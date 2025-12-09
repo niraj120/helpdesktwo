@@ -25,10 +25,10 @@ const getApiUrl = (): string => {
     return 'http://localhost:3003';
   } else if (hostname.includes('helpdesk.hubblehox.ai')) {
     console.log('📍 Detected PRODUCTION environment from hostname: helpdesk.hubblehox.ai');
-    return 'https://helpdesk.hubblehox.ai';
+    return 'https://helpdesk-api.hubblehox.ai';
   } else {
     console.log('📍 Unknown hostname, defaulting to PRODUCTION');
-    return 'https://helpdesk.hubblehox.ai';
+    return 'https://helpdesk-api.hubblehox.ai';
   }
 };
 
@@ -52,10 +52,10 @@ const getWsUrl = (): string => {
     return 'ws://localhost:3003';
   } else if (hostname.includes('helpdesk.hubblehox.ai')) {
     console.log('📍 Detected PRODUCTION WebSocket from hostname: helpdesk.hubblehox.ai');
-    return 'wss://helpdesk.hubblehox.ai';
+    return 'wss://helpdesk-api.hubblehox.ai';
   } else {
     console.log('📍 Unknown hostname, defaulting to PRODUCTION WebSocket');
-    return 'wss://helpdesk.hubblehox.ai';
+    return 'wss://helpdesk-api.hubblehox.ai';
   }
 };
 
