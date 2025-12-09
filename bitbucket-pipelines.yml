@@ -43,8 +43,13 @@ pipelines:
                 git pull &&
                 npm ci &&
                 chmod +x node_modules/.bin/* &&
+                echo "Copying production environment file..." &&
+                cp .env.production.server .env &&
+                echo "=== Production Backend .env contents ===" &&
+                cat .env &&
                 npm run build &&
                 sudo cp ../ecosystem.config.js /var/www/helpdesk/backend/ &&
+                sudo cp .env /var/www/helpdesk/backend/ &&
                 sudo cp -r dist/* /var/www/helpdesk/backend/ &&
                 sudo chown -R ubuntu:ubuntu /var/www/helpdesk/backend &&
                 cd /var/www/helpdesk/backend &&
