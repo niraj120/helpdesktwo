@@ -13,8 +13,12 @@ const getApiUrl = (): string => {
   const hostname = window.location.hostname;
   
   // Check for explicit env var first
-  const envUrl = import.meta.env.VITE_API_BASE_URL;
+  let envUrl = import.meta.env.VITE_API_BASE_URL;
   if (envUrl) {
+    // Auto-append /api if not already present and not localhost
+    if (!envUrl.includes('localhost') && !envUrl.endsWith('/api')) {
+      envUrl = `${envUrl}/api`;
+    }
     console.log('📍 Using API URL from environment:', envUrl);
     return envUrl;
   }
@@ -25,7 +29,7 @@ const getApiUrl = (): string => {
     return 'http://localhost:3003';
   } else if (hostname.includes('helpdesk.hubblehox.ai')) {
     console.log('📍 Detected PRODUCTION environment from hostname: helpdesk.hubblehox.ai');
-    return 'https://helpdesk.hubblehox.ai';
+    return 'https://helpdesk.hubblehox.ai/api';
   } else {
     console.log('📍 Unknown hostname, defaulting to PRODUCTION');
     return 'https://helpdesk.hubblehox.ai';
