@@ -895,7 +895,7 @@ const SLARulesPage: React.FC = () => {
                         resolutionTimeUnit: 'hours',
                         isActive: true,
                         isDefault: false,
-                        projectId: '',
+                        projectIds: [],
                       });
                     }}
                     style={{
