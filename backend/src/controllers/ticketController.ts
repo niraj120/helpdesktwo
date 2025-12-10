@@ -3,6 +3,7 @@ import { Ticket } from '../models/Ticket';
 import { Project } from '../models/Project';
 import { User } from '../models/User';
 import { Role } from '../models/Role';
+import { Permission } from '../models/Permission';
 import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
@@ -161,15 +162,41 @@ export const submitTicket = async (req: Request, res: Response) => {
     // Generate unique ticket number with retry mechanism
     console.time('⏱️ Generate ticket number');
     const generateUniqueTicketNumber = async (): Promise<string> => {
-      const today = new Date();
-      const datePrefix = `TKT-${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+      // Get ticket number configuration from project
+      const ticketNumberConfig = project.configuration?.ticketNumberSettings;
+      console.log('🔧 Ticket Number Config:', JSON.stringify(ticketNumberConfig, null, 2));
+      const prefix = ticketNumberConfig?.prefix || 'TKT';
+      const format = ticketNumberConfig?.format || '{PREFIX}-{YYYY}{MM}{DD}-{NNNN}';
+      const resetPeriod = ticketNumberConfig?.resetPeriod || 'daily';
+      console.log(`🎫 Using: prefix="${prefix}", format="${format}", resetPeriod="${resetPeriod}"`);
       
-      // Find the highest ticket number for today
+      const today = new Date();
+      let datePrefix = '';
+      
+      // Build date prefix based on reset period
+      if (resetPeriod === 'daily') {
+        datePrefix = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+      } else if (resetPeriod === 'monthly') {
+        datePrefix = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}`;
+      } else if (resetPeriod === 'yearly') {
+        datePrefix = `${today.getFullYear()}`;
+      }
+      
+      // Build search pattern based on format
+      let searchPattern = format
+        .replace('{PREFIX}', prefix)
+        .replace('{YYYY}', String(today.getFullYear()))
+        .replace('{MM}', String(today.getMonth() + 1).padStart(2, '0'))
+        .replace('{DD}', String(today.getDate()).padStart(2, '0'))
+        .replace('{NNNN}', ''); // Remove the number part for search
+      
+      // Find the highest ticket number for the current period
       const latestTicket = await Ticket.findOne({
-        ticketNumber: new RegExp(`^${datePrefix}-`)
+        projectId,
+        ticketNumber: new RegExp(`^${searchPattern.replace(/[-]/g, '\\-')}`)
       }).sort({ ticketNumber: -1 });
       
-      let nextNumber = 1;
+      let nextNumber = ticketNumberConfig?.startingNumber || 1;
       if (latestTicket && latestTicket.ticketNumber) {
         // Extract the sequence number from the last ticket
         const lastNumber = parseInt(latestTicket.ticketNumber.split('-').pop() || '0');
@@ -178,7 +205,13 @@ export const submitTicket = async (req: Request, res: Response) => {
       
       // Try up to 10 times to find a unique number (in case of race conditions)
       for (let attempt = 0; attempt < 10; attempt++) {
-        const ticketNumber = `${datePrefix}-${String(nextNumber).padStart(4, '0')}`;
+        // Generate ticket number based on format
+        let ticketNumber = format
+          .replace('{PREFIX}', prefix)
+          .replace('{YYYY}', String(today.getFullYear()))
+          .replace('{MM}', String(today.getMonth() + 1).padStart(2, '0'))
+          .replace('{DD}', String(today.getDate()).padStart(2, '0'))
+          .replace('{NNNN}', String(nextNumber).padStart(4, '0'));
         
         // Check if this number already exists
         const exists = await Ticket.findOne({ ticketNumber });
@@ -190,7 +223,7 @@ export const submitTicket = async (req: Request, res: Response) => {
       }
       
       // Fallback: use timestamp if all attempts fail
-      return `${datePrefix}-${Date.now().toString().slice(-4)}`;
+      return `${prefix}-${datePrefix}-${Date.now().toString().slice(-4)}`;
     };
     
     const ticketNumber = await generateUniqueTicketNumber();
@@ -211,14 +244,19 @@ export const submitTicket = async (req: Request, res: Response) => {
       switch (assignmentSettings.assignmentType) {
         case 'round-robin':
           // For round-robin: Find users with isAgent roles mapped to this project
+          console.log(`🔍 Looking for agent roles for project: ${projectId} (type: ${typeof projectId})`);
+          
+          const projectObjectId = new mongoose.Types.ObjectId(projectId);
           const agentRoles = await Role.find({
             isAgent: true,
             isActive: true,
             $or: [
-              { projects: projectId }, // New multi-project mapping
-              { projectId: projectId }  // Old single project mapping (backward compatibility)
+              { projects: projectObjectId }, // New multi-project mapping
+              { projectId: projectObjectId }  // Old single project mapping (backward compatibility)
             ]
           });
+          
+          console.log(`📊 Found ${agentRoles.length} agent roles:`, agentRoles.map(r => ({ name: r.name, code: r.code, projectId: r.projectId, projects: r.projects })));
           
           if (agentRoles.length > 0) {
             const agentRoleIds = agentRoles.map(r => r._id);
@@ -606,7 +644,13 @@ export const getAllTickets = async (req: Request, res: Response) => {
       // Other roles with TICKET_VIEW_ALL see only tickets from their assigned projects
       const assignedProjectIds = ((user as any).projects as any[])?.map(p => p._id) || [];
       if (assignedProjectIds.length > 0) {
-        query['metadata.projectId'] = { $in: assignedProjectIds };
+        // Handle both string and ObjectId project IDs in metadata.projectId
+        query['metadata.projectId'] = { 
+          $in: [
+            ...assignedProjectIds, 
+            ...assignedProjectIds.map(id => id.toString())
+          ] 
+        };
         console.log(`🔍 [VIEW_TICKETS] User with TICKET_VIEW_ALL - filter by assigned projects:`, assignedProjectIds);
       } else {
         console.log(`🔍 [VIEW_TICKETS] User has no assigned projects - returning empty`);
@@ -1405,7 +1449,15 @@ export const escalateTicket = async (req: Request, res: Response) => {
       });
     }
 
-    const escalatedUser = await User.findById(escalateTo);
+    // Extract user ID from escalation level format: "policyId-levelName-userId"
+    let escalatedUserId = escalateTo;
+    if (typeof escalateTo === 'string' && escalateTo.includes('-')) {
+      const parts = escalateTo.split('-');
+      // Last part is the user ID
+      escalatedUserId = parts[parts.length - 1];
+    }
+
+    const escalatedUser = await User.findById(escalatedUserId);
     if (!escalatedUser) {
       return res.status(404).json({
         success: false,
@@ -1427,21 +1479,14 @@ export const escalateTicket = async (req: Request, res: Response) => {
 
     ticket.escalationHistory.push({
       _id: new mongoose.Types.ObjectId(),
-      escalatedTo: {
-        firstName: escalatedUser.firstName,
-        lastName: escalatedUser.lastName,
-        email: escalatedUser.email,
-      },
-      escalatedBy: {
-        firstName: currentUser.firstName,
-        lastName: currentUser.lastName,
-      },
+      escalatedTo: new mongoose.Types.ObjectId(escalatedUserId),
+      escalatedBy: new mongoose.Types.ObjectId(userId),
       reason,
       escalatedAt: new Date(),
     } as any);
 
     // Update assigned agent
-    ticket.assignedTo = new mongoose.Types.ObjectId(escalateTo);
+    ticket.assignedTo = new mongoose.Types.ObjectId(escalatedUserId);
     ticket.updatedAt = new Date();
     await ticket.save();
 
@@ -1716,6 +1761,158 @@ export const getDashboardStats = async (req: Request, res: Response) => {
 };
 
 /**
+ * Get project-specific dashboard statistics
+ * Returns ticket counts by priority and SLA status for a specific project
+ */
+export const getProjectDashboardStats = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.userId;
+    const { projectId } = req.query;
+
+    if (!projectId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Project ID is required',
+      });
+    }
+
+    const user = await User.findById(userId).populate('role');
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    const userPermissions = (user.role as any)?.permissions || [];
+    const userRole = user.role as any;
+    const isAgent = userRole?.isAgent || false;
+
+    // Check permissions - handle both string codes and ObjectId references
+    const checkPermission = async (permCode: string): Promise<boolean> => {
+      // First check if permission exists as string code
+      const hasStringPermission = userPermissions.some((p: any) => {
+        if (typeof p === 'string') {
+          return p === permCode;
+        }
+        return false;
+      });
+      
+      if (hasStringPermission) {
+        return true;
+      }
+      
+      // Check by ObjectId - look up the permission and compare IDs
+      const perm = await Permission.findOne({ $or: [{ code: permCode }, { name: permCode }] });
+      if (!perm) {
+        return false;
+      }
+      
+      const permId = perm._id.toString();
+      return userPermissions.some((p: any) => {
+        try {
+          return p.toString() === permId;
+        } catch (e) {
+          return false;
+        }
+      });
+    };
+
+    console.log('🔍 Project Dashboard Stats Debug:', {
+      userId,
+      userEmail: user.email,
+      roleName: userRole?.name,
+      isAgent,
+      projectId,
+      permissionCount: userPermissions.length
+    });
+
+    // Build query based on user permissions
+    let query: any = { 'metadata.projectId': projectId };
+    
+    const hasViewAllTickets = await checkPermission('TICKET_VIEW_ALL');
+    
+    console.log('🔑 Permission Check Result:', { hasViewAllTickets });
+    
+    // For agents or users with TICKET_VIEW_OWN, show only their assigned tickets
+    if (hasViewAllTickets) {
+      // Users with TICKET_VIEW_ALL see all tickets for the project
+      console.log('✅ User has TICKET_VIEW_ALL - showing all project tickets');
+    } else if (isAgent || await checkPermission('TICKET_VIEW_OWN')) {
+      // Agents see only their assigned tickets within the project
+      const userObjectId = new mongoose.Types.ObjectId(userId);
+      query.assignedTo = userObjectId;
+      console.log('✅ User is agent or has TICKET_VIEW_OWN - showing assigned tickets only');
+      console.log('Query filter:', JSON.stringify(query, null, 2));
+    } else {
+      // No ticket view permissions - show only tickets created by this user
+      query['metadata.studentEmail'] = user.email;
+      console.log('⚠️ User has no ticket view permissions - showing only created tickets');
+    }
+
+    // Get total tickets count
+    const totalTickets = await Ticket.countDocuments(query);
+
+    console.log('📊 Dashboard Stats Results:', {
+      totalTickets,
+      query
+    });
+
+    // Get counts by priority
+    const highPriority = await Ticket.countDocuments({
+      ...query,
+      priority: 'high'
+    });
+
+    const mediumPriority = await Ticket.countDocuments({
+      ...query,
+      priority: 'medium'
+    });
+
+    const lowPriority = await Ticket.countDocuments({
+      ...query,
+      priority: 'low'
+    });
+
+    // Calculate SLA status
+    // For now, count resolved vs open/in-progress tickets as SLA metric
+    // TODO: Add proper SLA fields (sla, resolvedAt) to Ticket model for accurate tracking
+    const resolvedTickets = await Ticket.countDocuments({
+      ...query,
+      status: 'resolved'
+    });
+
+    const openOrInProgressTickets = await Ticket.countDocuments({
+      ...query,
+      status: { $in: ['open', 'in-progress', 'pending'] }
+    });
+
+    // Simplified SLA calculation - resolved = within SLA, open/pending = outside SLA
+    const withinSLA = resolvedTickets;
+    const outsideSLA = openOrInProgressTickets;
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        totalTickets,
+        highPriority,
+        mediumPriority,
+        lowPriority,
+        withinSLA,
+        outsideSLA,
+      },
+    });
+  } catch (error) {
+    console.error('Project dashboard stats error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch project dashboard statistics',
+    });
+  }
+};
+
+/**
  * Create offline ticket submission (by agent on behalf of student)
  */
 export const createOfflineTicket = async (req: Request, res: Response) => {
@@ -1915,6 +2112,72 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to create offline ticket',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get assignable agents for ticket assignment
+ * Returns users with isAgent=true roles from the same project(s) as the current user
+ */
+export const getAssignableAgents = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.userId;
+    
+    // Get current user with their projects
+    const currentUser = await User.findById(userId).populate('role');
+    
+    if (!currentUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+    
+    const userProjectIds = (currentUser.projects || []).map((p: any) => 
+      typeof p === 'string' ? p : p._id.toString()
+    );
+    
+    console.log('🔍 Fetching assignable agents for user:', {
+      userId,
+      email: currentUser.email,
+      projects: userProjectIds
+    });
+    
+    // Find all roles where isAgent = true
+    const agentRoles = await Role.find({ isAgent: true, isActive: true });
+    const agentRoleIds = agentRoles.map(role => role._id.toString());
+    
+    console.log('📋 Found agent roles:', agentRoles.map(r => r.name));
+    
+    // Find all active users who:
+    // 1. Have a role with isAgent = true
+    // 2. Share at least one project with the current user
+    const agents = await User.find({
+      isActive: true,
+      role: { $in: agentRoleIds },
+      projects: { $in: userProjectIds }
+    })
+    .populate('role', 'name isAgent')
+    .select('_id firstName lastName email role projects')
+    .sort({ firstName: 1, lastName: 1 });
+    
+    console.log('✅ Found assignable agents:', {
+      count: agents.length,
+      agents: agents.map(a => `${a.firstName} ${a.lastName} (${(a.role as any)?.name})`)
+    });
+    
+    return res.status(200).json({
+      success: true,
+      data: agents,
+    });
+    
+  } catch (error: any) {
+    console.error('Get assignable agents error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch assignable agents',
       error: error.message,
     });
   }

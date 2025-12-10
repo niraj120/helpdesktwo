@@ -99,7 +99,7 @@ const TicketConfigurationPage: React.FC = () => {
             color: 'var(--text-primary)',
             marginBottom: '8px' 
           }}>
-            Ticket Configuration
+            Query Configuration
           </h1>
           <p style={{ 
             fontSize: '14px', 

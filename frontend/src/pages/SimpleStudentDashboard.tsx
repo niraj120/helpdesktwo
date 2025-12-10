@@ -42,21 +42,21 @@ const SimpleStudentDashboard = () => {
       }
       
       // Fetch all student's tickets
-      const response = await axios.get(`${API_BASE_URL}/tickets/my-tickets`, {
+      const response = await axios.get(`${API_BASE_URL}/api/tickets/my-tickets`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
       if (response.data.success) {
         const tickets = response.data.data;
         
-        // Calculate stats
+        // Calculate stats (status values are lowercase in DB)
         const calculatedStats: TicketStats = {
           total: tickets.length,
-          open: tickets.filter((t: any) => t.status === 'Open').length,
-          inProgress: tickets.filter((t: any) => t.status === 'In Progress').length,
-          pending: tickets.filter((t: any) => t.status === 'Pending').length,
-          resolved: tickets.filter((t: any) => t.status === 'Resolved').length,
-          closed: tickets.filter((t: any) => t.status === 'Closed').length,
+          open: tickets.filter((t: any) => t.status === 'open').length,
+          inProgress: tickets.filter((t: any) => t.status === 'in-progress').length,
+          pending: tickets.filter((t: any) => t.status === 'pending').length,
+          resolved: tickets.filter((t: any) => t.status === 'resolved').length,
+          closed: tickets.filter((t: any) => t.status === 'closed').length,
         };
         
         setStats(calculatedStats);
@@ -98,7 +98,7 @@ const SimpleStudentDashboard = () => {
             marginBottom: '8px',
             color: '#1f2937'
           }}>
-            Student Dashboard
+            Candidate Dashboard
           </h1>
           <p style={{ color: '#6b7280', fontSize: '14px' }}>
             View and manage your support tickets
@@ -154,7 +154,7 @@ const SimpleStudentDashboard = () => {
             gap: '20px',
             marginBottom: '32px'
           }}>
-            {/* Total Tickets */}
+            {/* Total Queries */}
             <div style={{
               background: 'white',
               padding: '24px',
@@ -168,7 +168,7 @@ const SimpleStudentDashboard = () => {
                 marginBottom: '8px',
                 fontWeight: '500'
               }}>
-                Total Tickets
+                Total Queries
               </div>
               <div style={{ 
                 fontSize: '32px', 
@@ -179,7 +179,7 @@ const SimpleStudentDashboard = () => {
               </div>
             </div>
 
-            {/* Open Tickets */}
+            {/* Open Queries */}
             <div style={{
               background: 'white',
               padding: '24px',

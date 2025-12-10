@@ -14,6 +14,7 @@ import AgentStudentWorkflow from './AgentStudentWorkflow';
 import UserManagement from '../components/UserManagement';
 import RedirectToFirstRoute from '../components/RedirectToFirstRoute';
 import EmailConfigPage from './EmailConfigPage';
+import ProjectDashboard from './ProjectDashboard';
 
 // Import ticket-related pages
 import ViewTickets from './ViewTickets';
@@ -1129,7 +1130,7 @@ const ProjectPortalDashboard = () => {
   return (
     <DashboardLayout logoutRedirectPath={`/${customUrlPath}/portal/login`}>
       <Routes>
-        <Route path="/dashboard" element={<AgentDashboardContent />} />
+        <Route path="/dashboard" element={<ProjectDashboard wrapWithLayout={false} />} />
         
         {/* Ticket Routes */}
         <Route path="/tickets/view" element={

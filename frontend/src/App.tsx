@@ -4,6 +4,7 @@ import { PERMISSIONS } from './constants/permissions'
 import Login from './components/Login'
 import ProjectLogin from './pages/ProjectLogin'
 import AgentDashboard from './components/AgentDashboard'
+import ProjectDashboard from './pages/ProjectDashboard'
 import ProjectPortalLogin from './pages/ProjectPortalLogin'
 import ProjectForgotPassword from './pages/ProjectForgotPassword'
 import ProjectPortalDashboard from './pages/ProjectPortalDashboard'
@@ -145,12 +146,12 @@ function App() {
           } 
         />
         
-        {/* Agent Dashboard - Legacy route, requires ticket permissions */}
+        {/* Project Dashboard - For project-specific users */}
         <Route 
           path="/:customUrlPath/dashboard" 
           element={
             <ProtectedRoute modulePrefix="TICKET_">
-              <AgentDashboard />
+              <ProjectDashboard />
             </ProtectedRoute>
           } 
         />

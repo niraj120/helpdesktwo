@@ -101,18 +101,26 @@ export const getPriorityById = async (req: Request, res: Response) => {
 // Create new priority
 export const createPriority = async (req: Request, res: Response) => {
   try {
-    const { name, code, color, order, responseTime, resolutionTime, isActive, isDefault, description, projectId } = req.body;
+    const { name, code, color, order, responseTime, resolutionTime, isActive, isDefault, description, projectId, projectIds } = req.body;
     
-    if (!projectId) {
+    // Support both projectId (old) and projectIds (new) for backward compatibility
+    const finalProjectIds = projectIds && Array.isArray(projectIds) && projectIds.length > 0 
+      ? projectIds 
+      : (projectId ? [projectId] : []);
+    
+    if (finalProjectIds.length === 0) {
       return res.status(400).json({
         success: false,
         message: 'Project is required',
       });
     }
     
+    // For backward compatibility, use first project for duplicate checks
+    const checkProjectId = finalProjectIds[0];
+    
     // Check if priority with same name or code exists for this project
     const existing = await Priority.findOne({
-      projectId,
+      projectId: checkProjectId,
       $or: [{ name }, { code: code?.toUpperCase() }],
     });
     
@@ -133,7 +141,7 @@ export const createPriority = async (req: Request, res: Response) => {
       isActive: isActive !== false,
       isDefault: isDefault || false,
       description,
-      projectId,
+      projectId: finalProjectIds[0], // Store first project ID for backward compatibility
       createdBy: (req as any).user?.id,
     });
     

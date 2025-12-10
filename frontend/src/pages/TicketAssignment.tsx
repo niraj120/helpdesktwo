@@ -69,13 +69,14 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
   useEffect(() => {
     checkUserRole();
     fetchTickets();
-    fetchAgents();
   }, []);
 
   useEffect(() => {
     if (isSuperAdmin) {
       fetchProjects();
     }
+    // Fetch agents after role is determined
+    fetchAgents();
   }, [isSuperAdmin]);
 
   const checkUserRole = () => {
@@ -124,61 +125,21 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
     try {
       const token = localStorage.getItem('authToken');
       
-      // Get project context from localStorage (set during project portal login)
-      const projectContextStr = localStorage.getItem('projectContext');
-      let projectId = null;
-      
-      // For non-Super Admins, use project context
-      if (!isSuperAdmin && projectContextStr) {
-        try {
-          const projectContext = JSON.parse(projectContextStr);
-          projectId = projectContext.projectId;
-          console.log('📋 Fetching agents for project:', projectId);
-        } catch (e) {
-          console.error('Error parsing project context:', e);
-        }
-      }
-      
-      // Fetch users and their populated roles
-      const response = await axios.get(`${API_CONFIG.API_URL}/users?populate=role`, {
+      // Use the assignable-agents endpoint
+      const response = await axios.get(`${API_CONFIG.API_URL}/tickets/assignable-agents`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-
+      
       if (response.data.success) {
-        // Filter users who:
-        // 1. Are active
-        // 2. Have a role
-        // 3. Their role is marked as isAgent = true (for auto-assignment eligibility)
-        // 4. For non-Super Admins: Are assigned to the current project
-        const agentUsers = response.data.data.filter((user: any) => {
-          const isActive = user.isActive;
-          const hasRole = user.role;
-          const isAgent = user.role && user.role.isAgent === true;
-          
-          // If Super Admin, show all agents regardless of project
-          if (isSuperAdmin) {
-            return isActive && hasRole && isAgent;
-          }
-          
-          // For non-Super Admins, check if user is assigned to this project
-          // Convert ObjectIds to strings for comparison
-          const isInProject = !projectId || (user.projects && user.projects.some((p: any) => 
-            (typeof p === 'string' ? p : p._id || p.toString()) === projectId
-          ));
-          
-          return isActive && hasRole && isAgent && isInProject;
+        console.log('📋 Loaded assignable agents:', {
+          totalAgents: response.data.data.length,
+          agents: response.data.data.map((a: any) => `${a.firstName} ${a.lastName} (${a.role?.name})`)
         });
-        
-        console.log('📋 Loaded agents with isAgent roles:', {
-          totalAgents: agentUsers.length,
-          isSuperAdmin,
-          projectId: projectId || 'All projects',
-          agents: agentUsers.map((a: any) => `${a.firstName} ${a.lastName} (${a.role.name})`)
-        });
-        setAgents(agentUsers);
+        setAgents(response.data.data);
       }
     } catch (error) {
-      console.error('Error fetching agents:', error);
+      console.error('Error fetching assignable agents:', error);
+      setAgents([]);
     }
   };
 

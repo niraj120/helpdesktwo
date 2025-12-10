@@ -87,7 +87,7 @@ const WebhookFailureLogs: React.FC = () => {
       if (endpointFilter) params.append('endpoint', endpointFilter);
 
       const response = await fetch(
-        `${API_CONFIG.API_URL}/api-logs?${params.toString()}`,
+        `${API_CONFIG.API_URL.replace('/api', '')}/api-logs?${params.toString()}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -114,7 +114,7 @@ const WebhookFailureLogs: React.FC = () => {
       const token = localStorage.getItem('token');
 
       const response = await fetch(
-        `${API_CONFIG.API_URL}/api-logs/statistics`,
+        `${API_CONFIG.API_URL.replace('/api', '')}/api-logs/statistics`,
         {
           headers: {
             Authorization: `Bearer ${token}`,

@@ -258,7 +258,7 @@ const TicketListReport: React.FC = () => {
       
       // Title
       doc.setFontSize(18);
-      doc.text('Ticket List Report', 14, 20);
+      doc.text('Query List Report', 14, 20);
       
       // Subtitle with filters
       doc.setFontSize(10);
@@ -356,10 +356,10 @@ const TicketListReport: React.FC = () => {
       <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h1 style={{ fontSize: '24px', fontWeight: '600', color: '#1f2937', margin: 0 }}>
-            Ticket List Report
+            Query List Report
           </h1>
           <p style={{ color: '#6b7280', marginTop: '4px' }}>
-            View and export ticket data with filters
+            View and export query data with filters
           </p>
         </div>
         

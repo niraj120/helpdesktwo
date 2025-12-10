@@ -19,7 +19,9 @@ import {
   getAllTags,
   bulkUpdateByTags,
   getDashboardStats,
+  getProjectDashboardStats,
   createOfflineTicket,
+  getAssignableAgents,
 } from '../controllers/ticketController';
 import { authMiddleware } from '../middleware/auth';
 import { checkPermission } from '../middleware/permissions';
@@ -74,10 +76,20 @@ router.get('/agent/assigned', authMiddleware, checkPermission(['TICKET_VIEW_ALL'
 // @access  Private
 router.get('/dashboard-stats', authMiddleware, checkPermission(['TICKET_VIEW_ALL', 'DASHBOARD_VIEW']), getDashboardStats);
 
+// @desc    Get project-specific dashboard statistics
+// @route   GET /api/tickets/project-dashboard-stats
+// @access  Private
+router.get('/project-dashboard-stats', authMiddleware, checkPermission(['TICKET_VIEW_ALL', 'TICKET_VIEW_OWN']), getProjectDashboardStats);
+
 // @desc    Get all tags (MUST be before /:id route)
 // @route   GET /api/tickets/tags
 // @access  Private (Agent)
 router.get('/tags', authMiddleware, checkPermission(['TICKET_VIEW_ALL', 'View Own Tickets']), getAllTags);
+
+// @desc    Get assignable agents (MUST be before /:id route)
+// @route   GET /api/tickets/assignable-agents
+// @access  Private (requires TICKET_ASSIGN permission)
+router.get('/assignable-agents', authMiddleware, checkPermission('TICKET_ASSIGN'), getAssignableAgents);
 
 // @desc    Bulk update tickets by tags (MUST be before /:id route)
 // @route   POST /api/tickets/bulk-update
@@ -157,7 +169,7 @@ router.post('/:id/notes', authMiddleware, checkPermission('TICKET_ADD_COMMENT'),
 // @desc    Escalate ticket
 // @route   POST /api/tickets/:id/escalate
 // @access  Private (Agent)
-router.post('/:id/escalate', authMiddleware, checkPermission('TICKET_ASSIGN'), escalateTicket);
+router.post('/:id/escalate', authMiddleware, checkPermission('TICKET_ESCALATE'), escalateTicket);
 
 // @desc    Assign ticket to agent
 // @route   PUT /api/tickets/:id/assign

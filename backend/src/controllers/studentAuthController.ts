@@ -412,7 +412,7 @@ export const checkUser = async (req: Request, res: Response) => {
     }
 
     const role = user.role as any;
-    if (role.code !== 'STUDENT') {
+    if (!role || role.code !== 'STUDENT') {
       return res.status(403).json({
         success: false,
         message: 'This is not a student account.',

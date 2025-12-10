@@ -591,13 +591,43 @@ const OfflineModuleSettings: React.FC = () => {
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Field Name
                       </label>
-                      <input
-                        type="text"
-                        value={field.fieldName}
-                        onChange={(e) => updateRegistrationField(field.id, { fieldName: e.target.value })}
-                        disabled={isMandatoryField}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
-                      />
+                      {isMandatoryField ? (
+                        <input
+                          type="text"
+                          value={field.fieldName}
+                          disabled
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed"
+                        />
+                      ) : (
+                        <select
+                          value={field.fieldName}
+                          onChange={(e) => updateRegistrationField(field.id, { fieldName: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          <option value="">Select Field</option>
+                          <optgroup label="Student Info">
+                            <option value="name">Name / Full Name</option>
+                            <option value="First Name">First Name</option>
+                            <option value="Last Name">Last Name</option>
+                            <option value="Email">Email</option>
+                            <option value="Phone">Phone</option>
+                            <option value="Mobile Number">Mobile Number</option>
+                            <option value="Parent Mobile">Parent Mobile</option>
+                            <option value="Unique ID">Unique ID / Student ID</option>
+                          </optgroup>
+                          <optgroup label="Custom Fields">
+                            <option value="Address">Address</option>
+                            <option value="City">City</option>
+                            <option value="State">State</option>
+                            <option value="Pincode">Pincode</option>
+                            <option value="Date of Birth">Date of Birth</option>
+                            <option value="Gender">Gender</option>
+                            <option value="Course">Course</option>
+                            <option value="Class">Class</option>
+                            <option value="Custom Field">Custom Field (Edit Name)</option>
+                          </optgroup>
+                        </select>
+                      )}
                     </div>
 
                     {/* Field Type */}

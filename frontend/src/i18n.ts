@@ -25,10 +25,10 @@ const resources = {
       "users": "Users",
       "settings": "Settings",
       
-      // Tickets
-      "createTicket": "Create Ticket",
-      "ticketDetails": "Ticket Details",
-      "assignTicket": "Assign Ticket",
+      // Queries
+      "createTicket": "Create Query",
+      "ticketDetails": "Query Details",
+      "assignTicket": "Assign Query",
       
       // Users
       "userManagement": "User Management",

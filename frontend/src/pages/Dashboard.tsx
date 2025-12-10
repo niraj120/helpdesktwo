@@ -87,7 +87,7 @@ const Dashboard = () => {
             padding: '20px',
             boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)'
           }}>
-            <p style={{ fontSize: '14px', color: '#6b7280', marginBottom: '8px' }}>Total Tickets</p>
+            <p style={{ fontSize: '14px', color: '#6b7280', marginBottom: '8px' }}>Total Queries</p>
             <p style={{ fontSize: '32px', fontWeight: 'bold', color: '#111827' }}>
               {loading ? '-' : ticketStats.total}
             </p>

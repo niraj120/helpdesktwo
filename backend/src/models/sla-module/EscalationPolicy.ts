@@ -28,6 +28,7 @@ export interface IEscalationPolicy extends Document {
   isActive: boolean;
   projectId?: mongoose.Types.ObjectId;
   projectIds?: mongoose.Types.ObjectId[];
+  slaRuleIds?: mongoose.Types.ObjectId[];
   createdBy?: mongoose.Types.ObjectId;
   updatedBy?: mongoose.Types.ObjectId;
   createdAt: Date;
@@ -119,6 +120,12 @@ const EscalationPolicySchema = new Schema<IEscalationPolicy>(
       {
         type: Schema.Types.ObjectId,
         ref: 'Project',
+      },
+    ],
+    slaRuleIds: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: 'SLARule',
       },
     ],
     createdBy: {

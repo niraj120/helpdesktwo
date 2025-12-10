@@ -166,13 +166,13 @@ export const DashboardModule: React.FC<DashboardModuleProps> = ({ user, permissi
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
-          title="Total Tickets"
+          title="Total Queries"
           value={stats?.totalTickets || 0}
           icon={<TicketIcon className="h-6 w-6" />}
           color="blue"
         />
         <StatCard
-          title="Open Tickets"
+          title="Open Queries"
           value={stats?.openTickets || 0}
           icon={<ChartBarIcon className="h-6 w-6" />}
           color="yellow"

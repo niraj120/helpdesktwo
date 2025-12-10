@@ -123,13 +123,13 @@ const StudentLayout = ({ children }: StudentLayoutProps) => {
     {
       path: `/${customUrlPath}/student/my-tickets`,
       icon: <MdConfirmationNumber />,
-      label: 'My Tickets',
+      label: 'My Queries',
       permission: PERMISSIONS.TICKET_VIEW_OWN,
     },
     {
       path: `/${customUrlPath}/submit-ticket`,
       icon: <MdAdd />,
-      label: 'Submit Ticket',
+      label: 'Submit Query',
       permission: PERMISSIONS.TICKET_CREATE,
     },
     {
@@ -196,7 +196,7 @@ const StudentLayout = ({ children }: StudentLayoutProps) => {
           )}
           {sidebarOpen && !branding?.logo && (
             <h1 style={{ fontSize: '20px', fontWeight: '700', color: primaryColor, margin: 0 }}>
-              {branding?.headerText || 'Student Portal'}
+              {branding?.headerText || 'Candidate Portal'}
             </h1>
           )}
           <button
@@ -318,7 +318,7 @@ const StudentLayout = ({ children }: StudentLayoutProps) => {
           }}
         >
           <div style={{ fontSize: '18px', fontWeight: '600', color: primaryColor }}>
-            {branding?.headerText || 'Student Support Portal'}
+            {branding?.headerText || 'Candidate Support Portal'}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             {user && (

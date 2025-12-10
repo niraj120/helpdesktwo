@@ -99,7 +99,7 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
       // If no fields configured, use default fields (excluding profile fields)
       if (formFields.length === 0) {
         formFields = [
-          { fieldName: 'Subject', fieldType: 'text', required: true, placeholder: 'Enter ticket subject' },
+          { fieldName: 'Subject', fieldType: 'text', required: true, placeholder: 'Enter query subject' },
           { fieldName: 'Description', fieldType: 'textarea', required: true, placeholder: 'Describe your issue in detail' },
           { fieldName: 'Category', fieldType: 'dropdown', required: false, placeholder: 'Select category', options: activeCategoryNames },
         ];
@@ -259,7 +259,7 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
             className={commonClasses}
             style={{ ['--tw-ring-color' as any]: branding?.primaryColor }}
           >
-            <option value="">Select {field.fieldName}</option>
+            <option value="">{field.placeholder || `Select ${field.fieldName}`}</option>
             {field.options?.map((option) => (
               <option key={option} value={option}>
                 {option}
@@ -414,7 +414,7 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
         {/* Header */}
         {!hideHeader && (
           <div className="mb-8 text-center">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Submit a Ticket</h1>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">Submit a Query</h1>
             {ticketSettings?.welcomeMessage && (
               <p className="text-gray-600">{ticketSettings.welcomeMessage}</p>
             )}
@@ -434,13 +434,13 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
             <CheckCircleIcon className="w-6 h-6 text-green-600 flex-shrink-0 mt-0.5" />
             <div>
               <h3 className="text-lg font-semibold text-green-900 mb-1">
-                Ticket Submitted Successfully!
+                Query Submitted Successfully!
               </h3>
               <p className="text-green-700">
                 {ticketSettings?.successMessage ||
-                  'Your ticket has been submitted. Our team will get back to you soon.'}
+                  'Your query has been submitted. Our team will get back to you soon.'}
               </p>
-              <p className="text-green-600 text-sm mt-2">Redirecting to My Tickets...</p>
+              <p className="text-green-600 text-sm mt-2">Redirecting to My Queries...</p>
             </div>
           </div>
         )}
@@ -486,7 +486,7 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
                   : 'linear-gradient(135deg, #3b82f6 0%, #1e40af 100%)',
               }}
             >
-              {submitting ? 'Submitting...' : submitSuccess ? 'Submitted!' : 'Submit Ticket'}
+              {submitting ? 'Submitting...' : submitSuccess ? 'Submitted!' : 'Submit Query'}
             </button>
           </form>
         </div>

@@ -520,6 +520,56 @@ export const getProjectTicketSettings = async (req: Request, res: Response) => {
       });
     }
     
+    // Get ticket numbering config - prefer ticketNumberSettings, fallback to old location
+    const ticketNumberSettings = project.configuration?.ticketNumberSettings;
+    const oldNumbering = (project.configuration as any)?.ticketSubmissionSettings?.numbering;
+    
+    console.log('🔍 DB ticketNumberSettings:', JSON.stringify(ticketNumberSettings, null, 2));
+    console.log('🔍 DB oldNumbering:', JSON.stringify(oldNumbering, null, 2));
+    
+    // Convert backend format to UI format
+    let numbering;
+    if (ticketNumberSettings) {
+      const prefix = ticketNumberSettings.prefix || 'TKT';
+      const format = ticketNumberSettings.format || '{PREFIX}-{YYYY}-{NNNN}';
+      
+      // Extract separator from format (character between placeholders)
+      let separator = '-';
+      const match = format.match(/\{[^}]+\}(.)\{/);
+      if (match) separator = match[1];
+      
+      // Build UI format string (replace {PREFIX} with actual prefix, {NNNN} with ####)
+      const uiFormat = format
+        .replace('{PREFIX}', prefix)
+        .replace('{NNNN}', '####')
+        .replace('{NNN}', '###')
+        .replace('{NN}', '##');
+      
+      numbering = {
+        format: uiFormat,
+        prefix: prefix,
+        startingNumber: ticketNumberSettings.startingNumber || 1,
+        separator: separator,
+        includeYear: format.includes('{YYYY}'),
+        includeMonth: format.includes('{MM}'),
+        resetFrequency: ticketNumberSettings.resetPeriod || 'yearly',
+      };
+    } else if (oldNumbering) {
+      numbering = oldNumbering;
+    } else {
+      numbering = {
+        format: 'TICK-{YYYY}-{####}',
+        prefix: 'TICK',
+        startingNumber: 1,
+        separator: '-',
+        includeYear: true,
+        includeMonth: false,
+        resetFrequency: 'yearly',
+      };
+    }
+    
+    console.log('📋 Returning ticket numbering config:', JSON.stringify(numbering, null, 2));
+    
     // Return ticket submission settings with defaults
     const settings = {
       mode: project.configuration?.ticketSubmissionSettings?.mode || 'both',
@@ -564,16 +614,15 @@ export const getProjectTicketSettings = async (req: Request, res: Response) => {
         
         const query = {
           projectIds: { $in: [project._id] },  // Use $in because projectIds is an array
-          isActive: true,
-          priority: { $exists: true, $ne: null }
+          isActive: true
         };
         console.log('  Query:', JSON.stringify(query));
         
-        const slaRules = await SLARule.find(query).select('priority');
+        const slaRules = await SLARule.find(query).select('name priority');
         console.log('  Raw results:', JSON.stringify(slaRules, null, 2));
         
-        // Extract unique priorities
-        const uniquePriorities = [...new Set(slaRules.map(rule => rule.priority))];
+        // Extract unique priorities - use priority field if exists, otherwise use name
+        const uniquePriorities = [...new Set(slaRules.map(rule => rule.priority || rule.name).filter(p => p))];
         console.log(`📊 Found ${uniquePriorities.length} unique priorities from ${slaRules.length} SLA rules for project ${project.name}:`, uniquePriorities);
         
         return uniquePriorities;
@@ -584,7 +633,11 @@ export const getProjectTicketSettings = async (req: Request, res: Response) => {
     
     return res.json({
       success: true,
+      projectName: project.name,
       data: settings,
+      ticketConfig: {
+        numbering,
+      },
     });
     
   } catch (error) {
@@ -737,6 +790,8 @@ export const updateProjectTicketSettings = async (req: Request, res: Response) =
     const { projectId } = req.params;
     const { numbering, statuses, types } = req.body;
 
+    console.log('💾 Saving ticket settings:', JSON.stringify({ numbering, statuses, types }, null, 2));
+
     const project = await Project.findById(projectId);
     
     if (!project) {
@@ -750,28 +805,65 @@ export const updateProjectTicketSettings = async (req: Request, res: Response) =
     if (!project.configuration) {
       (project as any).configuration = {};
     }
-    if (!(project as any).configuration.ticketSubmissionSettings) {
-      (project as any).configuration.ticketSubmissionSettings = {};
-    }
 
-    // Update ticket configuration
+    // Update ticket numbering configuration - save to ticketNumberSettings (where backend reads from)
     if (numbering) {
+      // Build format string from UI settings
+      const prefix = numbering.prefix || 'TKT';
+      const separator = numbering.separator || '-';
+      let formatParts = ['{PREFIX}'];
+      
+      if (numbering.includeYear) {
+        formatParts.push('{YYYY}');
+      }
+      if (numbering.includeMonth) {
+        formatParts.push('{MM}');
+      }
+      formatParts.push('{NNNN}');
+      
+      const format = formatParts.join(separator);
+      
+      // Convert UI format to backend format
+      const ticketNumberSettings = {
+        prefix: prefix,
+        format: format,
+        startingNumber: numbering.startingNumber || 1,
+        resetPeriod: (numbering.resetFrequency || 'yearly') as 'never' | 'daily' | 'monthly' | 'yearly',
+      };
+      
+      console.log('✅ Converted UI format to backend format:', ticketNumberSettings);
+      (project as any).configuration.ticketNumberSettings = ticketNumberSettings;
+      
+      // Also save to old location for backward compatibility
+      if (!(project as any).configuration.ticketSubmissionSettings) {
+        (project as any).configuration.ticketSubmissionSettings = {};
+      }
       (project as any).configuration.ticketSubmissionSettings.numbering = numbering;
     }
+    
     if (statuses) {
+      if (!(project as any).configuration.ticketSubmissionSettings) {
+        (project as any).configuration.ticketSubmissionSettings = {};
+      }
       (project as any).configuration.ticketSubmissionSettings.statuses = statuses;
     }
     if (types) {
+      if (!(project as any).configuration.ticketSubmissionSettings) {
+        (project as any).configuration.ticketSubmissionSettings = {};
+      }
       (project as any).configuration.ticketSubmissionSettings.types = types;
     }
 
     await project.save();
+    
+    console.log('✅ Ticket settings saved successfully');
 
     return res.json({
       success: true,
       message: 'Ticket settings updated successfully',
       data: {
         numbering: (project as any).configuration?.ticketSubmissionSettings?.numbering,
+        ticketNumberSettings: (project as any).configuration?.ticketNumberSettings,
         statuses: (project as any).configuration?.ticketSubmissionSettings?.statuses,
         types: (project as any).configuration?.ticketSubmissionSettings?.types,
       },

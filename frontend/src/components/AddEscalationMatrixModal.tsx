@@ -44,7 +44,8 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
     name: '',
     description: '',
     isActive: true,
-    projectIds: [] as string[],
+    projectId: '',
+    slaRuleIds: [] as string[],
   });
 
   const [levels, setLevels] = useState<EscalationLevel[]>([
@@ -57,22 +58,66 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
   ]);
 
   const [projects, setProjects] = useState<any[]>([]);
+  const [slaRules, setSlaRules] = useState<any[]>([]);
+  const [allSlaRules, setAllSlaRules] = useState<any[]>([]); // Store all SLA rules
   const [roles, setRoles] = useState<any[]>([]);
 
   useEffect(() => {
     if (isOpen) {
       fetchProjects();
+      fetchSLARules();
       fetchRoles();
     }
   }, [isOpen]);
 
+  // Filter SLA rules when project changes
+  useEffect(() => {
+    if (formData.projectId) {
+      console.log('Filtering SLA rules for project:', formData.projectId);
+      console.log('All SLA rules:', allSlaRules);
+      
+      const filtered = allSlaRules.filter(sla => {
+        console.log('Checking SLA rule:', sla.name, 'projectIds:', sla.projectIds);
+        
+        if (!sla.projectIds || !Array.isArray(sla.projectIds)) {
+          console.log('  - No projectIds array found');
+          return false;
+        }
+        
+        const hasMatch = sla.projectIds.some((pid: any) => {
+          const pidString = typeof pid === 'object' ? (pid._id || pid.toString()) : pid.toString();
+          const formProjectIdString = formData.projectId.toString();
+          console.log(`  - Comparing: ${pidString} === ${formProjectIdString}`);
+          return pidString === formProjectIdString;
+        });
+        
+        console.log('  - Match:', hasMatch);
+        return hasMatch;
+      });
+      
+      setSlaRules(filtered);
+      console.log(`✅ Filtered ${filtered.length} SLA rules for project ${formData.projectId}`);
+    } else {
+      setSlaRules([]);
+    }
+  }, [formData.projectId, allSlaRules]);
+
   useEffect(() => {
     if (initialData && mode === 'edit') {
-      // Extract project IDs from populated or unpopulated projectIds
-      let projectIdArray: string[] = [];
-      if (initialData.projectIds && Array.isArray(initialData.projectIds)) {
-        projectIdArray = initialData.projectIds.map((p: any) => 
-          typeof p === 'object' && p._id ? p._id : p
+      // Extract project ID
+      let projectId = '';
+      if (initialData.projectId) {
+        projectId = typeof initialData.projectId === 'object' ? initialData.projectId._id : initialData.projectId;
+      } else if (initialData.projectIds && initialData.projectIds.length > 0) {
+        const firstProject = initialData.projectIds[0];
+        projectId = typeof firstProject === 'object' ? firstProject._id : firstProject;
+      }
+
+      // Extract SLA rule IDs from populated or unpopulated slaRuleIds
+      let slaRuleIdArray: string[] = [];
+      if (initialData.slaRuleIds && Array.isArray(initialData.slaRuleIds)) {
+        slaRuleIdArray = initialData.slaRuleIds.map((s: any) => 
+          typeof s === 'object' && s._id ? s._id : s
         );
       }
 
@@ -80,7 +125,8 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
         name: initialData.name || '',
         description: initialData.description || '',
         isActive: initialData.isActive !== undefined ? initialData.isActive : true,
-        projectIds: projectIdArray,
+        projectId: projectId,
+        slaRuleIds: slaRuleIdArray,
       });
       if (initialData.levels) {
         setLevels(initialData.levels);
@@ -91,7 +137,7 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
   const fetchProjects = async () => {
     try {
       const token = localStorage.getItem('authToken');
-      const response = await fetch(`${API_CONFIG.API_URL}/projects`, {
+      const response = await fetch(`${API_CONFIG.BASE_URL}/api/projects`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -100,8 +146,10 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
 
       if (response.ok) {
         const data = await response.json();
+        console.log('Projects API response:', data);
         if (data.success && data.data && Array.isArray(data.data.projects)) {
           setProjects(data.data.projects);
+          console.log('Loaded projects:', data.data.projects.length);
         } else if (data.success && Array.isArray(data.data)) {
           setProjects(data.data);
         } else if (Array.isArray(data)) {
@@ -110,11 +158,50 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
           setProjects([]);
         }
       } else {
+        console.error('Failed to fetch projects:', response.status, response.statusText);
         setProjects([]);
       }
     } catch (error) {
       console.error('Error fetching projects:', error);
       setProjects([]);
+    }
+  };
+
+  const fetchSLARules = async () => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`${API_CONFIG.BASE_URL}/api/sla-rules`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('SLA Rules API response:', data);
+        if (data.success && Array.isArray(data.data)) {
+          setAllSlaRules(data.data);
+          console.log('✅ Loaded all SLA rules:', data.data.length);
+          console.log('📋 SLA rules details:');
+          data.data.forEach((sla: any) => {
+            const projectNames = sla.projectIds?.map((p: any) => 
+              typeof p === 'object' ? `${p.name} (${p._id})` : p
+            ).join(', ') || 'No projects';
+            console.log(`  - ${sla.name} [${sla.priority || 'No priority'}] → Projects: ${projectNames}`);
+          });
+        } else if (Array.isArray(data)) {
+          setAllSlaRules(data);
+        } else {
+          setAllSlaRules([]);
+        }
+      } else {
+        console.error('Failed to fetch SLA rules:', response.status, response.statusText);
+        setAllSlaRules([]);
+      }
+    } catch (error) {
+      console.error('Error fetching SLA rules:', error);
+      setAllSlaRules([]);
     }
   };
 
@@ -132,14 +219,17 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
 
       for (const ep of endpoints) {
         try {
-          const res = await fetch(`${API_CONFIG.API_URL}${ep.startsWith('/') ? '' : '/'}${ep}`, {
+          const res = await fetch(`${API_CONFIG.BASE_URL}/api${ep}`, {
             headers: {
               'Authorization': `Bearer ${token}`,
             },
             credentials: 'include',
           });
 
-            if (!res.ok) continue;
+            if (!res.ok) {
+              console.log(`Endpoint ${ep} failed with status ${res.status}`);
+              continue;
+            }
 
             const payload = await res.json();
 
@@ -151,12 +241,14 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
               else if (Array.isArray(payload)) list = payload;
             }
 
+            console.log(`Roles from ${ep}:`, list.length, 'roles');
             if (list.length > 0) {
               rolesResult = list;
               break;
             }
         } catch (innerErr) {
           // try next endpoint
+          console.error(`Error fetching from ${ep}:`, innerErr);
           continue;
         }
       }
@@ -167,6 +259,7 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
         name: r.name || r.title || r.displayName || r.code || '',
       })).filter(r => r._id && r.name);
 
+      console.log('Normalized roles:', normalized.length);
       setRoles(normalized);
     } catch (error) {
       console.error('Error fetching roles:', error);
@@ -281,6 +374,16 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
       return;
     }
 
+    if (!formData.projectId) {
+      alert('Please select a project');
+      return;
+    }
+
+    if (!formData.slaRuleIds || formData.slaRuleIds.length === 0) {
+      alert('Please map at least one SLA rule to this escalation policy');
+      return;
+    }
+
     if (levels.length === 0) {
       alert('Please add at least one escalation level');
       return;
@@ -310,7 +413,8 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
       name: '',
       description: '',
       isActive: true,
-      projectIds: [],
+      projectId: '',
+      slaRuleIds: [],
     });
     setLevels([
       {
@@ -434,13 +538,49 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
                 </label>
               </div>
 
-              {/* Project Mapping */}
+              {/* Project Selection */}
               <div style={{ marginBottom: '16px' }}>
                 <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 500, color: '#374151' }}>
-                  Map to Projects
+                  Select Project <span style={{ color: '#dc2626' }}>*</span>
                 </label>
                 <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#6b7280' }}>
-                  Select projects where this escalation policy will be applied
+                  Choose the project for this escalation policy. SLA rules will be filtered based on your selection.
+                </p>
+                <select
+                  required
+                  value={formData.projectId}
+                  onChange={(e) => {
+                    setFormData({ 
+                      ...formData, 
+                      projectId: e.target.value,
+                      slaRuleIds: [] // Reset SLA selection when project changes
+                    });
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                    backgroundColor: 'white',
+                  }}
+                >
+                  <option value="">-- Select a project --</option>
+                  {projects.map((project) => (
+                    <option key={project._id} value={project._id}>
+                      {project.name} ({project.code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* SLA Rules Mapping */}
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 500, color: '#374151' }}>
+                  Map to SLA Rules <span style={{ color: '#dc2626' }}>*</span>
+                </label>
+                <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#6b7280' }}>
+                  Select SLA rules that will trigger this escalation policy when breached
                 </p>
                 <div style={{ 
                   border: '1px solid #d1d5db', 
@@ -450,14 +590,22 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
                   overflowY: 'auto',
                   backgroundColor: '#f9fafb',
                 }}>
-                  {!Array.isArray(projects) || projects.length === 0 ? (
+                  {!formData.projectId ? (
+                    <p style={{ margin: 0, fontSize: '13px', color: '#f59e0b', backgroundColor: '#fef3c7', padding: '12px', borderRadius: '4px' }}>
+                      ⚠️ Please select a project first to see available SLA rules
+                    </p>
+                  ) : !Array.isArray(slaRules) || slaRules.length === 0 ? (
                     <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>
-                      No projects available
+                      No SLA rules found for this project. Please create SLA rules for this project first.
                     </p>
                   ) : (
-                    projects.map((project) => (
+                    <>
+                      <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#059669', fontWeight: 500 }}>
+                        ✓ Found {slaRules.length} SLA rule{slaRules.length !== 1 ? 's' : ''} for this project
+                      </p>
+                      {slaRules.map((slaRule) => (
                       <label
-                        key={project._id}
+                        key={slaRule._id}
                         style={{
                           display: 'flex',
                           alignItems: 'center',
@@ -471,27 +619,33 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
                       >
                         <input
                           type="checkbox"
-                          checked={formData.projectIds.includes(project._id)}
+                          checked={formData.slaRuleIds.includes(slaRule._id)}
                           onChange={(e) => {
                             if (e.target.checked) {
                               setFormData({
                                 ...formData,
-                                projectIds: [...formData.projectIds, project._id],
+                                slaRuleIds: [...formData.slaRuleIds, slaRule._id],
                               });
                             } else {
                               setFormData({
                                 ...formData,
-                                projectIds: formData.projectIds.filter(id => id !== project._id),
+                                slaRuleIds: formData.slaRuleIds.filter(id => id !== slaRule._id),
                               });
                             }
                           }}
                           style={{ marginRight: '8px', width: '16px', height: '16px', cursor: 'pointer' }}
                         />
                         <span style={{ fontSize: '13px', color: '#374151' }}>
-                          {project.name} <span style={{ color: '#6b7280' }}>({project.code})</span>
+                          {slaRule.name} 
+                          {slaRule.priority && <span style={{ color: '#6b7280' }}> - {slaRule.priority} Priority</span>}
+                          <span style={{ color: '#9ca3af', fontSize: '11px', marginLeft: '8px' }}>
+                            (Response: {slaRule.responseTime?.value}{slaRule.responseTime?.unit?.[0]}, 
+                            Resolution: {slaRule.resolutionTime?.value}{slaRule.resolutionTime?.unit?.[0]})
+                          </span>
                         </span>
                       </label>
-                    ))
+                    ))}
+                    </>
                   )}
                 </div>
               </div>

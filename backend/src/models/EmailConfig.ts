@@ -107,7 +107,7 @@ const emailConfigSchema = new Schema(
           name: 'Account Created',
           enabled: false,
           subject: 'Welcome to {{projectName}} - Your Account Details',
-          body: 'Hello {{userName}},\n\nYour account has been created successfully!\n\nPortal URL: {{portalUrl}}\nUsername: {{username}}\nEmail: {{userEmail}}\n\nPlease login and set your password using the "Forgot Password" option.\n\nThank you!',
+          body: 'Hello {{studentName}},\n\nYour account has been created successfully!\n\nPortal URL: {{loginUrl}}\nEmail: {{email}}\n\nPlease login and set your password using the "Forgot Password" option.\n\nThank you!\n\n{{projectName}} Support Team',
           recipients: 'student'
         }
       },

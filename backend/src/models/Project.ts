@@ -84,6 +84,12 @@ export interface IProject extends Document {
       defaultResponseTime?: number; // in hours
       defaultResolutionTime?: number; // in hours
     };
+    ticketNumberSettings?: {
+      prefix?: string; // e.g., 'TKT', 'HELP', 'SUP'
+      format?: string; // e.g., '{PREFIX}-{YYYY}{MM}{DD}-{NNNN}', '{PREFIX}-{NNNN}'
+      startingNumber?: number; // Starting sequence number (default: 1)
+      resetPeriod?: 'never' | 'daily' | 'monthly' | 'yearly'; // When to reset counter
+    };
     ticketAssignmentSettings?: {
       enabled: boolean;
       assignmentType: 'round-robin' | 'load-balanced' | 'manual' | 'condition-based';
@@ -344,6 +350,12 @@ const projectSchema = new Schema<IProject>({
       enabled: { type: Boolean, default: false },
       defaultResponseTime: Number,
       defaultResolutionTime: Number,
+    },
+    ticketNumberSettings: {
+      prefix: { type: String },
+      format: { type: String },
+      startingNumber: { type: Number },
+      resetPeriod: { type: String, enum: ['never', 'daily', 'monthly', 'yearly'] },
     },
     ticketAssignmentSettings: {
       enabled: { type: Boolean, default: false },

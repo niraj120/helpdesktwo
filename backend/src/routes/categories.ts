@@ -15,19 +15,19 @@ const router = express.Router();
 // Get all categories (admin/debug endpoint)
 router.get('/all', authMiddleware, getAllCategories);
 
-// Get all categories for a project
+// Get all categories for a project (must come before /:categoryId)
 router.get('/project/:projectId', getCategoriesByProject);
 
 // Create new category
 router.post('/project/:projectId', authMiddleware, requirePermission('MASTER_DATA_MANAGE_CATEGORIES'), createCategory);
-
-// Get single category
-router.get('/:categoryId', authMiddleware, requirePermission('MASTER_DATA_VIEW'), getCategoryById);
 
 // Update a category
 router.put('/:categoryId', authMiddleware, requirePermission('MASTER_DATA_MANAGE_CATEGORIES'), updateCategory);
 
 // Delete a category
 router.delete('/:categoryId', authMiddleware, requirePermission('MASTER_DATA_MANAGE_CATEGORIES'), deleteCategory);
+
+// Get single category (must come after /project/:projectId to avoid conflicts)
+router.get('/:categoryId', authMiddleware, requirePermission('MASTER_DATA_VIEW'), getCategoryById);
 
 export default router;

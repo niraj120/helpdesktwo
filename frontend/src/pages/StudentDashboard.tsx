@@ -206,7 +206,7 @@ const StudentDashboard: React.FC = () => {
       setUser({
         id: payload.userId,
         email: payload.email,
-        firstName: payload.firstName || 'Student',
+        firstName: payload.firstName || 'Candidate',
         lastName: payload.lastName || '',
       });
     } catch (error) {
@@ -284,6 +284,15 @@ const StudentDashboard: React.FC = () => {
         `${API_CONFIG.API_URL}/projects/${branding.projectId}/ticket-settings`
       );
       const settings = settingsRes.data.success ? settingsRes.data.data : settingsRes.data;
+      
+      // Filter out student profile fields (Name, Email, Phone) since student is already logged in
+      const excludeFields = ['name', 'email', 'phone', 'mobile', 'mobile number', 'phone number', 'student name', 'student email', 'contact number', 'email address', 'full name', 'priority'];
+      if (settings.onlineFormFields && settings.onlineFormFields.length > 0) {
+        settings.onlineFormFields = settings.onlineFormFields.filter(
+          (field: any) => !excludeFields.includes(field.fieldName.toLowerCase())
+        );
+      }
+      
       setTicketSettings(settings);
       
       // Initialize filtered centers
@@ -866,7 +875,7 @@ const StudentDashboard: React.FC = () => {
               />
             )}
             <h1 className="text-xl font-bold text-white hidden sm:block">
-              {projectBranding?.name || 'Student Portal'}
+              {projectBranding?.name || 'Candidate Portal'}
             </h1>
           </div>
 
@@ -1051,7 +1060,7 @@ const StudentDashboard: React.FC = () => {
           <div style={{ display: activeModule === 'submit-ticket' ? 'block' : 'none' }}>
             {ticketSettings && (
             <div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-6">Submit New Ticket</h2>
+              <h2 className="text-2xl font-bold text-gray-900 mb-6">Submit New Query</h2>
               
               {/* Success Message */}
               {submitSuccess && (
@@ -1059,10 +1068,10 @@ const StudentDashboard: React.FC = () => {
                   <CheckCircleIcon className="w-6 h-6 text-green-600 flex-shrink-0 mt-0.5" />
                   <div>
                     <h3 className="text-lg font-semibold text-green-900 mb-1">
-                      Ticket Submitted Successfully!
+                      Query Submitted Successfully!
                     </h3>
                     <p className="text-green-700">
-                      {ticketSettings.successMessage || 'Your ticket has been submitted. Our team will get back to you soon.'}
+                      {ticketSettings.successMessage || 'Your query has been submitted. Our team will get back to you soon.'}
                     </p>
                   </div>
                 </div>
@@ -1100,7 +1109,7 @@ const StudentDashboard: React.FC = () => {
                       background: `linear-gradient(135deg, ${projectBranding.primaryColor} 0%, ${projectBranding.secondaryColor} 100%)`,
                     }}
                   >
-                    {submitting ? 'Submitting...' : 'Submit Ticket'}
+                    {submitting ? 'Submitting...' : 'Submit Query'}
                   </button>
                 </form>
               </div>
@@ -1649,7 +1658,7 @@ const StudentDashboard: React.FC = () => {
                     <div className="space-y-6">
                       {/* Ticket Details */}
                       <div className="bg-white rounded-xl shadow-sm p-6">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-4">Ticket Information</h3>
+                        <h3 className="text-lg font-semibold text-gray-900 mb-4">Query Information</h3>
                         <dl className="space-y-3">
                           <div>
                             <dt className="text-sm font-medium text-gray-500">Category</dt>

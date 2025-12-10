@@ -452,9 +452,12 @@ const StudentTicketDetail: React.FC = () => {
                   <button
                     type="submit"
                     disabled={submitting}
-                    className="w-full py-3 px-6 rounded-lg text-white font-semibold shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full py-3 px-6 rounded-lg font-semibold shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{
-                      background: `linear-gradient(135deg, ${branding?.primaryColor} 0%, ${branding?.secondaryColor} 100%)`,
+                      background: branding?.primaryColor && branding?.secondaryColor 
+                        ? `linear-gradient(135deg, ${branding.primaryColor} 0%, ${branding.secondaryColor} 100%)`
+                        : '#3B82F6',
+                      color: '#ffffff',
                     }}
                   >
                     {submitting ? 'Sending...' : 'Send Reply'}

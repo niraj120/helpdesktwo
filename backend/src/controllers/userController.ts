@@ -181,8 +181,8 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
       }
     }
 
-    // Check if employee code already exists
-    if (employeeCode) {
+    // Check if employee code already exists (only if non-empty)
+    if (employeeCode && employeeCode.trim()) {
       const existingEmployee = await User.findOne({ employeeCode });
       if (existingEmployee) {
         res.status(400).json({
@@ -208,7 +208,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
       password: password || Math.random().toString(36).slice(-10), // Generate random password if not provided
       firstName,
       lastName,
-      mobile,
+      mobile: mobile || undefined,
       role,
       department,
       designation,
@@ -251,7 +251,8 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
         });
         return;
       }
-    } else if (employeeCode) {
+    } else if (employeeCode && employeeCode.trim()) {
+      // Only set employeeCode if it's not empty
       userData.employeeCode = employeeCode;
     }
 
@@ -378,8 +379,8 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       user.email = req.body.email;
     }
 
-    // Check if employee code is being changed and if it's unique
-    if (employeeCode && employeeCode !== user.employeeCode) {
+    // Check if employee code is being changed and if it's unique (only if non-empty)
+    if (employeeCode && employeeCode.trim() && employeeCode !== user.employeeCode) {
       const existingEmployee = await User.findOne({ employeeCode });
       if (existingEmployee) {
         res.status(400).json({
@@ -430,8 +431,9 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
     // Update fields
     if (firstName !== undefined) user.firstName = firstName;
     if (lastName !== undefined) user.lastName = lastName;
-    if (mobile !== undefined) user.mobile = mobile;
-    if (employeeCode !== undefined) user.employeeCode = employeeCode;
+    if (mobile !== undefined) user.mobile = mobile || undefined;
+    // Convert empty string to undefined for sparse unique fields
+    if (employeeCode !== undefined) user.employeeCode = employeeCode || undefined;
     if (department !== undefined) user.department = department;
     if (designation !== undefined) user.designation = designation;
     if (joiningDate !== undefined) user.joiningDate = new Date(joiningDate);
@@ -938,6 +940,9 @@ export const registerStudent = async (req: Request, res: Response): Promise<void
   try {
     const { projectId, ...studentData } = req.body;
     
+    console.log('📝 Student registration - phone and parent mobile are OPTIONAL');
+    console.log('📝 Request data:', { projectId, fields: Object.keys(studentData) });
+    
     // Field mapping to normalize various field name formats to expected backend fields
     const fieldMapping: Record<string, string> = {
       'First Name': 'firstName',
@@ -986,21 +991,22 @@ export const registerStudent = async (req: Request, res: Response): Promise<void
       return;
     }
 
-    if (!phone) {
-      res.status(400).json({
-        success: false,
-        error: 'Phone number is required',
-      });
-      return;
-    }
+    // Phone and parent mobile are now optional
+    // if (!phone) {
+    //   res.status(400).json({
+    //     success: false,
+    //     error: 'Phone number is required',
+    //   });
+    //   return;
+    // }
 
-    if (!parentMobile) {
-      res.status(400).json({
-        success: false,
-        error: 'Parent mobile number is required',
-      });
-      return;
-    }
+    // if (!parentMobile) {
+    //   res.status(400).json({
+    //     success: false,
+    //     error: 'Parent mobile number is required',
+    //   });
+    //   return;
+    // }
 
     // Check if user already exists with this email
     const existingUser = await User.findOne({ email });

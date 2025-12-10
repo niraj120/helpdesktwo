@@ -1016,7 +1016,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
           <div className="space-y-6">
             {/* Ticket Info Card */}
             <div className="bg-white rounded-xl shadow-sm p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Ticket Information</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Query Information</h3>
               
               <div className="space-y-4">
                 {/* Status */}

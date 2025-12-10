@@ -21,6 +21,11 @@ interface Priority {
   isActive: boolean;
   isDefault?: boolean;
   projectId?: string;
+  projectIds?: Array<{
+    _id: string;
+    name: string;
+    code: string;
+  }>;
   project?: {
     _id: string;
     name: string;
@@ -52,7 +57,7 @@ const SLARulesPage: React.FC = () => {
     resolutionTimeUnit: 'hours' as 'minutes' | 'hours' | 'days',
     isActive: true,
     isDefault: false,
-    projectId: '',
+    projectIds: [] as string[],
   });
 
   useEffect(() => {
@@ -96,7 +101,7 @@ const SLARulesPage: React.FC = () => {
       const token = localStorage.getItem('authToken');
       console.log('Fetching priorities with token:', token ? 'Token exists' : 'No token');
       
-      const response = await fetch(`${API_CONFIG.API_URL}/priorities`, {
+      const response = await fetch(`${API_CONFIG.API_URL}/sla-rules`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -130,7 +135,7 @@ const SLARulesPage: React.FC = () => {
     if (confirm(`Are you sure you want to delete "${priority.name}"?`)) {
       try {
         const token = localStorage.getItem('authToken');
-        const response = await fetch(`${API_CONFIG.API_URL}/priorities/${priority._id}`, {
+        const response = await fetch(`${API_CONFIG.API_URL}/sla-rules/${priority._id}`, {
           method: 'DELETE',
           headers: {
             'Content-Type': 'application/json',
@@ -157,8 +162,8 @@ const SLARulesPage: React.FC = () => {
     try {
       const token = localStorage.getItem('authToken');
       // Toggle isActive and update
-      const response = await fetch(`${API_CONFIG.API_URL}/priorities/${priority._id}`, {
-        method: 'PUT',
+      const response = await fetch(`${API_CONFIG.API_URL}/sla-rules/${priority._id}/toggle-status`, {
+        method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
@@ -200,13 +205,13 @@ const SLARulesPage: React.FC = () => {
         },
         isActive: formData.isActive,
         isDefault: formData.isDefault,
-        projectId: formData.projectId,
+        projectIds: formData.projectIds.length > 0 ? formData.projectIds : [],
       };
 
       const isEditing = editingPriority !== null;
       const url = isEditing 
-        ? `${API_CONFIG.API_URL}/priorities/${editingPriority._id}`
-        : `${API_CONFIG.API_URL}/priorities`;
+        ? `${API_CONFIG.API_URL}/sla-rules/${editingPriority._id}`
+        : `${API_CONFIG.API_URL}/sla-rules`;
       const method = isEditing ? 'PUT' : 'POST';
 
       const response = await fetch(url, {
@@ -236,7 +241,7 @@ const SLARulesPage: React.FC = () => {
           resolutionTimeUnit: 'hours',
           isActive: true,
           isDefault: false,
-          projectId: '',
+          projectIds: [],
         });
         fetchPriorities();
       } else {
@@ -252,6 +257,11 @@ const SLARulesPage: React.FC = () => {
   const handleEditPriority = (priority: Priority) => {
     setEditingPriority(priority);
 
+    // Extract project IDs from projectIds array
+    const extractedProjectIds = priority.projectIds && Array.isArray(priority.projectIds)
+      ? priority.projectIds.map(p => typeof p === 'string' ? p : p._id)
+      : priority.projectId ? [priority.projectId] : [];
+
     setFormData({
       name: priority.name,
       code: priority.code || '',
@@ -261,10 +271,10 @@ const SLARulesPage: React.FC = () => {
       responseTimeValue: priority.responseTime?.value?.toString() || '',
       responseTimeUnit: priority.responseTime?.unit || 'minutes',
       resolutionTimeValue: priority.resolutionTime?.value?.toString() || '',
-      resolutionTimeUnit: priority.resolutionTime?.unit || 'hours',
+      resolutionTimeUnit: priority.resolutionTime.unit,
       isActive: priority.isActive,
       isDefault: priority.isDefault || false,
-      projectId: priority.projectId || (priority.project as any)?._id || '',
+      projectIds: extractedProjectIds,
     });
     setShowCreateModal(true);
   };
@@ -474,24 +484,27 @@ const SLARulesPage: React.FC = () => {
                         {priority.description}
                       </p>
                     )}
-                    {(priority.project || priority.projectId) && (
+                    {(priority.projectIds && priority.projectIds.length > 0) && (
                       <div style={{ marginTop: '8px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                           <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: 500 }}>
-                            Project:
+                            {priority.projectIds.length > 1 ? 'Projects:' : 'Project:'}
                           </span>
-                          <span
-                            style={{
-                              padding: '2px 8px',
-                              backgroundColor: '#ede9fe',
-                              color: '#7c3aed',
-                              borderRadius: '4px',
-                              fontSize: '11px',
-                              fontWeight: 500,
-                            }}
-                          >
-                            {priority.project?.code || priority.project?.name || projects.find(p => p._id === priority.projectId)?.code || 'Unknown'}
-                          </span>
+                          {priority.projectIds.map((proj) => (
+                            <span
+                              key={proj._id}
+                              style={{
+                                padding: '2px 8px',
+                                backgroundColor: '#ede9fe',
+                                color: '#7c3aed',
+                                borderRadius: '4px',
+                                fontSize: '11px',
+                                fontWeight: 500,
+                              }}
+                            >
+                              {proj.code || proj.name}
+                            </span>
+                          ))}
                         </div>
                       </div>
                     )}
@@ -789,31 +802,63 @@ const SLARulesPage: React.FC = () => {
                 {/* Project Mapping */}
                 <div style={{ marginBottom: '20px' }}>
                   <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 500, color: '#374151' }}>
-                    Project <span style={{ color: '#dc2626' }}>*</span>
+                    Projects <span style={{ color: '#dc2626' }}>*</span>
                   </label>
-                  <select
-                    required
-                    value={formData.projectId}
-                    onChange={(e) => setFormData({ ...formData, projectId: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      border: '1px solid #d1d5db',
-                      borderRadius: '6px',
-                      fontSize: '14px',
-                      backgroundColor: 'white',
-                    }}
-                  >
-                    <option value="">Select a project</option>
-                    {projects.map((project) => (
-                      <option key={project._id} value={project._id}>
-                        {project.name} {project.code ? `(${project.code})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                  <p style={{ margin: '8px 0 0 0', fontSize: '12px', color: '#6b7280' }}>
-                    Each priority must be mapped to a specific project.
+                  <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#6b7280' }}>
+                    Select projects where this SLA rule will be applied
                   </p>
+                  <div style={{ 
+                    border: '1px solid #d1d5db', 
+                    borderRadius: '6px', 
+                    padding: '12px',
+                    maxHeight: '200px',
+                    overflowY: 'auto',
+                    backgroundColor: '#f9fafb',
+                  }}>
+                    {projects.length === 0 ? (
+                      <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>
+                        No projects available
+                      </p>
+                    ) : (
+                      projects.map((project) => (
+                        <label
+                          key={project._id}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            padding: '8px',
+                            cursor: 'pointer',
+                            borderRadius: '4px',
+                            transition: 'background-color 0.2s',
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f3f4f6'}
+                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={formData.projectIds.includes(project._id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setFormData({
+                                  ...formData,
+                                  projectIds: [...formData.projectIds, project._id],
+                                });
+                              } else {
+                                setFormData({
+                                  ...formData,
+                                  projectIds: formData.projectIds.filter(id => id !== project._id),
+                                });
+                              }
+                            }}
+                            style={{ marginRight: '8px', width: '16px', height: '16px', cursor: 'pointer' }}
+                          />
+                          <span style={{ fontSize: '13px', color: '#374151' }}>
+                            {project.name} {project.code ? <span style={{ color: '#6b7280' }}>({project.code})</span> : ''}
+                          </span>
+                        </label>
+                      ))
+                    )}
+                  </div>
                 </div>
 
                 {/* Active Status */}

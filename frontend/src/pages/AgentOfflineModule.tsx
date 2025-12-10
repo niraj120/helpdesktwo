@@ -407,7 +407,7 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
         }, 5000);
       }
     } catch (error: any) {
-      alert(error.response?.data?.message || 'Failed to create ticket');
+      alert(error.response?.data?.message || 'Failed to create query');
     } finally {
       setCreatingTicket(false);
     }
@@ -582,7 +582,7 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900">Offline Support Center</h1>
         <p className="text-gray-600 mt-2">
-          Register users and create tickets for walk-in support
+          Register users and create queries for walk-in support
         </p>
       </div>
 
@@ -625,7 +625,7 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
               <div>
                 <h4 className="font-semibold text-green-900">User Registered Successfully!</h4>
                 <p className="text-sm text-green-700 mt-1">
-                  {foundUser?.firstName} {foundUser?.lastName} has been registered and can now submit tickets.
+                  {foundUser?.firstName} {foundUser?.lastName} has been registered and can now submit queries.
                 </p>
               </div>
             </div>
@@ -747,7 +747,7 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
               <div>
                 <h4 className="font-semibold text-green-900">Ticket Created Successfully!</h4>
                 <p className="text-sm text-green-700 mt-1">
-                  Ticket #{createdTicketNumber} has been created
+                  Query #{createdTicketNumber} has been created
                   {ticketForm.markAsResolved && ' and marked as resolved'}
                   {ticketForm.needsEscalation && ' and escalated'}.
                 </p>

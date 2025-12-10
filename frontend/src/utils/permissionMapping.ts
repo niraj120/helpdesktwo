@@ -54,12 +54,12 @@ export const permissionUIMapping: UIFeature[] = [
   // ================== TICKETS ==================
   {
     code: 'TICKET_VIEW_ALL',
-    name: 'View All Tickets',
+    name: 'View All Queries',
     category: 'Tickets',
     module: 'tickets',
     component: 'TicketsModule',
     route: '/tickets/all',
-    description: 'View all tickets across the system',
+    description: 'View all queries across the system',
     requiresUI: true,
     uiType: 'page',
     status: 'implemented'

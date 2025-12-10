@@ -131,12 +131,12 @@ const ViewTickets: React.FC = () => {
       <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
         <div style={{ marginBottom: '32px' }}>
           <h1 style={{ fontSize: '28px', fontWeight: 700, color: '#111827', marginBottom: '8px' }}>
-            {hasViewAll ? 'All Tickets' : 'My Tickets'}
+            {hasViewAll ? 'All Queries' : 'My Queries'}
           </h1>
           <p style={{ color: '#6B7280', fontSize: '14px' }}>
             {hasViewAll 
-              ? 'View and manage all support tickets across all projects' 
-              : 'View and manage tickets assigned to you'}
+              ? 'View and manage all support queries across all projects' 
+              : 'View and manage queries assigned to you'}
           </p>
         </div>
 

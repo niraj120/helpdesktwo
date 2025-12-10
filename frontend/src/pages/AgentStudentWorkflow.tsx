@@ -198,16 +198,26 @@ const AgentStudentWorkflow: React.FC<Props> = ({ projectId }) => {
   const fetchTicketAgents = async () => {
     try {
       const token = localStorage.getItem('authToken');
+      console.log('🔍 Fetching escalation policies for project:', projectId);
+      
       const escalationContactsRes = await axios.get(
         `${API_CONFIG.API_URL}/escalation-policies?projectId=${projectId}&isActive=true`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
+      console.log('📋 Escalation policies response:', escalationContactsRes.data);
+
       // Transform escalation policies into contact format for the dropdown
       const policies = escalationContactsRes.data.data || [];
       
+      console.log(`📊 Found ${policies.length} active policies for this project`);
+      
       const contacts = policies.flatMap((policy: any) => {
+        console.log(`📌 Processing policy: ${policy.name}, levels: ${policy.levels?.length}`);
+        
         return (policy.levels || []).flatMap((level: any) => {
+          console.log(`  Level ${level.level}: ${level.users?.length} users, escalateTo:`, level.escalateTo);
+          
           // If level has users array, create a contact for each user
           if (level.users && level.users.length > 0) {
             return level.users.map((user: any) => ({
@@ -231,9 +241,10 @@ const AgentStudentWorkflow: React.FC<Props> = ({ projectId }) => {
         });
       });
       
+      console.log(`✅ Total contacts extracted: ${contacts.length}`, contacts);
       setAgents(contacts);
     } catch (error) {
-      console.error('Error fetching escalation agents:', error);
+      console.error('❌ Error fetching escalation agents:', error);
     }
   };
 
@@ -275,15 +286,15 @@ const AgentStudentWorkflow: React.FC<Props> = ({ projectId }) => {
       if (response.data.success) {
         if (response.data.data && response.data.data.length > 0) {
           setSearchResults(response.data.data);
-          setSearchMessage(`Found ${response.data.count} student(s)`);
+          setSearchMessage(`Found ${response.data.count} candidate(s)`);
         } else {
-          setSearchMessage('No students found. Please register a new student.');
+          setSearchMessage('No candidates found. Please register a new candidate.');
           setSearchResults([]);
         }
       }
     } catch (error) {
-      console.error('Error searching students:', error);
-      setSearchMessage('Error searching students. Please try again.');
+      console.error('Error searching candidates:', error);
+      setSearchMessage('Error searching candidates. Please try again.');
     } finally {
       setSearching(false);
     }
@@ -335,12 +346,12 @@ const AgentStudentWorkflow: React.FC<Props> = ({ projectId }) => {
         // Show success message with default password
         if (newStudent.defaultPassword) {
           alert(
-            `✅ Student Registered Successfully!\n\n` +
+            `✅ Candidate Registered Successfully!\n\n` +
             `Name: ${newStudent.firstName} ${newStudent.lastName}\n` +
             `Email: ${newStudent.email}\n` +
             `Default Password: ${newStudent.defaultPassword}\n\n` +
-            `⚠️ IMPORTANT: Please share this password with the student securely.\n` +
-            `The student can login to the student portal using:\n` +
+            `⚠️ IMPORTANT: Please share this password with the candidate securely.\n` +
+            `The candidate can login to the candidate portal using:\n` +
             `Email: ${newStudent.email}\n` +
             `Password: ${newStudent.defaultPassword}\n\n` +
             `They will be required to change their password on first login.`
@@ -358,7 +369,7 @@ const AgentStudentWorkflow: React.FC<Props> = ({ projectId }) => {
       }
     } catch (error: any) {
       setRegistrationError(
-        error.response?.data?.message || 'Failed to register student. Please try again.'
+        error.response?.data?.message || 'Failed to register candidate. Please try again.'
       );
     } finally {
       setRegistering(false);
@@ -370,7 +381,7 @@ const AgentStudentWorkflow: React.FC<Props> = ({ projectId }) => {
     e.preventDefault();
 
     if (!currentStudent) {
-      setTicketMessage('No student selected. Please search or register a student first.');
+      setTicketMessage('No candidate selected. Please search or register a candidate first.');
       return;
     }
 
@@ -472,7 +483,7 @@ const AgentStudentWorkflow: React.FC<Props> = ({ projectId }) => {
 
       if (response.data.success) {
         setTicketMessage(
-          `✓ Ticket #${response.data.data.ticketNumber} created successfully for ${currentStudent.firstName} ${currentStudent.lastName}`
+          `✓ Query #${response.data.data.ticketNumber} created successfully for ${currentStudent.firstName} ${currentStudent.lastName}`
         );
 
         // Reset workflow
@@ -492,7 +503,7 @@ const AgentStudentWorkflow: React.FC<Props> = ({ projectId }) => {
         }, 3000);
       }
     } catch (error: any) {
-      setTicketMessage(error.response?.data?.message || 'Failed to create ticket');
+      setTicketMessage(error.response?.data?.message || 'Failed to create query');
     } finally {
       setCreatingTicket(false);
     }
@@ -693,8 +704,8 @@ const AgentStudentWorkflow: React.FC<Props> = ({ projectId }) => {
     <div className="p-6 max-w-6xl mx-auto">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Student Management Workflow</h1>
-        <p className="text-gray-600 mt-2">Search, register, and create tickets for walk-in students</p>
+        <h1 className="text-3xl font-bold text-gray-900">Candidate Management Workflow</h1>
+        <p className="text-gray-600 mt-2">Search, register, and create queries for walk-in candidates</p>
       </div>
 
       {/* Workflow Progress */}
@@ -730,7 +741,7 @@ const AgentStudentWorkflow: React.FC<Props> = ({ projectId }) => {
       {/* STEP 1: SEARCH */}
       {workflowStep === 'search' && (
         <div className="bg-white rounded-xl shadow-md p-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-6">Search for a Student</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-6">Search for a Candidate</h2>
 
           {/* Search Form */}
           <div className="space-y-6">
@@ -814,7 +825,7 @@ const AgentStudentWorkflow: React.FC<Props> = ({ projectId }) => {
             {/* Search Results */}
             {searchResults.length > 0 && (
               <div className="space-y-3">
-                <h3 className="text-sm font-semibold text-gray-700">Select a Student:</h3>
+                <h3 className="text-sm font-semibold text-gray-700">Select a Candidate:</h3>
                 {searchResults.map((student) => (
                   <div
                     key={student._id}
@@ -928,7 +939,7 @@ const AgentStudentWorkflow: React.FC<Props> = ({ projectId }) => {
       {/* STEP 3: CREATE TICKET */}
       {workflowStep === 'ticket' && currentStudent && (
         <div className="bg-white rounded-xl shadow-md p-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Create Ticket</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">Create Query</h2>
 
           {/* Student Info Card */}
           <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
@@ -988,7 +999,7 @@ const AgentStudentWorkflow: React.FC<Props> = ({ projectId }) => {
             <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
               <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                 <p className="text-sm text-blue-800">
-                  <strong>ℹ️ Auto-Assignment:</strong> This ticket will be automatically assigned to you unless you escalate it to another agent.
+                  <strong>ℹ️ Auto-Assignment:</strong> This query will be automatically assigned to you unless you escalate it to another agent.
                 </p>
               </div>
 
@@ -1016,7 +1027,7 @@ const AgentStudentWorkflow: React.FC<Props> = ({ projectId }) => {
                 />
                 <label htmlFor="needsEscalation" className="text-sm flex-1">
                   <span className="font-medium text-gray-900">Escalate to Another Agent</span>
-                  <p className="text-gray-600 text-xs mt-1">Check if this ticket needs specialized support</p>
+                  <p className="text-gray-600 text-xs mt-1">Check if this query needs specialized support</p>
                 </label>
               </div>
 

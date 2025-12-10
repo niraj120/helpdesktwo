@@ -6,6 +6,7 @@ import nodemailer from 'nodemailer';
 export const getEmailConfig = async (req: Request, res: Response) => {
   try {
     const { projectId } = req.params;
+    const { showPassword } = req.query; // Allow fetching real password
 
     let config = await EmailConfig.findOne({ projectId });
 
@@ -24,9 +25,11 @@ export const getEmailConfig = async (req: Request, res: Response) => {
       });
     }
 
-    // Don't send password to frontend
+    // Mask password unless explicitly requested
     const configData = config.toObject();
-    configData.smtpPassword = configData.smtpPassword ? '********' : '';
+    if (showPassword !== 'true') {
+      configData.smtpPassword = configData.smtpPassword ? '********' : '';
+    }
 
     return res.status(200).json({
       success: true,

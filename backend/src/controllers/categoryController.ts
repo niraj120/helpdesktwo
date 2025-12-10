@@ -90,11 +90,27 @@ export const createCategory = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    if (!code) {
-      return res.status(400).json({
-        success: false,
-        message: 'Category code is required',
-      });
+    // Auto-generate code if not provided
+    let categoryCode = code;
+    if (!categoryCode) {
+      // Generate code from name: convert to uppercase, replace spaces with underscores
+      categoryCode = name
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, ''); // Remove leading/trailing underscores
+      
+      // Ensure uniqueness by appending number if needed
+      let counter = 1;
+      let testCode = categoryCode;
+      while (await Category.findOne({ projectId, code: testCode })) {
+        testCode = `${categoryCode}_${counter}`;
+        counter++;
+      }
+      categoryCode = testCode;
+      
+      console.log(`🔤 Auto-generated category code: ${categoryCode} from name: ${name}`);
+    } else {
+      categoryCode = categoryCode.toUpperCase();
     }
 
     // Verify project exists
@@ -109,7 +125,7 @@ export const createCategory = async (req: AuthRequest, res: Response) => {
     // Check if category already exists by name or code
     const existingCategory = await Category.findOne({ 
       projectId,
-      $or: [{ name }, { code: code.toUpperCase() }]
+      $or: [{ name }, { code: categoryCode }]
     });
     if (existingCategory) {
       return res.status(400).json({
@@ -122,7 +138,7 @@ export const createCategory = async (req: AuthRequest, res: Response) => {
 
     const category = new Category({
       name,
-      code: code.toUpperCase(),
+      code: categoryCode,
       description,
       projectId,
       color,

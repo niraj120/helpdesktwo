@@ -14,6 +14,7 @@ export interface ISLARule extends Document {
   };
   isActive: boolean;
   projectIds?: mongoose.Types.ObjectId[];
+  escalationPolicyId?: mongoose.Types.ObjectId;
   createdBy?: mongoose.Types.ObjectId;
   updatedBy?: mongoose.Types.ObjectId;
   createdAt: Date;
@@ -70,6 +71,10 @@ const SLARuleSchema = new Schema<ISLARule>(
         ref: 'Project',
       },
     ],
+    escalationPolicyId: {
+      type: Schema.Types.ObjectId,
+      ref: 'EscalationPolicy',
+    },
     createdBy: {
       type: Schema.Types.ObjectId,
       ref: 'User',

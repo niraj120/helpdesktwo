@@ -184,9 +184,9 @@ export const TicketsModule: React.FC<TicketsModuleProps> = ({ user, permissions 
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Tickets</h2>
+          <h2 className="text-2xl font-bold text-gray-900">Queries</h2>
           <p className="text-sm text-gray-500 mt-1">
-            {canViewAll ? 'All Tickets' : 'My Tickets'}
+            {canViewAll ? 'All Queries' : 'My Queries'}
           </p>
         </div>
         <div className="flex gap-3">

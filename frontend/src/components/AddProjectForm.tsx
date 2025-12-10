@@ -90,7 +90,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
     enableOnlineTicketForm: true,
     enableOfflineCenter: true,
     ticketSubmissionAnnouncement: '',
-    ticketWelcomeMessage: 'Welcome! Submit your ticket below and our team will assist you.',
+    ticketWelcomeMessage: 'Welcome! Submit your query below and our team will assist you.',
     ticketSuccessMessage: 'Your ticket has been successfully submitted. We will get back to you soon.',
     allowTicketAttachments: true,
     maxTicketAttachmentSize: 10, // in MB
@@ -492,8 +492,8 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
         enableOnlineTicketForm: project?.configuration?.ticketSubmissionSettings?.enableOnlineForm ?? true,
         enableOfflineCenter: project?.configuration?.ticketSubmissionSettings?.enableOfflineCenter ?? true,
         ticketSubmissionAnnouncement: project?.configuration?.ticketSubmissionSettings?.announcement || '',
-        ticketWelcomeMessage: project?.configuration?.ticketSubmissionSettings?.welcomeMessage || 'Welcome! Submit your ticket below and our team will assist you.',
-        ticketSuccessMessage: project?.configuration?.ticketSubmissionSettings?.successMessage || 'Your ticket has been successfully submitted. We will get back to you soon.',
+        ticketWelcomeMessage: project?.configuration?.ticketSubmissionSettings?.welcomeMessage || 'Welcome! Submit your query below and our team will assist you.',
+        ticketSuccessMessage: project?.configuration?.ticketSubmissionSettings?.successMessage || 'Your query has been successfully submitted. We will get back to you soon.',
         allowTicketAttachments: project?.configuration?.ticketSubmissionSettings?.allowAttachments ?? true,
         maxTicketAttachmentSize: project?.configuration?.ticketSubmissionSettings?.maxAttachmentSize || 10,
         allowedTicketFileTypes: project?.configuration?.ticketSubmissionSettings?.allowedFileTypes || ['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png'],
@@ -598,7 +598,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
             fieldName: 'Category',
             fieldType: 'dropdown',
             required: true,
-            placeholder: 'Select ticket category',
+            placeholder: 'Select category',
             options: ['Technical Support', 'Account Issues', 'Billing', 'General Inquiry', 'Feature Request']
           },
           {
@@ -792,8 +792,8 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
       };
 
       const url = project
-        ? `${API_BASE_URL}/projects/${project._id}`
-        : `${API_BASE_URL}/projects`;
+        ? `${API_BASE_URL}/api/projects/${project._id}`
+        : `${API_BASE_URL}/api/projects`;
 
       const method = project ? 'PUT' : 'POST';
 

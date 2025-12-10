@@ -81,7 +81,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
         return;
       }
 
-      const response = await axios.get(`${API_BASE_URL}/tickets/my-tickets`, {
+      const response = await axios.get(`${API_BASE_URL}/api/tickets/my-tickets`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -90,7 +90,10 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
       if (response.data.success) {
         setTickets(response.data.data);
       } else {
-        setError(response.data.error || 'Failed to load tickets');
+        // Hide 404 and "Not Found" errors from UI
+        if (response.data.error && !response.data.error.includes('Not Found')) {
+          setError(response.data.error || 'Failed to load tickets');
+        }
       }
     } catch (err: any) {
       console.error('Error fetching my tickets:', err);
@@ -99,6 +102,9 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
         navigate('/login');
       } else if (err.response?.status === 403) {
         setError('You do not have permission to view tickets. Please contact your administrator.');
+      } else if (err.response?.status === 404) {
+        // Hide 404 errors from UI, just log them
+        console.log('Tickets endpoint not found (404)');
       } else {
         setError(err.response?.data?.error || 'Failed to load tickets');
       }
@@ -186,14 +192,14 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
     <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
         <div style={{ marginBottom: '32px' }}>
           <h1 style={{ fontSize: '28px', fontWeight: 700, color: '#111827', marginBottom: '8px' }}>
-            My Tickets
+            My Queries
           </h1>
           <p style={{ color: '#6B7280', fontSize: '14px' }}>
-            View and manage tickets assigned to you or created by you
+            View and manage queries assigned to you or created by you
           </p>
         </div>
 
-        {error && (
+        {error && !error.includes('Not Found') && (
           <div style={{
             background: '#FEE2E2',
             border: '1px solid #EF4444',
@@ -217,13 +223,13 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px', marginBottom: canExport ? '16px' : '0' }}>
             <div>
               <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 500, color: '#374151' }}>
-                Search Tickets
+                Search Queries
               </label>
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search by ticket number or subject"
+                placeholder="Search by query number or subject"
                 style={{
                   width: '100%',
                   padding: '10px 12px',
@@ -321,8 +327,8 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
           }}>
             <p style={{ color: '#6B7280', fontSize: '16px' }}>
               {searchTerm || statusFilter !== 'all' || priorityFilter !== 'all'
-                ? 'No tickets found matching your filters'
-                : 'You have no tickets yet'}
+                ? 'No queries found matching your filters'
+                : 'You have no queries yet'}
             </p>
           </div>
         ) : (
@@ -337,7 +343,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                 <thead>
                   <tr style={{ background: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
                     <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' }}>
-                      Ticket #
+                      Query #
                     </th>
                     <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' }}>
                       Subject
@@ -483,7 +489,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
 
         <div style={{ marginTop: '16px' }}>
           <p style={{ color: '#6B7280', fontSize: '14px' }}>
-            Showing {filteredTickets.length} of {tickets.length} ticket(s)
+            Showing {filteredTickets.length} of {tickets.length} quer{tickets.length === 1 ? 'y' : 'ies'}
           </p>
         </div>
 

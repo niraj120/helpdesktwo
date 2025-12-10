@@ -96,10 +96,10 @@ export const menuConfig: MenuItem[] = [
     modulePrefix: PERMISSION_MODULES.USER,
   },
 
-  // Tickets - For Center Managers and Agents
+  // Queries - For Center Managers and Agents
   {
     icon: <MdConfirmationNumber />,
-    label: 'Tickets',
+    label: 'Queries',
     labelHi: 'टिकट',
     labelMr: 'तिकीटे',
     permission: [
@@ -112,7 +112,7 @@ export const menuConfig: MenuItem[] = [
       {
         path: '/tickets/view',
         icon: <MdConfirmationNumber />,
-        label: 'View Tickets',
+        label: 'View Queries',
         labelHi: 'टिकट देखें',
         labelMr: 'तिकीटे पहा',
         permission: PERMISSIONS.TICKET_VIEW_ALL,
@@ -120,7 +120,7 @@ export const menuConfig: MenuItem[] = [
       {
         path: '/tickets/my-tickets',
         icon: <MdPeople />,
-        label: 'My Tickets',
+        label: 'My Queries',
         labelHi: 'मेरे टिकट',
         labelMr: 'माझी तिकीटे',
         permission: PERMISSIONS.TICKET_VIEW_OWN,
@@ -129,7 +129,7 @@ export const menuConfig: MenuItem[] = [
       {
         path: '/tickets/assign',
         icon: <MdPeople />,
-        label: 'Assign Tickets',
+        label: 'Assign Queries',
         labelHi: 'टिकट असाइन करें',
         labelMr: 'तिकीटे नियुक्त करा',
         permission: PERMISSIONS.TICKET_ASSIGN,
@@ -137,11 +137,11 @@ export const menuConfig: MenuItem[] = [
     ],
   },
 
-  // Ticket Configuration - Super Admin only
+  // Query Configuration - Super Admin only
   {
     path: '/ticket-config',
     icon: <MdSettings />,
-    label: 'Ticket Configuration',
+    label: 'Query Configuration',
     labelHi: 'टिकट कॉन्फ़िगरेशन',
     labelMr: 'तिकीट कॉन्फिगरेशन',
     permission: [
@@ -206,7 +206,7 @@ export const menuConfig: MenuItem[] = [
         label: 'Email Configuration',
         labelHi: 'ईमेल विन्यास',
         labelMr: 'ईमेल कॉन्फिगरेशन',
-        permission: 'EMAIL_CONFIG_VIEW',
+        permission: 'PROJECT_MANAGE_SETTINGS',
       },
     ],
   },
@@ -251,7 +251,7 @@ export const menuConfig: MenuItem[] = [
         label: 'Email Logs',
         labelHi: 'ईमेल लॉग',
         labelMr: 'ईमेल लॉग',
-        permission: PERMISSIONS.EMAIL_CONFIG_VIEW,
+        permission: PERMISSIONS.AUDIT_VIEW_ACTIVITY,
       },
       // HIDDEN: Integration failure logs sub-menu - not ready
       // {
@@ -300,7 +300,7 @@ export const projectPortalMenuConfig: MenuItem[] = [
   },
   {
     icon: <MdConfirmationNumber />,
-    label: 'Tickets',
+    label: 'Queries',
     labelHi: 'टिकट',
     labelMr: 'तिकीटे',
     permission: [
@@ -313,7 +313,7 @@ export const projectPortalMenuConfig: MenuItem[] = [
       {
         path: 'tickets/my-tickets',
         icon: <MdConfirmationNumber />,
-        label: 'My Tickets',
+        label: 'My Queries',
         labelHi: 'मेरे टिकट',
         labelMr: 'माझी तिकीटे',
         permission: PERMISSIONS.TICKET_VIEW_OWN,
@@ -322,7 +322,7 @@ export const projectPortalMenuConfig: MenuItem[] = [
       {
         path: 'tickets/assign',
         icon: <MdPeople />,
-        label: 'Assign Tickets',
+        label: 'Assign Queries',
         labelHi: 'टिकट असाइन करें',
         labelMr: 'तिकीटे नियुक्त करा',
         permission: PERMISSIONS.TICKET_ASSIGN,
@@ -331,7 +331,7 @@ export const projectPortalMenuConfig: MenuItem[] = [
       {
         path: 'tickets/create',
         icon: <MdConfirmationNumber />,
-        label: 'Create Ticket',
+        label: 'Create Query',
         labelHi: 'टिकट बनाएं',
         labelMr: 'तिकीट तयार करा',
         permission: PERMISSIONS.TICKET_CREATE,

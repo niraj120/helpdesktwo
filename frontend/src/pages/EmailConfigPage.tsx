@@ -8,6 +8,8 @@ import {
   Cog6ToothIcon,
   PaperAirplaneIcon,
   InformationCircleIcon,
+  EyeIcon,
+  EyeSlashIcon,
 } from '@heroicons/react/24/outline';
 
 // Variable definitions for each trigger type
@@ -142,6 +144,7 @@ const EmailConfigPage: React.FC = () => {
   const [triggerEdits, setTriggerEdits] = useState<Partial<EmailTrigger>>({});
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projects, setProjects] = useState<any[]>([]);
+  const [showPassword, setShowPassword] = useState(false);
 
   // Get projectId from context, URL, or fetch projects
   useEffect(() => {
@@ -149,7 +152,17 @@ const EmailConfigPage: React.FC = () => {
       // Try projectContext first
       const projectContext = JSON.parse(localStorage.getItem('projectContext') || '{}');
       if (projectContext.projectId) {
+        console.log('Using projectId from projectContext:', projectContext.projectId);
         setProjectId(projectContext.projectId);
+        setLoading(false);
+        return;
+      }
+
+      // Try direct projectId
+      const directProjectId = localStorage.getItem('projectId');
+      if (directProjectId) {
+        console.log('Using direct projectId:', directProjectId);
+        setProjectId(directProjectId);
         setLoading(false);
         return;
       }
@@ -158,7 +171,7 @@ const EmailConfigPage: React.FC = () => {
       try {
         const token = localStorage.getItem('authToken');
         console.log('Fetching projects for email config...');
-        const response = await axios.get(`${API_BASE_URL}/projects`, {
+        const response = await axios.get(`${API_BASE_URL}/api/projects`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         console.log('Projects response:', response.data);
@@ -209,7 +222,7 @@ const EmailConfigPage: React.FC = () => {
   const fetchEmailConfig = async () => {
     try {
       const token = localStorage.getItem('authToken');
-      const response = await axios.get(`${API_BASE_URL}/email-config/${projectId}`, {
+      const response = await axios.get(`${API_BASE_URL}/api/email-config/${projectId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setConfig(response.data.data);
@@ -220,6 +233,24 @@ const EmailConfigPage: React.FC = () => {
       // If config doesn't exist, it will be created by the backend
       // Set loading to false to show the form
       setLoading(false);
+    }
+  };
+
+  const togglePasswordVisibility = async () => {
+    if (!showPassword && config?.smtpPassword === '********') {
+      // Fetch real password from backend
+      try {
+        const token = localStorage.getItem('authToken');
+        const response = await axios.get(`${API_BASE_URL}/api/email-config/${projectId}?showPassword=true`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setConfig(response.data.data);
+        setShowPassword(true);
+      } catch (error) {
+        console.error('Error fetching password:', error);
+      }
+    } else {
+      setShowPassword(!showPassword);
     }
   };
 
@@ -249,7 +280,7 @@ const EmailConfigPage: React.FC = () => {
         (updates as any).smtpPassword = config.smtpPassword;
       }
 
-      await axios.put(`${API_BASE_URL}/email-config/${projectId}`, updates, {
+      await axios.put(`${API_BASE_URL}/api/email-config/${projectId}`, updates, {
         headers: { Authorization: `Bearer ${token}` },
       });
       
@@ -270,7 +301,7 @@ const EmailConfigPage: React.FC = () => {
       const token = localStorage.getItem('authToken');
       
       const response = await axios.post(
-        `${API_BASE_URL}/email-config/${projectId}/test`,
+        `${API_BASE_URL}/api/email-config/${projectId}/test`,
         { testEmail },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -301,7 +332,7 @@ const EmailConfigPage: React.FC = () => {
       const token = localStorage.getItem('authToken');
       
       await axios.put(
-        `${API_BASE_URL}/email-config/${projectId}/triggers/${selectedTrigger}`,
+        `${API_BASE_URL}/api/email-config/${projectId}/triggers/${selectedTrigger}`,
         triggerEdits,
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -454,13 +485,26 @@ const EmailConfigPage: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     SMTP Password *
                   </label>
-                  <input
-                    type="password"
-                    value={config.smtpPassword}
-                    onChange={(e) => handleSMTPChange('smtpPassword', e.target.value)}
-                    placeholder="********"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      value={config.smtpPassword}
+                      onChange={(e) => handleSMTPChange('smtpPassword', e.target.value)}
+                      placeholder="********"
+                      className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                    <button
+                      type="button"
+                      onClick={togglePasswordVisibility}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                    >
+                      {showPassword ? (
+                        <EyeSlashIcon className="h-5 w-5" />
+                      ) : (
+                        <EyeIcon className="h-5 w-5" />
+                      )}
+                    </button>
+                  </div>
                 </div>
 
                 <div>
