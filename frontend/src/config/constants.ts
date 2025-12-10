@@ -13,12 +13,8 @@ const getApiUrl = (): string => {
   const hostname = window.location.hostname;
   
   // Check for explicit env var first
-  let envUrl = import.meta.env.VITE_API_BASE_URL;
+  const envUrl = import.meta.env.VITE_API_BASE_URL;
   if (envUrl) {
-    // Auto-append /api if not already present and not localhost
-    if (!envUrl.includes('localhost') && !envUrl.endsWith('/api')) {
-      envUrl = `${envUrl}/api`;
-    }
     console.log('📍 Using API URL from environment:', envUrl);
     return envUrl;
   }
