@@ -11,22 +11,10 @@ pipelines:
                 cd /home/ubuntu/helpdesk/frontend &&
                 node -v &&
                 git checkout dev &&
-                git reset --hard origin/dev &&
                 git pull &&
                 npm ci &&
-                chmod +x node_modules/.bin/* &&
-                echo "Setting production environment variables..." &&
-                rm -f .env &&
-                cp .env.production.build .env &&
-                echo "=== Production .env contents ===" &&
-                cat .env &&
-                echo "=== Building with production URLs ===" &&
                 npm run build &&
-                sudo rm -rf /var/www/helpdesk/frontend/* &&
-                sudo cp -r dist/* /var/www/helpdesk/frontend/ &&
-                sudo chown -R www-data:www-data /var/www/helpdesk/frontend &&
-                sudo chmod -R 755 /var/www/helpdesk/frontend &&
-                sudo systemctl reload nginx &&
+                pm2 restart helpdesk-frontend:3001 &&
                 echo "Frontend deployed successfully!"
               '
 
@@ -39,21 +27,9 @@ pipelines:
                 cd /home/ubuntu/helpdesk/backend &&
                 node -v &&
                 git checkout dev &&
-                git reset --hard origin/dev &&
                 git pull &&
                 npm ci &&
-                chmod +x node_modules/.bin/* &&
-                echo "Copying production environment file..." &&
-                cp .env.production.server .env &&
-                echo "=== Production Backend .env contents ===" &&
-                cat .env &&
                 npm run build &&
-                sudo cp ../ecosystem.config.js /var/www/helpdesk/backend/ &&
-                sudo cp .env /var/www/helpdesk/backend/ &&
-                sudo cp -r dist/* /var/www/helpdesk/backend/ &&
-                sudo chown -R ubuntu:ubuntu /var/www/helpdesk/backend &&
-                cd /var/www/helpdesk/backend &&
-                pm2 reload ecosystem.config.js || pm2 start ecosystem.config.js &&
-                pm2 save &&
+                pm2 restart helpdesk-backend:3003 &&
                 echo "Backend deployed successfully!"
               '
