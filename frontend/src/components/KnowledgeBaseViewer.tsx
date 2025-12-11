@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { MdSearch, MdVisibility, MdThumbUp, MdThumbDown } from 'react-icons/md';
+import { MdSearch, MdVisibility, MdThumbUp, MdThumbDown, MdAdd } from 'react-icons/md';
+import { useNavigate } from 'react-router-dom';
 import DOMPurify from 'dompurify';
 import { API_CONFIG } from '../config/constants';
+import { usePermissions } from '../hooks/usePermissions';
+import { PERMISSIONS } from '../constants/permissions';
 
 interface KBArticle {
   _id: string;
@@ -22,6 +25,8 @@ interface KBArticle {
 }
 
 const KnowledgeBaseViewer: React.FC = () => {
+  const navigate = useNavigate();
+  const { hasPermission } = usePermissions();
   const [articles, setArticles] = useState<KBArticle[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -31,6 +36,9 @@ const KnowledgeBaseViewer: React.FC = () => {
   // Get project context from localStorage
   const projectContext = localStorage.getItem('projectContext');
   const projectId = projectContext ? JSON.parse(projectContext).projectId : null;
+  
+  // Check if user has create permission
+  const canCreate = hasPermission(PERMISSIONS.KB_CREATE);
 
   useEffect(() => {
     if (projectId) {
@@ -153,22 +161,62 @@ const KnowledgeBaseViewer: React.FC = () => {
       margin: '0 auto'
     }}>
       <div style={{
-        marginBottom: '32px'
+        marginBottom: '32px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '16px'
       }}>
-        <h1 style={{
-          fontSize: '28px',
-          fontWeight: '600',
-          color: 'var(--text-primary)',
-          marginBottom: '8px'
-        }}>
-          Knowledge Base
-        </h1>
-        <p style={{
-          fontSize: '14px',
-          color: 'var(--text-secondary)'
-        }}>
-          Browse articles and find answers to common questions
-        </p>
+        <div>
+          <h1 style={{
+            fontSize: '28px',
+            fontWeight: '600',
+            color: 'var(--text-primary)',
+            marginBottom: '8px'
+          }}>
+            Knowledge Base
+          </h1>
+          <p style={{
+            fontSize: '14px',
+            color: 'var(--text-secondary)'
+          }}>
+            Browse articles and find answers to common questions
+          </p>
+        </div>
+        
+        {canCreate && (
+          <button
+            onClick={() => navigate('/knowledge-base')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '10px 20px',
+              background: 'var(--primary-main)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: '500',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'var(--primary-dark)';
+              e.currentTarget.style.transform = 'translateY(-1px)';
+              e.currentTarget.style.boxShadow = '0 4px 8px rgba(0,0,0,0.15)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'var(--primary-main)';
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+            }}
+          >
+            <MdAdd size={20} /> Create Article
+          </button>
+        )}
       </div>
 
       {/* Search and Filter */}

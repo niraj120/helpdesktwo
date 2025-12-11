@@ -3,6 +3,8 @@ import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
 import DashboardLayout from './DashboardLayout';
 import { API_CONFIG } from '../config/constants';
+import { usePermissions } from '../hooks/usePermissions';
+import { PERMISSIONS } from '../constants/permissions';
 
 interface KBArticle {
   _id: string;
@@ -28,6 +30,7 @@ interface Project {
 }
 
 const KnowledgeBaseManagement: React.FC = () => {
+  const { hasPermission } = usePermissions();
   const [activeTab, setActiveTab] = useState<'articles' | 'settings'>('articles');
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>('');
@@ -35,6 +38,12 @@ const KnowledgeBaseManagement: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editingArticle, setEditingArticle] = useState<KBArticle | null>(null);
+  
+  // Check if we're in a project portal context
+  const projectContext = localStorage.getItem('projectContext');
+  const isProjectPortal = !!projectContext;
+  const contextProjectId = projectContext ? JSON.parse(projectContext).projectId : null;
+  const contextProjectName = projectContext ? JSON.parse(projectContext).projectName : null;
   
   // KB Settings state
   const [kbSettings, setKbSettings] = useState({
@@ -121,9 +130,18 @@ const KnowledgeBaseManagement: React.FC = () => {
   const [tagInput, setTagInput] = useState('');
   const [copiedArticleId, setCopiedArticleId] = useState<string | null>(null);
 
-  // Fetch projects
+  // Fetch projects or use context
   useEffect(() => {
-    fetchProjects();
+    if (isProjectPortal && contextProjectId) {
+      // In project portal, use the context project
+      setSelectedProject(contextProjectId);
+      if (contextProjectName) {
+        setProjects([{ _id: contextProjectId, name: contextProjectName }]);
+      }
+    } else {
+      // In main system, fetch all projects
+      fetchProjects();
+    }
   }, []);
 
   // Fetch articles when project changes
@@ -388,48 +406,69 @@ const KnowledgeBaseManagement: React.FC = () => {
       <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
         <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h1 style={{ fontSize: '24px', fontWeight: '700', margin: 0 }}>Knowledge Base Management</h1>
-        <button
-          onClick={handleCreate}
-          disabled={!selectedProject}
-          style={{
-            padding: '10px 20px',
-            backgroundColor: '#3b82f6',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            fontSize: '14px',
-            fontWeight: '600',
-            cursor: selectedProject ? 'pointer' : 'not-allowed',
-            opacity: selectedProject ? 1 : 0.5
-          }}
-        >
-          + Create Article
-        </button>
+        {hasPermission(PERMISSIONS.KB_CREATE) && (
+          <button
+            onClick={handleCreate}
+            disabled={!selectedProject}
+            style={{
+              padding: '10px 20px',
+              backgroundColor: '#3b82f6',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: selectedProject ? 'pointer' : 'not-allowed',
+              opacity: selectedProject ? 1 : 0.5
+            }}
+          >
+            + Create Article
+          </button>
+        )}
       </div>
 
-      {/* Project Selector */}
-      <div style={{ marginBottom: '24px' }}>
-        <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>
-          Select Project
-        </label>
-        <select
-          value={selectedProject}
-          onChange={(e) => setSelectedProject(e.target.value)}
-          style={{
-            width: '100%',
-            maxWidth: '400px',
-            padding: '10px 12px',
-            border: '1px solid #d1d5db',
-            borderRadius: '6px',
-            fontSize: '14px'
-          }}
-        >
-          <option value="">Select a project</option>
-          {Array.isArray(projects) && projects.map(project => (
-            <option key={project._id} value={project._id}>{project.name}</option>
-          ))}
-        </select>
-      </div>
+      {/* Project Selector - Only show if not in project portal */}
+      {!isProjectPortal && (
+        <div style={{ marginBottom: '24px' }}>
+          <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>
+            Select Project
+          </label>
+          <select
+            value={selectedProject}
+            onChange={(e) => setSelectedProject(e.target.value)}
+            style={{
+              width: '100%',
+              maxWidth: '400px',
+              padding: '10px 12px',
+              border: '1px solid #d1d5db',
+              borderRadius: '6px',
+              fontSize: '14px'
+            }}
+          >
+            <option value="">Select a project</option>
+            {Array.isArray(projects) && projects.map(project => (
+              <option key={project._id} value={project._id}>{project.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+      
+      {/* Project Info - Show when in project portal */}
+      {isProjectPortal && contextProjectName && (
+        <div style={{ 
+          marginBottom: '24px',
+          padding: '12px 16px',
+          background: '#f3f4f6',
+          border: '1px solid #e5e7eb',
+          borderRadius: '8px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          <span style={{ fontSize: '14px', color: '#6b7280', fontWeight: '500' }}>Project:</span>
+          <span style={{ fontSize: '14px', color: '#111827', fontWeight: '600' }}>{contextProjectName}</span>
+        </div>
+      )}
 
       {/* Tabs */}
       {selectedProject && (
@@ -565,34 +604,38 @@ const KnowledgeBaseManagement: React.FC = () => {
                 >
                   {copiedArticleId === article._id ? '✓ Copied' : '🔗 Copy Link'}
                 </button>
-                <button
-                  onClick={() => handleEdit(article)}
-                  style={{
-                    padding: '8px 16px',
-                    backgroundColor: '#f3f4f6',
-                    color: '#374151',
-                    border: 'none',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={() => handleDelete(article._id)}
-                  style={{
-                    padding: '8px 16px',
-                    backgroundColor: '#fef2f2',
-                    color: '#dc2626',
-                    border: 'none',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Delete
-                </button>
+                {hasPermission(PERMISSIONS.KB_EDIT) && (
+                  <button
+                    onClick={() => handleEdit(article)}
+                    style={{
+                      padding: '8px 16px',
+                      backgroundColor: '#f3f4f6',
+                      color: '#374151',
+                      border: 'none',
+                      borderRadius: '6px',
+                      fontSize: '14px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Edit
+                  </button>
+                )}
+                {hasPermission(PERMISSIONS.KB_DELETE) && (
+                  <button
+                    onClick={() => handleDelete(article._id)}
+                    style={{
+                      padding: '8px 16px',
+                      backgroundColor: '#fef2f2',
+                      color: '#dc2626',
+                      border: 'none',
+                      borderRadius: '6px',
+                      fontSize: '14px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Delete
+                  </button>
+                )}
               </div>
             </div>
           ))}
