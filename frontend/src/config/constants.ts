@@ -59,38 +59,43 @@ const getWsUrl = (): string => {
 const API_BASE_URL = getApiUrl();
 const WS_URL = getWsUrl();
 
-// Check if API_BASE_URL already includes /api (from server .env)
+// Check if API_BASE_URL already includes /api
+// The .env now includes /api for both local and production
 const hasApiSuffix = API_BASE_URL.endsWith('/api');
-const apiPrefix = hasApiSuffix ? '' : '/api';
+
+// Log for debugging
+console.log('🔧 [Config] API_BASE_URL:', API_BASE_URL);
+console.log('🔧 [Config] Has /api suffix:', hasApiSuffix);
 
 /**
  * API Configuration
- * Handles both cases:
- * - Local dev: VITE_API_BASE_URL="http://localhost:3003" (adds /api)
- * - Production: VITE_API_BASE_URL="https://helpdesk.hubblehox.ai/api" (no /api added)
+ * IMPORTANT: .env files now include /api in VITE_API_BASE_URL
+ * - Local: VITE_API_BASE_URL="http://localhost:3003/api"
+ * - Production: VITE_API_BASE_URL="https://helpdesk.hubblehox.ai/api"
+ * So API_URL should be used directly without adding /api again
  */
 export const API_CONFIG = {
-  // Base URLs
-  BASE_URL: API_BASE_URL,
+  // Base URLs (without /api)
+  BASE_URL: hasApiSuffix ? API_BASE_URL.replace(/\/api$/, '') : API_BASE_URL,
   WS_URL: WS_URL,
   
-  // Full API URL with /api prefix (only if not already present)
-  API_URL: `${API_BASE_URL}${apiPrefix}`,
+  // Full API URL (already includes /api from .env)
+  API_URL: API_BASE_URL,
   
-  // Common endpoints
-  AUTH: `${API_BASE_URL}${apiPrefix}/auth`,
-  USERS: `${API_BASE_URL}${apiPrefix}/users`,
-  PROJECTS: `${API_BASE_URL}${apiPrefix}/projects`,
-  TICKETS: `${API_BASE_URL}${apiPrefix}/tickets`,
-  RBAC: `${API_BASE_URL}${apiPrefix}/rbac`,
+  // Common endpoints (API_BASE_URL already has /api, so just append path)
+  AUTH: `${API_BASE_URL}/auth`,
+  USERS: `${API_BASE_URL}/users`,
+  PROJECTS: `${API_BASE_URL}/projects`,
+  TICKETS: `${API_BASE_URL}/tickets`,
+  RBAC: `${API_BASE_URL}/rbac`,
   
   // Project-specific auth endpoints
   PROJECT_AUTH: (customUrlPath: string) => 
-    `${API_BASE_URL}${apiPrefix}/project-auth/${customUrlPath}`,
+    `${API_BASE_URL}/project-auth/${customUrlPath}`,
   
   // Student portal endpoints
   STUDENT_AUTH: (customUrlPath: string) => 
-    `${API_BASE_URL}${apiPrefix}/project-auth/${customUrlPath}/student`,
+    `${API_BASE_URL}/project-auth/${customUrlPath}/student`,
     
   // WebSocket URL with token
   WS_WITH_TOKEN: (token: string) => `${WS_URL}/?token=${token}`,
@@ -124,6 +129,7 @@ export const getAuthHeaders = () => {
 
 /**
  * Helper function to build full API URL
+ * IMPORTANT: API_CONFIG.API_URL now already includes /api from .env
  */
 export const buildApiUrl = (endpoint: string): string => {
   // If endpoint already starts with http/https, return as-is
@@ -131,11 +137,11 @@ export const buildApiUrl = (endpoint: string): string => {
     return endpoint;
   }
   
-  // If endpoint starts with /api, use base URL
+  // If endpoint starts with /api, use BASE_URL (without /api) + endpoint (with /api)
   if (endpoint.startsWith('/api')) {
     return `${API_CONFIG.BASE_URL}${endpoint}`;
   }
   
-  // Otherwise, prepend API_URL
+  // Otherwise, prepend API_URL (which already has /api)
   return `${API_CONFIG.API_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
 };

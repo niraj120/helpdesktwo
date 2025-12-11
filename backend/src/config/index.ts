@@ -96,10 +96,10 @@ export const config = {
       ? process.env.FRONTEND_URL_PRODUCTION || 'https://helpdesk.hubblehox.ai'
       : process.env.FRONTEND_URL_LOCAL || 'http://localhost:3001',
     backend: isProduction
-      ? process.env.BACKEND_URL_PRODUCTION || 'https://api.helpdesk.hubblehox.ai'
+      ? process.env.BACKEND_URL_PRODUCTION || 'https://helpdesk.hubblehox.ai'
       : process.env.BACKEND_URL_LOCAL || 'http://localhost:3003',
     api: isProduction
-      ? process.env.API_URL_PRODUCTION || 'https://api.helpdesk.hubblehox.ai/api'
+      ? process.env.API_URL_PRODUCTION || 'https://helpdesk.hubblehox.ai/api'
       : process.env.API_URL_LOCAL || 'http://localhost:3003/api',
     socketCors: isProduction
       ? process.env.SOCKET_CORS_ORIGIN_PRODUCTION || 'https://helpdesk.hubblehox.ai'
