@@ -258,11 +258,11 @@ const RBACSetup = () => {
 
     // Define permission categories for each role type
     const rolePermissionMap: Record<string, string[]> = {
-      super_admin: ['RBAC', 'USER', 'PROJECT', 'TICKET', 'KB_', 'AUDIT', 'OFFLINE', 'STUDENT', 'FIELDS', 'SLA', 'AUTOMATION', 'REPORT', 'INTEGRATION', 'FORM', 'WORKFLOW', 'APPROVAL', 'MASTER_DATA', 'TICKET_CONFIG', 'DASHBOARD'],
-      manager: ['USER', 'TICKET', 'KB_', 'AUDIT', 'OFFLINE', 'STUDENT', 'REPORT'],
-      agent: ['TICKET', 'KB_', 'OFFLINE', 'STUDENT'],
-      student: ['TICKET', 'OFFLINE', 'STUDENT'],
-      custom: ['RBAC', 'USER', 'PROJECT', 'TICKET', 'KB_', 'AUDIT', 'OFFLINE', 'STUDENT', 'FIELDS', 'SLA', 'AUTOMATION', 'REPORT', 'INTEGRATION', 'FORM', 'WORKFLOW', 'APPROVAL', 'MASTER_DATA', 'TICKET_CONFIG', 'DASHBOARD'], // All
+      super_admin: ['RBAC', 'USER', 'PROJECT', 'TICKET', 'KB_', 'FAQ', 'AUDIT', 'OFFLINE', 'STUDENT', 'FIELDS', 'SLA', 'AUTOMATION', 'REPORT', 'INTEGRATION', 'FORM', 'WORKFLOW', 'APPROVAL', 'MASTER_DATA', 'TICKET_CONFIG', 'DASHBOARD'],
+      manager: ['USER', 'TICKET', 'KB_', 'FAQ', 'AUDIT', 'OFFLINE', 'STUDENT', 'REPORT'],
+      agent: ['TICKET', 'KB_', 'FAQ', 'OFFLINE', 'STUDENT'],
+      student: ['TICKET', 'FAQ', 'OFFLINE', 'STUDENT'],
+      custom: ['RBAC', 'USER', 'PROJECT', 'TICKET', 'KB_', 'FAQ', 'AUDIT', 'OFFLINE', 'STUDENT', 'FIELDS', 'SLA', 'AUTOMATION', 'REPORT', 'INTEGRATION', 'FORM', 'WORKFLOW', 'APPROVAL', 'MASTER_DATA', 'TICKET_CONFIG', 'DASHBOARD'], // All
     };
 
     const allowedPrefixes = rolePermissionMap[roleType] || rolePermissionMap.custom;

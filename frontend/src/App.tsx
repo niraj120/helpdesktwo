@@ -35,6 +35,7 @@ import AccessLogs from './components/AccessLogs'
 import KnowledgeBaseManagement from './components/KnowledgeBaseManagement'
 import KBArticleView from './pages/KBArticleView'
 import FAQManagement from './components/FAQManagement'
+import FAQViewer from './components/FAQViewer'
 import TicketSettings from './components/TicketSettings'
 import TicketConfigurationPage from './pages/TicketConfigurationPage'
 import AgentTicketDetail from './pages/AgentTicketDetail'
@@ -142,6 +143,26 @@ function App() {
             <ProtectedRoute requireAuth={true}>
               <StudentLayout>
                 <MyTickets wrapWithLayout={false} />
+              </StudentLayout>
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/:customUrlPath/student/faq" 
+          element={
+            <ProtectedRoute requireAuth={true}>
+              <StudentLayout>
+                <FAQViewer />
+              </StudentLayout>
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/:customUrlPath/student/submit-ticket" 
+          element={
+            <ProtectedRoute requireAuth={true}>
+              <StudentLayout>
+                <AuthenticatedStudentSubmitTicket hideHeader={true} />
               </StudentLayout>
             </ProtectedRoute>
           } 

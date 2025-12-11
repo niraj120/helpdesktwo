@@ -60,7 +60,9 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
     try {
       const token = localStorage.getItem('authToken');
       if (!token) {
-        navigate(`/${customUrlPath}/submit-ticket`);
+        // No token - component will show login prompt or handle accordingly
+        // Don't redirect, let the parent route handle it
+        setLoading(false);
         return;
       }
 

@@ -51,9 +51,27 @@ export const createFAQ = async (req: Request, res: Response) => {
     const { projectId, question, answer, category, tags, status, displayOrder } = req.body;
     const user = (req as any).user;
 
+    console.log('📝 Creating FAQ - User object:', {
+      userId: user?.userId,
+      email: user?.email,
+      firstName: user?.firstName,
+      lastName: user?.lastName,
+      hasUser: !!user
+    });
+
     if (!projectId || !question || !answer) {
       return sendErrorResponse(res, 'Project ID, question, and answer are required', 400);
     }
+
+    if (!user || !user.userId || !user.email) {
+      console.error('❌ Invalid user object:', user);
+      return sendErrorResponse(res, 'User authentication failed', 401);
+    }
+
+    // Construct user name from firstName and lastName, or use email as fallback
+    const userName = user.firstName && user.lastName 
+      ? `${user.firstName} ${user.lastName}` 
+      : user.email;
 
     const faq = new FAQ({
       projectId,
@@ -64,8 +82,8 @@ export const createFAQ = async (req: Request, res: Response) => {
       status: status || 'active',
       displayOrder: displayOrder || 0,
       createdBy: {
-        userId: user._id,
-        name: user.name,
+        userId: user.userId,
+        name: userName,
         email: user.email,
       },
     });
@@ -99,9 +117,14 @@ export const updateFAQ = async (req: Request, res: Response) => {
     if (status !== undefined) faq.status = status;
     if (displayOrder !== undefined) faq.displayOrder = displayOrder;
 
+    // Construct user name from firstName and lastName, or use email as fallback
+    const userName = user.firstName && user.lastName 
+      ? `${user.firstName} ${user.lastName}` 
+      : user.email;
+
     faq.updatedBy = {
-      userId: user._id,
-      name: user.name,
+      userId: user.userId,
+      name: userName,
       email: user.email,
     };
 

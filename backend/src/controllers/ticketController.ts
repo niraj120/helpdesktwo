@@ -1835,15 +1835,23 @@ export const getProjectDashboardStats = async (req: Request, res: Response) => {
     
     console.log('🔑 Permission Check Result:', { hasViewAllTickets });
     
+    // Check if user is a student (students create tickets, not get assigned)
+    const isStudent = userRole?.code === 'STUDENT';
+    
     // For agents or users with TICKET_VIEW_OWN, show only their assigned tickets
     if (hasViewAllTickets) {
       // Users with TICKET_VIEW_ALL see all tickets for the project
       console.log('✅ User has TICKET_VIEW_ALL - showing all project tickets');
+    } else if (isStudent && await checkPermission('TICKET_VIEW_OWN')) {
+      // Students see only tickets they created (not assigned)
+      query['metadata.studentEmail'] = user.email;
+      console.log('✅ Student user - showing tickets created by:', user.email);
+      console.log('Query filter:', JSON.stringify(query, null, 2));
     } else if (isAgent || await checkPermission('TICKET_VIEW_OWN')) {
       // Agents see only their assigned tickets within the project
       const userObjectId = new mongoose.Types.ObjectId(userId);
       query.assignedTo = userObjectId;
-      console.log('✅ User is agent or has TICKET_VIEW_OWN - showing assigned tickets only');
+      console.log('✅ Agent/Staff user - showing assigned tickets only');
       console.log('Query filter:', JSON.stringify(query, null, 2));
     } else {
       // No ticket view permissions - show only tickets created by this user

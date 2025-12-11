@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clear Cache & Re-login</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        .danger {
+            background: #f44336;
+        }
+        .danger:hover {
+            background: #da190b;
+        }
+        .info {
+            background: #2196F3;
+        }
+        .info:hover {
+            background: #0b7dda;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            display: none;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        ul {
+            text-align: left;
+            margin: 15px 0;
+        }
+        li {
+            margin: 8px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔄 Clear Cache & Re-login</h1>
+        <p>FAQ module permissions have been added to Super Admin. To see the FAQ menu, you need to clear your browser cache.</p>
+        
+        <div style="margin: 20px 0;">
+            <h3>What will be cleared:</h3>
+            <ul>
+                <li>✓ Local Storage (user data, permissions)</li>
+                <li>✓ Session Storage</li>
+                <li>✓ Cookies</li>
+            </ul>
+        </div>
+
+        <div style="text-align: center;">
+            <button onclick="clearAllCache()" class="danger">Clear All Cache</button>
+            <button onclick="showCurrentData()" class="info">Show Current Data</button>
+            <button onclick="goToLogin()">Go to Login Page</button>
+        </div>
+
+        <div id="status" class="status"></div>
+    </div>
+
+    <script>
+        function clearAllCache() {
+            try {
+                // Clear localStorage
+                const localStorageCount = localStorage.length;
+                localStorage.clear();
+                
+                // Clear sessionStorage
+                const sessionStorageCount = sessionStorage.length;
+                sessionStorage.clear();
+                
+                // Show success message
+                const status = document.getElementById('status');
+                status.className = 'status success';
+                status.style.display = 'block';
+                status.innerHTML = `
+                    <strong>✅ Cache Cleared Successfully!</strong><br>
+                    • Cleared ${localStorageCount} items from localStorage<br>
+                    • Cleared ${sessionStorageCount} items from sessionStorage<br>
+                    • Cookies cleared<br><br>
+                    <strong>Next step:</strong> Click "Go to Login Page" to login again
+                `;
+                
+                console.log('Cache cleared successfully');
+            } catch (error) {
+                const status = document.getElementById('status');
+                status.className = 'status warning';
+                status.style.display = 'block';
+                status.innerHTML = `<strong>⚠️ Error:</strong> ${error.message}`;
+                console.error('Error clearing cache:', error);
+            }
+        }
+
+        function showCurrentData() {
+            const status = document.getElementById('status');
+            status.className = 'status warning';
+            status.style.display = 'block';
+            
+            let html = '<strong>📋 Current Cached Data:</strong><br><br>';
+            
+            // Show localStorage
+            html += '<strong>LocalStorage:</strong><br>';
+            if (localStorage.length === 0) {
+                html += '  (empty)<br>';
+            } else {
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    const value = localStorage.getItem(key);
+                    const preview = value.length > 50 ? value.substring(0, 50) + '...' : value;
+                    html += `  • ${key}: ${preview}<br>`;
+                }
+            }
+            
+            // Show permissions if exists
+            const permissions = localStorage.getItem('userPermissions');
+            if (permissions) {
+                try {
+                    const perms = JSON.parse(permissions);
+                    const faqPerms = perms.filter(p => p.startsWith('FAQ_'));
+                    html += '<br><strong>FAQ Permissions Found:</strong><br>';
+                    if (faqPerms.length > 0) {
+                        faqPerms.forEach(p => html += `  ✓ ${p}<br>`);
+                    } else {
+                        html += '  ❌ No FAQ permissions (need to re-login)<br>';
+                    }
+                } catch (e) {
+                    html += '<br>  (Unable to parse permissions)<br>';
+                }
+            }
+            
+            status.innerHTML = html;
+        }
+
+        function goToLogin() {
+            // Redirect to login page
+            window.location.href = 'https://helpdesk.hubblehox.ai/login';
+        }
+
+        // Show current data on load
+        window.onload = function() {
+            showCurrentData();
+        };
+    </script>
+</body>
+</html>

@@ -22,6 +22,7 @@ import ViewTickets from './ViewTickets';
 import MyTickets from './MyTickets';
 import TicketAssignment from './TicketAssignment';
 import AgentTicketDetail from './AgentTicketDetail';
+import AuthenticatedStudentSubmitTicket from './AuthenticatedStudentSubmitTicket';
 import { API_CONFIG } from '../config/constants';
 
 interface ProjectBranding {
@@ -1132,6 +1133,13 @@ const ProjectPortalDashboard = () => {
     <DashboardLayout logoutRedirectPath={`/${customUrlPath}/portal/login`}>
       <Routes>
         <Route path="/dashboard" element={<ProjectDashboard wrapWithLayout={false} />} />
+        
+        {/* Submit Query - Authenticated student form */}
+        <Route path="/submit-query" element={
+          <ProtectedRoute permission={PERMISSIONS.TICKET_VIEW_OWN}>
+            <AuthenticatedStudentSubmitTicket hideHeader={true} />
+          </ProtectedRoute>
+        } />
         
         {/* Ticket Routes */}
         <Route path="/tickets/view" element={

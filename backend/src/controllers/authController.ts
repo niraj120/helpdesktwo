@@ -251,10 +251,35 @@ export const login = async (req: Request<{}, {}, LoginRequest>, res: Response) =
         }
         // Get permissions from role
         if ('permissions' in user.role && Array.isArray(user.role.permissions)) {
+          console.log('🔍 Raw permissions array:', user.role.permissions.length);
+          console.log('🔍 First permission type:', typeof user.role.permissions[0]);
+          if (user.role.permissions[0]) {
+            console.log('🔍 First permission value:', user.role.permissions[0]);
+            console.log('🔍 First permission keys:', Object.keys(user.role.permissions[0] || {}));
+          }
+          
           permissions = user.role.permissions
-            .map((p: any) => p.code || (typeof p === 'object' && 'code' in p ? p.code : null))
+            .map((p: any) => {
+              // If p is already a string, return it
+              if (typeof p === 'string') {
+                return p;
+              }
+              // If p is an object with code property
+              if (p && typeof p === 'object' && 'code' in p) {
+                return p.code;
+              }
+              // Otherwise, try to convert to string and check if it looks like a permission code
+              const str = String(p);
+              if (str && str.includes('_')) {
+                return str;
+              }
+              return null;
+            })
             .filter(Boolean);
           console.log('✅ Extracted permissions:', permissions.length);
+          console.log('🔍 First 5 permissions:', permissions.slice(0, 5));
+        } else {
+          console.log('⚠️  Permissions not found or not an array');
         }
       } else {
         console.log('⚠️  Role is not an object:', typeof user.role);

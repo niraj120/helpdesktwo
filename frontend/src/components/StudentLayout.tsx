@@ -127,16 +127,22 @@ const StudentLayout = ({ children }: StudentLayoutProps) => {
       permission: PERMISSIONS.TICKET_VIEW_OWN,
     },
     {
-      path: `/${customUrlPath}/submit-ticket`,
+      path: `/${customUrlPath}/student/submit-ticket`,
       icon: <MdAdd />,
       label: 'Submit Query',
-      permission: PERMISSIONS.TICKET_CREATE,
+      permission: PERMISSIONS.TICKET_VIEW_OWN, // Changed from TICKET_CREATE to TICKET_VIEW_OWN
     },
     {
       path: `/${customUrlPath}/kb`,
       icon: <MdBook />,
       label: 'Knowledge Base',
       permission: PERMISSIONS.KB_VIEW,
+    },
+    {
+      path: `/${customUrlPath}/student/faq`,
+      icon: <MdBook />,
+      label: 'FAQ',
+      permission: PERMISSIONS.FAQ_VIEW,
     },
     {
       path: `/${customUrlPath}/find-center`,

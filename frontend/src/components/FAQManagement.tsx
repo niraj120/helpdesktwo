@@ -3,6 +3,7 @@ import { MdAdd, MdEdit, MdDelete, MdVisibility, MdThumbUp, MdSearch } from 'reac
 import { API_CONFIG } from '../config/constants';
 import { usePermissions } from '../hooks/usePermissions';
 import { PERMISSIONS } from '../constants/permissions';
+import DashboardLayout from './DashboardLayout';
 
 interface FAQ {
   _id: string;
@@ -232,13 +233,14 @@ const FAQManagement: React.FC = () => {
   });
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
-      {/* Header */}
-      <div style={{ marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-        <div>
-          <h1 style={{ fontSize: '28px', fontWeight: '600', marginBottom: '8px' }}>FAQ Management</h1>
-          <p style={{ fontSize: '14px', color: '#6b7280' }}>Manage frequently asked questions</p>
-        </div>
+    <DashboardLayout>
+      <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
+        {/* Header */}
+        <div style={{ marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+          <div>
+            <h1 style={{ fontSize: '28px', fontWeight: '600', marginBottom: '8px' }}>FAQ Management</h1>
+            <p style={{ fontSize: '14px', color: '#6b7280' }}>Manage frequently asked questions</p>
+          </div>
         {canCreate && selectedProject && (
           <button
             onClick={() => {
@@ -595,7 +597,8 @@ const FAQManagement: React.FC = () => {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </DashboardLayout>
   );
 };
 

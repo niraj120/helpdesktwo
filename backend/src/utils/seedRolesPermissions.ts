@@ -598,6 +598,44 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     category: 'knowledge-base',
   },
   // =====================================================
+  // FAQ CATEGORY
+  // =====================================================
+  {
+    module: 'FAQ',
+    name: 'View FAQs',
+    code: 'FAQ_VIEW',
+    description: 'Can view FAQ articles',
+    category: 'faq',
+  },
+  {
+    module: 'FAQ',
+    name: 'Create FAQs',
+    code: 'FAQ_CREATE',
+    description: 'Can create new FAQ articles',
+    category: 'faq',
+  },
+  {
+    module: 'FAQ',
+    name: 'Edit FAQs',
+    code: 'FAQ_EDIT',
+    description: 'Can edit existing FAQ articles',
+    category: 'faq',
+  },
+  {
+    module: 'FAQ',
+    name: 'Delete FAQs',
+    code: 'FAQ_DELETE',
+    description: 'Can delete FAQ articles',
+    category: 'faq',
+  },
+  {
+    module: 'FAQ',
+    name: 'Manage FAQs',
+    code: 'FAQ_MANAGE',
+    description: 'Can manage FAQ settings and categories',
+    category: 'faq',
+  },
+  // =====================================================
   // INTEGRATIONS CATEGORY
   // =====================================================
   {
