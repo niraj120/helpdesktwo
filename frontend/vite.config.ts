@@ -38,5 +38,18 @@ export default defineConfig(({ mode }) => ({
     outDir: 'dist',
     sourcemap: true,
     minify: 'esbuild',
+    // Ensure assets are properly referenced
+    assetsDir: 'assets',
+    // Generate manifest for better caching
+    manifest: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'react-router-dom'],
+        },
+      },
+    },
   },
+  // Set base path for production
+  base: '/',
 }))

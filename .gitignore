@@ -64,3 +64,48 @@ Thumbs.db
 *.flv
 *.mov
 *.wmv
+
+# Deployment and test scripts (keep local only)
+deploy-*.ps1
+deploy-*.sh
+verify-*.ps1
+check-*.ps1
+test-*.ps1
+diagnose-*.sh
+restore-*.ps1
+start-*.ps1
+stop-*.ps1
+serve-*.ps1
+run-script.ps1
+watchdog.ps1
+
+# Backend test/debug scripts (not needed in production)
+backend/add-*.js
+backend/check-*.js
+backend/debug-*.js
+backend/set-*.js
+backend/test-*.js
+backend/update-*.js
+backend/map-*.js
+backend/restore-*.js
+backend/scripts/
+
+# HTML test files
+*.test.html
+check-*.html
+test-*.html
+debug-*.html
+clear-token.html
+
+# Documentation files (keep important ones explicitly)
+*_AUDIT.md
+*_CHECKLIST.md
+*_CLEANUP.md
+*_SUMMARY.md
+*_GUIDE.md
+*_STATUS.md
+*_SECTIONS_REMOVED.txt
+
+# Config backups
+*.backup
+*.bak

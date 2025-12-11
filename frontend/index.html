@@ -3,10 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="description" content="SAC Helpdesk Portal - Student Assistance Center Support System" />
     <title>SAC Helpdesk Portal</title>
+    <!-- Fallback for 404 handling in SPA -->
+    <base href="/" />
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <noscript>
+      <div style="text-align: center; padding: 50px; font-family: Arial, sans-serif;">
+        <h1>JavaScript Required</h1>
+        <p>Please enable JavaScript to use the SAC Helpdesk Portal.</p>
+      </div>
+    </noscript>
   </body>
 </html>
