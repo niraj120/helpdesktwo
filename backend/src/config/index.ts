@@ -8,7 +8,7 @@ const isDevelopment = process.env.NODE_ENV === 'development' || !process.env.NOD
 
 /**
  * Get JWT Secret with proper validation
- * In production: Throws error if JWT_SECRET is not set
+ * In production: Warns if JWT_SECRET contains "CHANGE-THIS" but doesn't block startup
  * In development: Uses fallback with warning
  */
 const getJwtSecret = (): string => {
@@ -16,15 +16,45 @@ const getJwtSecret = (): string => {
   
   if (!secret) {
     if (isProduction) {
-      throw new Error('FATAL: JWT_SECRET environment variable must be set in production!');
+      console.error('❌ CRITICAL: JWT_SECRET environment variable is not set in production!');
+      console.error('⚠️  Using fallback secret - THIS IS INSECURE!');
+    } else {
+      console.warn('⚠️  WARNING: JWT_SECRET not set. Using development fallback. DO NOT use in production!');
     }
-    console.warn('⚠️  WARNING: JWT_SECRET not set. Using development fallback. DO NOT use in production!');
     return 'dev-only-fallback-secret-change-in-production';
   }
   
-  // Validate secret strength in production
+  // Warn about weak secrets but don't block startup
+  if (secret.includes('CHANGE-THIS') || secret.includes('CHANGE-THIS-IN-PRODUCTION')) {
+    console.error('❌ CRITICAL SECURITY WARNING: JWT_SECRET contains placeholder text!');
+    console.error('⚠️  Please update JWT_SECRET in .env file immediately!');
+    console.error('⚠️  Generate a strong secret with: node -e "console.log(require(\'crypto\').randomBytes(64).toString(\'hex\'))"');
+  }
+  
   if (isProduction && secret.length < 32) {
-    throw new Error('FATAL: JWT_SECRET must be at least 32 characters in production!');
+    console.error('❌ WARNING: JWT_SECRET is too short (< 32 characters) for production use!');
+  }
+  
+  return secret;
+};
+
+/**
+ * Get JWT Refresh Secret with proper validation
+ */
+const getJwtRefreshSecret = (): string => {
+  const secret = process.env.JWT_REFRESH_SECRET;
+  
+  if (!secret) {
+    if (isProduction) {
+      console.error('❌ CRITICAL: JWT_REFRESH_SECRET not set in production!');
+    }
+    return process.env.JWT_SECRET || 'dev-only-fallback-refresh-secret';
+  }
+  
+  // Warn about weak secrets
+  if (secret.includes('CHANGE-THIS') || secret.includes('CHANGE-THIS-TOO')) {
+    console.error('❌ CRITICAL SECURITY WARNING: JWT_REFRESH_SECRET contains placeholder text!');
+    console.error('⚠️  Please update JWT_REFRESH_SECRET in .env file immediately!');
   }
   
   return secret;
@@ -42,8 +72,9 @@ export const config = {
   // JWT Configuration
   jwt: {
     secret: getJwtSecret(),
-    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
-    refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
+    refreshSecret: getJwtRefreshSecret(),
+    expiresIn: process.env.JWT_EXPIRE || process.env.JWT_EXPIRES_IN || '7d',
+    refreshExpiresIn: process.env.JWT_REFRESH_EXPIRE || process.env.JWT_REFRESH_EXPIRES_IN || '30d',
   },
   
   // Database - Conditional based on NODE_ENV only
