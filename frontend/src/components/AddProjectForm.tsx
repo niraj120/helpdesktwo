@@ -1099,9 +1099,9 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   Custom Portal URL Path <span style={{ color: '#E6393E' }}>*</span>
                 </label>
                 <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '8px', lineHeight: '1.5' }}>
-                  Enter a custom URL path for this project. Users will access the login page at: <strong>http://localhost:3000/[your-custom-path]</strong>
+                  Enter a custom URL path for this project. Users will access the login page at: <strong>{window.location.origin}/[your-custom-path]</strong>
                   <br />
-                  Example: Enter "studentassistcenter" → URL will be: http://localhost:3000/studentassistcenter
+                  Example: Enter "studentassistcenter" → URL will be: {window.location.origin}/studentassistcenter
                 </p>
                 <div style={{ display: 'flex', gap: '0', alignItems: 'stretch' }}>
                   <span style={{
@@ -1118,7 +1118,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                     height: '40px',
                     lineHeight: '1'
                   }}>
-                    http://localhost:3000/
+                    {window.location.origin}/
                   </span>
                   <input
                     type="text"

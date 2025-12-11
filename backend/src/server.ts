@@ -47,10 +47,6 @@ import { seedRolesAndPermissions } from './utils/seedRolesPermissions';
 // Load environment variables
 dotenv.config();
 
-// Debug: Log JWT_SECRET status
-console.log('🔐 JWT_SECRET loaded:', process.env.JWT_SECRET ? 'YES (from .env)' : 'NO (will use fallback)');
-console.log('🔑 JWT_SECRET value:', process.env.JWT_SECRET || 'fallback-secret-key-for-development');
-
 const app = express();
 const httpServer = createServer(app);
 
@@ -81,12 +77,10 @@ const getAllowedOrigins = (): string[] => {
     : process.env.FRONTEND_URL;
   
   if (oldFormatUrl) {
-    console.log(`📍 Using ${isProduction ? 'PRODUCTION_FRONTEND_URL' : 'FRONTEND_URL'} for CORS`);
     return [oldFormatUrl];
   }
   
   // Final fallback
-  console.warn(`⚠️  No CORS origins configured in .env`);
   return isProduction 
     ? ['https://helpdesk.hubblehox.ai']
     : ['http://localhost:3001', 'http://localhost:3000', 'http://localhost:3003'];
@@ -116,18 +110,6 @@ app.use(helmet({
 
 // CORS - Must be before other middleware
 // Support multiple origins from .env configuration
-
-// TEMPORARY: Allow all origins for debugging
-app.use(cors({
-  origin: true,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Cache-Control', 'Pragma'],
-  exposedHeaders: ['Content-Range', 'X-Content-Range'],
-  maxAge: 86400 // 24 hours
-}));
-
-/* COMMENTED OUT - Original CORS configuration with origin validation
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (like mobile apps, Postman, curl)
@@ -146,7 +128,6 @@ app.use(cors({
   exposedHeaders: ['Content-Range', 'X-Content-Range'],
   maxAge: 86400 // 24 hours
 }));
-*/
 
 // Rate limiting - More lenient in development
 const limiter = rateLimit({

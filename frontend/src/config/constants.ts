@@ -15,19 +15,16 @@ const getApiUrl = (): string => {
   // Check for explicit env var first
   const envUrl = import.meta.env.VITE_API_BASE_URL;
   if (envUrl) {
-    console.log('📍 Using API URL from environment:', envUrl);
     return envUrl;
   }
   
   // Fallback to auto-detection based on hostname
+  // Note: Do NOT add /api here - it's added in API_CONFIG below
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    console.log('📍 Detected LOCAL environment from hostname: localhost');
     return 'http://localhost:3003';
   } else if (hostname.includes('helpdesk.hubblehox.ai')) {
-    console.log('📍 Detected PRODUCTION environment from hostname: helpdesk.hubblehox.ai');
-    return 'https://helpdesk.hubblehox.ai/api';
+    return 'https://helpdesk.hubblehox.ai';
   } else {
-    console.log('📍 Unknown hostname, defaulting to PRODUCTION');
     return 'https://helpdesk.hubblehox.ai';
   }
 };
@@ -42,34 +39,21 @@ const getWsUrl = (): string => {
   // Check for explicit env var first
   const envWsUrl = import.meta.env.VITE_WS_URL;
   if (envWsUrl) {
-    console.log('📍 Using WebSocket URL from environment:', envWsUrl);
     return envWsUrl;
   }
   
   // Fallback to auto-detection based on hostname
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    console.log('📍 Detected LOCAL WebSocket from hostname: localhost');
     return 'ws://localhost:3003';
   } else if (hostname.includes('helpdesk.hubblehox.ai')) {
-    console.log('📍 Detected PRODUCTION WebSocket from hostname: helpdesk.hubblehox.ai');
     return 'wss://helpdesk.hubblehox.ai';
   } else {
-    console.log('📍 Unknown hostname, defaulting to PRODUCTION WebSocket');
     return 'wss://helpdesk.hubblehox.ai';
   }
 };
 
 const API_BASE_URL = getApiUrl();
 const WS_URL = getWsUrl();
-
-// Log which URL is being used - DETAILED
-console.log('╔════════════════════════════════════════════════════════════╗');
-console.log('║         ENVIRONMENT AUTO-DETECTION RESULTS                 ║');
-console.log('╠════════════════════════════════════════════════════════════╣');
-console.log(`║ 🌐 Hostname: ${window.location.hostname.padEnd(43)}║`);
-console.log(`║ 🔗 API URL:  ${API_BASE_URL.padEnd(43)}║`);
-console.log(`║ 📡 WS URL:   ${WS_URL.padEnd(43)}║`);
-console.log('╚════════════════════════════════════════════════════════════╝');
 
 /**
  * API Configuration
