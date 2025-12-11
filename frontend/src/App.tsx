@@ -34,6 +34,7 @@ import ActivityLogs from './components/ActivityLogs'
 import AccessLogs from './components/AccessLogs'
 import KnowledgeBaseManagement from './components/KnowledgeBaseManagement'
 import KBArticleView from './pages/KBArticleView'
+import FAQManagement from './components/FAQManagement'
 import TicketSettings from './components/TicketSettings'
 import TicketConfigurationPage from './pages/TicketConfigurationPage'
 import AgentTicketDetail from './pages/AgentTicketDetail'
@@ -344,6 +345,16 @@ function App() {
           element={
             <ProtectedRoute permission="KB_VIEW">
               <KBArticleView />
+            </ProtectedRoute>
+          } 
+        />
+        
+        {/* FAQ - Management requires FAQ_* permissions, viewing requires FAQ_VIEW */}
+        <Route 
+          path="/faq" 
+          element={
+            <ProtectedRoute permission={['FAQ_VIEW', 'FAQ_CREATE', 'FAQ_EDIT', 'FAQ_DELETE']}>
+              <FAQManagement />
             </ProtectedRoute>
           } 
         />

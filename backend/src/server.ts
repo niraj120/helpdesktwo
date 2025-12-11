@@ -35,6 +35,7 @@ import priorityRoutes from './routes/priorityRoutes';
 import activityLogRoutes from './routes/activityLogs';
 import accessLogRoutes from './routes/accessLogs';
 import knowledgeBaseRoutes from './routes/knowledgeBase';
+import faqRoutes from './routes/faqRoutes';
 import approvalRoutes from './routes/approvals';
 import approvalMasterRoutes from './routes/approvalMasters';
 import offlineModuleRoutes from './routes/offlineModule';
@@ -186,6 +187,9 @@ app.use('/api/dashboard', dashboardRoutes);
 
 // Knowledge Base Routes
 app.use('/api/kb', knowledgeBaseRoutes);
+
+// FAQ Routes
+app.use('/api/faq', faqRoutes);
 
 // Approval workflows
 app.use('/api/approvals', approvalRoutes);

@@ -9,6 +9,7 @@ import { PERMISSIONS } from '../constants/permissions';
 import ActivityLogs from '../components/ActivityLogs';
 import AccessLogs from '../components/AccessLogs';
 import KnowledgeBaseViewer from '../components/KnowledgeBaseViewer';
+import FAQViewer from '../components/FAQViewer';
 import AgentOfflineModule from './AgentOfflineModule';
 import AgentStudentWorkflow from './AgentStudentWorkflow';
 import UserManagement from '../components/UserManagement';
@@ -1158,6 +1159,11 @@ const ProjectPortalDashboard = () => {
         <Route path="/knowledge-base" element={
           <ProtectedRoute permission={PERMISSIONS.KB_VIEW}>
             <KnowledgeBaseViewer />
+          </ProtectedRoute>
+        } />
+        <Route path="/faq" element={
+          <ProtectedRoute permission={PERMISSIONS.FAQ_VIEW}>
+            <FAQViewer />
           </ProtectedRoute>
         } />
         {/* NEW: Student Workflow replaces old Offline Module */}

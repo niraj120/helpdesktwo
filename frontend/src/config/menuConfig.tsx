@@ -9,6 +9,7 @@ import {
   MdCheckCircle,
   MdSchedule,
   MdBook,
+  MdQuestionAnswer,
   MdIntegrationInstructions,
   MdBarChart,
   MdFactCheck,
@@ -192,6 +193,16 @@ export const menuConfig: MenuItem[] = [
     permission: [PERMISSIONS.KB_VIEW, PERMISSIONS.KB_CREATE, PERMISSIONS.KB_EDIT],
   },
 
+  // FAQ - All users (view), Admins (manage)
+  {
+    path: '/faq',
+    icon: <MdQuestionAnswer />,
+    label: 'FAQ',
+    labelHi: 'अक्सर पूछे जाने वाले प्रश्न',
+    labelMr: 'वारंवार विचारले जाणारे प्रश्न',
+    permission: [PERMISSIONS.FAQ_VIEW, PERMISSIONS.FAQ_CREATE, PERMISSIONS.FAQ_MANAGE],
+  },
+
   // Integrations - Super Admin only
   {
     icon: <MdIntegrationInstructions />,
@@ -346,6 +357,15 @@ export const projectPortalMenuConfig: MenuItem[] = [
     labelHi: 'ज्ञान आधार',
     labelMr: 'ज्ञान आधार',
     permission: PERMISSIONS.KB_VIEW, // Only need view permission to access KB
+    isProjectRoute: true,
+  },
+  {
+    path: 'faq',
+    icon: <MdQuestionAnswer />,
+    label: 'FAQ',
+    labelHi: 'अक्सर पूछे जाने वाले प्रश्न',
+    labelMr: 'वारंवार विचारले जाणारे प्रश्न',
+    permission: PERMISSIONS.FAQ_VIEW, // All users can view FAQs
     isProjectRoute: true,
   },
   {
