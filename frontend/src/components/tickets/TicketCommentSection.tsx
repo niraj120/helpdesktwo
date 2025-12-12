@@ -59,7 +59,7 @@ export const TicketCommentSection: React.FC<TicketCommentSectionProps> = ({
     try {
       const token = localStorage.getItem('authToken');
       const response = await axios.post(
-        `${API_BASE_URL}/api/tickets/${ticketId}/comments`,
+        `${API_BASE_URL}/tickets/${ticketId}/comments`,
         { text: newComment },
         {
           headers: {
@@ -93,7 +93,7 @@ export const TicketCommentSection: React.FC<TicketCommentSectionProps> = ({
     try {
       const token = localStorage.getItem('authToken');
       const response = await axios.put(
-        `${API_BASE_URL}/api/tickets/${ticketId}/comments/${commentId}`,
+        `${API_BASE_URL}/tickets/${ticketId}/comments/${commentId}`,
         { text: editingText },
         {
           headers: {
@@ -127,7 +127,7 @@ export const TicketCommentSection: React.FC<TicketCommentSectionProps> = ({
     try {
       const token = localStorage.getItem('authToken');
       const response = await axios.delete(
-        `${API_BASE_URL}/api/tickets/${ticketId}/comments/${commentId}`,
+        `${API_BASE_URL}/tickets/${ticketId}/comments/${commentId}`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,

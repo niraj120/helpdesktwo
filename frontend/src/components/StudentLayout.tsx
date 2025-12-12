@@ -136,13 +136,13 @@ const StudentLayout = ({ children }: StudentLayoutProps) => {
       path: `/${customUrlPath}/kb`,
       icon: <MdBook />,
       label: 'Knowledge Base',
-      permission: PERMISSIONS.KB_VIEW,
+      permission: null, // Public access for students
     },
     {
       path: `/${customUrlPath}/student/faq`,
       icon: <MdBook />,
       label: 'FAQ',
-      permission: PERMISSIONS.FAQ_VIEW,
+      permission: null, // Public access for students
     },
     {
       path: `/${customUrlPath}/find-center`,

@@ -4,4 +4,5 @@
 
 import { API_CONFIG } from './constants';
 
-export default API_CONFIG.BASE_URL;
+// Export API_URL which includes /api prefix from .env
+export default API_CONFIG.API_URL;

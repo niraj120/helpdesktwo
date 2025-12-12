@@ -35,7 +35,7 @@ export const TicketExportModal: React.FC<TicketExportModalProps> = ({
     try {
       const token = localStorage.getItem('authToken');
       const response = await axios.post(
-        `${API_BASE_URL}/api/tickets/export`,
+        `${API_BASE_URL}/tickets/export`,
         {
           format: exportFormat,
           includeComments,

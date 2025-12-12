@@ -62,7 +62,7 @@ export const TicketAttachmentSection: React.FC<TicketAttachmentSectionProps> = (
     try {
       const token = localStorage.getItem('authToken');
       const response = await axios.post(
-        `${API_BASE_URL}/api/tickets/${ticketId}/attachments`,
+        `${API_BASE_URL}/tickets/${ticketId}/attachments`,
         formData,
         {
           headers: {
@@ -99,7 +99,7 @@ export const TicketAttachmentSection: React.FC<TicketAttachmentSectionProps> = (
     try {
       const token = localStorage.getItem('authToken');
       const response = await axios.delete(
-        `${API_BASE_URL}/api/tickets/${ticketId}/attachments/${attachmentId}`,
+        `${API_BASE_URL}/tickets/${ticketId}/attachments/${attachmentId}`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -120,7 +120,7 @@ export const TicketAttachmentSection: React.FC<TicketAttachmentSectionProps> = (
     try {
       const token = localStorage.getItem('authToken');
       const response = await axios.get(
-        `${API_BASE_URL}/api/tickets/${ticketId}/attachments/${attachment._id}/download`,
+        `${API_BASE_URL}/tickets/${ticketId}/attachments/${attachment._id}/download`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,

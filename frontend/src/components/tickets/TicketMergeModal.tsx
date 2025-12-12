@@ -44,7 +44,7 @@ export const TicketMergeModal: React.FC<TicketMergeModalProps> = ({
     try {
       const token = localStorage.getItem('authToken');
       const response = await axios.get(
-        `${API_BASE_URL}/api/tickets?exclude=${primaryTicket._id}&limit=50`,
+        `${API_BASE_URL}/tickets?exclude=${primaryTicket._id}&limit=50`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -89,7 +89,7 @@ export const TicketMergeModal: React.FC<TicketMergeModalProps> = ({
     try {
       const token = localStorage.getItem('authToken');
       const response = await axios.post(
-        `${API_BASE_URL}/api/tickets/${primaryTicket._id}/merge`,
+        `${API_BASE_URL}/tickets/${primaryTicket._id}/merge`,
         {
           ticketIds: selectedTickets,
         },

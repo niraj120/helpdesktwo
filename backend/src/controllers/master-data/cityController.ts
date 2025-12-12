@@ -4,20 +4,63 @@ import { City } from '../../models/master-data/City';
 // Get all cities
 export const getCities = async (req: Request, res: Response) => {
   try {
-    const { includeInactive, state, country } = req.query;
+    const { includeInactive, state, country, stateId, countryId } = req.query;
     
     const filter: any = {};
     if (includeInactive !== 'true') {
       filter.isActive = true;
     }
-    if (state) {
-      filter.state = state;
+    
+    // Support both stateId (preferred) and state name (backward compatibility)
+    if (stateId) {
+      filter.stateId = stateId;
+    } else if (state) {
+      const stateDoc = await require('../../models/master-data/State').State.findOne({ 
+        $or: [
+          { key: (state as string).toLowerCase() },
+          { value: { $regex: new RegExp(`^${state}$`, 'i') } }
+        ]
+      });
+      
+      if (stateDoc) {
+        const hasStateId = await City.findOne({ stateId: { $exists: true } });
+        if (hasStateId) {
+          filter.stateId = stateDoc._id;
+        } else {
+          filter.state = (state as string).toLowerCase();
+        }
+      } else {
+        filter.state = (state as string).toLowerCase();
+      }
     }
-    if (country) {
-      filter.country = country;
+    
+    // Support both countryId (preferred) and country name (backward compatibility)
+    if (countryId) {
+      filter.countryId = countryId;
+    } else if (country) {
+      const countryDoc = await require('../../models/master-data/Country').Country.findOne({ 
+        $or: [
+          { key: (country as string).toLowerCase() },
+          { value: { $regex: new RegExp(`^${country}$`, 'i') } }
+        ]
+      });
+      
+      if (countryDoc) {
+        const hasCountryId = await City.findOne({ countryId: { $exists: true } });
+        if (hasCountryId) {
+          filter.countryId = countryDoc._id;
+        } else {
+          filter.country = (country as string).toLowerCase();
+        }
+      } else {
+        filter.country = (country as string).toLowerCase();
+      }
     }
 
-    const cities = await City.find(filter).sort({ displayOrder: 1, value: 1 });
+    const cities = await City.find(filter)
+      .populate('stateId', 'key value')
+      .populate('countryId', 'key value code')
+      .sort({ displayOrder: 1, value: 1 });
 
     return res.json({
       success: true,

@@ -104,13 +104,19 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
 
   useEffect(() => {
     if (initialData && mode === 'edit') {
+      console.log('📝 Loading escalation policy for edit:', initialData);
+      
       // Extract project ID
       let projectId = '';
       if (initialData.projectId) {
         projectId = typeof initialData.projectId === 'object' ? initialData.projectId._id : initialData.projectId;
+        console.log('  ✅ Found projectId:', projectId);
       } else if (initialData.projectIds && initialData.projectIds.length > 0) {
         const firstProject = initialData.projectIds[0];
         projectId = typeof firstProject === 'object' ? firstProject._id : firstProject;
+        console.log('  ✅ Found projectId from projectIds array:', projectId);
+      } else {
+        console.log('  ⚠️ No projectId or projectIds found in initialData');
       }
 
       // Extract SLA rule IDs from populated or unpopulated slaRuleIds
@@ -119,16 +125,22 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
         slaRuleIdArray = initialData.slaRuleIds.map((s: any) => 
           typeof s === 'object' && s._id ? s._id : s
         );
+        console.log('  ✅ SLA rule IDs:', slaRuleIdArray);
       }
 
-      setFormData({
+      const newFormData = {
         name: initialData.name || '',
         description: initialData.description || '',
         isActive: initialData.isActive !== undefined ? initialData.isActive : true,
         projectId: projectId,
         slaRuleIds: slaRuleIdArray,
-      });
+      };
+      
+      console.log('  📋 Setting form data:', newFormData);
+      setFormData(newFormData);
+      
       if (initialData.levels) {
+        console.log('  📊 Setting levels:', initialData.levels.length, 'levels');
         setLevels(initialData.levels);
       }
     }
@@ -208,61 +220,51 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
   const fetchRoles = async () => {
     try {
       const token = localStorage.getItem('authToken');
-      // Try master role list first, then fall back to other role endpoints
-      const endpoints = [
-        '/roles/master/list',
-        '/rbac/roles',
-        '/roles'
-      ];
+      // Fetch roles from /api/roles endpoint (includes all role data)
+      const res = await fetch(`${API_CONFIG.API_URL}/roles`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        credentials: 'include',
+      });
 
-      let rolesResult: any[] = [];
-
-      for (const ep of endpoints) {
-        try {
-          const res = await fetch(`${API_CONFIG.BASE_URL}/api${ep}`, {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-            },
-            credentials: 'include',
-          });
-
-            if (!res.ok) {
-              console.log(`Endpoint ${ep} failed with status ${res.status}`);
-              continue;
-            }
-
-            const payload = await res.json();
-
-            // possible shapes: { success: true, data: [...] } or { data: { roles: [...] } } or [...]
-            let list: any[] = [];
-            if (payload) {
-              if (Array.isArray(payload.data)) list = payload.data;
-              else if (payload.data && Array.isArray(payload.data.roles)) list = payload.data.roles;
-              else if (Array.isArray(payload)) list = payload;
-            }
-
-            console.log(`Roles from ${ep}:`, list.length, 'roles');
-            if (list.length > 0) {
-              rolesResult = list;
-              break;
-            }
-        } catch (innerErr) {
-          // try next endpoint
-          console.error(`Error fetching from ${ep}:`, innerErr);
-          continue;
-        }
+      if (!res.ok) {
+        console.error('Failed to fetch roles:', res.status);
+        setRoles([]);
+        return;
       }
 
-      // Normalize role objects to {_id, name}
-      const normalized = rolesResult.map(r => ({
-        _id: r._id || r.id || r._id?.toString?.() || r.id?.toString?.(),
+      const payload = await res.json();
+      
+      let rolesList: any[] = [];
+      if (payload.success && Array.isArray(payload.data)) {
+        rolesList = payload.data;
+      } else if (Array.isArray(payload)) {
+        rolesList = payload;
+      }
+
+      console.log('🔍 All roles fetched:', rolesList.length, rolesList);
+
+      // Filter roles: Only show roles with isAgent=true
+      const agentRoles = rolesList.filter(role => {
+        const hasIsAgent = role.isAgent === true;
+        console.log(`  Role: ${role.name}, isAgent: ${role.isAgent}, include: ${hasIsAgent}`);
+        return hasIsAgent;
+      });
+
+      console.log('✅ Agent roles (isAgent=true):', agentRoles.length, agentRoles.map(r => r.name));
+
+      // Normalize role objects to {_id, name, isAgent}
+      const normalized = agentRoles.map(r => ({
+        _id: r._id || r.id,
         name: r.name || r.title || r.displayName || r.code || '',
+        isAgent: r.isAgent,
       })).filter(r => r._id && r.name);
 
-      console.log('Normalized roles:', normalized.length);
+      console.log('📋 Normalized agent roles for dropdown:', normalized);
       setRoles(normalized);
     } catch (error) {
-      console.error('Error fetching roles:', error);
+      console.error('❌ Error fetching roles:', error);
       setRoles([]);
     }
   };

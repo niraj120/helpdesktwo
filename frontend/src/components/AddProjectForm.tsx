@@ -408,45 +408,63 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
   });
 
   // Fetch states for a specific country
-  const fetchStatesForCountry = async (countryValue: string, centerIndex: number) => {
+  const fetchStatesForCountry = async (countryId: string, centerIndex: number) => {
     try {
+      console.log('🏛️ Fetching states for countryId:', countryId, 'center index:', centerIndex);
       const token = localStorage.getItem('authToken');
       const headers = {
         'Authorization': `Bearer ${token}`,
       };
       
-      const response = await fetch(`${API_BASE_URL}/masters/states?country=${encodeURIComponent(countryValue)}`, { 
+      // Use countryId instead of country name for proper database querying
+      const url = `${API_BASE_URL}/masters/states?countryId=${encodeURIComponent(countryId)}`;
+      console.log('🏛️ API URL:', url);
+      
+      const response = await fetch(url, { 
         headers, 
         credentials: 'include' 
       });
       
       const data = await response.json();
+      console.log('🏛️ States response:', data);
+      
       if (data.success) {
+        console.log('✅ States loaded:', data.data.length, 'states');
         setCenterStates(prev => ({
           ...prev,
           [centerIndex]: data.data
         }));
+      } else {
+        console.error('❌ Failed to load states:', data);
       }
     } catch (error) {
-      console.error('Error fetching states:', error);
+      console.error('❌ Error fetching states:', error);
     }
   };
 
   // Fetch cities for a specific state
-  const fetchCitiesForState = async (stateValue: string, centerIndex: number) => {
+  const fetchCitiesForState = async (stateId: string, centerIndex: number) => {
     try {
+      console.log('🏙️ Fetching cities for stateId:', stateId);
       const token = localStorage.getItem('authToken');
       const headers = {
         'Authorization': `Bearer ${token}`,
       };
       
-      const response = await fetch(`${API_BASE_URL}/masters/cities?state=${encodeURIComponent(stateValue)}`, { 
+      // Use stateId instead of state name for proper database querying
+      const url = `${API_BASE_URL}/masters/cities?stateId=${encodeURIComponent(stateId)}`;
+      console.log('🏙️ API URL:', url);
+      
+      const response = await fetch(url, { 
         headers, 
         credentials: 'include' 
       });
       
       const data = await response.json();
+      console.log('🏙️ Cities response:', data);
+      
       if (data.success) {
+        console.log('✅ Cities loaded:', data.data.length, 'cities');
         setCenterCities(prev => ({
           ...prev,
           [centerIndex]: data.data
@@ -470,18 +488,26 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
         const rolesUrl = `${API_BASE_URL}/roles`;
         
         const [countriesRes, usersRes, rolesRes] = await Promise.all([
-          fetch(`${API_BASE_URL}/masters/countries`, { headers, credentials: 'include' }),
+          fetch(`${API_BASE_URL}/master/countries`, { headers, credentials: 'include' }),
           fetch(`${API_BASE_URL}/users`, { headers, credentials: 'include' }),
           fetch(rolesUrl, { headers, credentials: 'include' })
         ]);
 
-        const [countries, usersData, rolesData] = await Promise.all([
+        const [countriesData, usersData, rolesData] = await Promise.all([
           countriesRes.json(),
           usersRes.json(),
           rolesRes.json()
         ]);
 
-        if (countries.success) setCountries(countries.data);
+        if (countriesData.success) {
+          console.log('✅ Countries loaded:', countriesData.data.length, 'countries');
+          const formattedCountries = countriesData.data.map((c: any) => ({
+            _id: c._id, // ObjectId for backend queries
+            key: c.key,
+            value: c.value
+          }));
+          setCountries(formattedCountries);
+        }
         if (usersData.success) setUsers(usersData.data);
         if (rolesData.success) {
           console.log('🔍 DEBUG - Roles API Response:', rolesData.data);
@@ -863,8 +889,8 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
       };
 
       const url = project
-        ? `${API_BASE_URL}/api/projects/${project._id}`
-        : `${API_BASE_URL}/api/projects`;
+        ? `${API_BASE_URL}/projects/${project._id}`
+        : `${API_BASE_URL}/projects`;
 
       const method = project ? 'PUT' : 'POST';
 
@@ -3291,16 +3317,22 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                               }}
                             />
                             <select
-                              value={center.country || 'India'}
+                              value={center.country || ''}
                               onChange={(e) => {
+                                const selectedCountryId = e.target.value;
+                                const selectedCountry = countries.find(c => c._id === selectedCountryId);
+                                console.log('🌍 Country selected:', selectedCountry?.value, 'ID:', selectedCountryId);
+                                
                                 const newCenters = [...formData.offlineCenters];
-                                newCenters[index].country = e.target.value;
+                                newCenters[index].country = selectedCountryId; // Store countryId
                                 // Reset state and city when country changes
                                 newCenters[index].state = '';
                                 newCenters[index].city = '';
                                 setFormData({ ...formData, offlineCenters: newCenters });
-                                // Fetch states for selected country
-                                fetchStatesForCountry(e.target.value, index);
+                                // Fetch states for selected country using countryId
+                                if (selectedCountryId) {
+                                  fetchStatesForCountry(selectedCountryId, index);
+                                }
                                 // Clear cities for this center
                                 setCenterCities(prev => ({
                                   ...prev,
@@ -3317,21 +3349,29 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                               }}
                             >
                               <option value="">Select Country</option>
-                              {countries.map((country) => (
-                                <option key={country.key} value={country.value}>{country.value}</option>
-                              ))}
+                              {countries.length > 0 ? (
+                                countries.map((country) => (
+                                  <option key={country._id} value={country._id}>{country.value}</option>
+                                ))
+                              ) : (
+                                <option value="" disabled>Loading countries...</option>
+                              )}
                             </select>
                             <select
-                              value={center.state}
+                              value={center.state || ''}
                               onChange={(e) => {
+                                const selectedStateId = e.target.value;
+                                const selectedState = (centerStates[index] || []).find((s: any) => s._id === selectedStateId);
+                                console.log('🏛️ State selected:', selectedState?.value, 'ID:', selectedStateId);
+                                
                                 const newCenters = [...formData.offlineCenters];
-                                newCenters[index].state = e.target.value;
+                                newCenters[index].state = selectedStateId; // Store stateId
                                 // Reset city when state changes
                                 newCenters[index].city = '';
                                 setFormData({ ...formData, offlineCenters: newCenters });
-                                // Fetch cities for selected state
-                                if (e.target.value) {
-                                  fetchCitiesForState(e.target.value, index);
+                                // Fetch cities for selected state using stateId
+                                if (selectedStateId) {
+                                  fetchCitiesForState(selectedStateId, index);
                                 }
                               }}
                               style={{
@@ -3345,15 +3385,25 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                               disabled={!center.country}
                             >
                               <option value="">Select State</option>
-                              {(centerStates[index] || []).map((state) => (
-                                <option key={state.key} value={state.value}>{state.value}</option>
-                              ))}
+                              {!center.country ? (
+                                <option value="" disabled>Please select country first</option>
+                              ) : (centerStates[index] || []).length > 0 ? (
+                                (centerStates[index] || []).map((state: any) => (
+                                  <option key={state._id} value={state._id}>{state.value}</option>
+                                ))
+                              ) : (
+                                <option value="" disabled>Loading states...</option>
+                              )}
                             </select>
                             <select
-                              value={center.city}
+                              value={center.city || ''}
                               onChange={(e) => {
+                                const selectedCityId = e.target.value;
+                                const selectedCity = (centerCities[index] || []).find((c: any) => c._id === selectedCityId);
+                                console.log('🏙️ City selected:', selectedCity?.value, 'ID:', selectedCityId);
+                                
                                 const newCenters = [...formData.offlineCenters];
-                                newCenters[index].city = e.target.value;
+                                newCenters[index].city = selectedCityId; // Store cityId
                                 setFormData({ ...formData, offlineCenters: newCenters });
                               }}
                               style={{
@@ -3367,9 +3417,15 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                               disabled={!center.state}
                             >
                               <option value="">Select City</option>
-                              {(centerCities[index] || []).map((city) => (
-                                <option key={city.key} value={city.value}>{city.value}</option>
-                              ))}
+                              {!center.state ? (
+                                <option value="" disabled>Please select state first</option>
+                              ) : (centerCities[index] || []).length > 0 ? (
+                                (centerCities[index] || []).map((city: any) => (
+                                  <option key={city._id} value={city._id}>{city.value}</option>
+                                ))
+                              ) : (
+                                <option value="" disabled>Loading cities...</option>
+                              )}
                             </select>
                             <input
                               type="text"

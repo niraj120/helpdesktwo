@@ -171,7 +171,7 @@ const EmailConfigPage: React.FC = () => {
       try {
         const token = localStorage.getItem('authToken');
         console.log('Fetching projects for email config...');
-        const response = await axios.get(`${API_BASE_URL}/api/projects`, {
+        const response = await axios.get(`${API_BASE_URL}/projects`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         console.log('Projects response:', response.data);
@@ -222,7 +222,7 @@ const EmailConfigPage: React.FC = () => {
   const fetchEmailConfig = async () => {
     try {
       const token = localStorage.getItem('authToken');
-      const response = await axios.get(`${API_BASE_URL}/api/email-config/${projectId}`, {
+      const response = await axios.get(`${API_BASE_URL}/email-config/${projectId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setConfig(response.data.data);
@@ -241,7 +241,7 @@ const EmailConfigPage: React.FC = () => {
       // Fetch real password from backend
       try {
         const token = localStorage.getItem('authToken');
-        const response = await axios.get(`${API_BASE_URL}/api/email-config/${projectId}?showPassword=true`, {
+        const response = await axios.get(`${API_BASE_URL}/email-config/${projectId}?showPassword=true`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         setConfig(response.data.data);
@@ -280,7 +280,7 @@ const EmailConfigPage: React.FC = () => {
         (updates as any).smtpPassword = config.smtpPassword;
       }
 
-      await axios.put(`${API_BASE_URL}/api/email-config/${projectId}`, updates, {
+      await axios.put(`${API_BASE_URL}/email-config/${projectId}`, updates, {
         headers: { Authorization: `Bearer ${token}` },
       });
       
@@ -301,7 +301,7 @@ const EmailConfigPage: React.FC = () => {
       const token = localStorage.getItem('authToken');
       
       const response = await axios.post(
-        `${API_BASE_URL}/api/email-config/${projectId}/test`,
+        `${API_BASE_URL}/email-config/${projectId}/test`,
         { testEmail },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -332,7 +332,7 @@ const EmailConfigPage: React.FC = () => {
       const token = localStorage.getItem('authToken');
       
       await axios.put(
-        `${API_BASE_URL}/api/email-config/${projectId}/triggers/${selectedTrigger}`,
+        `${API_BASE_URL}/email-config/${projectId}/triggers/${selectedTrigger}`,
         triggerEdits,
         { headers: { Authorization: `Bearer ${token}` } }
       );

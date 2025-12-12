@@ -187,6 +187,8 @@ export const createOfflineTicket = async (req: AuthRequest, res: Response): Prom
       metadata: {
         submissionMethod: 'offline',
         createdByAgent: req.user?.userId,
+        studentEmail: student.email, // Required for ticket filtering by student email
+        projectId: projectId, // Required for project-based filtering
         customFields: ticketData.customFields || {}
       },
       tags: [],

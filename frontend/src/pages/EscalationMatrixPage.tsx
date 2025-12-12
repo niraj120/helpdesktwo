@@ -139,17 +139,24 @@ const EscalationMatrixPage: React.FC = () => {
     try {
       const token = localStorage.getItem('authToken');
       
-      // The form data already matches our API structure
+      // Convert projectId (singular) to projectIds (plural array) for API
+      const projectIdsArray = matrixData.projectId 
+        ? [matrixData.projectId] 
+        : (matrixData.projectIds || []);
+      
       const apiData = {
         name: matrixData.name,
         description: matrixData.description || '',
         levels: matrixData.levels,
         isActive: matrixData.isActive !== undefined ? matrixData.isActive : true,
-        projectIds: matrixData.projectIds || [],
+        projectIds: projectIdsArray,
+        slaRuleIds: matrixData.slaRuleIds || [],
         createdBy: 'Admin', // TODO: Get from authenticated user
       };
 
-      console.log('Sending escalation policy data:', apiData);
+      console.log('📤 Sending escalation policy data:', apiData);
+      console.log('  Project ID from form:', matrixData.projectId);
+      console.log('  Project IDs array:', projectIdsArray);
 
       const isEdit = editingMatrix && editingMatrix._id;
       const url = isEdit 

@@ -81,7 +81,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
         return;
       }
 
-      const response = await axios.get(`${API_BASE_URL}/api/tickets/my-tickets`, {
+      const response = await axios.get(`${API_BASE_URL}/tickets/my-tickets`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
