@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { MdAdd, MdEdit, MdDelete, MdContentCopy, MdStar, MdStarBorder, MdClose, MdSave, MdExpandMore, MdExpandLess } from 'react-icons/md';
 import DashboardLayout from '../components/DashboardLayout';
@@ -56,6 +56,9 @@ const RBACSetup = () => {
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'system' | 'custom' | 'master'>('all');
+  
+  // Debounce timer for fetchData to prevent rate limiting
+  const fetchDataTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -71,6 +74,16 @@ const RBACSetup = () => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Debounced fetchData to prevent rate limiting when doing multiple operations
+  const debouncedFetchData = (delay: number = 500) => {
+    if (fetchDataTimerRef.current) {
+      clearTimeout(fetchDataTimerRef.current);
+    }
+    fetchDataTimerRef.current = setTimeout(() => {
+      fetchData();
+    }, delay);
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -179,11 +192,20 @@ const RBACSetup = () => {
     if (!confirm('Are you sure you want to delete this role?')) return;
     try {
       const token = localStorage.getItem('authToken');
+      
+      // Optimistic UI update - remove from list immediately (better UX)
+      setRoles(prevRoles => prevRoles.filter(role => role._id !== roleId));
+      
+      // Delete in background
       await axios.delete(`${API_CONFIG.API_URL}/roles/${roleId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      fetchData();
+      
+      // Debounced refresh to avoid rate limiting when deleting multiple roles
+      debouncedFetchData(1000);
     } catch (error: any) {
+      // On error, refresh to restore correct state
+      fetchData();
       alert(error.response?.data?.error || 'Failed to delete role');
     }
   };
