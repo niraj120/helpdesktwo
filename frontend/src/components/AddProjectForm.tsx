@@ -108,6 +108,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
     offlineCenters: [] as Array<{
       centerName: string;
       address: string;
+      country: string;
       city: string;
       state: string;
       pincode: string;
@@ -287,6 +288,9 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
   const [countries, setCountries] = useState<Array<{ key: string; value: string }>>([]);
   const [states, setStates] = useState<Array<{ key: string; value: string }>>([]);
   const [cities, setCities] = useState<Array<{ key: string; value: string }>>([]);
+  // Filtered states and cities for each offline center
+  const [centerStates, setCenterStates] = useState<{[index: number]: Array<{ key: string; value: string }>}>({});
+  const [centerCities, setCenterCities] = useState<{[index: number]: Array<{ key: string; value: string }>}>({});
   const [users, setUsers] = useState<Array<{ 
     _id: string; 
     name: string; 
@@ -403,6 +407,56 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
     return false;
   });
 
+  // Fetch states for a specific country
+  const fetchStatesForCountry = async (countryValue: string, centerIndex: number) => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+      };
+      
+      const response = await fetch(`${API_BASE_URL}/masters/states?country=${encodeURIComponent(countryValue)}`, { 
+        headers, 
+        credentials: 'include' 
+      });
+      
+      const data = await response.json();
+      if (data.success) {
+        setCenterStates(prev => ({
+          ...prev,
+          [centerIndex]: data.data
+        }));
+      }
+    } catch (error) {
+      console.error('Error fetching states:', error);
+    }
+  };
+
+  // Fetch cities for a specific state
+  const fetchCitiesForState = async (stateValue: string, centerIndex: number) => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+      };
+      
+      const response = await fetch(`${API_BASE_URL}/masters/cities?state=${encodeURIComponent(stateValue)}`, { 
+        headers, 
+        credentials: 'include' 
+      });
+      
+      const data = await response.json();
+      if (data.success) {
+        setCenterCities(prev => ({
+          ...prev,
+          [centerIndex]: data.data
+        }));
+      }
+    } catch (error) {
+      console.error('Error fetching cities:', error);
+    }
+  };
+
   // Fetch master data, users, and roles
   useEffect(() => {
     const fetchMasterData = async () => {
@@ -415,25 +469,19 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
         // Fetch ALL roles regardless of project - let client-side filter handle it
         const rolesUrl = `${API_BASE_URL}/roles`;
         
-        const [countriesRes, statesRes, citiesRes, usersRes, rolesRes] = await Promise.all([
+        const [countriesRes, usersRes, rolesRes] = await Promise.all([
           fetch(`${API_BASE_URL}/masters/countries`, { headers, credentials: 'include' }),
-          fetch(`${API_BASE_URL}/masters/states`, { headers, credentials: 'include' }),
-          fetch(`${API_BASE_URL}/masters/cities`, { headers, credentials: 'include' }),
           fetch(`${API_BASE_URL}/users`, { headers, credentials: 'include' }),
           fetch(rolesUrl, { headers, credentials: 'include' })
         ]);
 
-        const [countries, statesData, citiesData, usersData, rolesData] = await Promise.all([
+        const [countries, usersData, rolesData] = await Promise.all([
           countriesRes.json(),
-          statesRes.json(),
-          citiesRes.json(),
           usersRes.json(),
           rolesRes.json()
         ]);
 
         if (countries.success) setCountries(countries.data);
-        if (statesData.success) setStates(statesData.data.map((item: any) => ({ key: item.key, value: item.value })));
-        if (citiesData.success) setCities(citiesData.data.map((item: any) => ({ key: item.key, value: item.value })));
         if (usersData.success) setUsers(usersData.data);
         if (rolesData.success) {
           console.log('🔍 DEBUG - Roles API Response:', rolesData.data);
@@ -448,6 +496,29 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
 
     fetchMasterData();
   }, []); // Only fetch once on mount
+
+  // Load states and cities for existing offline centers
+  useEffect(() => {
+    if (formData.offlineCenters && formData.offlineCenters.length > 0) {
+      formData.offlineCenters.forEach((center, index) => {
+        // Fetch states if country is set
+        if (center.state) {
+          // Find the country from the state (assuming state format includes country info)
+          // For now, we'll fetch all states and let the select show the correct one
+          const country = countries.find(c => 
+            centerStates[index]?.some(s => s.value === center.state)
+          );
+          if (country) {
+            fetchStatesForCountry(country.value, index);
+          }
+        }
+        // Fetch cities if state is set
+        if (center.state) {
+          fetchCitiesForState(center.state, index);
+        }
+      });
+    }
+  }, [formData.offlineCenters.length, countries]); // Re-run when centers are added or countries loaded
 
   // Update form data when project changes (for edit mode)
   useEffect(() => {
@@ -3106,6 +3177,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                             {
                               centerName: '',
                               address: '',
+                              country: 'India',
                               city: '',
                               state: '',
                               pincode: '',
@@ -3119,6 +3191,9 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                             }
                           ]
                         });
+                        // Fetch states for India by default for new center
+                        const newIndex = formData.offlineCenters.length;
+                        fetchStatesForCountry('India', newIndex);
                       }}
                       style={{
                         padding: '8px 16px',
@@ -3216,6 +3291,65 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                               }}
                             />
                             <select
+                              value={center.country || 'India'}
+                              onChange={(e) => {
+                                const newCenters = [...formData.offlineCenters];
+                                newCenters[index].country = e.target.value;
+                                // Reset state and city when country changes
+                                newCenters[index].state = '';
+                                newCenters[index].city = '';
+                                setFormData({ ...formData, offlineCenters: newCenters });
+                                // Fetch states for selected country
+                                fetchStatesForCountry(e.target.value, index);
+                                // Clear cities for this center
+                                setCenterCities(prev => ({
+                                  ...prev,
+                                  [index]: []
+                                }));
+                              }}
+                              style={{
+                                padding: '10px 12px',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '6px',
+                                fontSize: '14px',
+                                backgroundColor: 'white',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <option value="">Select Country</option>
+                              {countries.map((country) => (
+                                <option key={country.key} value={country.value}>{country.value}</option>
+                              ))}
+                            </select>
+                            <select
+                              value={center.state}
+                              onChange={(e) => {
+                                const newCenters = [...formData.offlineCenters];
+                                newCenters[index].state = e.target.value;
+                                // Reset city when state changes
+                                newCenters[index].city = '';
+                                setFormData({ ...formData, offlineCenters: newCenters });
+                                // Fetch cities for selected state
+                                if (e.target.value) {
+                                  fetchCitiesForState(e.target.value, index);
+                                }
+                              }}
+                              style={{
+                                padding: '10px 12px',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '6px',
+                                fontSize: '14px',
+                                backgroundColor: 'white',
+                                cursor: 'pointer'
+                              }}
+                              disabled={!center.country}
+                            >
+                              <option value="">Select State</option>
+                              {(centerStates[index] || []).map((state) => (
+                                <option key={state.key} value={state.value}>{state.value}</option>
+                              ))}
+                            </select>
+                            <select
                               value={center.city}
                               onChange={(e) => {
                                 const newCenters = [...formData.offlineCenters];
@@ -3230,31 +3364,11 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                 backgroundColor: 'white',
                                 cursor: 'pointer'
                               }}
+                              disabled={!center.state}
                             >
                               <option value="">Select City</option>
-                              {cities.map((city) => (
+                              {(centerCities[index] || []).map((city) => (
                                 <option key={city.key} value={city.value}>{city.value}</option>
-                              ))}
-                            </select>
-                            <select
-                              value={center.state}
-                              onChange={(e) => {
-                                const newCenters = [...formData.offlineCenters];
-                                newCenters[index].state = e.target.value;
-                                setFormData({ ...formData, offlineCenters: newCenters });
-                              }}
-                              style={{
-                                padding: '10px 12px',
-                                border: '1px solid #d1d5db',
-                                borderRadius: '6px',
-                                fontSize: '14px',
-                                backgroundColor: 'white',
-                                cursor: 'pointer'
-                              }}
-                            >
-                              <option value="">Select State</option>
-                              {states.map((state) => (
-                                <option key={state.key} value={state.value}>{state.value}</option>
                               ))}
                             </select>
                             <input
