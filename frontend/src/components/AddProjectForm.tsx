@@ -285,12 +285,12 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
   });
 
   // Master data states
-  const [countries, setCountries] = useState<Array<{ key: string; value: string }>>([]);
-  const [states, setStates] = useState<Array<{ key: string; value: string }>>([]);
-  const [cities, setCities] = useState<Array<{ key: string; value: string }>>([]);
+  const [countries, setCountries] = useState<Array<{ _id: string; key: string; value: string }>>([]);
+  const [states, setStates] = useState<Array<{ _id: string; key: string; value: string }>>([]);
+  const [cities, setCities] = useState<Array<{ _id: string; key: string; value: string }>>([]);
   // Filtered states and cities for each offline center
-  const [centerStates, setCenterStates] = useState<{[index: number]: Array<{ key: string; value: string }>}>({});
-  const [centerCities, setCenterCities] = useState<{[index: number]: Array<{ key: string; value: string }>}>({});
+  const [centerStates, setCenterStates] = useState<{[index: number]: Array<{ _id: string; key: string; value: string }>}>({});
+  const [centerCities, setCenterCities] = useState<{[index: number]: Array<{ _id: string; key: string; value: string }>}>({});
   const [users, setUsers] = useState<Array<{ 
     _id: string; 
     name: string; 
