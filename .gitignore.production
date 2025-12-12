@@ -1,0 +1,27 @@
+﻿# Production Server .gitignore
+# Place this as .gitignore on your production server to exclude docs and test files
+
+# Documentation (not needed on server)
+docs/
+
+# Test scripts (not needed on server)
+backend/test-scripts/
+
+# Development scripts (not needed on server)
+start-dev-servers.ps1
+start-dev.ps1
+
+# Config files (use production versions)
+.env.example
+.env.development
+
+# Version control
+.git/
+.github/
+
+# Editor
+.vscode/
+.idea/
+
+# Python virtual environment (if any)
+.venv/

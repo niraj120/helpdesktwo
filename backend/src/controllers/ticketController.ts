@@ -1859,41 +1859,35 @@ export const getProjectDashboardStats = async (req: Request, res: Response) => {
       console.log('⚠️ User has no ticket view permissions - showing only created tickets');
     }
 
-    // Get total tickets count
-    const totalTickets = await Ticket.countDocuments(query);
+    // Optimized: Use single aggregate query instead of 7 separate countDocuments calls
+    const stats = await Ticket.aggregate([
+      { $match: query },
+      {
+        $facet: {
+          total: [{ $count: 'count' }],
+          highPriority: [{ $match: { priority: 'high' } }, { $count: 'count' }],
+          mediumPriority: [{ $match: { priority: 'medium' } }, { $count: 'count' }],
+          lowPriority: [{ $match: { priority: 'low' } }, { $count: 'count' }],
+          resolved: [{ $match: { status: 'resolved' } }, { $count: 'count' }],
+          openOrPending: [
+            { $match: { status: { $in: ['open', 'in-progress', 'pending'] } } },
+            { $count: 'count' }
+          ]
+        }
+      }
+    ]);
+
+    const result = stats[0];
+    const totalTickets = result.total[0]?.count || 0;
+    const highPriority = result.highPriority[0]?.count || 0;
+    const mediumPriority = result.mediumPriority[0]?.count || 0;
+    const lowPriority = result.lowPriority[0]?.count || 0;
+    const resolvedTickets = result.resolved[0]?.count || 0;
+    const openOrInProgressTickets = result.openOrPending[0]?.count || 0;
 
     console.log('📊 Dashboard Stats Results:', {
       totalTickets,
       query
-    });
-
-    // Get counts by priority
-    const highPriority = await Ticket.countDocuments({
-      ...query,
-      priority: 'high'
-    });
-
-    const mediumPriority = await Ticket.countDocuments({
-      ...query,
-      priority: 'medium'
-    });
-
-    const lowPriority = await Ticket.countDocuments({
-      ...query,
-      priority: 'low'
-    });
-
-    // Calculate SLA status
-    // For now, count resolved vs open/in-progress tickets as SLA metric
-    // TODO: Add proper SLA fields (sla, resolvedAt) to Ticket model for accurate tracking
-    const resolvedTickets = await Ticket.countDocuments({
-      ...query,
-      status: 'resolved'
-    });
-
-    const openOrInProgressTickets = await Ticket.countDocuments({
-      ...query,
-      status: { $in: ['open', 'in-progress', 'pending'] }
     });
 
     // Simplified SLA calculation - resolved = within SLA, open/pending = outside SLA

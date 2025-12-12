@@ -411,22 +411,31 @@ export const updateProjectModules = async (req: Request, res: Response) => {
 };
 
 /**
- * Get project statistics
+ * Get project statistics - Optimized with single aggregate query
  */
 export const getProjectStats = async (req: Request, res: Response) => {
   try {
-    const totalProjects = await Project.countDocuments();
-    const activeProjects = await Project.countDocuments({ status: 'active' });
-    const inactiveProjects = await Project.countDocuments({ status: 'inactive' });
-    const suspendedProjects = await Project.countDocuments({ status: 'suspended' });
+    // Combine all counts into a single aggregate query for better performance
+    const stats = await Project.aggregate([
+      {
+        $facet: {
+          total: [{ $count: 'count' }],
+          active: [{ $match: { status: 'active' } }, { $count: 'count' }],
+          inactive: [{ $match: { status: 'inactive' } }, { $count: 'count' }],
+          suspended: [{ $match: { status: 'suspended' } }, { $count: 'count' }]
+        }
+      }
+    ]);
+
+    const result = stats[0];
     
     return res.json({
       success: true,
       data: {
-        total: totalProjects,
-        active: activeProjects,
-        inactive: inactiveProjects,
-        suspended: suspendedProjects,
+        total: result.total[0]?.count || 0,
+        active: result.active[0]?.count || 0,
+        inactive: result.inactive[0]?.count || 0,
+        suspended: result.suspended[0]?.count || 0,
       },
     });
     

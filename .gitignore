@@ -80,6 +80,7 @@ run-script.ps1
 watchdog.ps1
 
 # Backend test/debug scripts (not needed in production)
+backend/test-scripts/
 backend/add-*.js
 backend/check-*.js
 backend/debug-*.js
@@ -88,7 +89,10 @@ backend/test-*.js
 backend/update-*.js
 backend/map-*.js
 backend/restore-*.js
-backend/scripts/
+backend/seed-*.js
+backend/create-*.js
+backend/verify-*.js
+backend/remove-*.js
 
 # HTML test files
 *.test.html
@@ -97,7 +101,8 @@ test-*.html
 debug-*.html
 clear-token.html
 
-# Documentation files (keep important ones explicitly)
+# Documentation files (only README.md and docs/ folder should be tracked)
+# All other .md files are in docs/ folder now
 *_AUDIT.md
 *_CHECKLIST.md
 *_CLEANUP.md
@@ -105,7 +110,11 @@ clear-token.html
 *_GUIDE.md
 *_STATUS.md
 *_SECTIONS_REMOVED.txt
+*.backup.md
 
 # Config backups
 *.backup
 *.bak
+
+# Pipeline configuration (do not push changes)
+bitbucket-pipelines.yml

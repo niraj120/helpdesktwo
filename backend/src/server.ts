@@ -130,15 +130,23 @@ app.use(cors({
   maxAge: 86400 // 24 hours
 }));
 
-// Rate limiting - More lenient in development
+// Rate limiting - More lenient in development, reasonable for production
 const limiter = rateLimit({
   windowMs: (parseInt(process.env.RATE_LIMIT_WINDOW || '15') || 15) * 60 * 1000, // 15 minutes
   max: process.env.NODE_ENV === 'development' 
     ? 1000  // 1000 requests per 15 min in development
-    : parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100') || 100, // 100 in production
+    : parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '500') || 500, // Increased to 500 for production (was 100)
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  // Skip rate limiting for static assets and health checks
+  skip: (req) => {
+    return req.path.startsWith('/health') || 
+           req.path.endsWith('.js') || 
+           req.path.endsWith('.css') ||
+           req.path.endsWith('.png') ||
+           req.path.endsWith('.jpg');
+  }
 });
 app.use('/api/', limiter);
 
