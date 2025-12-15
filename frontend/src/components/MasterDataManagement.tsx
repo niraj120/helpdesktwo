@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import DashboardLayout from './DashboardLayout';
 import { MdAdd, MdEdit, MdDelete, MdSave, MdClose } from 'react-icons/md';
@@ -51,6 +51,11 @@ const MasterDataManagement = () => {
   const { hasPermission } = usePermissions();
   const [activeTab, setActiveTab] = useState('countries');
   const [items, setItems] = useState<MasterItem[]>([]);
+  
+  // Refs to prevent duplicate API calls from React.StrictMode
+  const hasFetchedCountries = useRef(false);
+  const hasFetchedStates = useRef(false);
+  const hasFetchedProjects = useRef(false);
   const [countries, setCountries] = useState<MasterItem[]>([]);
   const [states, setStates] = useState<MasterItem[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -77,9 +82,19 @@ const MasterDataManagement = () => {
 
   // Fetch reference data for dropdowns
   useEffect(() => {
-    fetchCountries();
-    fetchStates();
-    fetchProjects();
+    // Prevent duplicate calls from React.StrictMode
+    if (!hasFetchedCountries.current) {
+      fetchCountries();
+      hasFetchedCountries.current = true;
+    }
+    if (!hasFetchedStates.current) {
+      fetchStates();
+      hasFetchedStates.current = true;
+    }
+    if (!hasFetchedProjects.current) {
+      fetchProjects();
+      hasFetchedProjects.current = true;
+    }
   }, []);
 
   useEffect(() => {

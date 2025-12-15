@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MdSettings, MdLock, MdShield, MdPalette, MdConfirmationNumber } from 'react-icons/md';
 import DOMPurify from 'dompurify';
@@ -291,6 +291,11 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
   // Filtered states and cities for each offline center
   const [centerStates, setCenterStates] = useState<{[index: number]: Array<{ _id: string; key: string; value: string }>}>({});
   const [centerCities, setCenterCities] = useState<{[index: number]: Array<{ _id: string; key: string; value: string }>}>({});
+  
+  // Ref to prevent duplicate API calls from React.StrictMode
+  const hasFetchedMasterData = useRef(false);
+  const hasFetchedOfflineCenterData = useRef(new Set<string>()); // Track which states we've fetched cities for
+  
   const [users, setUsers] = useState<Array<{ 
     _id: string; 
     name: string; 
@@ -477,8 +482,15 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
 
   // Fetch master data, users, and roles
   useEffect(() => {
+    // Prevent duplicate calls from React.StrictMode
+    if (hasFetchedMasterData.current) {
+      console.log('⏭️ Skipping duplicate master data fetch (already loaded)');
+      return;
+    }
+
     const fetchMasterData = async () => {
       try {
+        console.log('🔄 Fetching master data: countries, users, roles...');
         const token = localStorage.getItem('authToken');
         const headers = {
           'Authorization': `Bearer ${token}`,
@@ -508,15 +520,21 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
           }));
           setCountries(formattedCountries);
         }
-        if (usersData.success) setUsers(usersData.data);
+        if (usersData.success) {
+          console.log('✅ Users loaded:', usersData.data.length, 'users');
+          setUsers(usersData.data);
+        }
         if (rolesData.success) {
-          console.log('🔍 DEBUG - Roles API Response:', rolesData.data);
-          console.log('🔍 DEBUG - Total roles fetched:', rolesData.data.length);
+          console.log('✅ Roles loaded:', rolesData.data.length, 'roles');
           setRoles(rolesData.data);
           // Role IDs no longer needed for filtering - permissions handle access control
         }
+        
+        // Mark as fetched to prevent duplicate calls
+        hasFetchedMasterData.current = true;
+        console.log('✅ Master data fetch complete');
       } catch (error) {
-        console.error('Error fetching master data:', error);
+        console.error('❌ Error fetching master data:', error);
       }
     };
 
@@ -538,9 +556,13 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
             fetchStatesForCountry(country.value, index);
           }
         }
-        // Fetch cities if state is set
-        if (center.state) {
+        // Fetch cities if state is set (but only once per unique state across all re-renders)
+        if (center.state && !hasFetchedOfflineCenterData.current.has(center.state)) {
+          console.log(`🏙️ Fetching cities for offline center ${index}, state: ${center.state}`);
           fetchCitiesForState(center.state, index);
+          hasFetchedOfflineCenterData.current.add(center.state);
+        } else if (center.state) {
+          console.log(`⏭️ Skipping cities fetch for state ${center.state} (already fetched)`);
         }
       });
     }

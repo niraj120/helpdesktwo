@@ -674,32 +674,44 @@ export const getOfflineSettings = async (req: Request, res: Response) => {
       });
     }
 
-    let settings = project.configuration?.offlineModuleSettings || {
-      registrationFields: [
-        { id: '1', fieldName: 'First Name', fieldType: 'text', required: true, placeholder: 'Enter first name', order: 1 },
-        { id: '2', fieldName: 'Last Name', fieldType: 'text', required: true, placeholder: 'Enter last name', order: 2 },
-        { id: '3', fieldName: 'Email', fieldType: 'email', required: true, placeholder: 'student@example.com', order: 3 },
-        { id: '4', fieldName: 'Phone', fieldType: 'phone', required: false, placeholder: '+91 98765 43210', order: 4 },
-      ],
-      ticketFields: [
-        { id: 'category-fixed', fieldName: 'Category', fieldType: 'category', required: true, placeholder: 'Select category', isFixed: true, isEnabled: true, order: 1 },
-        { id: '1', fieldName: 'Title', fieldType: 'text', required: true, placeholder: 'Brief description of issue', order: 2 },
-        { id: '2', fieldName: 'Description', fieldType: 'textarea', required: true, placeholder: 'Detailed description...', order: 3 },
-        { id: '3', fieldName: 'Attachments', fieldType: 'file', required: false, placeholder: '', allowMultiple: true, maxFiles: 5, allowedFileTypes: ['pdf', 'jpg', 'png', 'doc', 'docx'], order: 4 },
-      ],
-      allowAgentToMarkResolved: true,
-      allowAgentToEscalate: true,
-      autoAssignToCreatingAgent: false,
-      requireStudentVerification: false,
-      notificationSettings: {
-        notifyStudentOnRegistration: true,
-        notifyStudentOnTicketCreation: true,
-        sendWelcomeEmail: true,
-      },
-    };
+    let settings = project.configuration?.offlineModuleSettings;
+    
+    // Log for debugging
+    console.log('📋 Project found:', project.name);
+    console.log('📋 Has offlineModuleSettings?', !!settings);
+    console.log('📋 Registration fields count:', settings?.registrationFields?.length || 0);
+    console.log('📋 Ticket fields count:', settings?.ticketFields?.length || 0);
+    
+    // If no settings exist, return defaults
+    if (!settings) {
+      settings = {
+        registrationFields: [
+          { id: '1', fieldName: 'firstName', fieldType: 'text', required: true, placeholder: 'Enter first name', order: 1 },
+          { id: '2', fieldName: 'lastName', fieldType: 'text', required: true, placeholder: 'Enter last name', order: 2 },
+          { id: '3', fieldName: 'email', fieldType: 'email', required: true, placeholder: 'student@example.com', order: 3 },
+          { id: '4', fieldName: 'phone', fieldType: 'phone', required: true, placeholder: '+91 98765 43210', order: 4 },
+          { id: '5', fieldName: 'parentMobile', fieldType: 'phone', required: true, placeholder: 'Parent mobile number', isParentMobile: true, order: 5 },
+        ],
+        ticketFields: [
+          { id: 'category-fixed', fieldName: 'Category', fieldType: 'category', required: true, placeholder: 'Select category', isFixed: true, isEnabled: true, order: 1 },
+          { id: '1', fieldName: 'Title', fieldType: 'text', required: true, placeholder: 'Brief description of issue', order: 2 },
+          { id: '2', fieldName: 'Description', fieldType: 'textarea', required: true, placeholder: 'Detailed description...', order: 3 },
+          { id: '3', fieldName: 'Attachments', fieldType: 'file', required: false, placeholder: '', allowMultiple: true, maxFiles: 5, allowedFileTypes: ['pdf', 'jpg', 'png', 'doc', 'docx'], order: 4 },
+        ],
+        allowAgentToMarkResolved: true,
+        allowAgentToEscalate: true,
+        autoAssignToCreatingAgent: false,
+        requireStudentVerification: false,
+        notificationSettings: {
+          notifyStudentOnRegistration: true,
+          notifyStudentOnTicketCreation: true,
+          sendWelcomeEmail: true,
+        },
+      };
+    }
 
     // Convert to plain object to remove Mongoose metadata
-    if (project.configuration?.offlineModuleSettings) {
+    if (settings) {
       settings = JSON.parse(JSON.stringify(settings));
       
       // Ensure category field exists in ticket fields

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from './DashboardLayout';
 import { getText } from '../utils/language';
@@ -102,6 +102,9 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
   
   const [saving, setSaving] = useState(false);
+  
+  // Ref to prevent duplicate API calls from React.StrictMode
+  const hasFetchedInitialData = useRef(false);
 
   // Generate a secure random password
   const generateSecurePassword = (): string => {
@@ -232,8 +235,20 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
   };
 
   useEffect(() => {
-    fetchUsers();
-    fetchRolesAndProjects();
+    // Prevent duplicate calls from React.StrictMode on initial load
+    if (!hasFetchedInitialData.current && !searchQuery && !filterRole && !filterStatus) {
+      console.log('🔄 Initial load: Fetching users and roles/projects...');
+      hasFetchedInitialData.current = true;
+      fetchUsers();
+      fetchRolesAndProjects();
+    } else if (searchQuery || filterRole || filterStatus) {
+      // Allow re-fetching when filters change
+      console.log('🔍 Filters changed: Re-fetching users...');
+      fetchUsers();
+      fetchRolesAndProjects();
+    } else {
+      console.log('⏭️ Skipping duplicate initial fetch (already loaded)');
+    }
   }, [searchQuery, filterRole, filterStatus]);
 
   // Handle create user

@@ -59,6 +59,8 @@ const RBACSetup = () => {
   
   // Debounce timer for fetchData to prevent rate limiting
   const fetchDataTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Ref to prevent duplicate API calls from React.StrictMode
+  const hasFetchedData = useRef(false);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -72,6 +74,12 @@ const RBACSetup = () => {
   });
 
   useEffect(() => {
+    // Prevent duplicate calls from React.StrictMode
+    if (hasFetchedData.current) {
+      console.log('⏭️ Skipping duplicate RBAC data fetch (already loaded)');
+      return;
+    }
+    hasFetchedData.current = true;
     fetchData();
   }, []);
 

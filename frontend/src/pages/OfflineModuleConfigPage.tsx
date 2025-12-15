@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { MdSettings, MdArrowForward } from 'react-icons/md';
@@ -20,8 +20,17 @@ const OfflineModuleConfigPage: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Ref to prevent duplicate API calls from React.StrictMode
+  const hasFetchedProjects = useRef(false);
 
   useEffect(() => {
+    // Prevent duplicate calls from React.StrictMode
+    if (hasFetchedProjects.current) {
+      console.log('⏭️ Skipping duplicate projects fetch (already loaded)');
+      return;
+    }
+    hasFetchedProjects.current = true;
     fetchProjects();
   }, []);
 

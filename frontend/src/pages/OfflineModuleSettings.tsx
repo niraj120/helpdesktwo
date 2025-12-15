@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
@@ -71,6 +71,10 @@ const OfflineModuleSettings: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'registration' | 'ticket' | 'general'>('general');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  
+  // Ref to prevent duplicate API calls from React.StrictMode
+  const hasFetchedSettings = useRef(false);
+  const hasFetchedCategories = useRef(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
   const [settings, setSettings] = useState<OfflineSettings>({
@@ -99,21 +103,39 @@ const OfflineModuleSettings: React.FC = () => {
   });
 
   useEffect(() => {
-    fetchSettings();
-    fetchCategories();
+    // Reset refs when projectId changes
+    hasFetchedSettings.current = false;
+    hasFetchedCategories.current = false;
+    
+    // Prevent duplicate calls from React.StrictMode
+    if (!hasFetchedSettings.current) {
+      hasFetchedSettings.current = true;
+      fetchSettings();
+    }
+    if (!hasFetchedCategories.current) {
+      hasFetchedCategories.current = true;
+      fetchCategories();
+    }
   }, [projectId]);
 
   const fetchSettings = async () => {
     try {
       setLoading(true);
       const token = localStorage.getItem('authToken');
+      console.log('🔄 Fetching offline settings for project:', projectId);
+      
       const response = await axios.get(
         `${API_CONFIG.API_URL}/projects/${projectId}/offline-settings`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      if (response.data.success && response.data.data) {
-        const fetchedSettings = response.data.data;
+      console.log('✅ Offline settings response:', response.data);
+
+      if (response.data.success) {
+        const fetchedSettings = response.data.data || {};
+        
+        console.log('📋 Fetched registration fields:', fetchedSettings.registrationFields?.length || 0);
+        console.log('📋 Fetched ticket fields:', fetchedSettings.ticketFields?.length || 0);
         
         // Remove duplicate Category fields - keep only the first one
         if (fetchedSettings.ticketFields) {
@@ -133,7 +155,7 @@ const OfflineModuleSettings: React.FC = () => {
         const hasCategoryField = fetchedSettings.ticketFields?.some((f: TicketField) => 
           f.fieldType === 'category' || f.fieldType === 'category-select' || f.fieldName === 'Category'
         );
-        if (!hasCategoryField) {
+        if (!hasCategoryField && fetchedSettings.ticketFields) {
           // Add category field as first field if it doesn't exist
           fetchedSettings.ticketFields = [
             {
@@ -146,17 +168,29 @@ const OfflineModuleSettings: React.FC = () => {
               isEnabled: true,
               order: 1
             },
-            ...(fetchedSettings.ticketFields || []).map((f: TicketField) => ({
+            ...fetchedSettings.ticketFields.map((f: TicketField) => ({
               ...f,
               order: (f.order || 0) + 1
             }))
           ];
         }
         
-        setSettings(fetchedSettings);
+        // Merge with defaults to ensure we always have the structure
+        const mergedSettings = {
+          registrationFields: fetchedSettings.registrationFields || settings.registrationFields,
+          ticketFields: fetchedSettings.ticketFields || settings.ticketFields,
+          allowAgentToMarkResolved: fetchedSettings.allowAgentToMarkResolved ?? settings.allowAgentToMarkResolved,
+          allowAgentToEscalate: fetchedSettings.allowAgentToEscalate ?? settings.allowAgentToEscalate,
+          autoAssignToCreatingAgent: fetchedSettings.autoAssignToCreatingAgent ?? settings.autoAssignToCreatingAgent,
+          requireStudentVerification: fetchedSettings.requireStudentVerification ?? settings.requireStudentVerification,
+          notificationSettings: fetchedSettings.notificationSettings || settings.notificationSettings,
+        };
+        
+        console.log('✅ Setting merged settings with', mergedSettings.registrationFields?.length, 'registration fields');
+        setSettings(mergedSettings);
       }
     } catch (error) {
-      console.error('Error fetching offline settings:', error);
+      console.error('❌ Error fetching offline settings:', error);
     } finally {
       setLoading(false);
     }

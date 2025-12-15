@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import DashboardLayout from './DashboardLayout';
 import AddProjectForm from './AddProjectForm';
 import { usePermissions } from '../hooks/usePermissions';
@@ -44,9 +44,16 @@ const ProjectManagement = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const [deleting, setDeleting] = useState(false);
+  
+  // Prevent duplicate API calls in React StrictMode (development)
+  const hasFetchedProjects = useRef(false);
 
   useEffect(() => {
-    fetchProjects();
+    // Only fetch once, even in StrictMode
+    if (!hasFetchedProjects.current) {
+      hasFetchedProjects.current = true;
+      fetchProjects();
+    }
   }, []);
 
   const fetchProjects = async () => {

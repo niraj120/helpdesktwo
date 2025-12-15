@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import axios from 'axios';
@@ -51,6 +51,9 @@ const ViewTickets: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // Ref to prevent duplicate API calls from React.StrictMode
+  const hasFetchedTickets = useRef(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [showMergeModal, setShowMergeModal] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
@@ -61,6 +64,12 @@ const ViewTickets: React.FC = () => {
   const userRole = localStorage.getItem('userRole') || '';
 
   useEffect(() => {
+    // Prevent duplicate calls from React.StrictMode
+    if (hasFetchedTickets.current) {
+      console.log('⏭️ Skipping duplicate tickets fetch (already loaded)');
+      return;
+    }
+    hasFetchedTickets.current = true;
     fetchTickets();
   }, []);
 

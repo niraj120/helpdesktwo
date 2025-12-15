@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useNavigate, useLocation } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
@@ -58,6 +58,9 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  
+  // Ref to prevent duplicate API calls from React.StrictMode
+  const hasFetchedTickets = useRef(false);
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [showExportModal, setShowExportModal] = useState(false);
@@ -68,6 +71,12 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
   const canMerge = checkPermission('TICKET_MERGE');
 
   useEffect(() => {
+    // Prevent duplicate calls from React.StrictMode
+    if (hasFetchedTickets.current) {
+      console.log('⏭️ Skipping duplicate my-tickets fetch (already loaded)');
+      return;
+    }
+    hasFetchedTickets.current = true;
     fetchMyTickets();
   }, []);
 
