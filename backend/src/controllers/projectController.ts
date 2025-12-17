@@ -710,27 +710,25 @@ export const getOfflineSettings = async (req: Request, res: Response) => {
       };
     }
 
-    // Convert to plain object to remove Mongoose metadata
-    if (settings) {
-      settings = JSON.parse(JSON.stringify(settings));
-      
-      // Ensure category field exists in ticket fields
-      if (settings.ticketFields) {
-        const hasCategoryField = settings.ticketFields.some((f: any) => 
-          f.fieldType === 'category' || f.fieldType === 'category-select' || f.fieldName === 'Category'
-        );
-        if (!hasCategoryField) {
-          settings.ticketFields = [
-            { id: 'category-fixed', fieldName: 'Category', fieldType: 'category', required: true, placeholder: 'Select category', isFixed: true, isEnabled: true, order: 1 },
-            ...settings.ticketFields.map((f: any) => ({ ...f, order: (f.order || 0) + 1 }))
-          ];
-        }
+    // Convert to plain object to remove Mongoose metadata and ensure category field
+    const parsedSettings = JSON.parse(JSON.stringify(settings));
+    
+    // Ensure category field exists in ticket fields
+    if (parsedSettings.ticketFields) {
+      const hasCategoryField = parsedSettings.ticketFields.some((f: any) => 
+        f.fieldType === 'category' || f.fieldType === 'category-select' || f.fieldName === 'Category'
+      );
+      if (!hasCategoryField) {
+        parsedSettings.ticketFields = [
+          { id: 'category-fixed', fieldName: 'Category', fieldType: 'category', required: true, placeholder: 'Select category', isFixed: true, isEnabled: true, order: 1 },
+          ...parsedSettings.ticketFields.map((f: any) => ({ ...f, order: (f.order || 0) + 1 }))
+        ];
       }
     }
 
     return res.json({
       success: true,
-      data: settings,
+      data: parsedSettings,
     });
   } catch (error) {
     console.error('Get offline settings error:', error);

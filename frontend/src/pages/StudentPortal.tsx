@@ -15,6 +15,14 @@ import {
 import { StudentLoginModal } from '../components/StudentLoginModal';
 import { LanguageToggle } from '../components/LanguageToggle';
 import { API_CONFIG } from '../config/constants';
+import './StudentPortal.css';
+
+// Google Maps type declarations
+declare global {
+  interface Window {
+    google: any;
+  }
+}
 
 interface ProjectBranding {
   projectId: string;
@@ -65,6 +73,12 @@ interface OfflineCenter {
   features?: string[];
   mapLink?: string;
   googleMapLink?: string;
+  contacts?: Array<{
+    name: string;
+    role: string;
+    mobile: string;
+    email: string;
+  }>;
 }
 
 interface TicketSubmissionSettings {
@@ -91,7 +105,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
   const [error, setError] = useState<string | null>(null);
   const [projectBranding, setProjectBranding] = useState<ProjectBranding | null>(null);
   const [ticketSettings, setTicketSettings] = useState<TicketSubmissionSettings | null>(null);
-  const [activeTab, setActiveTab] = useState<'online' | 'offline'>('online');
+  const [activeTab, setActiveTab] = useState<'online' | 'offline' | 'kb'>('online');
   const [formData, setFormData] = useState<Record<string, any>>({});
   const [fieldFiles, setFieldFiles] = useState<Record<string, File[]>>({}); // per-field file storage
   const [submitting, setSubmitting] = useState(false);
@@ -100,9 +114,45 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'state' | 'city' | 'pincode'>('all');
   const [filteredCenters, setFilteredCenters] = useState<OfflineCenter[]>([]);
+  const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
   const [uniqueStates, setUniqueStates] = useState<string[]>([]);
   const [uniqueCities, setUniqueCities] = useState<string[]>([]);
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [kbArticles, setKbArticles] = useState<any[]>([]);
+  const [kbCategories, setKbCategories] = useState<any[]>([]);
+  const [kbLoading, setKbLoading] = useState(false);
+  const [selectedArticle, setSelectedArticle] = useState<any | null>(null);
+  const [kbSearchQuery, setKbSearchQuery] = useState('');
+
+  // Fetch KB articles when KB tab is active
+  useEffect(() => {
+    if (activeTab === 'kb' && projectBranding?.knowledgeBase && kbArticles.length === 0) {
+      fetchKBArticles();
+    }
+  }, [activeTab]);
+
+  const fetchKBArticles = async () => {
+    try {
+      setKbLoading(true);
+      console.log('Fetching KB articles for project:', projectBranding?.projectId);
+      const response = await axios.get(`${API_CONFIG.API_URL}/kb/project/${projectBranding?.projectId}`);
+      console.log('KB API Response:', response.data);
+      
+      // Handle different response structures
+      if (response.data.success) {
+        const articles = response.data.data?.articles || response.data.data || [];
+        console.log('KB Articles found:', articles);
+        setKbArticles(Array.isArray(articles) ? articles : []);
+        setKbCategories(response.data.data?.categories || []);
+      } else {
+        console.log('KB API returned success=false');
+      }
+    } catch (error) {
+      console.error('Error fetching KB articles:', error);
+    } finally {
+      setKbLoading(false);
+    }
+  };
 
   useEffect(() => {
     const fetchProjectData = async () => {
@@ -544,22 +594,13 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
   const showOffline = ticketSettings.mode === 'offline' || ticketSettings.mode === 'both';
 
   return (
-    <div
-      className="min-h-screen"
-      style={{
-        background: hideHeader ? 'transparent' : `linear-gradient(135deg, ${projectBranding.primaryColor}15 0%, ${projectBranding.secondaryColor}15 100%)`,
-      }}
-    >
-      {/* Header */}
+    <div className="min-h-screen bg-gray-50">
+      {/* Modern Header with Logo */}
       {!hideHeader && (
-        <header
-          className="shadow-md"
-          style={{
-            background: `linear-gradient(135deg, ${projectBranding.primaryColor} 0%, ${projectBranding.secondaryColor} 100%)`,
-          }}
-        >
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <div className="flex items-center justify-between">
+        <header className="bg-white shadow-sm border-b border-gray-200">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center justify-between h-20">
+              {/* Logo and Brand */}
               <div className="flex items-center space-x-4">
                 {projectBranding.logoUrl && (
                   <img
@@ -569,71 +610,139 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                   />
                 )}
                 <div>
-                  <h1 className="text-2xl font-bold text-white">{projectBranding.name}</h1>
-                  <p className="text-white/80 text-sm">{projectBranding.welcomeText}</p>
+                  <h1 className="text-xl font-bold text-gray-900">{projectBranding.name}</h1>
+                  <p className="text-sm text-gray-500">{projectBranding.welcomeText}</p>
                 </div>
               </div>
-              {/* Action Buttons */}
+
+              {/* Right Side Actions */}
               <div className="flex items-center space-x-3">
-                {/* Language Toggle */}
                 <LanguageToggle />
-                {/* Knowledge Base Button */}
-                {projectBranding.knowledgeBase && (
-                  <button
-                    onClick={() => navigate(`/${customUrlPath}/kb`)}
-                    className="flex items-center space-x-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-colors duration-200 backdrop-blur-sm"
-                  >
-                    <BookOpenIcon className="h-5 w-5" />
-                    <span className="font-medium">{t('knowledgeBase')}</span>
-                  </button>
-                )}
-                {/* Login Button */}
                 <button
                   onClick={() => setShowLoginModal(true)}
-                  className="flex items-center space-x-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-colors duration-200 backdrop-blur-sm"
+                  className="px-4 py-2 rounded-lg text-sm font-medium transition-all hover:shadow-md"
+                  style={{
+                    backgroundColor: projectBranding.primaryColor,
+                    color: 'white',
+                  }}
                 >
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                  </svg>
-                  <span className="font-medium">{t('login')}</span>
+                  {t('login')}
                 </button>
               </div>
             </div>
+
+            {/* Modern Navigation Menu */}
+            <nav className="flex space-x-1 pb-2">
+              {showOnline && (
+                <button
+                  onClick={() => {
+                    setActiveTab('online');
+                  }}
+                  className={`flex items-center space-x-2 px-6 py-3 rounded-t-lg font-medium transition-all ${
+                    activeTab === 'online'
+                      ? 'text-white shadow-md'
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                  style={{
+                    backgroundColor: activeTab === 'online' ? projectBranding.primaryColor : 'transparent',
+                  }}
+                >
+                  <DocumentArrowUpIcon className="w-5 h-5" />
+                  <span>Submit Online</span>
+                </button>
+              )}
+              
+              {showOffline && (
+                <button
+                  onClick={() => {
+                    setActiveTab('offline');
+                    setViewMode('list');
+                  }}
+                  className={`flex items-center space-x-2 px-6 py-3 rounded-t-lg font-medium transition-all ${
+                    activeTab === 'offline'
+                      ? 'text-white shadow-md'
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                  style={{
+                    backgroundColor: activeTab === 'offline' ? projectBranding.primaryColor : 'transparent',
+                  }}
+                >
+                  <MapPinIcon className="w-5 h-5" />
+                  <span>Find Nearest Center</span>
+                </button>
+              )}
+
+              {projectBranding.knowledgeBase && (
+                <button
+                  onClick={() => setActiveTab('kb')}
+                  className={`flex items-center space-x-2 px-6 py-3 rounded-t-lg font-medium transition-all ${
+                    activeTab === 'kb'
+                      ? 'text-white shadow-md'
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                  style={{
+                    backgroundColor: activeTab === 'kb' ? projectBranding.primaryColor : 'transparent',
+                  }}
+                >
+                  <BookOpenIcon className="w-5 h-5" />
+                  <span>Knowledge Base</span>
+                </button>
+              )}
+            </nav>
           </div>
         </header>
       )}
 
-      {/* Main Content */}
-      <main className={`max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 ${hideHeader ? 'py-0' : 'py-12'}`}>
-        {/* Announcement Banner */}
-        {ticketSettings.announcement && (
-          <div className="bg-yellow-50 border-l-4 border-yellow-400 rounded-r-xl p-6 mb-8 flex items-start space-x-4">
-            <ExclamationCircleIcon className="w-6 h-6 text-yellow-600 flex-shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <h3 className="text-lg font-semibold text-yellow-900 mb-1">
-                Important Announcement
-              </h3>
-              <p className="text-yellow-800 whitespace-pre-wrap">{ticketSettings.announcement}</p>
+      {/* Moving Announcement Banner */}
+      {ticketSettings.announcement && (
+        <div 
+          className="overflow-hidden py-3 border-b border-gray-200"
+          style={{
+            background: `linear-gradient(90deg, ${projectBranding.primaryColor}10 0%, ${projectBranding.secondaryColor}10 100%)`,
+          }}
+        >
+          <div className="relative flex">
+            <div className="animate-marquee whitespace-nowrap flex items-center space-x-8">
+              <span className="inline-flex items-center space-x-2 text-sm font-medium px-4">
+                <ExclamationCircleIcon className="w-5 h-5 flex-shrink-0" style={{ color: projectBranding.primaryColor }} />
+                <span style={{ color: projectBranding.primaryColor }}>{ticketSettings.announcement}</span>
+              </span>
+              <span className="inline-flex items-center space-x-2 text-sm font-medium px-4">
+                <ExclamationCircleIcon className="w-5 h-5 flex-shrink-0" style={{ color: projectBranding.primaryColor }} />
+                <span style={{ color: projectBranding.primaryColor }}>{ticketSettings.announcement}</span>
+              </span>
+            </div>
+            <div className="animate-marquee2 whitespace-nowrap flex items-center space-x-8 absolute top-0">
+              <span className="inline-flex items-center space-x-2 text-sm font-medium px-4">
+                <ExclamationCircleIcon className="w-5 h-5 flex-shrink-0" style={{ color: projectBranding.primaryColor }} />
+                <span style={{ color: projectBranding.primaryColor }}>{ticketSettings.announcement}</span>
+              </span>
+              <span className="inline-flex items-center space-x-2 text-sm font-medium px-4">
+                <ExclamationCircleIcon className="w-5 h-5 flex-shrink-0" style={{ color: projectBranding.primaryColor }} />
+                <span style={{ color: projectBranding.primaryColor }}>{ticketSettings.announcement}</span>
+              </span>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Welcome Message */}
-        {ticketSettings.welcomeMessage && (
-          <div className="bg-white rounded-xl shadow-sm p-6 mb-8">
-            <p className="text-gray-700 text-lg">{ticketSettings.welcomeMessage}</p>
-          </div>
-        )}
-
+      {/* Main Content */}
+      <main className={`max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 ${hideHeader ? 'py-0' : 'py-8'}`}>
         {/* Success Message */}
         {submitSuccess && (
-          <div className="bg-green-50 border border-green-200 rounded-xl p-6 mb-8 flex items-start space-x-4">
-            <CheckCircleIcon className="w-6 h-6 text-green-600 flex-shrink-0 mt-0.5" />
+          <div 
+            className="mb-6 rounded-xl p-6 flex items-start space-x-4 shadow-lg animate-fadeIn"
+            style={{
+              background: `linear-gradient(135deg, #10b98115 0%, #10b98125 100%)`,
+              border: '1px solid #10b981',
+            }}
+          >
+            <CheckCircleIcon className="w-7 h-7 text-green-600 flex-shrink-0 mt-0.5" />
             <div>
-              <h3 className="text-lg font-semibold text-green-900 mb-1">
-                Ticket Submitted Successfully!
+              <h3 className="text-lg font-bold text-green-900 mb-1">
+                🎉 Ticket Submitted Successfully!
               </h3>
-              <p className="text-green-700">
+              <p className="text-green-700 font-medium">
                 {ticketSettings.successMessage ||
                   'Your ticket has been submitted. Our team will get back to you soon.'}
               </p>
@@ -643,84 +752,132 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
 
         {/* Error Message */}
         {submitError && (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-6 mb-8 flex items-start space-x-4">
-            <ExclamationCircleIcon className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" />
+          <div 
+            className="mb-6 rounded-xl p-6 flex items-start space-x-4 shadow-lg animate-fadeIn"
+            style={{
+              background: `linear-gradient(135deg, #ef444415 0%, #ef444425 100%)`,
+              border: '1px solid #ef4444',
+            }}
+          >
+            <ExclamationCircleIcon className="w-7 h-7 text-red-600 flex-shrink-0 mt-0.5" />
             <div>
-              <h3 className="text-lg font-semibold text-red-900 mb-1">Submission Error</h3>
-              <p className="text-red-700">{submitError}</p>
+              <h3 className="text-lg font-bold text-red-900 mb-1">⚠️ Submission Error</h3>
+              <p className="text-red-700 font-medium">{submitError}</p>
             </div>
           </div>
         )}
 
-        {/* Tabs */}
-        {ticketSettings.mode === 'both' && (
-          <div className="flex space-x-2 mb-8 bg-white rounded-xl shadow-sm p-2">
-            <button
-              onClick={() => setActiveTab('online')}
-              className={`flex-1 py-3 px-6 rounded-lg font-medium transition-all ${
-                activeTab === 'online'
-                  ? 'text-white shadow-md'
-                  : 'text-gray-600 hover:bg-gray-50'
-              }`}
-              style={{
-                backgroundColor: activeTab === 'online' ? projectBranding.primaryColor : 'transparent',
-              }}
-            >
-              {t('submitOnline')}
-            </button>
-            <button
-              onClick={() => setActiveTab('offline')}
-              className={`flex-1 py-3 px-6 rounded-lg font-medium transition-all ${
-                activeTab === 'offline'
-                  ? 'text-white shadow-md'
-                  : 'text-gray-600 hover:bg-gray-50'
-              }`}
-              style={{
-                backgroundColor: activeTab === 'offline' ? projectBranding.primaryColor : 'transparent',
-              }}
-            >
-              {t('visitCenter')}
-            </button>
-          </div>
-        )}
+        {/* Content Area with Modern Card Design */}
+        <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-200">
+          {/* Online Form View */}
+          {showOnline && activeTab === 'online' && (
+            <div className="p-8 md:p-12">
+              <div className="mb-8">
+                <h2 className="text-3xl font-bold text-gray-900 mb-2">Submit Your Query</h2>
+                <p className="text-gray-600">
+                  {ticketSettings.welcomeMessage || 'Fill out the form below and our team will assist you.'}
+                </p>
+              </div>
+              <form onSubmit={handleSubmit} className="space-y-6">
+                {ticketSettings.onlineFormFields.map((field) => (
+                  <div key={field.fieldName} className="group">
+                    <label className="block text-sm font-semibold text-gray-800 mb-2">
+                      {field.fieldName}
+                      {field.required && <span className="text-red-500 ml-1">*</span>}
+                    </label>
+                    {renderOnlineFormField(field)}
+                  </div>
+                ))}
 
-
-        {/* Online Form */}
-        {showOnline && (ticketSettings.mode !== 'both' || activeTab === 'online') && (
-          <div className="bg-white rounded-xl shadow-md p-8">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">{t('submitYourTicket')}</h2>
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {ticketSettings.onlineFormFields.map((field) => (
-                <div key={field.fieldName}>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {field.fieldName}
-                    {field.required && <span className="text-red-500 ml-1">*</span>}
-                  </label>
-                  {renderOnlineFormField(field)}
+                {/* Submit Button with Modern Design */}
+                <div className="pt-4">
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="w-full py-4 px-6 rounded-xl text-white font-bold text-lg shadow-lg hover:shadow-2xl transform hover:scale-[1.02] transition-all disabled:opacity-50 disabled:cursor-not-allowed relative overflow-hidden group"
+                    style={{
+                      background: `linear-gradient(135deg, ${projectBranding.primaryColor} 0%, ${projectBranding.secondaryColor} 100%)`,
+                    }}
+                  >
+                    <span className="relative z-10 flex items-center justify-center space-x-2">
+                      {submitting ? (
+                        <>
+                          <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          <span>Submitting...</span>
+                        </>
+                      ) : (
+                        <>
+                          <DocumentArrowUpIcon className="w-6 h-6" />
+                          <span>Submit Ticket</span>
+                        </>
+                      )}
+                    </span>
+                    <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 transition-opacity"></div>
+                  </button>
                 </div>
-              ))}
+              </form>
+            </div>
+          )}
 
-              {/* Submit Button */}
-              <button
-                type="submit"
-                disabled={submitting}
-                className="w-full py-3 px-6 rounded-lg text-white font-semibold shadow-md hover:shadow-lg transform hover:scale-[1.02] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          {/* Offline Centers View */}
+          {showOffline && activeTab === 'offline' && (
+            <div>
+              {/* Header with View Toggle */}
+              <div 
+                className="px-8 md:px-12 py-6 border-b border-gray-200"
                 style={{
-                  background: `linear-gradient(135deg, ${projectBranding.primaryColor} 0%, ${projectBranding.secondaryColor} 100%)`,
+                  background: `linear-gradient(135deg, ${projectBranding.primaryColor}08 0%, ${projectBranding.secondaryColor}08 100%)`,
                 }}
               >
-                {submitting ? t('submitting') : t('submitTicket')}
-              </button>
-            </form>
-          </div>
-        )}
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                  <div>
+                    <h2 className="text-3xl font-bold text-gray-900 mb-2">Find Nearest Center</h2>
+                    <p className="text-gray-600">Locate our centers across the country or view them on the map</p>
+                  </div>
+                  
+                  {/* View Mode Toggle */}
+                  <div className="flex gap-2 bg-white p-1 rounded-lg shadow-sm border border-gray-200">
+                    <button
+                      onClick={() => setViewMode('list')}
+                      className={`flex items-center space-x-2 px-4 py-2.5 rounded-md font-medium transition-all ${
+                        viewMode === 'list'
+                          ? 'text-white shadow-md transform scale-105'
+                          : 'text-gray-600 hover:bg-gray-50'
+                      }`}
+                      style={{
+                        backgroundColor: viewMode === 'list' ? projectBranding.primaryColor : 'transparent',
+                      }}
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                      </svg>
+                      <span>List View</span>
+                    </button>
+                    <button
+                      onClick={() => setViewMode('map')}
+                      className={`flex items-center space-x-2 px-4 py-2.5 rounded-md font-medium transition-all ${
+                        viewMode === 'map'
+                          ? 'text-white shadow-md transform scale-105'
+                          : 'text-gray-600 hover:bg-gray-50'
+                      }`}
+                      style={{
+                        backgroundColor: viewMode === 'map' ? projectBranding.primaryColor : 'transparent',
+                      }}
+                    >
+                      <MapPinIcon className="w-5 h-5" />
+                      <span>Map View</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
 
-        {/* Offline Centers */}
-        {showOffline && (ticketSettings.mode !== 'both' || activeTab === 'offline') && (
-          <div className="bg-white rounded-xl shadow-md p-8">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">{t('findNearestCenter')}</h2>
+              <div className="p-8 md:p-12">
 
             {/* Filter Buttons */}
+            {viewMode === 'list' && (
             <div className="mb-4 flex flex-wrap gap-2">
               <button
                 onClick={() => {
@@ -787,8 +944,10 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                 {t('byPincode')}
               </button>
             </div>
+            )}
 
             {/* Search */}
+            {viewMode === 'list' && (
             <div className="mb-6">
               <input
                 type="text"
@@ -807,20 +966,273 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                 style={{ ['--tw-ring-color' as any]: projectBranding.primaryColor }}
               />
             </div>
+            )}
+
+            {/* Map View */}
+            {viewMode === 'map' && (
+              <div className="h-[600px] rounded-lg overflow-hidden border border-gray-200 shadow-lg relative">
+                <div 
+                  id="google-map" 
+                  className="w-full h-full"
+                  ref={(el) => {
+                    if (el && !el.dataset.initialized) {
+                      el.dataset.initialized = 'true';
+                      
+                      // Load Google Maps Script
+                      if (!window.google) {
+                        const script = document.createElement('script');
+                        script.src = `https://maps.googleapis.com/maps/api/js?key=AIzaSyBRFSFV0gNYtzruNYF9hoJxbUFoaOMWhD8`;
+                        script.async = true;
+                        script.onload = () => initMap(el);
+                        document.head.appendChild(script);
+                      } else {
+                        initMap(el);
+                      }
+                    }
+
+                    function initMap(mapElement: HTMLElement) {
+                      if (!window.google) return;
+
+                      // Default center (India)
+                      const defaultCenter = { lat: 20.5937, lng: 78.9629 };
+                      
+                      // Create map
+                      const map = new window.google.maps.Map(mapElement, {
+                        zoom: 5,
+                        center: defaultCenter,
+                        mapTypeControl: true,
+                        fullscreenControl: true,
+                      });
+
+                      // Add markers for each center
+                      const bounds = new window.google.maps.LatLngBounds();
+                      let hasMarkers = false;
+
+                      // Geocode centers that don't have coordinates
+                      const geocodePromises = filteredCenters.map(async (center) => {
+                        let lat, lng;
+
+                        // Try to get coordinates
+                        if (center.latitude && center.longitude) {
+                          lat = parseFloat(center.latitude);
+                          lng = parseFloat(center.longitude);
+                        } else if (center.mapLink || center.googleMapLink) {
+                          // Try to extract coordinates from map link - supports multiple formats
+                          const link = center.mapLink || center.googleMapLink;
+                          
+                          // Format 1: @lat,lng pattern (e.g., https://www.google.com/maps/@19.0760,72.8777,15z)
+                          let coordMatch = link.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+                          if (coordMatch) {
+                            lat = parseFloat(coordMatch[1]);
+                            lng = parseFloat(coordMatch[2]);
+                          }
+                          
+                          // Format 2: ?q=lat,lng pattern (e.g., https://www.google.com/maps?q=19.0760,72.8777)
+                          if (!lat && !lng) {
+                            coordMatch = link.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
+                            if (coordMatch) {
+                              lat = parseFloat(coordMatch[1]);
+                              lng = parseFloat(coordMatch[2]);
+                            }
+                          }
+                          
+                          // Format 3: /place/ or /dir/ with coordinates (e.g., https://www.google.com/maps/place/@19.0760,72.8777)
+                          if (!lat && !lng) {
+                            coordMatch = link.match(/\/(?:place|dir)\/[^/]*@?(-?\d+\.\d+),(-?\d+\.\d+)/);
+                            if (coordMatch) {
+                              lat = parseFloat(coordMatch[1]);
+                              lng = parseFloat(coordMatch[2]);
+                            }
+                          }
+                          
+                          // Format 4: ll= pattern (e.g., https://www.google.com/maps?ll=19.0760,72.8777)
+                          if (!lat && !lng) {
+                            coordMatch = link.match(/[?&]ll=(-?\d+\.\d+),(-?\d+\.\d+)/);
+                            if (coordMatch) {
+                              lat = parseFloat(coordMatch[1]);
+                              lng = parseFloat(coordMatch[2]);
+                            }
+                          }
+                          
+                          // Format 5: Shortened links (maps.app.goo.gl) or links without coordinates
+                          // Use Geocoding API as fallback
+                          if (!lat && !lng) {
+                            try {
+                              const geocoder = new window.google.maps.Geocoder();
+                              const address = `${center.centerName}, ${center.address}, ${center.city}, ${center.state} ${center.pincode}`;
+                              const result = await new Promise<any>((resolve, reject) => {
+                                geocoder.geocode({ address }, (results, status) => {
+                                  if (status === 'OK' && results && results[0]) {
+                                    resolve(results[0]);
+                                  } else {
+                                    reject(status);
+                                  }
+                                });
+                              });
+                              lat = result.geometry.location.lat();
+                              lng = result.geometry.location.lng();
+                            } catch (error) {
+                              console.warn(`Could not geocode ${center.centerName}:`, error);
+                            }
+                          }
+                        }
+
+                        return { center, lat, lng };
+                      });
+
+                      // Wait for all geocoding to complete
+                      Promise.all(geocodePromises).then((results) => {
+                        results.forEach(({ center, lat, lng }) => {
+                          if (lat && lng) {
+                          const position = { lat, lng };
+                          
+                          // Create marker
+                          const marker = new window.google.maps.Marker({
+                            position,
+                            map,
+                            title: center.centerName,
+                            animation: window.google.maps.Animation.DROP,
+                          });
+
+                          // Create info window with contacts
+                          let contactsHtml = '';
+                          if (center.contacts && center.contacts.length > 0) {
+                            contactsHtml = '<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #e5e7eb;">';
+                            contactsHtml += '<p style="margin: 4px 0; font-size: 12px; font-weight: bold; color: #374151;">Additional Contacts:</p>';
+                            center.contacts.forEach((contact) => {
+                              contactsHtml += `<div style="margin: 4px 0; font-size: 12px; color: #6b7280;">
+                                <strong>${contact.name}</strong>${contact.role ? ` (${contact.role})` : ''}<br/>
+                                📞 ${contact.mobile}${contact.email ? ` | ✉️ ${contact.email}` : ''}
+                              </div>`;
+                            });
+                            contactsHtml += '</div>';
+                          }
+                          
+                          const infoWindow = new window.google.maps.InfoWindow({
+                            content: `
+                              <div style="padding: 8px; max-width: 250px;">
+                                <h3 style="font-weight: bold; margin: 0 0 8px 0; color: #1f2937;">${center.centerName}</h3>
+                                <p style="margin: 4px 0; font-size: 13px; color: #4b5563;">
+                                  📍 ${center.address}, ${center.city}, ${center.state}
+                                </p>
+                                <p style="margin: 4px 0; font-size: 13px; color: #4b5563;">
+                                  📞 ${center.phone}
+                                </p>
+                                <p style="margin: 4px 0; font-size: 13px; color: #4b5563;">
+                                  🕒 ${center.workingHours}
+                                </p>
+                                ${contactsHtml}
+                                ${center.mapLink || center.googleMapLink ? `
+                                  <a 
+                                    href="${center.mapLink || center.googleMapLink}" 
+                                    target="_blank"
+                                    style="display: inline-block; margin-top: 8px; padding: 6px 12px; background: #3b82f6; color: white; text-decoration: none; border-radius: 4px; font-size: 12px;"
+                                  >
+                                    Get Directions
+                                  </a>
+                                ` : ''}
+                              </div>
+                            `,
+                          });
+
+                          marker.addListener('click', () => {
+                            infoWindow.open(map, marker);
+                          });
+
+                          bounds.extend(position);
+                          hasMarkers = true;
+                          }
+                        });
+
+                        // Fit bounds to show all markers
+                        if (hasMarkers) {
+                          map.fitBounds(bounds);
+                          
+                          // Don't zoom in too much for single marker
+                          const listener = window.google.maps.event.addListener(map, 'idle', () => {
+                            if (map.getZoom() > 15) map.setZoom(15);
+                            window.google.maps.event.removeListener(listener);
+                          });
+                        }
+
+                        // Add user's current location
+                        if (navigator.geolocation) {
+                          navigator.geolocation.getCurrentPosition(
+                            (position) => {
+                              const userPos = {
+                                lat: position.coords.latitude,
+                                lng: position.coords.longitude,
+                              };
+
+                              // User location marker (blue dot)
+                              new window.google.maps.Marker({
+                                position: userPos,
+                                map,
+                                title: 'Your Location',
+                                icon: {
+                                  path: window.google.maps.SymbolPath.CIRCLE,
+                                  scale: 8,
+                                  fillColor: '#4285F4',
+                                  fillOpacity: 1,
+                                  strokeColor: '#ffffff',
+                                  strokeWeight: 2,
+                                },
+                              });
+
+                              // Center map on user if no centers with coordinates
+                              if (!hasMarkers) {
+                                map.setCenter(userPos);
+                                map.setZoom(12);
+                              }
+                            },
+                            () => {
+                              console.log('Geolocation permission denied');
+                            }
+                          );
+                        }
+                      });
+                    }
+                  }}
+                ></div>
+                
+                {filteredCenters.filter(c => !c.latitude && !c.longitude && !c.mapLink && !c.googleMapLink).length > 0 && (
+                  <div className="absolute top-4 left-4 right-4 bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800">
+                    ⚠️ Some centers don't have location coordinates. Please add latitude/longitude or map links to show them on the map.
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Centers List */}
-            <div className="space-y-6">
+            {viewMode === 'list' && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {filteredCenters.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">No centers found</p>
+                <div className="col-span-2 text-center py-12">
+                  <MapPinIcon className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                  <p className="text-gray-500 text-lg">No centers found matching your search</p>
+                </div>
               ) : (
                 filteredCenters.map((center, idx) => (
                   <div
                     key={idx}
-                    className="border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow"
+                    className="bg-gradient-to-br from-white to-gray-50 border-2 border-gray-200 rounded-2xl p-6 hover-lift hover:border-gray-300 transition-all duration-300"
                   >
-                    <h3 className="text-xl font-bold text-gray-900 mb-4">
-                      {center.centerName}
-                    </h3>
+                    <div className="flex items-start justify-between mb-4">
+                      <h3 className="text-xl font-bold text-gray-900 flex-1">
+                        {center.centerName}
+                      </h3>
+                      <div 
+                        className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0"
+                        style={{
+                          background: `linear-gradient(135deg, ${projectBranding.primaryColor}15 0%, ${projectBranding.secondaryColor}25 100%)`,
+                        }}
+                      >
+                        <MapPinIcon 
+                          className="w-6 h-6"
+                          style={{ color: projectBranding.primaryColor }}
+                        />
+                      </div>
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="flex items-start space-x-3">
                         <MapPinIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
@@ -871,8 +1283,43 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                       </div>
                     )}
 
+                    {/* Additional Contacts Section */}
+                    {center.contacts && center.contacts.length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-gray-200">
+                        <p className="text-sm font-medium text-gray-700 mb-3">Additional Contacts</p>
+                        <div className="space-y-3">
+                          {center.contacts.map((contact, contactIdx) => (
+                            <div key={contactIdx} className="bg-gray-50 p-3 rounded-lg">
+                              <div className="flex items-start justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-gray-900">{contact.name}</p>
+                                  {contact.role && (
+                                    <p className="text-xs text-gray-500 mt-0.5">{contact.role}</p>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="mt-2 space-y-1">
+                                {contact.mobile && (
+                                  <div className="flex items-center space-x-2">
+                                    <PhoneIcon className="w-4 h-4 text-gray-400" />
+                                    <a href={`tel:${contact.mobile}`} className="text-sm text-gray-600 hover:text-gray-900">{contact.mobile}</a>
+                                  </div>
+                                )}
+                                {contact.email && (
+                                  <div className="flex items-center space-x-2">
+                                    <EnvelopeIcon className="w-4 h-4 text-gray-400" />
+                                    <a href={`mailto:${contact.email}`} className="text-sm text-gray-600 hover:text-gray-900">{contact.email}</a>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Get Directions Button */}
-                    <div className="mt-4">
+                    <div className="mt-6 pt-4 border-t border-gray-200">
                       <button
                         onClick={() => {
                           let mapUrl = center.mapLink || center.googleMapLink;
@@ -885,20 +1332,153 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                           }
                           window.open(mapUrl, '_blank');
                         }}
-                        className="w-full py-3 px-4 rounded-lg text-white font-semibold shadow hover:shadow-lg transition-all"
+                        className="w-full py-3 px-4 rounded-xl text-white font-bold shadow-lg hover:shadow-xl transform hover:scale-[1.02] transition-all flex items-center justify-center space-x-2 group"
                         style={{
                           background: `linear-gradient(135deg, ${projectBranding?.primaryColor} 0%, ${projectBranding?.secondaryColor} 100%)`,
                         }}
                       >
-                        🗺️ Get Directions
+                        <MapPinIcon className="w-5 h-5 group-hover:animate-bounce" />
+                        <span>Get Directions</span>
                       </button>
                     </div>
                   </div>
                 ))
               )}
             </div>
-          </div>
-        )}
+            )}
+              </div>
+            </div>
+          )}
+
+          {/* Knowledge Base View */}
+          {projectBranding.knowledgeBase && activeTab === 'kb' && (
+            <div className="p-8 md:p-12">
+              <div className="mb-8">
+                <h2 className="text-3xl font-bold text-gray-900 mb-2">Knowledge Base</h2>
+                <p className="text-gray-600">Browse articles and find answers to common questions</p>
+              </div>
+
+              {/* Search Bar */}
+              <div className="mb-6">
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Search articles..."
+                    value={kbSearchQuery}
+                    onChange={(e) => setKbSearchQuery(e.target.value)}
+                    className="w-full px-5 py-4 pl-12 rounded-xl border-2 border-gray-300 focus:border-blue-500 focus:outline-none text-lg"
+                  />
+                  <svg 
+                    className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400"
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+              </div>
+
+              {/* Loading State */}
+              {kbLoading && (
+                <div className="text-center py-12">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 mx-auto mb-4" style={{ borderColor: projectBranding.primaryColor }}></div>
+                  <p className="text-gray-600">Loading articles...</p>
+                </div>
+              )}
+
+              {/* Article Modal */}
+              {selectedArticle && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={() => setSelectedArticle(null)}>
+                  <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                    <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex justify-between items-start">
+                      <div>
+                        <h2 className="text-2xl font-bold text-gray-900 mb-2">{selectedArticle.title}</h2>
+                        {selectedArticle.category && (
+                          <span className="inline-block px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                            {selectedArticle.category}
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => setSelectedArticle(null)}
+                        className="text-gray-400 hover:text-gray-600 transition-colors"
+                      >
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                    <div className="p-6">
+                      <div 
+                        className="prose prose-lg max-w-none"
+                        dangerouslySetInnerHTML={{ __html: selectedArticle.content }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Articles List */}
+              {!kbLoading && kbArticles.length === 0 && (
+                <div className="text-center py-12 bg-gray-50 rounded-2xl">
+                  <BookOpenIcon className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                  <p className="text-gray-500 text-lg">No articles available yet</p>
+                </div>
+              )}
+
+              {!kbLoading && kbArticles.length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {kbArticles
+                    .filter(article => 
+                      (article.status === 'published' || article.status === 'archived') && 
+                      (kbSearchQuery === '' || 
+                       article.title?.toLowerCase().includes(kbSearchQuery.toLowerCase()) ||
+                       article.content?.toLowerCase().includes(kbSearchQuery.toLowerCase()))
+                    )
+                    .map((article, idx) => (
+                      <div
+                        key={article._id || idx}
+                        onClick={() => setSelectedArticle(article)}
+                        className="bg-white border-2 border-gray-200 rounded-xl p-6 hover-lift cursor-pointer transition-all duration-300 hover:border-blue-300"
+                      >
+                        <div className="flex items-start justify-between mb-3">
+                          <h3 className="text-lg font-bold text-gray-900 line-clamp-2 flex-1">
+                            {article.title}
+                          </h3>
+                          <svg 
+                            className="w-5 h-5 text-gray-400 flex-shrink-0 ml-2"
+                            fill="none" 
+                            stroke="currentColor" 
+                            viewBox="0 0 24 24"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        </div>
+                        
+                        {article.category && (
+                          <span className="inline-block px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 mb-3">
+                            {article.category}
+                          </span>
+                        )}
+                        
+                        <p className="text-sm text-gray-600 line-clamp-3 mb-4">
+                          {article.content?.replace(/<[^>]*>/g, '').substring(0, 150)}...
+                        </p>
+                        
+                        <div className="flex items-center text-xs text-gray-500">
+                          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          {article.updatedAt ? new Date(article.updatedAt).toLocaleDateString() : 'Recently updated'}
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </main>
 
       {/* Footer */}

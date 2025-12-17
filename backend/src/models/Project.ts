@@ -175,6 +175,15 @@ export interface IProject extends Document {
         workingHours?: string;
         latitude?: number;
         longitude?: number;
+        features?: string[];
+        mapLink?: string;
+        googleMapLink?: string;
+        contacts?: Array<{
+          name: string;
+          role: string;
+          mobile: string;
+          email: string;
+        }>;
       }>;
       welcomeMessage?: string;
       successMessage?: string;
@@ -444,6 +453,13 @@ const projectSchema = new Schema<IProject>({
         longitude: { type: Number },
         features: [{ type: String }],
         mapLink: { type: String },
+        googleMapLink: { type: String },
+        contacts: [{
+          name: { type: String },
+          role: { type: String },
+          mobile: { type: String },
+          email: { type: String },
+        }],
       }],
       welcomeMessage: { type: String },
       successMessage: { type: String },

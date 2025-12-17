@@ -10,7 +10,6 @@ import ProjectForgotPassword from './pages/ProjectForgotPassword'
 import ProjectPortalDashboard from './pages/ProjectPortalDashboard'
 import StudentPortal from './pages/StudentPortal'
 import AuthenticatedStudentSubmitTicket from './pages/AuthenticatedStudentSubmitTicket'
-import StudentKBPage from './pages/StudentKBPage';
 import StudentLayout from './components/StudentLayout';
 import ConditionalStudentLayout from './components/ConditionalStudentLayout';
 import StudentDashboard from './pages/StudentDashboard';
@@ -109,15 +108,6 @@ function App() {
             </ConditionalStudentLayout>
           } 
         />
-        <Route 
-          path="/:customUrlPath/kb" 
-          element={
-            <ConditionalStudentLayout>
-              <StudentKBPage hideHeader={!!localStorage.getItem('authToken')} />
-            </ConditionalStudentLayout>
-          } 
-        />
-        
         {/* Student Portal Routes - Requires authentication only */}
         <Route 
           path="/:customUrlPath/student/dashboard" 

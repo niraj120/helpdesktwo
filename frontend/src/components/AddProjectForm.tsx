@@ -119,6 +119,12 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
       longitude?: number;
       features?: string[];
       mapLink?: string;
+      contacts?: Array<{
+        name: string;
+        role: string;
+        mobile: string;
+        email: string;
+      }>;
     }>,
     
     // File Download Settings
@@ -617,7 +623,10 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
         maxTicketAttachmentSize: project?.configuration?.ticketSubmissionSettings?.maxAttachmentSize || 10,
         allowedTicketFileTypes: project?.configuration?.ticketSubmissionSettings?.allowedFileTypes || ['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png'],
         onlineFormFields: project?.configuration?.ticketSubmissionSettings?.onlineFormFields || [],
-        offlineCenters: project?.configuration?.ticketSubmissionSettings?.offlineCenters || [],
+        offlineCenters: (project?.configuration?.ticketSubmissionSettings?.offlineCenters || []).map((center: any) => ({
+          ...center,
+          contacts: center.contacts || []
+        })),
         
         // File Settings
         fileDownloadPermission: project?.configuration?.fileSettings?.downloadPermission || 'logged-in-permission',
@@ -3235,7 +3244,8 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                               latitude: undefined,
                               longitude: undefined,
                               features: [],
-                              mapLink: ''
+                              mapLink: '',
+                              contacts: []
                             }
                           ]
                         });
@@ -3611,6 +3621,155 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                     fontSize: '13px'
                                   }}>
                                     No features added. Click "Add Feature" to list center amenities.
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            
+                            {/* Additional Contacts Section */}
+                            <div style={{ gridColumn: '1 / -1', marginTop: '12px' }}>
+                              <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <label style={{ fontSize: '14px', fontWeight: '500', color: '#374151' }}>
+                                  Additional Contacts
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const newCenters = [...formData.offlineCenters];
+                                    if (!newCenters[index].contacts) {
+                                      newCenters[index].contacts = [];
+                                    }
+                                    newCenters[index].contacts!.push({
+                                      name: '',
+                                      role: '',
+                                      mobile: '',
+                                      email: ''
+                                    });
+                                    setFormData({ ...formData, offlineCenters: newCenters });
+                                  }}
+                                  style={{
+                                    padding: '4px 12px',
+                                    backgroundColor: '#8b5cf6',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    fontSize: '12px',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  + Add Contact
+                                </button>
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                {(center.contacts || []).map((contact, contactIndex) => (
+                                  <div key={contactIndex} style={{
+                                    padding: '12px',
+                                    backgroundColor: '#ffffff',
+                                    border: '1px solid #e5e7eb',
+                                    borderRadius: '6px'
+                                  }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                      <span style={{ fontSize: '13px', fontWeight: '500', color: '#6b7280' }}>
+                                        Contact {contactIndex + 1}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const newCenters = [...formData.offlineCenters];
+                                          newCenters[index].contacts!.splice(contactIndex, 1);
+                                          setFormData({ ...formData, offlineCenters: newCenters });
+                                        }}
+                                        style={{
+                                          padding: '4px 8px',
+                                          backgroundColor: '#ef4444',
+                                          color: 'white',
+                                          border: 'none',
+                                          borderRadius: '4px',
+                                          fontSize: '11px',
+                                          cursor: 'pointer'
+                                        }}
+                                      >
+                                        Remove
+                                      </button>
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                      <input
+                                        type="text"
+                                        placeholder="Contact Name"
+                                        value={contact.name}
+                                        onChange={(e) => {
+                                          const newCenters = [...formData.offlineCenters];
+                                          newCenters[index].contacts![contactIndex].name = e.target.value;
+                                          setFormData({ ...formData, offlineCenters: newCenters });
+                                        }}
+                                        style={{
+                                          padding: '8px 12px',
+                                          border: '1px solid #d1d5db',
+                                          borderRadius: '6px',
+                                          fontSize: '13px'
+                                        }}
+                                      />
+                                      <input
+                                        type="text"
+                                        placeholder="Role/Designation"
+                                        value={contact.role}
+                                        onChange={(e) => {
+                                          const newCenters = [...formData.offlineCenters];
+                                          newCenters[index].contacts![contactIndex].role = e.target.value;
+                                          setFormData({ ...formData, offlineCenters: newCenters });
+                                        }}
+                                        style={{
+                                          padding: '8px 12px',
+                                          border: '1px solid #d1d5db',
+                                          borderRadius: '6px',
+                                          fontSize: '13px'
+                                        }}
+                                      />
+                                      <input
+                                        type="tel"
+                                        placeholder="Mobile Number"
+                                        value={contact.mobile}
+                                        onChange={(e) => {
+                                          const newCenters = [...formData.offlineCenters];
+                                          newCenters[index].contacts![contactIndex].mobile = e.target.value;
+                                          setFormData({ ...formData, offlineCenters: newCenters });
+                                        }}
+                                        style={{
+                                          padding: '8px 12px',
+                                          border: '1px solid #d1d5db',
+                                          borderRadius: '6px',
+                                          fontSize: '13px'
+                                        }}
+                                      />
+                                      <input
+                                        type="email"
+                                        placeholder="Email Address"
+                                        value={contact.email}
+                                        onChange={(e) => {
+                                          const newCenters = [...formData.offlineCenters];
+                                          newCenters[index].contacts![contactIndex].email = e.target.value;
+                                          setFormData({ ...formData, offlineCenters: newCenters });
+                                        }}
+                                        style={{
+                                          padding: '8px 12px',
+                                          border: '1px solid #d1d5db',
+                                          borderRadius: '6px',
+                                          fontSize: '13px'
+                                        }}
+                                      />
+                                    </div>
+                                  </div>
+                                ))}
+                                {(!center.contacts || center.contacts.length === 0) && (
+                                  <div style={{ 
+                                    padding: '12px', 
+                                    backgroundColor: '#f3f4f6', 
+                                    borderRadius: '6px',
+                                    textAlign: 'center',
+                                    color: '#6b7280',
+                                    fontSize: '13px'
+                                  }}>
+                                    No additional contacts added. Click "Add Contact" to add staff members.
                                   </div>
                                 )}
                               </div>

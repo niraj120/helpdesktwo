@@ -179,13 +179,8 @@ export const studentRoutes: RoutePermission[] = [
   },
   {
     path: '/:customUrlPath/submit-ticket',
-    requireAuth: false, // Public - students can submit without login
-    description: 'Public ticket submission'
-  },
-  {
-    path: '/:customUrlPath/kb',
-    requireAuth: false, // Public KB access
-    description: 'Public knowledge base'
+    requireAuth: false, // Public - students can submit without login (KB is now integrated in this page)
+    description: 'Public ticket submission with integrated KB'
   },
 ];
 
