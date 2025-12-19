@@ -49,14 +49,14 @@ const SimpleStudentDashboard = () => {
       if (response.data.success) {
         const tickets = response.data.data;
         
-        // Calculate stats (status values are lowercase in DB)
+        // Calculate stats (status values are numeric: 1=Open, 2=In Progress, 3=On Hold, 4=Resolved, 5=Closed)
         const calculatedStats: TicketStats = {
           total: tickets.length,
-          open: tickets.filter((t: any) => t.status === 'open').length,
-          inProgress: tickets.filter((t: any) => t.status === 'in-progress').length,
-          pending: tickets.filter((t: any) => t.status === 'pending').length,
-          resolved: tickets.filter((t: any) => t.status === 'resolved').length,
-          closed: tickets.filter((t: any) => t.status === 'closed').length,
+          open: tickets.filter((t: any) => t.status === 1).length,
+          inProgress: tickets.filter((t: any) => t.status === 2).length,
+          pending: tickets.filter((t: any) => t.status === 3).length, // On Hold
+          resolved: tickets.filter((t: any) => t.status === 4).length,
+          closed: tickets.filter((t: any) => t.status === 5).length,
         };
         
         setStats(calculatedStats);

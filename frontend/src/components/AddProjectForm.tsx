@@ -3525,23 +3525,140 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                 fontSize: '14px'
                               }}
                             />
-                            <input
-                              type="text"
-                              placeholder="Google Maps Link (for directions)"
-                              value={center.mapLink || ''}
-                              onChange={(e) => {
-                                const newCenters = [...formData.offlineCenters];
-                                newCenters[index].mapLink = e.target.value;
-                                setFormData({ ...formData, offlineCenters: newCenters });
-                              }}
-                              style={{
-                                gridColumn: '1 / -1',
-                                padding: '10px 12px',
-                                border: '1px solid #d1d5db',
-                                borderRadius: '6px',
-                                fontSize: '14px'
-                              }}
-                            />
+                            <div style={{ gridColumn: '1 / -1' }}>
+                              <input
+                                type="text"
+                                placeholder="Google Maps Link (for directions)"
+                                value={center.mapLink || ''}
+                                onChange={(e) => {
+                                  const newCenters = [...formData.offlineCenters];
+                                  newCenters[index].mapLink = e.target.value;
+                                  setFormData({ ...formData, offlineCenters: newCenters });
+                                }}
+                                onBlur={(e) => {
+                                  // Auto-extract coordinates when user pastes a Google Maps link
+                                  const link = e.target.value;
+                                  if (link && !center.latitude && !center.longitude) {
+                                    // Try to extract coordinates from the link
+                                    let lat: number | undefined;
+                                    let lng: number | undefined;
+                                    
+                                    try {
+                                      // Format 1: 3d<lat>!4d<lng> pattern (most common in place links)
+                                      let match = link.match(/3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/);
+                                      if (match) {
+                                        lat = parseFloat(match[1]);
+                                        lng = parseFloat(match[2]);
+                                      }
+                                      
+                                      // Format 2: @lat,lng pattern
+                                      if (!lat || !lng) {
+                                        match = link.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+                                        if (match) {
+                                          lat = parseFloat(match[1]);
+                                          lng = parseFloat(match[2]);
+                                        }
+                                      }
+                                      
+                                      // Format 3: ?q=lat,lng pattern
+                                      if (!lat || !lng) {
+                                        match = link.match(/[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+                                        if (match) {
+                                          lat = parseFloat(match[1]);
+                                          lng = parseFloat(match[2]);
+                                        }
+                                      }
+                                      
+                                      // Format 4: ll= pattern
+                                      if (!lat || !lng) {
+                                        match = link.match(/[?&]ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+                                        if (match) {
+                                          lat = parseFloat(match[1]);
+                                          lng = parseFloat(match[2]);
+                                        }
+                                      }
+                                      
+                                      // If coordinates found, update the center
+                                      if (lat && lng) {
+                                        const newCenters = [...formData.offlineCenters];
+                                        newCenters[index].latitude = lat;
+                                        newCenters[index].longitude = lng;
+                                        setFormData({ ...formData, offlineCenters: newCenters });
+                                        console.log(`✅ Auto-extracted coordinates for ${center.centerName}: ${lat}, ${lng}`);
+                                      }
+                                    } catch (e) {
+                                      console.error('Error extracting coordinates:', e);
+                                    }
+                                  }
+                                }}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px 12px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                              {center.latitude && center.longitude && (
+                                <div style={{ marginTop: '4px', fontSize: '12px', color: '#10b981' }}>
+                                  ✓ Coordinates extracted: {center.latitude}, {center.longitude}
+                                </div>
+                              )}
+                            </div>
+                            
+                            {/* Latitude and Longitude inputs */}
+                            <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                              <div>
+                                <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: '500', color: '#374151' }}>
+                                  Latitude
+                                </label>
+                                <input
+                                  type="number"
+                                  step="any"
+                                  placeholder="e.g., 19.184753"
+                                  value={center.latitude || ''}
+                                  onChange={(e) => {
+                                    const newCenters = [...formData.offlineCenters];
+                                    newCenters[index].latitude = e.target.value ? parseFloat(e.target.value) : undefined;
+                                    setFormData({ ...formData, offlineCenters: newCenters });
+                                  }}
+                                  style={{
+                                    width: '100%',
+                                    padding: '10px 12px',
+                                    border: '1px solid #d1d5db',
+                                    borderRadius: '6px',
+                                    fontSize: '14px'
+                                  }}
+                                />
+                              </div>
+                              <div>
+                                <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: '500', color: '#374151' }}>
+                                  Longitude
+                                </label>
+                                <input
+                                  type="number"
+                                  step="any"
+                                  placeholder="e.g., 72.8341927"
+                                  value={center.longitude || ''}
+                                  onChange={(e) => {
+                                    const newCenters = [...formData.offlineCenters];
+                                    newCenters[index].longitude = e.target.value ? parseFloat(e.target.value) : undefined;
+                                    setFormData({ ...formData, offlineCenters: newCenters });
+                                  }}
+                                  style={{
+                                    width: '100%',
+                                    padding: '10px 12px',
+                                    border: '1px solid #d1d5db',
+                                    borderRadius: '6px',
+                                    fontSize: '14px'
+                                  }}
+                                />
+                              </div>
+                              <div style={{ gridColumn: '1 / -1', fontSize: '12px', color: '#6b7280', fontStyle: 'italic' }}>
+                                💡 Tip: Paste a Google Maps link above and coordinates will be auto-extracted, or enter them manually here for accurate distance sorting.
+                              </div>
+                            </div>
+                            
                             <div style={{ gridColumn: '1 / -1' }}>
                               <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                 <label style={{ fontSize: '14px', fontWeight: '500', color: '#374151' }}>

@@ -87,10 +87,10 @@ export const getDashboardStatistics = async (req: Request, res: Response) => {
       { $limit: 10 },
     ]);
 
-    // Get status counts
-    const openTickets = ticketsByStatus.find(s => s.status === 'Open')?.count || 0;
-    const resolvedTickets = ticketsByStatus.find(s => s.status === 'Resolved')?.count || 0;
-    const pendingTickets = ticketsByStatus.find(s => s.status === 'Pending')?.count || 0;
+    // Get status counts (using numeric codes: 1=Open, 2=In Progress, 3=On Hold, 4=Resolved, 5=Closed)
+    const openTickets = ticketsByStatus.find(s => s.status === 1)?.count || 0;
+    const resolvedTickets = ticketsByStatus.find(s => s.status === 4)?.count || 0;
+    const pendingTickets = ticketsByStatus.find(s => s.status === 2 || s.status === 3)?.count || 0; // In Progress or On Hold
 
     // Calculate average response time (mock for now - will need actual implementation)
     const averageResponseTime = 2.5; // hours

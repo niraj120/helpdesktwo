@@ -16,6 +16,7 @@ import UserManagement from '../components/UserManagement';
 import RedirectToFirstRoute from '../components/RedirectToFirstRoute';
 import EmailConfigPage from './EmailConfigPage';
 import ProjectDashboard from './ProjectDashboard';
+import MyAssetsStatic from '../components/MyAssetsStatic';
 
 // Import ticket-related pages
 import ViewTickets from './ViewTickets';
@@ -230,8 +231,9 @@ const AgentTicketsContent = ({ projectBranding, user }: AgentTicketsContentProps
   const fetchStatuses = async () => {
     try {
       const token = localStorage.getItem('authToken');
+      const cacheBuster = `?t=${Date.now()}`;
       const response = await axios.get(
-        `${API_CONFIG.API_URL}/statuses/project/${projectId}`,
+        `${API_CONFIG.API_URL}/statuses/project/${projectId}${cacheBuster}`,
         {
           headers: { Authorization: `Bearer ${token}` }
         }
@@ -325,7 +327,7 @@ const AgentTicketsContent = ({ projectBranding, user }: AgentTicketsContentProps
       for (const ticketId of Array.from(selectedTickets)) {
         await axios.patch(
           `${API_CONFIG.API_URL}/tickets/${ticketId}/status`,
-          { status: 'closed' },
+          { status: 5 }, // 5 = Closed
           { headers: { Authorization: `Bearer ${token}` } }
         );
       }
@@ -1177,6 +1179,7 @@ const ProjectPortalDashboard = () => {
         {/* NEW: Student Workflow replaces old Offline Module */}
         <Route path="/offline" element={<AgentStudentWorkflow projectId={projectBranding?.projectId || ''} />} />
         <Route path="/student-workflow" element={<AgentStudentWorkflow projectId={projectBranding?.projectId || ''} />} />
+        <Route path="/my-assets-demo" element={<MyAssetsStatic />} />
         <Route path="/users" element={<ProjectUserManagement />} />
         <Route path="/audit/activity-logs" element={<ActivityLogs wrapWithLayout={false} />} />
         <Route path="/audit/access-logs" element={<AccessLogs wrapWithLayout={false} />} />

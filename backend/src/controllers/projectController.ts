@@ -636,6 +636,21 @@ export const getProjectTicketSettings = async (req: Request, res: Response) => {
         
         return uniquePriorities;
       })(),
+      // Fetch full SLA rules for resolution time
+      slaRules: await (async () => {
+        const slaRules = await SLARule.find({
+          projectIds: { $in: [project._id] },
+          isActive: true
+        }).populate('priority', 'name code');
+        
+        return slaRules.map(rule => ({
+          _id: rule._id,
+          name: rule.name,
+          priority: rule.priority,
+          resolutionTime: rule.resolutionTime,
+          responseTime: rule.responseTime
+        }));
+      })(),
     };
     
     console.log(`✅ Found ticket settings for project: ${project.name}`);

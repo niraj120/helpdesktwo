@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_CONFIG } from '../config/constants';
+import FeedbackSubmission from '../components/FeedbackSubmission';
 import {
   ArrowLeftIcon,
   PaperClipIcon,
@@ -17,7 +18,7 @@ interface Ticket {
   ticketNumber: string;
   title: string;
   description: string;
-  status: 'open' | 'in-progress' | 'resolved' | 'closed';
+  status: number; // 1=Open, 2=In Progress, 3=On Hold, 4=Resolved, 5=Closed
   priority: 'low' | 'medium' | 'high' | 'urgent';
   category: string;
   createdAt: string;
@@ -67,6 +68,7 @@ interface TicketSettings {
 const StudentTicketDetail: React.FC = () => {
   const { customUrlPath, ticketId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useState(() => new URLSearchParams(window.location.search));
 
   const [loading, setLoading] = useState(true);
   const [ticket, setTicket] = useState<Ticket | null>(null);
@@ -78,6 +80,11 @@ const StudentTicketDetail: React.FC = () => {
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [closingTicket, setClosingTicket] = useState(false);
+  
+  // Feedback mode detection
+  const showFeedbackForm = searchParams.get('feedback') === 'true';
+  const studentIdFromUrl = searchParams.get('studentId');
+  const emailFromUrl = searchParams.get('email');
 
   useEffect(() => {
     fetchData();
@@ -99,8 +106,9 @@ const StudentTicketDetail: React.FC = () => {
       setBranding(brandingData);
 
       // Fetch ticket settings
+      const cacheBuster = `?t=${Date.now()}`;
       const settingsRes = await axios.get(
-        `${API_CONFIG.API_URL}/projects/${brandingData.projectId}/ticket-settings`
+        `${API_CONFIG.API_URL}/projects/${brandingData.projectId}/ticket-settings${cacheBuster}`
       );
       const settings = settingsRes.data.success ? settingsRes.data.data : settingsRes.data;
       setTicketSettings(settings);
@@ -202,19 +210,28 @@ const StudentTicketDetail: React.FC = () => {
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'open':
-        return 'bg-blue-100 text-blue-800';
-      case 'in-progress':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'resolved':
-        return 'bg-green-100 text-green-800';
-      case 'closed':
-        return 'bg-gray-100 text-gray-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
+  const getStatusName = (status: string | number): string => {
+    const statusCode = typeof status === 'number' ? status : Number(status);
+    const statusNames: Record<number, string> = {
+      1: 'Open',
+      2: 'In Progress',
+      3: 'On Hold',
+      4: 'Resolved',
+      5: 'Closed'
+    };
+    return statusNames[statusCode] || `Status ${statusCode}`;
+  };
+
+  const getStatusColor = (status: string | number) => {
+    const statusCode = typeof status === 'number' ? status : Number(status);
+    const colors: Record<number, string> = {
+      1: 'bg-blue-100 text-blue-800',
+      2: 'bg-yellow-100 text-yellow-800',
+      3: 'bg-pink-100 text-pink-800',
+      4: 'bg-green-100 text-green-800',
+      5: 'bg-gray-100 text-gray-800'
+    };
+    return colors[statusCode] || 'bg-gray-100 text-gray-800';
   };
 
   const getPriorityColor = (priority: string) => {
@@ -313,7 +330,7 @@ const StudentTicketDetail: React.FC = () => {
                 <h2 className="text-2xl font-bold text-gray-900">{ticket.title}</h2>
                 <div className="flex flex-col items-end space-y-2">
                   <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(ticket.status)}`}>
-                    {ticket.status.replace('-', ' ').toUpperCase()}
+                    {getStatusName(ticket.status).toUpperCase()}
                   </span>
                   <span className={`text-xs font-medium ${getPriorityColor(ticket.priority)}`}>
                     {ticket.priority.toUpperCase()}
@@ -402,7 +419,8 @@ const StudentTicketDetail: React.FC = () => {
             )}
 
             {/* Reply Form (only if ticket is not closed) */}
-            {ticket.status !== 'closed' && (
+            {/* 5 = Closed */}
+            {ticket.status !== 5 && (
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Add Reply</h3>
                 <form onSubmit={handleReplySubmit} className="space-y-4">
@@ -503,7 +521,8 @@ const StudentTicketDetail: React.FC = () => {
             </div>
 
             {/* Close Ticket Button */}
-            {ticketSettings?.allowStudentToCloseTicket && ticket.status !== 'closed' && (
+            {/* 5 = Closed */}
+            {ticketSettings?.allowStudentToCloseTicket && ticket.status !== 5 && (
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-3">Actions</h3>
                 <button
@@ -520,6 +539,39 @@ const StudentTicketDetail: React.FC = () => {
             )}
           </div>
         </div>
+
+        {/* Feedback Form Section */}
+        {showFeedbackForm && branding && (
+          <div className="mt-8 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl shadow-lg p-8">
+            <div className="text-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                📝 Share Your Feedback
+              </h2>
+              <p className="text-gray-600">
+                Your ticket has been resolved. We'd love to hear about your experience!
+              </p>
+              <p className="text-sm text-gray-500 mt-2">
+                Ticket: <span className="font-semibold">{ticket.ticketNumber}</span>
+                {studentIdFromUrl && emailFromUrl && (
+                  <span className="ml-2">• Student: <span className="font-semibold">{emailFromUrl}</span></span>
+                )}
+              </p>
+            </div>
+            
+            <div className="bg-white rounded-lg p-6 shadow-sm">
+              <FeedbackSubmission
+                ticketId={ticketId!}
+                projectId={branding.projectId}
+                studentId={studentIdFromUrl || undefined}
+                isPublic={!!studentIdFromUrl}
+                onSuccess={() => {
+                  alert('Thank you for your feedback!');
+                  navigate(`/${customUrlPath}/student/my-tickets`);
+                }}
+              />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

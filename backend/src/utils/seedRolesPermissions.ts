@@ -636,6 +636,44 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     category: 'faq',
   },
   // =====================================================
+  // FEEDBACK MODULE CATEGORY
+  // =====================================================
+  {
+    module: 'Feedback',
+    name: 'Create Feedback Forms',
+    code: 'FEEDBACK_FORM_CREATE',
+    description: 'Can create new feedback forms',
+    category: 'feedback',
+  },
+  {
+    module: 'Feedback',
+    name: 'Edit Feedback Forms',
+    code: 'FEEDBACK_FORM_EDIT',
+    description: 'Can edit existing feedback forms',
+    category: 'feedback',
+  },
+  {
+    module: 'Feedback',
+    name: 'Delete Feedback Forms',
+    code: 'FEEDBACK_FORM_DELETE',
+    description: 'Can delete feedback forms',
+    category: 'feedback',
+  },
+  {
+    module: 'Feedback',
+    name: 'View Feedback Responses',
+    code: 'FEEDBACK_VIEW',
+    description: 'Can view submitted feedback responses',
+    category: 'feedback',
+  },
+  {
+    module: 'Feedback',
+    name: 'Export Feedback',
+    code: 'FEEDBACK_EXPORT',
+    description: 'Can export feedback responses',
+    category: 'feedback',
+  },
+  // =====================================================
   // INTEGRATIONS CATEGORY
   // =====================================================
   {
@@ -1037,6 +1075,65 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     code: 'FORM_VIEW_AUDIT_LOGS',
     description: 'Can view audit logs for form changes',
     category: 'fields-forms',
+  },
+  // =====================================================
+  // ASSET MANAGEMENT CATEGORY
+  // =====================================================
+  {
+    module: 'Asset Management',
+    name: 'View Assets',
+    code: 'ASSET_VIEW',
+    description: 'Can view master asset list and details',
+    category: 'asset-management',
+  },
+  {
+    module: 'Asset Management',
+    name: 'Create Asset',
+    code: 'ASSET_CREATE',
+    description: 'Can create new assets in master list',
+    category: 'asset-management',
+  },
+  {
+    module: 'Asset Management',
+    name: 'Edit Asset',
+    code: 'ASSET_EDIT',
+    description: 'Can edit existing assets in master list',
+    category: 'asset-management',
+  },
+  {
+    module: 'Asset Management',
+    name: 'Delete Asset',
+    code: 'ASSET_DELETE',
+    description: 'Can delete assets from master list',
+    category: 'asset-management',
+  },
+  {
+    module: 'Asset Management',
+    name: 'Manage Center Assets',
+    code: 'ASSET_MANAGE',
+    description: 'Can manage asset mappings and update counts for centers',
+    category: 'asset-management',
+  },
+  {
+    module: 'Asset Management',
+    name: 'Map Assets to Centers',
+    code: 'ASSET_MAP_TO_CENTER',
+    description: 'Can map assets to centers in bulk',
+    category: 'asset-management',
+  },
+  {
+    module: 'Asset Management',
+    name: 'Upload Asset Photos',
+    code: 'ASSET_UPLOAD_PHOTOS',
+    description: 'Can upload and manage photos for center assets',
+    category: 'asset-management',
+  },
+  {
+    module: 'Asset Management',
+    name: 'View Asset Statistics',
+    code: 'ASSET_VIEW_STATS',
+    description: 'Can view asset statistics and summary reports',
+    category: 'asset-management',
   },
 ];
 

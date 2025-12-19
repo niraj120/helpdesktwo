@@ -118,6 +118,10 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
   const [uniqueStates, setUniqueStates] = useState<string[]>([]);
   const [uniqueCities, setUniqueCities] = useState<string[]>([]);
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [sortBy, setSortBy] = useState<'none' | 'district' | 'distance' | 'alphabetical'>('none');
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [showSortDropdown, setShowSortDropdown] = useState(false);
+  const [centerCoordinates, setCenterCoordinates] = useState<Map<string, { lat: number; lng: number }>>(new Map());
   const [kbArticles, setKbArticles] = useState<any[]>([]);
   const [kbCategories, setKbCategories] = useState<any[]>([]);
   const [kbLoading, setKbLoading] = useState(false);
@@ -202,8 +206,9 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
         setProjectBranding(branding);
 
         // Fetch ticket submission settings
+        const cacheBuster = `?t=${Date.now()}`;
         const settingsResponse = await axios.get(
-          `${API_CONFIG.API_URL}/projects/${branding.projectId}/ticket-settings`
+          `${API_CONFIG.API_URL}/projects/${branding.projectId}/ticket-settings${cacheBuster}`
         );
         const ticketSettings = settingsResponse.data.success 
           ? settingsResponse.data.data 
@@ -240,6 +245,38 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
     }
   }, [customUrlPath]);
 
+  // Get user's location for distance-based sorting
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setUserLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          });
+        },
+        (error) => {
+          console.log('Geolocation permission denied or unavailable:', error);
+        }
+      );
+    }
+  }, []);
+
+  // Helper function to calculate distance between two coordinates (Haversine formula)
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371; // Radius of Earth in kilometers
+    const dLat = (lat2 - lat1) * (Math.PI / 180);
+    const dLon = (lon2 - lon1) * (Math.PI / 180);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * (Math.PI / 180)) *
+        Math.cos(lat2 * (Math.PI / 180)) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
   useEffect(() => {
     // Filter centers based on search query and filter type
     if (ticketSettings?.offlineCenters) {
@@ -267,9 +304,159 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
         });
       }
 
+      // Apply sorting
+      if (sortBy === 'district') {
+        // Sort by state (district) alphabetically
+        filtered = [...filtered].sort((a, b) => a.state.localeCompare(b.state));
+      } else if (sortBy === 'alphabetical') {
+        // Sort by center name alphabetically
+        filtered = [...filtered].sort((a, b) => a.centerName.localeCompare(b.centerName));
+      } else if (sortBy === 'distance' && userLocation) {
+        console.log('🗺️ Sorting by distance. User location:', userLocation);
+        
+        // Helper function to extract coordinates from Google Maps link
+        const extractCoordinatesFromLink = (center: OfflineCenter): { lat: number; lng: number } | null => {
+          // First check if center already has coordinates
+          if (center.latitude && center.longitude) {
+            return { lat: center.latitude, lng: center.longitude };
+          }
+          
+          const link = center.mapLink || center.googleMapLink;
+          if (!link) return null;
+          
+          try {
+            // Format 1: 3d<lat>!4d<lng> pattern (most common in place links)
+            // e.g., 3d19.1594674!4d72.8355775
+            let match = link.match(/3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/);
+            if (match) {
+              console.log(`✅ Found 3d/4d format: ${match[1]}, ${match[2]}`);
+              return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+            }
+            
+            // Format 2: @lat,lng pattern (e.g., https://www.google.com/maps/@19.0760,72.8777,15z)
+            match = link.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+            if (match) {
+              console.log(`✅ Found @ format: ${match[1]}, ${match[2]}`);
+              return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+            }
+            
+            // Format 3: ?q=lat,lng pattern (e.g., https://www.google.com/maps?q=19.0760,72.8777)
+            match = link.match(/[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+            if (match) {
+              console.log(`✅ Found q= format: ${match[1]}, ${match[2]}`);
+              return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+            }
+            
+            // Format 4: /place/ or /dir/ with coordinates
+            match = link.match(/\/(?:place|dir)\/[^\/]*@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+            if (match) {
+              console.log(`✅ Found place/dir format: ${match[1]}, ${match[2]}`);
+              return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+            }
+            
+            // Format 5: ll= pattern
+            match = link.match(/[?&]ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+            if (match) {
+              console.log(`✅ Found ll= format: ${match[1]}, ${match[2]}`);
+              return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+            }
+            
+            console.log(`❌ No coordinate pattern found in: ${link}`);
+          } catch (e) {
+            console.error('Error parsing coordinates from link:', link, e);
+          }
+          
+          return null;
+        };
+        
+        // For centers with shortened URLs or no coordinates, we'll use Geocoding API
+        // This will be done asynchronously after initial sort
+        const centersWithDistances: Array<{ center: OfflineCenter; distance: number }> = [];
+        const centersNeedingGeocode: OfflineCenter[] = [];
+        
+        filtered.forEach(center => {
+          const coords = extractCoordinatesFromLink(center);
+          if (coords) {
+            const distance = calculateDistance(
+              userLocation.lat,
+              userLocation.lng,
+              coords.lat,
+              coords.lng
+            );
+            console.log(`📏 ${center.centerName}: ${distance.toFixed(2)} km`);
+            centersWithDistances.push({ center, distance });
+          } else {
+            // Will geocode based on address
+            console.log(`🔍 ${center.centerName}: Will use geocoding for address`);
+            centersNeedingGeocode.push(center);
+          }
+        });
+        
+        // Sort by distance
+        centersWithDistances.sort((a, b) => a.distance - b.distance);
+        
+        console.log('✅ Sorted order:', centersWithDistances.map(c => `${c.center.centerName} (${c.distance.toFixed(2)} km)`));
+        
+        // Extract just the centers
+        const sortedWithCoords = centersWithDistances.map(item => item.center);
+        
+        // Geocode centers that need it (using Google Maps Geocoding API)
+        if (centersNeedingGeocode.length > 0 && window.google) {
+          const geocoder = new window.google.maps.Geocoder();
+          const newCoords = new Map(centerCoordinates);
+          let geocodedCount = 0;
+          const geocodedCenters: Array<{ center: OfflineCenter; distance: number }> = [];
+          
+          centersNeedingGeocode.forEach(center => {
+            const address = `${center.address}, ${center.city}, ${center.state} ${center.pincode}`;
+            
+            geocoder.geocode({ address }, (results: any, status: any) => {
+              if (status === 'OK' && results[0]) {
+                const lat = results[0].geometry.location.lat();
+                const lng = results[0].geometry.location.lng();
+                const distance = calculateDistance(userLocation.lat, userLocation.lng, lat, lng);
+                
+                console.log(`📍 Geocoded ${center.centerName}: ${distance.toFixed(2)} km`);
+                
+                // Store coordinates for this center
+                const key = `${center.centerName}-${center.address}`;
+                newCoords.set(key, { lat, lng });
+                geocodedCenters.push({ center, distance });
+                geocodedCount++;
+                
+                // When all geocoding is done, update the list
+                if (geocodedCount === centersNeedingGeocode.length) {
+                  // Combine and sort all centers
+                  const allCentersWithDistance = [...centersWithDistances, ...geocodedCenters];
+                  allCentersWithDistance.sort((a, b) => a.distance - b.distance);
+                  const allSorted = allCentersWithDistance.map(item => item.center);
+                  
+                  setCenterCoordinates(newCoords);
+                  setFilteredCenters(allSorted);
+                }
+              } else {
+                geocodedCount++;
+                if (geocodedCount === centersNeedingGeocode.length) {
+                  // Update with what we have
+                  const allCentersWithDistance = [...centersWithDistances, ...geocodedCenters];
+                  allCentersWithDistance.sort((a, b) => a.distance - b.distance);
+                  const allSorted = allCentersWithDistance.map(item => item.center);
+                  
+                  setCenterCoordinates(newCoords);
+                  setFilteredCenters(allSorted);
+                }
+              }
+            });
+          });
+        }
+        
+        // Initial display with sorted centers + centers needing geocoding at the end
+        filtered = [...sortedWithCoords, ...centersNeedingGeocode];
+      }
+
       setFilteredCenters(filtered);
     }
-  }, [searchQuery, filterType, ticketSettings]);
+  }, [searchQuery, filterType, ticketSettings, sortBy, userLocation]);
 
   const handleInputChange = (fieldName: string, value: any) => {
     setFormData((prev) => ({ ...prev, [fieldName]: value }));
@@ -598,29 +785,29 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
       {/* Modern Header with Logo */}
       {!hideHeader && (
         <header className="bg-white shadow-sm border-b border-gray-200">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center justify-between h-20">
+          <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+            <div className="flex items-center justify-between h-16 sm:h-20">
               {/* Logo and Brand */}
-              <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2 sm:space-x-4 flex-1 min-w-0">
                 {projectBranding.logoUrl && (
                   <img
                     src={projectBranding.logoUrl}
                     alt={projectBranding.name}
-                    className="h-12 w-auto"
+                    className="h-8 sm:h-12 w-auto flex-shrink-0"
                   />
                 )}
-                <div>
-                  <h1 className="text-xl font-bold text-gray-900">{projectBranding.name}</h1>
-                  <p className="text-sm text-gray-500">{projectBranding.welcomeText}</p>
+                <div className="min-w-0">
+                  <h1 className="text-base sm:text-xl font-bold text-gray-900 truncate">{projectBranding.name}</h1>
+                  <p className="text-xs sm:text-sm text-gray-500 truncate hidden sm:block">{projectBranding.welcomeText}</p>
                 </div>
               </div>
 
               {/* Right Side Actions */}
-              <div className="flex items-center space-x-3">
+              <div className="flex items-center space-x-2 sm:space-x-3 flex-shrink-0">
                 <LanguageToggle />
                 <button
                   onClick={() => setShowLoginModal(true)}
-                  className="px-4 py-2 rounded-lg text-sm font-medium transition-all hover:shadow-md"
+                  className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all hover:shadow-md"
                   style={{
                     backgroundColor: projectBranding.primaryColor,
                     color: 'white',
@@ -632,13 +819,13 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
             </div>
 
             {/* Modern Navigation Menu */}
-            <nav className="flex space-x-1 pb-2">
+            <nav className="flex space-x-1 pb-2 overflow-x-auto">
               {showOnline && (
                 <button
                   onClick={() => {
                     setActiveTab('online');
                   }}
-                  className={`flex items-center space-x-2 px-6 py-3 rounded-t-lg font-medium transition-all ${
+                  className={`flex items-center space-x-1 sm:space-x-2 px-3 sm:px-6 py-2 sm:py-3 rounded-t-lg font-medium transition-all whitespace-nowrap ${
                     activeTab === 'online'
                       ? 'text-white shadow-md'
                       : 'text-gray-600 hover:bg-gray-100'
@@ -647,8 +834,8 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                     backgroundColor: activeTab === 'online' ? projectBranding.primaryColor : 'transparent',
                   }}
                 >
-                  <DocumentArrowUpIcon className="w-5 h-5" />
-                  <span>Submit Online</span>
+                  <DocumentArrowUpIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+                  <span className="text-sm sm:text-base">Submit Online</span>
                 </button>
               )}
               
@@ -658,7 +845,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                     setActiveTab('offline');
                     setViewMode('list');
                   }}
-                  className={`flex items-center space-x-2 px-6 py-3 rounded-t-lg font-medium transition-all ${
+                  className={`flex items-center space-x-1 sm:space-x-2 px-3 sm:px-6 py-2 sm:py-3 rounded-t-lg font-medium transition-all whitespace-nowrap ${
                     activeTab === 'offline'
                       ? 'text-white shadow-md'
                       : 'text-gray-600 hover:bg-gray-100'
@@ -727,7 +914,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
       )}
 
       {/* Main Content */}
-      <main className={`max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 ${hideHeader ? 'py-0' : 'py-8'}`}>
+      <main className={`max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 ${hideHeader ? 'py-0' : 'py-4 sm:py-8'}`}>
         {/* Success Message */}
         {submitSuccess && (
           <div 
@@ -771,14 +958,14 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
         <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-200">
           {/* Online Form View */}
           {showOnline && activeTab === 'online' && (
-            <div className="p-8 md:p-12">
-              <div className="mb-8">
-                <h2 className="text-3xl font-bold text-gray-900 mb-2">Submit Your Query</h2>
-                <p className="text-gray-600">
+            <div className="p-4 sm:p-8 md:p-12">
+              <div className="mb-6 sm:mb-8">
+                <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Submit Your Query</h2>
+                <p className="text-sm sm:text-base text-gray-600">
                   {ticketSettings.welcomeMessage || 'Fill out the form below and our team will assist you.'}
                 </p>
               </div>
-              <form onSubmit={handleSubmit} className="space-y-6">
+              <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
                 {ticketSettings.onlineFormFields.map((field) => (
                   <div key={field.fieldName} className="group">
                     <label className="block text-sm font-semibold text-gray-800 mb-2">
@@ -827,22 +1014,22 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
             <div>
               {/* Header with View Toggle */}
               <div 
-                className="px-8 md:px-12 py-6 border-b border-gray-200"
+                className="px-4 sm:px-8 md:px-12 py-4 sm:py-6 border-b border-gray-200"
                 style={{
                   background: `linear-gradient(135deg, ${projectBranding.primaryColor}08 0%, ${projectBranding.secondaryColor}08 100%)`,
                 }}
               >
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 sm:gap-4">
                   <div>
-                    <h2 className="text-3xl font-bold text-gray-900 mb-2">Find Nearest Center</h2>
-                    <p className="text-gray-600">Locate our centers across the country or view them on the map</p>
+                    <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 mb-1 sm:mb-2">Find Nearest Center</h2>
+                    <p className="text-sm sm:text-base text-gray-600">Locate our centers across the country or view them on the map</p>
                   </div>
                   
                   {/* View Mode Toggle */}
-                  <div className="flex gap-2 bg-white p-1 rounded-lg shadow-sm border border-gray-200">
+                  <div className="flex gap-1 sm:gap-2 bg-white p-1 rounded-lg shadow-sm border border-gray-200 w-full md:w-auto">
                     <button
                       onClick={() => setViewMode('list')}
-                      className={`flex items-center space-x-2 px-4 py-2.5 rounded-md font-medium transition-all ${
+                      className={`flex items-center justify-center space-x-1 sm:space-x-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-md font-medium transition-all flex-1 md:flex-initial ${
                         viewMode === 'list'
                           ? 'text-white shadow-md transform scale-105'
                           : 'text-gray-600 hover:bg-gray-50'
@@ -851,14 +1038,14 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                         backgroundColor: viewMode === 'list' ? projectBranding.primaryColor : 'transparent',
                       }}
                     >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
                       </svg>
-                      <span>List View</span>
+                      <span className="text-sm sm:text-base">List</span>
                     </button>
                     <button
                       onClick={() => setViewMode('map')}
-                      className={`flex items-center space-x-2 px-4 py-2.5 rounded-md font-medium transition-all ${
+                      className={`flex items-center justify-center space-x-1 sm:space-x-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-md font-medium transition-all flex-1 md:flex-initial ${
                         viewMode === 'map'
                           ? 'text-white shadow-md transform scale-105'
                           : 'text-gray-600 hover:bg-gray-50'
@@ -867,14 +1054,14 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                         backgroundColor: viewMode === 'map' ? projectBranding.primaryColor : 'transparent',
                       }}
                     >
-                      <MapPinIcon className="w-5 h-5" />
-                      <span>Map View</span>
+                      <MapPinIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+                      <span className="text-sm sm:text-base">Map</span>
                     </button>
                   </div>
                 </div>
               </div>
 
-              <div className="p-8 md:p-12">
+              <div className="p-4 sm:p-6 md:p-8 lg:p-12">
 
             {/* Filter Buttons */}
             {viewMode === 'list' && (
@@ -946,31 +1133,151 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
             </div>
             )}
 
-            {/* Search */}
+            {/* Search and Sort */}
             {viewMode === 'list' && (
-            <div className="mb-6">
-              <input
-                type="text"
-                placeholder={
-                  filterType === 'state'
-                    ? 'Search by state...'
-                    : filterType === 'city'
-                    ? 'Search by city...'
-                    : filterType === 'pincode'
-                    ? 'Search by pincode...'
-                    : 'Search by city, state, or pincode...'
-                }
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:outline-none"
-                style={{ ['--tw-ring-color' as any]: projectBranding.primaryColor }}
-              />
+            <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row gap-3 sm:gap-4">
+              <div className="flex-1">
+                <input
+                  type="text"
+                  placeholder={
+                    filterType === 'state'
+                      ? 'Search by state...'
+                      : filterType === 'city'
+                      ? 'Search by city...'
+                      : filterType === 'pincode'
+                      ? 'Search by pincode...'
+                      : 'Search by city, state, or pincode...'
+                  }
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:outline-none"
+                  style={{ ['--tw-ring-color' as any]: projectBranding.primaryColor }}
+                />
+              </div>
+              
+              {/* Sort Dropdown */}
+              <div className="relative w-full sm:w-auto sm:min-w-[200px]">
+                <button
+                  onClick={() => setShowSortDropdown(!showSortDropdown)}
+                  className="flex items-center space-x-2 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-colors font-medium text-gray-700 w-full justify-between text-sm sm:text-base"
+                >
+                  <div className="flex items-center space-x-2">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
+                    </svg>
+                    <span>
+                      {sortBy === 'district' ? 'Sort: District' : 
+                       sortBy === 'distance' ? 'Sort: Distance' :
+                       sortBy === 'alphabetical' ? 'Sort: A-Z' :
+                       'Sort By'}
+                    </span>
+                  </div>
+                  <svg className={`w-4 h-4 transition-transform ${showSortDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                
+                {/* Dropdown Menu */}
+                {showSortDropdown && (
+                  <div className="absolute right-0 mt-2 w-full bg-white rounded-lg shadow-xl border border-gray-200 z-10 overflow-hidden">
+                    <button
+                      onClick={() => {
+                        setSortBy('district');
+                        setShowSortDropdown(false);
+                      }}
+                      className={`w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors flex items-center space-x-2 ${
+                        sortBy === 'district' ? 'font-bold' : ''
+                      }`}
+                      style={{
+                        backgroundColor: sortBy === 'district' ? `${projectBranding.primaryColor}10` : 'transparent',
+                        color: sortBy === 'district' ? projectBranding.primaryColor : 'inherit',
+                      }}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                      </svg>
+                      <span>Sort by District</span>
+                      {sortBy === 'district' && (
+                        <svg className="w-4 h-4 ml-auto" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (!userLocation) {
+                          alert('Location access is required to sort by distance. Please enable location permissions.');
+                          return;
+                        }
+                        setSortBy('distance');
+                        setShowSortDropdown(false);
+                      }}
+                      className={`w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors flex items-center space-x-2 ${
+                        sortBy === 'distance' ? 'font-bold' : ''
+                      } ${!userLocation ? 'opacity-50' : ''}`}
+                      style={{
+                        backgroundColor: sortBy === 'distance' ? `${projectBranding.primaryColor}10` : 'transparent',
+                        color: sortBy === 'distance' ? projectBranding.primaryColor : 'inherit',
+                      }}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      <span>Sort by Distance from You</span>
+                      {!userLocation && <span className="text-xs text-gray-400">(location required)</span>}
+                      {sortBy === 'distance' && (
+                        <svg className="w-4 h-4 ml-auto" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSortBy('alphabetical');
+                        setShowSortDropdown(false);
+                      }}
+                      className={`w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors flex items-center space-x-2 ${
+                        sortBy === 'alphabetical' ? 'font-bold' : ''
+                      }`}
+                      style={{
+                        backgroundColor: sortBy === 'alphabetical' ? `${projectBranding.primaryColor}10` : 'transparent',
+                        color: sortBy === 'alphabetical' ? projectBranding.primaryColor : 'inherit',
+                      }}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h9m5-4v12m0 0l-4-4m4 4l4-4" />
+                      </svg>
+                      <span>Sort Alphabetically (A-Z)</span>
+                      {sortBy === 'alphabetical' && (
+                        <svg className="w-4 h-4 ml-auto" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                    </button>
+                    {sortBy !== 'none' && (
+                      <button
+                        onClick={() => {
+                          setSortBy('none');
+                          setShowSortDropdown(false);
+                        }}
+                        className="w-full px-4 py-3 text-left hover:bg-red-50 transition-colors flex items-center space-x-2 border-t border-gray-200 text-red-600"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                        <span>Clear Sort</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
             )}
 
             {/* Map View */}
             {viewMode === 'map' && (
-              <div className="h-[600px] rounded-lg overflow-hidden border border-gray-200 shadow-lg relative">
+              <div className="h-[400px] sm:h-[500px] md:h-[600px] rounded-lg overflow-hidden border border-gray-200 shadow-lg relative">
                 <div 
                   id="google-map" 
                   className="w-full h-full"
@@ -1205,7 +1512,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
 
             {/* Centers List */}
             {viewMode === 'list' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
               {filteredCenters.length === 0 ? (
                 <div className="col-span-2 text-center py-12">
                   <MapPinIcon className="w-16 h-16 text-gray-300 mx-auto mb-4" />
@@ -1215,12 +1522,49 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                 filteredCenters.map((center, idx) => (
                   <div
                     key={idx}
-                    className="bg-gradient-to-br from-white to-gray-50 border-2 border-gray-200 rounded-2xl p-6 hover-lift hover:border-gray-300 transition-all duration-300"
+                    className="bg-white border-2 border-gray-400 rounded-xl sm:rounded-2xl p-4 sm:p-6 hover-lift hover:border-gray-600 transition-all duration-300 shadow-md hover:shadow-xl"
                   >
-                    <div className="flex items-start justify-between mb-4">
-                      <h3 className="text-xl font-bold text-gray-900 flex-1">
-                        {center.centerName}
-                      </h3>
+                    <div className="flex items-start justify-between mb-3 sm:mb-4">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-lg sm:text-xl font-bold text-gray-900 break-words">
+                          {center.centerName}
+                        </h3>
+                        {/* Show distance if sorting by distance */}
+                        {sortBy === 'distance' && userLocation && (() => {
+                          // Try to get coordinates from direct values or geocoded values
+                          let lat = center.latitude;
+                          let lng = center.longitude;
+                          
+                          if (!lat || !lng) {
+                            const key = `${center.centerName}-${center.address}`;
+                            const coords = centerCoordinates.get(key);
+                            if (coords) {
+                              lat = coords.lat;
+                              lng = coords.lng;
+                            }
+                          }
+                          
+                          if (lat && lng) {
+                            return (
+                              <p className="text-sm text-gray-500 mt-1 flex items-center space-x-1">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                                <span>
+                                  {calculateDistance(
+                                    userLocation.lat,
+                                    userLocation.lng,
+                                    lat,
+                                    lng
+                                  ).toFixed(1)} km away
+                                </span>
+                              </p>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </div>
                       <div 
                         className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0"
                         style={{
@@ -1283,10 +1627,10 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                       </div>
                     )}
 
-                    {/* Additional Contacts Section */}
+                    {/* Contact Details Section */}
                     {center.contacts && center.contacts.length > 0 && (
                       <div className="mt-4 pt-4 border-t border-gray-200">
-                        <p className="text-sm font-medium text-gray-700 mb-3">Additional Contacts</p>
+                        <p className="text-sm font-medium text-gray-700 mb-3">Contact Details</p>
                         <div className="space-y-3">
                           {center.contacts.map((contact, contactIdx) => (
                             <div key={contactIdx} className="bg-gray-50 p-3 rounded-lg">

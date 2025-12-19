@@ -86,8 +86,9 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
       console.log('📁 Total categories:', activeCategoryNames.length);
 
       // Fetch ticket settings
+      const cacheBuster = `?t=${Date.now()}`;
       const settingsRes = await axios.get(
-        `${API_CONFIG.API_URL}/projects/${brandingData.projectId}/ticket-settings`
+        `${API_CONFIG.API_URL}/projects/${brandingData.projectId}/ticket-settings${cacheBuster}`
       );
       const settings = settingsRes.data.success ? settingsRes.data.data : settingsRes.data;
       

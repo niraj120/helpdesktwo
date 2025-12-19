@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { body } from 'express-validator';
 import { validateRequest } from '../middleware/validateRequest';
-import { authRateLimit, forgotPasswordRateLimit } from '../middleware/rateLimiter';
 import {
   login,
   logout,
@@ -19,7 +18,7 @@ const router = Router();
 // @desc    Login user
 // @route   POST /api/auth/login
 // @access  Public
-router.post('/login', authRateLimit, [
+router.post('/login', [
   body('email').isEmail().normalizeEmail().withMessage('Please provide a valid email'),
   body('password').notEmpty().withMessage('Password is required'),
   validateRequest,
@@ -43,7 +42,7 @@ router.post('/logout', auth, logout);
 // @desc    Forgot password - Send OTP
 // @route   POST /api/auth/forgot-password
 // @access  Public
-router.post('/forgot-password', forgotPasswordRateLimit, [
+router.post('/forgot-password', [
   body('email').isEmail().normalizeEmail().withMessage('Please provide a valid email'),
   validateRequest,
 ], forgotPassword);

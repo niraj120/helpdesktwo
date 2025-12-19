@@ -35,6 +35,12 @@ import KnowledgeBaseManagement from './components/KnowledgeBaseManagement'
 import KBArticleView from './pages/KBArticleView'
 import FAQManagement from './components/FAQManagement'
 import FAQViewer from './components/FAQViewer'
+import FeedbackFormManagement from './components/FeedbackFormManagement'
+import FeedbackResponses from './components/FeedbackResponses'
+import AssetManagement from './components/AssetManagement'
+import CenterAssetMapping from './components/CenterAssetMapping'
+import MyAssets from './components/MyAssets'
+import MyAssetsStatic from './components/MyAssetsStatic'
 import TicketSettings from './components/TicketSettings'
 import TicketConfigurationPage from './pages/TicketConfigurationPage'
 import AgentTicketDetail from './pages/AgentTicketDetail'
@@ -368,6 +374,54 @@ function App() {
               <FAQManagement />
             </ProtectedRoute>
           } 
+        />
+        
+        {/* Feedback Module - Requires FEEDBACK_* permissions */}
+        <Route 
+          path="/feedback/forms" 
+          element={
+            <ProtectedRoute permission={['FEEDBACK_FORM_CREATE', 'FEEDBACK_FORM_EDIT', 'FEEDBACK_FORM_DELETE']}>
+              <FeedbackFormManagement />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/feedback/responses" 
+          element={
+            <ProtectedRoute permission="FEEDBACK_VIEW">
+              <FeedbackResponses />
+            </ProtectedRoute>
+          } 
+        />
+        
+        {/* Asset Management - Requires ASSET_* permissions */}
+        <Route 
+          path="/assets" 
+          element={
+            <ProtectedRoute permission="ASSET_VIEW">
+              <AssetManagement />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/center-assets" 
+          element={
+            <ProtectedRoute permission="ASSET_MANAGE">
+              <CenterAssetMapping />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/my-assets" 
+          element={
+            <ProtectedRoute permission="ASSET_MANAGE">
+              <MyAssets />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/my-assets-demo" 
+          element={<MyAssetsStatic />} 
         />
         
         {/* Audit Logs - Requires AUDIT_* permissions */}

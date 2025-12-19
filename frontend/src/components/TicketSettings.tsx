@@ -92,7 +92,8 @@ const TicketSettings: React.FC = () => {
     setLoadingStatuses(true);
     try {
       const token = localStorage.getItem('authToken');
-      const response = await fetch(`${API_CONFIG.API_URL}/statuses/project/${projectId}`, {
+      const cacheBuster = `?t=${Date.now()}`;
+      const response = await fetch(`${API_CONFIG.API_URL}/statuses/project/${projectId}${cacheBuster}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -185,7 +186,8 @@ const TicketSettings: React.FC = () => {
     setLoading(true);
     try {
       const token = localStorage.getItem('authToken');
-      const response = await fetch(`${API_CONFIG.API_URL}/projects/${projectId}/ticket-settings`, {
+      const cacheBuster = `?t=${Date.now()}`;
+      const response = await fetch(`${API_CONFIG.API_URL}/projects/${projectId}/ticket-settings${cacheBuster}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },

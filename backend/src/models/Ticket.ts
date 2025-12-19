@@ -50,12 +50,22 @@ export interface IEscalationRecord {
   escalatedAt: Date;
 }
 
+export interface IChangeHistory {
+  _id?: mongoose.Types.ObjectId;
+  field: string; // Field that was changed (e.g., 'status', 'priority', 'category', 'tags', 'assignedTo')
+  oldValue: string; // Previous value
+  newValue: string; // New value
+  changedBy: mongoose.Types.ObjectId; // User who made the change
+  changedAt: Date;
+  changeType: 'update' | 'add' | 'remove'; // Type of change
+}
+
 export interface ITicket extends Document {
   ticketNumber: string;
   title: string;
   description: string;
-  status: 'open' | 'in-progress' | 'resolved' | 'closed' | 'on-hold';
-  priority: 'low' | 'medium' | 'high' | 'critical';
+  status: number; // Changed to number: 1=open, 2=in-progress, 3=on-hold, 4=resolved, 5=closed
+  priority: string; // Priority code from Priority master data (e.g., LOW, MEDIUM, HIGH, CRITICAL)
   category?: string;
   createdBy: mongoose.Types.ObjectId;
   assignedTo?: mongoose.Types.ObjectId;
@@ -65,6 +75,7 @@ export interface ITicket extends Document {
   comments?: IComment[]; // Added for RBAC comment feature
   internalNotes?: IInternalNote[];
   escalationHistory?: IEscalationRecord[];
+  changeHistory?: IChangeHistory[]; // Track all changes to the ticket
   tags: string[];
   submissionSource?: 'online' | 'offline'; // Track where ticket was created
   metadata?: any;
@@ -119,6 +130,15 @@ const EscalationRecordSchema = new Schema({
   escalatedAt: { type: Date, default: Date.now },
 });
 
+const ChangeHistorySchema = new Schema({
+  field: { type: String, required: true },
+  oldValue: { type: String, required: true },
+  newValue: { type: String, required: true },
+  changedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  changedAt: { type: Date, default: Date.now },
+  changeType: { type: String, enum: ['update', 'add', 'remove'], default: 'update' },
+});
+
 const TicketSchema: Schema = new Schema(
   {
     ticketNumber: {
@@ -137,16 +157,19 @@ const TicketSchema: Schema = new Schema(
       trim: true,
     },
     status: {
-      type: String,
-      enum: ['open', 'in-progress', 'resolved', 'closed', 'on-hold'],
-      default: 'open',
+      type: Number,
+      required: true,
+      default: 1, // 1=open, 2=in-progress, 3=on-hold, 4=resolved, 5=closed
       index: true,
     },
     priority: {
       type: String,
-      enum: ['low', 'medium', 'high', 'critical'],
-      default: 'medium',
+      required: true,
+      uppercase: true,
+      trim: true,
       index: true,
+      // No enum - priority codes are dynamic from Priority master data
+      // Common codes: LOW, MEDIUM, HIGH, CRITICAL
     },
     category: {
       type: String,
@@ -172,6 +195,7 @@ const TicketSchema: Schema = new Schema(
     comments: [CommentSchema], // Added for RBAC comment feature
     internalNotes: [InternalNoteSchema],
     escalationHistory: [EscalationRecordSchema],
+    changeHistory: [ChangeHistorySchema], // Track all field changes
     tags: [{
       type: String,
       trim: true,

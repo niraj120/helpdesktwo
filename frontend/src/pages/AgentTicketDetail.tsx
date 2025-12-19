@@ -176,7 +176,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
   const navigate = useNavigate();
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'details' | 'replies' | 'notes' | 'history'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'replies' | 'notes' | 'history'>('replies');
   
   // Reply states
   const [replyMessage, setReplyMessage] = useState('');
@@ -206,13 +206,110 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [escalationContacts, setEscalationContacts] = useState<EscalationContact[]>([]);
   const [projectConfig, setProjectConfig] = useState<ProjectConfiguration | null>(null);
-  const [statusOptions, setStatusOptions] = useState<string[]>([]);
+  const [statusOptions, setStatusOptions] = useState<any[]>([]);
   const [priorityOptions, setPriorityOptions] = useState<string[]>([]);
+  const [priorityData, setPriorityData] = useState<any>(null);
+  const [slaRules, setSlaRules] = useState<any[]>([]);
+
+  // Helper function to get status display name from numeric code
+  const getStatusDisplayName = (statusCode: number | string) => {
+    const code = typeof statusCode === 'string' ? Number(statusCode) : statusCode;
+    const status = statusOptions.find((s: any) => s.code === code);
+    return status?.name || `Status ${code}`;
+  };
+
+  // Function to calculate resolution time remaining
+  const calculateResolutionTimeRemaining = () => {
+    if (!ticket || !priorityData) return null;
+
+    const createdAt = new Date(ticket.createdAt);
+    const now = new Date();
+    const elapsedMs = now.getTime() - createdAt.getTime();
+
+    // Convert resolution time to milliseconds
+    let resolutionMs = 0;
+    if (priorityData.resolutionTime) {
+      const { value, unit } = priorityData.resolutionTime;
+      switch (unit) {
+        case 'minutes':
+          resolutionMs = value * 60 * 1000;
+          break;
+        case 'hours':
+          resolutionMs = value * 60 * 60 * 1000;
+          break;
+        case 'days':
+          resolutionMs = value * 24 * 60 * 60 * 1000;
+          break;
+      }
+    }
+
+    const remainingMs = resolutionMs - elapsedMs;
+    const isBreached = remainingMs <= 0;
+
+    // Convert to hours and minutes
+    const totalMinutes = Math.abs(Math.floor(remainingMs / (1000 * 60)));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+
+    return {
+      hours,
+      minutes,
+      isBreached,
+      displayText: isBreached 
+        ? `Overdue by ${hours}h ${minutes}m`
+        : `${hours}h ${minutes}m remaining`
+    };
+  };
 
   useEffect(() => {
     fetchTicketDetails();
     fetchMasterData();
   }, [ticketId]);
+
+  // Fetch priority details when ticket priority changes
+  useEffect(() => {
+    const fetchPriorityData = async () => {
+      if (!ticket?.priority) return;
+
+      try {
+        const token = localStorage.getItem('authToken');
+        const projectContext = JSON.parse(localStorage.getItem('projectContext') || '{}');
+        
+        if (!projectContext.projectId) return;
+          
+        // Fetch ticket settings which includes SLA rules with priorities
+        const response = await axios.get(
+          `${API_CONFIG.API_URL}/projects/${projectContext.projectId}/ticket-settings`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        
+        if (response.data.success && response.data.data?.slaRules) {
+          // Find the matching SLA rule by priority name
+          const matchingSlaRule = response.data.data.slaRules.find(
+            (rule: any) => rule.priority?.name?.toUpperCase() === ticket.priority.toUpperCase()
+          );
+            
+          if (matchingSlaRule?.priority) {
+            // Set priority data with resolution time
+            setPriorityData({
+              name: matchingSlaRule.priority.name,
+              code: ticket.priority.toUpperCase(),
+              resolutionTime: {
+                value: matchingSlaRule.resolutionTime?.value || 0,
+                unit: matchingSlaRule.resolutionTime?.unit || 'hours'
+              }
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching priority data:', error);
+      }
+    };
+
+    fetchPriorityData();
+  }, [ticket?.priority]);
 
   const fetchTicketDetails = async () => {
     setLoading(true);
@@ -284,8 +381,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
 
       // Fetch ticket configuration (statuses, priorities, categories)
       if (projectContext.projectId) {
+        // Add cache-busting parameter to force fresh data
+        const cacheBuster = `?t=${Date.now()}`;
         const ticketConfigRes = await axios.get(
-          `${API_CONFIG.API_URL}/projects/${projectContext.projectId}/ticket-settings`,
+          `${API_CONFIG.API_URL}/projects/${projectContext.projectId}/ticket-settings${cacheBuster}`,
           {
             headers: { Authorization: `Bearer ${token}` },
           }
@@ -296,11 +395,9 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
           
           // Set statuses from Status master table
           if (ticketConfig.allowedStatuses && ticketConfig.allowedStatuses.length > 0) {
-            // Map status objects to lowercase codes for the dropdown
-            const statusCodes = ticketConfig.allowedStatuses.map((status: any) => 
-              status.code ? status.code.toLowerCase() : status
-            );
-            setStatusOptions(statusCodes);
+            console.log('📊 Received allowedStatuses from backend:', ticketConfig.allowedStatuses);
+            // Store full status objects with name and code
+            setStatusOptions(ticketConfig.allowedStatuses);
           }
           
           // Set categories from add project form
@@ -314,6 +411,11 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
           // Set priorities from SLA Rules
           if (ticketConfig.allowedPriorities && ticketConfig.allowedPriorities.length > 0) {
             setPriorityOptions(ticketConfig.allowedPriorities);
+          }
+          
+          // Store SLA rules for resolution time calculation
+          if (ticketConfig.slaRules && ticketConfig.slaRules.length > 0) {
+            setSlaRules(ticketConfig.slaRules);
           }
         }
       }
@@ -399,17 +501,23 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
     }
   };
 
-  const handleUpdateStatus = async (statusOverride?: string) => {
+  const handleUpdateStatus = async (statusOverride?: string | number) => {
     const statusToUpdate = statusOverride || newStatus;
     if (!statusToUpdate || !ticket) return;
 
-    console.log('🔄 Updating status to:', statusToUpdate);
+    // Convert to number (status codes are now numeric: 1=open, 2=in-progress, 3=on-hold, 4=resolved, 5=closed)
+    const statusCode = typeof statusToUpdate === 'string' ? Number(statusToUpdate) : statusToUpdate;
+
+    console.log('🔄 Updating status to:', statusToUpdate, '→', statusCode);
+    console.log('🔍 Type of statusCode:', typeof statusCode);
+    console.log('🔍 Status options available:', statusOptions);
 
     try {
       const token = localStorage.getItem('authToken');
+      console.log('📤 Sending PATCH request with body:', { status: statusCode });
       const response = await axios.patch(
         `${API_CONFIG.API_URL}/tickets/${ticket._id}/status`,
-        { status: statusToUpdate },
+        { status: statusCode },
         {
           headers: { Authorization: `Bearer ${token}` },
         }
@@ -613,15 +721,16 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
     }
   };
 
-  const getStatusColor = (status: string) => {
-    const colors: Record<string, string> = {
-      'open': 'bg-yellow-100 text-yellow-800 border-yellow-300',
-      'in-progress': 'bg-blue-100 text-blue-800 border-blue-300',
-      'pending': 'bg-pink-100 text-pink-800 border-pink-300',
-      'resolved': 'bg-green-100 text-green-800 border-green-300',
-      'closed': 'bg-gray-100 text-gray-800 border-gray-300',
+  const getStatusColor = (status: number | string) => {
+    const statusCode = typeof status === 'string' ? Number(status) : status;
+    const colors: Record<number, string> = {
+      1: 'bg-yellow-100 text-yellow-800 border-yellow-300', // open
+      2: 'bg-blue-100 text-blue-800 border-blue-300', // in-progress
+      3: 'bg-pink-100 text-pink-800 border-pink-300', // on-hold
+      4: 'bg-green-100 text-green-800 border-green-300', // resolved
+      5: 'bg-gray-100 text-gray-800 border-gray-300', // closed
     };
-    return colors[status?.toLowerCase()] || colors.open;
+    return colors[statusCode] || colors[1]; // Default to 'open' style
   };
 
   const getPriorityColor = (priority: string) => {
@@ -700,7 +809,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                       #{ticket.ticketNumber}
                     </h1>
                     <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(ticket.status)}`}>
-                      {ticket.status}
+                      {getStatusDisplayName(ticket.status)}
                     </span>
                     <span className={`px-3 py-1 rounded-full text-xs font-medium ${getPriorityColor(ticket.priority)}`}>
                       {ticket.priority}
@@ -749,6 +858,87 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                 </div>
               )}
             </div>
+
+            {/* Latest Reply and Internal Note - Always Visible */}
+            {(ticket.threads && ticket.threads.length > 0) || (ticket.internalNotes && ticket.internalNotes.length > 0) ? (
+              <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Activity</h3>
+                
+                {/* Latest Reply */}
+                {ticket.threads && ticket.threads.length > 0 && (() => {
+                  const latestReply = [...ticket.threads].sort((a, b) => 
+                    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+                  )[0];
+                  
+                  return (
+                    <div className="border-l-4 border-blue-500 pl-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center space-x-2">
+                          <ChatBubbleLeftRightIcon className="h-5 w-5 text-blue-600" />
+                          <span className="text-sm font-semibold text-gray-900">Latest Reply</span>
+                        </div>
+                        <span className="text-xs text-gray-500">
+                          {new Date(latestReply.createdAt).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="bg-blue-50 rounded-lg p-3">
+                        <p className="text-xs font-medium text-gray-700 mb-1">
+                          {latestReply.createdBy.firstName} {latestReply.createdBy.lastName}
+                          {latestReply.createdBy.role && (
+                            <span className="text-gray-500"> • {typeof latestReply.createdBy.role === 'string' ? latestReply.createdBy.role : (latestReply.createdBy.role as any).name}</span>
+                          )}
+                        </p>
+                        <p className="text-sm text-gray-800 whitespace-pre-wrap line-clamp-3">
+                          {latestReply.message}
+                        </p>
+                        {latestReply.attachments && latestReply.attachments.length > 0 && (
+                          <div className="mt-2 flex items-center space-x-1 text-xs text-blue-600">
+                            <PaperClipIcon className="h-3 w-3" />
+                            <span>{latestReply.attachments.length} attachment(s)</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Latest Internal Note */}
+                {ticket.internalNotes && ticket.internalNotes.length > 0 && (() => {
+                  const latestNote = [...ticket.internalNotes].sort((a, b) => 
+                    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+                  )[0];
+                  
+                  return (
+                    <div className="border-l-4 border-yellow-500 pl-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center space-x-2">
+                          <DocumentTextIcon className="h-5 w-5 text-yellow-600" />
+                          <span className="text-sm font-semibold text-gray-900">Latest Internal Note</span>
+                          <span className="text-xs text-gray-500 italic">(Staff only)</span>
+                        </div>
+                        <span className="text-xs text-gray-500">
+                          {new Date(latestNote.createdAt).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="bg-yellow-50 rounded-lg p-3">
+                        <p className="text-xs font-medium text-gray-700 mb-1">
+                          {latestNote.createdBy.firstName} {latestNote.createdBy.lastName}
+                        </p>
+                        <p className="text-sm text-gray-800 whitespace-pre-wrap line-clamp-3">
+                          {latestNote.note}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <div className="pt-2 border-t border-gray-200">
+                  <p className="text-xs text-gray-500 text-center">
+                    View all replies and notes in the tabs below
+                  </p>
+                </div>
+              </div>
+            ) : null}
 
             {/* Tabs */}
             <div className="bg-white rounded-xl shadow-sm">
@@ -843,54 +1033,53 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                       </div>
                     </form>
 
-                    <div className="border-t border-gray-200 pt-6">
-                      {/* Conversation Thread */}
-                      {ticket.threads && ticket.threads.length > 0 ? (
-                        <div className="space-y-4">
-                          {ticket.threads.map((thread, idx) => (
-                            <div
-                              key={thread._id || idx}
-                              className={`p-4 rounded-lg ${
-                                thread.isSystemMessage
-                                  ? 'bg-blue-50 border border-blue-200'
-                                  : 'bg-gray-50 border border-gray-200'
-                              }`}
-                            >
+                    {/* Full Conversation Thread */}
+                    {ticket.threads && ticket.threads.length > 0 && (
+                      <div className="space-y-4 mt-8">
+                        <h4 className="text-base font-semibold text-gray-900 border-b pb-2">
+                          Full Conversation ({ticket.threads.length} {ticket.threads.length === 1 ? 'message' : 'messages'})
+                        </h4>
+                        {ticket.threads
+                          .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+                          .map((thread) => (
+                            <div key={thread._id} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                               <div className="flex items-start space-x-3">
                                 <div className="flex-shrink-0">
-                                  <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
-                                    <UserIcon className="h-6 w-6 text-blue-600" />
+                                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-semibold">
+                                    {thread.createdBy?.firstName?.charAt(0) || '?'}
                                   </div>
                                 </div>
-                                <div className="flex-1">
+                                <div className="flex-1 min-w-0">
                                   <div className="flex items-center justify-between mb-2">
                                     <div>
                                       <p className="text-sm font-medium text-gray-900">
-                                        {thread.createdBy.firstName} {thread.createdBy.lastName}
+                                        {thread.createdBy?.firstName} {thread.createdBy?.lastName}
+                                        {thread.createdBy?.role && (
+                                          <span className="ml-2 text-xs text-gray-500">
+                                            ({typeof thread.createdBy.role === 'string' ? thread.createdBy.role : thread.createdBy.role.name})
+                                          </span>
+                                        )}
                                       </p>
                                       <p className="text-xs text-gray-500">
                                         {new Date(thread.createdAt).toLocaleString()}
                                       </p>
                                     </div>
-                                    {thread.isSystemMessage && (
-                                      <span className="text-xs font-medium text-blue-700 bg-blue-100 px-2 py-1 rounded">
-                                        System
-                                      </span>
-                                    )}
                                   </div>
-                                  <p className="text-gray-700 whitespace-pre-wrap">{thread.message}</p>
+                                  <p className="text-gray-700 whitespace-pre-wrap text-sm">{thread.message}</p>
+
+                                  {/* Thread Attachments */}
                                   {thread.attachments && thread.attachments.length > 0 && (
-                                    <div className="mt-2 flex flex-wrap gap-2">
-                                      {thread.attachments.map((attachment, idx) => (
+                                    <div className="mt-3 space-y-2">
+                                      {thread.attachments.map((file, idx) => (
                                         <a
                                           key={idx}
-                                          href={`${API_CONFIG.BASE_URL}${attachment.path}`}
+                                          href={`${API_CONFIG.BASE_URL}${file.path}`}
                                           target="_blank"
                                           rel="noopener noreferrer"
-                                          className="text-xs text-blue-600 hover:text-blue-700 flex items-center space-x-1"
+                                          className="flex items-center space-x-2 text-sm text-blue-600 hover:text-blue-700"
                                         >
-                                          <PaperClipIcon className="h-3 w-3" />
-                                          <span>{attachment.originalName}</span>
+                                          <PaperClipIcon className="h-4 w-4" />
+                                          <span>{file.filename}</span>
                                         </a>
                                       ))}
                                     </div>
@@ -899,11 +1088,8 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                               </div>
                             </div>
                           ))}
-                        </div>
-                      ) : (
-                        <p className="text-center text-gray-500 py-8">No messages yet</p>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -947,39 +1133,98 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                       </div>
                     </div>
 
-                    <div className="border-t border-gray-200 pt-6">
-                      {/* Notes List */}
-                      {ticket.internalNotes && ticket.internalNotes.length > 0 ? (
-                        <div className="space-y-3">
-                          {ticket.internalNotes.map((note) => (
-                            <div key={note._id} className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    {/* Full Internal Notes List */}
+                    {ticket.internalNotes && ticket.internalNotes.length > 0 && (
+                      <div className="space-y-4 mt-8">
+                        <h4 className="text-base font-semibold text-gray-900 border-b pb-2">
+                          All Internal Notes ({ticket.internalNotes.length} {ticket.internalNotes.length === 1 ? 'note' : 'notes'})
+                        </h4>
+                        {ticket.internalNotes
+                          .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+                          .map((note) => (
+                            <div key={note._id} className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
                               <div className="flex items-start space-x-3">
-                                <DocumentTextIcon className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-1" />
-                                <div className="flex-1">
-                                  <div className="flex items-center justify-between mb-1">
-                                    <p className="text-sm font-medium text-gray-900">
-                                      {note.createdBy.firstName} {note.createdBy.lastName}
-                                    </p>
-                                    <p className="text-xs text-gray-500">
-                                      {new Date(note.createdAt).toLocaleString()}
-                                    </p>
+                                <div className="flex-shrink-0">
+                                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-yellow-500 to-orange-600 flex items-center justify-center text-white font-semibold">
+                                    {note.createdBy?.firstName?.charAt(0) || '?'}
                                   </div>
-                                  <p className="text-sm text-gray-700 whitespace-pre-wrap">{note.note}</p>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <div>
+                                      <p className="text-sm font-medium text-gray-900">
+                                        {note.createdBy?.firstName} {note.createdBy?.lastName}
+                                        <span className="ml-2 text-xs text-yellow-700 font-semibold">(STAFF ONLY)</span>
+                                      </p>
+                                      <p className="text-xs text-gray-600">
+                                        {new Date(note.createdAt).toLocaleString()}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <p className="text-gray-700 whitespace-pre-wrap text-sm">{note.note}</p>
                                 </div>
                               </div>
                             </div>
                           ))}
-                        </div>
-                      ) : (
-                        <p className="text-center text-gray-500 py-8">No internal notes yet</p>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
                 {/* History Tab */}
                 {activeTab === 'history' && (
-                  <div className="space-y-4">
+                  <div className="space-y-6">
+                    {/* Change History */}
+                    {(ticket as any).changeHistory && (ticket as any).changeHistory.length > 0 ? (
+                      <div className="space-y-3">
+                        <h3 className="text-sm font-medium text-gray-900">Change History</h3>
+                        {[...(ticket as any).changeHistory].reverse().map((change: any) => (
+                          <div key={change._id} className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                            <div className="flex items-start space-x-3">
+                              <ClockIcon className="h-5 w-5 text-gray-600 flex-shrink-0 mt-1" />
+                              <div className="flex-1">
+                                <div className="flex items-start justify-between">
+                                  <div>
+                                    <p className="text-sm font-medium text-gray-900">
+                                      {change.field} {change.changeType === 'add' ? 'Added' : change.changeType === 'remove' ? 'Removed' : 'Updated'}
+                                    </p>
+                                    <p className="text-xs text-gray-600 mt-1">
+                                      By {change.changedBy?.firstName} {change.changedBy?.lastName}
+                                    </p>
+                                  </div>
+                                  <p className="text-xs text-gray-500">
+                                    {new Date(change.changedAt).toLocaleString()}
+                                  </p>
+                                </div>
+                                <div className="mt-2 text-sm">
+                                  {change.changeType === 'add' ? (
+                                    <span className="text-green-700">
+                                      + {change.newValue}
+                                    </span>
+                                  ) : change.changeType === 'remove' ? (
+                                    <span className="text-red-700">
+                                      - {change.oldValue}
+                                    </span>
+                                  ) : (
+                                    <div className="space-y-1">
+                                      <span className="text-red-700 line-through">
+                                        {change.oldValue}
+                                      </span>
+                                      <span className="mx-2">→</span>
+                                      <span className="text-green-700">
+                                        {change.newValue}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {/* Escalation History */}
                     {ticket.escalationHistory && ticket.escalationHistory.length > 0 ? (
                       <div className="space-y-3">
                         <h3 className="text-sm font-medium text-gray-900">Escalation History</h3>
@@ -1003,8 +1248,12 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                           </div>
                         ))}
                       </div>
-                    ) : (
-                      <p className="text-center text-gray-500 py-8">No escalation history</p>
+                    ) : null}
+
+                    {/* No history message */}
+                    {(!(ticket as any).changeHistory || (ticket as any).changeHistory.length === 0) && 
+                     (!ticket.escalationHistory || ticket.escalationHistory.length === 0) && (
+                      <p className="text-center text-gray-500 py-8">No history yet</p>
                     )}
                   </div>
                 )}
@@ -1025,16 +1274,16 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                   <select
                     value={ticket.status}
                     onChange={(e) => {
-                      const newStatusValue = e.target.value;
-                      setNewStatus(newStatusValue);
-                      // Call update directly with the new value
-                      handleUpdateStatus(newStatusValue);
+                      const newStatusCode = Number(e.target.value);
+                      setNewStatus(newStatusCode);
+                      // Call update directly with the new numeric code
+                      handleUpdateStatus(newStatusCode);
                     }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
-                    {statusOptions.map((status) => (
-                      <option key={status} value={status}>
-                        {status}
+                    {statusOptions.map((status: any) => (
+                      <option key={status.code} value={status.code}>
+                        {status.name}
                       </option>
                     ))}
                   </select>
@@ -1044,7 +1293,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Priority</label>
                   <select
-                    value={ticket.priority}
+                    value={ticket.priority.toUpperCase()}
                     onChange={(e) => {
                       const newPriorityValue = e.target.value;
                       setNewPriority(newPriorityValue);
@@ -1054,12 +1303,87 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     {priorityOptions.map((priority) => (
-                      <option key={priority} value={priority}>
+                      <option key={priority} value={priority.toUpperCase()}>
                         {priority}
                       </option>
                     ))}
                   </select>
                 </div>
+
+                {/* Resolution Time Countdown */}
+                {(() => {
+                  console.log('🎯 SLA Rules:', slaRules);
+                  console.log('🎯 Ticket Priority:', ticket.priority);
+                  
+                  // Find matching SLA rule for this ticket's priority
+                  const matchingSlaRule = slaRules.find(
+                    (rule: any) => rule.priority?.name?.toUpperCase() === ticket.priority.toUpperCase()
+                  );
+                  
+                  console.log('🎯 Matching SLA Rule:', matchingSlaRule);
+                  
+                  // Fallback to default resolution times if no SLA rule found
+                  const defaultResolutionHours: { [key: string]: number } = {
+                    'CRITICAL': 2,
+                    'HIGH': 8,
+                    'MEDIUM': 24,
+                    'LOW': 48
+                  };
+                  
+                  let resolutionMs = 0;
+                  
+                  if (matchingSlaRule?.resolutionTime) {
+                    // Use SLA rule resolution time
+                    const { value, unit } = matchingSlaRule.resolutionTime;
+                    switch (unit?.toLowerCase()) {
+                      case 'minutes':
+                        resolutionMs = value * 60 * 1000;
+                        break;
+                      case 'hours':
+                        resolutionMs = value * 60 * 60 * 1000;
+                        break;
+                      case 'days':
+                        resolutionMs = value * 24 * 60 * 60 * 1000;
+                        break;
+                      default:
+                        resolutionMs = value * 60 * 60 * 1000; // Default to hours
+                    }
+                  } else {
+                    // Use default hours
+                    const hours = defaultResolutionHours[ticket.priority.toUpperCase()] || 24;
+                    resolutionMs = hours * 60 * 60 * 1000;
+                  }
+                  
+                  const createdAt = new Date(ticket.createdAt);
+                  const resolutionDeadline = new Date(createdAt.getTime() + resolutionMs);
+                  const now = new Date();
+                  const diffMs = resolutionDeadline.getTime() - now.getTime();
+                  const isBreached = diffMs < 0;
+                  
+                  const absDiffMs = Math.abs(diffMs);
+                  const totalHours = Math.floor(absDiffMs / (1000 * 60 * 60));
+                  const minutes = Math.floor((absDiffMs % (1000 * 60 * 60)) / (1000 * 60));
+                  
+                  const displayText = isBreached 
+                    ? `Overdue by ${totalHours}h ${minutes}m`
+                    : `${totalHours}h ${minutes}m remaining`;
+                  
+                  console.log('🎯 Display Text:', displayText);
+                  
+                  return (
+                    <div className={`p-3 rounded-lg border ${isBreached ? 'bg-red-50 border-red-300' : 'bg-blue-50 border-blue-300'}`}>
+                      <div className="flex items-center space-x-2">
+                        <ClockIcon className={`h-5 w-5 ${isBreached ? 'text-red-600' : 'text-blue-600'}`} />
+                        <div className="flex-1">
+                          <p className="text-xs font-medium text-gray-700">Resolution Time</p>
+                          <p className={`text-lg font-bold ${isBreached ? 'text-red-600' : 'text-blue-600'}`}>
+                            {displayText}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Category */}
                 <div>

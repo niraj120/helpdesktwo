@@ -180,7 +180,7 @@ export const createOfflineTicket = async (req: AuthRequest, res: Response): Prom
       title: ticketData.title,
       description: ticketData.description,
       createdBy: student._id,
-      status: ticketData.markAsResolved ? 'resolved' : 'open',
+      status: ticketData.markAsResolved ? 4 : 1, // 4=Resolved, 1=Open
       priority: ticketData.priority || 'medium',
       category: ticketData.category,
       attachments: ticketData.attachments || [],

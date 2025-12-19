@@ -93,13 +93,46 @@ export const getArticleById = async (req: AuthRequest, res: Response) => {
 // @access  Private (SuperAdmin only)
 export const createArticle = async (req: AuthRequest, res: Response) => {
   try {
-    const { projectId, title, content, category, tags, status, displayOrder } = req.body;
+    const { 
+      projectId, 
+      title, 
+      content, 
+      category, // Keep for backward compatibility
+      categoryId, 
+      subcategoryId,
+      contentType,
+      pdfUrl,
+      pdfFileName,
+      tags, 
+      status, 
+      displayOrder 
+    } = req.body;
+
+    // Validate required fields based on content type
+    if (contentType === 'pdf' && !pdfUrl) {
+      return res.status(400).json({
+        success: false,
+        error: 'PDF URL is required for PDF content type'
+      });
+    }
+
+    if (contentType === 'html' && !content) {
+      return res.status(400).json({
+        success: false,
+        error: 'Content is required for HTML content type'
+      });
+    }
 
     const article = await KnowledgeBaseArticle.create({
       projectId,
       title,
-      content,
-      category,
+      content: contentType === 'html' ? content : undefined,
+      category, // Keep for backward compatibility
+      categoryId,
+      subcategoryId,
+      contentType: contentType || 'html',
+      pdfUrl,
+      pdfFileName,
       tags,
       status,
       displayOrder: displayOrder || 0,
@@ -108,14 +141,16 @@ export const createArticle = async (req: AuthRequest, res: Response) => {
     });
 
     const populatedArticle = await KnowledgeBaseArticle.findById(article._id)
-      .populate('author', 'name email');
+      .populate('author', 'name email')
+      .populate('categoryId', 'name')
+      .populate('subcategoryId', 'name');
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       data: populatedArticle
     });
   } catch (error: any) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: error.message || 'Failed to create article'
     });
@@ -128,7 +163,20 @@ export const createArticle = async (req: AuthRequest, res: Response) => {
 export const updateArticle = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { title, content, category, tags, status, displayOrder, isActive } = req.body;
+    const { 
+      title, 
+      content, 
+      category, 
+      categoryId, 
+      subcategoryId,
+      contentType,
+      pdfUrl,
+      pdfFileName,
+      tags, 
+      status, 
+      displayOrder, 
+      isActive 
+    } = req.body;
 
     const article = await KnowledgeBaseArticle.findById(id);
 
@@ -144,6 +192,11 @@ export const updateArticle = async (req: AuthRequest, res: Response) => {
     if (title !== undefined) article.title = title;
     if (content !== undefined) article.content = content;
     if (category !== undefined) article.category = category;
+    if (categoryId !== undefined) article.categoryId = categoryId;
+    if (subcategoryId !== undefined) article.subcategoryId = subcategoryId;
+    if (contentType !== undefined) article.contentType = contentType;
+    if (pdfUrl !== undefined) article.pdfUrl = pdfUrl;
+    if (pdfFileName !== undefined) article.pdfFileName = pdfFileName;
     if (tags !== undefined) article.tags = tags;
     if (displayOrder !== undefined) article.displayOrder = displayOrder;
     if (isActive !== undefined) article.isActive = isActive;
@@ -159,7 +212,9 @@ export const updateArticle = async (req: AuthRequest, res: Response) => {
     await article.save();
 
     const updatedArticle = await KnowledgeBaseArticle.findById(id)
-      .populate('author', 'name email');
+      .populate('author', 'name email')
+      .populate('categoryId', 'name')
+      .populate('subcategoryId', 'name');
 
     res.json({
       success: true,

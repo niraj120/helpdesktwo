@@ -2,7 +2,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IStatus extends Document {
   name: string;
-  code: string;
+  code: number; // Changed to number
   color: string;
   projectId: mongoose.Types.ObjectId;
   isDefault: boolean;
@@ -24,10 +24,8 @@ const StatusSchema = new Schema<IStatus>(
       trim: true,
     },
     code: {
-      type: String,
+      type: Number, // Changed to Number
       required: true,
-      uppercase: true,
-      trim: true,
     },
     color: {
       type: String,

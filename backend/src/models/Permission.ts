@@ -66,6 +66,7 @@ const permissionSchema = new Schema<IPermission>(
         'workflow-role-mapping',
         'sla-escalation',
         'knowledge-base',
+        'feedback',
         'integrations',
         'reports',
         'audit-logs',

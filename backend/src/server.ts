@@ -35,6 +35,7 @@ import priorityRoutes from './routes/priorityRoutes';
 import activityLogRoutes from './routes/activityLogs';
 import accessLogRoutes from './routes/accessLogs';
 import knowledgeBaseRoutes from './routes/knowledgeBase';
+import uploadRoutes from './routes/upload';
 import faqRoutes from './routes/faqRoutes';
 import approvalRoutes from './routes/approvals';
 import approvalMasterRoutes from './routes/approvalMasters';
@@ -43,6 +44,11 @@ import dashboardRoutes from './routes/dashboard';
 import emailConfigRoutes from './routes/emailConfig';
 import emailLogRoutes from './routes/emailLogs';
 import apiLogRoutes from './routes/apiLogs';
+import feedbackFormRoutes from './routes/feedbackForm';
+import feedbackResponseRoutes from './routes/feedbackResponse';
+import assetRoutes from './routes/asset';
+import centerAssetRoutes from './routes/centerAsset';
+import centerRoutes from './routes/centers';
 // import integrationRoutes from './routes/integrations'; // TODO: Implement
 import { setupSocketHandlers } from './socket/socketHandlers';
 import { initializeDatabase } from './utils/dbInit';
@@ -130,29 +136,15 @@ app.use(cors({
   maxAge: 86400 // 24 hours
 }));
 
-// Rate limiting - More lenient in development, reasonable for production
-const limiter = rateLimit({
-  windowMs: (parseInt(process.env.RATE_LIMIT_WINDOW || '15') || 15) * 60 * 1000, // 15 minutes
-  max: process.env.NODE_ENV === 'development' 
-    ? 1000  // 1000 requests per 15 min in development
-    : parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '500') || 500, // Increased to 500 for production (was 100)
-  message: 'Too many requests from this IP, please try again later.',
-  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-  // Skip rate limiting for static assets and health checks
-  skip: (req) => {
-    return req.path.startsWith('/health') || 
-           req.path.endsWith('.js') || 
-           req.path.endsWith('.css') ||
-           req.path.endsWith('.png') ||
-           req.path.endsWith('.jpg');
-  }
-});
-app.use('/api/', limiter);
+// Rate limiting disabled for development/testing
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+
+// Serve uploaded files statically
+import path from 'path';
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Compression and logging
 app.use(compression());
@@ -195,6 +187,10 @@ app.use('/api/dashboard', dashboardRoutes);
 
 // Knowledge Base Routes
 app.use('/api/kb', knowledgeBaseRoutes);
+app.use('/api/knowledge-base', knowledgeBaseRoutes);
+
+// File Upload Routes
+app.use('/api/upload', uploadRoutes);
 
 // FAQ Routes
 app.use('/api/faq', faqRoutes);
@@ -206,6 +202,11 @@ app.use('/api/approval-masters', approvalMasterRoutes);
 // Offline Module Routes (Agent features for walk-in student support)
 app.use('/api/offline-module', offlineModuleRoutes);
 
+// Asset Management Routes
+app.use('/api/assets', assetRoutes);
+app.use('/api/center-assets', centerAssetRoutes);
+app.use('/api/centers', centerRoutes);
+
 // Email Configuration Routes
 app.use('/api/email-config', emailConfigRoutes);
 
@@ -214,6 +215,10 @@ app.use('/api/email-logs', emailLogRoutes);
 
 // API Logs Routes (Webhook/Integration failures)
 app.use('/api/api-logs', apiLogRoutes);
+
+// Feedback Module Routes
+app.use('/api/feedback-forms', feedbackFormRoutes);
+app.use('/api/feedback-responses', feedbackResponseRoutes);
 
 // Integration Routes (TODO: Implement)
 // app.use('/api/integrations', integrationRoutes);

@@ -13,6 +13,18 @@ import { sendTicketCreatedEmail, sendStudentWelcomeEmail } from '../utils/emailS
 import { logActivity } from '../utils/logger';
 import { config } from '../config';
 
+// Helper: Convert status code to name for emails/display
+const getStatusName = (statusCode: number): string => {
+  const statusMap: Record<number, string> = {
+    1: 'Open',
+    2: 'In Progress',
+    3: 'On Hold',
+    4: 'Resolved',
+    5: 'Closed'
+  };
+  return statusMap[statusCode] || `Status ${statusCode}`;
+};
+
 /**
  * Check if user has authorization to modify a ticket
  * Authorized users:
@@ -55,6 +67,32 @@ const canModifyTicket = async (userId: string, ticket: any, user: any): Promise<
 };
 
 /**
+ * Helper function to track changes in ticket history
+ */
+const trackChange = async (
+  ticket: any,
+  field: string,
+  oldValue: string,
+  newValue: string,
+  userId: string,
+  changeType: 'update' | 'add' | 'remove' = 'update'
+) => {
+  if (!ticket.changeHistory) {
+    ticket.changeHistory = [];
+  }
+
+  ticket.changeHistory.push({
+    _id: new mongoose.Types.ObjectId(),
+    field,
+    oldValue: oldValue || 'None',
+    newValue: newValue || 'None',
+    changedBy: userId,
+    changedAt: new Date(),
+    changeType,
+  });
+};
+
+/**
  * Get next agent for round-robin assignment
  */
 const getNextRoundRobinAgent = async (projectId: string, eligibleUserIds: mongoose.Types.ObjectId[]): Promise<mongoose.Types.ObjectId | null> => {
@@ -90,7 +128,7 @@ const getLeastLoadedAgent = async (eligibleUserIds: mongoose.Types.ObjectId[]): 
     eligibleUserIds.map(async (userId) => {
       const count = await Ticket.countDocuments({
         assignedTo: userId,
-        status: { $in: ['open', 'in-progress', 'pending'] }
+        status: { $in: [1, 2, 3] } // 1=Open, 2=In Progress, 3=On Hold
       });
       return { userId, count };
     })
@@ -330,6 +368,19 @@ export const submitTicket = async (req: Request, res: Response) => {
           
           console.log(`✅ Student user created: ${newStudent._id} | ${studentEmail}`);
           studentUserId = newStudent._id as mongoose.Types.ObjectId;
+          
+          // Check feedback triggers for student registration (non-blocking)
+          (async () => {
+            try {
+              const { checkAndTriggerFeedback } = require('../services/feedbackTriggerService');
+              await checkAndTriggerFeedback('student_registered', {
+                projectId: projectId,
+                studentId: newStudent._id.toString()
+              });
+            } catch (error) {
+              console.error('Error checking student_registered feedback triggers:', error);
+            }
+          })();
         } else {
           console.error('⚠️ STUDENT role not found - cannot create student user');
           // Use a placeholder if role doesn't exist
@@ -351,7 +402,7 @@ export const submitTicket = async (req: Request, res: Response) => {
       ticketNumber,
       title: ticketData.Subject || 'New Ticket',
       description: ticketData.Description || '',
-      status: 'open',
+      status: 1, // 1 = Open (numeric code)
       priority: 'medium',
       category: ticketData.Category || 'General',
       createdBy: studentUserId, // Use actual student user ID
@@ -376,6 +427,19 @@ export const submitTicket = async (req: Request, res: Response) => {
     console.timeEnd('⏱️ Ticket save');
     
     console.log(`✅ Ticket created successfully: ${ticket._id} | Created by: ${studentUserId}${assignedAgent ? ` | Assigned to: ${assignedAgent}` : ' | Unassigned'}`);
+    
+    // Check feedback triggers for ticket creation (non-blocking)
+    (async () => {
+      try {
+        const { checkAndTriggerFeedback } = require('../services/feedbackTriggerService');
+        await checkAndTriggerFeedback('ticket_created', {
+          projectId: projectId,
+          ticketId: ticket._id.toString()
+        });
+      } catch (error) {
+        console.error('Error checking ticket_created feedback triggers:', error);
+      }
+    })();
     
     // Log activity (non-blocking - fire and forget)
     (async () => {
@@ -430,7 +494,7 @@ export const submitTicket = async (req: Request, res: Response) => {
             projectId,
             {
               studentName: studentName,
-              status: ticket.status,
+              status: getStatusName(ticket.status),
               priority: ticket.priority
             }
           );
@@ -830,7 +894,14 @@ export const getTicketById = async (req: Request, res: Response) => {
           path: 'role',
           select: 'name code'
         }
-      });
+      })
+      .populate({
+        path: 'internalNotes.createdBy',
+        select: 'firstName lastName email'
+      })
+      .populate('escalationHistory.escalatedTo', 'firstName lastName email')
+      .populate('escalationHistory.escalatedBy', 'firstName lastName email')
+      .populate('changeHistory.changedBy', 'firstName lastName email');
 
     if (!ticket) {
       return res.status(404).json({
@@ -862,9 +933,15 @@ export const getTicketById = async (req: Request, res: Response) => {
       });
     }
 
+    // Remove internal notes if user is a student (not staff)
+    const ticketData = ticket.toObject();
+    if (isStudent) {
+      ticketData.internalNotes = []; // Hide internal notes from students
+    }
+
     return res.status(200).json({
       success: true,
-      data: ticket,
+      data: ticketData,
     });
 
   } catch (error) {
@@ -933,8 +1010,8 @@ export const replyToTicket = async (req: Request, res: Response) => {
       });
     }
 
-    // Check if ticket is closed
-    if (ticket.status === 'closed') {
+    // Check if ticket is closed (status 5 = closed)
+    if (ticket.status === 5) {
       return res.status(400).json({
         success: false,
         message: 'Cannot reply to a closed ticket',
@@ -1041,8 +1118,8 @@ export const closeTicket = async (req: Request, res: Response) => {
       });
     }
 
-    // Check if ticket is already closed
-    if (ticket.status === 'closed') {
+    // Check if ticket is already closed (status 5 = closed)
+    if (ticket.status === 5) {
       return res.status(400).json({
         success: false,
         message: 'Ticket is already closed',
@@ -1067,8 +1144,8 @@ export const closeTicket = async (req: Request, res: Response) => {
       });
     }
 
-    // Close the ticket
-    ticket.status = 'closed';
+    // Close the ticket (5 = closed)
+    ticket.status = 5;
     ticket.updatedAt = new Date();
 
     // Add system thread
@@ -1129,10 +1206,66 @@ export const updateTicketStatus = async (req: Request, res: Response) => {
       });
     }
 
+    // Validate status is a valid number (1-5)
+    const statusNum = Number(status);
+    const validStatusCodes = [1, 2, 3, 4, 5]; // 1=open, 2=in-progress, 3=on-hold, 4=resolved, 5=closed
+    console.log(`🔍 Attempting to change status to: ${statusNum} (type: ${typeof statusNum})`);
+    
+    if (isNaN(statusNum) || !validStatusCodes.includes(statusNum)) {
+      console.log(`❌ Invalid status: "${status}". Valid codes: ${validStatusCodes.join(', ')}`);
+      return res.status(400).json({
+        success: false,
+        message: `Invalid status code "${status}". Must be one of: ${validStatusCodes.join(', ')} (1=open, 2=in-progress, 3=on-hold, 4=resolved, 5=closed)`
+      });
+    }
+
     const oldStatus = ticket.status;
-    ticket.status = status;
+    ticket.status = statusNum;
     ticket.updatedAt = new Date();
+    
+    // Track change in history
+    await trackChange(ticket, 'Status', String(oldStatus), String(statusNum), userId);
+    
     await ticket.save();
+    
+    // Check feedback triggers for status change
+    try {
+      const Status = require('../models/Status').Status;
+      console.log(`🔍 Looking up status with code: ${statusNum} (type: ${typeof statusNum}) for project: ${ticket.metadata?.projectId}`);
+      
+      const statusDoc = await Status.findOne({ 
+        code: statusNum, 
+        projectId: ticket.metadata?.projectId 
+      });
+      
+      console.log(`📊 Status Doc found: ${statusDoc ? 'YES' : 'NO'}`);
+      if (statusDoc) {
+        console.log(`   Name: ${statusDoc.name}, Code: ${statusDoc.code}, isClosed: ${statusDoc.isClosed}`);
+      }
+      
+      const { checkAndTriggerFeedback } = require('../services/feedbackTriggerService');
+      
+      // Trigger for status change
+      await checkAndTriggerFeedback('ticket_status_changed', {
+        projectId: ticket.metadata?.projectId,
+        ticketId: ticket._id.toString(),
+        statusId: statusDoc?._id.toString()
+      });
+      
+      // Also trigger for ticket closed if status is closed
+      if (statusDoc && statusDoc.isClosed) {
+        console.log(`🚪 Ticket is being closed - triggering ticket_closed feedback`);
+        await checkAndTriggerFeedback('ticket_closed', {
+          projectId: ticket.metadata?.projectId,
+          ticketId: ticket._id.toString()
+        });
+      } else {
+        console.log(`ℹ️  Status is not marked as closed (isClosed: ${statusDoc?.isClosed})`);
+      }
+    } catch (feedbackError) {
+      console.error('Error checking feedback triggers:', feedbackError);
+      // Don't fail the status update if feedback fails
+    }
     
     // Log activity
     if (user) {
@@ -1199,6 +1332,10 @@ export const updateTicketCategory = async (req: Request, res: Response) => {
     const oldCategory = ticket.category;
     ticket.category = category;
     ticket.updatedAt = new Date();
+    
+    // Track change in history
+    await trackChange(ticket, 'Category', oldCategory || 'None', category, userId);
+    
     await ticket.save();
     
     // Log activity
@@ -1264,8 +1401,13 @@ export const updateTicketPriority = async (req: Request, res: Response) => {
     }
 
     const oldPriority = ticket.priority;
-    ticket.priority = priority;
+    // Convert priority to uppercase code (e.g., MEDIUM -> MEDIUM, medium -> MEDIUM)
+    ticket.priority = priority.toUpperCase().trim();
     ticket.updatedAt = new Date();
+    
+    // Track change in history
+    await trackChange(ticket, 'Priority', oldPriority, ticket.priority, userId);
+    
     await ticket.save();
     
     // Log activity
@@ -1311,6 +1453,7 @@ export const addTicketTag = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { tag } = req.body;
+    const userId = (req as any).user?.userId;
 
     const ticket = await Ticket.findById(id);
     if (!ticket) {
@@ -1327,6 +1470,10 @@ export const addTicketTag = async (req: Request, res: Response) => {
     if (!ticket.tags.includes(tag)) {
       ticket.tags.push(tag);
       ticket.updatedAt = new Date();
+      
+      // Track change in history
+      await trackChange(ticket, 'Tags', '', tag, userId, 'add');
+      
       await ticket.save();
     }
 
@@ -1349,6 +1496,7 @@ export const addTicketTag = async (req: Request, res: Response) => {
 export const removeTicketTag = async (req: Request, res: Response) => {
   try {
     const { id, tag } = req.params;
+    const userId = (req as any).user?.userId;
 
     const ticket = await Ticket.findById(id);
     if (!ticket) {
@@ -1361,6 +1509,10 @@ export const removeTicketTag = async (req: Request, res: Response) => {
     if (ticket.tags) {
       ticket.tags = ticket.tags.filter(t => t !== tag);
       ticket.updatedAt = new Date();
+      
+      // Track change in history
+      await trackChange(ticket, 'Tags', tag, '', userId, 'remove');
+      
       await ticket.save();
     }
 
@@ -1409,10 +1561,7 @@ export const addInternalNote = async (req: Request, res: Response) => {
     ticket.internalNotes.push({
       _id: new mongoose.Types.ObjectId(),
       note,
-      createdBy: {
-        firstName: user.firstName,
-        lastName: user.lastName,
-      },
+      createdBy: userId, // Store userId directly as ObjectId reference
       createdAt: new Date(),
     } as any);
 
@@ -1585,6 +1734,20 @@ export const assignTicket = async (req: Request, res: Response) => {
       }
     });
 
+    // Check feedback triggers for agent assignment (non-blocking)
+    (async () => {
+      try {
+        const { checkAndTriggerFeedback } = require('../services/feedbackTriggerService');
+        await checkAndTriggerFeedback('agent_assigned', {
+          projectId: projectInfo?._id?.toString(),
+          ticketId: ticket._id.toString(),
+          agentId: agentId
+        });
+      } catch (error) {
+        console.error('Error checking agent_assigned feedback triggers:', error);
+      }
+    })();
+
     // Populate assignedTo for response
     const updatedTicket = await Ticket.findById(id)
       .populate('assignedTo', 'firstName lastName email')
@@ -1722,13 +1885,13 @@ export const getDashboardStats = async (req: Request, res: Response) => {
     // Get pending tickets count (open, in-progress, pending statuses)
     const pending = await Ticket.countDocuments({
       ...query,
-      status: { $in: ['open', 'in-progress', 'pending'] }
+      status: { $in: [1, 2, 3] } // 1=Open, 2=In Progress, 3=On Hold
     });
 
     // Get resolved tickets count
     const resolved = await Ticket.countDocuments({
       ...query,
-      status: 'resolved'
+      status: 4 // 4=Resolved
     });
 
     // Get recent activity (last 5 tickets)
@@ -1868,9 +2031,9 @@ export const getProjectDashboardStats = async (req: Request, res: Response) => {
           highPriority: [{ $match: { priority: 'high' } }, { $count: 'count' }],
           mediumPriority: [{ $match: { priority: 'medium' } }, { $count: 'count' }],
           lowPriority: [{ $match: { priority: 'low' } }, { $count: 'count' }],
-          resolved: [{ $match: { status: 'resolved' } }, { $count: 'count' }],
+          resolved: [{ $match: { status: 4 } }, { $count: 'count' }], // 4=Resolved
           openOrPending: [
-            { $match: { status: { $in: ['open', 'in-progress', 'pending'] } } },
+            { $match: { status: { $in: [1, 2, 3] } } }, // 1=Open, 2=In Progress, 3=On Hold
             { $count: 'count' }
           ]
         }
@@ -1985,8 +2148,16 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
       }
     }
 
-    // Determine initial status
-    const ticketStatus = resolvedAtCreation === 'true' ? 'resolved' : (initialStatus || 'open');
+    // Determine initial status (convert string to numeric if needed)
+    let ticketStatus: number;
+    if (resolvedAtCreation === 'true') {
+      ticketStatus = 4; // 4=Resolved
+    } else if (initialStatus) {
+      // If initialStatus is provided, convert to number
+      ticketStatus = typeof initialStatus === 'number' ? initialStatus : 1;
+    } else {
+      ticketStatus = 1; // 1=Open
+    }
 
     // Determine assignment: If escalated, assign to escalateTo; otherwise assign to creating agent
     const assignedToAgentId = escalateTo || agent.userId;
@@ -2097,6 +2268,62 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
       });
     } catch (logError) {
       console.error('Failed to log activity:', logError);
+    }
+
+    // Send email notifications (async, don't wait)
+    if (student.email) {
+      (async () => {
+        try {
+          const project = await Project.findById(projectId);
+          if (!project) {
+            console.error('Project not found for email notifications');
+            return;
+          }
+
+          const studentName = `${student.firstName || ''} ${student.lastName || ''}`.trim();
+          const studentEmail = student.email;
+
+          // Check if this is the student's first ticket (welcome email)
+          const isFirstTicket = await Ticket.countDocuments({ 
+            createdBy: studentId 
+          }) === 1;
+
+          if (isFirstTicket) {
+            // Generate login URL for project portal
+            const loginUrl = (project as any).customUrlPath 
+              ? `${process.env.FRONTEND_URL || 'http://localhost:3001'}/${(project as any).customUrlPath}/portal/login`
+              : `${process.env.FRONTEND_URL || 'http://localhost:3001'}/login`;
+
+            console.log('📧 Sending welcome email to new student:', studentEmail);
+            await sendStudentWelcomeEmail(
+              studentEmail,
+              studentName,
+              (project as any).name || 'SAC Helpdesk',
+              loginUrl,
+              projectId
+            );
+          }
+          
+          // Send ticket creation confirmation
+          console.log('📧 Sending ticket creation email:', ticketNumber);
+          await sendTicketCreatedEmail(
+            studentEmail,
+            ticket.ticketNumber,
+            ticket.title || description.substring(0, 100),
+            projectId,
+            {
+              studentName: studentName,
+              status: getStatusName(ticket.status),
+              priority: ticket.priority || 'medium'
+            }
+          );
+
+          console.log('✅ Email notifications sent successfully');
+        } catch (emailError) {
+          console.error('Failed to send email notifications:', emailError);
+          // Don't fail the request if email fails
+        }
+      })();
     }
 
     return res.status(201).json({

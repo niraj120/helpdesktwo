@@ -140,7 +140,8 @@ const TicketListReport: React.FC = () => {
   const fetchStatuses = async (projectId: string) => {
     try {
       const token = localStorage.getItem('authToken');
-      const response = await axios.get(`${API_CONFIG.BASE_URL}/api/statuses/project/${projectId}`, {
+      const cacheBuster = `?t=${Date.now()}`;
+      const response = await axios.get(`${API_CONFIG.BASE_URL}/api/statuses/project/${projectId}${cacheBuster}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (response.data.success && Array.isArray(response.data.data)) {

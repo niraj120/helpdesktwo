@@ -2,9 +2,14 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IKnowledgeBaseArticle extends Document {
   projectId: mongoose.Types.ObjectId;
+  categoryId: mongoose.Types.ObjectId;
+  subcategoryId: mongoose.Types.ObjectId;
   title: string;
-  content: string;
-  category?: string;
+  contentType: 'html' | 'pdf';
+  content?: string; // For HTML content
+  pdfUrl?: string; // For PDF content
+  pdfFileName?: string;
+  category?: string; // Keep for backward compatibility
   tags?: string[];
   author: mongoose.Types.ObjectId;
   status: 'draft' | 'published' | 'archived';
@@ -25,14 +30,39 @@ const KnowledgeBaseArticleSchema = new Schema<IKnowledgeBaseArticle>({
     required: true,
     index: true
   },
+  categoryId: {
+    type: Schema.Types.ObjectId,
+    ref: 'KBCategory',
+    required: true,
+    index: true
+  },
+  subcategoryId: {
+    type: Schema.Types.ObjectId,
+    ref: 'KBSubcategory',
+    required: true,
+    index: true
+  },
   title: {
     type: String,
     required: true,
     trim: true
   },
-  content: {
+  contentType: {
     type: String,
-    required: true
+    enum: ['html', 'pdf'],
+    required: true,
+    default: 'html'
+  },
+  content: {
+    type: String
+  },
+  pdfUrl: {
+    type: String,
+    trim: true
+  },
+  pdfFileName: {
+    type: String,
+    trim: true
   },
   category: {
     type: String,

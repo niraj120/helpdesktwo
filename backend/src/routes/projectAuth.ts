@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { body } from 'express-validator';
 import { validateRequest } from '../middleware/validateRequest';
-import { authRateLimit, forgotPasswordRateLimit } from '../middleware/rateLimiter';
 import { 
   getProjectBrandingByUrl, 
   projectLogin,
@@ -12,9 +11,6 @@ import {
 } from '../controllers/projectAuthController';
 
 const router = Router();
-
-// Apply rate limiting to auth routes
-router.use(authRateLimit);
 
 // @desc    Get project branding by custom URL or domain
 // @route   GET /api/project-auth/branding/:urlPath
@@ -53,7 +49,7 @@ router.post('/login', [
 // @desc    Project-specific forgot password by custom URL path
 // @route   POST /api/project-auth/:customUrlPath/forgot-password
 // @access  Public
-router.post('/:customUrlPath/forgot-password', forgotPasswordRateLimit, [
+router.post('/:customUrlPath/forgot-password', [
   body('email')
     .isEmail()
     .withMessage('Please provide a valid email'),

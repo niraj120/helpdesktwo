@@ -5,6 +5,7 @@ import {
   MdSettings,
   MdSecurity,
   MdPeople,
+  MdPerson,
   MdConfirmationNumber,
   MdCheckCircle,
   MdSchedule,
@@ -203,6 +204,68 @@ export const menuConfig: MenuItem[] = [
     permission: [PERMISSIONS.FAQ_VIEW, PERMISSIONS.FAQ_CREATE, PERMISSIONS.FAQ_MANAGE],
   },
 
+  // Feedback Module - Super Admin, Project Admin
+  {
+    icon: <MdChat />,
+    label: 'Feedback',
+    labelHi: 'फीडबैक',
+    labelMr: 'अभिप्राय',
+    modulePrefix: PERMISSION_MODULES.FEEDBACK,
+    subItems: [
+      {
+        path: '/feedback/forms',
+        icon: <MdFactCheck />,
+        label: 'Manage Forms',
+        labelHi: 'फॉर्म प्रबंधन',
+        labelMr: 'फॉर्म व्यवस्थापन',
+        permission: [PERMISSIONS.FEEDBACK_FORM_CREATE, PERMISSIONS.FEEDBACK_FORM_EDIT],
+      },
+      {
+        path: '/feedback/responses',
+        icon: <MdBarChart />,
+        label: 'View Responses',
+        labelHi: 'प्रतिक्रियाएं देखें',
+        labelMr: 'प्रतिसाद पहा',
+        permission: PERMISSIONS.FEEDBACK_VIEW,
+      },
+    ],
+  },
+
+  // Asset Management - Super Admin, Center Managers
+  {
+    icon: <MdFactCheck />,
+    label: 'Asset Management',
+    labelHi: 'संपत्ति प्रबंधन',
+    labelMr: 'मालमत्ता व्यवस्थापन',
+    modulePrefix: PERMISSION_MODULES.ASSET,
+    subItems: [
+      {
+        path: '/assets',
+        icon: <MdCategory />,
+        label: 'Master Assets',
+        labelHi: 'मास्टर संपत्ति',
+        labelMr: 'मास्टर मालमत्ता',
+        permission: PERMISSIONS.ASSET_VIEW,
+      },
+      {
+        path: '/center-assets',
+        icon: <MdFolder />,
+        label: 'Center Assets',
+        labelHi: 'केंद्र संपत्ति',
+        labelMr: 'केंद्र मालमत्ता',
+        permission: PERMISSIONS.ASSET_MANAGE,
+      },
+      {
+        path: '/my-assets',
+        icon: <MdPerson />,
+        label: 'My Assets',
+        labelHi: 'मेरी संपत्ति',
+        labelMr: 'माझी मालमत्ता',
+        permission: PERMISSIONS.ASSET_MANAGE,
+      },
+    ],
+  },
+
   // Integrations - Super Admin only
   {
     icon: <MdIntegrationInstructions />,
@@ -375,6 +438,14 @@ export const projectPortalMenuConfig: MenuItem[] = [
     labelHi: 'ऑफ़लाइन सहायता',
     labelMr: 'ऑफलाइन सहाय्य',
     permission: PERMISSIONS.OFFLINE_MODULE_ACCESS, // Specific permission instead of module prefix
+    isProjectRoute: true,
+  },
+  {
+    path: 'my-assets-demo',
+    icon: <MdPerson />,
+    label: 'My Assets',
+    labelHi: 'मेरी संपत्ति',
+    labelMr: 'माझी मालमत्ता',
     isProjectRoute: true,
   },
   {

@@ -122,15 +122,29 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
     }
   };
 
-  const getStatusColor = (status: string) => {
-    const colors: Record<string, string> = {
-      'open': '#3B82F6',
-      'in progress': '#F59E0B',
-      'resolved': '#10B981',
-      'closed': '#6B7280',
-      'pending': '#EF4444',
+  const getStatusName = (status: string | number) => {
+    const statusCode = typeof status === 'number' ? status : Number(status);
+    const statusNames: Record<number, string> = {
+      1: 'Open',
+      2: 'In Progress',
+      3: 'On Hold',
+      4: 'Resolved',
+      5: 'Closed',
     };
-    return colors[status.toLowerCase()] || '#6B7280';
+    return statusNames[statusCode] || `Status ${statusCode}`;
+  };
+
+  const getStatusColor = (status: string | number) => {
+    // Handle numeric status codes: 1=open, 2=in-progress, 3=on-hold, 4=resolved, 5=closed
+    const statusCode = typeof status === 'number' ? status : Number(status);
+    const colors: Record<number, string> = {
+      1: '#3B82F6',  // open
+      2: '#F59E0B',  // in-progress
+      3: '#EF4444',  // on-hold
+      4: '#10B981',  // resolved
+      5: '#6B7280',  // closed
+    };
+    return colors[statusCode] || '#6B7280';
   };
 
   const getPriorityColor = (priority: string) => {
@@ -145,7 +159,10 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
   };
 
   const filteredTickets = tickets.filter((ticket) => {
-    const matchesStatus = statusFilter === 'all' || ticket.status.toLowerCase() === statusFilter.toLowerCase();
+    // Status is now numeric: compare as numbers or convert filter to number
+    const ticketStatus = typeof ticket.status === 'number' ? ticket.status : Number(ticket.status);
+    const filterStatus = statusFilter === 'all' ? 'all' : Number(statusFilter);
+    const matchesStatus = statusFilter === 'all' || ticketStatus === filterStatus;
     const matchesPriority = priorityFilter === 'all' || ticket.priority.toLowerCase() === priorityFilter.toLowerCase();
     const matchesSearch = 
       ticket.ticketNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -265,11 +282,11 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                 }}
               >
                 <option value="all">All Statuses</option>
-                <option value="open">Open</option>
-                <option value="in progress">In Progress</option>
-                <option value="pending">Pending</option>
-                <option value="resolved">Resolved</option>
-                <option value="closed">Closed</option>
+                <option value="1">Open</option>
+                <option value="2">In Progress</option>
+                <option value="3">On Hold</option>
+                <option value="4">Resolved</option>
+                <option value="5">Closed</option>
               </select>
             </div>
             <div>
@@ -425,7 +442,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                           color: 'white',
                           backgroundColor: getStatusColor(ticket.status),
                         }}>
-                          {ticket.status}
+                          {getStatusName(ticket.status)}
                         </span>
                       </td>
                       <td onClick={() => handleTicketClick(ticket._id)} style={{ padding: '12px 16px', cursor: 'pointer' }}>
