@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MdSearch, MdVisibility, MdThumbUp, MdThumbDown, MdAdd } from 'react-icons/md';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import DOMPurify from 'dompurify';
 import { API_CONFIG } from '../config/constants';
 import { usePermissions } from '../hooks/usePermissions';
@@ -32,13 +32,43 @@ const KnowledgeBaseViewer: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedArticle, setSelectedArticle] = useState<KBArticle | null>(null);
-
-  // Get project context from localStorage
-  const projectContext = localStorage.getItem('projectContext');
-  const projectId = projectContext ? JSON.parse(projectContext).projectId : null;
+  const [projectId, setProjectId] = useState<string | null>(null);
+  
+  const location = useLocation();
   
   // Check if user has create permission
   const canCreate = hasPermission(PERMISSIONS.KB_CREATE);
+
+  // Get projectId from multiple sources
+  useEffect(() => {
+    const getProjectId = async () => {
+      // 1. Try from projectContext (for agents)
+      const projectContext = localStorage.getItem('projectContext');
+      if (projectContext) {
+        const parsed = JSON.parse(projectContext);
+        setProjectId(parsed.projectId);
+        return;
+      }
+      
+      // 2. Try from URL path (for students: /mhcet/kb)
+      const pathParts = location.pathname.split('/');
+      const customUrlPath = pathParts[1];
+      
+      if (customUrlPath && customUrlPath !== 'kb') {
+        try {
+          const response = await fetch(`${API_CONFIG.API_URL}/projects/branding/${customUrlPath}`);
+          const data = await response.json();
+          if (data.success && data.data.projectId) {
+            setProjectId(data.data.projectId);
+          }
+        } catch (error) {
+          console.error('Error fetching project from URL:', error);
+        }
+      }
+    };
+    
+    getProjectId();
+  }, [location.pathname]);
 
   useEffect(() => {
     if (projectId) {

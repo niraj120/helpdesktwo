@@ -1171,6 +1171,11 @@ const ProjectPortalDashboard = () => {
             <KnowledgeBaseViewer />
           </ProtectedRoute>
         } />
+        <Route path="/kb" element={
+          <ProtectedRoute permission={PERMISSIONS.KB_VIEW}>
+            <KnowledgeBaseViewer />
+          </ProtectedRoute>
+        } />
         <Route path="/faq" element={
           <ProtectedRoute permission={PERMISSIONS.FAQ_VIEW}>
             <FAQViewer />

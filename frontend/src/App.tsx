@@ -32,6 +32,7 @@ import TicketListReport from './pages/TicketListReport'
 import ActivityLogs from './components/ActivityLogs'
 import AccessLogs from './components/AccessLogs'
 import KnowledgeBaseManagement from './components/KnowledgeBaseManagement'
+import KnowledgeBaseViewer from './components/KnowledgeBaseViewer'
 import KBArticleView from './pages/KBArticleView'
 import FAQManagement from './components/FAQManagement'
 import FAQViewer from './components/FAQViewer'
@@ -159,6 +160,16 @@ function App() {
             <ProtectedRoute requireAuth={true}>
               <StudentLayout>
                 <AuthenticatedStudentSubmitTicket hideHeader={true} />
+              </StudentLayout>
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/:customUrlPath/kb" 
+          element={
+            <ProtectedRoute requireAuth={true}>
+              <StudentLayout>
+                <KnowledgeBaseViewer />
               </StudentLayout>
             </ProtectedRoute>
           } 
