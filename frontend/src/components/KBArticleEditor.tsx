@@ -305,6 +305,7 @@ const KBArticleEditor: React.FC<KBArticleEditorProps> = ({ article, onSave, onCa
             <div>
               {/* Category and Subcategory dropdowns removed from UI */}
             </div>
+          </div>
 
           {/* Content Type Selection */}
           <div>
