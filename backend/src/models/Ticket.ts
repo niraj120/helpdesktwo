@@ -62,7 +62,7 @@ export interface IChangeHistory {
 
 export interface ITicket extends Document {
   ticketNumber: string;
-  title: string;
+  subject: string;
   description: string;
   status: number; // Changed to number: 1=open, 2=in-progress, 3=on-hold, 4=resolved, 5=closed
   priority: string; // Priority code from Priority master data (e.g., LOW, MEDIUM, HIGH, CRITICAL)
@@ -147,7 +147,7 @@ const TicketSchema: Schema = new Schema(
       unique: true,
       index: true,
     },
-    title: {
+    subject: {
       type: String,
       required: true,
       trim: true,

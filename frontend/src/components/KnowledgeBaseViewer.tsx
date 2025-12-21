@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MdSearch, MdVisibility, MdThumbUp, MdThumbDown, MdAdd } from 'react-icons/md';
+import { MdSearch, MdVisibility, MdThumbUp, MdThumbDown, MdAdd, MdShare, MdContentCopy, MdClose, MdCheck } from 'react-icons/md';
 import { useNavigate, useLocation } from 'react-router-dom';
 import DOMPurify from 'dompurify';
 import { API_CONFIG } from '../config/constants';
@@ -33,6 +33,8 @@ const KnowledgeBaseViewer: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedArticle, setSelectedArticle] = useState<KBArticle | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
+  const [customUrlPath, setCustomUrlPath] = useState<string>('');
+  const [copySuccess, setCopySuccess] = useState(false);
   
   const location = useLocation();
   
@@ -52,11 +54,12 @@ const KnowledgeBaseViewer: React.FC = () => {
       
       // 2. Try from URL path (for students: /mhcet/kb)
       const pathParts = location.pathname.split('/');
-      const customUrlPath = pathParts[1];
+      const urlPath = pathParts[1];
+      setCustomUrlPath(urlPath);
       
-      if (customUrlPath && customUrlPath !== 'kb') {
+      if (urlPath && urlPath !== 'kb') {
         try {
-          const response = await fetch(`${API_CONFIG.API_URL}/projects/branding/${customUrlPath}`);
+          const response = await fetch(`${API_CONFIG.API_URL}/projects/branding/${urlPath}`);
           const data = await response.json();
           if (data.success && data.data.projectId) {
             setProjectId(data.data.projectId);
@@ -153,6 +156,40 @@ const KnowledgeBaseViewer: React.FC = () => {
     } catch (error) {
       console.error('Error submitting feedback:', error);
     }
+  };
+
+  const copyPublicLink = (articleId: string) => {
+    // Get the proper custom URL path for the project
+    let urlPath = '';
+    
+    // Check if we're in a project portal context (e.g., /mhcet/portal/kb)
+    const pathParts = window.location.pathname.split('/').filter(p => p);
+    
+    if (pathParts.length > 0 && pathParts[0] !== 'kb') {
+      // Use the first path segment as the custom URL path
+      urlPath = `/${pathParts[0]}`;
+    } else if (customUrlPath && customUrlPath !== 'kb') {
+      // Fallback to stored customUrlPath
+      urlPath = `/${customUrlPath}`;
+    }
+    
+    const publicUrl = `${window.location.origin}${urlPath}/submit-ticket?kbArticle=${articleId}`;
+    
+    navigator.clipboard.writeText(publicUrl).then(() => {
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    }).catch(err => {
+      console.error('Failed to copy link:', err);
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea');
+      textArea.value = publicUrl;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    });
   };
 
   const categories = ['all', ...new Set(articles.map(a => a.category).filter(Boolean))];
@@ -327,28 +364,46 @@ const KnowledgeBaseViewer: React.FC = () => {
                 key={article._id}
                 onClick={() => handleArticleClick(article)}
                 style={{
-                  padding: '20px',
-                  background: 'white',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: '12px',
+                  padding: '24px',
+                  background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
+                  border: '2px solid var(--border-subtle)',
+                  borderRadius: '16px',
                   cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                  position: 'relative',
+                  overflow: 'hidden'
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-2px)';
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+                  e.currentTarget.style.transform = 'translateY(-4px)';
+                  e.currentTarget.style.boxShadow = '0 12px 24px rgba(0,0,0,0.12)';
+                  e.currentTarget.style.borderColor = 'var(--primary-main)';
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+                  e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)';
+                  e.currentTarget.style.borderColor = 'var(--border-subtle)';
                 }}
               >
+                {/* Decorative corner accent */}
+                <div style={{
+                  position: 'absolute',
+                  top: 0,
+                  right: 0,
+                  width: '80px',
+                  height: '80px',
+                  background: 'linear-gradient(135deg, var(--primary-main) 0%, var(--primary-light) 100%)',
+                  opacity: 0.1,
+                  borderRadius: '0 16px 0 100%'
+                }} />
+                
                 <h3 style={{
-                  fontSize: '18px',
-                  fontWeight: '600',
+                  fontSize: '20px',
+                  fontWeight: '700',
                   color: 'var(--text-primary)',
-                  marginBottom: '8px'
+                  marginBottom: '12px',
+                  lineHeight: '1.4',
+                  position: 'relative'
                 }}>
                   {article.title}
                 </h3>
@@ -356,13 +411,16 @@ const KnowledgeBaseViewer: React.FC = () => {
                 {article.category && (
                   <span style={{
                     display: 'inline-block',
-                    padding: '4px 12px',
-                    background: 'var(--primary-light)',
-                    color: 'var(--primary-main)',
-                    borderRadius: '12px',
+                    padding: '6px 14px',
+                    background: 'linear-gradient(135deg, var(--primary-main) 0%, var(--primary-dark) 100%)',
+                    color: 'white',
+                    borderRadius: '20px',
                     fontSize: '12px',
-                    fontWeight: '500',
-                    marginBottom: '12px'
+                    fontWeight: '600',
+                    marginBottom: '12px',
+                    letterSpacing: '0.5px',
+                    textTransform: 'uppercase',
+                    boxShadow: '0 2px 8px rgba(59, 130, 246, 0.3)'
                   }}>
                     {article.category}
                   </span>
@@ -370,16 +428,30 @@ const KnowledgeBaseViewer: React.FC = () => {
 
                 <div style={{
                   display: 'flex',
-                  gap: '16px',
+                  gap: '20px',
                   fontSize: '13px',
                   color: 'var(--text-secondary)',
-                  marginTop: '12px'
+                  marginTop: '16px',
+                  paddingTop: '16px',
+                  borderTop: '1px solid rgba(0,0,0,0.05)'
                 }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <MdVisibility /> {article.viewCount}
+                  <span style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '6px',
+                    fontWeight: '500'
+                  }}>
+                    <MdVisibility size={18} style={{ color: 'var(--primary-main)' }} /> 
+                    {article.viewCount}
                   </span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <MdThumbUp /> {article.helpfulCount}
+                  <span style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '6px',
+                    fontWeight: '500'
+                  }}>
+                    <MdThumbUp size={18} style={{ color: '#10b981' }} /> 
+                    {article.helpfulCount}
                   </span>
                 </div>
               </div>
@@ -389,27 +461,88 @@ const KnowledgeBaseViewer: React.FC = () => {
       ) : (
         // Article Detail View
         <div>
-          <button
-            onClick={() => setSelectedArticle(null)}
-            style={{
-              padding: '8px 16px',
-              background: 'var(--surface-secondary)',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: '8px',
-              fontSize: '14px',
-              cursor: 'pointer',
-              marginBottom: '20px'
-            }}
-          >
-            ← Back to Articles
-          </button>
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between',
+            marginBottom: '20px',
+            flexWrap: 'wrap',
+            gap: '12px'
+          }}>
+            <button
+              onClick={() => setSelectedArticle(null)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '10px 20px',
+                background: 'white',
+                border: '2px solid var(--border-subtle)',
+                borderRadius: '10px',
+                fontSize: '14px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                color: 'var(--text-primary)',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'var(--surface-secondary)';
+                e.currentTarget.style.borderColor = 'var(--primary-main)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'white';
+                e.currentTarget.style.borderColor = 'var(--border-subtle)';
+              }}
+            >
+              ← Back to Articles
+            </button>
+
+            <button
+              onClick={() => copyPublicLink(selectedArticle._id)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '10px 20px',
+                background: copySuccess ? '#10b981' : 'var(--primary-main)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '10px',
+                fontSize: '14px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                transition: 'all 0.3s',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+              }}
+              onMouseEnter={(e) => {
+                if (!copySuccess) {
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
+              }}
+            >
+              {copySuccess ? (
+                <>
+                  <MdCheck size={20} /> Link Copied!
+                </>
+              ) : (
+                <>
+                  <MdShare size={20} /> Share Public Link
+                </>
+              )}
+            </button>
+          </div>
 
           <div style={{
             background: 'white',
             border: '1px solid var(--border-subtle)',
-            borderRadius: '12px',
-            padding: '32px',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+            borderRadius: '16px',
+            padding: '40px',
+            boxShadow: '0 4px 6px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.1)'
           }}>
             <h1 style={{
               fontSize: '32px',
@@ -452,7 +585,77 @@ const KnowledgeBaseViewer: React.FC = () => {
               </span>
             </div>
 
+            <style>{`
+              .kb-article-content ol {
+                list-style-type: decimal !important;
+                padding-left: 2em !important;
+                margin: 1em 0 !important;
+                counter-reset: list-0;
+              }
+              .kb-article-content ul {
+                list-style-type: disc !important;
+                padding-left: 2em !important;
+                margin: 1em 0 !important;
+              }
+              .kb-article-content ol > li,
+              .kb-article-content ul > li {
+                display: list-item !important;
+                margin-bottom: 0.5em !important;
+                line-height: 1.8 !important;
+                list-style-position: outside !important;
+              }
+              .kb-article-content ol > li {
+                list-style-type: decimal !important;
+              }
+              .kb-article-content ul > li {
+                list-style-type: disc !important;
+              }
+              .kb-article-content li.ql-indent-1 { padding-left: 3em; }
+              .kb-article-content li.ql-indent-2 { padding-left: 4.5em; }
+              .kb-article-content li.ql-indent-3 { padding-left: 6em; }
+              .kb-article-content li.ql-indent-4 { padding-left: 7.5em; }
+              .kb-article-content li.ql-indent-5 { padding-left: 9em; }
+              .kb-article-content h1 { font-size: 2em; font-weight: bold; margin: 1em 0 0.5em; }
+              .kb-article-content h2 { font-size: 1.5em; font-weight: bold; margin: 0.83em 0 0.5em; }
+              .kb-article-content h3 { font-size: 1.17em; font-weight: bold; margin: 1em 0 0.5em; }
+              .kb-article-content h4 { font-size: 1em; font-weight: bold; margin: 1.33em 0 0.5em; }
+              .kb-article-content h5 { font-size: 0.83em; font-weight: bold; margin: 1.67em 0 0.5em; }
+              .kb-article-content h6 { font-size: 0.67em; font-weight: bold; margin: 2.33em 0 0.5em; }
+              .kb-article-content strong { font-weight: 700; }
+              .kb-article-content em { font-style: italic; }
+              .kb-article-content u { text-decoration: underline; }
+              .kb-article-content s { text-decoration: line-through; }
+              .kb-article-content blockquote {
+                border-left: 4px solid #ccc;
+                padding-left: 16px;
+                margin: 1em 0;
+                color: #666;
+              }
+              .kb-article-content pre {
+                background: #f4f4f4;
+                padding: 12px;
+                border-radius: 4px;
+                overflow-x: auto;
+              }
+              .kb-article-content code {
+                background: #f4f4f4;
+                padding: 2px 6px;
+                border-radius: 3px;
+                font-family: monospace;
+              }
+              .kb-article-content a {
+                color: #3b82f6;
+                text-decoration: underline;
+              }
+              .kb-article-content img {
+                max-width: 100%;
+                height: auto;
+                margin: 1em 0;
+              }
+            `}</style>
+
             <div 
+              className="kb-article-content"
               style={{
                 fontSize: '16px',
                 lineHeight: '1.7',

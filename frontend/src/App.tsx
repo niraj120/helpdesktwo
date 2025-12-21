@@ -48,6 +48,7 @@ import AgentTicketDetail from './pages/AgentTicketDetail'
 import OfflineModuleSettings from './pages/OfflineModuleSettings'
 import OfflineModuleConfigPage from './pages/OfflineModuleConfigPage'
 import ProtectedRoute from './components/ProtectedRoute'
+import { useDynamicTitle } from './hooks/useDynamicTitle'
 import ViewTickets from './pages/ViewTickets'
 import TicketAssignment from './pages/TicketAssignment'
 import MyTickets from './pages/MyTickets'
@@ -86,6 +87,9 @@ const Dashboard = () => {
 }
 
 function App() {
+  // Update browser tab title dynamically based on project
+  useDynamicTitle();
+  
   return (
     <div>
       <Routes>
@@ -425,14 +429,18 @@ function App() {
         <Route 
           path="/my-assets" 
           element={
-            <ProtectedRoute permission="ASSET_MANAGE">
+            <ProtectedRoute permission="ASSET_MANAGE" excludeForRoles={['STUDENT', 'COUNSELOR_L1', 'CET_STATE_CELL', 'AGENT', 'SUPPORT_ADMIN', 'ACCOUNT_OWNER']}>
               <MyAssets />
             </ProtectedRoute>
           } 
         />
         <Route 
           path="/my-assets-demo" 
-          element={<MyAssetsStatic />} 
+          element={
+            <ProtectedRoute requireAuth={true} excludeForRoles={['STUDENT', 'COUNSELOR_L1', 'CET_STATE_CELL', 'AGENT', 'SUPPORT_ADMIN', 'ACCOUNT_OWNER']}>
+              <MyAssetsStatic />
+            </ProtectedRoute>
+          } 
         />
         
         {/* Audit Logs - Requires AUDIT_* permissions */}

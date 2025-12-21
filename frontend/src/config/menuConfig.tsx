@@ -231,13 +231,14 @@ export const menuConfig: MenuItem[] = [
     ],
   },
 
-  // Asset Management - Super Admin, Center Managers
+  // Asset Management - Super Admin, CET State Cell only
   {
     icon: <MdFactCheck />,
     label: 'Asset Management',
     labelHi: 'संपत्ति प्रबंधन',
     labelMr: 'मालमत्ता व्यवस्थापन',
     modulePrefix: PERMISSION_MODULES.ASSET,
+    excludeForRoles: ['STUDENT', 'COUNSELOR_L1', 'CET_STATE_CELL', 'AGENT', 'SUPPORT_ADMIN', 'ACCOUNT_OWNER'],
     subItems: [
       {
         path: '/assets',
@@ -446,6 +447,7 @@ export const projectPortalMenuConfig: MenuItem[] = [
     label: 'My Assets',
     labelHi: 'मेरी संपत्ति',
     labelMr: 'माझी मालमत्ता',
+    excludeForRoles: ['STUDENT', 'COUNSELOR_L1', 'CET_STATE_CELL', 'AGENT', 'SUPPORT_ADMIN', 'ACCOUNT_OWNER'],
     isProjectRoute: true,
   },
   {
@@ -456,6 +458,43 @@ export const projectPortalMenuConfig: MenuItem[] = [
     labelMr: 'वापरकर्ता व्यवस्थापन',
     modulePrefix: PERMISSION_MODULES.USER,
     isProjectRoute: true,
+  },
+  {
+    icon: <MdBarChart />,
+    label: 'Reports',
+    labelHi: 'रिपोर्ट',
+    labelMr: 'अहवाल',
+    modulePrefix: PERMISSION_MODULES.REPORT,
+    isProjectRoute: true,
+    subItems: [
+      {
+        path: 'reports/tickets',
+        icon: <MdConfirmationNumber />,
+        label: 'Query Summary Report',
+        labelHi: 'टिकट सारांश रिपोर्ट',
+        labelMr: 'तिकीट सारांश अहवाल',
+        modulePrefix: PERMISSION_MODULES.REPORT,
+        isProjectRoute: true,
+      },
+      {
+        path: 'reports/assets',
+        icon: <MdPerson />,
+        label: 'Total Asset Report',
+        labelHi: 'कुल संपत्ति रिपोर्ट',
+        labelMr: 'एकूण मालमत्ता अहवाल',
+        modulePrefix: PERMISSION_MODULES.REPORT,
+        isProjectRoute: true,
+      },
+      {
+        path: 'reports/manpower',
+        icon: <MdPeople />,
+        label: 'Manpower Report',
+        labelHi: 'जनशक्ति रिपोर्ट',
+        labelMr: 'मनुष्यबळ अहवाल',
+        modulePrefix: PERMISSION_MODULES.REPORT,
+        isProjectRoute: true,
+      },
+    ],
   },
   {
     icon: <MdFactCheck />,
@@ -542,9 +581,29 @@ export const getFilteredMenuItems = (
 ): MenuItem[] => {
   console.log('🎯 getFilteredMenuItems called with permissions:', userPermissions);
   
-  // Get user role from localStorage to check role-based exclusions
-  const userRole = localStorage.getItem('userRole') || '';
-  console.log('👤 User role:', userRole);
+  // Get user role code from localStorage - with robust fallback
+  let userRole = localStorage.getItem('userRole') || '';
+  console.log('📌 Initial userRole from localStorage:', userRole);
+  
+  // If userRole doesn't look like a code (no underscore or all lowercase), try to get it from user object
+  if (!userRole || !userRole.includes('_') || userRole !== userRole.toUpperCase()) {
+    try {
+      const userStr = localStorage.getItem('user');
+      if (userStr) {
+        const user = JSON.parse(userStr);
+        const extractedRole = user.role?.code || user.roleCode;
+        if (extractedRole) {
+          console.log('📌 Extracted role code from user object:', extractedRole);
+          userRole = extractedRole;
+        }
+      }
+    } catch (e) {
+      console.warn('⚠️ Failed to parse user object from localStorage');
+    }
+  }
+  
+  console.log('👤 Final User Role Code:', userRole);
+  console.log('🚫 Asset Management excludes:', ['STUDENT', 'COUNSELOR_L1', 'CET_STATE_CELL', 'AGENT', 'SUPPORT_ADMIN', 'ACCOUNT_OWNER']);
   
   return menuItems
     .map((item) => {

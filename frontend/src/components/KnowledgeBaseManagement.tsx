@@ -12,6 +12,8 @@ interface KBArticle {
   title: string;
   content: string;
   category?: string;
+  categoryId?: string;
+  subcategoryId?: string;
   tags?: string[];
   status: 'draft' | 'published' | 'archived';
   displayOrder: number;
@@ -29,6 +31,19 @@ interface Project {
   name: string;
 }
 
+interface KBCategory {
+  _id: string;
+  name: string;
+  projectId: string;
+}
+
+interface KBSubcategory {
+  _id: string;
+  name: string;
+  categoryId: string;
+  projectId: string;
+}
+
 const KnowledgeBaseManagement: React.FC = () => {
   const { hasPermission } = usePermissions();
   const [activeTab, setActiveTab] = useState<'articles' | 'settings'>('articles');
@@ -38,8 +53,6 @@ const KnowledgeBaseManagement: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editingArticle, setEditingArticle] = useState<KBArticle | null>(null);
-  
-  // Check if we're in a project portal context
   const projectContext = localStorage.getItem('projectContext');
   const isProjectPortal = !!projectContext;
   const contextProjectId = projectContext ? JSON.parse(projectContext).projectId : null;
@@ -123,6 +136,8 @@ const KnowledgeBaseManagement: React.FC = () => {
     title: '',
     content: '',
     category: '',
+    categoryId: '',
+    subcategoryId: '',
     tags: [] as string[],
     status: 'draft' as 'draft' | 'published' | 'archived',
     displayOrder: 0
@@ -292,6 +307,8 @@ const KnowledgeBaseManagement: React.FC = () => {
       title: '',
       content: '',
       category: '',
+      categoryId: '',
+      subcategoryId: '',
       tags: [],
       status: 'draft',
       displayOrder: 0
@@ -305,6 +322,8 @@ const KnowledgeBaseManagement: React.FC = () => {
       title: article.title,
       content: article.content,
       category: article.category || '',
+      categoryId: article.categoryId || '',
+      subcategoryId: article.subcategoryId || '',
       tags: article.tags || [],
       status: article.status,
       displayOrder: article.displayOrder
@@ -314,6 +333,7 @@ const KnowledgeBaseManagement: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     try {
       const token = localStorage.getItem('authToken');
       const url = editingArticle
@@ -323,8 +343,27 @@ const KnowledgeBaseManagement: React.FC = () => {
       const method = editingArticle ? 'PUT' : 'POST';
       
       const payload = editingArticle
-        ? formData
-        : { ...formData, projectId: selectedProject };
+        ? {
+            title: formData.title,
+            content: formData.content,
+            ...(formData.categoryId && formData.categoryId.trim() !== '' && { categoryId: formData.categoryId }),
+            ...(formData.subcategoryId && formData.subcategoryId.trim() !== '' && { subcategoryId: formData.subcategoryId }),
+            tags: formData.tags,
+            status: formData.status,
+            displayOrder: formData.displayOrder
+          }
+        : {
+            projectId: selectedProject,
+            title: formData.title,
+            content: formData.content,
+            ...(formData.categoryId && formData.categoryId.trim() !== '' && { categoryId: formData.categoryId }),
+            ...(formData.subcategoryId && formData.subcategoryId.trim() !== '' && { subcategoryId: formData.subcategoryId }),
+            tags: formData.tags,
+            status: formData.status,
+            displayOrder: formData.displayOrder
+          };
+
+      console.log('Sending payload:', payload);
 
       const response = await fetch(url, {
         method,
@@ -977,25 +1016,6 @@ const KnowledgeBaseManagement: React.FC = () => {
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>
-                    Category
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                    placeholder="e.g., Getting Started, FAQ, Troubleshooting"
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      border: '1px solid #d1d5db',
-                      borderRadius: '6px',
-                      fontSize: '14px'
-                    }}
-                  />
-                </div>
-
                 <div>
                   <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>
                     Display Order

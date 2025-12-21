@@ -14,6 +14,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { StudentLoginModal } from '../components/StudentLoginModal';
 import { LanguageToggle } from '../components/LanguageToggle';
+import KBChatbot from '../components/KBChatbot';
 import { API_CONFIG } from '../config/constants';
 import './StudentPortal.css';
 
@@ -128,6 +129,24 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
   const [selectedArticle, setSelectedArticle] = useState<any | null>(null);
   const [kbSearchQuery, setKbSearchQuery] = useState('');
 
+  const fetchSpecificKBArticle = async (articleId: string) => {
+    try {
+      setKbLoading(true);
+      const response = await axios.get(`${API_CONFIG.API_URL}/kb/${articleId}`);
+      if (response.data.success) {
+        setSelectedArticle(response.data.data);
+        // Also fetch all articles for navigation
+        if (kbArticles.length === 0) {
+          fetchKBArticles();
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching KB article:', error);
+    } finally {
+      setKbLoading(false);
+    }
+  };
+
   // Fetch KB articles when KB tab is active
   useEffect(() => {
     if (activeTab === 'kb' && projectBranding?.knowledgeBase && kbArticles.length === 0) {
@@ -216,7 +235,23 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
         setTicketSettings(ticketSettings);
 
         // Set default tab based on mode
-        if (ticketSettings.mode === 'online') {
+        // Check if we have a kbArticle parameter in URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const kbArticleId = urlParams.get('kbArticle');
+        
+        if (kbArticleId && branding.knowledgeBase) {
+          // If KB article is specified, switch to KB tab and load it
+          setActiveTab('kb');
+          // Fetch the specific article
+          try {
+            const response = await axios.get(`${API_CONFIG.API_URL}/kb/${kbArticleId}`);
+            if (response.data.success) {
+              setSelectedArticle(response.data.data);
+            }
+          } catch (error) {
+            console.error('Error fetching KB article:', error);
+          }
+        } else if (ticketSettings.mode === 'online') {
           setActiveTab('online');
         } else if (ticketSettings.mode === 'offline') {
           setActiveTab('offline');
@@ -835,7 +870,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                   }}
                 >
                   <DocumentArrowUpIcon className="w-4 h-4 sm:w-5 sm:h-5" />
-                  <span className="text-sm sm:text-base">Submit Online</span>
+                  <span className="text-sm sm:text-base">{t('submitOnline')}</span>
                 </button>
               )}
               
@@ -855,7 +890,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                   }}
                 >
                   <MapPinIcon className="w-5 h-5" />
-                  <span>Find Nearest Center</span>
+                  <span>{t('findNearestCenter')}</span>
                 </button>
               )}
 
@@ -872,7 +907,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                   }}
                 >
                   <BookOpenIcon className="w-5 h-5" />
-                  <span>Knowledge Base</span>
+                  <span>{t('knowledgeBase')}</span>
                 </button>
               )}
             </nav>
@@ -1021,8 +1056,8 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
               >
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 sm:gap-4">
                   <div>
-                    <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 mb-1 sm:mb-2">Find Nearest Center</h2>
-                    <p className="text-sm sm:text-base text-gray-600">Locate our centers across the country or view them on the map</p>
+                    <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 mb-1 sm:mb-2">{t('findNearestCenter')}</h2>
+                    <p className="text-sm sm:text-base text-gray-600">{t('locateCentersText')}</p>
                   </div>
                   
                   {/* View Mode Toggle */}
@@ -1041,7 +1076,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                       <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
                       </svg>
-                      <span className="text-sm sm:text-base">List</span>
+                      <span className="text-sm sm:text-base">{t('list')}</span>
                     </button>
                     <button
                       onClick={() => setViewMode('map')}
@@ -1055,7 +1090,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                       }}
                     >
                       <MapPinIcon className="w-4 h-4 sm:w-5 sm:h-5" />
-                      <span className="text-sm sm:text-base">Map</span>
+                      <span className="text-sm sm:text-base">{t('map')}</span>
                     </button>
                   </div>
                 </div>
@@ -1081,22 +1116,6 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                 }}
               >
                 {t('allCenters')}
-              </button>
-              <button
-                onClick={() => {
-                  setFilterType('state');
-                  setSearchQuery('');
-                }}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                  filterType === 'state'
-                    ? 'text-white shadow-md'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-                style={{
-                  backgroundColor: filterType === 'state' ? projectBranding.primaryColor : undefined,
-                }}
-              >
-                {t('byState')}
               </button>
               <button
                 onClick={() => {
@@ -1140,13 +1159,11 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                 <input
                   type="text"
                   placeholder={
-                    filterType === 'state'
-                      ? 'Search by state...'
-                      : filterType === 'city'
-                      ? 'Search by city...'
+                    filterType === 'city'
+                      ? t('searchByCity')
                       : filterType === 'pincode'
-                      ? 'Search by pincode...'
-                      : 'Search by city, state, or pincode...'
+                      ? t('searchByPincode')
+                      : t('searchPlaceholder')
                   }
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -1166,10 +1183,10 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
                     </svg>
                     <span>
-                      {sortBy === 'district' ? 'Sort: District' : 
-                       sortBy === 'distance' ? 'Sort: Distance' :
-                       sortBy === 'alphabetical' ? 'Sort: A-Z' :
-                       'Sort By'}
+                      {sortBy === 'district' ? t('sortDistrict') : 
+                       sortBy === 'distance' ? t('sortDistance') :
+                       sortBy === 'alphabetical' ? t('sortAlphabetical') :
+                       t('sortBy')}
                     </span>
                   </div>
                   <svg className={`w-4 h-4 transition-transform ${showSortDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1196,7 +1213,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
                       </svg>
-                      <span>Sort by District</span>
+                      <span>{t('sortByDistrict')}</span>
                       {sortBy === 'district' && (
                         <svg className="w-4 h-4 ml-auto" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
@@ -1224,7 +1241,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                       </svg>
-                      <span>Sort by Distance from You</span>
+                      <span>{t('sortByDistance')}</span>
                       {!userLocation && <span className="text-xs text-gray-400">(location required)</span>}
                       {sortBy === 'distance' && (
                         <svg className="w-4 h-4 ml-auto" fill="currentColor" viewBox="0 0 20 20">
@@ -1248,7 +1265,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h9m5-4v12m0 0l-4-4m4 4l4-4" />
                       </svg>
-                      <span>Sort Alphabetically (A-Z)</span>
+                      <span>{t('sortByAlphabetical')}</span>
                       {sortBy === 'alphabetical' && (
                         <svg className="w-4 h-4 ml-auto" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
@@ -1317,15 +1334,16 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
 
                       // Geocode centers that don't have coordinates
                       const geocodePromises = filteredCenters.map(async (center) => {
-                        let lat, lng;
+                        let lat: number | undefined, lng: number | undefined;
 
                         // Try to get coordinates
                         if (center.latitude && center.longitude) {
-                          lat = parseFloat(center.latitude);
-                          lng = parseFloat(center.longitude);
+                          lat = typeof center.latitude === 'number' ? center.latitude : parseFloat(String(center.latitude));
+                          lng = typeof center.longitude === 'number' ? center.longitude : parseFloat(String(center.longitude));
                         } else if (center.mapLink || center.googleMapLink) {
                           // Try to extract coordinates from map link - supports multiple formats
-                          const link = center.mapLink || center.googleMapLink;
+                          const link: string | undefined = center.mapLink || center.googleMapLink;
+                          if (link) {
                           
                           // Format 1: @lat,lng pattern (e.g., https://www.google.com/maps/@19.0760,72.8777,15z)
                           let coordMatch = link.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
@@ -1360,6 +1378,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                               lng = parseFloat(coordMatch[2]);
                             }
                           }
+                          }
                           
                           // Format 5: Shortened links (maps.app.goo.gl) or links without coordinates
                           // Use Geocoding API as fallback
@@ -1368,7 +1387,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                               const geocoder = new window.google.maps.Geocoder();
                               const address = `${center.centerName}, ${center.address}, ${center.city}, ${center.state} ${center.pincode}`;
                               const result = await new Promise<any>((resolve, reject) => {
-                                geocoder.geocode({ address }, (results, status) => {
+                                geocoder.geocode({ address }, (results: any[] | null, status: string) => {
                                   if (status === 'OK' && results && results[0]) {
                                     resolve(results[0]);
                                   } else {
@@ -1435,7 +1454,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                                     target="_blank"
                                     style="display: inline-block; margin-top: 8px; padding: 6px 12px; background: #3b82f6; color: white; text-decoration: none; border-radius: 4px; font-size: 12px;"
                                   >
-                                    Get Directions
+                                    ${t('getDirections')}
                                   </a>
                                 ` : ''}
                               </div>
@@ -1581,7 +1600,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                       <div className="flex items-start space-x-3">
                         <MapPinIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
                         <div>
-                          <p className="text-sm font-medium text-gray-700">Address</p>
+                          <p className="text-sm font-medium text-gray-700">{t('address')}</p>
                           <p className="text-sm text-gray-600">
                             {center.address}, {center.city}, {center.state} - {center.pincode}
                           </p>
@@ -1590,21 +1609,21 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                       <div className="flex items-start space-x-3">
                         <PhoneIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
                         <div>
-                          <p className="text-sm font-medium text-gray-700">Phone</p>
+                          <p className="text-sm font-medium text-gray-700">{t('phone')}</p>
                           <p className="text-sm text-gray-600">{center.phone}</p>
                         </div>
                       </div>
                       <div className="flex items-start space-x-3">
                         <EnvelopeIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
                         <div>
-                          <p className="text-sm font-medium text-gray-700">Email</p>
+                          <p className="text-sm font-medium text-gray-700">{t('email')}</p>
                           <p className="text-sm text-gray-600">{center.email}</p>
                         </div>
                       </div>
                       <div className="flex items-start space-x-3">
                         <ClockIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
                         <div>
-                          <p className="text-sm font-medium text-gray-700">Working Hours</p>
+                          <p className="text-sm font-medium text-gray-700">{t('workingHours')}</p>
                           <p className="text-sm text-gray-600">{center.workingHours}</p>
                         </div>
                       </div>
@@ -1682,7 +1701,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                         }}
                       >
                         <MapPinIcon className="w-5 h-5 group-hover:animate-bounce" />
-                        <span>Get Directions</span>
+                        <span>{t('getDirections')}</span>
                       </button>
                     </div>
                   </div>
@@ -1697,127 +1716,163 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
           {/* Knowledge Base View */}
           {projectBranding.knowledgeBase && activeTab === 'kb' && (
             <div className="p-8 md:p-12">
-              <div className="mb-8">
-                <h2 className="text-3xl font-bold text-gray-900 mb-2">Knowledge Base</h2>
-                <p className="text-gray-600">Browse articles and find answers to common questions</p>
-              </div>
+              {!selectedArticle ? (
+                <>
+                  <div className="mb-8">
+                    <h2 className="text-3xl font-bold text-gray-900 mb-2">Knowledge Base</h2>
+                    <p className="text-gray-600">Browse articles and find answers to common questions</p>
+                  </div>
 
-              {/* Search Bar */}
-              <div className="mb-6">
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="Search articles..."
-                    value={kbSearchQuery}
-                    onChange={(e) => setKbSearchQuery(e.target.value)}
-                    className="w-full px-5 py-4 pl-12 rounded-xl border-2 border-gray-300 focus:border-blue-500 focus:outline-none text-lg"
-                  />
-                  <svg 
-                    className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400"
-                    fill="none" 
-                    stroke="currentColor" 
-                    viewBox="0 0 24 24"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                </div>
-              </div>
-
-              {/* Loading State */}
-              {kbLoading && (
-                <div className="text-center py-12">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 mx-auto mb-4" style={{ borderColor: projectBranding.primaryColor }}></div>
-                  <p className="text-gray-600">Loading articles...</p>
-                </div>
-              )}
-
-              {/* Article Modal */}
-              {selectedArticle && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={() => setSelectedArticle(null)}>
-                  <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
-                    <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex justify-between items-start">
-                      <div>
-                        <h2 className="text-2xl font-bold text-gray-900 mb-2">{selectedArticle.title}</h2>
-                        {selectedArticle.category && (
-                          <span className="inline-block px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            {selectedArticle.category}
-                          </span>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => setSelectedArticle(null)}
-                        className="text-gray-400 hover:text-gray-600 transition-colors"
-                      >
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </div>
-                    <div className="p-6">
-                      <div 
-                        className="prose prose-lg max-w-none"
-                        dangerouslySetInnerHTML={{ __html: selectedArticle.content }}
+                  {/* Search Bar */}
+                  <div className="mb-6">
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Search articles..."
+                        value={kbSearchQuery}
+                        onChange={(e) => setKbSearchQuery(e.target.value)}
+                        className="w-full px-5 py-4 pl-12 rounded-xl border-2 border-gray-300 focus:border-blue-500 focus:outline-none text-lg"
                       />
+                      <svg 
+                        className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400"
+                        fill="none" 
+                        stroke="currentColor" 
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
                     </div>
                   </div>
-                </div>
-              )}
 
-              {/* Articles List */}
-              {!kbLoading && kbArticles.length === 0 && (
-                <div className="text-center py-12 bg-gray-50 rounded-2xl">
-                  <BookOpenIcon className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                  <p className="text-gray-500 text-lg">No articles available yet</p>
-                </div>
-              )}
+                  {/* Loading State */}
+                  {kbLoading && (
+                    <div className="text-center py-12">
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 mx-auto mb-4" style={{ borderColor: projectBranding.primaryColor }}></div>
+                      <p className="text-gray-600">Loading articles...</p>
+                    </div>
+                  )}
 
-              {!kbLoading && kbArticles.length > 0 && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {kbArticles
-                    .filter(article => 
-                      (article.status === 'published' || article.status === 'archived') && 
-                      (kbSearchQuery === '' || 
-                       article.title?.toLowerCase().includes(kbSearchQuery.toLowerCase()) ||
-                       article.content?.toLowerCase().includes(kbSearchQuery.toLowerCase()))
-                    )
-                    .map((article, idx) => (
-                      <div
-                        key={article._id || idx}
-                        onClick={() => setSelectedArticle(article)}
-                        className="bg-white border-2 border-gray-200 rounded-xl p-6 hover-lift cursor-pointer transition-all duration-300 hover:border-blue-300"
-                      >
-                        <div className="flex items-start justify-between mb-3">
-                          <h3 className="text-lg font-bold text-gray-900 line-clamp-2 flex-1">
-                            {article.title}
-                          </h3>
-                          <svg 
-                            className="w-5 h-5 text-gray-400 flex-shrink-0 ml-2"
-                            fill="none" 
-                            stroke="currentColor" 
-                            viewBox="0 0 24 24"
+                  {/* Articles List */}
+                  {!kbLoading && kbArticles.length === 0 && (
+                    <div className="text-center py-12 bg-gray-50 rounded-2xl">
+                      <BookOpenIcon className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                      <p className="text-gray-500 text-lg">No articles available yet</p>
+                    </div>
+                  )}
+
+                  {!kbLoading && kbArticles.length > 0 && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {kbArticles
+                        .filter(article => 
+                          (article.status === 'published' || article.status === 'archived') && 
+                          (kbSearchQuery === '' || 
+                           article.title?.toLowerCase().includes(kbSearchQuery.toLowerCase()) ||
+                           article.content?.toLowerCase().includes(kbSearchQuery.toLowerCase()))
+                        )
+                        .map((article, idx) => (
+                          <div
+                            key={article._id || idx}
+                            onClick={() => setSelectedArticle(article)}
+                            className="bg-white border-2 border-gray-200 rounded-xl p-6 hover-lift cursor-pointer transition-all duration-300 hover:border-blue-300"
                           >
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                          </svg>
-                        </div>
-                        
-                        {article.category && (
-                          <span className="inline-block px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 mb-3">
-                            {article.category}
-                          </span>
-                        )}
-                        
-                        <p className="text-sm text-gray-600 line-clamp-3 mb-4">
-                          {article.content?.replace(/<[^>]*>/g, '').substring(0, 150)}...
-                        </p>
-                        
-                        <div className="flex items-center text-xs text-gray-500">
-                          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          {article.updatedAt ? new Date(article.updatedAt).toLocaleDateString() : 'Recently updated'}
-                        </div>
-                      </div>
-                    ))}
+                            <div className="flex items-start justify-between mb-3">
+                              <h3 className="text-lg font-bold text-gray-900 line-clamp-2 flex-1">
+                                {article.title}
+                              </h3>
+                              <svg 
+                                className="w-5 h-5 text-gray-400 flex-shrink-0 ml-2"
+                                fill="none" 
+                                stroke="currentColor" 
+                                viewBox="0 0 24 24"
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                              </svg>
+                            </div>
+                            
+                            {article.category && (
+                              <span className="inline-block px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 mb-3">
+                                {article.category}
+                              </span>
+                            )}
+                            
+                            <p className="text-sm text-gray-600 line-clamp-3 mb-4">
+                              {article.content?.replace(/<[^>]*>/g, '').substring(0, 150)}...
+                            </p>
+                            
+                            <div className="flex items-center text-xs text-gray-500">
+                              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              {article.updatedAt ? new Date(article.updatedAt).toLocaleDateString() : 'Recently updated'}
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                /* Article Detail View - Inline */
+                <div>
+                  <button
+                    onClick={() => setSelectedArticle(null)}
+                    className="mb-6 flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-all"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                    </svg>
+                    Back to Articles
+                  </button>
+
+                  <div className="bg-white rounded-2xl border-2 border-gray-200 shadow-lg p-8 md:p-12">
+                    <div className="mb-6">
+                      <h1 className="text-4xl font-bold text-gray-900 mb-4">{selectedArticle.title}</h1>
+                      {selectedArticle.category && (
+                        <span className="inline-block px-4 py-2 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
+                          {selectedArticle.category}
+                        </span>
+                      )}
+                    </div>
+                    
+                    <style>{`
+                      .kb-article-content ol {
+                        list-style-type: decimal !important;
+                        padding-left: 2em !important;
+                        margin: 1em 0 !important;
+                      }
+                      .kb-article-content ul {
+                        list-style-type: disc !important;
+                        padding-left: 2em !important;
+                        margin: 1em 0 !important;
+                      }
+                      .kb-article-content ol > li,
+                      .kb-article-content ul > li {
+                        display: list-item !important;
+                        margin-bottom: 0.5em !important;
+                        line-height: 1.8 !important;
+                        list-style-position: outside !important;
+                      }
+                      .kb-article-content ol > li {
+                        list-style-type: decimal !important;
+                      }
+                      .kb-article-content ul > li {
+                        list-style-type: disc !important;
+                      }
+                      .kb-article-content li.ql-indent-1 { padding-left: 3em !important; }
+                      .kb-article-content li.ql-indent-2 { padding-left: 4.5em !important; }
+                      .kb-article-content li.ql-indent-3 { padding-left: 6em !important; }
+                      .kb-article-content li.ql-indent-4 { padding-left: 7.5em !important; }
+                      .kb-article-content li.ql-indent-5 { padding-left: 9em !important; }
+                      .kb-article-content h1 { font-size: 2em; font-weight: bold; margin: 1em 0 0.5em; }
+                      .kb-article-content h2 { font-size: 1.5em; font-weight: bold; margin: 0.83em 0 0.5em; }
+                      .kb-article-content h3 { font-size: 1.17em; font-weight: bold; margin: 1em 0 0.5em; }
+                      .kb-article-content strong { font-weight: 700; }
+                    `}</style>
+                    
+                    <div 
+                      className="prose prose-lg max-w-none kb-article-content text-gray-700 leading-relaxed"
+                      dangerouslySetInnerHTML={{ __html: selectedArticle.content }}
+                    />
+                  </div>
                 </div>
               )}
             </div>
@@ -1841,6 +1896,9 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
           customUrlPath={customUrlPath || ''}
         />
       )}
+
+      {/* KB Chatbot */}
+      <KBChatbot />
     </div>
   );
 };

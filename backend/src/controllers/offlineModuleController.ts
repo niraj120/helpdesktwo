@@ -228,7 +228,7 @@ export const createOfflineTicket = async (req: AuthRequest, res: Response): Prom
       ticket: {
         id: ticket._id,
         ticketNumber: ticket.ticketNumber,
-        title: ticket.title,
+        subject: ticket.subject,
         status: ticket.status,
         priority: ticket.priority,
         createdAt: ticket.createdAt,

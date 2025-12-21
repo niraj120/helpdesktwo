@@ -62,7 +62,7 @@ interface Thread {
     firstName: string;
     lastName: string;
     email: string;
-    role?: string;
+    role?: string | { name: string; code?: string };
   };
   createdAt: string;
   attachments?: Array<{
@@ -194,7 +194,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [isEscalating, setIsEscalating] = useState(false);
 
-  const [newStatus, setNewStatus] = useState('');
+  const [newStatus, setNewStatus] = useState<string | number>('');
   const [newCategory, setNewCategory] = useState('');
   const [newPriority, setNewPriority] = useState('');
   const [newTag, setNewTag] = useState('');
@@ -654,7 +654,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
       alert('Ticket escalated successfully');
     } catch (error) {
       console.error('Error escalating ticket:', error);
-      alert('Failed to escalate ticket');
+      alert('Failed to escalate query');
     }
   };
 
@@ -1508,7 +1508,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
 
             {/* Escalate Card */}
             <div className="bg-white rounded-xl shadow-sm p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Escalate Ticket</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Escalate Query</h3>
 
               {isEscalating ? (
                 <div className="space-y-4">
@@ -1584,7 +1584,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                   className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100"
                 >
                   <ArrowUpIcon className="h-5 w-5" />
-                  <span>Escalate This Ticket</span>
+                  <span>Escalate This Query</span>
                 </button>
               )}
             </div>
@@ -1614,7 +1614,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                   className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-gray-50 text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-100"
                 >
                   <XCircleIcon className="h-5 w-5" />
-                  <span>Close Ticket</span>
+                  <span>Close Query</span>
                 </button>
               </div>
             </div>

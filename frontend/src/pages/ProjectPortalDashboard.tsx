@@ -17,6 +17,9 @@ import RedirectToFirstRoute from '../components/RedirectToFirstRoute';
 import EmailConfigPage from './EmailConfigPage';
 import ProjectDashboard from './ProjectDashboard';
 import MyAssetsStatic from '../components/MyAssetsStatic';
+import TicketListReport from './TicketListReport';
+import AssetReport from './AssetReport';
+import ManpowerReport from './ManpowerReport';
 
 // Import ticket-related pages
 import ViewTickets from './ViewTickets';
@@ -1184,8 +1187,32 @@ const ProjectPortalDashboard = () => {
         {/* NEW: Student Workflow replaces old Offline Module */}
         <Route path="/offline" element={<AgentStudentWorkflow projectId={projectBranding?.projectId || ''} />} />
         <Route path="/student-workflow" element={<AgentStudentWorkflow projectId={projectBranding?.projectId || ''} />} />
-        <Route path="/my-assets-demo" element={<MyAssetsStatic />} />
+        <Route path="/my-assets-demo" element={
+          <ProtectedRoute requireAuth={true} excludeForRoles={['STUDENT', 'COUNSELOR_L1', 'CET_STATE_CELL', 'AGENT', 'SUPPORT_ADMIN', 'ACCOUNT_OWNER']}>
+            <MyAssetsStatic />
+          </ProtectedRoute>
+        } />
         <Route path="/users" element={<ProjectUserManagement />} />
+        
+        {/* Reports - Requires REPORT_* permissions */}
+        <Route path="/reports/tickets" element={
+          <ProtectedRoute modulePrefix="REPORT_">
+            <TicketListReport projectId={projectBranding?.projectId} wrapWithLayout={false} />
+          </ProtectedRoute>
+        } />
+        
+        <Route path="/reports/assets" element={
+          <ProtectedRoute modulePrefix="REPORT_">
+            <AssetReport projectId={projectBranding?.projectId} wrapWithLayout={false} />
+          </ProtectedRoute>
+        } />
+        
+        <Route path="/reports/manpower" element={
+          <ProtectedRoute modulePrefix="REPORT_">
+            <ManpowerReport projectId={projectBranding?.projectId} wrapWithLayout={false} />
+          </ProtectedRoute>
+        } />
+        
         <Route path="/audit/activity-logs" element={<ActivityLogs wrapWithLayout={false} />} />
         <Route path="/audit/access-logs" element={<AccessLogs wrapWithLayout={false} />} />
         

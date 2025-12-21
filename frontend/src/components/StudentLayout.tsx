@@ -126,12 +126,12 @@ const StudentLayout = ({ children }: StudentLayoutProps) => {
       label: 'My Queries',
       permission: PERMISSIONS.TICKET_VIEW_OWN,
     },
-    {
-      path: `/${customUrlPath}/student/submit-ticket`,
-      icon: <MdAdd />,
-      label: 'Submit Query',
-      permission: PERMISSIONS.TICKET_VIEW_OWN, // Changed from TICKET_CREATE to TICKET_VIEW_OWN
-    },
+    // {
+    //   path: `/${customUrlPath}/student/submit-ticket`,
+    //   icon: <MdAdd />,
+    //   label: 'Submit Query',
+    //   permission: PERMISSIONS.TICKET_VIEW_OWN, // Changed from TICKET_CREATE to TICKET_VIEW_OWN
+    // },
     {
       path: `/${customUrlPath}/kb`,
       icon: <MdBook />,
@@ -348,14 +348,14 @@ const StudentLayout = ({ children }: StudentLayoutProps) => {
                   fontSize: '14px',
                   fontWeight: '600'
                 }}>
-                  {user.firstName.charAt(0)}{user.lastName.charAt(0)}
+                  {user.firstName?.charAt(0) || ''}{user.lastName?.charAt(0) || ''}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
                   <span style={{ fontSize: '14px', fontWeight: '600', color: '#1f2937' }}>
-                    {user.firstName} {user.lastName}
+                    {user.firstName || ''} {user.lastName || ''}
                   </span>
                   <span style={{ fontSize: '12px', color: '#6b7280' }}>
-                    {user.email}
+                    {user.email || ''}
                   </span>
                 </div>
               </div>

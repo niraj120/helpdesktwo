@@ -17,7 +17,7 @@ interface Ticket {
   ticketNumber: string;
   title: string;
   description: string;
-  status: string;
+  status: string | number;
   priority: string;
   category: string;
   assignedTo?: {

@@ -33,13 +33,13 @@ const KnowledgeBaseArticleSchema = new Schema<IKnowledgeBaseArticle>({
   categoryId: {
     type: Schema.Types.ObjectId,
     ref: 'KBCategory',
-    required: true,
+    required: false,
     index: true
   },
   subcategoryId: {
     type: Schema.Types.ObjectId,
     ref: 'KBSubcategory',
-    required: true,
+    required: false,
     index: true
   },
   title: {

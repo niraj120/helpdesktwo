@@ -451,7 +451,7 @@ export const submitTicket = async (req: Request, res: Response) => {
           action: 'create',
           entity: 'ticket',
           entityId: ticket._id.toString(),
-          entityName: ticket.title,
+          entityName: ticket.subject,
           projectId: projectId,
           projectName: project.name,
           description: `Ticket ${ticket.ticketNumber} created via online submission`,
@@ -490,7 +490,7 @@ export const submitTicket = async (req: Request, res: Response) => {
           await sendTicketCreatedEmail(
             studentEmail,
             ticket.ticketNumber,
-            ticket.title,
+            ticket.subject,
             projectId,
             {
               studentName: studentName,
@@ -617,6 +617,7 @@ export const getMyTickets = async (req: Request, res: Response) => {
     // Find tickets based on query
     const tickets = await Ticket.find(query)
       .populate('assignedTo', 'firstName lastName email')
+      .populate('category', 'name code')
       .sort({ createdAt: -1 });
 
     console.log(`🔍 [TICKET QUERY] Tickets found: ${tickets.length}`);
@@ -659,7 +660,8 @@ export const getMyTickets = async (req: Request, res: Response) => {
 /**
  * Get all tickets for View Tickets page
  * - Super Admin: ALL tickets across all projects
- * - Other roles: Only tickets from their assigned projects
+ * - Users with TICKET_VIEW_ALL: Tickets from their assigned projects
+ * - Agents (isAgent=true): Tickets assigned to them in their assigned projects
  */
 export const getAllTickets = async (req: Request, res: Response) => {
   try {
@@ -690,25 +692,26 @@ export const getAllTickets = async (req: Request, res: Response) => {
 
     const role = user.role as any;
     const isSuperAdmin = role?.code === 'SUPER_ADMIN';
+    const isAgent = role?.isAgent || false;
     const permissions = role?.permissions || [];
     const permissionCodes = permissions.map((p: any) => p.code).filter((c: any) => c);
     const hasViewAll = permissionCodes.includes('TICKET_VIEW_ALL');
+    const hasViewOwn = permissionCodes.includes('TICKET_VIEW_OWN');
 
     console.log(`🔍 [VIEW_TICKETS] User: ${user.email}`);
     console.log(`🔍 [VIEW_TICKETS] Role: ${role?.name} (${role?.code})`);
-    console.log(`🔍 [VIEW_TICKETS] isSuperAdmin: ${isSuperAdmin}, hasViewAll: ${hasViewAll}`);
+    console.log(`🔍 [VIEW_TICKETS] isSuperAdmin: ${isSuperAdmin}, hasViewAll: ${hasViewAll}, isAgent: ${isAgent}, hasViewOwn: ${hasViewOwn}`);
 
     let query: any = {};
+    const assignedProjectIds = ((user as any).projects as any[])?.map(p => p._id) || [];
 
     // Super Admin sees ALL tickets across all projects
     if (isSuperAdmin) {
       console.log(`🔍 [VIEW_TICKETS] Super Admin - showing all tickets`);
       // No filter - show everything
     } else if (hasViewAll) {
-      // Other roles with TICKET_VIEW_ALL see only tickets from their assigned projects
-      const assignedProjectIds = ((user as any).projects as any[])?.map(p => p._id) || [];
+      // Users with TICKET_VIEW_ALL see tickets from their assigned projects
       if (assignedProjectIds.length > 0) {
-        // Handle both string and ObjectId project IDs in metadata.projectId
         query['metadata.projectId'] = { 
           $in: [
             ...assignedProjectIds, 
@@ -723,12 +726,35 @@ export const getAllTickets = async (req: Request, res: Response) => {
           data: [],
         });
       }
+    } else if (isAgent || hasViewOwn) {
+      // Agents or users with TICKET_VIEW_OWN see tickets assigned to them within their projects
+      if (assignedProjectIds.length > 0) {
+        query = {
+          $and: [
+            { 'metadata.projectId': { $in: [...assignedProjectIds, ...assignedProjectIds.map(id => id.toString())] } },
+            { 
+              $or: [
+                { assignedTo: new mongoose.Types.ObjectId(userId) },
+                { 'metadata.studentEmail': user.email } // Also show tickets created by them
+              ]
+            }
+          ]
+        };
+        console.log(`🔍 [VIEW_TICKETS] Agent/ViewOwn user - showing assigned tickets in their projects`);
+      } else {
+        // No projects assigned - show only assigned tickets
+        query = { 
+          $or: [
+            { assignedTo: new mongoose.Types.ObjectId(userId) },
+            { 'metadata.studentEmail': user.email }
+          ]
+        };
+        console.log(`🔍 [VIEW_TICKETS] Agent with no projects - showing only assigned tickets`);
+      }
     } else {
-      // Users without TICKET_VIEW_ALL should not access this endpoint
-      return res.status(403).json({
-        success: false,
-        message: 'You do not have permission to view all tickets',
-      });
+      // Users without proper permissions - show only tickets they created
+      query['metadata.studentEmail'] = user.email;
+      console.log(`🔍 [VIEW_TICKETS] Regular user - showing only created tickets`);
     }
 
     console.log(`🔍 [VIEW_TICKETS] Final query:`, JSON.stringify(query));
@@ -1032,23 +1058,25 @@ export const replyToTicket = async (req: Request, res: Response) => {
       });
     }
 
-    // Add thread to ticket
-    if (!ticket.threads) {
-      ticket.threads = [];
-    }
-
-    ticket.threads.push({
+    // Add thread to ticket using atomic update to avoid full document validation
+    const newThread = {
       message,
-      createdBy: userId,
+      createdBy: new mongoose.Types.ObjectId(userId),
       attachments,
       createdAt: new Date(),
-    } as any);
+    };
 
-    ticket.updatedAt = new Date();
-    await ticket.save();
-
-    // Populate the new thread's createdBy field with role information
-    await ticket.populate({
+    const updatedTicket = await Ticket.findByIdAndUpdate(
+      id,
+      {
+        $push: { threads: newThread },
+        $set: { updatedAt: new Date() }
+      },
+      { 
+        new: true,
+        runValidators: false // Skip validation to avoid issues with missing subject field
+      }
+    ).populate({
       path: 'threads.createdBy',
       select: 'firstName lastName email role',
       populate: {
@@ -1057,12 +1085,19 @@ export const replyToTicket = async (req: Request, res: Response) => {
       }
     });
 
-    console.log(`✅ Reply added to ticket: ${ticket._id} by user: ${user.email}`);
+    if (!updatedTicket) {
+      return res.status(404).json({
+        success: false,
+        message: 'Failed to update ticket',
+      });
+    }
+
+    console.log(`✅ Reply added to ticket: ${updatedTicket._id} by user: ${user.email}`);
 
     return res.status(200).json({
       success: true,
       message: 'Reply added successfully',
-      data: ticket.threads,
+      data: updatedTicket.threads,
     });
 
   } catch (error) {
@@ -1278,7 +1313,7 @@ export const updateTicketStatus = async (req: Request, res: Response) => {
           action: 'update',
           entity: 'ticket',
           entityId: ticket._id.toString(),
-          entityName: ticket.title,
+          entityName: ticket.subject,
           projectId: ticket.metadata?.projectId,
           projectName: projectData?.name,
           changes: [{ field: 'status', oldValue: oldStatus, newValue: status }],
@@ -1349,7 +1384,7 @@ export const updateTicketCategory = async (req: Request, res: Response) => {
           action: 'update',
           entity: 'ticket',
           entityId: ticket._id.toString(),
-          entityName: ticket.title,
+          entityName: ticket.subject,
           projectId: ticket.metadata?.projectId,
           projectName: projectData?.name,
           changes: [{ field: 'category', oldValue: oldCategory, newValue: category }],
@@ -1421,7 +1456,7 @@ export const updateTicketPriority = async (req: Request, res: Response) => {
           action: 'update',
           entity: 'ticket',
           entityId: ticket._id.toString(),
-          entityName: ticket.title,
+          entityName: ticket.subject,
           projectId: ticket.metadata?.projectId,
           projectName: projectData?.name,
           changes: [{ field: 'priority', oldValue: oldPriority, newValue: priority }],
@@ -1589,12 +1624,48 @@ export const escalateTicket = async (req: Request, res: Response) => {
     const { id } = req.params;
     const { escalateTo, reason } = req.body;
     const userId = (req as any).user?.userId;
+    const user = (req as any).user;
+
+    console.log(`🔄 Escalation attempt - User: ${userId}, Ticket: ${id}`);
 
     const ticket = await Ticket.findById(id);
     if (!ticket) {
       return res.status(404).json({
         success: false,
         message: 'Ticket not found',
+      });
+    }
+
+    // Get user details
+    const currentUser = await User.findById(userId).populate('role');
+    if (!currentUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'Current user not found',
+      });
+    }
+
+    // Check if user has permission to escalate
+    // Allow if: user is an agent (has isAgent role)
+    const userRole = currentUser.role as any;
+    const isAgent = userRole?.isAgent || false;
+    
+    console.log(`🔍 Escalation auth check:`, {
+      userId,
+      userEmail: currentUser.email,
+      roleName: userRole?.name,
+      roleCode: userRole?.code,
+      isAgent,
+      ticketAssignedTo: ticket.assignedTo?.toString(),
+      isAssignedAgent: ticket.assignedTo?.toString() === userId
+    });
+
+    // Allow escalation if user is an agent
+    if (!isAgent) {
+      console.log(`❌ Escalation denied: User ${userId} (${currentUser.email}) is not an agent`);
+      return res.status(403).json({
+        success: false,
+        message: 'Only agents can escalate tickets',
       });
     }
 
@@ -1614,14 +1685,6 @@ export const escalateTicket = async (req: Request, res: Response) => {
       });
     }
 
-    const currentUser = await User.findById(userId);
-    if (!currentUser) {
-      return res.status(404).json({
-        success: false,
-        message: 'Current user not found',
-      });
-    }
-
     if (!ticket.escalationHistory) {
       ticket.escalationHistory = [];
     }
@@ -1638,6 +1701,8 @@ export const escalateTicket = async (req: Request, res: Response) => {
     ticket.assignedTo = new mongoose.Types.ObjectId(escalatedUserId);
     ticket.updatedAt = new Date();
     await ticket.save();
+
+    console.log(`✅ Ticket ${id} escalated by ${currentUser.email} to ${escalatedUser.email}`);
 
     return res.status(200).json({
       success: true,
@@ -1903,7 +1968,7 @@ export const getDashboardStats = async (req: Request, res: Response) => {
 
     const formattedActivity = recentActivity.map(ticket => ({
       ticketId: ticket._id.toString(),
-      title: ticket.title,
+      subject: ticket.subject,
       status: ticket.status,
       updatedAt: ticket.updatedAt,
     }));
@@ -2022,19 +2087,130 @@ export const getProjectDashboardStats = async (req: Request, res: Response) => {
       console.log('⚠️ User has no ticket view permissions - showing only created tickets');
     }
 
-    // Optimized: Use single aggregate query instead of 7 separate countDocuments calls
+    // Get Priority model for SLA calculations
+    const Priority = require('../models/master-data/Priority').Priority;
+    
+    // First, check if ANY priorities exist in the database
+    const allPriorities = await Priority.find({}).limit(10);
+    console.log('🔍 Total priorities in database:', await Priority.countDocuments({}));
+    console.log('🔍 Sample priorities:', allPriorities.map((p: any) => ({
+      name: p.name,
+      code: p.code,
+      projectId: p.projectId?.toString(),
+      projectIds: p.projectIds?.map((id: any) => id.toString()),
+      isActive: p.isActive
+    })));
+    
+    // Get all priorities for this project to calculate SLA deadlines
+    // Try multiple query strategies
+    console.log('🔍 Searching for priorities with projectId:', projectId);
+    
+    let priorities = await Priority.find({ 
+      $or: [
+        { projectId: projectId },
+        { projectIds: { $in: [projectId] } },
+        { projectId: new mongoose.Types.ObjectId(projectId as string) },
+        { projectIds: new mongoose.Types.ObjectId(projectId as string) }
+      ],
+      isActive: true 
+    });
+    
+    // If no priorities found with isActive filter, try without it
+    if (priorities.length === 0) {
+      console.log('⚠️ No active priorities found, trying without isActive filter...');
+      priorities = await Priority.find({ 
+        $or: [
+          { projectId: projectId },
+          { projectIds: { $in: [projectId] } },
+          { projectId: new mongoose.Types.ObjectId(projectId as string) },
+          { projectIds: new mongoose.Types.ObjectId(projectId as string) }
+        ]
+      });
+    }
+    
+    console.log('📋 Found priorities for project:', priorities.length);
+    console.log('📋 Available priorities:', priorities.map((p: any) => `${p.name} (${p.code}) [ID: ${p._id}] - Resolution: ${p.resolutionTime?.value} ${p.resolutionTime?.unit}`));
+    
+    const priorityMap = new Map(priorities.map((p: any) => [p.code.toUpperCase().trim(), p]));
+    const priorityIdMap = new Map(priorities.map((p: any) => [p._id.toString(), p]));
+
+    // Get ObjectIds for each priority level for matching
+    const highPriorityIds = priorities
+      .filter((p: any) => ['HIGH', 'CRITICAL'].includes(p.code.toUpperCase()))
+      .map((p: any) => p._id);
+    
+    const mediumPriorityIds = priorities
+      .filter((p: any) => p.code.toUpperCase() === 'MEDIUM')
+      .map((p: any) => p._id);
+    
+    const lowPriorityIds = priorities
+      .filter((p: any) => p.code.toUpperCase() === 'LOW')
+      .map((p: any) => p._id);
+
+    console.log('🎯 Priority ObjectIds:', {
+      high: highPriorityIds.map((id: any) => id.toString()),
+      medium: mediumPriorityIds.map((id: any) => id.toString()),
+      low: lowPriorityIds.map((id: any) => id.toString())
+    });
+
+    // Debug: Get actual tickets to see priority values
+    const sampleTickets = await Ticket.find(query).limit(5).select('ticketNumber priority').lean();
+    console.log('🔍 Sample tickets with priority values:', sampleTickets.map(t => ({
+      ticketNumber: t.ticketNumber,
+      priority: t.priority,
+      priorityType: typeof t.priority,
+      priorityString: String(t.priority)
+    })));
+
+    // Optimized: Use single aggregate query with SLA calculation
     const stats = await Ticket.aggregate([
       { $match: query },
       {
         $facet: {
           total: [{ $count: 'count' }],
-          highPriority: [{ $match: { priority: 'high' } }, { $count: 'count' }],
-          mediumPriority: [{ $match: { priority: 'medium' } }, { $count: 'count' }],
-          lowPriority: [{ $match: { priority: 'low' } }, { $count: 'count' }],
+          // Priority counts - match by ObjectId, string codes, or numeric values
+          highPriority: [{ 
+            $match: { 
+              $or: [
+                { priority: { $in: highPriorityIds } }, // Match by ObjectId
+                { priority: { $regex: /^(high|critical)$/i } }, // Match by string
+                { priority: { $in: [3, 4, '3', '4'] } } // Match by number
+              ]
+            } 
+          }, { $count: 'count' }],
+          mediumPriority: [{ 
+            $match: { 
+              $or: [
+                { priority: { $in: mediumPriorityIds } }, // Match by ObjectId
+                { priority: { $regex: /^medium$/i } }, // Match by string
+                { priority: { $in: [2, '2'] } } // Match by number
+              ]
+            } 
+          }, { $count: 'count' }],
+          lowPriority: [{ 
+            $match: { 
+              $or: [
+                { priority: { $in: lowPriorityIds } }, // Match by ObjectId
+                { priority: { $regex: /^low$/i } }, // Match by string
+                { priority: { $in: [1, '1'] } } // Match by number
+              ]
+            } 
+          }, { $count: 'count' }],
           resolved: [{ $match: { status: 4 } }, { $count: 'count' }], // 4=Resolved
           openOrPending: [
             { $match: { status: { $in: [1, 2, 3] } } }, // 1=Open, 2=In Progress, 3=On Hold
             { $count: 'count' }
+          ],
+          // Get all tickets for SLA calculation
+          allTickets: [
+            {
+              $project: {
+                _id: 1,
+                priority: 1,
+                status: 1,
+                createdAt: 1
+              }
+            }
           ]
         }
       }
@@ -2048,14 +2224,137 @@ export const getProjectDashboardStats = async (req: Request, res: Response) => {
     const resolvedTickets = result.resolved[0]?.count || 0;
     const openOrInProgressTickets = result.openOrPending[0]?.count || 0;
 
+    // Debug: Log actual priority values from tickets
+    const allTickets = result.allTickets || [];
+    const uniquePriorities = [...new Set(allTickets.map((t: any) => t.priority))];
+    console.log('🔍 Unique priority values in DB:', uniquePriorities.map((p: any) => `"${p}" (type: ${typeof p})`));
+
     console.log('📊 Dashboard Stats Results:', {
       totalTickets,
+      highPriority,
+      mediumPriority,
+      lowPriority,
+      resolved: resolvedTickets,
+      openOrPending: openOrInProgressTickets,
       query
     });
 
-    // Simplified SLA calculation - resolved = within SLA, open/pending = outside SLA
-    const withinSLA = resolvedTickets;
-    const outsideSLA = openOrInProgressTickets;
+    // Calculate SLA compliance for each ticket
+    let withinSLA = 0;
+    let outsideSLA = 0;
+    
+    const now = new Date();
+    
+    console.log('🕐 Starting SLA calculation at:', now.toISOString());
+    
+    for (const ticket of allTickets) {
+      // Get priority settings for this ticket
+      // Priority could be: ObjectId, string code (HIGH, MEDIUM, LOW), numeric (1,2,3,4), or order number
+      let prioritySettings = null;
+      
+      // Try matching by ObjectId first
+      if (ticket.priority && typeof ticket.priority === 'object' && ticket.priority._id) {
+        const priorityId = ticket.priority._id.toString();
+        prioritySettings = priorityIdMap.get(priorityId);
+      } else if (ticket.priority && mongoose.Types.ObjectId.isValid(ticket.priority.toString())) {
+        // Priority is an ObjectId
+        const priorityId = ticket.priority.toString();
+        prioritySettings = priorityIdMap.get(priorityId);
+      } else if (typeof ticket.priority === 'string') {
+        // Priority is a string code
+        const priorityCode = ticket.priority.toUpperCase();
+        prioritySettings = priorityMap.get(priorityCode);
+      } else if (typeof ticket.priority === 'number') {
+        // Map numeric priority to string code
+        const priorityNumMap: Record<number, string> = {
+          1: 'LOW',
+          2: 'MEDIUM',
+          3: 'HIGH',
+          4: 'CRITICAL'
+        };
+        const priorityCode = priorityNumMap[ticket.priority] || 'MEDIUM';
+        prioritySettings = priorityMap.get(priorityCode);
+      }
+      
+      if (!prioritySettings) {
+        // Try to find by order if all else failed
+        prioritySettings = priorities.find((p: any) => p.order === ticket.priority);
+        if (!prioritySettings) {
+          console.log(`⚠️ No priority settings found for ticket ${ticket._id}, priority: ${JSON.stringify(ticket.priority)} (type: ${typeof ticket.priority}) - Skipping SLA calculation`);
+          // Skip this ticket from SLA calculation if no priority found
+          continue;
+        }
+      }
+      
+      // Convert resolution time to milliseconds
+      let resolutionTimeMs = 0;
+      const resTime = prioritySettings.resolutionTime;
+      if (!resTime || !resTime.value || !resTime.unit) {
+        console.log(`⚠️ Invalid resolution time settings for priority ${prioritySettings.name} - Skipping ticket ${ticket._id}`);
+        continue;
+      }
+      
+      if (resTime.unit === 'minutes') {
+        resolutionTimeMs = resTime.value * 60 * 1000;
+      } else if (resTime.unit === 'hours') {
+        resolutionTimeMs = resTime.value * 60 * 60 * 1000;
+      } else if (resTime.unit === 'days') {
+        resolutionTimeMs = resTime.value * 24 * 60 * 60 * 1000;
+      }
+      
+      // Calculate SLA deadline (from ticket creation time)
+      const createdAt = new Date(ticket.createdAt);
+      const slaDeadline = new Date(createdAt.getTime() + resolutionTimeMs);
+      
+      // Determine SLA status based on ticket state:
+      // 1. If ticket is resolved/closed: Check if it was resolved within SLA deadline
+      // 2. If ticket is still open: Check if current time is within SLA deadline
+      const isResolved = ticket.status === 4; // 4 = Resolved
+      const isClosed = ticket.status === 5;   // 5 = Closed
+      
+      if (isResolved || isClosed) {
+        // For resolved/closed tickets, check when it was resolved (use updatedAt as proxy)
+        const resolvedAt = new Date(ticket.updatedAt || ticket.createdAt);
+        const wasResolvedWithinSLA = resolvedAt <= slaDeadline;
+        
+        if (wasResolvedWithinSLA) {
+          withinSLA++;
+          const timeTaken = resolvedAt.getTime() - createdAt.getTime();
+          const hoursTaken = Math.floor(timeTaken / (1000 * 60 * 60));
+          const minutesTaken = Math.floor((timeTaken % (1000 * 60 * 60)) / (1000 * 60));
+          console.log(`✅ Ticket ${ticket._id}: ${isResolved ? 'RESOLVED' : 'CLOSED'} within SLA - Took ${hoursTaken}h ${minutesTaken}m (Deadline: ${slaDeadline.toISOString()})`);
+        } else {
+          outsideSLA++;
+          const overdueTime = resolvedAt.getTime() - slaDeadline.getTime();
+          const hoursOverdue = Math.floor(overdueTime / (1000 * 60 * 60));
+          const minutesOverdue = Math.floor((overdueTime % (1000 * 60 * 60)) / (1000 * 60));
+          console.log(`❌ Ticket ${ticket._id}: ${isResolved ? 'RESOLVED' : 'CLOSED'} AFTER SLA - ${hoursOverdue}h ${minutesOverdue}m late (Deadline: ${slaDeadline.toISOString()})`);
+        }
+      } else {
+        // For open tickets, check current time against deadline
+        const isWithinDeadline = now <= slaDeadline;
+        
+        if (isWithinDeadline) {
+          withinSLA++;
+          const timeRemaining = slaDeadline.getTime() - now.getTime();
+          const hoursRemaining = Math.floor(timeRemaining / (1000 * 60 * 60));
+          const minutesRemaining = Math.floor((timeRemaining % (1000 * 60 * 60)) / (1000 * 60));
+          console.log(`✅ Ticket ${ticket._id}: OPEN - Within SLA - ${hoursRemaining}h ${minutesRemaining}m remaining (Priority: ${prioritySettings.name}, Deadline: ${slaDeadline.toISOString()})`);
+        } else {
+          outsideSLA++;
+          const overdueTime = now.getTime() - slaDeadline.getTime();
+          const hoursOverdue = Math.floor(overdueTime / (1000 * 60 * 60));
+          const minutesOverdue = Math.floor((overdueTime % (1000 * 60 * 60)) / (1000 * 60));
+          console.log(`❌ Ticket ${ticket._id}: OPEN - Outside SLA - ${hoursOverdue}h ${minutesOverdue}m overdue (Status: ${ticket.status}, Priority: ${prioritySettings.name}, Deadline: ${slaDeadline.toISOString()})`);
+        }
+      }
+    }
+    
+    console.log('📊 SLA Calculation:', {
+      totalTicketsChecked: allTickets.length,
+      withinSLA,
+      outsideSLA
+    });
 
     return res.status(200).json({
       success: true,
@@ -2085,13 +2384,19 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
     const agent = (req as any).user;
     
     console.log('=== OFFLINE TICKET SUBMISSION ===');
+    console.log('req.body keys:', Object.keys(req.body));
     console.log('req.body:', req.body);
     console.log('req.files:', req.files);
     
     const {
       studentId,
+      Title,        // Title field from form (mapped to subject)
+      Subject,      // Subject field from form
+      subject,      // Alternative field name
       description,
+      Description,  // Alternative field name for description
       category,
+      Category,     // Alternative field name for category
       priority,
       projectId,
       submissionType,
@@ -2103,16 +2408,27 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
 
     console.log('Extracted values:');
     console.log('  studentId:', studentId);
+    console.log('  Subject:', Subject);
+    console.log('  Title:', Title);
+    console.log('  Description:', Description);
     console.log('  description:', description);
     console.log('  category:', category);
+    console.log('  Category:', Category);
     console.log('  projectId:', projectId);
 
-    // Validate required fields
-    if (!studentId || !description || !category || !projectId) {
+    // Validate required fields (handle both capitalized and lowercase field names)
+    const hasDescription = Description || description;
+    const categoryId = Category || category;
+    
+    if (!studentId || !hasDescription || !categoryId || !projectId) {
       console.log('❌ Validation failed - missing fields');
       console.log('  studentId present:', !!studentId);
+      console.log('  Subject present:', !!Subject);
+      console.log('  Title present:', !!Title);
+      console.log('  Description present:', !!Description);
       console.log('  description present:', !!description);
       console.log('  category present:', !!category);
+      console.log('  Category present:', !!Category);
       console.log('  projectId present:', !!projectId);
       return res.status(400).json({
         success: false,
@@ -2129,9 +2445,74 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
       });
     }
 
-    // Generate ticket number
-    const ticketCount = await Ticket.countDocuments();
-    const ticketNumber = `TKT-${String(ticketCount + 1).padStart(6, '0')}`;
+    // Get project and offline ticket numbering configuration
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: 'Project not found',
+      });
+    }
+
+    // Generate ticket number using offline configuration
+    const offlineConfig = project.configuration?.offlineModuleSettings?.offlineTicketNumbering;
+    console.log('🔧 Offline Ticket Number Config:', JSON.stringify(offlineConfig, null, 2));
+    
+    const prefix = offlineConfig?.prefix || 'OFF';
+    const separator = offlineConfig?.separator || '-';
+    const includeYear = offlineConfig?.includeYear !== false; // Default true
+    const includeMonth = offlineConfig?.includeMonth || false;
+    const resetFrequency = offlineConfig?.resetFrequency || 'yearly';
+    const startingNumber = offlineConfig?.startingNumber || 1;
+    
+    const today = new Date();
+    let ticketNumber = prefix;
+    
+    // Build search pattern for finding the latest ticket
+    let searchPattern = `^${prefix.replace(/[-]/g, '\\-')}`;
+    if (separator) {
+      ticketNumber += separator;
+      searchPattern += separator.replace(/[-]/g, '\\-');
+    }
+    
+    // Add date parts based on configuration
+    if (includeYear) {
+      const year = today.getFullYear().toString();
+      ticketNumber += year;
+      searchPattern += year;
+    }
+    
+    if (includeMonth) {
+      const month = String(today.getMonth() + 1).padStart(2, '0');
+      if (separator && includeYear) ticketNumber += separator;
+      ticketNumber += month;
+      if (includeYear) searchPattern += separator.replace(/[-]/g, '\\-');
+      searchPattern += month;
+    }
+    
+    // Add separator before number
+    if (separator) {
+      ticketNumber += separator;
+      searchPattern += separator.replace(/[-]/g, '\\-');
+    }
+    
+    // Find the highest ticket number for the current period
+    const latestTicket = await Ticket.findOne({
+      submissionSource: 'offline',
+      ticketNumber: new RegExp(searchPattern)
+    }).sort({ ticketNumber: -1 });
+    
+    let nextNumber = startingNumber;
+    if (latestTicket && latestTicket.ticketNumber) {
+      // Extract the sequence number from the last ticket
+      const lastNumber = parseInt(latestTicket.ticketNumber.split(separator).pop() || '0');
+      nextNumber = lastNumber + 1;
+    }
+    
+    // Add the sequence number
+    ticketNumber += String(nextNumber).padStart(4, '0');
+    
+    console.log(`🎫 Generated offline ticket number: ${ticketNumber}`);
 
     // Handle file attachments
     const attachments: any[] = [];
@@ -2162,12 +2543,17 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
     // Determine assignment: If escalated, assign to escalateTo; otherwise assign to creating agent
     const assignedToAgentId = escalateTo || agent.userId;
 
+    // Extract subject and description (handle both capitalized and lowercase field names)
+    // Support Title, Subject, or subject field names from form
+    const ticketSubject = Subject || Title || subject || description?.substring(0, 100) || 'No subject provided';
+    const ticketDescription = Description || description || 'No description provided';
+
     // Create ticket (priority defaults to 'medium' if not provided - agent will set it later based on SLA)
     const ticket = await Ticket.create({
       ticketNumber,
-      title: description.substring(0, 100), // Use first 100 chars of description as title
-      description,
-      category,
+      subject: ticketSubject,
+      description: ticketDescription,
+      category: categoryId,
       priority: priority || 'medium', // Default to medium, agent will update based on SLA rules
       status: ticketStatus,
       createdBy: new mongoose.Types.ObjectId(studentId), // Ticket owned by student
@@ -2203,7 +2589,7 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
     if (!escalateTo) {
       // Ticket assigned to creating agent
       ticket.threads!.push({
-        message: `Ticket assigned to ${agent.firstName} ${agent.lastName} (Creating Agent).`,
+        message: `Ticket assigned to ${agent.firstName} ${agent.lastName} (Counselor).`,
         createdBy: new mongoose.Types.ObjectId(agent.userId),
         isSystemMessage: true,
         attachments: [],
@@ -2254,7 +2640,7 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
         action: 'create',
         entity: 'ticket',
         entityId: ticket._id.toString(),
-        entityName: ticket.title,
+        entityName: ticket.subject,
         projectId: projectId,
         projectName: projectData?.name,
         description: `Offline ticket ${ticketNumber} created on behalf of ${student.firstName} ${student.lastName}`,
@@ -2309,7 +2695,7 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
           await sendTicketCreatedEmail(
             studentEmail,
             ticket.ticketNumber,
-            ticket.title || description.substring(0, 100),
+            ticket.subject || description.substring(0, 100),
             projectId,
             {
               studentName: studentName,

@@ -46,7 +46,7 @@ export const exportTickets = async (req: Request, res: Response) => {
       // Header row
       const headers = [
         'Ticket Number',
-        'Title',
+        'Subject',
         'Description',
         'Status',
         'Priority',
@@ -67,7 +67,7 @@ export const exportTickets = async (req: Request, res: Response) => {
       tickets.forEach(ticket => {
         const row = [
           ticket.ticketNumber,
-          `"${ticket.title.replace(/"/g, '""')}"`,
+          `"${ticket.subject.replace(/"/g, '""')}"`,
           `"${ticket.description?.replace(/"/g, '""') || ''}"`,
           (ticket.status as any)?.name || '',
           (ticket.priority as any)?.name || '',
@@ -100,7 +100,7 @@ export const exportTickets = async (req: Request, res: Response) => {
       // Define columns
       const columns: any[] = [
         { header: 'Ticket Number', key: 'ticketNumber', width: 15 },
-        { header: 'Title', key: 'title', width: 30 },
+        { header: 'Subject', key: 'subject', width: 30 },
         { header: 'Description', key: 'description', width: 40 },
         { header: 'Status', key: 'status', width: 15 },
         { header: 'Priority', key: 'priority', width: 15 },
@@ -129,7 +129,7 @@ export const exportTickets = async (req: Request, res: Response) => {
       tickets.forEach(ticket => {
         const row: any = {
           ticketNumber: ticket.ticketNumber,
-          title: ticket.title,
+          subject: ticket.subject,
           description: ticket.description || '',
           status: (ticket.status as any)?.name || '',
           priority: (ticket.priority as any)?.name || '',

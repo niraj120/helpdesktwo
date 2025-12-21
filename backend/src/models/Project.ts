@@ -38,6 +38,7 @@ export interface IProject extends Document {
       background?: string;
     };
     headerText?: string;
+    browserTitle?: string;
     footerText?: string;
     domainUrl?: string; // For whitelabeling
     favicon?: string;
@@ -227,6 +228,14 @@ export interface IProject extends Document {
       allowAgentToEscalate?: boolean;
       autoAssignToCreatingAgent?: boolean;
       requireStudentVerification?: boolean;
+      offlineTicketNumbering?: {
+        prefix?: string;
+        startingNumber?: number;
+        separator?: string;
+        includeYear?: boolean;
+        includeMonth?: boolean;
+        resetFrequency?: 'never' | 'yearly' | 'monthly';
+      };
       notificationSettings?: {
         notifyStudentOnRegistration?: boolean;
         notifyStudentOnTicketCreation?: boolean;
@@ -308,6 +317,7 @@ const projectSchema = new Schema<IProject>({
       background: { type: String, default: '#ffffff' },
     },
     headerText: String,
+    browserTitle: String,
     footerText: String,
     domainUrl: String,
     favicon: String,
@@ -502,6 +512,14 @@ const projectSchema = new Schema<IProject>({
       allowAgentToEscalate: { type: Boolean, default: true },
       autoAssignToCreatingAgent: { type: Boolean, default: false },
       requireStudentVerification: { type: Boolean, default: false },
+      offlineTicketNumbering: {
+        prefix: { type: String, default: 'OFF' },
+        startingNumber: { type: Number, default: 1 },
+        separator: { type: String, default: '-' },
+        includeYear: { type: Boolean, default: true },
+        includeMonth: { type: Boolean, default: false },
+        resetFrequency: { type: String, enum: ['never', 'yearly', 'monthly'], default: 'yearly' },
+      },
       notificationSettings: {
         notifyStudentOnRegistration: { type: Boolean, default: true },
         notifyStudentOnTicketCreation: { type: Boolean, default: true },

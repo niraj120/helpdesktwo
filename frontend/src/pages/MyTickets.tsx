@@ -381,9 +381,6 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                       Priority
                     </th>
                     <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' }}>
-                      Category
-                    </th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' }}>
                       Project
                     </th>
                     <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' }}>
@@ -457,9 +454,6 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                         }}>
                           {ticket.priority}
                         </span>
-                      </td>
-                      <td onClick={() => handleTicketClick(ticket._id)} style={{ padding: '12px 16px', fontSize: '14px', color: '#6B7280', cursor: 'pointer' }}>
-                        {ticket.category?.name || 'N/A'}
                       </td>
                       <td onClick={() => handleTicketClick(ticket._id)} style={{ padding: '12px 16px', fontSize: '14px', color: '#6B7280', cursor: 'pointer' }}>
                         {ticket.metadata?.projectId

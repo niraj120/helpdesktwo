@@ -43,6 +43,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
   const [formData, setFormData] = useState({
     // General Tab - Portal Settings
     portalName: project?.name || project?.branding?.headerText || '',
+    browserTabTitle: project?.branding?.browserTitle || project?.name || '',
     portalUrl: project?.branding?.domainUrl || '',
     displayPortalNameInNav: true,
     
@@ -780,6 +781,9 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
     if (!formData.portalName.trim()) {
       newErrors.portalName = 'Portal name is required';
     }
+    if (!formData.browserTabTitle.trim()) {
+      newErrors.browserTabTitle = 'Browser tab title is required';
+    }
     if (!formData.branding?.customUrlPath?.trim()) {
       newErrors.portalUrl = 'Custom URL path is required';
     }
@@ -829,6 +833,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
             background: '#ffffff'
           },
           headerText: formData.portalName,
+          browserTitle: formData.browserTabTitle,
           footerText: formData.branding.footerText,
           domainUrl: formData.portalUrl,
           customUrlPath: formData.branding.customUrlPath
@@ -1116,7 +1121,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       Portal Name <span style={{ color: '#E6393E' }}>*</span>
                     </label>
                     <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '8px', lineHeight: '1.5' }}>
-                      The portal name specified below will be used in the customer portal browser title.
+                      The portal name will be displayed in the customer portal header.
                     </p>
                     <input
                       type="text"
@@ -1156,6 +1161,62 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           <path d="M8 5v3M8 11h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
                         </svg>
                         {errors.portalName}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Browser Tab Title */}
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      fontSize: '14px',
+                      fontWeight: '500',
+                      color: '#111827',
+                      marginBottom: '6px'
+                    }}>
+                      Browser Tab Title <span style={{ color: '#E6393E' }}>*</span>
+                    </label>
+                    <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '8px', lineHeight: '1.5' }}>
+                      This will be displayed in the browser tab when customers access the portal.
+                    </p>
+                    <input
+                      type="text"
+                      required
+                      value={formData.browserTabTitle}
+                      onChange={(e) => {
+                        setFormData({ ...formData, browserTabTitle: e.target.value });
+                        if (errors.browserTabTitle) {
+                          setErrors({ ...errors, browserTabTitle: '' });
+                        }
+                      }}
+                      onBlur={() => {
+                        if (!formData.browserTabTitle.trim()) {
+                          setErrors({ ...errors, browserTabTitle: 'Browser tab title is required' });
+                        }
+                      }}
+                      placeholder="e.g., MHCET Helpdesk Portal"
+                      className="text-field"
+                      style={{ 
+                        width: '100%', 
+                        boxSizing: 'border-box',
+                        borderColor: errors.browserTabTitle ? '#ef4444' : undefined,
+                        backgroundColor: errors.browserTabTitle ? 'rgba(239, 68, 68, 0.02)' : undefined
+                      }}
+                    />
+                    {errors.browserTabTitle && (
+                      <div style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '6px', 
+                        marginTop: '6px',
+                        color: '#ef4444',
+                        fontSize: '13px'
+                      }}>
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                          <path d="M8 14A6 6 0 108 2a6 6 0 000 12z" stroke="currentColor" strokeWidth="1.5"/>
+                          <path d="M8 5v3M8 11h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                        </svg>
+                        {errors.browserTabTitle}
                       </div>
                     )}
                     <div style={{ marginTop: '12px' }}>

@@ -9,7 +9,7 @@ const resources = {
       appSubtitle: "Digital India Initiative",
       
       // Login Page
-      welcomeTitle: "Welcome to Helpdesk",
+      welcomeTitle: "Welcome to Portal",
       welcomeSubtitle: "Super Admin Portal",
       secureAccess: "Secure access to government helpdesk services",
       
@@ -23,6 +23,7 @@ const resources = {
       // Buttons
       loginButton: "Login",
       signingIn: "Signing in...",
+      signInToContinue: "Sign in to continue",
       forgotPassword: "Forgot your password?",
       sendOtp: "Send OTP",
       sendingOtp: "Sending OTP...",
@@ -189,6 +190,7 @@ const resources = {
       // Buttons
       loginButton: "लॉग इन",
       signingIn: "साइन इन हो रहा है...",
+      signInToContinue: "जारी रखने के लिए साइन इन करें",
       forgotPassword: "अपना पासवर्ड भूल गए?",
       sendOtp: "OTP भेजें",
       sendingOtp: "OTP भेजा जा रहा है...",
@@ -355,8 +357,7 @@ const resources = {
       
       // Buttons
       loginButton: "लॉग इन",
-      signingIn: "साइन इन करत आहे...",
-      forgotPassword: "आपला पासवर्ड विसरलात?",
+      signingIn: "साइन इन करत आहे...",      signInToContinue: "सुरू ठेवण्यासाठी साइन इन करा",      forgotPassword: "आपला पासवर्ड विसरलात?",
       sendOtp: "OTP पाठवा",
       sendingOtp: "OTP पाठवत आहे...",
       verifyOtp: "OTP तपासा",

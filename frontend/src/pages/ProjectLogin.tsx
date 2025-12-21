@@ -124,7 +124,8 @@ const ProjectLogin: React.FC = () => {
         localStorage.setItem('authToken', result.data.token);
         localStorage.setItem('userId', result.data.user.id);
         localStorage.setItem('userEmail', result.data.user.email);
-        localStorage.setItem('userRole', result.data.user.role);
+        localStorage.setItem('user', JSON.stringify(result.data.user));
+        localStorage.setItem('userRole', result.data.user.role?.code || result.data.user.role);
         localStorage.setItem('projectId', projectBranding.projectId);
         
         // Check if user has accepted EULA

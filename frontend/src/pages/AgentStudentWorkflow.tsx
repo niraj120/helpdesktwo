@@ -761,7 +761,7 @@ const AgentStudentWorkflow: React.FC<Props> = ({ projectId }) => {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Search Query <span className="text-red-500">*</span>
+                Search Login <span className="text-red-500">*</span>
               </label>
               <div className="flex space-x-2">
                 <input

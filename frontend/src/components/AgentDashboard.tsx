@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { usePermissions } from '../hooks/usePermissions';
 import { PERMISSIONS } from '../constants/permissions';
+import KBChatbot from './KBChatbot';
 import {
   HomeIcon,
   TicketIcon,
@@ -560,6 +561,9 @@ const AgentDashboard: React.FC<AgentDashboardProps> = ({ projectId }) => {
           {renderContent()}
         </div>
       </main>
+
+      {/* KB Chatbot */}
+      <KBChatbot />
     </div>
   );
 };

@@ -530,10 +530,10 @@ const StudentTicketDetail: React.FC = () => {
                   disabled={closingTicket}
                   className="w-full py-2 px-4 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {closingTicket ? 'Closing...' : 'Close Ticket'}
+                  {closingTicket ? 'Closing...' : 'Close Query'}
                 </button>
                 <p className="text-xs text-gray-500 mt-2">
-                  Once closed, you won't be able to reopen this ticket.
+                  Once closed, you won't be able to reopen this query.
                 </p>
               </div>
             )}

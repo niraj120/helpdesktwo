@@ -46,6 +46,7 @@ const MyAssets: React.FC = () => {
   const [projects, setProjects] = useState<any[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>('');
   const [loading, setLoading] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editData, setEditData] = useState<EditData>({
     totalAssigned: 0,
@@ -57,6 +58,46 @@ const MyAssets: React.FC = () => {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
+    // Check if user is Super Admin
+    const userStr = localStorage.getItem('user');
+    let isSuperAdminUser = false;
+    
+    console.log('=== MyAssets Debug ===');
+    console.log('userStr:', userStr);
+    
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        console.log('Parsed user:', user);
+        const roleCode = user.role?.code || user.roleCode;
+        console.log('Role code:', roleCode);
+        isSuperAdminUser = roleCode === 'SUPER_ADMIN';
+        console.log('Is Super Admin:', isSuperAdminUser);
+      } catch (error) {
+        console.error('Failed to parse user data:', error);
+      }
+    }
+    
+    setIsSuperAdmin(isSuperAdminUser);
+
+    // For non-Super Admin, auto-select project from projectContext
+    if (!isSuperAdminUser) {
+      const projectContext = localStorage.getItem('projectContext');
+      console.log('Project context:', projectContext);
+      if (projectContext) {
+        try {
+          const context = JSON.parse(projectContext);
+          console.log('Parsed context:', context);
+          if (context.projectId) {
+            console.log('Auto-selecting project:', context.projectId);
+            setSelectedProject(context.projectId);
+          }
+        } catch (error) {
+          console.error('Failed to parse projectContext:', error);
+        }
+      }
+    }
+
     fetchProjects();
   }, []);
 
@@ -220,24 +261,26 @@ const MyAssets: React.FC = () => {
           </p>
         </div>
 
-        {/* Project Selector */}
-        <div className="mb-6 rounded-lg bg-white p-4 shadow">
-          <label className="mb-2 block text-sm font-medium text-gray-700">
-            Select Project <span className="text-red-500">*</span>
-          </label>
-          <select
-            value={selectedProject}
-            onChange={(e) => setSelectedProject(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 md:w-1/2"
-          >
-            <option value="">Choose a project...</option>
-            {projects.map((project) => (
-              <option key={project._id} value={project._id}>
-                {project.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* Project Selector - Only for Super Admin */}
+        {isSuperAdmin && (
+          <div className="mb-6 rounded-lg bg-white p-4 shadow">
+            <label className="mb-2 block text-sm font-medium text-gray-700">
+              Select Project <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={selectedProject}
+              onChange={(e) => setSelectedProject(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 md:w-1/2"
+            >
+              <option value="">Choose a project...</option>
+              {projects.map((project) => (
+                <option key={project._id} value={project._id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {selectedProject && (
           <>
@@ -272,8 +315,6 @@ const MyAssets: React.FC = () => {
                       <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Center</th>
                       <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Asset</th>
                       <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Total Assigned</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Used</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Not Used</th>
                       <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Working</th>
                       <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Not Working</th>
                       <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Next Audit</th>
@@ -283,13 +324,13 @@ const MyAssets: React.FC = () => {
                   <tbody className="divide-y divide-gray-200 bg-white">
                     {loading && !assets.length ? (
                       <tr>
-                        <td colSpan={9} className="px-6 py-4 text-center text-sm text-gray-500">
+                        <td colSpan={7} className="px-6 py-4 text-center text-sm text-gray-500">
                           Loading assets...
                         </td>
                       </tr>
                     ) : assets.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="px-6 py-4 text-center text-sm text-gray-500">
+                        <td colSpan={7} className="px-6 py-4 text-center text-sm text-gray-500">
                           No assets assigned yet.
                         </td>
                       </tr>
@@ -320,32 +361,6 @@ const MyAssets: React.FC = () => {
                                 />
                               ) : (
                                 <span className="text-sm text-gray-900">{asset.totalAssigned}</span>
-                              )}
-                            </td>
-                            <td className="whitespace-nowrap px-6 py-4 text-right">
-                              {isEditing ? (
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={editData.assetUsed}
-                                  onChange={(e) => setEditData({ ...editData, assetUsed: parseInt(e.target.value) || 0 })}
-                                  className="w-20 rounded border border-gray-300 px-2 py-1 text-right text-sm"
-                                />
-                              ) : (
-                                <span className="text-sm text-gray-900">{asset.assetUsed}</span>
-                              )}
-                            </td>
-                            <td className="whitespace-nowrap px-6 py-4 text-right">
-                              {isEditing ? (
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={editData.assetNotUsed}
-                                  onChange={(e) => setEditData({ ...editData, assetNotUsed: parseInt(e.target.value) || 0 })}
-                                  className="w-20 rounded border border-gray-300 px-2 py-1 text-right text-sm"
-                                />
-                              ) : (
-                                <span className="text-sm text-gray-900">{asset.assetNotUsed}</span>
                               )}
                             </td>
                             <td className="whitespace-nowrap px-6 py-4 text-right">

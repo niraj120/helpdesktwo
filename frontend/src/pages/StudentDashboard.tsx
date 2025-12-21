@@ -1405,8 +1405,77 @@ const StudentDashboard: React.FC = () => {
                       </span>
                     </div>
 
+                    <style>{`
+                      .kb-article-content ol {
+                        list-style-type: decimal !important;
+                        padding-left: 2em !important;
+                        margin: 1em 0 !important;
+                        counter-reset: list-0;
+                      }
+                      .kb-article-content ul {
+                        list-style-type: disc !important;
+                        padding-left: 2em !important;
+                        margin: 1em 0 !important;
+                      }
+                      .kb-article-content ol > li,
+                      .kb-article-content ul > li {
+                        display: list-item !important;
+                        margin-bottom: 0.5em !important;
+                        line-height: 1.8 !important;
+                        list-style-position: outside !important;
+                      }
+                      .kb-article-content ol > li {
+                        list-style-type: decimal !important;
+                      }
+                      .kb-article-content ul > li {
+                        list-style-type: disc !important;
+                      }
+                      .kb-article-content li.ql-indent-1 { padding-left: 3em; }
+                      .kb-article-content li.ql-indent-2 { padding-left: 4.5em; }
+                      .kb-article-content li.ql-indent-3 { padding-left: 6em; }
+                      .kb-article-content li.ql-indent-4 { padding-left: 7.5em; }
+                      .kb-article-content li.ql-indent-5 { padding-left: 9em; }
+                      .kb-article-content h1 { font-size: 2em; font-weight: bold; margin: 1em 0 0.5em; }
+                      .kb-article-content h2 { font-size: 1.5em; font-weight: bold; margin: 0.83em 0 0.5em; }
+                      .kb-article-content h3 { font-size: 1.17em; font-weight: bold; margin: 1em 0 0.5em; }
+                      .kb-article-content h4 { font-size: 1em; font-weight: bold; margin: 1.33em 0 0.5em; }
+                      .kb-article-content h5 { font-size: 0.83em; font-weight: bold; margin: 1.67em 0 0.5em; }
+                      .kb-article-content h6 { font-size: 0.67em; font-weight: bold; margin: 2.33em 0 0.5em; }
+                      .kb-article-content strong { font-weight: 700; }
+                      .kb-article-content em { font-style: italic; }
+                      .kb-article-content u { text-decoration: underline; }
+                      .kb-article-content s { text-decoration: line-through; }
+                      .kb-article-content blockquote {
+                        border-left: 4px solid #ccc;
+                        padding-left: 16px;
+                        margin: 1em 0;
+                        color: #666;
+                      }
+                      .kb-article-content pre {
+                        background: #f4f4f4;
+                        padding: 12px;
+                        border-radius: 4px;
+                        overflow-x: auto;
+                      }
+                      .kb-article-content code {
+                        background: #f4f4f4;
+                        padding: 2px 6px;
+                        border-radius: 3px;
+                        font-family: monospace;
+                      }
+                      .kb-article-content a {
+                        color: #3b82f6;
+                        text-decoration: underline;
+                      }
+                      .kb-article-content img {
+                        max-width: 100%;
+                        height: auto;
+                        margin: 1em 0;
+                      }
+                    `}</style>
+
                     <div
-                      className="prose prose-blue max-w-none mb-8 text-gray-700 leading-relaxed"
+                      className="prose prose-blue max-w-none mb-8 text-gray-700 leading-relaxed kb-article-content"
                       dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(selectedKbArticle.content) }}
                     />
 
@@ -1708,10 +1777,10 @@ const StudentDashboard: React.FC = () => {
                             disabled={closingTicket}
                             className="w-full py-2 px-4 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            {closingTicket ? 'Closing...' : 'Close Ticket'}
+                            {closingTicket ? 'Closing...' : 'Close Query'}
                           </button>
                           <p className="text-xs text-gray-500 mt-2">
-                            Once closed, you won't be able to reopen this ticket.
+                            Once closed, you won't be able to reopen this query.
                           </p>
                         </div>
                       )}

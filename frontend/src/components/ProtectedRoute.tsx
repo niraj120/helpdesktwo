@@ -9,6 +9,7 @@ interface ProtectedRouteProps {
   modulePrefix?: string; // Alternative: check if user has any permission with this prefix
   redirectTo?: string; // Optional custom redirect path (defaults to /no-access)
   requireAuth?: boolean; // If true, only requires authentication (no specific permission)
+  excludeForRoles?: string[]; // Array of role codes that should NOT access this route
 }
 
 /**
@@ -54,6 +55,7 @@ export const ProtectedRoute = ({
   modulePrefix,
   redirectTo = '/no-access',
   requireAuth = false,
+  excludeForRoles = [],
 }: ProtectedRouteProps) => {
   const location = useLocation();
   const { hasPermission, hasAnyPermission, hasAllPermissions, hasModuleAccess, getAllPermissions } = usePermissions();
@@ -65,6 +67,29 @@ export const ProtectedRoute = ({
   // If not authenticated, redirect to login
   if (!authToken) {
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  // Check role exclusion
+  if (excludeForRoles.length > 0) {
+    let userRole = localStorage.getItem('userRole') || '';
+    
+    // Try to get role code from user object if not a proper code
+    if (!userRole || !userRole.includes('_') || userRole !== userRole.toUpperCase()) {
+      try {
+        const userStr = localStorage.getItem('user');
+        if (userStr) {
+          const user = JSON.parse(userStr);
+          userRole = user.role?.code || user.roleCode || userRole;
+        }
+      } catch (e) {
+        console.warn('Failed to parse user object');
+      }
+    }
+    
+    if (excludeForRoles.includes(userRole)) {
+      console.log(`🚫 Access denied - Role ${userRole} is excluded from this route`);
+      return <Navigate to={redirectTo} state={{ from: location, excludedRole: userRole }} replace />;
+    }
   }
 
   // If only authentication is required (no specific permission check)

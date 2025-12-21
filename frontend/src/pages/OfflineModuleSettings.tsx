@@ -59,6 +59,14 @@ interface OfflineSettings {
   allowAgentToEscalate: boolean;
   autoAssignToCreatingAgent: boolean;
   requireStudentVerification: boolean;
+  offlineTicketNumbering?: {
+    prefix: string;
+    startingNumber: number;
+    separator: string;
+    includeYear: boolean;
+    includeMonth: boolean;
+    resetFrequency: 'never' | 'yearly' | 'monthly';
+  };
   notificationSettings: {
     notifyStudentOnRegistration: boolean;
     notifyStudentOnTicketCreation: boolean;
@@ -77,6 +85,10 @@ const OfflineModuleSettings: React.FC = () => {
   const hasFetchedCategories = useRef(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
+  
+  // Track unsaved changes
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const originalSettings = useRef<OfflineSettings | null>(null);
   const [settings, setSettings] = useState<OfflineSettings>({
     registrationFields: [
       { id: '1', fieldName: 'firstName', fieldType: 'text', required: true, placeholder: 'Enter first name', order: 1 },
@@ -87,14 +99,22 @@ const OfflineModuleSettings: React.FC = () => {
     ],
     ticketFields: [
       { id: 'category-fixed', fieldName: 'Category', fieldType: 'category', required: true, placeholder: 'Select category', isFixed: true, isEnabled: true, order: 1 },
-      { id: '1', fieldName: 'Title', fieldType: 'text', required: true, placeholder: 'Brief description of issue', order: 2 },
-      { id: '2', fieldName: 'Description', fieldType: 'textarea', required: true, placeholder: 'Detailed description...', order: 3 },
+      { id: 'subject-fixed', fieldName: 'Subject', fieldType: 'text', required: true, placeholder: 'Brief description of issue', isFixed: true, order: 2 },
+      { id: 'description-fixed', fieldName: 'Description', fieldType: 'textarea', required: true, placeholder: 'Detailed description...', isFixed: true, order: 3 },
       { id: '3', fieldName: 'Attachments', fieldType: 'file', required: false, placeholder: '', allowMultiple: true, maxFiles: 5, allowedFileTypes: ['pdf', 'jpg', 'png', 'doc', 'docx'], order: 4 },
     ],
     allowAgentToMarkResolved: true,
     allowAgentToEscalate: true,
     autoAssignToCreatingAgent: false,
     requireStudentVerification: false,
+    offlineTicketNumbering: {
+      prefix: 'OFF',
+      startingNumber: 1,
+      separator: '-',
+      includeYear: true,
+      includeMonth: false,
+      resetFrequency: 'yearly',
+    },
     notificationSettings: {
       notifyStudentOnRegistration: true,
       notifyStudentOnTicketCreation: true,
@@ -183,11 +203,15 @@ const OfflineModuleSettings: React.FC = () => {
           allowAgentToEscalate: fetchedSettings.allowAgentToEscalate ?? settings.allowAgentToEscalate,
           autoAssignToCreatingAgent: fetchedSettings.autoAssignToCreatingAgent ?? settings.autoAssignToCreatingAgent,
           requireStudentVerification: fetchedSettings.requireStudentVerification ?? settings.requireStudentVerification,
+          offlineTicketNumbering: fetchedSettings.offlineTicketNumbering || settings.offlineTicketNumbering,
           notificationSettings: fetchedSettings.notificationSettings || settings.notificationSettings,
         };
         
         console.log('✅ Setting merged settings with', mergedSettings.registrationFields?.length, 'registration fields');
+        console.log('🎫 Offline ticket numbering:', mergedSettings.offlineTicketNumbering);
         setSettings(mergedSettings);
+        originalSettings.current = mergedSettings;
+        setHasUnsavedChanges(false);
       }
     } catch (error) {
       console.error('❌ Error fetching offline settings:', error);
@@ -225,6 +249,8 @@ const OfflineModuleSettings: React.FC = () => {
       );
 
       setSaveSuccess(true);
+      setHasUnsavedChanges(false);
+      originalSettings.current = settings;
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (error: any) {
       alert(error.response?.data?.message || 'Failed to save settings');
@@ -246,6 +272,7 @@ const OfflineModuleSettings: React.FC = () => {
       ...settings,
       registrationFields: [...settings.registrationFields, newField],
     });
+    setHasUnsavedChanges(true);
   };
 
   const removeRegistrationField = (id: string) => {
@@ -262,6 +289,7 @@ const OfflineModuleSettings: React.FC = () => {
       ...settings,
       registrationFields: settings.registrationFields.filter(f => f.id !== id),
     });
+    setHasUnsavedChanges(true);
   };
 
   const updateRegistrationField = (id: string, updates: Partial<RegistrationField>) => {
@@ -286,6 +314,7 @@ const OfflineModuleSettings: React.FC = () => {
         f.id === id ? { ...f, ...updates } : f
       ),
     });
+    setHasUnsavedChanges(true);
   };
 
   const moveRegistrationField = (id: string, direction: 'up' | 'down') => {
@@ -307,6 +336,7 @@ const OfflineModuleSettings: React.FC = () => {
     });
 
     setSettings({ ...settings, registrationFields: newFields });
+    setHasUnsavedChanges(true);
   };
 
   const addTicketField = () => {
@@ -322,6 +352,7 @@ const OfflineModuleSettings: React.FC = () => {
       ...settings,
       ticketFields: [...settings.ticketFields, newField],
     });
+    setHasUnsavedChanges(true);
   };
 
   const removeTicketField = (id: string) => {
@@ -329,6 +360,7 @@ const OfflineModuleSettings: React.FC = () => {
       ...settings,
       ticketFields: settings.ticketFields.filter(f => f.id !== id),
     });
+    setHasUnsavedChanges(true);
   };
 
   const updateTicketField = (id: string, updates: Partial<TicketField>) => {
@@ -338,6 +370,7 @@ const OfflineModuleSettings: React.FC = () => {
         f.id === id ? { ...f, ...updates } : f
       ),
     });
+    setHasUnsavedChanges(true);
   };
 
   const moveTicketField = (id: string, direction: 'up' | 'down') => {
@@ -359,7 +392,22 @@ const OfflineModuleSettings: React.FC = () => {
     });
 
     setSettings({ ...settings, ticketFields: newFields });
+    setHasUnsavedChanges(true);
   };
+
+  // Warn user before leaving page with unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = 'You have unsaved changes. Are you sure you want to leave?';
+        return e.returnValue;
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges]);
 
   if (loading) {
     return (
@@ -383,6 +431,21 @@ const OfflineModuleSettings: React.FC = () => {
             Configure how agents register students and create tickets for walk-in support
           </p>
         </div>
+
+        {/* Unsaved Changes Warning */}
+        {hasUnsavedChanges && (
+          <div className="mb-6 p-4 bg-yellow-50 border border-yellow-300 rounded-lg flex items-start space-x-3">
+            <svg className="h-6 w-6 text-yellow-600 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <div className="flex-1">
+              <h4 className="font-semibold text-yellow-900">You have unsaved changes</h4>
+              <p className="text-sm text-yellow-700 mt-1">
+                Don't forget to click "Save Configuration" at the bottom to save your changes permanently.
+              </p>
+            </div>
+          </div>
+        )}
 
         {saveSuccess && (
           <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-start space-x-3">
@@ -446,6 +509,184 @@ const OfflineModuleSettings: React.FC = () => {
       {/* General Settings Tab */}
       {activeTab === 'general' && (
         <div className="space-y-6">
+          {/* Ticket Numbering Configuration */}
+          <div className="bg-white rounded-xl shadow-md p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Offline Ticket Numbering</h3>
+            <p className="text-sm text-gray-600 mb-6">
+              Configure how ticket numbers are generated for offline (walk-in) tickets
+            </p>
+            
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Prefix
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.offlineTicketNumbering?.prefix || 'OFF'}
+                    onChange={(e) => {
+                      setSettings({
+                        ...settings,
+                        offlineTicketNumbering: {
+                          ...(settings.offlineTicketNumbering || { startingNumber: 1, separator: '-', includeYear: true, includeMonth: false, resetFrequency: 'yearly' }),
+                          prefix: e.target.value.toUpperCase()
+                        }
+                      });
+                      setHasUnsavedChanges(true);
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="OFF"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Separator
+                  </label>
+                  <select
+                    value={settings.offlineTicketNumbering?.separator || '-'}
+                    onChange={(e) => {
+                      setSettings({
+                        ...settings,
+                        offlineTicketNumbering: {
+                          ...(settings.offlineTicketNumbering || { prefix: 'OFF', startingNumber: 1, includeYear: true, includeMonth: false, resetFrequency: 'yearly' }),
+                          separator: e.target.value
+                        }
+                      });
+                      setHasUnsavedChanges(true);
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="-">Hyphen (-)</option>
+                    <option value="_">Underscore (_)</option>
+                    <option value="/">Slash (/)</option>
+                    <option value="">None</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Starting Number
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={settings.offlineTicketNumbering?.startingNumber || 1}
+                    onChange={(e) => {
+                      setSettings({
+                        ...settings,
+                        offlineTicketNumbering: {
+                          ...(settings.offlineTicketNumbering || { prefix: 'OFF', separator: '-', includeYear: true, includeMonth: false, resetFrequency: 'yearly' }),
+                          startingNumber: parseInt(e.target.value) || 1
+                        }
+                      });
+                      setHasUnsavedChanges(true);
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Reset Frequency
+                  </label>
+                  <select
+                    value={settings.offlineTicketNumbering?.resetFrequency || 'yearly'}
+                    onChange={(e) => {
+                      setSettings({
+                        ...settings,
+                        offlineTicketNumbering: {
+                          ...(settings.offlineTicketNumbering || { prefix: 'OFF', startingNumber: 1, separator: '-', includeYear: true, includeMonth: false }),
+                          resetFrequency: e.target.value as 'never' | 'yearly' | 'monthly'
+                        }
+                      });
+                      setHasUnsavedChanges(true);
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="never">Never Reset</option>
+                    <option value="yearly">Reset Yearly</option>
+                    <option value="monthly">Reset Monthly</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center space-x-3">
+                  <input
+                    type="checkbox"
+                    id="includeYear"
+                    checked={settings.offlineTicketNumbering?.includeYear ?? true}
+                    onChange={(e) => {
+                      setSettings({
+                        ...settings,
+                        offlineTicketNumbering: {
+                          ...(settings.offlineTicketNumbering || { prefix: 'OFF', startingNumber: 1, separator: '-', includeMonth: false, resetFrequency: 'yearly' }),
+                          includeYear: e.target.checked
+                        }
+                      });
+                      setHasUnsavedChanges(true);
+                    }}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                  <label htmlFor="includeYear" className="text-sm font-medium text-gray-700">
+                    Include Year in ticket number
+                  </label>
+                </div>
+
+                <div className="flex items-center space-x-3">
+                  <input
+                    type="checkbox"
+                    id="includeMonth"
+                    checked={settings.offlineTicketNumbering?.includeMonth ?? false}
+                    onChange={(e) => {
+                      setSettings({
+                        ...settings,
+                        offlineTicketNumbering: {
+                          ...(settings.offlineTicketNumbering || { prefix: 'OFF', startingNumber: 1, separator: '-', includeYear: true, resetFrequency: 'yearly' }),
+                          includeMonth: e.target.checked
+                        }
+                      });
+                      setHasUnsavedChanges(true);
+                    }}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                  <label htmlFor="includeMonth" className="text-sm font-medium text-gray-700">
+                    Include Month in ticket number
+                  </label>
+                </div>
+              </div>
+
+              {/* Preview */}
+              <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-start space-x-2">
+                  <svg className="h-5 w-5 text-blue-600 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div>
+                    <p className="text-sm font-medium text-blue-900">Preview</p>
+                    <p className="text-lg font-mono font-bold text-blue-700 mt-1">
+                      {(() => {
+                        const config = settings.offlineTicketNumbering || { prefix: 'OFF', separator: '-', includeYear: true, includeMonth: false };
+                        let preview = config.prefix;
+                        if (config.separator) preview += config.separator;
+                        if (config.includeYear) preview += '2025';
+                        if (config.includeMonth) {
+                          if (config.includeYear && config.separator) preview += config.separator;
+                          preview += '12';
+                        }
+                        if (config.separator) preview += config.separator;
+                        preview += '0001';
+                        return preview;
+                      })()}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="bg-white rounded-xl shadow-md p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Agent Permissions</h3>
             <div className="space-y-4">
@@ -454,7 +695,10 @@ const OfflineModuleSettings: React.FC = () => {
                   type="checkbox"
                   id="allowMarkResolved"
                   checked={settings.allowAgentToMarkResolved}
-                  onChange={(e) => setSettings({ ...settings, allowAgentToMarkResolved: e.target.checked })}
+                  onChange={(e) => {
+                    setSettings({ ...settings, allowAgentToMarkResolved: e.target.checked });
+                    setHasUnsavedChanges(true);
+                  }}
                   className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                 />
                 <label htmlFor="allowMarkResolved" className="flex-1">
@@ -470,7 +714,10 @@ const OfflineModuleSettings: React.FC = () => {
                   type="checkbox"
                   id="allowEscalate"
                   checked={settings.allowAgentToEscalate}
-                  onChange={(e) => setSettings({ ...settings, allowAgentToEscalate: e.target.checked })}
+                  onChange={(e) => {
+                    setSettings({ ...settings, allowAgentToEscalate: e.target.checked });
+                    setHasUnsavedChanges(true);
+                  }}
                   className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                 />
                 <label htmlFor="allowEscalate" className="flex-1">
@@ -486,13 +733,16 @@ const OfflineModuleSettings: React.FC = () => {
                   type="checkbox"
                   id="autoAssign"
                   checked={settings.autoAssignToCreatingAgent}
-                  onChange={(e) => setSettings({ ...settings, autoAssignToCreatingAgent: e.target.checked })}
+                  onChange={(e) => {
+                    setSettings({ ...settings, autoAssignToCreatingAgent: e.target.checked });
+                    setHasUnsavedChanges(true);
+                  }}
                   className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                 />
                 <label htmlFor="autoAssign" className="flex-1">
-                  <span className="font-medium text-gray-900">Auto-assign to Creating Agent</span>
+                  <span className="font-medium text-gray-900">Auto-assign to Counselor</span>
                   <p className="text-sm text-gray-600 mt-1">
-                    Automatically assign offline tickets to the agent who created them
+                    Automatically assign offline tickets to the counselor who created them
                   </p>
                 </label>
               </div>
@@ -502,7 +752,10 @@ const OfflineModuleSettings: React.FC = () => {
                   type="checkbox"
                   id="requireVerification"
                   checked={settings.requireStudentVerification}
-                  onChange={(e) => setSettings({ ...settings, requireStudentVerification: e.target.checked })}
+                  onChange={(e) => {
+                    setSettings({ ...settings, requireStudentVerification: e.target.checked });
+                    setHasUnsavedChanges(true);
+                  }}
                   className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                 />
                 <label htmlFor="requireVerification" className="flex-1">
@@ -523,13 +776,16 @@ const OfflineModuleSettings: React.FC = () => {
                   type="checkbox"
                   id="notifyRegistration"
                   checked={settings.notificationSettings.notifyStudentOnRegistration}
-                  onChange={(e) => setSettings({
-                    ...settings,
-                    notificationSettings: {
-                      ...settings.notificationSettings,
-                      notifyStudentOnRegistration: e.target.checked,
-                    },
-                  })}
+                  onChange={(e) => {
+                    setSettings({
+                      ...settings,
+                      notificationSettings: {
+                        ...settings.notificationSettings,
+                        notifyStudentOnRegistration: e.target.checked,
+                      },
+                    });
+                    setHasUnsavedChanges(true);
+                  }}
                   className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                 />
                 <label htmlFor="notifyRegistration" className="flex-1">
@@ -545,13 +801,16 @@ const OfflineModuleSettings: React.FC = () => {
                   type="checkbox"
                   id="notifyTicket"
                   checked={settings.notificationSettings.notifyStudentOnTicketCreation}
-                  onChange={(e) => setSettings({
-                    ...settings,
-                    notificationSettings: {
-                      ...settings.notificationSettings,
-                      notifyStudentOnTicketCreation: e.target.checked,
-                    },
-                  })}
+                  onChange={(e) => {
+                    setSettings({
+                      ...settings,
+                      notificationSettings: {
+                        ...settings.notificationSettings,
+                        notifyStudentOnTicketCreation: e.target.checked,
+                      },
+                    });
+                    setHasUnsavedChanges(true);
+                  }}
                   className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                 />
                 <label htmlFor="notifyTicket" className="flex-1">
@@ -567,13 +826,16 @@ const OfflineModuleSettings: React.FC = () => {
                   type="checkbox"
                   id="welcomeEmail"
                   checked={settings.notificationSettings.sendWelcomeEmail}
-                  onChange={(e) => setSettings({
-                    ...settings,
-                    notificationSettings: {
-                      ...settings.notificationSettings,
-                      sendWelcomeEmail: e.target.checked,
-                    },
-                  })}
+                  onChange={(e) => {
+                    setSettings({
+                      ...settings,
+                      notificationSettings: {
+                        ...settings.notificationSettings,
+                        sendWelcomeEmail: e.target.checked,
+                      },
+                    });
+                    setHasUnsavedChanges(true);
+                  }}
                   className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                 />
                 <label htmlFor="welcomeEmail" className="flex-1">
@@ -1161,7 +1423,12 @@ const OfflineModuleSettings: React.FC = () => {
       {/* Save Button */}
       <div className="flex justify-end space-x-4 pt-6 border-t mt-6">
         <button
-          onClick={() => window.history.back()}
+          onClick={() => {
+            if (hasUnsavedChanges && !confirm('You have unsaved changes. Are you sure you want to leave without saving?')) {
+              return;
+            }
+            window.history.back();
+          }}
           className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
         >
           Cancel
@@ -1169,7 +1436,9 @@ const OfflineModuleSettings: React.FC = () => {
         <button
           onClick={handleSaveSettings}
           disabled={saving}
-          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center space-x-2"
+          className={`px-6 py-2 text-white rounded-lg transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center space-x-2 ${
+            hasUnsavedChanges ? 'bg-orange-600 hover:bg-orange-700 animate-pulse' : 'bg-blue-600 hover:bg-blue-700'
+          }`}
         >
           {saving ? (
             <>
@@ -1179,7 +1448,7 @@ const OfflineModuleSettings: React.FC = () => {
           ) : (
             <>
               <CheckCircleIcon className="h-5 w-5" />
-              <span>Save Configuration</span>
+              <span>{hasUnsavedChanges ? 'Save Changes Now' : 'Save Configuration'}</span>
             </>
           )}
         </button>

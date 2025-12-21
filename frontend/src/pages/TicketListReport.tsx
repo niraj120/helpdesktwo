@@ -54,7 +54,42 @@ interface Status {
   color?: string;
 }
 
-const TicketListReport: React.FC = () => {
+interface TicketListReportProps {
+  projectId?: string;
+  wrapWithLayout?: boolean;
+}
+
+// Helper function to convert status code to name
+const getStatusName = (status: string | number): string => {
+  const statusMap: Record<string | number, string> = {
+    1: 'Open',
+    2: 'In Progress',
+    3: 'On Hold',
+    4: 'Resolved',
+    5: 'Closed',
+    'open': 'Open',
+    'in-progress': 'In Progress',
+    'on-hold': 'On Hold',
+    'resolved': 'Resolved',
+    'closed': 'Closed',
+  };
+  return statusMap[status] || statusMap[String(status)] || String(status);
+};
+
+// Helper function to get status color
+const getStatusColor = (status: string | number): { bg: string; text: string } => {
+  const statusNum = typeof status === 'number' ? status : parseInt(status);
+  switch (statusNum) {
+    case 1: return { bg: '#fef3c7', text: '#92400e' }; // Open - Yellow
+    case 2: return { bg: '#dbeafe', text: '#1e40af' }; // In Progress - Blue
+    case 3: return { bg: '#fce7f3', text: '#9d174d' }; // On Hold - Pink
+    case 4: return { bg: '#d1fae5', text: '#065f46' }; // Resolved - Green
+    case 5: return { bg: '#e5e7eb', text: '#374151' }; // Closed - Gray
+    default: return { bg: '#dbeafe', text: '#1e40af' };
+  }
+};
+
+const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWithLayout = true }) => {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
@@ -64,7 +99,7 @@ const TicketListReport: React.FC = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [statuses, setStatuses] = useState<Status[]>([]);
   
-  const [selectedProject, setSelectedProject] = useState('');
+  const [selectedProject, setSelectedProject] = useState(projectId || '');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -75,8 +110,15 @@ const TicketListReport: React.FC = () => {
   const [total, setTotal] = useState(0);
 
   useEffect(() => {
-    fetchProjects();
-  }, []);
+    // Only fetch projects if no projectId is provided (super admin view)
+    if (!projectId) {
+      fetchProjects();
+    } else {
+      // If projectId is provided, immediately fetch categories and statuses
+      fetchCategories(projectId);
+      fetchStatuses(projectId);
+    }
+  }, [projectId]);
 
   useEffect(() => {
     if (selectedProject) {
@@ -241,7 +283,7 @@ const TicketListReport: React.FC = () => {
       'Student Name': ticket.metadata?.studentName || 'N/A',
       'Subject': ticket.subject || ticket.title || 'N/A',
       'Category': typeof ticket.category === 'string' ? ticket.category : (ticket.category?.name || 'N/A'),
-      'Status': ticket.statusName || ticket.status || 'N/A',
+      'Status': getStatusName(ticket.status),
       'Assigned To': ticket.assignedTo ? `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}` : 'Unassigned',
       'Created Date': new Date(ticket.createdAt).toLocaleDateString('en-IN'),
     }));
@@ -435,30 +477,32 @@ const TicketListReport: React.FC = () => {
         boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
       }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-          {/* Project Filter */}
-          <div>
-            <label style={{ display: 'block', marginBottom: '4px', fontSize: '14px', fontWeight: '500', color: '#374151' }}>
-              Project
-            </label>
-            <select
-              value={selectedProject}
-              onChange={(e) => setSelectedProject(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                border: '1px solid #d1d5db',
-                borderRadius: '6px',
-                fontSize: '14px',
-              }}
-            >
-              <option value="">All Projects</option>
-              {projects.map(project => (
-                <option key={project._id} value={project._id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* Project Filter - Only show if no projectId prop provided */}
+          {!projectId && (
+            <div>
+              <label style={{ display: 'block', marginBottom: '4px', fontSize: '14px', fontWeight: '500', color: '#374151' }}>
+                Project
+              </label>
+              <select
+                value={selectedProject}
+                onChange={(e) => setSelectedProject(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                }}
+              >
+                <option value="">All Projects</option>
+                {projects.map(project => (
+                  <option key={project._id} value={project._id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Category Filter */}
           <div>
@@ -468,14 +512,14 @@ const TicketListReport: React.FC = () => {
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              disabled={!selectedProject}
+              disabled={!selectedProject && !projectId}
               style={{
                 width: '100%',
                 padding: '8px 12px',
                 border: '1px solid #d1d5db',
                 borderRadius: '6px',
                 fontSize: '14px',
-                background: !selectedProject ? '#f3f4f6' : 'white',
+                background: (!selectedProject && !projectId) ? '#f3f4f6' : 'white',
               }}
             >
               <option value="">All Categories</option>
@@ -637,10 +681,10 @@ const TicketListReport: React.FC = () => {
                         padding: '4px 12px',
                         borderRadius: '12px',
                         fontSize: '12px',
-                        background: '#dbeafe',
-                        color: '#1e40af',
+                        background: getStatusColor(ticket.status).bg,
+                        color: getStatusColor(ticket.status).text,
                       }}>
-                        {ticket.statusName || ticket.status || 'N/A'}
+                        {getStatusName(ticket.status)}
                       </span>
                     </td>
                     <td style={{ padding: '12px 16px', fontSize: '14px', color: '#374151' }}>
@@ -700,7 +744,7 @@ const TicketListReport: React.FC = () => {
     </div>
   );
 
-  return <DashboardLayout>{content}</DashboardLayout>;
+  return wrapWithLayout ? <DashboardLayout>{content}</DashboardLayout> : content;
 };
 
 export default TicketListReport;

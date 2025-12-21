@@ -5,6 +5,7 @@ import * as yup from 'yup';
 import { useTranslation } from 'react-i18next';
 import DOMPurify from 'dompurify';
 import { API_CONFIG } from '../config/constants';
+import KBChatbot from './KBChatbot';
 import {
   EyeIcon, 
   EyeSlashIcon, 
@@ -232,7 +233,8 @@ const Login: React.FC = () => {
         localStorage.setItem('authToken', token);
         localStorage.setItem('userId', result.data.user.id);
         localStorage.setItem('userEmail', result.data.user.email);
-        localStorage.setItem('userRole', result.data.user.role);
+        localStorage.setItem('user', JSON.stringify(result.data.user));
+        localStorage.setItem('userRole', result.data.user.role?.code || result.data.user.role);
         
         // Store user permissions - ALWAYS extract from token (primary source)
         let permissions: string[] = [];
@@ -292,7 +294,8 @@ const Login: React.FC = () => {
         localStorage.setItem('authToken', token);
         localStorage.setItem('userId', result.data.user.id);
         localStorage.setItem('userEmail', result.data.user.email);
-        localStorage.setItem('userRole', result.data.user.role);
+        localStorage.setItem('user', JSON.stringify(result.data.user));
+        localStorage.setItem('userRole', result.data.user.role?.code || result.data.user.role);
         
         // Store user permissions
         let permissions: string[] = [];
@@ -1360,6 +1363,9 @@ const Login: React.FC = () => {
         </main>
       </div>
       </div>
+
+      {/* KB Chatbot */}
+      <KBChatbot />
     </div>
   );
 };

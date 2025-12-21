@@ -168,8 +168,8 @@ router.post('/:id/notes', authMiddleware, checkPermission('TICKET_ADD_COMMENT'),
 
 // @desc    Escalate ticket
 // @route   POST /api/tickets/:id/escalate
-// @access  Private (Agent)
-router.post('/:id/escalate', authMiddleware, checkPermission('TICKET_ESCALATE'), escalateTicket);
+// @access  Private (Agent) - Authorization handled in controller
+router.post('/:id/escalate', authMiddleware, escalateTicket);
 
 // @desc    Assign ticket to agent
 // @route   PUT /api/tickets/:id/assign

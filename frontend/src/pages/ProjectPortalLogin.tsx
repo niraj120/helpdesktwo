@@ -5,8 +5,10 @@ import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
 import axios from 'axios';
+import { useTranslation } from 'react-i18next';
 import { getFirstAvailableRoute } from '../utils/loginRedirect';
 import { API_CONFIG } from '../config/constants';
+import { LanguageToggle } from '../components/LanguageToggle';
 
 interface LoginFormData {
   email: string;
@@ -32,6 +34,7 @@ interface ProjectBranding {
 const ProjectPortalLogin: React.FC = () => {
   const navigate = useNavigate();
   const { customUrlPath } = useParams<{ customUrlPath: string }>();
+  const { t } = useTranslation();
 
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -45,12 +48,12 @@ const ProjectPortalLogin: React.FC = () => {
   const loginSchema = yup.object({
     email: yup
       .string()
-      .required('Email is required')
-      .email('Invalid email address'),
+      .required(t('emailRequired'))
+      .email(t('emailInvalid')),
     password: yup
       .string()
-      .required('Password is required')
-      .min(6, 'Password must be at least 6 characters')
+      .required(t('passwordRequired'))
+      .min(6, t('passwordMinLengthError'))
   });
 
   // Form hook
@@ -191,6 +194,7 @@ const ProjectPortalLogin: React.FC = () => {
         localStorage.setItem('userEmail', user.email);
         localStorage.setItem('userName', user.name);
         localStorage.setItem('userRole', user.role.code);
+        localStorage.setItem('userRoleName', user.role.name);
         localStorage.setItem('userPermissions', JSON.stringify(user.role.permissions || []));
 
         setSuccessMessage('Login successful! Redirecting...');
@@ -246,6 +250,16 @@ const ProjectPortalLogin: React.FC = () => {
 
   return (
     <div className="min-h-screen flex" style={{ fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif' }}>
+      {/* Language Toggle - Top Right */}
+      <div style={{
+        position: 'fixed',
+        top: '1rem',
+        right: '1rem',
+        zIndex: 1000,
+      }}>
+        <LanguageToggle />
+      </div>
+      
       {/* Left Side - Branding & Image */}
       <div style={{
         flex: 1,
@@ -460,10 +474,10 @@ const ProjectPortalLogin: React.FC = () => {
                 </svg>
               </div>
               <h1 style={{ fontSize: '1.875rem', fontWeight: 600, color: '#111827', marginBottom: '0.5rem' }}>
-                Welcome to Helpdesk
+                Welcome to {projectBranding?.name || 'Portal'}
               </h1>
               <p style={{ fontSize: '0.875rem', color: primaryColor, fontWeight: 500 }}>
-                {projectBranding?.name || 'Portal'}
+                {t('signInToContinue')}
               </p>
             </div>
 
@@ -480,7 +494,7 @@ const ProjectPortalLogin: React.FC = () => {
                     marginBottom: '0.5rem',
                   }}
                 >
-                  Email address
+                  {t('emailLabel')}
                   <span style={{ color: '#EF4444', marginLeft: '0.25rem' }}>*</span>
                 </label>
                 <input
@@ -497,7 +511,7 @@ const ProjectPortalLogin: React.FC = () => {
                     transition: 'all 0.2s ease',
                     fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
                   }}
-                  placeholder="Enter your email"
+                  placeholder={t('emailPlaceholder')}
                   onFocus={(e) => {
                     if (!loginForm.formState.errors.email) {
                       e.currentTarget.style.borderColor = primaryColor;
@@ -528,7 +542,7 @@ const ProjectPortalLogin: React.FC = () => {
                     marginBottom: '0.5rem',
                   }}
                 >
-                  Password
+                  {t('passwordLabel')}
                   <span style={{ color: '#EF4444', marginLeft: '0.25rem' }}>*</span>
                 </label>
                 <div style={{ position: 'relative' }}>
@@ -636,7 +650,7 @@ const ProjectPortalLogin: React.FC = () => {
                   }
                 }}
               >
-                {isLoading ? 'Signing in...' : 'Sign in'}
+                {isLoading ? t('signingIn') : t('loginButton')}
               </button>
             </form>
           </div>
@@ -655,7 +669,7 @@ const ProjectPortalLogin: React.FC = () => {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
               </svg>
-              <span>Secured with 256-bit SSL encryption</span>
+              <span>{t('sslSecured')}</span>
             </div>
             <div style={{
               display: 'flex',
@@ -665,11 +679,11 @@ const ProjectPortalLogin: React.FC = () => {
               fontSize: '0.75rem',
               color: '#9CA3AF',
             }}>
-              <a href="#" style={{ color: '#9CA3AF', textDecoration: 'none' }}>Privacy Policy</a>
+              <a href="#" style={{ color: '#9CA3AF', textDecoration: 'none' }}>{t('privacyPolicy')}</a>
               <span>•</span>
-              <a href="#" style={{ color: '#9CA3AF', textDecoration: 'none' }}>Terms of Service</a>
+              <a href="#" style={{ color: '#9CA3AF', textDecoration: 'none' }}>{t('termsOfService')}</a>
               <span>•</span>
-              <a href="#" style={{ color: '#9CA3AF', textDecoration: 'none' }}>Help & Support</a>
+              <a href="#" style={{ color: '#9CA3AF', textDecoration: 'none' }}>{t('helpSupport')}</a>
             </div>
           </div>
         </main>

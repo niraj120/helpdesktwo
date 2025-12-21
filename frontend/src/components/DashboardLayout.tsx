@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { SkipLink } from './accessible/SkipLink';
 import { LanguageToggle } from './LanguageToggle';
+import KBChatbot from './KBChatbot';
 import { designSystem } from '../styles/designSystem';
 import { usePermissions } from '../hooks/usePermissions';
 import { menuConfig, projectPortalMenuConfig, getFilteredMenuItems } from '../config/menuConfig';
@@ -245,6 +246,48 @@ const DashboardLayout = ({ children, logoutRedirectPath }: DashboardLayoutProps)
     : getFilteredMenuItems(menuConfig, permissions);
 
   const userName = localStorage.getItem('userName') || 'Super Admin';
+  
+  // Get user role for display
+  const getUserRole = (): string => {
+    try {
+      // First try to get role name from project portal login
+      const userRoleName = localStorage.getItem('userRoleName');
+      if (userRoleName) {
+        return userRoleName;
+      }
+      
+      // Try to get from user object (for legacy logins)
+      const userStr = localStorage.getItem('user');
+      if (userStr) {
+        const user = JSON.parse(userStr);
+        if (user.role) {
+          if (typeof user.role === 'object' && user.role.name) {
+            return user.role.name;
+          }
+          if (typeof user.role === 'object' && user.role.code) {
+            return user.role.code;
+          }
+          if (typeof user.role === 'string') {
+            return user.role;
+          }
+        }
+        if (user.roleCode) {
+          return user.roleCode;
+        }
+      }
+      
+      // Fallback to userRole code if name not available
+      const userRole = localStorage.getItem('userRole');
+      if (userRole) {
+        return userRole;
+      }
+    } catch (error) {
+      console.error('Error getting user role:', error);
+    }
+    return 'User';
+  };
+  
+  const userRole = getUserRole();
   const sidebarWidth = isSidebarCollapsed ? '64px' : '240px';
 
   return (
@@ -344,7 +387,7 @@ const DashboardLayout = ({ children, logoutRedirectPath }: DashboardLayoutProps)
                 fontSize: '12px', 
                 color: 'var(--text-secondary)'
               }}>
-                {projectBranding?.code || (i18n.language === 'mr' ? 'हेल्पडेस्क' : i18n.language === 'hi' ? 'हेल्पडेस्क' : 'Helpdesk')}
+                {userRole}
               </div>
             </div>
           )}
@@ -887,6 +930,9 @@ const DashboardLayout = ({ children, logoutRedirectPath }: DashboardLayoutProps)
         {children}
       </main>
     </div>
+
+    {/* KB Chatbot */}
+    <KBChatbot />
     </>
   );
 };

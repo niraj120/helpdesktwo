@@ -478,6 +478,7 @@ export const getProjectBranding = async (req: Request, res: Response) => {
         logo: project.branding?.logo,
         favicon: project.branding?.favicon,
         headerText: project.branding?.headerText,
+        browserTitle: project.branding?.browserTitle,
         footerText: project.branding?.footerText,
         colorTheme: {
           primary: project.branding?.colorTheme?.primary || '#667eea',
@@ -709,14 +710,22 @@ export const getOfflineSettings = async (req: Request, res: Response) => {
         ],
         ticketFields: [
           { id: 'category-fixed', fieldName: 'Category', fieldType: 'category', required: true, placeholder: 'Select category', isFixed: true, isEnabled: true, order: 1 },
-          { id: '1', fieldName: 'Title', fieldType: 'text', required: true, placeholder: 'Brief description of issue', order: 2 },
-          { id: '2', fieldName: 'Description', fieldType: 'textarea', required: true, placeholder: 'Detailed description...', order: 3 },
+          { id: 'subject-fixed', fieldName: 'Subject', fieldType: 'text', required: true, placeholder: 'Brief description of issue', isFixed: true, order: 2 },
+          { id: 'description-fixed', fieldName: 'Description', fieldType: 'textarea', required: true, placeholder: 'Detailed description...', isFixed: true, order: 3 },
           { id: '3', fieldName: 'Attachments', fieldType: 'file', required: false, placeholder: '', allowMultiple: true, maxFiles: 5, allowedFileTypes: ['pdf', 'jpg', 'png', 'doc', 'docx'], order: 4 },
         ],
         allowAgentToMarkResolved: true,
         allowAgentToEscalate: true,
         autoAssignToCreatingAgent: false,
         requireStudentVerification: false,
+        offlineTicketNumbering: {
+          prefix: 'OFF',
+          startingNumber: 1,
+          separator: '-',
+          includeYear: true,
+          includeMonth: false,
+          resetFrequency: 'yearly',
+        },
         notificationSettings: {
           notifyStudentOnRegistration: true,
           notifyStudentOnTicketCreation: true,

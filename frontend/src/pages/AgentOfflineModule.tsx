@@ -859,7 +859,7 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                   className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                 />
                 <label htmlFor="needsEscalation" className="text-sm flex-1">
-                  <span className="font-medium text-gray-900">Escalate Ticket</span>
+                  <span className="font-medium text-gray-900">Escalate Query</span>
                   <p className="text-gray-600 text-xs mt-1">
                     Escalate to another agent for specialized support
                   </p>

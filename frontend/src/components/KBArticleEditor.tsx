@@ -9,6 +9,54 @@ import {
   XMarkIcon
 } from '@heroicons/react/24/outline';
 
+// Custom CSS for enhanced editor
+const editorStyles = `
+  .enhanced-quill-editor .ql-container {
+    min-height: 500px;
+    font-size: 16px;
+  }
+  .enhanced-quill-editor .ql-editor {
+    min-height: 500px;
+    line-height: 1.8;
+  }
+  .enhanced-quill-editor .ql-editor ol,
+  .enhanced-quill-editor .ql-editor ul {
+    padding-left: 1.5em;
+  }
+  .enhanced-quill-editor .ql-editor li {
+    margin-bottom: 0.5em;
+  }
+  .enhanced-quill-editor .ql-editor li.ql-indent-1 { padding-left: 3em; }
+  .enhanced-quill-editor .ql-editor li.ql-indent-2 { padding-left: 4.5em; }
+  .enhanced-quill-editor .ql-editor li.ql-indent-3 { padding-left: 6em; }
+  .enhanced-quill-editor .ql-editor li.ql-indent-4 { padding-left: 7.5em; }
+  .enhanced-quill-editor .ql-editor li.ql-indent-5 { padding-left: 9em; }
+  .enhanced-quill-editor .ql-toolbar {
+    background: #f8f9fa;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem 0.5rem 0 0;
+    padding: 12px;
+  }
+  .enhanced-quill-editor .ql-container {
+    border: 1px solid #e2e8f0;
+    border-radius: 0 0 0.5rem 0.5rem;
+    background: white;
+  }
+  .enhanced-quill-editor .ql-editor strong {
+    font-weight: 700;
+  }
+  .enhanced-quill-editor .ql-editor h1 { font-size: 2em; font-weight: bold; margin: 1em 0 0.5em; }
+  .enhanced-quill-editor .ql-editor h2 { font-size: 1.5em; font-weight: bold; margin: 0.83em 0 0.5em; }
+  .enhanced-quill-editor .ql-editor h3 { font-size: 1.17em; font-weight: bold; margin: 1em 0 0.5em; }
+  .enhanced-quill-editor .ql-toolbar .ql-formats {
+    margin-right: 15px;
+  }
+  .enhanced-quill-editor .ql-picker-label {
+    padding: 5px 8px;
+  }
+`;
+
+
 interface KBCategory {
   _id: string;
   name: string;
@@ -41,8 +89,6 @@ interface KBArticleEditorProps {
 }
 
 const KBArticleEditor: React.FC<KBArticleEditorProps> = ({ article, onSave, onCancel }) => {
-  const [categories, setCategories] = useState<KBCategory[]>([]);
-  const [subcategories, setSubcategories] = useState<KBSubcategory[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploadingPdf, setUploadingPdf] = useState(false);
 
@@ -63,11 +109,7 @@ const KBArticleEditor: React.FC<KBArticleEditorProps> = ({ article, onSave, onCa
   const projectContext = JSON.parse(localStorage.getItem('projectContext') || '{}');
   const token = localStorage.getItem('authToken');
 
-  useEffect(() => {
-    if (projectContext.projectId) {
-      fetchCategories();
-    }
-  }, [projectContext.projectId]);
+  // Removed useEffect for fetchCategories as categories are no longer in UI
 
   useEffect(() => {
     if (article) {
@@ -76,55 +118,12 @@ const KBArticleEditor: React.FC<KBArticleEditorProps> = ({ article, onSave, onCa
         tags: article.tags || []
       });
       if (article.categoryId) {
-        fetchSubcategories(article.categoryId);
+        // fetchSubcategories removed as subcategories are no longer in UI
       }
     }
   }, [article?._id]);
 
-  const fetchCategories = async () => {
-    if (!projectContext.projectId || !token) {
-      console.warn('Missing projectId or token');
-      return;
-    }
-
-    try {
-      const response = await axios.get(
-        `${API_CONFIG.API_URL}/knowledge-base/categories/project/${projectContext.projectId}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setCategories(response.data.data || []);
-    } catch (error: any) {
-      console.error('Error fetching categories:', error);
-      alert(error.response?.data?.message || 'Failed to load categories');
-    }
-  };
-
-  const fetchSubcategories = async (categoryId: string) => {
-    if (!categoryId || !token) return;
-
-    try {
-      const response = await axios.get(
-        `${API_CONFIG.API_URL}/knowledge-base/subcategories/category/${categoryId}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setSubcategories(response.data.data || []);
-    } catch (error: any) {
-      console.error('Error fetching subcategories:', error);
-      alert(error.response?.data?.message || 'Failed to load subcategories');
-    }
-  };
-
-  const handleCategoryChange = (categoryId: string) => {
-    setFormData({
-      ...formData,
-      categoryId,
-      subcategoryId: '' // Reset subcategory when category changes
-    });
-    setSubcategories([]);
-    if (categoryId) {
-      fetchSubcategories(categoryId);
-    }
-  };
+  // Category and subcategory functions removed as they are no longer used in UI
 
   const handlePdfUpload = async (file: File) => {
     if (!file) return;
@@ -201,14 +200,14 @@ const KBArticleEditor: React.FC<KBArticleEditorProps> = ({ article, onSave, onCa
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Debug logging
+    console.log('Form Data:', formData);
+    console.log('CategoryId:', formData.categoryId);
+    console.log('SubcategoryId:', formData.subcategoryId);
+
     // Validation
     if (!formData.title?.trim()) {
       alert('Please provide article title');
-      return;
-    }
-
-    if (!formData.categoryId || !formData.subcategoryId) {
-      alert('Please select both Category and Subcategory');
       return;
     }
 
@@ -231,11 +230,19 @@ const KBArticleEditor: React.FC<KBArticleEditorProps> = ({ article, onSave, onCa
       setLoading(true);
       const payload = {
         projectId: projectContext.projectId,
-        ...formData,
-        // Clean up payload based on content type
-        ...(formData.contentType === 'pdf' && { content: undefined }),
-        ...(formData.contentType === 'html' && { pdfUrl: undefined, pdfFileName: undefined })
+        title: formData.title,
+        ...(formData.categoryId && formData.categoryId.trim() !== '' && { categoryId: formData.categoryId }),
+        ...(formData.subcategoryId && formData.subcategoryId.trim() !== '' && { subcategoryId: formData.subcategoryId }),
+        contentType: formData.contentType,
+        content: formData.contentType === 'html' ? formData.content : undefined,
+        pdfUrl: formData.contentType === 'pdf' ? formData.pdfUrl : undefined,
+        pdfFileName: formData.contentType === 'pdf' ? formData.pdfFileName : undefined,
+        tags: formData.tags || [],
+        status: formData.status,
+        displayOrder: formData.displayOrder
       };
+
+      console.log('Sending payload:', payload);
 
       if (article?._id) {
         // Update existing article
@@ -267,6 +274,7 @@ const KBArticleEditor: React.FC<KBArticleEditorProps> = ({ article, onSave, onCa
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
+      <style>{editorStyles}</style>
       <div className="bg-white rounded-lg p-6 w-full max-w-4xl my-8 max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold text-gray-800">
@@ -295,44 +303,8 @@ const KBArticleEditor: React.FC<KBArticleEditorProps> = ({ article, onSave, onCa
           {/* Category Selection */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Category (1st Level) *
-              </label>
-              <select
-                value={formData.categoryId}
-                onChange={(e) => handleCategoryChange(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                required
-              >
-                <option value="">Select Category</option>
-                {categories.map((cat) => (
-                  <option key={cat._id} value={cat._id}>
-                    {cat.name}
-                  </option>
-                ))}
-              </select>
+              {/* Category and Subcategory dropdowns removed from UI */}
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Subcategory (2nd Level) *
-              </label>
-              <select
-                value={formData.subcategoryId}
-                onChange={(e) => setFormData({ ...formData, subcategoryId: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                required
-                disabled={!formData.categoryId}
-              >
-                <option value="">Select Subcategory</option>
-                {subcategories.map((sub) => (
-                  <option key={sub._id} value={sub._id}>
-                    {sub.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
 
           {/* Content Type Selection */}
           <div>
@@ -374,17 +346,39 @@ const KBArticleEditor: React.FC<KBArticleEditorProps> = ({ article, onSave, onCa
               <ReactQuill
                 value={formData.content || ''}
                 onChange={(content) => setFormData({ ...formData, content })}
-                className="bg-white"
+                className="enhanced-quill-editor bg-white"
                 theme="snow"
                 modules={{
                   toolbar: [
-                    [{ header: [1, 2, 3, false] }],
+                    [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
+                    [{ 'font': [] }],
+                    [{ 'size': ['small', false, 'large', 'huge'] }],
                     ['bold', 'italic', 'underline', 'strike'],
-                    [{ list: 'ordered' }, { list: 'bullet' }],
-                    ['link', 'image', 'code-block'],
+                    [{ 'color': [] }, { 'background': [] }],
+                    [{ 'script': 'sub'}, { 'script': 'super' }],
+                    [{ 'list': 'ordered'}, { 'list': 'bullet' }, { 'list': 'check' }],
+                    [{ 'indent': '-1'}, { 'indent': '+1' }],
+                    [{ 'align': [] }],
+                    ['blockquote', 'code-block'],
+                    ['link', 'image', 'video', 'formula'],
                     ['clean']
-                  ]
+                  ],
+                  clipboard: {
+                    matchVisual: false
+                  }
                 }}
+                formats={[
+                  'header', 'font', 'size',
+                  'bold', 'italic', 'underline', 'strike',
+                  'color', 'background',
+                  'script',
+                  'list', 'bullet', 'check', 'indent',
+                  'align',
+                  'blockquote', 'code-block',
+                  'link', 'image', 'video', 'formula'
+                ]}
+                placeholder="Enter your article content here. You can use the toolbar above to format text, add lists, headings, links, images, and more..."
+                style={{ minHeight: '500px' }}
               />
             </div>
           )}

@@ -212,7 +212,7 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
     return matchesStatus && matchesSearch && matchesProject;
   });
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: string | number) => {
     const colors: Record<string, string> = {
       'open': '#3B82F6',
       'in-progress': '#F59E0B',
@@ -220,17 +220,19 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
       'closed': '#6B7280',
       'pending': '#EF4444',
     };
-    return colors[status.toLowerCase()] || '#6B7280';
+    const statusStr = String(status).toLowerCase();
+    return colors[statusStr] || '#6B7280';
   };
 
-  const getPriorityColor = (priority: string) => {
+  const getPriorityColor = (priority: string | number) => {
     const colors: Record<string, string> = {
       'low': '#10B981',
       'medium': '#F59E0B',
       'high': '#EF4444',
       'critical': '#DC2626',
     };
-    return colors[priority?.toLowerCase()] || '#6B7280';
+    const priorityStr = String(priority).toLowerCase();
+    return colors[priorityStr] || '#6B7280';
   };
 
   if (loading) {
@@ -305,7 +307,7 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
                   fontSize: '14px',
                 }}
               >
-                <option value="">-- Choose an agent --</option>
+                <option value="">-- Choose a counselor --</option>
                 {agents.map(agent => (
                   <option key={agent._id} value={agent._id}>
                     {agent.firstName} {agent.lastName} ({agent.role.name})

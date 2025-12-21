@@ -48,7 +48,7 @@ const DEMO_ASSETS: AssetUsage[] = [
   {
     _id: '1',
     assetId: { _id: 'a1', name: 'AC', category: 'Electronics', unit: 'units' },
-    centerId: { _id: 'c1', centerName: 'MHCET - Goregaon', city: 'Mumbai' },
+    centerId: { _id: 'c1', centerName: 'CET उपकेंद्र - Amravati', city: 'Amravati' },
     projectId: { _id: '1', name: 'MH CET Extension Centres' },
     totalAssigned: 5,
     assetUsed: 4,
@@ -62,7 +62,7 @@ const DEMO_ASSETS: AssetUsage[] = [
   {
     _id: '2',
     assetId: { _id: 'a2', name: 'Projector', category: 'Electronics', unit: 'units' },
-    centerId: { _id: 'c1', centerName: 'MHCET - Goregaon', city: 'Mumbai' },
+    centerId: { _id: 'c1', centerName: 'CET उपकेंद्र - Amravati', city: 'Amravati' },
     projectId: { _id: '1', name: 'MH CET Extension Centres' },
     totalAssigned: 3,
     assetUsed: 3,
@@ -76,7 +76,7 @@ const DEMO_ASSETS: AssetUsage[] = [
   {
     _id: '3',
     assetId: { _id: 'a3', name: 'Chairs', category: 'Furniture', unit: 'units' },
-    centerId: { _id: 'c1', centerName: 'MHCET - Goregaon', city: 'Mumbai' },
+    centerId: { _id: 'c1', centerName: 'CET उपकेंद्र - Amravati', city: 'Amravati' },
     projectId: { _id: '1', name: 'MH CET Extension Centres' },
     totalAssigned: 50,
     assetUsed: 45,
@@ -203,25 +203,6 @@ const MyAssetsStatic: React.FC = () => {
           </p>
         </div>
 
-        {/* Project Selector */}
-        <div className="mb-6 rounded-lg bg-white p-4 shadow">
-          <label className="mb-2 block text-sm font-medium text-gray-700">
-            Select Project <span className="text-red-500">*</span>
-          </label>
-          <select
-            value={selectedProject}
-            onChange={(e) => setSelectedProject(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 md:w-1/2"
-          >
-            <option value="">Choose a project...</option>
-            {DEMO_PROJECTS.map((project) => (
-              <option key={project._id} value={project._id}>
-                {project.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
         {selectedProject && (
           <>
             {/* Action Buttons */}
@@ -255,8 +236,6 @@ const MyAssetsStatic: React.FC = () => {
                       <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Asset Name</th>
                       <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Category</th>
                       <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Total Assigned</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Used</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Not Used</th>
                       <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Working</th>
                       <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Not Working</th>
                       <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Last Updated</th>
@@ -267,7 +246,7 @@ const MyAssetsStatic: React.FC = () => {
                   <tbody className="divide-y divide-gray-200 bg-white">
                     {filteredAssets.length === 0 ? (
                       <tr>
-                        <td colSpan={11} className="px-6 py-4 text-center text-sm text-gray-500">
+                        <td colSpan={9} className="px-6 py-4 text-center text-sm text-gray-500">
                           No assets found for this project.
                         </td>
                       </tr>
@@ -299,32 +278,6 @@ const MyAssetsStatic: React.FC = () => {
                                 />
                               ) : (
                                 <span className="text-sm text-gray-900">{asset.totalAssigned}</span>
-                              )}
-                            </td>
-                            <td className="whitespace-nowrap px-6 py-4 text-right">
-                              {isEditing ? (
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={editData.assetUsed}
-                                  onChange={(e) => setEditData({ ...editData, assetUsed: parseInt(e.target.value) || 0 })}
-                                  className="w-20 rounded border border-gray-300 px-2 py-1 text-right text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                                />
-                              ) : (
-                                <span className="text-sm text-gray-900">{asset.assetUsed}</span>
-                              )}
-                            </td>
-                            <td className="whitespace-nowrap px-6 py-4 text-right">
-                              {isEditing ? (
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={editData.assetNotUsed}
-                                  onChange={(e) => setEditData({ ...editData, assetNotUsed: parseInt(e.target.value) || 0 })}
-                                  className="w-20 rounded border border-gray-300 px-2 py-1 text-right text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                                />
-                              ) : (
-                                <span className="text-sm text-gray-900">{asset.assetNotUsed}</span>
                               )}
                             </td>
                             <td className="whitespace-nowrap px-6 py-4 text-right">
