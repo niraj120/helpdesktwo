@@ -757,6 +757,33 @@ export const getAllTickets = async (req: Request, res: Response) => {
       console.log(`🔍 [VIEW_TICKETS] Regular user - showing only created tickets`);
     }
 
+    // Apply center-based filtering if user has centers assigned (for offline mode)
+    const userCenterIds = (user.centers || []).map((c: any) => 
+      typeof c === 'string' ? c : c._id?.toString() || c.toString()
+    );
+    
+    if (userCenterIds.length > 0) {
+      // User has centers assigned - filter offline tickets by centers
+      // Keep all online tickets, but filter offline tickets to user's centers only
+      const centerQuery = {
+        $or: [
+          { submissionSource: { $ne: 'offline' } }, // Include all online tickets
+          { 'metadata.centerId': { $in: userCenterIds } } // Filter offline tickets by centers
+        ]
+      };
+      
+      // Merge center filter with existing query
+      if (query.$and) {
+        query.$and.push(centerQuery);
+      } else if (Object.keys(query).length > 0) {
+        query = { $and: [query, centerQuery] };
+      } else {
+        query = centerQuery;
+      }
+      
+      console.log(`🔍 [VIEW_TICKETS] User has ${userCenterIds.length} center(s) - filtering offline tickets by centers`);
+    }
+
     console.log(`🔍 [VIEW_TICKETS] Final query:`, JSON.stringify(query));
 
     // Find tickets based on query
@@ -1995,7 +2022,7 @@ export const getDashboardStats = async (req: Request, res: Response) => {
 export const getProjectDashboardStats = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.userId;
-    const { projectId } = req.query;
+    const { projectId, centerId } = req.query;
 
     if (!projectId) {
       return res.status(400).json({
@@ -2053,11 +2080,18 @@ export const getProjectDashboardStats = async (req: Request, res: Response) => {
       roleName: userRole?.name,
       isAgent,
       projectId,
+      centerId,
       permissionCount: userPermissions.length
     });
 
     // Build query based on user permissions
     let query: any = { 'metadata.projectId': projectId };
+    
+    // Apply center filter if provided (for offline mode)
+    if (centerId) {
+      query['metadata.centerId'] = centerId;
+      console.log('🏢 Filtering dashboard stats by center:', centerId);
+    }
     
     const hasViewAllTickets = await checkPermission('TICKET_VIEW_ALL');
     
@@ -2399,6 +2433,7 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
       Category,     // Alternative field name for category
       priority,
       projectId,
+      centerId,     // Center ID for offline ticket
       submissionType,
       status: initialStatus,
       resolvedAtCreation,
@@ -2562,6 +2597,7 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
       attachments,
       metadata: {
         projectId,
+        centerId: centerId || null, // Associate ticket with center
         submissionType: submissionType || 'offline',
         studentEmail: student.email,
         studentName: `${student.firstName} ${student.lastName}`,
@@ -2754,10 +2790,15 @@ export const getAssignableAgents = async (req: Request, res: Response) => {
       typeof p === 'string' ? p : p._id.toString()
     );
     
+    const userCenterIds = (currentUser.centers || []).map((c: any) => 
+      typeof c === 'string' ? c : c._id?.toString() || c.toString()
+    );
+    
     console.log('🔍 Fetching assignable agents for user:', {
       userId,
       email: currentUser.email,
-      projects: userProjectIds
+      projects: userProjectIds,
+      centers: userCenterIds
     });
     
     // Find all roles where isAgent = true
@@ -2766,14 +2807,24 @@ export const getAssignableAgents = async (req: Request, res: Response) => {
     
     console.log('📋 Found agent roles:', agentRoles.map(r => r.name));
     
-    // Find all active users who:
-    // 1. Have a role with isAgent = true
-    // 2. Share at least one project with the current user
-    const agents = await User.find({
+    // Build agent query
+    const agentQuery: any = {
       isActive: true,
       role: { $in: agentRoleIds },
       projects: { $in: userProjectIds }
-    })
+    };
+    
+    // If user has centers assigned, also filter agents by shared centers (for offline mode)
+    if (userCenterIds.length > 0) {
+      agentQuery.centers = { $in: userCenterIds };
+      console.log('🏢 Filtering agents by shared centers:', userCenterIds);
+    }
+    
+    // Find all active users who:
+    // 1. Have a role with isAgent = true
+    // 2. Share at least one project with the current user
+    // 3. Share at least one center with the current user (if user has centers)
+    const agents = await User.find(agentQuery)
     .populate('role', 'name isAgent')
     .select('_id firstName lastName email role projects')
     .sort({ firstName: 1, lastName: 1 });

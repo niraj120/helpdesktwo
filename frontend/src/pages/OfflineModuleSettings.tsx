@@ -13,6 +13,9 @@ import {
   UserPlusIcon,
   TicketIcon,
   EyeIcon,
+  BuildingOfficeIcon,
+  MapPinIcon,
+  PencilIcon,
 } from '@heroicons/react/24/outline';
 
 interface RegistrationField {
@@ -52,6 +55,30 @@ interface Category {
   description?: string;
 }
 
+interface OfflineCenter {
+  _id?: string;
+  centerName: string;
+  address: string;
+  country?: string;
+  city: string;
+  state: string;
+  pincode: string;
+  phone: string;
+  email: string;
+  workingHours: string;
+  latitude?: number;
+  longitude?: number;
+  features?: string[];
+  mapLink?: string;
+  googleMapLink?: string;
+  contacts?: Array<{
+    name: string;
+    role: string;
+    mobile: string;
+    email: string;
+  }>;
+}
+
 interface OfflineSettings {
   registrationFields: RegistrationField[];
   ticketFields: TicketField[];
@@ -72,11 +99,12 @@ interface OfflineSettings {
     notifyStudentOnTicketCreation: boolean;
     sendWelcomeEmail: boolean;
   };
+  offlineCenters?: OfflineCenter[];
 }
 
 const OfflineModuleSettings: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
-  const [activeTab, setActiveTab] = useState<'registration' | 'ticket' | 'general'>('general');
+  const [activeTab, setActiveTab] = useState<'registration' | 'ticket' | 'general' | 'centers'>('general');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   
@@ -85,6 +113,13 @@ const OfflineModuleSettings: React.FC = () => {
   const hasFetchedCategories = useRef(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
+  
+  // Offline Centers state
+  const [countries, setCountries] = useState<any[]>([]);
+  const [centerStates, setCenterStates] = useState<Record<string, any[]>>({});
+  const [centerCities, setCenterCities] = useState<Record<string, any[]>>({});
+  const [editingCenter, setEditingCenter] = useState<OfflineCenter | null>(null);
+  const [showCenterForm, setShowCenterForm] = useState(false);
   
   // Track unsaved changes
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -235,6 +270,92 @@ const OfflineModuleSettings: React.FC = () => {
       console.error('Error fetching categories:', error);
     }
   };
+
+  // Fetch countries for offline centers
+  const fetchCountries = async () => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await axios.get(`${API_CONFIG.API_URL}/masters/countries`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (response.data.success) {
+        setCountries(response.data.data);
+      }
+    } catch (error) {
+      console.error('Error fetching countries:', error);
+    }
+  };
+
+  // Fetch states for a country
+  const fetchStatesForCountry = async (countryId: string, centerId?: string) => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await axios.get(`${API_CONFIG.API_URL}/masters/countries/${countryId}/states`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (response.data.success) {
+        setCenterStates(prev => ({
+          ...prev,
+          [centerId || 'new']: response.data.data
+        }));
+      }
+    } catch (error) {
+      console.error('Error fetching states:', error);
+    }
+  };
+
+  // Fetch cities for a state
+  const fetchCitiesForState = async (stateId: string, centerId?: string) => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await axios.get(`${API_CONFIG.API_URL}/masters/states/${stateId}/cities`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (response.data.success) {
+        setCenterCities(prev => ({
+          ...prev,
+          [centerId || 'new']: response.data.data
+        }));
+      }
+    } catch (error) {
+      console.error('Error fetching cities:', error);
+    }
+  };
+
+  // Add or update offline center
+  const handleAddOrUpdateCenter = (center: OfflineCenter) => {
+    const centers = settings.offlineCenters || [];
+    
+    if (center._id) {
+      // Update existing center
+      const updatedCenters = centers.map(c => c._id === center._id ? center : c);
+      setSettings({ ...settings, offlineCenters: updatedCenters });
+    } else {
+      // Add new center with temporary ID
+      const newCenter = { ...center, _id: Date.now().toString() };
+      setSettings({ ...settings, offlineCenters: [...centers, newCenter] });
+    }
+    
+    setShowCenterForm(false);
+    setEditingCenter(null);
+    setHasUnsavedChanges(true);
+  };
+
+  // Delete offline center
+  const handleDeleteCenter = (centerId: string) => {
+    if (confirm('Are you sure you want to delete this center?')) {
+      const updatedCenters = (settings.offlineCenters || []).filter(c => c._id !== centerId);
+      setSettings({ ...settings, offlineCenters: updatedCenters });
+      setHasUnsavedChanges(true);
+    }
+  };
+
+  // Fetch countries when centers tab is active
+  useEffect(() => {
+    if (activeTab === 'centers' && countries.length === 0) {
+      fetchCountries();
+    }
+  }, [activeTab]);
 
   const handleSaveSettings = async () => {
     setSaving(true);
@@ -502,6 +623,19 @@ const OfflineModuleSettings: React.FC = () => {
                 <div className="flex items-center space-x-2">
                   <TicketIcon className="h-5 w-5" />
                   <span>Ticket Creation Form</span>
+                </div>
+              </button>
+              <button
+                onClick={() => setActiveTab('centers')}
+                className={`px-6 py-3 font-medium transition-colors border-b-2 ${
+                  activeTab === 'centers'
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <div className="flex items-center space-x-2">
+                  <BuildingOfficeIcon className="h-5 w-5" />
+                  <span>Offline Centers</span>
                 </div>
               </button>
             </div>
@@ -1275,6 +1409,143 @@ const OfflineModuleSettings: React.FC = () => {
         </div>
       )}
 
+      {/* Offline Centers Tab */}
+      {activeTab === 'centers' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-xl shadow-md p-6">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Offline Support Centers</h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  Manage physical locations where agents provide walk-in support
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setEditingCenter(null);
+                  setShowCenterForm(true);
+                }}
+                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <PlusIcon className="h-5 w-5" />
+                <span>Add Center</span>
+              </button>
+            </div>
+
+            {/* Centers List */}
+            {(!settings.offlineCenters || settings.offlineCenters.length === 0) && !showCenterForm ? (
+              <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                <BuildingOfficeIcon className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                <p className="text-gray-600 mb-4">No offline centers configured yet</p>
+                <button
+                  onClick={() => setShowCenterForm(true)}
+                  className="text-blue-600 hover:text-blue-700 font-medium"
+                >
+                  + Add your first offline center
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {(settings.offlineCenters || []).map((center) => (
+                  <div key={center._id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2 mb-2">
+                          <h4 className="font-semibold text-gray-900">{center.centerName}</h4>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 text-sm text-gray-600">
+                          <div>
+                            <MapPinIcon className="h-4 w-4 inline mr-1" />
+                            {center.city}, {center.state}{center.country && `, ${center.country}`} - {center.pincode}
+                          </div>
+                          <div>
+                            📧 {center.email}
+                          </div>
+                          <div className="col-span-2">
+                            📍 {center.address}
+                          </div>
+                          <div>
+                            📞 {center.phone}
+                          </div>
+                          <div>
+                            🕒 {center.workingHours}
+                          </div>
+                          {center.features && center.features.length > 0 && (
+                            <div className="col-span-2">
+                              <span className="font-medium">Features: </span>
+                              {center.features.join(', ')}
+                            </div>
+                          )}
+                          {center.contacts && center.contacts.length > 0 && (
+                            <div className="col-span-2">
+                              <span className="font-medium">Contacts: </span>
+                              {center.contacts.map((c, i) => `${c.name} (${c.mobile})`).join(', ')}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex space-x-2 ml-4">
+                        <button
+                          onClick={() => {
+                            setEditingCenter(center);
+                            setShowCenterForm(true);
+                            // Load states and cities for editing
+                            if (center.country) {
+                              const countryObj = countries.find(c => c.name === center.country);
+                              if (countryObj) {
+                                fetchStatesForCountry(countryObj._id, center._id);
+                                // Also load cities if state exists
+                                if (center.state) {
+                                  // We'll need to find the state ID first, but that requires states to be loaded
+                                  // Let's load states first, then cities will be loaded when user interacts
+                                }
+                              }
+                            }
+                          }}
+                          className="p-2 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                          title="Edit"
+                        >
+                          <PencilIcon className="h-5 w-5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteCenter(center._id!)}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded transition-colors"
+                          title="Delete"
+                        >
+                          <TrashIcon className="h-5 w-5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Center Form (Add/Edit) */}
+            {showCenterForm && (
+              <div className="mt-6 border-t pt-6">
+                <h4 className="font-semibold text-gray-900 mb-4">
+                  {editingCenter ? 'Edit Center' : 'Add New Center'}
+                </h4>
+                <CenterForm
+                  center={editingCenter}
+                  countries={countries}
+                  states={centerStates[editingCenter?._id || 'new'] || []}
+                  cities={centerCities[editingCenter?._id || 'new'] || []}
+                  onSave={handleAddOrUpdateCenter}
+                  onCancel={() => {
+                    setShowCenterForm(false);
+                    setEditingCenter(null);
+                  }}
+                  onCountryChange={(countryId) => fetchStatesForCountry(countryId, editingCenter?._id)}
+                  onStateChange={(stateId) => fetchCitiesForState(stateId, editingCenter?._id)}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
           </div>
 
           {/* Right Column - Preview Panel */}
@@ -1415,6 +1686,39 @@ const OfflineModuleSettings: React.FC = () => {
                     </div>
                   </div>
                 )}
+
+                {activeTab === 'centers' && (
+                  <div>
+                    <h4 className="font-medium text-gray-900 mb-3">Offline Centers Summary</h4>
+                    <div className="space-y-3">
+                      <div className="bg-blue-50 rounded-lg p-3">
+                        <div className="text-2xl font-bold text-blue-900">
+                          {(settings.offlineCenters || []).length}
+                        </div>
+                        <div className="text-sm text-blue-700">Total Centers</div>
+                      </div>
+                      <div className="bg-green-50 rounded-lg p-3">
+                        <div className="text-2xl font-bold text-green-900">
+                          {(settings.offlineCenters || []).filter(c => c.isActive).length}
+                        </div>
+                        <div className="text-sm text-green-700">Active Centers</div>
+                      </div>
+                      {(settings.offlineCenters || []).length > 0 && (
+                        <div className="mt-4">
+                          <div className="text-xs font-medium text-gray-600 mb-2">Locations:</div>
+                          <div className="space-y-2 text-sm">
+                            {(settings.offlineCenters || []).map((center, idx) => (
+                              <div key={idx} className="flex items-start space-x-2 text-gray-700">
+                                <MapPinIcon className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                                <span className="text-xs">{center.centerName} - {center.city}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1455,6 +1759,444 @@ const OfflineModuleSettings: React.FC = () => {
       </div>
     </div>
     </DashboardLayout>
+  );
+};
+
+// Center Form Component
+interface CenterFormProps {
+  center: OfflineCenter | null;
+  countries: any[];
+  states: any[];
+  cities: any[];
+  onSave: (center: OfflineCenter) => void;
+  onCancel: () => void;
+  onCountryChange: (countryId: string) => void;
+  onStateChange: (stateId: string) => void;
+}
+
+const CenterForm: React.FC<CenterFormProps> = ({
+  center,
+  countries,
+  states,
+  cities,
+  onSave,
+  onCancel,
+  onCountryChange,
+  onStateChange,
+}) => {
+  const [formData, setFormData] = useState<OfflineCenter>({
+    _id: center?._id,
+    centerName: center?.centerName || '',
+    address: center?.address || '',
+    country: center?.country || '',
+    city: center?.city || '',
+    state: center?.state || '',
+    pincode: center?.pincode || '',
+    phone: center?.phone || '',
+    email: center?.email || '',
+    workingHours: center?.workingHours || '',
+    latitude: center?.latitude,
+    longitude: center?.longitude,
+    features: center?.features || [],
+    mapLink: center?.mapLink || '',
+    googleMapLink: center?.googleMapLink || '',
+    contacts: center?.contacts || [],
+  });
+
+  const [newFeature, setNewFeature] = useState('');
+  const [newContact, setNewContact] = useState({ name: '', role: '', mobile: '', email: '' });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Validation
+    if (!formData.centerName || !formData.address || !formData.city || !formData.state || !formData.pincode) {
+      alert('Please fill in all required fields');
+      return;
+    }
+    
+    onSave(formData);
+  };
+
+  const handleCountryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const countryId = e.target.value;
+    const selectedCountry = countries.find(c => c._id === countryId);
+    setFormData({ ...formData, country: selectedCountry?.name || '', state: '', city: '' });
+    if (countryId) {
+      onCountryChange(countryId);
+    }
+  };
+
+  const handleStateChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const stateId = e.target.value;
+    const selectedState = states.find(s => s._id === stateId);
+    setFormData({ ...formData, state: selectedState?.name || '', city: '' });
+    if (stateId) {
+      onStateChange(stateId);
+    }
+  };
+
+  const handleCityChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const cityId = e.target.value;
+    const selectedCity = cities.find(c => c._id === cityId);
+    setFormData({ ...formData, city: selectedCity?.name || '' });
+  };
+
+  const addFeature = () => {
+    if (newFeature.trim()) {
+      setFormData({ ...formData, features: [...(formData.features || []), newFeature.trim()] });
+      setNewFeature('');
+    }
+  };
+
+  const removeFeature = (index: number) => {
+    const updatedFeatures = (formData.features || []).filter((_, i) => i !== index);
+    setFormData({ ...formData, features: updatedFeatures });
+  };
+
+  const addContact = () => {
+    if (newContact.name.trim() && newContact.mobile.trim()) {
+      setFormData({ ...formData, contacts: [...(formData.contacts || []), newContact] });
+      setNewContact({ name: '', role: '', mobile: '', email: '' });
+    }
+  };
+
+  const removeContact = (index: number) => {
+    const updatedContacts = (formData.contacts || []).filter((_, i) => i !== index);
+    setFormData({ ...formData, contacts: updatedContacts });
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <div className="grid grid-cols-2 gap-4">
+        {/* Center Name */}
+        <div className="col-span-2">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Center Name <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            value={formData.centerName}
+            onChange={(e) => setFormData({ ...formData, centerName: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="e.g., Main Campus Support Center"
+            required
+          />
+        </div>
+
+        {/* Address */}
+        <div className="col-span-2">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Address <span className="text-red-500">*</span>
+          </label>
+          <textarea
+            value={formData.address}
+            onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="Full address with street and building"
+            rows={2}
+            required
+          />
+        </div>
+
+        {/* Country */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Country <span className="text-red-500">*</span>
+          </label>
+          <select
+            value={countries.find(c => c.name === formData.country)?._id || ''}
+            onChange={handleCountryChange}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            required
+          >
+            <option value="">Select Country</option>
+            {countries.map((country) => (
+              <option key={country._id} value={country._id}>
+                {country.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* State */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            State <span className="text-red-500">*</span>
+          </label>
+          <select
+            value={states.find(s => s.name === formData.state)?._id || ''}
+            onChange={handleStateChange}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            disabled={!formData.country}
+            required
+          >
+            <option value="">Select State</option>
+            {states.map((state) => (
+              <option key={state._id} value={state._id}>
+                {state.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* City */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            City <span className="text-red-500">*</span>
+          </label>
+          <select
+            value={cities.find(c => c.name === formData.city)?._id || ''}
+            onChange={handleCityChange}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            disabled={!formData.state}
+            required
+          >
+            <option value="">Select City</option>
+            {cities.map((city) => (
+              <option key={city._id} value={city._id}>
+                {city.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Pincode */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Pincode <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            value={formData.pincode}
+            onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="e.g., 400001"
+            required
+          />
+        </div>
+
+        {/* Phone */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Phone <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="tel"
+            value={formData.phone}
+            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="+91 98765 43210"
+            required
+          />
+        </div>
+
+        {/* Email */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Email <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="email"
+            value={formData.email}
+            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="center@example.com"
+            required
+          />
+        </div>
+
+        {/* Working Hours */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Working Hours <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            value={formData.workingHours}
+            onChange={(e) => setFormData({ ...formData, workingHours: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="e.g., Mon-Fri: 9AM-6PM"
+            required
+          />
+        </div>
+
+        {/* Map Link */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Map Link (Optional)
+          </label>
+          <input
+            type="url"
+            value={formData.mapLink || ''}
+            onChange={(e) => setFormData({ ...formData, mapLink: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="https://maps.app.goo.gl/..."
+          />
+        </div>
+
+        {/* Google Map Link */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Google Map Link (Optional)
+          </label>
+          <input
+            type="url"
+            value={formData.googleMapLink || ''}
+            onChange={(e) => setFormData({ ...formData, googleMapLink: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="https://www.google.com/maps/..."
+          />
+        </div>
+
+        {/* Latitude */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Latitude (Optional)
+          </label>
+          <input
+            type="number"
+            step="any"
+            value={formData.latitude || ''}
+            onChange={(e) => setFormData({ ...formData, latitude: parseFloat(e.target.value) || undefined })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="e.g., 28.6139"
+          />
+        </div>
+
+        {/* Longitude */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Longitude (Optional)
+          </label>
+          <input
+            type="number"
+            step="any"
+            value={formData.longitude || ''}
+            onChange={(e) => setFormData({ ...formData, longitude: parseFloat(e.target.value) || undefined })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="e.g., 77.2090"
+          />
+        </div>
+      </div>
+
+      {/* Features Array */}
+      <div className="border-t pt-4">
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Features (Optional)
+        </label>
+        <div className="flex space-x-2 mb-2">
+          <input
+            type="text"
+            value={newFeature}
+            onChange={(e) => setNewFeature(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addFeature())}
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="e.g., Free WiFi, Parking Available"
+          />
+          <button
+            type="button"
+            onClick={addFeature}
+            className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+          >
+            <PlusIcon className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {(formData.features || []).map((feature, index) => (
+            <span key={index} className="inline-flex items-center space-x-1 px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
+              <span>{feature}</span>
+              <button
+                type="button"
+                onClick={() => removeFeature(index)}
+                className="hover:text-blue-900"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* Contacts Array */}
+      <div className="border-t pt-4">
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Contact Persons (Optional)
+        </label>
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <input
+            type="text"
+            value={newContact.name}
+            onChange={(e) => setNewContact({ ...newContact, name: e.target.value })}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="Name"
+          />
+          <input
+            type="text"
+            value={newContact.role}
+            onChange={(e) => setNewContact({ ...newContact, role: e.target.value })}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="Role"
+          />
+          <input
+            type="tel"
+            value={newContact.mobile}
+            onChange={(e) => setNewContact({ ...newContact, mobile: e.target.value })}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="Mobile"
+          />
+          <input
+            type="email"
+            value={newContact.email}
+            onChange={(e) => setNewContact({ ...newContact, email: e.target.value })}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="Email"
+          />
+          <button
+            type="button"
+            onClick={addContact}
+            className="col-span-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 flex items-center justify-center space-x-2"
+          >
+            <PlusIcon className="h-5 w-5" />
+            <span>Add Contact</span>
+          </button>
+        </div>
+        <div className="space-y-2">
+          {(formData.contacts || []).map((contact, index) => (
+            <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+              <div className="text-sm">
+                <div className="font-medium">{contact.name} {contact.role && `- ${contact.role}`}</div>
+                <div className="text-gray-600">{contact.mobile} {contact.email && `• ${contact.email}`}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => removeContact(index)}
+                className="text-red-600 hover:text-red-700"
+              >
+                <TrashIcon className="h-5 w-5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Form Actions */}
+      <div className="flex justify-end space-x-3 pt-4 border-t">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          {center ? 'Update Center' : 'Add Center'}
+        </button>
+      </div>
+    </form>
   );
 };
 

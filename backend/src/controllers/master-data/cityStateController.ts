@@ -58,3 +58,52 @@ export const getStates = async (req: Request, res: Response) => {
     });
   }
 };
+
+// @desc    Get states by country ID
+// @route   GET /api/masters/countries/:countryId/states
+// @access  Private
+export const getStatesByCountry = async (req: Request, res: Response) => {
+  try {
+    const { countryId } = req.params;
+    const states = await State.find({ country: countryId, isActive: true }).sort({ displayOrder: 1, value: 1 });
+    
+    res.json({
+      success: true,
+      data: states.map(state => ({
+        key: state.key,
+        value: state.value,
+        country: state.country
+      }))
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to fetch states',
+    });
+  }
+};
+
+// @desc    Get cities by state ID
+// @route   GET /api/masters/states/:stateId/cities
+// @access  Private
+export const getCitiesByState = async (req: Request, res: Response) => {
+  try {
+    const { stateId } = req.params;
+    const cities = await City.find({ state: stateId, isActive: true }).sort({ displayOrder: 1, value: 1 });
+    
+    res.json({
+      success: true,
+      data: cities.map(city => ({
+        key: city.key,
+        value: city.value,
+        state: city.state,
+        country: city.country
+      }))
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to fetch cities',
+    });
+  }
+};

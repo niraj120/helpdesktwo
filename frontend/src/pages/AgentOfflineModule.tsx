@@ -31,6 +31,15 @@ interface Category {
   description?: string;
 }
 
+interface Center {
+  _id: string;
+  centerName: string;
+  address: string;
+  city: string;
+  state: string;
+  isActive: boolean;
+}
+
 interface RegistrationField {
   id: string;
   fieldName: string;
@@ -114,6 +123,8 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
   const [ticketUserSearched, setTicketUserSearched] = useState(false);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [centers, setCenters] = useState<Center[]>([]);
+  const [selectedCenter, setSelectedCenter] = useState<string>('');
   const [creatingTicket, setCreatingTicket] = useState(false);
   const [ticketSuccess, setTicketSuccess] = useState(false);
   const [createdTicketNumber, setCreatedTicketNumber] = useState('');
@@ -128,6 +139,7 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
     if (activeTab === 'create-ticket') {
       fetchTicketAgents();
       fetchCategories();
+      fetchCenters();
     }
   }, [activeTab]);
 
@@ -197,7 +209,23 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
       }
     } catch (error) {
       console.error('Error fetching categories:', error);
+    
+
+  const fetchCenters = async () => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await axios.get(
+        `${API_CONFIG.API_URL}/centers?projectId=${projectId}&isActive=true`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (response.data.success) {
+        setCenters(response.data.data || []);
+        console.log('📍 Loaded centers:', response.data.data);
+      }
+    } catch (error) {
+      console.error('Error fetching centers:', error);
     }
+  };}
   };
 
   const searchUser = async () => {
@@ -335,6 +363,11 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
       return;
     }
 
+    if (!selectedCenter) {
+      alert('Please select a center');
+      return;
+    }
+
     if (ticketForm.needsEscalation && !ticketForm.escalateTo) {
       alert('Please select an agent to escalate to');
       return;
@@ -360,6 +393,7 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
       formData.append('userId', selectedUser._id);
       formData.append('studentId', selectedUser._id);
       formData.append('projectId', projectId);
+      formData.append('centerId', selectedCenter);
       formData.append('submissionType', 'offline');
       
       if (ticketForm.markAsResolved) {
@@ -809,6 +843,31 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                     </div>
                   )}
                 </div>
+              )}
+            </div>
+
+            {/* Center Selection */}
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Select Center <span className="text-red-500">*</span>
+              </label>
+              <select
+                required
+                value={selectedCenter}
+                onChange={(e) => setSelectedCenter(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">-- Select Support Center --</option>
+                {centers.map((center) => (
+                  <option key={center._id} value={center._id}>
+                    {center.centerName} - {center.city}, {center.state}
+                  </option>
+                ))}
+              </select>
+              {centers.length === 0 && (
+                <p className="text-sm text-amber-600 mt-2">
+                  No centers configured. Please add centers in project settings.
+                </p>
               )}
             </div>
 

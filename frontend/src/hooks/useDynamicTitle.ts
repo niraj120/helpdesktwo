@@ -16,8 +16,33 @@ export const useDynamicTitle = () => {
         const pathParts = location.pathname.split('/').filter(Boolean);
         const customUrlPath = pathParts[0];
 
-        // Check if it's a project-specific route
-        if (customUrlPath && !['login', 'dashboard', 'reports', 'tickets', 'projects', 'users', 'roles'].includes(customUrlPath)) {
+        // List of internal admin routes that should NOT trigger branding fetch
+        const internalRoutes = [
+          'login',
+          'dashboard',
+          'reports',
+          'tickets',
+          'projects',
+          'users',
+          'roles',
+          'permissions',
+          'master-data',
+          'offline-module',
+          'settings',
+          'profile',
+          'categories',
+          'priorities',
+          'statuses',
+          'sla-policies',
+          'approval-workflows',
+          'feedback-surveys',
+          'register',
+          'forgot-password',
+          'reset-password'
+        ];
+
+        // Check if it's a project-specific route (NOT an internal admin route)
+        if (customUrlPath && !internalRoutes.includes(customUrlPath)) {
           try {
             const response = await axios.get(`${API_BASE_URL}/projects/branding/${customUrlPath}`);
             if (response.data.success) {

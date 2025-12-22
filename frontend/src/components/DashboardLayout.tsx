@@ -122,36 +122,89 @@ const DashboardLayout = ({ children, logoutRedirectPath }: DashboardLayoutProps)
   useEffect(() => {
     const fetchProjectBranding = async () => {
       try {
-        // Check if project context exists in localStorage
-        const projectContextStr = localStorage.getItem('projectContext');
-        if (!projectContextStr) return;
-
-        const projectContext = JSON.parse(projectContextStr);
-        
-        // Get customUrlPath from URL or use project code
+        // Get customUrlPath from URL first to check if it's an internal route
         const pathParts = window.location.pathname.split('/');
         const customUrlPath = pathParts[1]; // First part of path after domain
         
-        if (customUrlPath) {
-          // Fetch project branding using public endpoint (no auth required)
-          const response = await axios.get(
-            `${API_CONFIG.API_URL}/projects/branding/${customUrlPath}`
-          );
-          const branding = response.data;
-          
-          // Set branding with proper structure
-          setProjectBranding({
-            name: branding.name,
-            code: branding.code,
-            logo: branding.logo,
-            colorTheme: branding.colorTheme || {
-              primary: '#667eea',
-              secondary: '#764ba2',
-              accent: '#3b82f6',
-              background: '#ffffff'
-            }
-          });
+        // List of internal admin routes that should NOT trigger branding fetch
+        const internalRoutes = [
+          'dashboard',
+          'tickets',
+          'users',
+          'projects',
+          'roles',
+          'permissions',
+          'master-data',
+          'offline-module',
+          'reports',
+          'settings',
+          'profile',
+          'categories',
+          'priorities',
+          'statuses',
+          'sla-policies',
+          'approval-workflows',
+          'feedback-surveys',
+          'login',
+          'register',
+          'forgot-password',
+          'reset-password'
+        ];
+        
+        // EARLY EXIT: If on internal route, don't even check for branding
+        if (!customUrlPath || internalRoutes.includes(customUrlPath)) {
+          return; // Stop here for internal admin routes
         }
+        
+        // Check if user is logged in via project portal (not admin dashboard)
+        const projectContextStr = localStorage.getItem('projectContext');
+        const userStr = localStorage.getItem('user');
+        
+        if (!projectContextStr) return;
+        
+        // Parse user data to check role
+        let user = null;
+        if (userStr) {
+          try {
+            user = JSON.parse(userStr);
+          } catch (e) {
+            console.error('Error parsing user data:', e);
+          }
+        }
+        
+        // Skip branding fetch for super admin, admin, or staff users
+        // Only fetch branding for project portal users (students, etc.)
+        if (user && user.role) {
+          const roleCode = typeof user.role === 'string' ? user.role : user.role.code;
+          const isAgent = typeof user.role === 'object' ? user.role.isAgent : false;
+          
+          if (roleCode === 'SUPER_ADMIN' || 
+              roleCode === 'ADMIN' ||
+              isAgent === true) {
+            return; // Don't fetch branding for admin/staff users
+          }
+        }
+
+        const projectContext = JSON.parse(projectContextStr);
+        
+        // Fetch project branding using public endpoint (no auth required)
+        const response = await axios.get(
+          `${API_CONFIG.API_URL}/projects/branding/${customUrlPath}`
+        );
+        const branding = response.data;
+          
+        // Set branding with proper structure
+        setProjectBranding({
+          name: branding.name,
+          code: branding.code,
+          logo: branding.logo,
+          colorTheme: branding.colorTheme || {
+            primary: '#667eea',
+            secondary: '#764ba2',
+            accent: '#3b82f6',
+            background: '#ffffff'
+          }
+        });
       } catch (error) {
         console.error('Error fetching project branding:', error);
         // Fallback to project context if available

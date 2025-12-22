@@ -31,6 +31,7 @@ export interface IUser extends Document {
   
   // Project/Portal assignment
   projects?: mongoose.Types.ObjectId[]; // Multiple projects can be assigned
+  centers?: mongoose.Types.ObjectId[]; // Multiple centers can be assigned (for offline mode)
   
   // OTP-related fields
   resetPasswordOTP?: string;
@@ -174,6 +175,10 @@ const userSchema = new Schema<IUser>({
   projects: [{
     type: Schema.Types.ObjectId,
     ref: 'Project',
+  }],
+  centers: [{
+    type: Schema.Types.ObjectId,
+    ref: 'Center',
   }],
   resetPasswordOTP: {
     type: String,
