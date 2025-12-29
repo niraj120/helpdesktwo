@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import DashboardLayout from '../components/DashboardLayout';
+import ModuleHeader from '../components/ModuleHeader';
 import API_BASE_URL from '../config/api';
 import { usePermissionContext } from '../context/PermissionContext';
 import { 
@@ -137,17 +138,10 @@ const BlockedEmailRecipients: React.FC = () => {
     <DashboardLayout>
       <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
         {/* Header */}
-        <div style={{ marginBottom: '32px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-            <NoSymbolIcon style={{ width: '32px', height: '32px', color: '#DC2626' }} />
-            <h1 style={{ fontSize: '28px', fontWeight: 700, color: '#111827', margin: 0 }}>
-              Blocked Email Recipients
-            </h1>
-          </div>
-          <p style={{ color: '#6B7280', fontSize: '14px' }}>
-            Manage email addresses that are blocked from receiving system notifications
-          </p>
-        </div>
+        <ModuleHeader 
+          title="Blocked Email Recipients"
+          subtitle="Manage email addresses that are blocked from receiving system notifications"
+        />
 
         {error && (
           <div style={{

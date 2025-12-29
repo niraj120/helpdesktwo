@@ -58,6 +58,7 @@ export const getAllUsers = async (req: Request, res: Response): Promise<void> =>
         .select('-password -resetPasswordOTP -resetPasswordOTPExpires')
         .populate('role', 'name code isAgent')
         .populate('projects', 'name code')
+        .populate('centers', 'centerName city state')
         .populate('reportingManager', 'firstName lastName email employeeCode')
         .sort({ createdAt: -1 })
         .skip(skip)
@@ -140,6 +141,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
       joiningDate,
       reportingManager,
       projects,
+      centers,
       syncFromHRMS = false,
     } = req.body;
 
@@ -214,6 +216,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
       designation,
       reportingManager,
       projects: projects || [],
+      centers: centers || [],
     };
 
     // Sync from HRMS if requested
@@ -354,6 +357,7 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       joiningDate,
       reportingManager,
       projects,
+      centers,
       syncFromHRMS = false,
     } = req.body;
 
@@ -439,11 +443,13 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
     if (joiningDate !== undefined) user.joiningDate = new Date(joiningDate);
     if (reportingManager !== undefined) user.reportingManager = reportingManager;
     if (projects !== undefined) user.projects = projects;
+    if (centers !== undefined) user.centers = centers;
 
     await user.save();
 
     await user.populate('role', 'name code');
     await user.populate('projects', 'name code');
+    await user.populate('centers', 'centerName city state projectId');
     await user.populate('reportingManager', 'firstName lastName email employeeCode');
 
     const userResponse: any = user.toObject();

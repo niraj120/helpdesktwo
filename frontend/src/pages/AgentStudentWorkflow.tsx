@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import axios from 'axios';
 import { API_CONFIG } from '../config/constants';
 import {
@@ -86,13 +87,14 @@ interface OfflineSettings {
   };
 }
 
-interface Props {
-  projectId: string;
-}
-
 type WorkflowStep = 'search' | 'register' | 'ticket';
 
-const AgentStudentWorkflow: React.FC<Props> = ({ projectId }) => {
+const AgentStudentWorkflow: React.FC = () => {
+  // Get customUrlPath from URL
+  const { customUrlPath } = useParams<{ customUrlPath: string }>();
+  const [projectId, setProjectId] = useState<string>('');  
+  const [projectLoading, setProjectLoading] = useState(true);
+  
   // Workflow state
   const [workflowStep, setWorkflowStep] = useState<WorkflowStep>('search');
   const [currentStudent, setCurrentStudent] = useState<Student | null>(null);
@@ -101,6 +103,28 @@ const AgentStudentWorkflow: React.FC<Props> = ({ projectId }) => {
   // Offline Module Settings
   const [offlineSettings, setOfflineSettings] = useState<OfflineSettings | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(true);
+
+  // Fetch projectId from customUrlPath
+  useEffect(() => {
+    const fetchProjectId = async () => {
+      try {
+        const response = await axios.get(
+          `${API_CONFIG.API_URL}/projects/branding/${customUrlPath}`
+        );
+        if (response.data.success && response.data.data) {
+          setProjectId(response.data.data.projectId || response.data.data._id);
+        }
+      } catch (error) {
+        console.error('Error fetching project:', error);
+      } finally {
+        setProjectLoading(false);
+      }
+    };
+
+    if (customUrlPath) {
+      fetchProjectId();
+    }
+  }, [customUrlPath]);
 
   // Step 1: Student Search States
   const [searchQuery, setSearchQuery] = useState('');
@@ -143,7 +167,14 @@ const AgentStudentWorkflow: React.FC<Props> = ({ projectId }) => {
 
   const fetchOfflineSettings = async () => {
     try {
+      if (!projectId) {
+        console.error('No projectId provided');
+        setSettingsLoading(false);
+        return;
+      }
+
       const token = localStorage.getItem('authToken');
+      
       const response = await axios.get(
         `${API_CONFIG.API_URL}/projects/${projectId}/offline-settings`,
         { headers: { Authorization: `Bearer ${token}` } }
@@ -188,8 +219,11 @@ const AgentStudentWorkflow: React.FC<Props> = ({ projectId }) => {
         });
         setTicketForm(initialTicketForm);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching offline settings:', error);
+      console.error('Error details:', error.response?.data || error.message);
+      // Show error message to user
+      alert(`Failed to load offline module settings: ${error.response?.data?.message || error.message}`);
     } finally {
       setSettingsLoading(false);
     }
@@ -675,12 +709,12 @@ const AgentStudentWorkflow: React.FC<Props> = ({ projectId }) => {
     }
   };
 
-  if (settingsLoading) {
+  if (projectLoading || settingsLoading) {
     return (
       <div className="p-6 max-w-6xl mx-auto flex items-center justify-center min-h-[400px]">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading workflow settings...</p>
+          <p className="text-gray-600">{projectLoading ? 'Loading project...' : 'Loading workflow settings...'}</p>
         </div>
       </div>
     );
@@ -734,7 +768,7 @@ const AgentStudentWorkflow: React.FC<Props> = ({ projectId }) => {
           }`}
         >
           <TicketIcon className="h-5 w-5" />
-          <span>Create Ticket</span>
+          <span>Create Query</span>
         </div>
       </div>
 
@@ -1061,7 +1095,7 @@ const AgentStudentWorkflow: React.FC<Props> = ({ projectId }) => {
                       value={ticketForm.escalationReason}
                       onChange={(e) => setTicketForm({ ...ticketForm, escalationReason: e.target.value })}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Reason for escalation..."
+                      placeholder="Explain why this query needs escalation..."
                     />
                   </div>
                 </div>
@@ -1089,7 +1123,7 @@ const AgentStudentWorkflow: React.FC<Props> = ({ projectId }) => {
                 ) : (
                   <>
                     <TicketIcon className="h-5 w-5" />
-                    <span>Create Ticket</span>
+                    <span>Create Query</span>
                   </>
                 )}
               </button>

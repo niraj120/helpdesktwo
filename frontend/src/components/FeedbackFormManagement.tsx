@@ -3,6 +3,7 @@ import axios from 'axios';
 import { API_CONFIG } from '../config/constants';
 import FeedbackFormBuilder from './FeedbackFormBuilder';
 import DashboardLayout from './DashboardLayout';
+import ModuleHeader from './ModuleHeader';
 import {
   PlusIcon,
   PencilIcon,
@@ -341,11 +342,10 @@ const FeedbackFormManagement: React.FC = () => {
   return (
     <DashboardLayout>
       <div className="p-6 max-w-7xl mx-auto">
-        {/* Header Section */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Feedback Forms</h1>
-          <p className="text-gray-600">Create and manage customizable feedback forms to collect student feedback on resolved tickets</p>
-        </div>
+        <ModuleHeader
+          title="Feedback Forms"
+          subtitle="Create and manage customizable feedback forms to collect student feedback on resolved tickets"
+        />
 
         {/* Project Selector Card */}
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-6 mb-8 shadow-sm">

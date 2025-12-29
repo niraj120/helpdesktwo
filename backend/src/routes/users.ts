@@ -58,7 +58,7 @@ router.post('/register-student', checkPermission('OFFLINE_STUDENT_REGISTER'), re
 // @desc    Get all users
 // @route   GET /api/users
 // @access  Private
-router.get('/', checkPermission('USER_VIEW_ALL'), getAllUsers);
+router.get('/', auth, getAllUsers);
 
 // @desc    Create new user
 // @route   POST /api/users

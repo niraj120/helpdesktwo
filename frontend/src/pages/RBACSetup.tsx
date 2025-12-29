@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { MdAdd, MdEdit, MdDelete, MdContentCopy, MdStar, MdStarBorder, MdClose, MdSave, MdExpandMore, MdExpandLess } from 'react-icons/md';
 import DashboardLayout from '../components/DashboardLayout';
+import ModuleHeader from '../components/ModuleHeader';
 import { API_CONFIG } from '../config/constants';
 
 interface Permission {
@@ -371,36 +372,46 @@ const RBACSetup = () => {
   return (
     <DashboardLayout>
       <div style={{ padding: '24px' }}>
-        {/* Header */}
-        <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <h1 style={{ fontSize: '28px', fontWeight: '600', marginBottom: '8px' }}>RBAC Setup</h1>
-          <p style={{ color: '#6b7280', fontSize: '14px' }}>Manage roles and permissions</p>
+        <ModuleHeader
+          title="RBAC Setup"
+          subtitle="Manage roles and permissions"
+        />
+        
+        <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            onClick={() => {
+              setEditingRole(null);
+              resetForm();
+              setShowRoleModal(true);
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '10px 20px',
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '12px',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              boxShadow: '0 4px 15px rgba(102, 126, 234, 0.4)'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-2px)';
+              e.currentTarget.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.4)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 4px 15px rgba(102, 126, 234, 0.4)';
+            }}
+          >
+            <MdAdd size={20} />
+            Create New Role
+          </button>
         </div>
-        <button
-          onClick={() => {
-            setEditingRole(null);
-            resetForm();
-            setShowRoleModal(true);
-          }}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '10px 20px',
-            backgroundColor: '#3b82f6',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            fontSize: '14px',
-            fontWeight: '500',
-            cursor: 'pointer',
-          }}
-        >
-          <MdAdd size={20} />
-          Create New Role
-        </button>
-      </div>
 
       {/* Filters */}
       <div style={{

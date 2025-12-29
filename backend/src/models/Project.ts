@@ -159,11 +159,19 @@ export interface IProject extends Document {
       enableOnlineForm?: boolean;
       enableOfflineCenter?: boolean;
       onlineFormFields?: Array<{
+        id?: string;
         fieldName: string;
-        fieldType: 'text' | 'email' | 'phone' | 'textarea' | 'dropdown' | 'file';
+        fieldLabel: string;
+        fieldType: 'text' | 'email' | 'phone' | 'textarea' | 'dropdown' | 'file' | 'number' | 'date';
         required: boolean;
         placeholder?: string;
         options?: string[];
+        order?: number;
+        validation?: {
+          minLength?: number;
+          maxLength?: number;
+          pattern?: string;
+        };
       }>;
       offlineCenters?: Array<{
         centerName: string;
@@ -445,10 +453,14 @@ const projectSchema = new Schema<IProject>({
       enableOfflineCenter: { type: Boolean, default: true },
       onlineFormFields: [{
         fieldName: { type: String },
-        fieldType: { type: String, enum: ['text', 'email', 'phone', 'textarea', 'dropdown', 'file'] },
+        fieldType: { type: String, enum: ['text', 'email', 'phone', 'textarea', 'dropdown', 'file', 'number', 'date', 'url', 'multiselect', 'radio', 'checkbox'] },
         required: { type: Boolean, default: false },
         placeholder: { type: String },
         options: [{ type: String }],
+        allowedFileTypes: [{ type: String }],
+        maxFileSizeMB: { type: Number },
+        allowMultiple: { type: Boolean },
+        _id: false  // Disable auto _id generation for subdocuments
       }],
       offlineCenters: [{
         centerName: { type: String },
@@ -497,7 +509,7 @@ const projectSchema = new Schema<IProject>({
       ticketFields: [{
         id: { type: String },
         fieldName: { type: String },
-        fieldType: { type: String, enum: ['text', 'textarea', 'dropdown', 'number', 'date', 'file', 'category'] },
+        fieldType: { type: String, enum: ['text', 'textarea', 'dropdown', 'number', 'date', 'file', 'category', 'category-select'] },
         required: { type: Boolean, default: false },
         placeholder: { type: String },
         options: [{ type: String }],

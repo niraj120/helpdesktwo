@@ -342,13 +342,13 @@ const ProjectPortalLogin: React.FC = () => {
             opacity: 0.95,
             lineHeight: 1.6,
           }}>
-            Streamline your support operations with our comprehensive ticketing and management system
+            Streamline your support operations with our comprehensive query and management system
           </p>
 
           {/* Features List */}
           <div style={{ textAlign: 'left', marginTop: '3rem' }}>
             {[
-              { icon: '🎫', text: 'Efficient Ticket Management' },
+              { icon: '🎫', text: 'Efficient Query Management' },
               { icon: '📊', text: 'Real-time Analytics Dashboard' },
               { icon: '🔔', text: 'Smart Notifications & Alerts' },
               { icon: '🛡️', text: 'Enterprise-grade Security' },

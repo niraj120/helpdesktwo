@@ -1,5 +1,6 @@
 import { Routes, Route } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { useEffect } from 'react'
 import { PERMISSIONS } from './constants/permissions'
 import Login from './components/Login'
 import ProjectLogin from './pages/ProjectLogin'
@@ -89,6 +90,16 @@ const Dashboard = () => {
 function App() {
   // Update browser tab title dynamically based on project
   useDynamicTitle();
+  
+  const { i18n } = useTranslation();
+  
+  // Load saved language preference on app mount
+  useEffect(() => {
+    const savedLanguage = localStorage.getItem('preferredLanguage');
+    if (savedLanguage && ['en', 'hi', 'mr'].includes(savedLanguage)) {
+      i18n.changeLanguage(savedLanguage);
+    }
+  }, [i18n]);
   
   return (
     <div>

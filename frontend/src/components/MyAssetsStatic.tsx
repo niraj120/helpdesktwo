@@ -1,5 +1,19 @@
 import React, { useState } from 'react';
-import { MdSave, MdRefresh, MdWarning, MdCheckCircle } from 'react-icons/md';
+import { MdSave, MdRefresh, MdWarning, MdCheckCircle, MdHistory } from 'react-icons/md';
+
+interface AuditHistoryEntry {
+  _id: string;
+  updatedBy: string;
+  updatedAt: string;
+  previousValues: {
+    workingAsset: number;
+    notWorkingAsset: number;
+  };
+  newValues: {
+    workingAsset: number;
+    notWorkingAsset: number;
+  };
+}
 
 interface AssetUsage {
   _id: string;
@@ -50,12 +64,12 @@ const DEMO_ASSETS: AssetUsage[] = [
     assetId: { _id: 'a1', name: 'AC', category: 'Electronics', unit: 'units' },
     centerId: { _id: 'c1', centerName: 'CET उपकेंद्र - Amravati', city: 'Amravati' },
     projectId: { _id: '1', name: 'MH CET Extension Centres' },
-    totalAssigned: 5,
+    totalAssigned: 4,
     assetUsed: 4,
-    assetNotUsed: 1,
+    assetNotUsed: 0,
     workingAsset: 3,
     notWorkingAsset: 1,
-    lastUpdatedBy: { _id: 'u1', name: 'Sameer Hapani' },
+    lastUpdatedBy: { _id: 'u1', name: 'Niraj Mishra' },
     updatedAt: '2024-10-15T10:30:00Z',
     nextAuditDate: '2025-01-15T10:30:00Z',
   },
@@ -69,7 +83,7 @@ const DEMO_ASSETS: AssetUsage[] = [
     assetNotUsed: 0,
     workingAsset: 2,
     notWorkingAsset: 1,
-    lastUpdatedBy: { _id: 'u1', name: 'Sameer Hapani' },
+    lastUpdatedBy: { _id: 'u1', name: 'Niraj Mishra' },
     updatedAt: '2024-09-10T14:20:00Z',
     nextAuditDate: '2024-12-10T14:20:00Z',
   },
@@ -78,21 +92,61 @@ const DEMO_ASSETS: AssetUsage[] = [
     assetId: { _id: 'a3', name: 'Chairs', category: 'Furniture', unit: 'units' },
     centerId: { _id: 'c1', centerName: 'CET उपकेंद्र - Amravati', city: 'Amravati' },
     projectId: { _id: '1', name: 'MH CET Extension Centres' },
-    totalAssigned: 50,
+    totalAssigned: 45,
     assetUsed: 45,
-    assetNotUsed: 5,
+    assetNotUsed: 0,
     workingAsset: 42,
     notWorkingAsset: 3,
-    lastUpdatedBy: { _id: 'u1', name: 'Sameer Hapani' },
+    lastUpdatedBy: { _id: 'u1', name: 'Niraj Mishra' },
     updatedAt: '2024-11-01T09:00:00Z',
     nextAuditDate: '2025-02-01T09:00:00Z',
   },
 ];
 
+// Static audit history data
+const AUDIT_HISTORY: { [key: string]: AuditHistoryEntry[] } = {
+  '1': [ // AC
+    {
+      _id: 'h1',
+      updatedBy: 'Devesh Mishra',
+      updatedAt: '2024-12-26T10:30:00Z',
+      previousValues: { workingAsset: 2, notWorkingAsset: 2 },
+      newValues: { workingAsset: 3, notWorkingAsset: 1 },
+    },
+    {
+      _id: 'h2',
+      updatedBy: 'Devesh Mishra',
+      updatedAt: '2024-10-15T10:30:00Z',
+      previousValues: { workingAsset: 1, notWorkingAsset: 3 },
+      newValues: { workingAsset: 2, notWorkingAsset: 2 },
+    },
+  ],
+  '2': [ // Projector
+    {
+      _id: 'h3',
+      updatedBy: 'Devesh Mishra',
+      updatedAt: '2024-09-10T14:20:00Z',
+      previousValues: { workingAsset: 1, notWorkingAsset: 2 },
+      newValues: { workingAsset: 2, notWorkingAsset: 1 },
+    },
+  ],
+  '3': [ // Chairs
+    {
+      _id: 'h4',
+      updatedBy: 'Devesh Mishra',
+      updatedAt: '2024-11-01T09:00:00Z',
+      previousValues: { workingAsset: 40, notWorkingAsset: 5 },
+      newValues: { workingAsset: 42, notWorkingAsset: 3 },
+    },
+  ],
+};
+
 const MyAssetsStatic: React.FC = () => {
   const [selectedProject, setSelectedProject] = useState<string>('1');
+  const [assetFilter, setAssetFilter] = useState<string>('all');
   const [assets, setAssets] = useState<AssetUsage[]>(DEMO_ASSETS);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showAuditHistory, setShowAuditHistory] = useState<string | null>(null);
   const [editData, setEditData] = useState<EditData>({
     totalAssigned: 0,
     assetUsed: 0,
@@ -138,7 +192,7 @@ const MyAssetsStatic: React.FC = () => {
       )
     );
 
-    showMessage('success', 'Asset updated successfully (Demo Mode)');
+    showMessage('success', 'Asset updated successfully');
     setEditingId(null);
   };
 
@@ -172,29 +226,19 @@ const MyAssetsStatic: React.FC = () => {
     return 'ok';
   };
 
-  const filteredAssets = assets.filter(asset => asset.projectId._id === selectedProject);
+  const filteredAssets = assets.filter(asset => {
+    const matchesProject = asset.projectId._id === selectedProject;
+    const matchesAsset = assetFilter === 'all' || asset.assetId._id === assetFilter;
+    return matchesProject && matchesAsset;
+  });
+
+  // Get unique assets for filter dropdown
+  const uniqueAssets = Array.from(
+    new Map(assets.map(asset => [asset.assetId._id, asset.assetId])).values()
+  );
 
   return (
       <div className="p-6">
-        {/* Demo Banner */}
-        <div className="mb-4 rounded-lg bg-blue-50 border border-blue-200 p-4">
-          <div className="flex items-start gap-3">
-            <div className="flex-shrink-0">
-              <svg className="h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-              </svg>
-            </div>
-            <div>
-              <h3 className="text-sm font-medium text-blue-800">Static Demo Mode</h3>
-              <p className="mt-1 text-sm text-blue-700">
-                This is a static demo with sample data. Changes are saved locally and will reset on page refresh.
-                <br />
-                <strong>Purpose:</strong> Update asset counts, track working/non-working items, and monitor audit schedules.
-              </p>
-            </div>
-          </div>
-        </div>
-
         {/* Header */}
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-gray-900">My Assets</h1>
@@ -207,16 +251,29 @@ const MyAssetsStatic: React.FC = () => {
           <>
             {/* Action Buttons */}
             <div className="mb-6 flex items-center justify-between">
-              <div className="text-sm text-gray-600">
-                Showing {filteredAssets.length} assets for selected project (Demo Data)
+              <div className="flex items-center gap-4">
+                <div>
+                  <label htmlFor="assetFilter" className="block text-sm font-medium text-gray-700 mb-1">
+                    Asset Filter
+                  </label>
+                  <select
+                    id="assetFilter"
+                    value={assetFilter}
+                    onChange={(e) => setAssetFilter(e.target.value)}
+                    className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  >
+                    <option value="all">All</option>
+                    {uniqueAssets.map((asset) => (
+                      <option key={asset._id} value={asset._id}>
+                        {asset.name} ({asset.category})
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <button
-                onClick={() => window.location.reload()}
-                className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                <MdRefresh className="h-5 w-5" />
-                Reset Demo
-              </button>
+              <div className="text-sm text-gray-600">
+                Showing {filteredAssets.length} assets
+              </div>
             </div>
 
             {/* Message Alert */}
@@ -239,14 +296,13 @@ const MyAssetsStatic: React.FC = () => {
                       <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Working</th>
                       <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Not Working</th>
                       <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Last Updated</th>
-                      <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Audit Status</th>
                       <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 bg-white">
                     {filteredAssets.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="px-6 py-4 text-center text-sm text-gray-500">
+                        <td colSpan={8} className="px-6 py-4 text-center text-sm text-gray-500">
                           No assets found for this project.
                         </td>
                       </tr>
@@ -273,8 +329,9 @@ const MyAssetsStatic: React.FC = () => {
                                   type="number"
                                   min="0"
                                   value={editData.totalAssigned}
-                                  onChange={(e) => setEditData({ ...editData, totalAssigned: parseInt(e.target.value) || 0 })}
-                                  className="w-20 rounded border border-gray-300 px-2 py-1 text-right text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                  readOnly
+                                  disabled
+                                  className="w-20 rounded border border-gray-300 bg-gray-100 px-2 py-1 text-right text-sm text-gray-500 cursor-not-allowed"
                                 />
                               ) : (
                                 <span className="text-sm text-gray-900">{asset.totalAssigned}</span>
@@ -318,44 +375,6 @@ const MyAssetsStatic: React.FC = () => {
                                 by {asset.lastUpdatedBy.name}
                               </div>
                             </td>
-                            <td className="whitespace-nowrap px-6 py-4">
-                              <div className="flex flex-col items-center">
-                                {auditStatus === 'urgent' ? (
-                                  <>
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-800">
-                                      <MdWarning className="h-4 w-4" />
-                                      Overdue
-                                    </span>
-                                    <span className="mt-1 text-xs text-red-600">
-                                      {Math.abs(daysUntilAudit)} days ago
-                                    </span>
-                                  </>
-                                ) : auditStatus === 'warning' ? (
-                                  <>
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-medium text-yellow-800">
-                                      <MdWarning className="h-4 w-4" />
-                                      Due Soon
-                                    </span>
-                                    <span className="mt-1 text-xs text-yellow-600">
-                                      {daysUntilAudit} days left
-                                    </span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800">
-                                      <MdCheckCircle className="h-4 w-4" />
-                                      On Track
-                                    </span>
-                                    <span className="mt-1 text-xs text-gray-600">
-                                      {daysUntilAudit} days
-                                    </span>
-                                  </>
-                                )}
-                                <span className="mt-1 text-xs text-gray-500">
-                                  Next: {new Date(asset.nextAuditDate).toLocaleDateString()}
-                                </span>
-                              </div>
-                            </td>
                             <td className="whitespace-nowrap px-6 py-4 text-center">
                               {isEditing ? (
                                 <div className="flex justify-center gap-2">
@@ -374,12 +393,21 @@ const MyAssetsStatic: React.FC = () => {
                                   </button>
                                 </div>
                               ) : (
-                                <button
-                                  onClick={() => handleEdit(asset)}
-                                  className="text-blue-600 hover:text-blue-900 text-sm font-medium"
-                                >
-                                  Update
-                                </button>
+                                <div className="flex justify-center gap-2">
+                                  <button
+                                    onClick={() => handleEdit(asset)}
+                                    className="text-blue-600 hover:text-blue-900 text-sm font-medium"
+                                  >
+                                    Update
+                                  </button>
+                                  <button
+                                    onClick={() => setShowAuditHistory(asset._id)}
+                                    className="flex items-center gap-1 text-gray-600 hover:text-gray-900 text-sm font-medium"
+                                    title="View Audit History"
+                                  >
+                                    <MdHistory className="h-4 w-4" />
+                                  </button>
+                                </div>
                               )}
                             </td>
                           </tr>
@@ -390,84 +418,97 @@ const MyAssetsStatic: React.FC = () => {
                 </table>
               </div>
             </div>
-
-            {/* Audit Timeline Summary */}
-            <div className="mt-6 grid gap-4 md:grid-cols-3">
-              <div className="rounded-lg bg-green-50 border border-green-200 p-4">
-                <div className="flex items-center gap-3">
-                  <MdCheckCircle className="h-8 w-8 text-green-600" />
-                  <div>
-                    <div className="text-2xl font-bold text-green-900">
-                      {filteredAssets.filter(a => getAuditStatus(getDaysUntilAudit(a.nextAuditDate)) === 'ok').length}
-                    </div>
-                    <div className="text-sm text-green-700">On Track (30+ days)</div>
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-4">
-                <div className="flex items-center gap-3">
-                  <MdWarning className="h-8 w-8 text-yellow-600" />
-                  <div>
-                    <div className="text-2xl font-bold text-yellow-900">
-                      {filteredAssets.filter(a => getAuditStatus(getDaysUntilAudit(a.nextAuditDate)) === 'warning').length}
-                    </div>
-                    <div className="text-sm text-yellow-700">Due Soon (1-30 days)</div>
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-lg bg-red-50 border border-red-200 p-4">
-                <div className="flex items-center gap-3">
-                  <MdWarning className="h-8 w-8 text-red-600" />
-                  <div>
-                    <div className="text-2xl font-bold text-red-900">
-                      {filteredAssets.filter(a => getAuditStatus(getDaysUntilAudit(a.nextAuditDate)) === 'urgent').length}
-                    </div>
-                    <div className="text-sm text-red-700">Overdue</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Audit Timeline Info */}
-            <div className="mt-4 rounded-lg bg-blue-50 border border-blue-200 p-4">
-              <h3 className="text-sm font-semibold text-blue-900 mb-2 flex items-center gap-2">
-                <MdCheckCircle className="h-5 w-5" />
-                Audit Schedule & Timeline
-              </h3>
-              <div className="space-y-2 text-sm text-blue-800">
-                <p>• <strong>Audit Frequency:</strong> Every 3 months from last update</p>
-                <p>• <strong>Next Audit Deadline:</strong> Automatically calculated when you save changes</p>
-                <p>• <strong>Status Indicators:</strong></p>
-                <div className="ml-6 space-y-1 text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-green-800 font-medium">On Track</span>
-                    <span>30+ days until audit</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-yellow-800 font-medium">Due Soon</span>
-                    <span>1-30 days until audit</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-red-800 font-medium">Overdue</span>
-                    <span>Audit deadline passed</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Instructions */}
-            <div className="mt-4 rounded-lg bg-yellow-50 border border-yellow-200 p-4">
-              <h3 className="text-sm font-semibold text-yellow-800 mb-2">How to Use:</h3>
-              <ul className="text-sm text-yellow-700 space-y-1 list-disc list-inside">
-                <li>Click <strong>"Update"</strong> on any row to edit asset counts</li>
-                <li>Enter values ensuring: <strong>Used + Not Used = Total Assigned</strong></li>
-                <li>Enter values ensuring: <strong>Working + Not Working = Used</strong></li>
-                <li>Click <strong>"Save"</strong> to apply changes or <strong>"Cancel"</strong> to discard</li>
-                <li>Audit date automatically updates to 3 months from save date</li>
-                <li>Monitor audit status: 🟢 On Track, 🟡 Warning (30 days), 🔴 Overdue</li>
-              </ul>
-            </div>
           </>
+        )}
+
+        {/* Audit History Modal */}
+        {showAuditHistory && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+            <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[80vh] overflow-hidden">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+                <h3 className="text-lg font-semibold text-gray-900">Audit History</h3>
+                <button
+                  onClick={() => setShowAuditHistory(null)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="overflow-y-auto max-h-[calc(80vh-120px)] px-6 py-4">
+                {AUDIT_HISTORY[showAuditHistory] && AUDIT_HISTORY[showAuditHistory].length > 0 ? (
+                  <div className="space-y-4">
+                    {AUDIT_HISTORY[showAuditHistory]
+                      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+                      .map((entry, index) => (
+                        <div key={index} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <div className="bg-blue-100 rounded-full p-2">
+                                <MdHistory className="h-5 w-5 text-blue-600" />
+                              </div>
+                              <div>
+                                <p className="font-medium text-gray-900">{entry.updatedBy}</p>
+                                <p className="text-sm text-gray-500">
+                                  {new Date(entry.updatedAt).toLocaleString('en-IN', {
+                                    day: '2-digit',
+                                    month: 'short',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    hour12: true
+                                  })}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4 mt-3">
+                            <div className="bg-white rounded p-3 border border-gray-200">
+                              <p className="text-xs font-semibold text-gray-600 mb-2">Working Assets</p>
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm text-gray-500">
+                                  {entry.previousValues.workingAsset}
+                                </span>
+                                <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                </svg>
+                                <span className="text-sm font-semibold text-green-600">
+                                  {entry.newValues.workingAsset}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="bg-white rounded p-3 border border-gray-200">
+                              <p className="text-xs font-semibold text-gray-600 mb-2">Not Working Assets</p>
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm text-gray-500">
+                                  {entry.previousValues.notWorkingAsset}
+                                </span>
+                                <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                </svg>
+                                <span className="text-sm font-semibold text-red-600">
+                                  {entry.newValues.notWorkingAsset}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <p className="text-gray-500">No audit history available for this asset.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         )}
       </div>
   );

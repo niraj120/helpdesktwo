@@ -4,6 +4,7 @@ import { API_CONFIG } from '../config/constants';
 import { usePermissions } from '../hooks/usePermissions';
 import { PERMISSIONS } from '../constants/permissions';
 import DashboardLayout from './DashboardLayout';
+import ModuleHeader from './ModuleHeader';
 
 interface Asset {
   _id: string;
@@ -271,29 +272,69 @@ const AssetManagement: React.FC = () => {
   return (
     <DashboardLayout>
       <div className="p-6">
-        {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
-          <h1 className="text-3xl font-bold text-gray-900">Asset Management</h1>
-          <div className="flex gap-3">
+        <ModuleHeader
+          title="Asset Management"
+          subtitle="Manage assets and inventory across projects"
+        />
+        
+        <div style={{ marginBottom: '24px', display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+          <button
+            onClick={fetchAssets}
+            disabled={loading || !selectedProject}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '10px 20px',
+              background: 'white',
+              border: '2px solid #E5E7EB',
+              borderRadius: '12px',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: (loading || !selectedProject) ? 'not-allowed' : 'pointer',
+              opacity: (loading || !selectedProject) ? 0.5 : 1,
+              transition: 'all 0.2s'
+            }}
+          >
+            <MdRefresh className="h-5 w-5" />
+            Refresh
+          </button>
+          {canCreate && (
             <button
-              onClick={fetchAssets}
+              onClick={() => handleOpenModal()}
               disabled={loading || !selectedProject}
-              className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '10px 20px',
+                background: (loading || !selectedProject) ? '#9ca3af' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '12px',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: (loading || !selectedProject) ? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s',
+                boxShadow: (loading || !selectedProject) ? 'none' : '0 4px 15px rgba(102, 126, 234, 0.4)'
+              }}
+              onMouseEnter={(e) => {
+                if (!loading && selectedProject) {
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.4)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!loading && selectedProject) {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 4px 15px rgba(102, 126, 234, 0.4)';
+                }
+              }}
             >
-              <MdRefresh className="h-5 w-5" />
-              Refresh
+              <MdAdd className="h-5 w-5" />
+              Add Asset
             </button>
-            {canCreate && (
-              <button
-                onClick={() => handleOpenModal()}
-                disabled={loading || !selectedProject}
-                className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-              >
-                <MdAdd className="h-5 w-5" />
-                Add Asset
-              </button>
-            )}
-          </div>
+          )}
         </div>
 
         {/* Project Selector */}
@@ -341,7 +382,7 @@ const AssetManagement: React.FC = () => {
                 onChange={(e) => setFilterActive(e.target.value as any)}
                 className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
-                <option value="all">All Assets</option>
+                <option value="all">All</option>
                 <option value="active">Active Only</option>
                 <option value="inactive">Inactive Only</option>
               </select>

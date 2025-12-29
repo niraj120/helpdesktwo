@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
 import DashboardLayout from './DashboardLayout';
+import ModuleHeader from './ModuleHeader';
 import { API_CONFIG } from '../config/constants';
 import { usePermissions } from '../hooks/usePermissions';
 import { PERMISSIONS } from '../constants/permissions';
@@ -443,28 +444,45 @@ const KnowledgeBaseManagement: React.FC = () => {
   return (
     <DashboardLayout>
       <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
-        <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h1 style={{ fontSize: '24px', fontWeight: '700', margin: 0 }}>Knowledge Base Management</h1>
+        <ModuleHeader
+          title="Knowledge Base Management"
+          subtitle="Create and manage articles for your knowledge base"
+        />
+        
         {hasPermission(PERMISSIONS.KB_CREATE) && (
-          <button
-            onClick={handleCreate}
-            disabled={!selectedProject}
-            style={{
-              padding: '10px 20px',
-              backgroundColor: '#3b82f6',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              fontSize: '14px',
-              fontWeight: '600',
-              cursor: selectedProject ? 'pointer' : 'not-allowed',
-              opacity: selectedProject ? 1 : 0.5
-            }}
-          >
-            + Create Article
-          </button>
+          <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              onClick={handleCreate}
+              disabled={!selectedProject}
+              style={{
+                padding: '10px 20px',
+                background: selectedProject ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : '#9ca3af',
+                color: 'white',
+                border: 'none',
+                borderRadius: '12px',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: selectedProject ? 'pointer' : 'not-allowed',
+                transition: 'all 0.2s',
+                boxShadow: selectedProject ? '0 4px 15px rgba(102, 126, 234, 0.4)' : 'none'
+              }}
+              onMouseEnter={(e) => {
+                if (selectedProject) {
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.4)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (selectedProject) {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 4px 15px rgba(102, 126, 234, 0.4)';
+                }
+              }}
+            >
+              + Create Article
+            </button>
+          </div>
         )}
-      </div>
 
       {/* Project Selector - Only show if not in project portal */}
       {!isProjectPortal && (

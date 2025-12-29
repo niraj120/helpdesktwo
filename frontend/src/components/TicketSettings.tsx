@@ -36,6 +36,22 @@ interface TicketNumberingConfig {
   resetFrequency: 'never' | 'yearly' | 'monthly';
 }
 
+interface FormField {
+  id?: string;
+  fieldName: string;
+  fieldLabel: string;
+  fieldType: 'text' | 'email' | 'phone' | 'textarea' | 'dropdown' | 'file' | 'number' | 'date';
+  required: boolean;
+  placeholder?: string;
+  options?: string[];
+  order?: number;
+  validation?: {
+    minLength?: number;
+    maxLength?: number;
+    pattern?: string;
+  };
+}
+
 const TicketSettings: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const [activeTab, setActiveTab] = useState('numbering');
@@ -76,6 +92,10 @@ const TicketSettings: React.FC = () => {
   const [priorities, setPriorities] = useState<Priority[]>([]);
   const [loadingPriorities, setLoadingPriorities] = useState(false);
 
+  // Form Fields State
+  const [formFields, setFormFields] = useState<FormField[]>([]);
+  const [loadingFormFields, setLoadingFormFields] = useState(false);
+
   // Load project-specific ticket configuration
   useEffect(() => {
     loadProjectConfig();
@@ -83,6 +103,7 @@ const TicketSettings: React.FC = () => {
       loadStatuses();
       loadPriorities();
       loadCategories();
+      loadFormFields();
     }
   }, [projectId]);
 
@@ -180,6 +201,37 @@ const TicketSettings: React.FC = () => {
     }
   };
 
+  const loadFormFields = async () => {
+    if (!projectId) return;
+    setLoadingFormFields(true);
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`${API_CONFIG.API_URL}/projects/${projectId}/form-fields`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('✅ Form Fields API Response:', data);
+        if (data.success && data.data) {
+          console.log('✅ Setting form fields:', data.data.length, 'items');
+          setFormFields(data.data.sort((a: FormField, b: FormField) => (a.order || 0) - (b.order || 0)));
+        } else {
+          console.error('❌ Form Fields API returned success=false or no data:', data);
+        }
+      } else {
+        console.error('❌ Form Fields API response not OK:', response.status, response.statusText);
+      }
+    } catch (error) {
+      console.error('❌ Error loading form fields:', error);
+    } finally {
+      setLoadingFormFields(false);
+    }
+  };
+
   const loadProjectConfig = async () => {
     if (!projectId) return;
     
@@ -219,6 +271,9 @@ const TicketSettings: React.FC = () => {
     setLoading(true);
     try {
       const token = localStorage.getItem('authToken');
+      
+      console.log('💾 Saving ticket configuration with form fields:', formFields.length, 'fields');
+      
       const response = await fetch(`${API_CONFIG.API_URL}/projects/${projectId}/ticket-settings`, {
         method: 'PUT',
         headers: {
@@ -229,13 +284,18 @@ const TicketSettings: React.FC = () => {
         body: JSON.stringify({
           numbering,
           statuses,
-          // Categories are now saved via Category API, not project config
+          onlineFormFields: formFields, // Save form fields with main save
         }),
       });
 
       if (response.ok) {
+        const data = await response.json();
+        console.log('✅ Ticket configuration saved:', data);
         setSaved(true);
         setTimeout(() => setSaved(false), 3000);
+      } else {
+        const errorData = await response.json();
+        alert(errorData.message || 'Failed to save ticket configuration');
       }
     } catch (error) {
       console.error('Error saving settings:', error);
@@ -249,6 +309,7 @@ const TicketSettings: React.FC = () => {
     { id: 'numbering', label: 'Ticket Numbering', labelMr: 'तिकीट क्रमांकन' },
     { id: 'statuses', label: 'Ticket Statuses', labelMr: 'तिकीट स्टेटस' },
     { id: 'categories', label: 'Ticket Categories', labelMr: 'तिकीट श्रेणी' },
+    { id: 'formFields', label: 'Form Fields', labelMr: 'फॉर्म फील्ड' },
   ];
 
   const generatePreview = () => {
@@ -1240,6 +1301,414 @@ const TicketSettings: React.FC = () => {
               )}
             </div>
           )}
+
+          {/* Form Fields Tab - Reusing exact code from AddProjectForm.tsx */}
+          {activeTab === 'formFields' && (
+            <div>
+              <div style={{ marginBottom: '24px' }}>
+                <h2 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '8px' }}>
+                  Online Query Form Fields
+                </h2>
+                <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+                  Configure custom fields for the online ticket submission form
+                </p>
+                <div style={{ 
+                  padding: '12px 16px', 
+                  backgroundColor: '#eff6ff', 
+                  border: '1px solid #3b82f6', 
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  color: '#1e40af',
+                  marginBottom: '16px'
+                }}>
+                  <strong>ℹ️ Fixed Fields:</strong> Name, Email, and Phone are always present and cannot be removed. Add custom fields below.
+                </div>
+              </div>
+
+              {loadingFormFields ? (
+                <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
+                  Loading form fields...
+                </div>
+              ) : (
+                <div>
+                  {/* Form Fields Configuration - Same as AddProjectForm */}
+                  <div style={{ marginTop: '0px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                      <h5 style={{ margin: 0, fontSize: '15px', fontWeight: '600', color: '#1f2937' }}>
+                        Form Fields
+                      </h5>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormFields([
+                            ...formFields,
+                            {
+                              id: Date.now().toString(),
+                              fieldName: '',
+                              fieldLabel: '',
+                              fieldType: 'text',
+                              required: false,
+                              placeholder: '',
+                              options: [],
+                              order: formFields.length,
+                              validation: {},
+                              // file-specific defaults
+                              allowedFileTypes: [],
+                              maxFileSizeMB: 5,
+                              allowMultiple: false
+                            }
+                          ]);
+                        }}
+                        style={{
+                          padding: '8px 16px',
+                          backgroundColor: '#3b82f6',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          fontSize: '14px',
+                          fontWeight: '500',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        + Add Field
+                      </button>
+                    </div>
+
+                    {formFields.length === 0 ? (
+                      <div style={{
+                        padding: '20px',
+                        backgroundColor: '#f9fafb',
+                        borderRadius: '6px',
+                        textAlign: 'center',
+                        color: '#6b7280',
+                        fontSize: '14px'
+                      }}>
+                        No custom fields added. Only fixed fields (Name, Email, Phone) will be shown on the submission form.
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        {formFields.map((field, index) => (
+                          <div key={index} style={{
+                            padding: '16px',
+                            backgroundColor: '#f9fafb',
+                            borderRadius: '6px',
+                            border: '1px solid #e5e7eb'
+                          }}>
+                            <div style={{ display: 'flex', gap: '12px', marginBottom: '12px' }}>
+                              <input
+                                type="text"
+                                placeholder="Field Name"
+                                value={field.fieldName}
+                                onChange={(e) => {
+                                  const newFields = [...formFields];
+                                  newFields[index].fieldName = e.target.value;
+                                  setFormFields(newFields);
+                                }}
+                                style={{
+                                  flex: 1,
+                                  padding: '10px 12px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                              <select
+                                value={field.fieldType}
+                                onChange={(e) => {
+                                  const newFields = [...formFields];
+                                  newFields[index].fieldType = e.target.value as any;
+                                  setFormFields(newFields);
+                                }}
+                                style={{
+                                  flex: 1,
+                                  padding: '10px 12px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              >
+                                <option value="text">Text</option>
+                                <option value="number">Number</option>
+                                <option value="date">Date</option>
+                                <option value="email">Email</option>
+                                <option value="phone">Phone</option>
+                                <option value="url">Link (URL)</option>
+                                <option value="textarea">Textarea</option>
+                                <option value="dropdown">Dropdown (Single Select)</option>
+                                <option value="multiselect">Multi-Select</option>
+                                <option value="radio">Radio Buttons</option>
+                                <option value="checkbox">Checkboxes</option>
+                                <option value="file">File Upload</option>
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setFormFields(formFields.filter((_, i) => i !== index));
+                                }}
+                                style={{
+                                  padding: '10px 16px',
+                                  backgroundColor: '#ef4444',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  fontSize: '14px',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                            <div style={{ display: 'flex', gap: '12px' }}>
+                              <input
+                                type="text"
+                                placeholder="Placeholder text"
+                                value={field.placeholder}
+                                onChange={(e) => {
+                                  const newFields = [...formFields];
+                                  newFields[index].placeholder = e.target.value;
+                                  setFormFields(newFields);
+                                }}
+                                style={{
+                                  flex: 1,
+                                  padding: '10px 12px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                              <label style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                padding: '10px 12px',
+                                backgroundColor: 'white',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '6px',
+                                cursor: 'pointer'
+                              }}>
+                                <input
+                                  type="checkbox"
+                                  checked={field.required}
+                                  onChange={(e) => {
+                                    const newFields = [...formFields];
+                                    newFields[index].required = e.target.checked;
+                                    setFormFields(newFields);
+                                  }}
+                                  style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                />
+                                <span style={{ fontSize: '14px', color: '#374151' }}>Required</span>
+                              </label>
+                            </div>
+                            {field.fieldType === 'dropdown' && (
+                              <div style={{ marginTop: '12px' }}>
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#374151', marginBottom: '6px' }}>
+                                  Dropdown Options (one per line or comma-separated)
+                                </label>
+                                <textarea
+                                  placeholder="Enter options (one per line or comma-separated)&#10;Example:&#10;Option 1&#10;Option 2&#10;Option 3"
+                                  defaultValue={field.options?.join('\n') || ''}
+                                  onBlur={(e) => {
+                                    const newFields = [...formFields];
+                                    const value = e.target.value;
+                                    if (value.includes('\n')) {
+                                      newFields[index].options = value.split('\n').map(opt => opt.trim()).filter(opt => opt);
+                                    } else {
+                                      newFields[index].options = value.split(',').map(opt => opt.trim()).filter(opt => opt);
+                                    }
+                                    setFormFields(newFields);
+                                  }}
+                                  rows={4}
+                                  style={{
+                                    width: '100%',
+                                    padding: '10px 12px',
+                                    border: '1px solid #d1d5db',
+                                    borderRadius: '6px',
+                                    fontSize: '14px',
+                                    fontFamily: 'inherit',
+                                    resize: 'vertical'
+                                  }}
+                                />
+                              </div>
+                            )}
+                            {(field.fieldType === 'multiselect' || field.fieldType === 'radio' || field.fieldType === 'checkbox') && (
+                              <div style={{ marginTop: '12px' }}>
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#374151', marginBottom: '6px' }}>
+                                  Options (one per line or comma-separated)
+                                </label>
+                                <textarea
+                                  placeholder="Enter options (one per line or comma-separated)&#10;Example:&#10;Option 1&#10;Option 2&#10;Option 3"
+                                  defaultValue={field.options?.join('\n') || ''}
+                                  onBlur={(e) => {
+                                    const newFields = [...formFields];
+                                    const value = e.target.value;
+                                    if (value.includes('\n')) {
+                                      newFields[index].options = value.split('\n').map(opt => opt.trim()).filter(opt => opt);
+                                    } else {
+                                      newFields[index].options = value.split(',').map(opt => opt.trim()).filter(opt => opt);
+                                    }
+                                    setFormFields(newFields);
+                                  }}
+                                  rows={4}
+                                  style={{
+                                    width: '100%',
+                                    padding: '10px 12px',
+                                    border: '1px solid #d1d5db',
+                                    borderRadius: '6px',
+                                    fontSize: '14px',
+                                    fontFamily: 'inherit',
+                                    resize: 'vertical'
+                                  }}
+                                />
+                              </div>
+                            )}
+                            {field.fieldType === 'file' && (
+                              <div style={{ marginTop: '12px', padding: '12px', backgroundColor: '#fef3c7', borderRadius: '6px', border: '1px solid #fde047' }}>
+                                <div style={{ marginBottom: '12px' }}>
+                                  <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#92400e', marginBottom: '6px' }}>
+                                    Allowed File Types (extensions)
+                                  </label>
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                    {['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.jpg', '.jpeg', '.png', '.gif', '.txt', '.zip'].map((ext) => (
+                                      <label key={ext} style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '6px',
+                                        padding: '4px 8px',
+                                        backgroundColor: (field.allowedFileTypes || []).includes(ext) ? '#dbeafe' : '#f9fafb',
+                                        border: (field.allowedFileTypes || []).includes(ext) ? '1px solid #3b82f6' : '1px solid #e5e7eb',
+                                        borderRadius: '4px',
+                                        cursor: 'pointer',
+                                        fontSize: '12px'
+                                      }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={(field.allowedFileTypes || []).includes(ext)}
+                                          onChange={(e) => {
+                                            const newFields = [...formFields];
+                                            const types = newFields[index].allowedFileTypes || [];
+                                            if (e.target.checked) {
+                                              newFields[index].allowedFileTypes = [...types, ext];
+                                            } else {
+                                              newFields[index].allowedFileTypes = types.filter(t => t !== ext);
+                                            }
+                                            setFormFields(newFields);
+                                          }}
+                                          style={{ width: '14px', height: '14px', cursor: 'pointer' }}
+                                        />
+                                        <span style={{ color: '#374151', fontWeight: '500' }}>{ext}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div style={{ marginBottom: '12px' }}>
+                                  <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#92400e', marginBottom: '6px' }}>
+                                    Max File Size (MB)
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    max="100"
+                                    value={field.maxFileSizeMB || 5}
+                                    onChange={(e) => {
+                                      const newFields = [...formFields];
+                                      newFields[index].maxFileSizeMB = parseInt(e.target.value) || 5;
+                                      setFormFields(newFields);
+                                    }}
+                                    style={{
+                                      width: '120px',
+                                      padding: '8px 10px',
+                                      border: '1px solid #d1d5db',
+                                      borderRadius: '6px',
+                                      fontSize: '13px'
+                                    }}
+                                  />
+                                </div>
+                                <div>
+                                  <label style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    cursor: 'pointer'
+                                  }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={field.allowMultiple || false}
+                                      onChange={(e) => {
+                                        const newFields = [...formFields];
+                                        newFields[index].allowMultiple = e.target.checked;
+                                        setFormFields(newFields);
+                                      }}
+                                      style={{ width: '14px', height: '14px', cursor: 'pointer' }}
+                                    />
+                                    <span style={{ fontSize: '13px', color: '#92400e', fontWeight: '500' }}>Allow multiple files</span>
+                                  </label>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    
+                    {/* Save Button */}
+                    {formFields.length > 0 && (
+                      <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end' }}>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            setLoadingFormFields(true);
+                            try {
+                              const token = localStorage.getItem('authToken');
+                              const response = await fetch(`${API_CONFIG.API_URL}/projects/${projectId}/ticket-settings`, {
+                                method: 'PUT',
+                                headers: {
+                                  'Content-Type': 'application/json',
+                                  'Authorization': `Bearer ${token}`,
+                                },
+                                credentials: 'include',
+                                body: JSON.stringify({
+                                  onlineFormFields: formFields
+                                }),
+                              });
+
+                              if (response.ok) {
+                                alert('Form fields saved successfully!');
+                                await loadFormFields();
+                              } else {
+                                const errorData = await response.json();
+                                alert(errorData.message || 'Failed to save form fields');
+                              }
+                            } catch (error) {
+                              console.error('Error saving form fields:', error);
+                              alert('Failed to save form fields');
+                            } finally {
+                              setLoadingFormFields(false);
+                            }
+                          }}
+                          style={{
+                            padding: '10px 24px',
+                            backgroundColor: '#10b981',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '6px',
+                            fontSize: '14px',
+                            fontWeight: '500',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px'
+                          }}
+                        >
+                          <MdSave />
+                          Save Form Fields
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
           </div>
 
@@ -1418,6 +1887,144 @@ const TicketSettings: React.FC = () => {
                           No categories configured yet
                         </div>
                       )}
+                    </div>
+                  </div>
+                )}
+
+                {activeTab === 'formFields' && (
+                  <div>
+                    <h4 style={{ 
+                      fontSize: '14px', 
+                      fontWeight: '600', 
+                      color: 'var(--text-secondary)',
+                      marginBottom: '12px'
+                    }}>
+                      Configured Form Fields
+                    </h4>
+                    
+                    {/* Fixed Fields Section */}
+                    <div style={{ marginBottom: '16px' }}>
+                      <div style={{ 
+                        fontSize: '12px', 
+                        fontWeight: '600', 
+                        color: '#3b82f6', 
+                        marginBottom: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}>
+                        <span>🔒</span> Fixed Fields (Always Present)
+                      </div>
+                      <div style={{ display: 'grid', gap: '8px' }}>
+                        {[
+                          { fieldName: 'Name', fieldType: 'text', required: true, placeholder: 'Enter your full name' },
+                          { fieldName: 'Email', fieldType: 'email', required: true, placeholder: 'Enter your email address' },
+                          { fieldName: 'Phone', fieldType: 'phone', required: true, placeholder: 'Enter your phone number' },
+                        ].map((field, index) => (
+                          <div 
+                            key={index}
+                            style={{
+                              padding: '10px 12px',
+                              background: '#eff6ff',
+                              borderRadius: '6px',
+                              border: '1px solid #bfdbfe'
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontWeight: '600', fontSize: '12px', color: '#1e40af' }}>
+                                {field.fieldName}
+                                {field.required && <span style={{ color: '#ef4444' }}> *</span>}
+                              </span>
+                              <span style={{ 
+                                fontSize: '10px', 
+                                padding: '2px 6px', 
+                                background: 'white',
+                                border: '1px solid #bfdbfe',
+                                borderRadius: '4px',
+                                fontWeight: '500',
+                                color: '#1e40af'
+                              }}>
+                                {field.fieldType}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '10px', color: '#6b7280', marginTop: '4px', fontStyle: 'italic' }}>
+                              "{field.placeholder}"
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    
+                    {/* Custom Dynamic Fields Section */}
+                    <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                      <div style={{ 
+                        fontSize: '12px', 
+                        fontWeight: '600', 
+                        color: '#6b7280', 
+                        marginBottom: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}>
+                        <span>✏️</span> Custom Fields ({formFields.length})
+                      </div>
+                      {formFields.length === 0 ? (
+                        <div style={{ 
+                          textAlign: 'center', 
+                          padding: '24px', 
+                          color: '#9ca3af',
+                          fontSize: '12px',
+                          background: '#f9fafb',
+                          borderRadius: '6px',
+                          border: '1px dashed #d1d5db'
+                        }}>
+                          No custom fields added yet
+                        </div>
+                      ) : (
+                        <div style={{ display: 'grid', gap: '12px' }}>
+                          {formFields.map((field, index) => (
+                            <div 
+                              key={field.id || index}
+                              style={{
+                                padding: '12px',
+                                background: '#f9fafb',
+                                borderRadius: '8px',
+                                border: '1px solid #e5e7eb'
+                              }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                <span style={{ fontWeight: '600', fontSize: '13px' }}>
+                                  {field.fieldName}
+                                  {field.required && <span style={{ color: '#ef4444' }}> *</span>}
+                                </span>
+                                <span style={{ 
+                                  fontSize: '10px', 
+                                  padding: '2px 6px', 
+                                  background: 'white',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '4px',
+                                  fontWeight: '500'
+                                }}>
+                                  {field.fieldType}
+                                </span>
+                              </div>
+                              {field.placeholder && (
+                                <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px', fontStyle: 'italic' }}>
+                                  "{field.placeholder}"
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ marginTop: '16px', padding: '12px', background: '#eff6ff', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
+                      <p style={{ fontSize: '12px', color: '#1e40af', fontWeight: '500', marginBottom: '4px' }}>
+                        💡 Preview
+                      </p>
+                      <p style={{ fontSize: '11px', color: '#3b82f6' }}>
+                        These fields will appear in the online ticket submission form for students.
+                      </p>
                     </div>
                   </div>
                 )}

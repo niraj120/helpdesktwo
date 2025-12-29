@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
+import ModuleHeader from '../components/ModuleHeader';
 import { API_CONFIG } from '../config/constants';
 import {
   FiRefreshCw,
@@ -208,9 +209,10 @@ const WebhookFailureLogs: React.FC = () => {
       <div className="p-6">
         {/* Header */}
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold text-gray-800">
-            Webhook & API Failure Logs
-          </h1>
+          <ModuleHeader 
+            title="Webhook & API Failure Logs"
+            subtitle="Monitor and troubleshoot webhook and API integration failures"
+          />
           <button
             onClick={handleRefresh}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
@@ -263,7 +265,7 @@ const WebhookFailureLogs: React.FC = () => {
                 }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="">All Statuses</option>
+                <option value="">All</option>
                 <option value="success">Success</option>
                 <option value="failed">Failed</option>
                 <option value="timeout">Timeout</option>

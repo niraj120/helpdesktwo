@@ -4,6 +4,7 @@ import { API_CONFIG } from '../config/constants';
 import { usePermissions } from '../hooks/usePermissions';
 import { PERMISSIONS } from '../constants/permissions';
 import DashboardLayout from './DashboardLayout';
+import ModuleHeader from './ModuleHeader';
 
 interface FAQ {
   _id: string;
@@ -235,36 +236,46 @@ const FAQManagement: React.FC = () => {
   return (
     <DashboardLayout>
       <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
-        {/* Header */}
-        <div style={{ marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-          <div>
-            <h1 style={{ fontSize: '28px', fontWeight: '600', marginBottom: '8px' }}>FAQ Management</h1>
-            <p style={{ fontSize: '14px', color: '#6b7280' }}>Manage frequently asked questions</p>
-          </div>
+        <ModuleHeader
+          title="FAQ Management"
+          subtitle="Manage frequently asked questions"
+        />
+        
         {canCreate && selectedProject && (
-          <button
-            onClick={() => {
-              resetForm();
-              setShowModal(true);
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '10px 20px',
-              background: '#3b82f6',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '14px',
-              fontWeight: '600',
-              cursor: 'pointer',
-            }}
-          >
-            <MdAdd size={20} /> Create FAQ
-          </button>
+          <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              onClick={() => {
+                resetForm();
+                setShowModal(true);
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '10px 20px',
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '12px',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                boxShadow: '0 4px 15px rgba(102, 126, 234, 0.4)'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.4)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 4px 15px rgba(102, 126, 234, 0.4)';
+              }}
+            >
+              <MdAdd size={20} /> Create FAQ
+            </button>
+          </div>
         )}
-      </div>
 
       {/* Project Selector */}
       {!isProjectPortal && (

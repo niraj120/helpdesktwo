@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import DashboardLayout from './DashboardLayout';
 import AddProjectForm from './AddProjectForm';
+import { ModuleHeader } from './ModuleHeader';
 import { usePermissions } from '../hooks/usePermissions';
 import { API_CONFIG } from '../config/constants';
 
@@ -143,63 +144,143 @@ const ProjectManagement = () => {
           padding: '2rem',
           boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)'
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-            <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#111827' }}>
-              Projects
-            </h2>
+          <ModuleHeader 
+            title="Projects" 
+            subtitle="Manage your projects and their configurations"
+          />
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '24px' }}>
             {hasPermission('PROJECT_CREATE') && (
               <button
                 style={{
-                  padding: '0.75rem 1.5rem',
-                  background: '#2563EB',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '12px 20px',
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                   color: 'white',
                   border: 'none',
-                  borderRadius: '6px',
-                  fontSize: '0.875rem',
-                  fontWeight: '500',
-                  cursor: 'pointer'
+                  borderRadius: '12px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 15px rgba(102, 126, 234, 0.3)',
+                  transition: 'all 0.2s ease',
+                  fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
                 }}
                 onClick={() => {
                   setSelectedProject(null);
                   setShowAddForm(true);
                 }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.4)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 4px 15px rgba(102, 126, 234, 0.3)';
+                }}
               >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19"/>
+                  <line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
                 Add Project
               </button>
             )}
           </div>
 
           {loading ? (
-            <div style={{ textAlign: 'center', padding: '3rem', color: '#6B7280' }}>
+            <div style={{
+              background: 'white',
+              borderRadius: '16px',
+              border: '1px solid #E5E7EB',
+              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+              textAlign: 'center',
+              padding: '80px 40px',
+              color: '#6B7280',
+              fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+            }}>
+              <div style={{
+                width: '48px',
+                height: '48px',
+                border: '3px solid #E5E7EB',
+                borderTop: '3px solid #667eea',
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite',
+                margin: '0 auto 16px',
+              }}></div>
               Loading projects...
             </div>
           ) : projects.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '3rem', color: '#6B7280' }}>
-              No projects found. Click "Add Project" to create one.
+            <div style={{
+              background: 'white',
+              borderRadius: '16px',
+              border: '1px solid #E5E7EB',
+              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+              textAlign: 'center',
+              padding: '80px 40px',
+            }}>
+              <div style={{
+                width: '96px',
+                height: '96px',
+                margin: '0 auto 24px',
+                background: 'linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#667eea" strokeWidth="1.5">
+                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+                  <line x1="8" y1="21" x2="16" y2="21"/>
+                  <line x1="12" y1="17" x2="12" y2="21"/>
+                </svg>
+              </div>
+              <h3 style={{
+                margin: '0 0 12px 0',
+                fontSize: '20px',
+                fontWeight: 700,
+                color: '#111827',
+                fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+              }}>No Projects Found</h3>
+              <p style={{
+                margin: 0,
+                color: '#6B7280',
+                fontSize: '14px',
+                fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+              }}>Click "Add Project" to create your first project</p>
             </div>
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <div style={{
+              background: 'white',
+              borderRadius: '16px',
+              border: '1px solid #E5E7EB',
+              overflow: 'hidden',
+              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+            }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif' }}>
               <thead>
-                <tr style={{ borderBottom: '2px solid #E5E7EB' }}>
-                  <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.875rem', fontWeight: '600', color: '#6B7280' }}>
+                <tr style={{ background: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
+                  <th style={{ padding: '12px 24px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Project ID
                   </th>
-                  <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.875rem', fontWeight: '600', color: '#6B7280' }}>
+                  <th style={{ padding: '12px 24px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Name
                   </th>
-                  <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.875rem', fontWeight: '600', color: '#6B7280' }}>
+                  <th style={{ padding: '12px 24px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Code
                   </th>
-                  <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.875rem', fontWeight: '600', color: '#6B7280' }}>
+                  <th style={{ padding: '12px 24px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Users
                   </th>
-                  <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.875rem', fontWeight: '600', color: '#6B7280' }}>
+                  <th style={{ padding: '12px 24px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Status
                   </th>
-                  <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.875rem', fontWeight: '600', color: '#6B7280' }}>
+                  <th style={{ padding: '12px 24px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Created
                   </th>
-                  <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.875rem', fontWeight: '600', color: '#6B7280' }}>
+                  <th style={{ padding: '12px 24px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Actions
                   </th>
                 </tr>
@@ -287,8 +368,16 @@ const ProjectManagement = () => {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
+
+        <style>{`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}</style>
       </div>
 
       {/* Add/Edit Project Form Modal */}

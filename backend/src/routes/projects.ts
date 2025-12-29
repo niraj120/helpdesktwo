@@ -14,6 +14,10 @@ import {
   updateProjectTicketSettings,
   getOfflineSettings,
   updateOfflineSettings,
+  getFormFields,
+  createFormField,
+  updateFormField,
+  deleteFormField,
 } from '../controllers/projectController';
 import { authMiddleware } from '../middleware/auth';
 import { checkPermission } from '../middleware/permissions';
@@ -21,7 +25,8 @@ import { checkPermission } from '../middleware/permissions';
 const router = express.Router();
 
 // Get all projects with optional filtering
-router.get('/', authMiddleware, checkPermission('PROJECT_VIEW_ALL'), getAllProjects);
+// Allow agents with OFFLINE_MODULE_ACCESS to view their assigned projects
+router.get('/', authMiddleware, checkPermission(['PROJECT_VIEW_ALL', 'OFFLINE_MODULE_ACCESS']), getAllProjects);
 
 // Get project statistics
 router.get('/stats', authMiddleware, checkPermission('PROJECT_VIEW_ALL'), getProjectStats);
@@ -43,6 +48,12 @@ router.get('/:id/offline-settings', authMiddleware, checkPermission(['PROJECT_VI
 
 // Update offline module settings
 router.put('/:id/offline-settings', authMiddleware, checkPermission('PROJECT_MANAGE_SETTINGS'), updateOfflineSettings);
+
+// Form Fields Management
+router.get('/:projectId/form-fields', authMiddleware, checkPermission('PROJECT_VIEW_ALL'), getFormFields);
+router.post('/:projectId/form-fields', authMiddleware, checkPermission('PROJECT_MANAGE_SETTINGS'), createFormField);
+router.put('/:projectId/form-fields/:fieldId', authMiddleware, checkPermission('PROJECT_MANAGE_SETTINGS'), updateFormField);
+router.delete('/:projectId/form-fields/:fieldId', authMiddleware, checkPermission('PROJECT_MANAGE_SETTINGS'), deleteFormField);
 
 // Get single project by ID
 router.get('/:id', authMiddleware, checkPermission('PROJECT_VIEW_ALL'), getProjectById);

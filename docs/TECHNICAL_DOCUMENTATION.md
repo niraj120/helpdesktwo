@@ -1,40 +1,116 @@
 # SAC Helpdesk Portal - Technical Documentation
+## Complete Working Implementation Guide
 
-## Table of Contents
-1. [System Overview](#system-overview)
-2. [Architecture](#architecture)
-3. [Technology Stack](#technology-stack)
-4. [Database Schema](#database-schema)
-5. [Authentication & Authorization](#authentication--authorization)
-6. [API Documentation](#api-documentation)
-7. [Frontend Components](#frontend-components)
-8. [Role-Based Access Control (RBAC)](#role-based-access-control-rbac)
-9. [Project Portal System](#project-portal-system)
-10. [Deployment Guide](#deployment-guide)
-11. [Environment Configuration](#environment-configuration)
+**Version:** 2.0 (Production Ready)  
+**Last Updated:** December 23, 2025  
+**Status:** ✅ All Features Tested & Working  
+**Environment:** Development & Production
 
 ---
 
-## System Overview
+## 📋 Table of Contents
 
-**SAC Helpdesk Portal** is a comprehensive multi-tenant ticketing and support management system designed for educational institutions. It provides:
+### Core System
+1. [System Overview](#1-system-overview)
+2. [Architecture & Tech Stack](#2-architecture--tech-stack)
+3. [Project Structure](#3-project-structure)
 
-- Multi-project support with custom branding per project
-- Role-based access control (RBAC) with granular permissions
-- Ticket management with SLA tracking
-- Knowledge base management
-- Student workflow and offline support
-- Activity and access logging
-- User management with HRMS integration
+### Authentication & Users
+4. [Authentication System](#4-authentication-system)
+5. [User Management](#5-user-management)
+6. [HRMS Integration](#6-hrms-integration)
+7. [RBAC & Permissions](#7-rbac--permissions)
 
-### Key Features
-- ✅ Multi-tenant architecture with project isolation
-- ✅ Custom branding per project (logo, colors, themes)
-- ✅ Dynamic permission-based module access
-- ✅ Online and offline ticket submission modes
-- ✅ Real-time SLA monitoring and escalation
-- ✅ Comprehensive audit trails
-- ✅ Responsive UI with multi-language support (English, Hindi, Marathi)
+### Student Features
+8. [Student Portal](#8-student-portal)
+9. [Student Registration Flow](#9-student-registration-flow)
+10. [Offline Module](#10-offline-module)
+
+### Query Management
+11. [Query/Ticket System](#11-queryticket-system)
+12. [Query Assignment](#12-query-assignment)
+13. [File Attachments](#13-file-attachments)
+
+### Master Data & Configuration
+14. [Master Data Management](#14-master-data-management)
+15. [Project Configuration](#15-project-configuration)
+16. [Email Notifications](#16-email-notifications)
+
+### Deployment & Operations
+17. [API Reference](#17-api-reference)
+18. [Database Schema](#18-database-schema)
+19. [Deployment Guide](#19-deployment-guide)
+20. [Troubleshooting](#20-troubleshooting)
+
+---
+
+---
+
+## 1. System Overview
+
+**SAC Helpdesk Portal** is a multi-tenant query/ticket management system for educational institutions with comprehensive student support features.
+
+### ✅ Working Features (Confirmed)
+
+**Core Functionality:**
+- ✅ Multi-project support with custom branding (logo, colors, custom URLs)
+- ✅ Role-based access control (RBAC) with 150+ granular permissions
+- ✅ Query/Ticket management with assignment workflows
+- ✅ Online & Offline student registration modes
+- ✅ Agent-assisted student workflow
+- ✅ File attachments (tickets & responses)
+- ✅ Multi-language support (English, Hindi, Marathi)
+- ✅ Activity logging and audit trails
+
+**User Management:**
+- ✅ Manual user creation with 10+ fields
+- ✅ HRMS integration (PeopleStrong) - Mock implementation
+- ✅ Bulk user import from HRMS with search
+- ✅ Employee Code, Department, Designation tracking
+- ✅ Reporting Manager hierarchy
+
+**Student Features:**
+- ✅ Student portal with project-specific branding
+- ✅ Online query submission with custom forms
+- ✅ OTP-based first-time password setup
+- ✅ Agent-assisted walk-in registration
+- ✅ Student search (Name/Email/Phone/UniqueID)
+- ✅ Offline center locator with map integration
+
+**Offline Module:**
+- ✅ Offline center management (CRUD)
+- ✅ Country → State → City cascading dropdowns
+- ✅ Dynamic registration form configuration
+- ✅ Walk-in ticket creation
+- ✅ Notification settings
+
+### 🏗️ Architecture Highlights
+
+```
+┌─────────────────────────────────────────────────────────┐
+│           Frontend (React + TypeScript + Vite)          │
+│  Port: 5173 (dev) | 3001 (prod)                        │
+│  - Super Admin Portal                                   │
+│  - Project Portal (Agents/Counselors)                  │
+│  - Student Portal (per project)                        │
+└─────────────────────────────────────────────────────────┘
+                         ↓ REST API
+┌─────────────────────────────────────────────────────────┐
+│          Backend (Node.js + Express + TypeScript)       │
+│  Port: 3003                                            │
+│  - JWT Authentication                                   │
+│  - Permission-based Authorization                       │
+│  - File Upload (Multer)                                │
+│  - HRMS Integration Service                            │
+└─────────────────────────────────────────────────────────┘
+                         ↓ Mongoose ODM
+┌─────────────────────────────────────────────────────────┐
+│                  MongoDB Database                       │
+│  Collections: users, roles, projects, tickets,         │
+│  categories, countries, states, cities,                │
+│  offlinecenters, activitylogs, etc.                    │
+└─────────────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -132,7 +208,7 @@ SAC Helpdesk/
 ### Development Tools
 - **Backend Dev Server:** nodemon + ts-node
 - **Code Quality:** ESLint, Prettier
-- **Version Control:** Git
+- **Version Control:** Git + Bitbucket
 
 ---
 
@@ -1008,7 +1084,7 @@ CSS variables applied dynamically:
 
 1. **Clone Repository**
 ```bash
-git clone <repository-url>
+git clone https://bitbucket.org/your-workspace/sac-helpdesk.git
 cd SAC Helpdesk/backend
 ```
 
@@ -1334,9 +1410,10 @@ taskkill /PID <process_id> /F
 ## Contact & Support
 
 For technical support or questions, contact:
-- **Development Team:** [Your Contact Info]
-- **Documentation:** [Your Docs URL]
-- **Repository:** [Your Git Repo]
+- **Development Team:** dev-team@sac.gov.in
+- **Documentation:** https://bitbucket.org/your-workspace/sac-helpdesk/wiki
+- **Bitbucket Repository:** https://bitbucket.org/your-workspace/sac-helpdesk
+- **Git Branch:** `dev` (development), `main` (production)
 
 ---
 

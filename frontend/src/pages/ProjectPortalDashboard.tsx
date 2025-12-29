@@ -4,6 +4,7 @@ import axios from 'axios';
 import DashboardLayout from '../components/DashboardLayout';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { PERMISSIONS } from '../constants/permissions';
+import { useBranding } from '../contexts/BrandingContext';
 
 // Import existing super admin components
 import ActivityLogs from '../components/ActivityLogs';
@@ -437,8 +438,8 @@ const AgentTicketsContent = ({ projectBranding, user }: AgentTicketsContentProps
   if (loading) {
     return (
       <div style={{ padding: '24px' }}>
-        <h1 style={{ fontSize: '28px', fontWeight: '600', marginBottom: '8px' }}>My Tickets</h1>
-        <p style={{ color: '#6b7280', marginBottom: '32px' }}>Tickets assigned to you</p>
+        <h1 style={{ fontSize: '28px', fontWeight: '600', marginBottom: '8px' }}>My Queries</h1>
+        <p style={{ color: '#6b7280', marginBottom: '32px' }}>Queries assigned to you</p>
         <div style={{
           background: 'white',
           padding: '48px',
@@ -464,7 +465,7 @@ const AgentTicketsContent = ({ projectBranding, user }: AgentTicketsContentProps
 
   return (
     <div style={{ padding: '24px' }}>
-      <h1 style={{ fontSize: '28px', fontWeight: '600', marginBottom: '24px' }}>My Tickets</h1>
+      <h1 style={{ fontSize: '28px', fontWeight: '600', marginBottom: '24px' }}>My Queries</h1>
 
       {/* Filters Section */}
       {/* Online/Offline Tabs */}
@@ -1011,7 +1012,7 @@ const ProjectPortalDashboard = () => {
   const { customUrlPath } = useParams();
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
-  const [projectBranding, setProjectBranding] = useState<ProjectBranding | null>(null);
+  const { branding: projectBranding } = useBranding();
 
   useEffect(() => {
     const token = localStorage.getItem('authToken');
@@ -1034,54 +1035,20 @@ const ProjectPortalDashboard = () => {
       // Route protection will handle access control based on permissions
       setUser(userData);
 
-      // Get project branding
-      const brandingResponse = await axios.get(
-        `${API_CONFIG.API_URL}/projects/branding/${customUrlPath}`
-      );
-      const brandingData = brandingResponse.data.success 
-        ? brandingResponse.data.data 
-        : brandingResponse.data;
-      
-      setProjectBranding(brandingData);
-
-      // Apply project theme
-      if (brandingData?.branding?.colorTheme) {
-        const root = document.documentElement;
-        const primaryColor = brandingData.branding.colorTheme.primary;
-        
-        root.style.setProperty('--primary-main', primaryColor);
-        root.style.setProperty('--primary-dark', brandingData.branding.colorTheme.secondary);
-        root.style.setProperty('--accent-main', brandingData.branding.colorTheme.accent);
-        
-        // Create a lighter version of primary color for hover states
-        // Convert hex to RGB and add alpha for light variant
-        const hexToRgb = (hex: string) => {
-          const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-          return result ? {
-            r: parseInt(result[1], 16),
-            g: parseInt(result[2], 16),
-            b: parseInt(result[3], 16)
-          } : null;
-        };
-        
-        const rgb = hexToRgb(primaryColor);
-        if (rgb) {
-          // Create light version with 15% opacity over white
-          root.style.setProperty('--primary-light', `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.15)`);
-        }
+      // Branding is now handled by BrandingContext - no need to fetch here
+      // Just store project context
+      if (projectBranding) {
+        localStorage.setItem('projectContext', JSON.stringify({
+          projectId: projectBranding.projectId,
+          projectName: projectBranding.name || projectBranding.projectName,
+          customUrlPath: customUrlPath
+        }));
       }
 
       // Set module access based on permissions (dynamic, not hardcoded)
       const moduleAccess = getModuleAccessFromPermissions(userData.role.permissions || []);
       localStorage.setItem('moduleAccess', JSON.stringify(moduleAccess));
       localStorage.setItem('userName', userData.name || `${userData.firstName} ${userData.lastName}`);
-      
-      // Store project context
-      localStorage.setItem('projectContext', JSON.stringify({
-        projectId: brandingData.projectId,
-        projectName: brandingData.name,
-        customUrlPath: customUrlPath
-      }));
 
       setLoading(false);
     } catch (error) {
@@ -1185,8 +1152,8 @@ const ProjectPortalDashboard = () => {
           </ProtectedRoute>
         } />
         {/* NEW: Student Workflow replaces old Offline Module */}
-        <Route path="/offline" element={<AgentStudentWorkflow projectId={projectBranding?.projectId || ''} />} />
-        <Route path="/student-workflow" element={<AgentStudentWorkflow projectId={projectBranding?.projectId || ''} />} />
+        <Route path="/offline" element={<AgentStudentWorkflow />} />
+        <Route path="/student-workflow" element={<AgentStudentWorkflow />} />
         <Route path="/my-assets-demo" element={
           <ProtectedRoute requireAuth={true} excludeForRoles={['STUDENT', 'COUNSELOR_L1', 'CET_STATE_CELL', 'AGENT', 'SUPPORT_ADMIN', 'ACCOUNT_OWNER']}>
             <MyAssetsStatic />

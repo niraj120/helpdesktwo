@@ -15,6 +15,7 @@ import {
 import { StudentLoginModal } from '../components/StudentLoginModal';
 import { LanguageToggle } from '../components/LanguageToggle';
 import KBChatbot from '../components/KBChatbot';
+import { useBranding } from '../contexts/BrandingContext';
 import { API_CONFIG } from '../config/constants';
 import './StudentPortal.css';
 
@@ -101,6 +102,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
   const { customUrlPath } = useParams<{ customUrlPath: string }>();
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const { branding: contextBranding, loading: brandingLoading } = useBranding();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -179,52 +181,79 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
 
   useEffect(() => {
     const fetchProjectData = async () => {
+      // Use branding from context if available
+      if (contextBranding && !brandingLoading) {
+        const colorTheme = contextBranding.branding?.colorTheme || contextBranding.colorTheme;
+        
+        const branding: ProjectBranding = {
+          projectId: contextBranding.projectId || '',
+          name: contextBranding.name || contextBranding.projectName || '',
+          customUrlPath: customUrlPath || '',
+          logoUrl: contextBranding.branding?.logo || contextBranding.logo || null,
+          welcomeText: contextBranding.branding?.headerText || 'Welcome!',
+          footerText: (contextBranding as any).branding?.footerText || '© 2025. All rights reserved.',
+          knowledgeBase: (contextBranding as any).knowledgeBase,
+          primaryColor: colorTheme?.primary || '#49bc8f',
+          secondaryColor: colorTheme?.secondary || '#64748b',
+          branding: {
+            colorTheme,
+            logo: contextBranding.branding?.logo || undefined,
+            headerText: contextBranding.branding?.headerText
+          },
+        };
+        
+        setProjectBranding(branding);
+        console.log('✅ Using branding from context (no API call)');
+      }
+
       try {
         setLoading(true);
         setError(null);
 
-        // Fetch project branding
-        const brandingResponse = await axios.get(
-          `${API_CONFIG.API_URL}/projects/branding/${customUrlPath}`
-        );
-        
-        // Extract branding data from response
-        const brandingData = brandingResponse.data.success 
-          ? brandingResponse.data.data 
-          : brandingResponse.data;
-        
-        // Parse colorTheme if it's a string
-        let colorTheme = brandingData.branding?.colorTheme;
-        if (typeof colorTheme === 'string') {
-          // Parse string like "@{primary=#49bc8f; secondary=#64748b; accent=#3b82f6; background=#ffffff}"
-          const parsed: any = {};
-          const matches = colorTheme.match(/(\w+)=#([a-zA-Z0-9]+)/g);
-          if (matches) {
-            matches.forEach((match: string) => {
-              const [key, value] = match.split('=');
-              parsed[key] = '#' + value;
-            });
-            colorTheme = parsed;
+        // Only fetch branding if not available from context
+        let branding: ProjectBranding;
+        if (!projectBranding && !contextBranding) {
+          console.log('🔄 Fetching branding from API (context not available)');
+          const brandingResponse = await axios.get(
+            `${API_CONFIG.API_URL}/projects/branding/${customUrlPath}`
+          );
+          
+          const brandingData = brandingResponse.data.success 
+            ? brandingResponse.data.data 
+            : brandingResponse.data;
+          
+          let colorTheme = brandingData.branding?.colorTheme;
+          if (typeof colorTheme === 'string') {
+            const parsed: any = {};
+            const matches = colorTheme.match(/(\w+)=#([a-zA-Z0-9]+)/g);
+            if (matches) {
+              matches.forEach((match: string) => {
+                const [key, value] = match.split('=');
+                parsed[key] = '#' + value;
+              });
+              colorTheme = parsed;
+            }
           }
+          
+          branding = {
+            projectId: brandingData.projectId,
+            name: brandingData.name,
+            customUrlPath: brandingData.customUrlPath,
+            logoUrl: brandingData.branding?.logo || null,
+            welcomeText: brandingData.branding?.headerText || 'Welcome!',
+            footerText: brandingData.branding?.footerText || '© 2025. All rights reserved.',
+            knowledgeBase: brandingData.knowledgeBase,
+            primaryColor: colorTheme?.primary || '#49bc8f',
+            secondaryColor: colorTheme?.secondary || '#64748b',
+            branding: { ...brandingData.branding, colorTheme },
+          };
+          
+          setProjectBranding(branding);
+        } else {
+          branding = projectBranding!;
         }
-        
-        // Map the branding colors from nested structure
-        const branding: ProjectBranding = {
-          projectId: brandingData.projectId,
-          name: brandingData.name,
-          customUrlPath: brandingData.customUrlPath,
-          logoUrl: brandingData.branding?.logo || null,
-          welcomeText: brandingData.branding?.headerText || 'Welcome!',
-          footerText: brandingData.branding?.footerText || '© 2025. All rights reserved.',
-          knowledgeBase: brandingData.knowledgeBase,
-          primaryColor: colorTheme?.primary || '#49bc8f',
-          secondaryColor: colorTheme?.secondary || '#64748b',
-          branding: { ...brandingData.branding, colorTheme },
-        };
-        
-        setProjectBranding(branding);
 
-        // Fetch ticket submission settings
+        // Fetch ticket submission settings (mode and form fields only)
         const cacheBuster = `?t=${Date.now()}`;
         const settingsResponse = await axios.get(
           `${API_CONFIG.API_URL}/projects/${branding.projectId}/ticket-settings${cacheBuster}`
@@ -232,7 +261,36 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
         const ticketSettings = settingsResponse.data.success 
           ? settingsResponse.data.data 
           : settingsResponse.data;
-        setTicketSettings(ticketSettings);
+
+        console.log('📋 Ticket settings mode:', ticketSettings.mode);
+        console.log('📋 Online form fields:', ticketSettings.onlineFormFields);
+
+        // Only fetch centers if mode is 'offline' or 'both'
+        let centersData: OfflineCenter[] = [];
+        if (ticketSettings.mode === 'offline' || ticketSettings.mode === 'both') {
+          try {
+            const centersResponse = await axios.get(
+              `${API_CONFIG.API_URL}/centers?projectId=${branding.projectId}&isActive=true`
+            );
+            if (centersResponse.data.success) {
+              centersData = centersResponse.data.data || [];
+              console.log('📍 Loaded centers from centers API:', centersData);
+            }
+          } catch (centersError) {
+            console.error('Error fetching centers:', centersError);
+            // Fallback to empty array if centers API fails
+            centersData = [];
+          }
+        } else {
+          console.log('📍 Skipping offline centers fetch (mode is online only)');
+        }
+
+        // Merge settings with centers data
+        const mergedSettings = {
+          ...ticketSettings,
+          offlineCenters: centersData
+        };
+        setTicketSettings(mergedSettings);
 
         // Set default tab based on mode
         // Check if we have a kbArticle parameter in URL
@@ -251,19 +309,19 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
           } catch (error) {
             console.error('Error fetching KB article:', error);
           }
-        } else if (ticketSettings.mode === 'online') {
+        } else if (mergedSettings.mode === 'online') {
           setActiveTab('online');
-        } else if (ticketSettings.mode === 'offline') {
+        } else if (mergedSettings.mode === 'offline') {
           setActiveTab('offline');
         }
 
         // Initialize filtered centers
-        setFilteredCenters(ticketSettings.offlineCenters || []);
+        setFilteredCenters(centersData || []);
 
         // Extract unique states and cities for filters
-        if (ticketSettings.offlineCenters) {
-          const states = [...new Set(ticketSettings.offlineCenters.map((c: OfflineCenter) => c.state))] as string[];
-          const cities = [...new Set(ticketSettings.offlineCenters.map((c: OfflineCenter) => c.city))] as string[];
+        if (centersData && centersData.length > 0) {
+          const states = [...new Set(centersData.map((c: OfflineCenter) => c.state))] as string[];
+          const cities = [...new Set(centersData.map((c: OfflineCenter) => c.city))] as string[];
           setUniqueStates(states.sort());
           setUniqueCities(cities.sort());
         }
@@ -278,7 +336,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
     if (customUrlPath) {
       fetchProjectData();
     }
-  }, [customUrlPath]);
+  }, [customUrlPath, contextBranding, brandingLoading]);
 
   // Get user's location for distance-based sorting
   useEffect(() => {
@@ -1057,7 +1115,6 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 sm:gap-4">
                   <div>
                     <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 mb-1 sm:mb-2">{t('findNearestCenter')}</h2>
-                    <p className="text-sm sm:text-base text-gray-600">{t('locateCentersText')}</p>
                   </div>
                   
                   {/* View Mode Toggle */}
@@ -1541,9 +1598,10 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                 filteredCenters.map((center, idx) => (
                   <div
                     key={idx}
-                    className="bg-white border-2 border-gray-400 rounded-xl sm:rounded-2xl p-4 sm:p-6 hover-lift hover:border-gray-600 transition-all duration-300 shadow-md hover:shadow-xl"
+                    className="bg-white border-2 border-gray-400 rounded-xl sm:rounded-2xl p-4 sm:p-6 hover-lift hover:border-gray-600 transition-all duration-300 shadow-md hover:shadow-xl flex flex-col"
                   >
-                    <div className="flex items-start justify-between mb-3 sm:mb-4">
+                    {/* Header Section - Fixed Height */}
+                    <div className="flex items-start justify-between mb-3 sm:mb-4 min-h-[60px]">
                       <div className="flex-1 min-w-0">
                         <h3 className="text-lg sm:text-xl font-bold text-gray-900 break-words">
                           {center.centerName}
@@ -1596,31 +1654,33 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                         />
                       </div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="flex items-start space-x-3">
+                    
+                    {/* Contact Info Grid - Fixed Height */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                      <div className="flex items-start space-x-3 h-[90px]">
                         <MapPinIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
-                        <div>
+                        <div className="overflow-hidden">
                           <p className="text-sm font-medium text-gray-700">{t('address')}</p>
-                          <p className="text-sm text-gray-600">
+                          <p className="text-sm text-gray-600 line-clamp-3">
                             {center.address}, {center.city}, {center.state} - {center.pincode}
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-start space-x-3">
+                      <div className="flex items-start space-x-3 h-[90px]">
                         <PhoneIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
                         <div>
                           <p className="text-sm font-medium text-gray-700">{t('phone')}</p>
                           <p className="text-sm text-gray-600">{center.phone}</p>
                         </div>
                       </div>
-                      <div className="flex items-start space-x-3">
+                      <div className="flex items-start space-x-3 h-[50px]">
                         <EnvelopeIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
                         <div>
                           <p className="text-sm font-medium text-gray-700">{t('email')}</p>
-                          <p className="text-sm text-gray-600">{center.email}</p>
+                          <p className="text-sm text-gray-600 truncate">{center.email}</p>
                         </div>
                       </div>
-                      <div className="flex items-start space-x-3">
+                      <div className="flex items-start space-x-3 h-[50px]">
                         <ClockIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
                         <div>
                           <p className="text-sm font-medium text-gray-700">{t('workingHours')}</p>
@@ -1629,10 +1689,10 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                       </div>
                     </div>
 
-                    {/* Features Section */}
-                    {center.features && center.features.length > 0 && (
-                      <div className="mt-4 pt-4 border-t border-gray-200">
-                        <p className="text-sm font-medium text-gray-700 mb-2">Available Features</p>
+                    {/* Features Section - Fixed Min Height */}
+                    <div className="mt-4 pt-4 border-t border-gray-200 min-h-[100px]">
+                      <p className="text-sm font-medium text-gray-700 mb-2">{t('availableFeatures')}</p>
+                      {center.features && center.features.length > 0 ? (
                         <div className="flex flex-wrap gap-2">
                           {center.features.map((feature, featureIdx) => (
                             <span
@@ -1643,46 +1703,44 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                             </span>
                           ))}
                         </div>
-                      </div>
-                    )}
+                      ) : (
+                        <p className="text-sm text-gray-400 italic">{t('noFeaturesListed')}</p>
+                      )}
+                    </div>
 
-                    {/* Contact Details Section */}
-                    {center.contacts && center.contacts.length > 0 && (
-                      <div className="mt-4 pt-4 border-t border-gray-200">
-                        <p className="text-sm font-medium text-gray-700 mb-3">Contact Details</p>
+                    {/* Contact Details Section - Fixed Min Height */}
+                    <div className="mt-4 pt-4 border-t border-gray-200 min-h-[120px]">
+                      <p className="text-sm font-medium text-gray-700 mb-3">{t('contactDetails')}</p>
+                      {center.contacts && center.contacts.length > 0 ? (
                         <div className="space-y-3">
                           {center.contacts.map((contact, contactIdx) => (
-                            <div key={contactIdx} className="bg-gray-50 p-3 rounded-lg">
-                              <div className="flex items-start justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-gray-900">{contact.name}</p>
-                                  {contact.role && (
-                                    <p className="text-xs text-gray-500 mt-0.5">{contact.role}</p>
-                                  )}
+                            <div key={contactIdx}>
+                              <p className="text-sm font-semibold text-gray-900">{contact.name}</p>
+                              {contact.role && (
+                                <p className="text-xs text-gray-500 mb-2">{contact.role}</p>
+                              )}
+                              {contact.mobile && (
+                                <div className="flex items-center space-x-2 mb-1">
+                                  <PhoneIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                                  <a href={`tel:${contact.mobile}`} className="text-sm text-gray-600 hover:text-gray-900">{contact.mobile}</a>
                                 </div>
-                              </div>
-                              <div className="mt-2 space-y-1">
-                                {contact.mobile && (
-                                  <div className="flex items-center space-x-2">
-                                    <PhoneIcon className="w-4 h-4 text-gray-400" />
-                                    <a href={`tel:${contact.mobile}`} className="text-sm text-gray-600 hover:text-gray-900">{contact.mobile}</a>
-                                  </div>
-                                )}
-                                {contact.email && (
-                                  <div className="flex items-center space-x-2">
-                                    <EnvelopeIcon className="w-4 h-4 text-gray-400" />
-                                    <a href={`mailto:${contact.email}`} className="text-sm text-gray-600 hover:text-gray-900">{contact.email}</a>
-                                  </div>
-                                )}
-                              </div>
+                              )}
+                              {contact.email && (
+                                <div className="flex items-center space-x-2">
+                                  <EnvelopeIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                                  <a href={`mailto:${contact.email}`} className="text-sm text-gray-600 hover:text-gray-900 truncate">{contact.email}</a>
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
-                      </div>
-                    )}
+                      ) : (
+                        <p className="text-sm text-gray-400 italic">{t('noContactDetailsAvailable')}</p>
+                      )}
+                    </div>
 
-                    {/* Get Directions Button */}
-                    <div className="mt-6 pt-4 border-t border-gray-200">
+                    {/* Get Directions Button - Always at bottom */}
+                    <div className="mt-auto pt-4 border-t border-gray-200">
                       <button
                         onClick={() => {
                           let mapUrl = center.mapLink || center.googleMapLink;
@@ -1719,8 +1777,8 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
               {!selectedArticle ? (
                 <>
                   <div className="mb-8">
-                    <h2 className="text-3xl font-bold text-gray-900 mb-2">Knowledge Base</h2>
-                    <p className="text-gray-600">Browse articles and find answers to common questions</p>
+                    <h2 className="text-3xl font-bold text-gray-900 mb-2">{t('knowledgeBaseTitle')}</h2>
+                    <p className="text-gray-600">{t('browseArticles')}</p>
                   </div>
 
                   {/* Search Bar */}
@@ -1728,7 +1786,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                     <div className="relative">
                       <input
                         type="text"
-                        placeholder="Search articles..."
+                        placeholder={t('searchArticlesPlaceholder')}
                         value={kbSearchQuery}
                         onChange={(e) => setKbSearchQuery(e.target.value)}
                         className="w-full px-5 py-4 pl-12 rounded-xl border-2 border-gray-300 focus:border-blue-500 focus:outline-none text-lg"
@@ -1748,7 +1806,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                   {kbLoading && (
                     <div className="text-center py-12">
                       <div className="animate-spin rounded-full h-12 w-12 border-b-2 mx-auto mb-4" style={{ borderColor: projectBranding.primaryColor }}></div>
-                      <p className="text-gray-600">Loading articles...</p>
+                      <p className="text-gray-600">{t('loadingArticles')}</p>
                     </div>
                   )}
 
@@ -1756,7 +1814,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                   {!kbLoading && kbArticles.length === 0 && (
                     <div className="text-center py-12 bg-gray-50 rounded-2xl">
                       <BookOpenIcon className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                      <p className="text-gray-500 text-lg">No articles available yet</p>
+                      <p className="text-gray-500 text-lg">{t('noArticlesAvailable')}</p>
                     </div>
                   )}
 
@@ -1803,7 +1861,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                               <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                               </svg>
-                              {article.updatedAt ? new Date(article.updatedAt).toLocaleDateString() : 'Recently updated'}
+                              {article.updatedAt ? new Date(article.updatedAt).toLocaleDateString() : t('recentlyUpdated')}
                             </div>
                           </div>
                         ))}
@@ -1820,7 +1878,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                     </svg>
-                    Back to Articles
+                    {t('backToArticles')}
                   </button>
 
                   <div className="bg-white rounded-2xl border-2 border-gray-200 shadow-lg p-8 md:p-12">

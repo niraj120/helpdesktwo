@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
+import ModuleHeader from '../components/ModuleHeader';
 import { MdSettings, MdArrowForward } from 'react-icons/md';
 import { API_CONFIG } from '../config/constants';
 
@@ -100,23 +101,10 @@ const TicketConfigurationPage: React.FC = () => {
   return (
     <DashboardLayout>
       <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
-        {/* Header */}
-        <div style={{ marginBottom: '32px' }}>
-          <h1 style={{ 
-            fontSize: '28px', 
-            fontWeight: '600', 
-            color: 'var(--text-primary)',
-            marginBottom: '8px' 
-          }}>
-            Query Configuration
-          </h1>
-          <p style={{ 
-            fontSize: '14px', 
-            color: 'var(--text-secondary)' 
-          }}>
-            Select a project to configure its ticket settings
-          </p>
-        </div>
+        <ModuleHeader
+          title="Query Configuration"
+          subtitle="Select a project to configure its ticket settings"
+        />
 
         {/* Search Bar */}
         <div style={{ marginBottom: '24px' }}>

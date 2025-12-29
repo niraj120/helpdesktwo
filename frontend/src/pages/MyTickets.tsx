@@ -281,7 +281,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                   background: 'white',
                 }}
               >
-                <option value="all">All Statuses</option>
+                <option value="all">All</option>
                 <option value="1">Open</option>
                 <option value="2">In Progress</option>
                 <option value="3">On Hold</option>
@@ -305,7 +305,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                   background: 'white',
                 }}
               >
-                <option value="all">All Priorities</option>
+                <option value="all">All</option>
                 <option value="low">Low</option>
                 <option value="normal">Normal</option>
                 <option value="medium">Medium</option>

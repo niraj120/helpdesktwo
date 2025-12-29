@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import DashboardLayout from '../components/DashboardLayout';
 import { API_CONFIG } from '../config/constants';
 
@@ -16,13 +17,14 @@ interface ProjectDashboardProps {
 }
 
 const ProjectDashboard = ({ wrapWithLayout = true }: ProjectDashboardProps) => {
+  const { t } = useTranslation();
   const [stats, setStats] = useState<ProjectDashboardStats>({
     totalTickets: 0,
     highPriority: 0,
     mediumPriority: 0,
     lowPriority: 0,
-    withinSLA: 0,
-    outsideSLA: 0,
+    withinSLA: 1,
+    outsideSLA: 1,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -86,7 +88,7 @@ const ProjectDashboard = ({ wrapWithLayout = true }: ProjectDashboardProps) => {
 
   const cards = [
     {
-      title: 'Total Queries',
+      title: t('totalQueries'),
       value: stats.totalTickets,
       icon: '🎫',
       bgColor: '#EFF6FF',
@@ -94,7 +96,7 @@ const ProjectDashboard = ({ wrapWithLayout = true }: ProjectDashboardProps) => {
       borderColor: '#3B82F6',
     },
     {
-      title: 'High Priority',
+      title: t('highPriority'),
       value: stats.highPriority,
       icon: '🔴',
       bgColor: '#FEF2F2',
@@ -102,7 +104,7 @@ const ProjectDashboard = ({ wrapWithLayout = true }: ProjectDashboardProps) => {
       borderColor: '#EF4444',
     },
     {
-      title: 'Medium Priority',
+      title: t('mediumPriority'),
       value: stats.mediumPriority,
       icon: '🟡',
       bgColor: '#FFFBEB',
@@ -110,7 +112,7 @@ const ProjectDashboard = ({ wrapWithLayout = true }: ProjectDashboardProps) => {
       borderColor: '#F59E0B',
     },
     {
-      title: 'Low Priority',
+      title: t('lowPriority'),
       value: stats.lowPriority,
       icon: '🟢',
       bgColor: '#F0FDF4',
@@ -118,7 +120,7 @@ const ProjectDashboard = ({ wrapWithLayout = true }: ProjectDashboardProps) => {
       borderColor: '#22C55E',
     },
     {
-      title: 'Within SLA',
+      title: t('withinSLA'),
       value: stats.withinSLA,
       icon: '✅',
       bgColor: '#ECFDF5',
@@ -126,7 +128,7 @@ const ProjectDashboard = ({ wrapWithLayout = true }: ProjectDashboardProps) => {
       borderColor: '#10B981',
     },
     {
-      title: 'Outside SLA',
+      title: t('outsideSLA'),
       value: stats.outsideSLA,
       icon: '⚠️',
       bgColor: '#FEF3C7',
@@ -143,12 +145,19 @@ const ProjectDashboard = ({ wrapWithLayout = true }: ProjectDashboardProps) => {
           fontSize: '28px',
           fontWeight: '700',
           marginBottom: '8px',
-          color: '#111827'
+          marginTop: '0',
+          color: '#111827',
+          lineHeight: '1.2'
         }}>
-          Project Dashboard
+          {t('projectDashboard')}
         </h1>
-        <p style={{ fontSize: '14px', color: '#6B7280' }}>
-          Overview of queries for your project
+        <p style={{ 
+          fontSize: '14px', 
+          color: '#6B7280',
+          margin: '0',
+          lineHeight: '1.5'
+        }}>
+          {t('overviewOfQueries')}
         </p>
       </div>
 
@@ -240,7 +249,7 @@ const ProjectDashboard = ({ wrapWithLayout = true }: ProjectDashboardProps) => {
         }}>
           <span style={{ fontSize: '20px' }}>ℹ️</span>
           <p style={{ fontSize: '14px', color: '#6B7280', margin: 0 }}>
-            Dashboard statistics are updated in real-time and show data based on your access permissions.
+            {t('dashboardUpdatedRealtime')}
             {' '}
             {stats.totalTickets === 0 && !loading && 'No queries found for this project yet.'}
           </p>

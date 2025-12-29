@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
+import ModuleHeader from '../components/ModuleHeader';
 import { API_CONFIG } from '../config/constants';
 import {
   PlusIcon,
@@ -275,11 +276,17 @@ const OfflineModuleSettings: React.FC = () => {
   const fetchCountries = async () => {
     try {
       const token = localStorage.getItem('authToken');
-      const response = await axios.get(`${API_CONFIG.API_URL}/masters/countries`, {
+      const response = await axios.get(`${API_CONFIG.API_URL}/master/countries`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (response.data.success) {
-        setCountries(response.data.data);
+        // Map the response to include 'name' property from 'value'
+        const formattedCountries = response.data.data.map((c: any) => ({
+          _id: c._id,
+          key: c.key,
+          name: c.value // Map 'value' to 'name' for consistency
+        }));
+        setCountries(formattedCountries);
       }
     } catch (error) {
       console.error('Error fetching countries:', error);
@@ -290,13 +297,19 @@ const OfflineModuleSettings: React.FC = () => {
   const fetchStatesForCountry = async (countryId: string, centerId?: string) => {
     try {
       const token = localStorage.getItem('authToken');
-      const response = await axios.get(`${API_CONFIG.API_URL}/masters/countries/${countryId}/states`, {
+      const response = await axios.get(`${API_CONFIG.API_URL}/master/countries/${countryId}/states`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (response.data.success) {
+        // Map the response to include 'name' property from 'value'
+        const formattedStates = response.data.data.map((s: any) => ({
+          _id: s._id,
+          key: s.key,
+          name: s.value // Map 'value' to 'name' for consistency
+        }));
         setCenterStates(prev => ({
           ...prev,
-          [centerId || 'new']: response.data.data
+          [centerId || 'new']: formattedStates
         }));
       }
     } catch (error) {
@@ -308,13 +321,19 @@ const OfflineModuleSettings: React.FC = () => {
   const fetchCitiesForState = async (stateId: string, centerId?: string) => {
     try {
       const token = localStorage.getItem('authToken');
-      const response = await axios.get(`${API_CONFIG.API_URL}/masters/states/${stateId}/cities`, {
+      const response = await axios.get(`${API_CONFIG.API_URL}/master/states/${stateId}/cities`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (response.data.success) {
+        // Map the response to include 'name' property from 'value'
+        const formattedCities = response.data.data.map((c: any) => ({
+          _id: c._id,
+          key: c.key,
+          name: c.value // Map 'value' to 'name' for consistency
+        }));
         setCenterCities(prev => ({
           ...prev,
-          [centerId || 'new']: response.data.data
+          [centerId || 'new']: formattedCities
         }));
       }
     } catch (error) {
@@ -323,32 +342,94 @@ const OfflineModuleSettings: React.FC = () => {
   };
 
   // Add or update offline center
-  const handleAddOrUpdateCenter = (center: OfflineCenter) => {
-    const centers = settings.offlineCenters || [];
-    
-    if (center._id) {
-      // Update existing center
-      const updatedCenters = centers.map(c => c._id === center._id ? center : c);
-      setSettings({ ...settings, offlineCenters: updatedCenters });
-    } else {
-      // Add new center with temporary ID
-      const newCenter = { ...center, _id: Date.now().toString() };
-      setSettings({ ...settings, offlineCenters: [...centers, newCenter] });
+  const handleAddOrUpdateCenter = async (center: OfflineCenter) => {
+    try {
+      const token = localStorage.getItem('authToken');
+      
+      if (center._id && center._id !== 'new') {
+        // Update existing center via API
+        const response = await axios.put(
+          `${API_CONFIG.API_URL}/centers/${center._id}`,
+          center,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        
+        if (response.data.success) {
+          // Refresh centers list
+          const centersResponse = await axios.get(
+            `${API_CONFIG.API_URL}/centers?projectId=${projectId}`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          setSettings({ ...settings, offlineCenters: centersResponse.data.data });
+        }
+      } else {
+        // Create new center via API
+        const response = await axios.post(
+          `${API_CONFIG.API_URL}/centers`,
+          { ...center, projectId },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        
+        if (response.data.success) {
+          // Refresh centers list
+          const centersResponse = await axios.get(
+            `${API_CONFIG.API_URL}/centers?projectId=${projectId}`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          setSettings({ ...settings, offlineCenters: centersResponse.data.data });
+        }
+      }
+      
+      setShowCenterForm(false);
+      setEditingCenter(null);
+    } catch (error) {
+      console.error('Error saving center:', error);
+      alert('Failed to save center. Please try again.');
     }
-    
-    setShowCenterForm(false);
-    setEditingCenter(null);
-    setHasUnsavedChanges(true);
   };
 
   // Delete offline center
-  const handleDeleteCenter = (centerId: string) => {
+  const handleDeleteCenter = async (centerId: string) => {
     if (confirm('Are you sure you want to delete this center?')) {
-      const updatedCenters = (settings.offlineCenters || []).filter(c => c._id !== centerId);
-      setSettings({ ...settings, offlineCenters: updatedCenters });
-      setHasUnsavedChanges(true);
+      try {
+        const token = localStorage.getItem('authToken');
+        
+        await axios.delete(
+          `${API_CONFIG.API_URL}/centers/${centerId}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        
+        // Refresh centers list
+        const centersResponse = await axios.get(
+          `${API_CONFIG.API_URL}/centers?projectId=${projectId}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        setSettings({ ...settings, offlineCenters: centersResponse.data.data });
+      } catch (error) {
+        console.error('Error deleting center:', error);
+        alert('Failed to delete center. Please try again.');
+      }
     }
   };
+
+  // Load centers from API when component mounts or tab changes
+  useEffect(() => {
+    if (activeTab === 'centers' && projectId) {
+      const loadCenters = async () => {
+        try {
+          const token = localStorage.getItem('authToken');
+          const response = await axios.get(
+            `${API_CONFIG.API_URL}/centers?projectId=${projectId}`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          setSettings({ ...settings, offlineCenters: response.data.data });
+        } catch (error) {
+          console.error('Error loading centers:', error);
+        }
+      };
+      loadCenters();
+    }
+  }, [activeTab, projectId]);
 
   // Fetch countries when centers tab is active
   useEffect(() => {
@@ -363,9 +444,13 @@ const OfflineModuleSettings: React.FC = () => {
 
     try {
       const token = localStorage.getItem('authToken');
+      
+      // Exclude centers from settings since they're managed separately via /api/centers
+      const { offlineCenters, ...settingsWithoutCenters } = settings;
+      
       await axios.put(
         `${API_CONFIG.API_URL}/projects/${projectId}/offline-settings`,
-        settings,
+        settingsWithoutCenters,
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
@@ -543,15 +628,10 @@ const OfflineModuleSettings: React.FC = () => {
   return (
     <DashboardLayout>
       <div className="p-6 max-w-[1600px] mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-            <Cog6ToothIcon className="h-8 w-8 text-blue-600" />
-            Offline Module Configuration
-          </h1>
-          <p className="text-gray-600 mt-2">
-            Configure how agents register students and create tickets for walk-in support
-          </p>
-        </div>
+        <ModuleHeader
+          title="Offline Module Configuration"
+          subtitle="Configure how agents register students and create queries for walk-in support"
+        />
 
         {/* Unsaved Changes Warning */}
         {hasUnsavedChanges && (
@@ -622,7 +702,7 @@ const OfflineModuleSettings: React.FC = () => {
               >
                 <div className="flex items-center space-x-2">
                   <TicketIcon className="h-5 w-5" />
-                  <span>Ticket Creation Form</span>
+                  <span>Query Creation Form</span>
                 </div>
               </button>
               <button
@@ -645,9 +725,9 @@ const OfflineModuleSettings: React.FC = () => {
         <div className="space-y-6">
           {/* Ticket Numbering Configuration */}
           <div className="bg-white rounded-xl shadow-md p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Offline Ticket Numbering</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Offline Query Numbering</h3>
             <p className="text-sm text-gray-600 mb-6">
-              Configure how ticket numbers are generated for offline (walk-in) tickets
+              Configure how query numbers are generated for offline (walk-in) queries
             </p>
             
             <div className="space-y-4">
@@ -658,7 +738,7 @@ const OfflineModuleSettings: React.FC = () => {
                   </label>
                   <input
                     type="text"
-                    value={settings.offlineTicketNumbering?.prefix || 'OFF'}
+                    value={settings.offlineTicketNumbering?.prefix ?? ''}
                     onChange={(e) => {
                       setSettings({
                         ...settings,
@@ -765,7 +845,7 @@ const OfflineModuleSettings: React.FC = () => {
                     className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                   />
                   <label htmlFor="includeYear" className="text-sm font-medium text-gray-700">
-                    Include Year in ticket number
+                    Include Year in query number
                   </label>
                 </div>
 
@@ -787,7 +867,7 @@ const OfflineModuleSettings: React.FC = () => {
                     className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                   />
                   <label htmlFor="includeMonth" className="text-sm font-medium text-gray-700">
-                    Include Month in ticket number
+                    Include Month in query number
                   </label>
                 </div>
               </div>
@@ -857,7 +937,7 @@ const OfflineModuleSettings: React.FC = () => {
                 <label htmlFor="allowEscalate" className="flex-1">
                   <span className="font-medium text-gray-900">Allow Escalation at Creation</span>
                   <p className="text-sm text-gray-600 mt-1">
-                    Agents can escalate tickets to specialized agents during creation
+                    Agents can escalate queries to specialized agents during creation
                   </p>
                 </label>
               </div>
@@ -948,9 +1028,9 @@ const OfflineModuleSettings: React.FC = () => {
                   className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                 />
                 <label htmlFor="notifyTicket" className="flex-1">
-                  <span className="font-medium text-gray-900">Notify on Ticket Creation</span>
+                  <span className="font-medium text-gray-900">Notify on Query Creation</span>
                   <p className="text-sm text-gray-600 mt-1">
-                    Send email notification when ticket is created on their behalf
+                    Send email notification when query is created on their behalf
                   </p>
                 </label>
               </div>
@@ -1188,9 +1268,9 @@ const OfflineModuleSettings: React.FC = () => {
           <div className="bg-white rounded-xl shadow-md p-6">
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">Ticket Creation Form Fields</h3>
+                <h3 className="text-lg font-semibold text-gray-900">Query Creation Form Fields</h3>
                 <p className="text-sm text-gray-600 mt-1">
-                  Configure what information agents collect when creating tickets
+                  Configure what information agents collect when creating queries
                 </p>
               </div>
               <button
@@ -1489,18 +1569,6 @@ const OfflineModuleSettings: React.FC = () => {
                           onClick={() => {
                             setEditingCenter(center);
                             setShowCenterForm(true);
-                            // Load states and cities for editing
-                            if (center.country) {
-                              const countryObj = countries.find(c => c.name === center.country);
-                              if (countryObj) {
-                                fetchStatesForCountry(countryObj._id, center._id);
-                                // Also load cities if state exists
-                                if (center.state) {
-                                  // We'll need to find the state ID first, but that requires states to be loaded
-                                  // Let's load states first, then cities will be loaded when user interacts
-                                }
-                              }
-                            }
                           }}
                           className="p-2 text-blue-600 hover:bg-blue-50 rounded transition-colors"
                           title="Edit"
@@ -1537,8 +1605,8 @@ const OfflineModuleSettings: React.FC = () => {
                     setShowCenterForm(false);
                     setEditingCenter(null);
                   }}
-                  onCountryChange={(countryId) => fetchStatesForCountry(countryId, editingCenter?._id)}
-                  onStateChange={(stateId) => fetchCitiesForState(stateId, editingCenter?._id)}
+                  onCountryChange={(countryId) => fetchStatesForCountry(countryId, editingCenter?._id || 'new')}
+                  onStateChange={(stateId) => fetchCitiesForState(stateId, editingCenter?._id || 'new')}
                 />
               </div>
             )}
@@ -1805,6 +1873,53 @@ const CenterForm: React.FC<CenterFormProps> = ({
 
   const [newFeature, setNewFeature] = useState('');
   const [newContact, setNewContact] = useState({ name: '', role: '', mobile: '', email: '' });
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  // Update form data when center prop changes
+  useEffect(() => {
+    if (center) {
+      setFormData({
+        _id: center._id,
+        centerName: center.centerName || '',
+        address: center.address || '',
+        country: center.country || '',
+        city: center.city || '',
+        state: center.state || '',
+        pincode: center.pincode || '',
+        phone: center.phone || '',
+        email: center.email || '',
+        workingHours: center.workingHours || '',
+        latitude: center.latitude,
+        longitude: center.longitude,
+        features: center.features || [],
+        mapLink: center.mapLink || '',
+        googleMapLink: center.googleMapLink || '',
+        contacts: center.contacts || [],
+      });
+      setIsInitialized(false);
+    }
+  }, [center?._id]);
+
+  // Load states when editing a center and countries are available
+  useEffect(() => {
+    if (center && center.country && countries.length > 0 && !isInitialized) {
+      const countryObj = countries.find(c => c.name === center.country);
+      if (countryObj?._id) {
+        onCountryChange(countryObj._id);
+        setIsInitialized(true);
+      }
+    }
+  }, [center?.country, countries.length, isInitialized]);
+
+  // Load cities when editing a center and states are available
+  useEffect(() => {
+    if (center && center.state && states.length > 0 && isInitialized) {
+      const stateObj = states.find(s => s.name === center.state);
+      if (stateObj?._id) {
+        onStateChange(stateObj._id);
+      }
+    }
+  }, [center?.state, states.length, isInitialized]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -2044,6 +2159,48 @@ const CenterForm: React.FC<CenterFormProps> = ({
             type="url"
             value={formData.googleMapLink || ''}
             onChange={(e) => setFormData({ ...formData, googleMapLink: e.target.value })}
+            onBlur={(e) => {
+              const url = e.target.value;
+              if (url) {
+                // Extract coordinates from various Google Maps URL formats
+                // Format 1: https://www.google.com/maps?q=28.6139,77.2090
+                // Format 2: https://www.google.com/maps/place/.../@28.6139,77.2090
+                // Format 3: https://maps.app.goo.gl/... (shortened, harder to parse)
+                // Format 4: https://www.google.com/maps/@28.6139,77.2090,15z
+                
+                let lat: number | undefined;
+                let lng: number | undefined;
+                
+                try {
+                  // Try to match coordinates in various formats
+                  const patterns = [
+                    /@(-?\d+\.\d+),(-?\d+\.\d+)/,  // @lat,lng
+                    /q=(-?\d+\.\d+),(-?\d+\.\d+)/,  // q=lat,lng
+                    /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/, // !3dlat!4dlng
+                  ];
+                  
+                  for (const pattern of patterns) {
+                    const match = url.match(pattern);
+                    if (match) {
+                      lat = parseFloat(match[1]);
+                      lng = parseFloat(match[2]);
+                      break;
+                    }
+                  }
+                  
+                  if (lat !== undefined && lng !== undefined && !isNaN(lat) && !isNaN(lng)) {
+                    setFormData({ 
+                      ...formData, 
+                      googleMapLink: url,
+                      latitude: lat, 
+                      longitude: lng 
+                    });
+                  }
+                } catch (error) {
+                  console.error('Failed to extract coordinates from Google Maps URL:', error);
+                }
+              }
+            }}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="https://www.google.com/maps/..."
           />
@@ -2090,14 +2247,22 @@ const CenterForm: React.FC<CenterFormProps> = ({
             type="text"
             value={newFeature}
             onChange={(e) => setNewFeature(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addFeature())}
+            onKeyPress={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                addFeature();
+              }
+            }}
             className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="e.g., Free WiFi, Parking Available"
           />
           <button
             type="button"
-            onClick={addFeature}
-            className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+            onClick={(e) => {
+              e.preventDefault();
+              addFeature();
+            }}
+            className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 flex items-center justify-center"
           >
             <PlusIcon className="h-5 w-5" />
           </button>

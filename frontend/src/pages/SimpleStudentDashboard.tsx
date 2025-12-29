@@ -138,7 +138,7 @@ const SimpleStudentDashboard = () => {
             onMouseEnter={(e) => e.currentTarget.style.background = '#2563eb'}
             onMouseLeave={(e) => e.currentTarget.style.background = '#3b82f6'}
           >
-            📋 View My Tickets
+            📋 View My Queries
           </button>
         </div>
 

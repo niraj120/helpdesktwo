@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { API_CONFIG } from '../config/constants';
+import ModuleHeader from './ModuleHeader';
+import DashboardLayout from './DashboardLayout';
 import {
   PlusIcon,
   PencilIcon,
@@ -284,17 +286,45 @@ const KBHierarchyManagement: React.FC = () => {
   };
 
   return (
-    <div className="p-6 bg-white rounded-lg shadow">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-gray-800">Knowledge Base Hierarchy</h2>
-        <button
-          onClick={() => openCategoryModal()}
-          className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-        >
-          <PlusIcon className="h-5 w-5 mr-2" />
-          Add Category (1st Level)
-        </button>
-      </div>
+    <DashboardLayout>
+      <div style={{ padding: '24px' }}>
+        <ModuleHeader
+          title="Knowledge Base Hierarchy"
+          subtitle="Organize categories and subcategories for your knowledge base"
+        />
+        
+        <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            onClick={() => openCategoryModal()}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              padding: '10px 20px',
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '12px',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              boxShadow: '0 4px 15px rgba(102, 126, 234, 0.4)'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-2px)';
+              e.currentTarget.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.4)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 4px 15px rgba(102, 126, 234, 0.4)';
+            }}
+          >
+            <PlusIcon className="h-5 w-5 mr-2" />
+            Add Category (1st Level)
+          </button>
+        </div>
+
+        <div className="p-6 bg-white rounded-lg shadow">
 
       {loading ? (
         <div className="text-center py-8">Loading...</div>
@@ -528,7 +558,9 @@ const KBHierarchyManagement: React.FC = () => {
           </div>
         </div>
       )}
-    </div>
+        </div>
+      </div>
+    </DashboardLayout>
   );
 };
 

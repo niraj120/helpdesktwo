@@ -128,14 +128,8 @@ const ProjectLogin: React.FC = () => {
         localStorage.setItem('userRole', result.data.user.role?.code || result.data.user.role);
         localStorage.setItem('projectId', projectBranding.projectId);
         
-        // Check if user has accepted EULA
-        if (result.data.user.eulaAccepted) {
-          // EULA already accepted, redirect to agent dashboard
-          navigate(`/${customUrlPath}/dashboard`);
-        } else {
-          // EULA not accepted, redirect to EULA page
-          navigate(`/${customUrlPath}/eula`);
-        }
+        // Redirect to dashboard
+        navigate(`/${customUrlPath}/dashboard`);
       }
     } catch (error: any) {
       setErrorMessage(error.message || t('loginFailed'));
@@ -341,7 +335,7 @@ const ProjectLogin: React.FC = () => {
           {/* Features List */}
           <div style={{ textAlign: 'left', marginTop: '3rem' }}>
             {[
-              { icon: '🎫', text: 'Efficient Ticket Management' },
+              { icon: '🎫', text: 'Efficient Query Management' },
               { icon: '📊', text: 'Real-time Analytics Dashboard' },
               { icon: '🔔', text: 'Smart Notifications & Alerts' },
               { icon: '🛡️', text: 'Enterprise-grade Security' },

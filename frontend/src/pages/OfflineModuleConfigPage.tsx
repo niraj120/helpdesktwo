@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
+import ModuleHeader from '../components/ModuleHeader';
 import { MdSettings, MdArrowForward } from 'react-icons/md';
 import { API_CONFIG } from '../config/constants';
 
@@ -101,22 +102,10 @@ const OfflineModuleConfigPage: React.FC = () => {
     <DashboardLayout>
       <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
         {/* Header */}
-        <div style={{ marginBottom: '32px' }}>
-          <h1 style={{ 
-            fontSize: '28px', 
-            fontWeight: '600', 
-            color: 'var(--text-primary)',
-            marginBottom: '8px' 
-          }}>
-            Offline Module Configuration
-          </h1>
-          <p style={{ 
-            fontSize: '14px', 
-            color: 'var(--text-secondary)' 
-          }}>
-            Configure offline support settings for agents - student registration and ticket creation forms
-          </p>
-        </div>
+        <ModuleHeader 
+          title="Offline Module Configuration"
+          subtitle="Configure offline support settings for agents - student registration and ticket creation forms"
+        />
 
         {/* Search Bar */}
         <div style={{ marginBottom: '24px' }}>

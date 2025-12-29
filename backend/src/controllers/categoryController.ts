@@ -175,12 +175,14 @@ export const createCategory = async (req: AuthRequest, res: Response) => {
         project.configuration.ticketSubmissionSettings.onlineFormFields = [];
       }
       project.configuration.ticketSubmissionSettings.onlineFormFields.push({
-        fieldName: 'Category',
+        id: `field_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        fieldName: 'category',
+        fieldLabel: 'Category',
         fieldType: 'dropdown',
         required: true,
         placeholder: 'Select category',
         options: [name],
-      });
+      } as any);
       await project.save();
     }
     

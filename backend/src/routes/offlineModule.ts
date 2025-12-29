@@ -6,7 +6,8 @@ import {
   createOfflineTicket,
   getOfflineModuleSettings,
   viewStudentRecords,
-  editStudentRecord
+  editStudentRecord,
+  getCenters
 } from '../controllers/offlineModuleController';
 import { PERMISSION_CODES } from '../constants/permissions';
 
@@ -68,6 +69,16 @@ router.put(
   '/:projectId/students/:studentId',
   requirePermission(PERMISSION_CODES.OFFLINE_STUDENT_EDIT),
   editStudentRecord
+);
+
+/**
+ * @route   GET /api/offline-module/:projectId/centers
+ * @desc    Get all centers for a project from Center master table
+ * @access  Authenticated users
+ */
+router.get(
+  '/:projectId/centers',
+  getCenters
 );
 
 export default router;

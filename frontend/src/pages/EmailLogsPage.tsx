@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
+import ModuleHeader from '../components/ModuleHeader';
 import axios from 'axios';
 import DOMPurify from 'dompurify';
 import API_BASE_URL from '../config/api';
@@ -122,14 +123,10 @@ const EmailLogsPage = () => {
     <DashboardLayout>
       <div style={{ padding: '24px' }}>
         {/* Header */}
-        <div style={{ marginBottom: '32px' }}>
-          <h1 style={{ fontSize: '28px', fontWeight: '600', marginBottom: '8px' }}>
-            Email Logs
-          </h1>
-          <p style={{ color: '#6b7280', fontSize: '14px' }}>
-            View all email activity and troubleshoot delivery issues
-          </p>
-        </div>
+        <ModuleHeader 
+          title="Email Logs"
+          subtitle="View all email activity and troubleshoot delivery issues"
+        />
 
         {/* Statistics Cards */}
         <div style={{
@@ -217,7 +214,7 @@ const EmailLogsPage = () => {
                   fontSize: '14px'
                 }}
               >
-                <option value="">All Statuses</option>
+                <option value="">All</option>
                 <option value="sent">Sent</option>
                 <option value="failed">Failed</option>
                 <option value="blocked">Blocked</option>

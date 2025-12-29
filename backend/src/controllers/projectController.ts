@@ -13,8 +13,22 @@ import { logActivity } from '../utils/logger';
 export const getAllProjects = async (req: Request, res: Response) => {
   try {
     const { search, status, page = 1, limit = 10 } = req.query;
+    const authReq = req as AuthRequest;
     
     const query: any = {};
+    
+    // Filter projects based on user's assigned projects if they don't have PROJECT_VIEW_ALL permission
+    if (authReq.user?.userId) {
+      const user = await User.findById(authReq.user.userId).populate('role');
+      const userPermissions = user?.role?.permissions || [];
+      const hasViewAllPermission = userPermissions.includes('PROJECT_VIEW_ALL');
+      
+      // If user doesn't have PROJECT_VIEW_ALL, only show their assigned projects
+      if (!hasViewAllPermission && user?.projects && user.projects.length > 0) {
+        query._id = { $in: user.projects };
+        console.log(`🔒 Filtering projects for user ${user.email}: ${user.projects.length} projects`);
+      }
+    }
     
     // Search by name, code, or projectId
     if (search && typeof search === 'string') {
@@ -208,6 +222,20 @@ export const updateProject = async (req: Request, res: Response) => {
         });
       }
       updateData.code = updateData.code.toUpperCase();
+    }
+    
+    // Get existing project to preserve offlineModuleSettings
+    const existingProject = await Project.findById(id);
+    if (!existingProject) {
+      return res.status(404).json({
+        success: false,
+        message: 'Project not found',
+      });
+    }
+    
+    // Preserve existing offlineModuleSettings if it exists
+    if (updateData.configuration && existingProject.configuration?.offlineModuleSettings) {
+      updateData.configuration.offlineModuleSettings = existingProject.configuration.offlineModuleSettings;
     }
     
     const project = await Project.findByIdAndUpdate(
@@ -580,18 +608,26 @@ export const getProjectTicketSettings = async (req: Request, res: Response) => {
     
     console.log('📋 Returning ticket numbering config:', JSON.stringify(numbering, null, 2));
     
+    // Fixed fields that are ALWAYS present for online ticket submission
+    const fixedFields = [
+      { fieldName: 'Name', fieldType: 'text', required: true, placeholder: 'Enter your full name', isFixed: true },
+      { fieldName: 'Email', fieldType: 'email', required: true, placeholder: 'Enter your email address', isFixed: true },
+      { fieldName: 'Phone', fieldType: 'phone', required: true, placeholder: 'Enter your phone number', isFixed: true },
+    ];
+    
+    // Get custom dynamic fields from database (these are configured in Form Fields tab)
+    const customFields = project.configuration?.ticketSubmissionSettings?.onlineFormFields || [];
+    
+    // Combine fixed fields + custom fields
+    const allFormFields = [...fixedFields, ...customFields];
+    
     // Return ticket submission settings with defaults
     const settings = {
       mode: project.configuration?.ticketSubmissionSettings?.mode || 'both',
       enableOnlineForm: project.configuration?.ticketSubmissionSettings?.enableOnlineForm !== false,
       enableOfflineCenter: project.configuration?.ticketSubmissionSettings?.enableOfflineCenter !== false,
-      onlineFormFields: project.configuration?.ticketSubmissionSettings?.onlineFormFields || [
-        { fieldName: 'Name', fieldType: 'text', required: true, placeholder: 'Enter your name' },
-        { fieldName: 'Email', fieldType: 'email', required: true, placeholder: 'Enter your email' },
-        { fieldName: 'Phone', fieldType: 'phone', required: true, placeholder: 'Enter your phone number' },
-        { fieldName: 'Subject', fieldType: 'text', required: true, placeholder: 'Enter subject' },
-        { fieldName: 'Description', fieldType: 'textarea', required: true, placeholder: 'Describe your issue' },
-      ],
+      onlineFormFields: allFormFields,
+      customFormFields: customFields, // Return custom fields separately for Form Fields tab editing
       offlineCenters: project.configuration?.ticketSubmissionSettings?.offlineCenters || [],
       welcomeMessage: project.configuration?.ticketSubmissionSettings?.welcomeMessage || 'Welcome! Submit your ticket below and our team will assist you.',
       successMessage: project.configuration?.ticketSubmissionSettings?.successMessage || 'Your ticket has been successfully submitted. We will get back to you soon.',
@@ -655,6 +691,10 @@ export const getProjectTicketSettings = async (req: Request, res: Response) => {
     };
     
     console.log(`✅ Found ticket settings for project: ${project.name}`);
+    console.log(`📋 Mode: ${settings.mode}`);
+    console.log(`📋 Fixed fields: 3 (Name, Email, Phone)`);
+    console.log(`📋 Custom dynamic fields: ${customFields.length}`);
+    console.log(`📋 Total form fields: ${settings.onlineFormFields?.length || 0}`);
     
     return res.json({
       success: true,
@@ -698,8 +738,9 @@ export const getOfflineSettings = async (req: Request, res: Response) => {
     console.log('📋 Registration fields count:', settings?.registrationFields?.length || 0);
     console.log('📋 Ticket fields count:', settings?.ticketFields?.length || 0);
     
-    // If no settings exist, return defaults
+    // If no settings exist, create and save defaults
     if (!settings) {
+      console.log('📋 No offline settings found, initializing defaults...');
       settings = {
         registrationFields: [
           { id: '1', fieldName: 'firstName', fieldType: 'text', required: true, placeholder: 'Enter first name', order: 1 },
@@ -732,6 +773,18 @@ export const getOfflineSettings = async (req: Request, res: Response) => {
           sendWelcomeEmail: true,
         },
       };
+      
+      // Save defaults to database
+      try {
+        if (!project.configuration) {
+          project.configuration = {};
+        }
+        project.configuration.offlineModuleSettings = settings;
+        await project.save();
+        console.log('✅ Default offline settings saved to database');
+      } catch (saveError) {
+        console.error('❌ Error saving default settings:', saveError);
+      }
     }
 
     // Convert to plain object to remove Mongoose metadata and ensure category field
@@ -771,6 +824,10 @@ export const updateOfflineSettings = async (req: AuthRequest, res: Response) => 
     const { id } = req.params;
     let settings = req.body;
 
+    console.log(`📝 Updating offline settings for project ID: ${id}`);
+    console.log(`📋 Registration fields: ${settings.registrationFields?.length || 0}`);
+    console.log(`🎫 Ticket fields: ${settings.ticketFields?.length || 0}`);
+
     // Clean the settings - remove MongoDB _id fields from nested arrays
     if (settings.registrationFields) {
       settings.registrationFields = settings.registrationFields.map((field: any) => {
@@ -782,6 +839,10 @@ export const updateOfflineSettings = async (req: AuthRequest, res: Response) => 
     if (settings.ticketFields) {
       settings.ticketFields = settings.ticketFields.map((field: any) => {
         const { _id, ...cleanField } = field;
+        // Convert 'category-select' to 'category' for schema compatibility
+        if (cleanField.fieldType === 'category-select') {
+          cleanField.fieldType = 'category';
+        }
         return cleanField;
       });
     }
@@ -789,11 +850,14 @@ export const updateOfflineSettings = async (req: AuthRequest, res: Response) => 
     const project = await Project.findById(id);
 
     if (!project) {
+      console.log(`❌ Project not found: ${id}`);
       return res.status(404).json({
         success: false,
         message: 'Project not found',
       });
     }
+
+    console.log(`✅ Project found: ${project.name} (${project.projectId})`);
 
     // Initialize configuration if it doesn't exist
     if (!project.configuration) {
@@ -807,9 +871,15 @@ export const updateOfflineSettings = async (req: AuthRequest, res: Response) => 
       project.updatedBy = req.user.userId as any;
     }
 
-    await project.save();
+    // Use markModified to ensure nested object changes are detected
+    project.markModified('configuration.offlineModuleSettings');
+    
+    const savedProject = await project.save();
 
-    console.log(`✅ Offline module settings updated for project: ${project.name}`);
+    console.log(`✅ Offline module settings saved successfully for: ${project.name}`);
+    console.log(`📊 Saved ${settings.registrationFields?.length || 0} registration fields`);
+    console.log(`📊 Saved ${settings.ticketFields?.length || 0} ticket fields`);
+    console.log(`📊 Verification - Settings in DB:`, !!savedProject.configuration?.offlineModuleSettings);
 
     return res.json({
       success: true,
@@ -817,10 +887,11 @@ export const updateOfflineSettings = async (req: AuthRequest, res: Response) => 
       data: settings,
     });
   } catch (error) {
-    console.error('Update offline settings error:', error);
+    console.error('❌ Update offline settings error:', error);
     return res.status(500).json({
       success: false,
       message: 'Internal server error',
+      error: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 };
@@ -831,9 +902,9 @@ export const updateOfflineSettings = async (req: AuthRequest, res: Response) => 
 export const updateProjectTicketSettings = async (req: Request, res: Response) => {
   try {
     const { projectId } = req.params;
-    const { numbering, statuses, types } = req.body;
+    const { numbering, statuses, types, onlineFormFields } = req.body;
 
-    console.log('💾 Saving ticket settings:', JSON.stringify({ numbering, statuses, types }, null, 2));
+    console.log('💾 Saving ticket settings:', JSON.stringify({ numbering, statuses, types, onlineFormFields }, null, 2));
 
     const project = await Project.findById(projectId);
     
@@ -895,6 +966,15 @@ export const updateProjectTicketSettings = async (req: Request, res: Response) =
         (project as any).configuration.ticketSubmissionSettings = {};
       }
       (project as any).configuration.ticketSubmissionSettings.types = types;
+    }
+    
+    // Update online form fields
+    if (onlineFormFields !== undefined) {
+      if (!(project as any).configuration.ticketSubmissionSettings) {
+        (project as any).configuration.ticketSubmissionSettings = {};
+      }
+      (project as any).configuration.ticketSubmissionSettings.onlineFormFields = onlineFormFields;
+      console.log('✅ Updated online form fields:', onlineFormFields.length, 'fields');
     }
 
     await project.save();
@@ -973,6 +1053,225 @@ export const getProjectByDomain = async (req: Request, res: Response) => {
     return res.json(projectConfig);
   } catch (error) {
     console.error('Get project by domain error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
+  }
+};
+
+/**
+ * Get form fields for online ticket submission
+ */
+export const getFormFields = async (req: AuthRequest, res: Response) => {
+  try {
+    const { projectId } = req.params;
+
+    const project = await Project.findById(projectId);
+
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: 'Project not found',
+      });
+    }
+
+    // Return only custom dynamic fields (not fixed fields like Name, Email, Phone)
+    const customFields = project.configuration?.ticketSubmissionSettings?.onlineFormFields || [];
+    
+    console.log(`📋 Returning ${customFields.length} custom form fields for project ${project.name}`);
+
+    return res.json({
+      success: true,
+      data: customFields,
+    });
+  } catch (error) {
+    console.error('Get form fields error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
+  }
+};
+
+/**
+ * Create a new form field
+ */
+export const createFormField = async (req: AuthRequest, res: Response) => {
+  try {
+    const { projectId } = req.params;
+    const { fieldName, fieldLabel, fieldType, required, placeholder, options, order } = req.body;
+
+    if (!fieldName || !fieldLabel || !fieldType) {
+      return res.status(400).json({
+        success: false,
+        message: 'Field name, label, and type are required',
+      });
+    }
+
+    const project = await Project.findById(projectId);
+
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: 'Project not found',
+      });
+    }
+
+    // Initialize configuration structure if needed
+    if (!project.configuration) {
+      (project as any).configuration = {};
+    }
+    if (!(project as any).configuration.ticketSubmissionSettings) {
+      (project as any).configuration.ticketSubmissionSettings = {};
+    }
+    if (!(project as any).configuration.ticketSubmissionSettings.onlineFormFields) {
+      (project as any).configuration.ticketSubmissionSettings.onlineFormFields = [];
+    }
+
+    // Create new field with unique ID
+    const newField = {
+      id: `field_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      fieldName,
+      fieldLabel,
+      fieldType,
+      required: required || false,
+      placeholder: placeholder || '',
+      options: options || [],
+      order: order || (project as any).configuration.ticketSubmissionSettings.onlineFormFields.length + 1,
+    };
+
+    (project as any).configuration.ticketSubmissionSettings.onlineFormFields.push(newField as any);
+    await project.save();
+
+    console.log(`✅ Form field created for project: ${project.name}`);
+
+    return res.json({
+      success: true,
+      message: 'Form field created successfully',
+      data: newField,
+    });
+  } catch (error) {
+    console.error('Create form field error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
+  }
+};
+
+/**
+ * Update a form field
+ */
+export const updateFormField = async (req: AuthRequest, res: Response) => {
+  try {
+    const { projectId, fieldId } = req.params;
+    const { fieldName, fieldLabel, fieldType, required, placeholder, options, order } = req.body;
+
+    const project = await Project.findById(projectId);
+
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: 'Project not found',
+      });
+    }
+
+    const formFields = project.configuration?.ticketSubmissionSettings?.onlineFormFields;
+
+    if (!formFields) {
+      return res.status(404).json({
+        success: false,
+        message: 'No form fields found for this project',
+      });
+    }
+
+    const fieldIndex = formFields.findIndex((f: any) => f.id === fieldId);
+
+    if (fieldIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: 'Form field not found',
+      });
+    }
+
+    // Update the field
+    formFields[fieldIndex] = {
+      ...formFields[fieldIndex],
+      fieldName: fieldName || formFields[fieldIndex].fieldName,
+      fieldLabel: fieldLabel || formFields[fieldIndex].fieldLabel,
+      fieldType: fieldType || formFields[fieldIndex].fieldType,
+      required: required !== undefined ? required : formFields[fieldIndex].required,
+      placeholder: placeholder !== undefined ? placeholder : formFields[fieldIndex].placeholder,
+      options: options !== undefined ? options : formFields[fieldIndex].options,
+      order: order !== undefined ? order : formFields[fieldIndex].order,
+    };
+
+    await project.save();
+
+    console.log(`✅ Form field updated for project: ${project.name}`);
+
+    return res.json({
+      success: true,
+      message: 'Form field updated successfully',
+      data: formFields[fieldIndex],
+    });
+  } catch (error) {
+    console.error('Update form field error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
+  }
+};
+
+/**
+ * Delete a form field
+ */
+export const deleteFormField = async (req: AuthRequest, res: Response) => {
+  try {
+    const { projectId, fieldId } = req.params;
+
+    const project = await Project.findById(projectId);
+
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: 'Project not found',
+      });
+    }
+
+    const formFields = project.configuration?.ticketSubmissionSettings?.onlineFormFields;
+
+    if (!formFields) {
+      return res.status(404).json({
+        success: false,
+        message: 'No form fields found for this project',
+      });
+    }
+
+    const fieldIndex = formFields.findIndex((f: any) => f.id === fieldId);
+
+    if (fieldIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: 'Form field not found',
+      });
+    }
+
+    // Remove the field
+    formFields.splice(fieldIndex, 1);
+
+    await project.save();
+
+    console.log(`✅ Form field deleted from project: ${project.name}`);
+
+    return res.json({
+      success: true,
+      message: 'Form field deleted successfully',
+    });
+  } catch (error) {
+    console.error('Delete form field error:', error);
     return res.status(500).json({
       success: false,
       message: 'Internal server error',

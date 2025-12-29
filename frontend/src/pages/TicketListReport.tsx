@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
+import ModuleHeader from '../components/ModuleHeader';
 import axios from 'axios';
 import { API_CONFIG } from '../config/constants';
 import { MdSearch, MdRefresh, MdPictureAsPdf, MdTableChart, MdGridOn } from 'react-icons/md';
@@ -278,7 +279,7 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
   // Export functions
   const getExportData = () => {
     return displayTickets.map(ticket => ({
-      'Ticket Number': ticket.ticketNumber,
+      'Query Number': ticket.ticketNumber,
       'Project': ticket.metadata?.projectId?.name || 'N/A',
       'Student Name': ticket.metadata?.studentName || 'N/A',
       'Subject': ticket.subject || ticket.title || 'N/A',
@@ -395,19 +396,12 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
 
   const content = (
     <div style={{ padding: '24px' }}>
-      {/* Header */}
-      <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <h1 style={{ fontSize: '24px', fontWeight: '600', color: '#1f2937', margin: 0 }}>
-            Query List Report
-          </h1>
-          <p style={{ color: '#6b7280', marginTop: '4px' }}>
-            View and export query data with filters
-          </p>
-        </div>
-        
-        {/* Export Buttons */}
-        <div style={{ display: 'flex', gap: '8px' }}>
+      <ModuleHeader
+        title="Query List Report"
+        subtitle="View and export query data with filters"
+      />
+      
+      <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
           <button
             onClick={exportToPDF}
             disabled={exporting || displayTickets.length === 0}
@@ -415,13 +409,28 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              padding: '8px 16px',
-              background: '#ef4444',
+              padding: '10px 20px',
+              background: (exporting || displayTickets.length === 0) ? '#9ca3af' : '#ef4444',
               color: 'white',
               border: 'none',
-              borderRadius: '6px',
-              cursor: displayTickets.length === 0 ? 'not-allowed' : 'pointer',
-              opacity: displayTickets.length === 0 ? 0.5 : 1,
+              borderRadius: '12px',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: (exporting || displayTickets.length === 0) ? 'not-allowed' : 'pointer',
+              transition: 'all 0.2s',
+              boxShadow: (exporting || displayTickets.length === 0) ? 'none' : '0 4px 15px rgba(239, 68, 68, 0.4)'
+            }}
+            onMouseEnter={(e) => {
+              if (!exporting && displayTickets.length > 0) {
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = '0 6px 20px rgba(239, 68, 68, 0.4)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!exporting && displayTickets.length > 0) {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 4px 15px rgba(239, 68, 68, 0.4)';
+              }
             }}
           >
             <MdPictureAsPdf size={18} />
@@ -434,13 +443,28 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              padding: '8px 16px',
-              background: '#10b981',
+              padding: '10px 20px',
+              background: (exporting || displayTickets.length === 0) ? '#9ca3af' : '#10b981',
               color: 'white',
               border: 'none',
-              borderRadius: '6px',
-              cursor: displayTickets.length === 0 ? 'not-allowed' : 'pointer',
-              opacity: displayTickets.length === 0 ? 0.5 : 1,
+              borderRadius: '12px',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: (exporting || displayTickets.length === 0) ? 'not-allowed' : 'pointer',
+              transition: 'all 0.2s',
+              boxShadow: (exporting || displayTickets.length === 0) ? 'none' : '0 4px 15px rgba(16, 185, 129, 0.4)'
+            }}
+            onMouseEnter={(e) => {
+              if (!exporting && displayTickets.length > 0) {
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = '0 6px 20px rgba(16, 185, 129, 0.4)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!exporting && displayTickets.length > 0) {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 4px 15px rgba(16, 185, 129, 0.4)';
+              }
             }}
           >
             <MdGridOn size={18} />
@@ -466,7 +490,6 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
             CSV
           </button>
         </div>
-      </div>
 
       {/* Filters */}
       <div style={{
@@ -549,7 +572,7 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
                 background: !selectedProject ? '#f3f4f6' : 'white',
               }}
             >
-              <option value="">All Statuses</option>
+              <option value="">All</option>
               {statuses.map(status => (
                 <option key={status._id} value={status.code}>
                   {status.name}
@@ -561,14 +584,14 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
           {/* Search */}
           <div>
             <label style={{ display: 'block', marginBottom: '4px', fontSize: '14px', fontWeight: '500', color: '#374151' }}>
-              Search by Ticket #
+              Search by Query #
             </label>
             <div style={{ display: 'flex', gap: '8px' }}>
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Enter ticket number..."
+                placeholder="Enter query number..."
                 onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
                 style={{
                   flex: 1,
@@ -611,7 +634,7 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
 
       {/* Results Summary */}
       <div style={{ marginBottom: '16px', color: '#6b7280', fontSize: '14px' }}>
-        Showing {displayTickets.length} of {tickets.length} tickets
+        Showing {displayTickets.length} of {tickets.length} queries
         {(selectedCategory || selectedStatus || searchQuery) && ' (filtered)'}
       </div>
 
@@ -624,11 +647,11 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
       }}>
         {loading ? (
           <div style={{ padding: '48px', textAlign: 'center', color: '#6b7280' }}>
-            Loading tickets...
+            Loading queries...
           </div>
         ) : displayTickets.length === 0 ? (
           <div style={{ padding: '48px', textAlign: 'center', color: '#6b7280' }}>
-            No tickets found matching the criteria
+            No queries found matching the criteria
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
@@ -636,7 +659,7 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
               <thead>
                 <tr style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
                   <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600', color: '#374151', fontSize: '14px' }}>
-                    Ticket #
+                    Query #
                   </th>
                   <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600', color: '#374151', fontSize: '14px' }}>
                     Project

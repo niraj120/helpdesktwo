@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import DashboardLayout from './DashboardLayout';
+import ModuleHeader from './ModuleHeader';
 import { MdAdd, MdEdit, MdDelete, MdSave, MdClose } from 'react-icons/md';
 import { usePermissions } from '../hooks/usePermissions';
 import { PERMISSIONS } from '../constants/permissions';
@@ -614,11 +615,10 @@ const MasterDataManagement = () => {
   return (
     <DashboardLayout>
       <div style={{ padding: '24px' }}>
-        {/* Header */}
-        <div style={{ marginBottom: '24px' }}>
-          <h1 style={{ fontSize: '24px', fontWeight: '600', marginBottom: '8px' }}>Master Data Management</h1>
-          <p style={{ color: '#6b7280' }}>Manage system-wide master data</p>
-        </div>
+        <ModuleHeader 
+          title="Master Data Management" 
+          subtitle="Manage system-wide master data"
+        />
 
         {/* Tabs */}
         <div style={{ borderBottom: '2px solid #e5e7eb', marginBottom: '24px' }}>

@@ -1,14 +1,13 @@
 import { ReactNode, useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import axios from 'axios';
 import { SkipLink } from './accessible/SkipLink';
 import { LanguageToggle } from './LanguageToggle';
 import KBChatbot from './KBChatbot';
 import { designSystem } from '../styles/designSystem';
 import { usePermissions } from '../hooks/usePermissions';
+import { useBranding } from '../contexts/BrandingContext';
 import { menuConfig, projectPortalMenuConfig, getFilteredMenuItems } from '../config/menuConfig';
-import { API_CONFIG } from '../config/constants';
 import {
   MdDashboard, 
   MdFolder, 
@@ -76,7 +75,6 @@ const DashboardLayout = ({ children, logoutRedirectPath }: DashboardLayoutProps)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ top: number; left: number } | null>(null);
-  const [projectBranding, setProjectBranding] = useState<any>(null);
   const sidebarRef = useRef<HTMLElement>(null);
   
   // Save sidebar scroll position to sessionStorage
@@ -111,136 +109,15 @@ const DashboardLayout = ({ children, logoutRedirectPath }: DashboardLayoutProps)
   // Get user permissions from the permission context
   const { permissions } = usePermissions();
   
+  // Get branding from context instead of fetching directly
+  const { branding: projectBranding } = useBranding();
+  
   // Debug permissions
   useEffect(() => {
     console.log('🔐 DashboardLayout - User Permissions:', permissions);
     console.log('🔐 Total permissions:', permissions?.length || 0);
     console.log('🔐 Has TICKET_ASSIGN:', permissions?.includes('TICKET_ASSIGN'));
   }, [permissions]);
-
-  // Fetch project branding if user is logged in via project portal
-  useEffect(() => {
-    const fetchProjectBranding = async () => {
-      try {
-        // Get customUrlPath from URL first to check if it's an internal route
-        const pathParts = window.location.pathname.split('/');
-        const customUrlPath = pathParts[1]; // First part of path after domain
-        
-        // List of internal admin routes that should NOT trigger branding fetch
-        const internalRoutes = [
-          'dashboard',
-          'tickets',
-          'users',
-          'projects',
-          'roles',
-          'permissions',
-          'master-data',
-          'offline-module',
-          'reports',
-          'settings',
-          'profile',
-          'categories',
-          'priorities',
-          'statuses',
-          'sla-policies',
-          'approval-workflows',
-          'feedback-surveys',
-          'login',
-          'register',
-          'forgot-password',
-          'reset-password'
-        ];
-        
-        // EARLY EXIT: If on internal route, don't even check for branding
-        if (!customUrlPath || internalRoutes.includes(customUrlPath)) {
-          return; // Stop here for internal admin routes
-        }
-        
-        // Check if user is logged in via project portal (not admin dashboard)
-        const projectContextStr = localStorage.getItem('projectContext');
-        const userStr = localStorage.getItem('user');
-        
-        if (!projectContextStr) return;
-        
-        // Parse user data to check role
-        let user = null;
-        if (userStr) {
-          try {
-            user = JSON.parse(userStr);
-          } catch (e) {
-            console.error('Error parsing user data:', e);
-          }
-        }
-        
-        // Skip branding fetch for super admin, admin, or staff users
-        // Only fetch branding for project portal users (students, etc.)
-        if (user && user.role) {
-          const roleCode = typeof user.role === 'string' ? user.role : user.role.code;
-          const isAgent = typeof user.role === 'object' ? user.role.isAgent : false;
-          
-          if (roleCode === 'SUPER_ADMIN' || 
-              roleCode === 'ADMIN' ||
-              isAgent === true) {
-            return; // Don't fetch branding for admin/staff users
-          }
-        }
-
-        const projectContext = JSON.parse(projectContextStr);
-        
-        // Fetch project branding using public endpoint (no auth required)
-        const response = await axios.get(
-          `${API_CONFIG.API_URL}/projects/branding/${customUrlPath}`
-        );
-        const branding = response.data;
-          
-        // Set branding with proper structure
-        setProjectBranding({
-          name: branding.name,
-          code: branding.code,
-          logo: branding.logo,
-          colorTheme: branding.colorTheme || {
-            primary: '#667eea',
-            secondary: '#764ba2',
-            accent: '#3b82f6',
-            background: '#ffffff'
-          }
-        });
-      } catch (error) {
-        console.error('Error fetching project branding:', error);
-        // Fallback to project context if available
-        try {
-          const projectContextStr = localStorage.getItem('projectContext');
-          if (projectContextStr) {
-            const projectContext = JSON.parse(projectContextStr);
-            setProjectBranding({
-              name: projectContext.projectName || 'Dashboard',
-              code: projectContext.projectCode || '',
-              colorTheme: {
-                primary: '#667eea',
-                secondary: '#764ba2',
-                accent: '#3b82f6',
-                background: '#ffffff'
-              }
-            });
-          }
-        } catch (fallbackError) {
-          console.error('Fallback error:', fallbackError);
-        }
-      }
-    };
-
-    fetchProjectBranding();
-  }, []);
-
-  // Apply project color theme to CSS variables
-  useEffect(() => {
-    if (projectBranding?.colorTheme) {
-      const root = document.documentElement;
-      root.style.setProperty('--primary-main', projectBranding.colorTheme.primary);
-      root.style.setProperty('--primary-dark', projectBranding.colorTheme.secondary);
-      root.style.setProperty('--accent-main', projectBranding.colorTheme.accent);
-    }
-  }, [projectBranding]);
 
   // Auto-expand menu that contains the active route on initial load only
   useEffect(() => {
@@ -276,12 +153,37 @@ const DashboardLayout = ({ children, logoutRedirectPath }: DashboardLayoutProps)
     return en;
   };
 
-  // Determine if this is a project portal (legacy check for migration period)
-  const projectContextStr = localStorage.getItem('projectContext');
-  const isProjectPortal = !!projectContextStr;
-  const customUrlPath = projectContextStr 
-    ? JSON.parse(projectContextStr).customUrlPath 
-    : null;
+  // Determine if this is a project portal - check both localStorage AND current URL
+  const [projectContext, setProjectContext] = useState<{customUrlPath: string; projectId: string} | null>(() => {
+    const projectContextStr = localStorage.getItem('projectContext');
+    return projectContextStr ? JSON.parse(projectContextStr) : null;
+  });
+
+  // Derive isProjectPortal from BOTH URL and localStorage
+  // If URL contains /portal/, we're definitely in project portal mode
+  const currentPath = location.pathname;
+  const urlHasPortal = currentPath.includes('/portal/');
+  const customUrlPathFromUrl = urlHasPortal ? currentPath.split('/')[1] : null;
+  
+  const isProjectPortal = urlHasPortal || !!projectContext;
+  const customUrlPath = customUrlPathFromUrl || projectContext?.customUrlPath;
+
+  // Update projectContext when URL changes
+  useEffect(() => {
+    if (urlHasPortal && customUrlPathFromUrl) {
+      const projectContextStr = localStorage.getItem('projectContext');
+      const existingContext = projectContextStr ? JSON.parse(projectContextStr) : null;
+      
+      // Update state if URL-derived context is different
+      if (!existingContext || existingContext.customUrlPath !== customUrlPathFromUrl) {
+        const newContext = {
+          customUrlPath: customUrlPathFromUrl,
+          projectId: existingContext?.projectId || ''
+        };
+        setProjectContext(newContext);
+      }
+    }
+  }, [urlHasPortal, customUrlPathFromUrl]);
 
   // Get filtered menu items based on permissions
   const menuItems = isProjectPortal
@@ -434,7 +336,7 @@ const DashboardLayout = ({ children, logoutRedirectPath }: DashboardLayoutProps)
                 overflow: 'hidden',
                 textOverflow: 'ellipsis'
               }}>
-                {projectBranding?.name || userName}
+                {userName}
               </div>
               <div style={{ 
                 fontSize: '12px', 
@@ -777,13 +679,13 @@ const DashboardLayout = ({ children, logoutRedirectPath }: DashboardLayoutProps)
                     role="group"
                     aria-label={`${getLabel(item)} submenu`}
                     style={{ 
-                      maxHeight: isExpanded ? `${item.subItems!.length * 40}px` : '0px',
+                      maxHeight: isExpanded ? `${item.subItems!.length * 44}px` : '0px',
                       overflow: 'hidden',
                       transition: 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
                       opacity: isExpanded ? 1 : 0,
-                      marginTop: isExpanded ? '4px' : '0px',
-                      marginBottom: isExpanded ? '4px' : '0px',
-                      marginLeft: '12px',
+                      marginTop: isExpanded ? '8px' : '0px',
+                      marginBottom: isExpanded ? '8px' : '0px',
+                      marginLeft: '0px',
                       transform: isExpanded ? 'translateY(0)' : 'translateY(-10px)'
                     }}
                   >
@@ -819,33 +721,35 @@ const DashboardLayout = ({ children, logoutRedirectPath }: DashboardLayoutProps)
                           style={{
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '10px',
-                            padding: '10px 16px',
-                            marginBottom: '2px',
-                            marginLeft: '12px',
-                            borderRadius: 'var(--radius-md)',
-                            backgroundColor: isSubActive ? 'var(--primary-light)' : 'transparent',
-                            color: isSubActive ? 'var(--primary-main)' : 'var(--text-primary)',
+                            gap: '12px',
+                            padding: '10px 16px 10px 40px',
+                            marginBottom: '4px',
+                            marginLeft: '0px',
+                            borderRadius: '8px',
+                            background: isSubActive ? 'linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)' : 'transparent',
+                            color: isSubActive ? '#667eea' : 'var(--text-primary)',
                             textDecoration: 'none',
                             fontSize: '14px',
-                            fontWeight: '400',
+                            fontWeight: isSubActive ? '600' : '400',
                             lineHeight: '1.5',
                             transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                             cursor: 'pointer',
-                            borderLeft: isSubActive ? '2px solid var(--primary-main)' : '2px solid transparent',
-                            boxShadow: isSubActive ? '0 1px 2px rgba(0, 0, 0, 0.08)' : 'none'
+                            borderLeft: isSubActive ? '3px solid #667eea' : '3px solid transparent',
+                            boxShadow: isSubActive ? '0 2px 8px rgba(102, 126, 234, 0.15)' : 'none'
                           }}
                           onMouseOver={(e) => {
                             if (!isSubActive) {
-                              e.currentTarget.style.backgroundColor = 'var(--surface-variant)';
-                              e.currentTarget.style.color = 'var(--text-primary)';
-                              e.currentTarget.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.06)';
+                              e.currentTarget.style.backgroundColor = 'rgba(102, 126, 234, 0.05)';
+                              e.currentTarget.style.color = '#667eea';
+                              e.currentTarget.style.borderLeft = '3px solid rgba(102, 126, 234, 0.3)';
+                              e.currentTarget.style.boxShadow = '0 1px 4px rgba(102, 126, 234, 0.1)';
                             }
                           }}
                           onMouseOut={(e) => {
                             if (!isSubActive) {
                               e.currentTarget.style.backgroundColor = 'transparent';
                               e.currentTarget.style.color = 'var(--text-primary)';
+                              e.currentTarget.style.borderLeft = '3px solid transparent';
                               e.currentTarget.style.boxShadow = 'none';
                             }
                           }}

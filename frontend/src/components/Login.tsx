@@ -254,16 +254,11 @@ const Login: React.FC = () => {
         console.log('💾 Storing permissions:', permissions.length, 'items');
         localStorage.setItem('userPermissions', JSON.stringify(permissions));
         
-        // Check if user has accepted EULA
-        if (result.data.user.eulaAccepted) {
-          // EULA already accepted, redirect to user's default accessible route
-          const { getDefaultRoute } = await import('../utils/routeUtils');
-          const defaultRoute = getDefaultRoute(permissions);
-          window.location.href = defaultRoute;
-        } else {
-          // EULA not accepted, redirect to EULA page
-          window.location.href = '/eula';
-        }
+        // Redirect to user's default accessible route
+        const { getDefaultRoute } = await import('../utils/routeUtils');
+        const defaultRoute = getDefaultRoute(permissions);
+        console.log('🚀 Redirecting to:', defaultRoute);
+        window.location.href = defaultRoute;
       }
     } catch (error: any) {
       setErrorMessage(error.message || t('loginFailed'));
@@ -312,13 +307,9 @@ const Login: React.FC = () => {
         localStorage.setItem('userPermissions', JSON.stringify(permissions));
         
         // Redirect
-        if (result.data.user.eulaAccepted) {
-          const { getDefaultRoute } = await import('../utils/routeUtils');
-          const defaultRoute = getDefaultRoute(permissions);
-          window.location.href = defaultRoute;
-        } else {
-          window.location.href = '/eula';
-        }
+        const { getDefaultRoute } = await import('../utils/routeUtils');
+        const defaultRoute = getDefaultRoute(permissions);
+        window.location.href = defaultRoute;
       }
     } catch (error: any) {
       setErrorMessage(error.message || 'Invalid OTP');
@@ -1171,13 +1162,13 @@ const Login: React.FC = () => {
             opacity: 0.95,
             lineHeight: 1.6,
           }}>
-            Streamline your support operations with our comprehensive ticketing and management system
+            Streamline your support operations with our comprehensive query and management system
           </p>
 
           {/* Features List */}
           <div style={{ textAlign: 'left', marginTop: '3rem' }}>
             {[
-              { icon: '🎫', text: 'Efficient Ticket Management' },
+              { icon: '🎫', text: 'Efficient Query Management' },
               { icon: '📊', text: 'Real-time Analytics Dashboard' },
               { icon: '🔔', text: 'Smart Notifications & Alerts' },
               { icon: '🛡️', text: 'Enterprise-grade Security' },

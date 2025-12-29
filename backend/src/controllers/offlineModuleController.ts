@@ -3,6 +3,7 @@ import { AuthRequest } from '../middleware/auth';
 import { User } from '../models/User';
 import { Ticket } from '../models/Ticket';
 import { Project } from '../models/Project';
+import { Center } from '../models/Center';
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
@@ -379,6 +380,57 @@ export const editStudentRecord = async (req: AuthRequest, res: Response): Promis
     res.status(500).json({ 
       success: false, 
       message: 'Failed to update student record',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+};
+
+/**
+ * Get all centers for a specific project
+ */
+export const getCenters = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { projectId } = req.params;
+
+    // Validate projectId
+    if (!mongoose.Types.ObjectId.isValid(projectId)) {
+      res.status(400).json({ 
+        success: false, 
+        message: 'Invalid project ID' 
+      });
+      return;
+    }
+
+    // Fetch all active centers for the project from Center master table
+    const centers = await Center.find({ 
+      projectId: new mongoose.Types.ObjectId(projectId),
+      isActive: true 
+    })
+    .select('projectId centerName city state address pincode phone email workingHours')
+    .sort({ centerName: 1 });
+
+    console.log(`[getCenters] Found ${centers.length} centers for projectId: ${projectId}`);
+
+    res.json({ 
+      success: true, 
+      centers: centers.map(center => ({
+        _id: center._id,
+        projectId: center.projectId,
+        centerName: center.centerName,
+        city: center.city,
+        state: center.state,
+        address: center.address,
+        pincode: center.pincode,
+        phone: center.phone,
+        email: center.email,
+        workingHours: center.workingHours
+      }))
+    });
+  } catch (error) {
+    console.error('Error fetching centers:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch centers',
       error: error instanceof Error ? error.message : 'Unknown error'
     });
   }

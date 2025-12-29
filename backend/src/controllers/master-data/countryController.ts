@@ -15,7 +15,15 @@ export const getCountries = async (req: Request, res: Response) => {
 
     return res.json({
       success: true,
-      data: countries,
+      data: countries.map(country => ({
+        _id: country._id,
+        key: country.key,
+        value: country.value,
+        name: country.value, // Add name mapping for frontend compatibility
+        code: country.code,
+        displayOrder: country.displayOrder,
+        isActive: country.isActive
+      })),
     });
   } catch (error) {
     console.error('Get countries error:', error);

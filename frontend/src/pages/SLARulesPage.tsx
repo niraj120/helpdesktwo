@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
+import ModuleHeader from '../components/ModuleHeader';
 import { API_CONFIG } from '../config/constants';
 
 interface Priority {
@@ -312,17 +313,10 @@ const SLARulesPage: React.FC = () => {
   return (
     <DashboardLayout>
       <div style={{ padding: '32px', maxWidth: '1400px', margin: '0 auto' }}>
-        {/* Header */}
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: '16px',
-        }}>
-          <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 600 }}>
-            Priority & Escalation Management
-          </h1>
-        </div>
+        <ModuleHeader
+          title="Priority & Escalation Management"
+          subtitle="Define priority levels with SLA response and resolution times"
+        />
 
         {/* Tab Navigation */}
         <div style={{ 

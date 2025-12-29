@@ -3,8 +3,9 @@ import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'react-hot-toast'
+import { BrandingProvider } from './contexts/BrandingContext'
 
-import './i18n' // Initialize i18n
+import './i18n/index' // Initialize i18n
 import App from './App.tsx'
 import './index.css'
 import './styles/hubblehox.css' // HubbleHox Design System
@@ -26,27 +27,29 @@ const isDevelopment = import.meta.env.DEV;
 const AppWrapper = () => (
   <QueryClientProvider client={queryClient}>
     <BrowserRouter future={{ v7_relativeSplatPath: true }}>
-      <App />
-      <Toaster 
-        position="top-right"
-        toastOptions={{
-          duration: 4000,
-          style: {
-            background: '#363636',
-            color: '#fff',
-          },
-          success: {
+      <BrandingProvider>
+        <App />
+        <Toaster 
+          position="top-right"
+          toastOptions={{
+            duration: 4000,
             style: {
-              background: '#22c55e',
+              background: '#363636',
+              color: '#fff',
             },
-          },
-          error: {
-            style: {
-              background: '#ef4444',
+            success: {
+              style: {
+                background: '#22c55e',
+              },
             },
-          },
-        }}
-      />
+            error: {
+              style: {
+                background: '#ef4444',
+              },
+            },
+          }}
+        />
+      </BrandingProvider>
     </BrowserRouter>
   </QueryClientProvider>
 );

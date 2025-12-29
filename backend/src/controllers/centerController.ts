@@ -68,7 +68,23 @@ export const getCenterById = async (req: AuthRequest, res: Response) => {
  */
 export const createCenter = async (req: AuthRequest, res: Response) => {
   try {
-    const { projectId, centerName, address, city, state, pincode, phone, email, workingHours, contacts } = req.body;
+    const { 
+      projectId, 
+      centerName, 
+      address, 
+      city, 
+      state, 
+      pincode, 
+      phone, 
+      email, 
+      workingHours, 
+      latitude,
+      longitude,
+      features,
+      mapLink,
+      googleMapLink,
+      contacts 
+    } = req.body;
     
     // Validate required fields
     if (!projectId || !centerName || !address || !city || !state) {
@@ -111,6 +127,11 @@ export const createCenter = async (req: AuthRequest, res: Response) => {
       phone,
       email,
       workingHours,
+      latitude,
+      longitude,
+      features,
+      mapLink,
+      googleMapLink,
       contacts,
       isActive: true,
       createdBy: new mongoose.Types.ObjectId(req.user!.userId),
@@ -138,6 +159,9 @@ export const updateCenter = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     const updateData = req.body;
     
+    // Remove fields that shouldn't be updated
+    const { _id, projectId, createdBy, createdAt, isActive, ...allowedUpdates } = updateData;
+    
     const center = await Center.findById(id);
     if (!center) {
       return res.status(404).json({
@@ -147,23 +171,23 @@ export const updateCenter = async (req: AuthRequest, res: Response) => {
     }
     
     // If updating centerName, check for duplicates
-    if (updateData.centerName && updateData.centerName !== center.centerName) {
+    if (allowedUpdates.centerName && allowedUpdates.centerName !== center.centerName) {
       const existingCenter = await Center.findOne({
         projectId: center.projectId,
-        centerName: { $regex: new RegExp(`^${updateData.centerName}$`, 'i') },
+        centerName: { $regex: new RegExp(`^${allowedUpdates.centerName}$`, 'i') },
         _id: { $ne: id },
       });
       
       if (existingCenter) {
         return res.status(409).json({
           success: false,
-          message: `Center with name "${updateData.centerName}" already exists in this project`,
+          message: `Center with name "${allowedUpdates.centerName}" already exists in this project`,
         });
       }
     }
     
-    // Update center
-    Object.assign(center, updateData);
+    // Update center with allowed fields
+    Object.assign(center, allowedUpdates);
     center.updatedBy = new mongoose.Types.ObjectId(req.user!.userId);
     await center.save();
     

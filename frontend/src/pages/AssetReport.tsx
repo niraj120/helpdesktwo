@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import DashboardLayout from '../components/DashboardLayout';
+import ModuleHeader from '../components/ModuleHeader';
 import { API_CONFIG } from '../config/constants';
 import { MdGridOn, MdDescription, MdRefresh } from 'react-icons/md';
 import * as XLSX from 'xlsx';
@@ -45,7 +47,7 @@ const DEMO_ASSETS: AssetUsage[] = [
     assetNotUsed: 1,
     workingAsset: 3,
     notWorkingAsset: 1,
-    lastUpdatedBy: { _id: 'u1', name: 'Sameer Hapani' },
+    lastUpdatedBy: { _id: 'u1', name: 'Niraj Mishra' },
     updatedAt: '2024-10-15T10:30:00Z',
   },
   {
@@ -58,7 +60,7 @@ const DEMO_ASSETS: AssetUsage[] = [
     assetNotUsed: 0,
     workingAsset: 2,
     notWorkingAsset: 1,
-    lastUpdatedBy: { _id: 'u1', name: 'Sameer Hapani' },
+    lastUpdatedBy: { _id: 'u1', name: 'Niraj Mishra' },
     updatedAt: '2024-09-10T14:20:00Z',
   },
   {
@@ -71,7 +73,7 @@ const DEMO_ASSETS: AssetUsage[] = [
     assetNotUsed: 5,
     workingAsset: 42,
     notWorkingAsset: 3,
-    lastUpdatedBy: { _id: 'u1', name: 'Sameer Hapani' },
+    lastUpdatedBy: { _id: 'u1', name: 'Niraj Mishra' },
     updatedAt: '2024-11-01T09:00:00Z',
   },
   {
@@ -84,7 +86,7 @@ const DEMO_ASSETS: AssetUsage[] = [
     assetNotUsed: 1,
     workingAsset: 23,
     notWorkingAsset: 1,
-    lastUpdatedBy: { _id: 'u1', name: 'Sameer Hapani' },
+    lastUpdatedBy: { _id: 'u1', name: 'Niraj Mishra' },
     updatedAt: '2024-10-20T11:15:00Z',
   },
   {
@@ -97,7 +99,7 @@ const DEMO_ASSETS: AssetUsage[] = [
     assetNotUsed: 1,
     workingAsset: 8,
     notWorkingAsset: 1,
-    lastUpdatedBy: { _id: 'u1', name: 'Sameer Hapani' },
+    lastUpdatedBy: { _id: 'u1', name: 'Niraj Mishra' },
     updatedAt: '2024-11-05T16:45:00Z',
   },
   // Kolhapur Center
@@ -317,75 +319,86 @@ const AssetReport: React.FC<AssetReportProps> = ({ projectId, wrapWithLayout = t
 
   const content = (
     <div style={{ padding: wrapWithLayout ? '0' : '24px' }}>
-      {/* Header */}
-      <div style={{ marginBottom: '24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-          <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#111827', margin: 0 }}>
-            Total Asset Report
-          </h1>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button
-              onClick={() => setAssets(DEMO_ASSETS)}
-              disabled={loading}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '8px 16px',
-                background: '#6b7280',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                opacity: loading ? 0.5 : 1,
-              }}
-            >
-              <MdRefresh size={18} />
-              Refresh
-            </button>
-            <button
-              onClick={exportToExcel}
-              disabled={exporting || assets.length === 0}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '8px 16px',
-                background: '#10b981',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: assets.length === 0 ? 'not-allowed' : 'pointer',
-                opacity: assets.length === 0 ? 0.5 : 1,
-              }}
-            >
-              <MdGridOn size={18} />
-              Excel
-            </button>
-            <button
-              onClick={exportToCSV}
-              disabled={exporting || assets.length === 0}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '8px 16px',
-                background: '#3b82f6',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: assets.length === 0 ? 'not-allowed' : 'pointer',
-                opacity: assets.length === 0 ? 0.5 : 1,
-              }}
-            >
-              <MdDescription size={18} />
-              CSV
-            </button>
-          </div>
-        </div>
-        <p style={{ color: '#6b7280', fontSize: '14px', margin: 0 }}>
-          View and export asset data with details
-        </p>
+      <ModuleHeader
+        title="Total Asset Report"
+        subtitle="View and export asset usage data across centers"
+      />
+      
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginBottom: '24px' }}>
+        <button
+          onClick={() => setAssets(DEMO_ASSETS)}
+          disabled={loading}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '10px 20px',
+            background: loading ? '#9ca3af' : 'white',
+            color: loading ? 'white' : '#374151',
+            border: '2px solid #E5E7EB',
+            borderRadius: '12px',
+            fontSize: '14px',
+            fontWeight: '600',
+            cursor: loading ? 'not-allowed' : 'pointer',
+            transition: 'all 0.2s'
+          }}
+        >
+          <MdRefresh size={18} />
+          Refresh
+        </button>
+        <button
+          onClick={exportToExcel}
+          disabled={exporting || assets.length === 0}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '10px 20px',
+            background: (exporting || assets.length === 0) ? '#9ca3af' : '#10b981',
+            color: 'white',
+            border: 'none',
+            borderRadius: '12px',
+            fontSize: '14px',
+            fontWeight: '600',
+            cursor: (exporting || assets.length === 0) ? 'not-allowed' : 'pointer',
+            transition: 'all 0.2s',
+            boxShadow: (exporting || assets.length === 0) ? 'none' : '0 4px 15px rgba(16, 185, 129, 0.4)'
+          }}
+          onMouseEnter={(e) => {
+            if (!exporting && assets.length > 0) {
+              e.currentTarget.style.transform = 'translateY(-2px)';
+              e.currentTarget.style.boxShadow = '0 6px 20px rgba(16, 185, 129, 0.4)';
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!exporting && assets.length > 0) {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 4px 15px rgba(16, 185, 129, 0.4)';
+            }
+          }}
+        >
+          <MdGridOn size={18} />
+          Excel
+        </button>
+        <button
+          onClick={exportToCSV}
+          disabled={exporting || assets.length === 0}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '8px 16px',
+            background: '#3b82f6',
+            color: 'white',
+            border: 'none',
+            borderRadius: '6px',
+            cursor: assets.length === 0 ? 'not-allowed' : 'pointer',
+            opacity: assets.length === 0 ? 0.5 : 1,
+          }}
+        >
+          <MdDescription size={18} />
+          CSV
+        </button>
       </div>
 
       {/* Table */}

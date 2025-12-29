@@ -650,8 +650,9 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
       setIsEscalating(false);
       setEscalationReason('');
       setSelectedEscalationContact('');
-      fetchTicketDetails();
-      alert('Ticket escalated successfully');
+      alert('Query escalated successfully');
+      // Navigate to ticket list with timestamp to force refresh
+      navigate(`/${customUrlPath}/portal/tickets/my-tickets?refresh=${Date.now()}`);
     } catch (error) {
       console.error('Error escalating ticket:', error);
       alert('Failed to escalate query');
@@ -770,8 +771,8 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <XCircleIcon className="h-16 w-16 text-red-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Ticket Not Found</h2>
-          <p className="text-gray-600 mb-4">The ticket you're looking for doesn't exist or you don't have access.</p>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Query Not Found</h2>
+          <p className="text-gray-600 mb-4">The query you're looking for doesn't exist or you don't have access.</p>
           <button
             onClick={() => navigate(-1)}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
@@ -1548,7 +1549,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                       onChange={(e) => setEscalationReason(e.target.value)}
                       rows={3}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Explain why this ticket needs escalation..."
+                      placeholder="Explain why this query needs escalation..."
                     />
                   </div>
 

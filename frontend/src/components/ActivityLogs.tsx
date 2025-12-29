@@ -109,6 +109,11 @@ const ActivityLogs: React.FC<ActivityLogsProps> = ({ wrapWithLayout = true }) =>
     return date.toLocaleString();
   };
 
+  const formatDisplayText = (text: string) => {
+    if (!text) return text;
+    return text.replace(/ticket/gi, 'query').replace(/Ticket/g, 'Query');
+  };
+
   const getActionColor = (action: string) => {
     const colors: Record<string, string> = {
       'create': '#10b981',
@@ -203,7 +208,7 @@ const ActivityLogs: React.FC<ActivityLogsProps> = ({ wrapWithLayout = true }) =>
               </label>
               <input
                 type="text"
-                placeholder="ticket, user, project..."
+                placeholder="query, user, project..."
                 value={filters.entity}
                 onChange={(e) => handleFilterChange('entity', e.target.value)}
                 style={{
@@ -451,7 +456,7 @@ const ActivityLogs: React.FC<ActivityLogsProps> = ({ wrapWithLayout = true }) =>
                         borderBottom: '1px solid #e5e7eb'
                       }}>
                         <div style={{ fontWeight: 500, color: '#1f2937' }}>
-                          {log.entity}
+                          {formatDisplayText(log.entity)}
                         </div>
                         {log.entityName && (
                           <div style={{ fontSize: '12px', color: '#6b7280' }}>
@@ -469,7 +474,7 @@ const ActivityLogs: React.FC<ActivityLogsProps> = ({ wrapWithLayout = true }) =>
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap'
                       }}>
-                        {log.description || '-'}
+                        {formatDisplayText(log.description) || '-'}
                       </td>
                       <td style={{
                         padding: '12px 16px',
@@ -637,7 +642,7 @@ const ActivityLogs: React.FC<ActivityLogsProps> = ({ wrapWithLayout = true }) =>
                     Entity
                   </div>
                   <div style={{ fontSize: '14px', color: '#1f2937' }}>
-                    {selectedLog.entity}
+                    {formatDisplayText(selectedLog.entity)}
                     {selectedLog.entityId && <span style={{ color: '#6b7280' }}> (ID: {selectedLog.entityId})</span>}
                   </div>
                   {selectedLog.entityName && (
@@ -653,7 +658,7 @@ const ActivityLogs: React.FC<ActivityLogsProps> = ({ wrapWithLayout = true }) =>
                       Description
                     </div>
                     <div style={{ fontSize: '14px', color: '#1f2937' }}>
-                      {selectedLog.description}
+                      {formatDisplayText(selectedLog.description)}
                     </div>
                   </div>
                 )}

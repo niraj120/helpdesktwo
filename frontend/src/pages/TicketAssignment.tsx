@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
+import ModuleHeader from '../components/ModuleHeader';
 import axios from 'axios';
 import { usePermissions } from '../hooks/usePermissions';
 import { API_CONFIG } from '../config/constants';
@@ -181,7 +182,7 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
 
       await Promise.all(promises);
       
-      alert(`Successfully assigned ${selectedTickets.length} ticket(s)`);
+      alert(`Successfully assigned ${selectedTickets.length} query(ies)`);
       setSelectedTickets([]);
       setSelectedAgent('');
       fetchTickets(); // Refresh ticket list
@@ -224,6 +225,18 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
     return colors[statusStr] || '#6B7280';
   };
 
+  const getStatusName = (status: string | number) => {
+    const statusCode = typeof status === 'number' ? status : Number(status);
+    const statusNames: Record<number, string> = {
+      1: 'Open',
+      2: 'In Progress',
+      3: 'On Hold',
+      4: 'Resolved',
+      5: 'Closed',
+    };
+    return statusNames[statusCode] || `Status ${statusCode}`;
+  };
+
   const getPriorityColor = (priority: string | number) => {
     const colors: Record<string, string> = {
       'low': '#10B981',
@@ -246,15 +259,10 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
 
   const content = (
     <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
-        {/* Header */}
-        <div style={{ marginBottom: '32px' }}>
-          <h1 style={{ fontSize: '28px', fontWeight: 700, color: '#111827', marginBottom: '8px' }}>
-            Ticket Assignment
-          </h1>
-          <p style={{ color: '#6B7280', fontSize: '14px' }}>
-            Select tickets and assign them to agents
-          </p>
-        </div>
+        <ModuleHeader
+          title="Query Assignment"
+          subtitle="Select queries and assign them to agents"
+        />
 
         {/* Assignment Panel */}
         <div style={{
@@ -294,7 +302,7 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
             
             <div style={{ flex: 1, minWidth: '250px' }}>
               <label style={{ display: 'block', fontSize: '14px', fontWeight: 600, color: '#374151', marginBottom: '8px' }}>
-                Select Agent
+                Select Counselor
               </label>
               <select
                 value={selectedAgent}
@@ -331,7 +339,7 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
                 transition: 'all 0.2s',
               }}
             >
-              {assigning ? 'Assigning...' : `Assign ${selectedTickets.length} Ticket(s)`}
+              {assigning ? 'Assigning...' : `Assign ${selectedTickets.length} Query(ies)`}
             </button>
           </div>
         </div>
@@ -348,7 +356,7 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
             <div style={{ flex: 1, minWidth: '200px' }}>
               <input
                 type="text"
-                placeholder="Search by ticket number, subject, or email..."
+                placeholder="Search by query number, subject, or email..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 style={{
@@ -371,7 +379,7 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
                   fontSize: '14px',
                 }}
               >
-                <option value="all">All Statuses</option>
+                <option value="all">All</option>
                 <option value="open">Open</option>
                 <option value="in-progress">In Progress</option>
                 <option value="pending">Pending</option>
@@ -401,7 +409,7 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
                   />
                 </th>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' }}>
-                  Ticket #
+                  Query #
                 </th>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' }}>
                   Subject
@@ -482,7 +490,7 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
                         background: getStatusColor(ticket.status) + '20',
                         color: getStatusColor(ticket.status),
                       }}>
-                        {ticket.status}
+                        {getStatusName(ticket.status)}
                       </span>
                     </td>
                     <td style={{ padding: '12px 16px' }}>

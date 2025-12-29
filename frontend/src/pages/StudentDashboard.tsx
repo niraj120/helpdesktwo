@@ -293,12 +293,32 @@ const StudentDashboard: React.FC = () => {
           (field: any) => !excludeFields.includes(field.fieldName.toLowerCase())
         );
       }
-      
-      setTicketSettings(settings);
+
+      // Fetch centers from the new centers API
+      let centersData: any[] = [];
+      try {
+        const centersResponse = await axios.get(
+          `${API_CONFIG.API_URL}/centers?projectId=${branding.projectId}&isActive=true`
+        );
+        if (centersResponse.data.success) {
+          centersData = centersResponse.data.data || [];
+          console.log('📍 Loaded centers from centers API:', centersData);
+        }
+      } catch (centersError) {
+        console.error('Error fetching centers:', centersError);
+        centersData = [];
+      }
+
+      // Merge settings with centers data
+      const mergedSettings = {
+        ...settings,
+        offlineCenters: centersData
+      };
+      setTicketSettings(mergedSettings);
       
       // Initialize filtered centers
-      if (settings.offlineCenters) {
-        setFilteredCenters(settings.offlineCenters);
+      if (centersData.length > 0) {
+        setFilteredCenters(centersData);
       }
 
       // Fetch KB articles
@@ -1250,7 +1270,7 @@ const StudentDashboard: React.FC = () => {
                         {/* Features */}
                         {center.features && center.features.length > 0 && (
                           <div className="mt-4 pt-4 border-t border-gray-200">
-                            <p className="text-sm font-medium text-gray-700 mb-2">Available Features</p>
+                            <p className="text-sm font-medium text-gray-700 mb-2">{t('availableFeatures')}</p>
                             <div className="flex flex-wrap gap-2">
                               {center.features.map((feature, featureIdx) => (
                                 <span key={featureIdx} className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
@@ -1280,7 +1300,7 @@ const StudentDashboard: React.FC = () => {
                               background: `linear-gradient(135deg, ${projectBranding?.primaryColor} 0%, ${projectBranding?.secondaryColor} 100%)`,
                             }}
                           >
-                            🗺️ Get Directions
+                            🗺️ {t('getDirections')}
                           </button>
                         </div>
                       </div>
@@ -1531,7 +1551,7 @@ const StudentDashboard: React.FC = () => {
                   className="flex items-center space-x-2 px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
                 >
                   <ArrowLeftIcon className="h-5 w-5" />
-                  <span>Back to My Tickets</span>
+                  <span>Back to My Queries</span>
                 </button>
               </div>
 

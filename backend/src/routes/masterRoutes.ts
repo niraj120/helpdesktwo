@@ -22,10 +22,19 @@ import {
   deleteCity,
 } from '../controllers/master-data/cityController';
 
+import { getStatesByCountry, getCitiesByState } from '../controllers/master-data/cityStateController';
+
 const router = Router();
 
 // All routes require authentication
 router.use(auth);
+
+// Nested routes MUST come before parameterized routes to avoid conflicts
+// Get states by country ID
+router.get('/countries/:countryId/states', checkPermission(['MASTER_DATA_VIEW', 'OFFLINE_MODULE_ACCESS']), getStatesByCountry);
+
+// Get cities by state ID
+router.get('/states/:stateId/cities', checkPermission(['MASTER_DATA_VIEW', 'OFFLINE_MODULE_ACCESS']), getCitiesByState);
 
 // Country routes
 router.get('/countries', checkPermission('MASTER_DATA_VIEW'), getCountries);

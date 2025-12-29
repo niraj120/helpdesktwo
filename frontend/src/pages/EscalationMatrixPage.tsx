@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
+import ModuleHeader from '../components/ModuleHeader';
 import { AddEscalationMatrixModal } from '../components/AddEscalationMatrixModal';
 import { API_CONFIG } from '../config/constants';
 
@@ -264,15 +265,18 @@ const EscalationMatrixPage: React.FC = () => {
           </button>
         </div>
 
+        <ModuleHeader 
+          title="Escalation Matrix"
+          subtitle="Configure escalation policies for SLA breaches"
+        />
+
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           marginBottom: '24px',
         }}>
-          <p style={{ margin: 0, color: '#6b7280', fontSize: '14px' }}>
-            Configure escalation policies for SLA breaches
-          </p>
+          <div></div>
           <button
             onClick={() => setShowCreateModal(true)}
             style={{

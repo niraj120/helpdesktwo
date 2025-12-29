@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
+import ModuleHeader from '../components/ModuleHeader';
 import { API_CONFIG } from '../config/constants';
 
 interface TicketStats {
@@ -67,12 +68,10 @@ const Dashboard = () => {
   return (
     <DashboardLayout>
       <div style={{ padding: '20px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '8px', color: '#111827' }}>
-          Dashboard
-        </h1>
-        <p style={{ fontSize: '14px', color: '#6b7280', marginBottom: '24px' }}>
-          Overview of your work
-        </p>
+        <ModuleHeader
+          title="Dashboard"
+          subtitle="Overview of your work"
+        />
 
         {/* Stats Cards */}
         <div style={{

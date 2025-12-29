@@ -158,9 +158,9 @@ const KBChatbot: React.FC = () => {
   };
 
   const quickQuestions = [
-    'How do I submit a ticket?',
+    'How do I submit a query?',
     'What are the guidelines?',
-    'How to track my ticket?',
+    'How to track my query?',
     'Contact information'
   ];
 

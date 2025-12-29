@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import API_BASE_URL from '../config/api';
+import ModuleHeader from '../components/ModuleHeader';
 import {
   EnvelopeIcon,
   CheckCircleIcon,
@@ -361,15 +362,10 @@ const EmailConfigPage: React.FC = () => {
     <div className="p-8">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-            <EnvelopeIcon className="h-8 w-8 text-blue-600" />
-            Email Configuration
-          </h1>
-          <p className="text-gray-600 mt-2">
-            Configure SMTP settings and manage email triggers for your project
-          </p>
-        </div>
+        <ModuleHeader 
+          title="Email Configuration"
+          subtitle="Configure SMTP settings and manage email triggers for your project"
+        />
 
         {/* Project Selector (for super admin) */}
         {projects.length > 0 && (

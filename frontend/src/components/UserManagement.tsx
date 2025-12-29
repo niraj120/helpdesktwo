@@ -10,6 +10,7 @@ interface Role {
   _id: string;
   name: string;
   code: string;
+  projectId?: string; // Optional: roles can be project-specific or global
 }
 
 interface Project {
@@ -17,6 +18,14 @@ interface Project {
   name: string;
   code: string;
   status?: string;
+}
+
+interface Center {
+  _id: string;
+  centerName: string;
+  city: string;
+  state: string;
+  projectId: string;
 }
 
 interface User {
@@ -33,6 +42,7 @@ interface User {
   joiningDate?: string;
   reportingManager?: User;
   projects?: Project[];
+  centers?: Center[];
   isActive: boolean;
   createdAt: string;
 }
@@ -59,10 +69,19 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [centers, setCenters] = useState<Center[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterRole, setFilterRole] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [filterProject, setFilterProject] = useState('');
+  const [filterCenter, setFilterCenter] = useState('');
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalUsers, setTotalUsers] = useState(0);
+  const [usersPerPage] = useState(50); // Show 50 users per page
   
   // Modal states
   const [showUserModal, setShowUserModal] = useState(false);
@@ -77,6 +96,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
   
   // Form data
   const [formData, setFormData] = useState({
+    primaryProject: '', // Main project selection for filtering roles and centers
     firstName: '',
     lastName: '',
     email: '',
@@ -90,7 +110,17 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
     joiningDate: '',
     reportingManager: '',
     projects: [] as string[],
+    centers: [] as string[],
   });
+  
+  // Filtered data based on primary project selection
+  const filteredRoles = formData.primaryProject 
+    ? roles.filter(role => !role.projectId || role.projectId === formData.primaryProject)
+    : roles;
+  
+  const filteredCenters = formData.primaryProject
+    ? centers.filter(center => center.projectId === formData.primaryProject)
+    : [];
   
   // HRMS data for bulk selection
   const [hrmsEmployees, setHrmsEmployees] = useState<HRMSEmployee[]>([]);
@@ -143,6 +173,8 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
     try {
       setLoading(true);
       const params = new URLSearchParams();
+      params.append('page', currentPage.toString());
+      params.append('limit', usersPerPage.toString());
       if (searchQuery) params.append('search', searchQuery);
       if (filterRole) params.append('role', filterRole);
       if (filterStatus) params.append('isActive', filterStatus);
@@ -153,7 +185,9 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
       if (projectId) params.append('project', projectId); // Backend uses 'project' not 'projectId'
       
       const token = localStorage.getItem('authToken');
-      const response = await fetch(`${API_CONFIG.API_URL}/users?${params}`, {
+      const url = `${API_CONFIG.API_URL}/users?${params}`;
+      
+      const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -168,6 +202,11 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
       
       if (data.success) {
         setUsers(data.data);
+        // Set pagination data
+        if (data.pagination) {
+          setTotalPages(data.pagination.pages);
+          setTotalUsers(data.pagination.total);
+        }
       } else {
         throw new Error(data.error || 'Failed to fetch users');
       }
@@ -220,6 +259,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
         
         if (projectsData.success && projectsData.data && Array.isArray(projectsData.data.projects)) {
           setProjects(projectsData.data.projects);
+          // Centers will be fetched when user selects a project
         }
       } else {
         // In project portal, set the current project from context
@@ -228,6 +268,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
           name: projectContext.projectName,
           code: projectContext.projectCode,
         }]);
+        // Centers will be fetched when user selects a project in the form
       }
     } catch (error) {
       console.error('Error fetching roles/projects:', error);
@@ -236,25 +277,62 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
 
   useEffect(() => {
     // Prevent duplicate calls from React.StrictMode on initial load
-    if (!hasFetchedInitialData.current && !searchQuery && !filterRole && !filterStatus) {
-      console.log('🔄 Initial load: Fetching users and roles/projects...');
+    if (!hasFetchedInitialData.current && !searchQuery && !filterRole && !filterStatus && !filterProject && !filterCenter) {
       hasFetchedInitialData.current = true;
       fetchUsers();
       fetchRolesAndProjects();
-    } else if (searchQuery || filterRole || filterStatus) {
+    } else if (searchQuery || filterRole || filterStatus || filterProject || filterCenter) {
       // Allow re-fetching when filters change
-      console.log('🔍 Filters changed: Re-fetching users...');
+      setCurrentPage(1); // Reset to first page when filters change
       fetchUsers();
       fetchRolesAndProjects();
-    } else {
-      console.log('⏭️ Skipping duplicate initial fetch (already loaded)');
     }
-  }, [searchQuery, filterRole, filterStatus]);
+  }, [searchQuery, filterRole, filterStatus, filterProject, filterCenter]);
+
+  // Separate effect for page changes
+  useEffect(() => {
+    if (hasFetchedInitialData.current && currentPage > 1) {
+      fetchUsers();
+    }
+  }, [currentPage]);
+
+  // Fetch centers when filterProject changes
+  useEffect(() => {
+    const fetchCentersForFilter = async () => {
+      if (filterProject) {
+        try {
+          const token = localStorage.getItem('authToken');
+          const centersRes = await fetch(`${API_CONFIG.API_URL}/offline-module/${filterProject}/centers`, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          
+          const centersData = await centersRes.json();
+          
+          if (centersData.success && Array.isArray(centersData.centers)) {
+            setCenters(centersData.centers);
+          }
+        } catch (error) {
+          console.error('Error fetching centers for filter:', error);
+        }
+      }
+    };
+    
+    fetchCentersForFilter();
+  }, [filterProject]);
 
   // Handle create user
   const handleOpenCreateModal = () => {
     setEditingUser(null);
+    
+    // Check if in project portal context
+    const projectContextStr = localStorage.getItem('projectContext');
+    const projectContext = projectContextStr ? JSON.parse(projectContextStr) : null;
+    
     setFormData({
+      primaryProject: projectContext?.projectId || '', // Auto-select if in project portal
       firstName: '',
       lastName: '',
       email: '',
@@ -267,15 +345,20 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
       designation: '',
       joiningDate: '',
       reportingManager: '',
-      projects: [],
+      projects: projectContext?.projectId ? [projectContext.projectId] : [],
+      centers: [],
     });
     setShowUserModal(true);
   };
 
   // Handle edit user
-  const handleEditUser = (user: User) => {
+  const handleEditUser = async (user: User) => {
     setEditingUser(user);
+    const userProjects = user.projects?.map(p => p._id) || [];
+    const primaryProjectId = userProjects[0] || '';
+    
     setFormData({
+      primaryProject: primaryProjectId, // Use first project as primary
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
@@ -288,8 +371,31 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
       designation: user.designation || '',
       joiningDate: user.joiningDate ? user.joiningDate.split('T')[0] : '',
       reportingManager: user.reportingManager?._id || '',
-      projects: user.projects?.map(p => p._id) || [],
+      projects: userProjects,
+      centers: user.centers?.map(c => c._id) || [],
     });
+    
+    // Fetch centers for the primary project
+    if (primaryProjectId) {
+      try {
+        const token = localStorage.getItem('authToken');
+        const centersRes = await fetch(`${API_CONFIG.API_URL}/offline-module/${primaryProjectId}/centers`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        const centersData = await centersRes.json();
+        
+        if (centersData.success && Array.isArray(centersData.centers)) {
+          setCenters(centersData.centers);
+        }
+      } catch (error) {
+        console.error('Error fetching centers for edit:', error);
+      }
+    }
+    
     setShowUserModal(true);
   };
 
@@ -332,6 +438,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
         joiningDate: formData.joiningDate || undefined,
         reportingManager: formData.reportingManager || undefined,
         projects: formData.projects,
+        centers: formData.centers,
       };
       
       if (!editingUser && formData.password) {
@@ -634,7 +741,44 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
     }
   };
 
-  const filteredUsers = users;
+  // Apply filters to users
+  const filteredUsers = users.filter(user => {
+    // Search filter
+    if (searchQuery) {
+      const searchLower = searchQuery.toLowerCase();
+      const matchesSearch = 
+        user.firstName?.toLowerCase().includes(searchLower) ||
+        user.lastName?.toLowerCase().includes(searchLower) ||
+        user.email?.toLowerCase().includes(searchLower) ||
+        user.employeeCode?.toLowerCase().includes(searchLower);
+      if (!matchesSearch) return false;
+    }
+
+    // Role filter
+    if (filterRole && user.role?._id !== filterRole) {
+      return false;
+    }
+
+    // Status filter
+    if (filterStatus !== '') {
+      const isActive = filterStatus === 'true';
+      if (user.isActive !== isActive) return false;
+    }
+
+    // Project filter
+    if (filterProject) {
+      const userProjectIds = user.projects?.map(p => p._id) || [];
+      if (!userProjectIds.includes(filterProject)) return false;
+    }
+
+    // Center filter
+    if (filterCenter) {
+      const userCenterIds = user.centers?.map(c => c._id) || [];
+      if (!userCenterIds.includes(filterCenter)) return false;
+    }
+
+    return true;
+  });
 
   if (loading) {
     const loadingContent = (
@@ -706,12 +850,18 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
       fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
     }}>
         {/* Header */}
-        <div style={{ marginBottom: '24px' }}>
+        <div style={{ 
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          padding: '32px 40px',
+          borderRadius: '16px',
+          marginBottom: '32px',
+          boxShadow: '0 10px 40px rgba(102, 126, 234, 0.2)',
+        }}>
           <h1 style={{ 
             margin: '0 0 8px 0',
-            fontSize: '28px', 
-            fontWeight: 700, 
-            color: '#111827',
+            fontSize: '32px', 
+            fontWeight: 800, 
+            color: '#ffffff',
             letterSpacing: '-0.02em',
             fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
           }}>
@@ -719,8 +869,8 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
           </h1>
           <p style={{ 
             margin: 0,
-            fontSize: '14px', 
-            color: '#6B7280',
+            fontSize: '15px', 
+            color: 'rgba(255, 255, 255, 0.9)',
             fontWeight: 400,
             fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
           }}>
@@ -730,28 +880,33 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
 
         {/* Actions Bar */}
         <div style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center', 
-          marginBottom: '24px', 
-          gap: '16px', 
-          flexWrap: 'wrap' 
+          display: 'grid',
+          gridTemplateColumns: '1fr auto',
+          gap: '20px',
+          alignItems: 'start',
+          marginBottom: '24px',
         }}>
-          <div style={{ display: 'flex', gap: '12px', flex: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+          {/* Filters Section */}
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', 
+            gap: '12px',
+            alignItems: 'center'
+          }}>
             {/* Search */}
-            <div style={{ position: 'relative', flex: '1', minWidth: '250px', maxWidth: '400px' }}>
+            <div style={{ position: 'relative', gridColumn: 'span 2', minWidth: '300px' }}>
               <svg 
                 width="18" 
                 height="18" 
                 viewBox="0 0 24 24" 
                 fill="none" 
-                stroke="#6B7280" 
+                stroke="#9CA3AF" 
                 strokeWidth="2" 
                 strokeLinecap="round" 
                 strokeLinejoin="round"
                 style={{
                   position: 'absolute',
-                  left: '14px',
+                  left: '16px',
                   top: '50%',
                   transform: 'translateY(-50%)',
                   pointerEvents: 'none',
@@ -767,22 +922,23 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
                 onChange={(e) => setSearchQuery(e.target.value)}
                 style={{ 
                   width: '100%', 
-                  padding: '10px 16px 10px 44px', 
-                  border: '1.5px solid #E5E7EB', 
-                  borderRadius: '8px', 
+                  padding: '12px 16px 12px 48px', 
+                  border: '2px solid #E5E7EB', 
+                  borderRadius: '12px', 
                   fontSize: '14px', 
                   outline: 'none',
                   transition: 'all 0.2s ease',
                   fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
                   background: 'white',
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
                 }}
                 onFocus={(e) => {
-                  e.target.style.borderColor = '#2563EB';
-                  e.target.style.boxShadow = '0 0 0 3px rgba(37, 99, 235, 0.1)';
+                  e.target.style.borderColor = '#667eea';
+                  e.target.style.boxShadow = '0 4px 16px rgba(102, 126, 234, 0.15)';
                 }}
                 onBlur={(e) => {
                   e.target.style.borderColor = '#E5E7EB';
-                  e.target.style.boxShadow = 'none';
+                  e.target.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.04)';
                 }}
               />
             </div>
@@ -792,23 +948,24 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
               value={filterRole}
               onChange={(e) => setFilterRole(e.target.value)}
               style={{ 
-                padding: '10px 16px', 
-                border: '1.5px solid #E5E7EB', 
-                borderRadius: '8px', 
+                padding: '12px 16px', 
+                border: '2px solid #E5E7EB', 
+                borderRadius: '12px', 
                 fontSize: '14px', 
                 outline: 'none', 
                 backgroundColor: 'white',
                 fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
               }}
               onFocus={(e) => {
-                e.target.style.borderColor = '#2563EB';
-                e.target.style.boxShadow = '0 0 0 3px rgba(37, 99, 235, 0.1)';
+                e.target.style.borderColor = '#667eea';
+                e.target.style.boxShadow = '0 4px 16px rgba(102, 126, 234, 0.15)';
               }}
               onBlur={(e) => {
                 e.target.style.borderColor = '#E5E7EB';
-                e.target.style.boxShadow = 'none';
+                e.target.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.04)';
               }}
             >
               <option value="">{getText('All Roles', 'सर्व रोल', 'सर्व रोल')}</option>
@@ -822,32 +979,112 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
               style={{ 
-                padding: '10px 16px', 
-                border: '1.5px solid #E5E7EB', 
-                borderRadius: '8px', 
+                padding: '12px 16px', 
+                border: '2px solid #E5E7EB', 
+                borderRadius: '12px', 
                 fontSize: '14px', 
                 outline: 'none', 
                 backgroundColor: 'white',
                 fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
               }}
               onFocus={(e) => {
-                e.target.style.borderColor = '#2563EB';
-                e.target.style.boxShadow = '0 0 0 3px rgba(37, 99, 235, 0.1)';
+                e.target.style.borderColor = '#667eea';
+                e.target.style.boxShadow = '0 4px 16px rgba(102, 126, 234, 0.15)';
               }}
               onBlur={(e) => {
                 e.target.style.borderColor = '#E5E7EB';
-                e.target.style.boxShadow = 'none';
+                e.target.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.04)';
               }}
             >
               <option value="">{getText('All Status', 'सर्व स्थिती', 'सर्व स्थिती')}</option>
               <option value="true">{getText('Active', 'सक्रिय', 'सक्रिय')}</option>
               <option value="false">{getText('Inactive', 'निष्क्रिय', 'निष्क्रिय')}</option>
             </select>
+
+            {/* Project Filter */}
+            <select
+              value={filterProject}
+              onChange={(e) => {
+                setFilterProject(e.target.value);
+                setFilterCenter(''); // Reset center filter when project changes
+              }}
+              style={{ 
+                padding: '12px 16px', 
+                border: '2px solid #E5E7EB', 
+                borderRadius: '12px', 
+                fontSize: '14px', 
+                outline: 'none', 
+                backgroundColor: 'white',
+                fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
+              }}
+              onFocus={(e) => {
+                e.target.style.borderColor = '#667eea';
+                e.target.style.boxShadow = '0 4px 16px rgba(102, 126, 234, 0.15)';
+              }}
+              onBlur={(e) => {
+                e.target.style.borderColor = '#E5E7EB';
+                e.target.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.04)';
+              }}
+            >
+              <option value="">{getText('All Projects', 'सर्व प्रकल्प', 'सर्व प्रकल्प')}</option>
+              {projects.map(project => (
+                <option key={project._id} value={project._id}>{project.name}</option>
+              ))}
+            </select>
+
+            {/* Center Filter */}
+            <select
+              value={filterCenter}
+              onChange={(e) => setFilterCenter(e.target.value)}
+              disabled={!filterProject}
+              style={{ 
+                padding: '12px 16px', 
+                border: '2px solid #E5E7EB', 
+                borderRadius: '12px', 
+                fontSize: '14px', 
+                outline: 'none', 
+                backgroundColor: !filterProject ? '#f3f4f6' : 'white',
+                fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+                cursor: !filterProject ? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s ease',
+                opacity: !filterProject ? 0.6 : 1,
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
+              }}
+              onFocus={(e) => {
+                if (filterProject) {
+                  e.target.style.borderColor = '#667eea';
+                  e.target.style.boxShadow = '0 4px 16px rgba(102, 126, 234, 0.15)';
+                }
+              }}
+              onBlur={(e) => {
+                e.target.style.borderColor = '#E5E7EB';
+                e.target.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.04)';
+              }}
+            >
+              <option value="">
+                {!filterProject 
+                  ? getText('Select project first', 'प्रथम प्रोजेक्ट निवडा', 'प्रथम प्रोजेक्ट निवडा')
+                  : getText('All Centers', 'सर्व केंद्रे', 'सर्व केंद्रे')
+                }
+              </option>
+              {filterProject && centers
+                .filter(center => center.projectId === filterProject)
+                .map(center => (
+                  <option key={center._id} value={center._id}>
+                    {center.centerName} - {center.city}
+                  </option>
+                ))}
+            </select>
           </div>
 
-          <div style={{ display: 'flex', gap: '12px' }}>
+          {/* Buttons Section */}
+          <div style={{ display: 'flex', gap: '12px', flexShrink: 0 }}>
             {hasPermission('USER_CREATE') && (
               <button
                 onClick={() => setShowHRMSModal(true)}
@@ -931,10 +1168,10 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
         {/* Users Table */}
         <div style={{
           background: 'white',
-          borderRadius: '12px',
+          borderRadius: '16px',
           border: '1px solid #E5E7EB',
           overflow: 'hidden',
-          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.06)',
+          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
         }}>
           {filteredUsers.length === 0 ? (
             <div style={{
@@ -1375,6 +1612,211 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
           )}
         </div>
 
+        {/* Pagination Controls */}
+        {!loading && filteredUsers.length > 0 && (
+          <div style={{
+            marginTop: '24px',
+            padding: '16px',
+            background: 'white',
+            borderRadius: '12px',
+            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '16px'
+          }}>
+            {/* Pagination Info */}
+            <div style={{
+              fontSize: '14px',
+              color: '#6b7280',
+              fontWeight: 500
+            }}>
+              Showing {((currentPage - 1) * usersPerPage) + 1} to {Math.min(currentPage * usersPerPage, totalUsers)} of {totalUsers} users
+            </div>
+
+            {/* Pagination Buttons */}
+            <div style={{
+              display: 'flex',
+              gap: '8px',
+              alignItems: 'center'
+            }}>
+              <button
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+                style={{
+                  padding: '8px 12px',
+                  background: currentPage === 1 ? '#f3f4f6' : 'white',
+                  color: currentPage === 1 ? '#9ca3af' : '#667eea',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  if (currentPage !== 1) {
+                    e.currentTarget.style.background = '#f9fafb';
+                    e.currentTarget.style.borderColor = '#667eea';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (currentPage !== 1) {
+                    e.currentTarget.style.background = 'white';
+                    e.currentTarget.style.borderColor = '#e5e7eb';
+                  }
+                }}
+              >
+                First
+              </button>
+
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                style={{
+                  padding: '8px 12px',
+                  background: currentPage === 1 ? '#f3f4f6' : 'white',
+                  color: currentPage === 1 ? '#9ca3af' : '#667eea',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  if (currentPage !== 1) {
+                    e.currentTarget.style.background = '#f9fafb';
+                    e.currentTarget.style.borderColor = '#667eea';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (currentPage !== 1) {
+                    e.currentTarget.style.background = 'white';
+                    e.currentTarget.style.borderColor = '#e5e7eb';
+                  }
+                }}
+              >
+                Previous
+              </button>
+
+              {/* Page Numbers */}
+              <div style={{
+                display: 'flex',
+                gap: '4px',
+                alignItems: 'center'
+              }}>
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let pageNum;
+                  if (totalPages <= 5) {
+                    pageNum = i + 1;
+                  } else if (currentPage <= 3) {
+                    pageNum = i + 1;
+                  } else if (currentPage >= totalPages - 2) {
+                    pageNum = totalPages - 4 + i;
+                  } else {
+                    pageNum = currentPage - 2 + i;
+                  }
+
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => setCurrentPage(pageNum)}
+                      style={{
+                        padding: '8px 12px',
+                        minWidth: '40px',
+                        background: currentPage === pageNum ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : 'white',
+                        color: currentPage === pageNum ? 'white' : '#667eea',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease'
+                      }}
+                      onMouseEnter={(e) => {
+                        if (currentPage !== pageNum) {
+                          e.currentTarget.style.background = '#f9fafb';
+                          e.currentTarget.style.borderColor = '#667eea';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (currentPage !== pageNum) {
+                          e.currentTarget.style.background = 'white';
+                          e.currentTarget.style.borderColor = '#e5e7eb';
+                        }
+                      }}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                style={{
+                  padding: '8px 12px',
+                  background: currentPage === totalPages ? '#f3f4f6' : 'white',
+                  color: currentPage === totalPages ? '#9ca3af' : '#667eea',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  if (currentPage !== totalPages) {
+                    e.currentTarget.style.background = '#f9fafb';
+                    e.currentTarget.style.borderColor = '#667eea';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (currentPage !== totalPages) {
+                    e.currentTarget.style.background = 'white';
+                    e.currentTarget.style.borderColor = '#e5e7eb';
+                  }
+                }}
+              >
+                Next
+              </button>
+
+              <button
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage === totalPages}
+                style={{
+                  padding: '8px 12px',
+                  background: currentPage === totalPages ? '#f3f4f6' : 'white',
+                  color: currentPage === totalPages ? '#9ca3af' : '#667eea',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  if (currentPage !== totalPages) {
+                    e.currentTarget.style.background = '#f9fafb';
+                    e.currentTarget.style.borderColor = '#667eea';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (currentPage !== totalPages) {
+                    e.currentTarget.style.background = 'white';
+                    e.currentTarget.style.borderColor = '#e5e7eb';
+                  }
+                }}
+              >
+                Last
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Create/Edit User Modal */}
         {showUserModal && (
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
@@ -1389,6 +1831,79 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
               </div>
               
               <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
+                {/* Primary Project Selection - FIRST */}
+                <div style={{ 
+                  marginBottom: '24px', 
+                  padding: '16px', 
+                  backgroundColor: '#fef3c7', 
+                  border: '2px solid #fbbf24', 
+                  borderRadius: '8px' 
+                }}>
+                  <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: '#92400e', marginBottom: '8px' }}>
+                    🏢 {getText('Select Project', 'प्रोजेक्ट निवडा', 'प्रोजेक्ट निवडा')} <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <select 
+                    value={formData.primaryProject} 
+                    onChange={async (e) => {
+                      const projectId = e.target.value;
+                      setFormData({ 
+                        ...formData, 
+                        primaryProject: projectId,
+                        projects: projectId ? [projectId] : [],
+                        role: '',
+                        centers: []
+                      });
+                      
+                      // Fetch centers for the selected project
+                      if (projectId) {
+                        try {
+                          const token = localStorage.getItem('authToken');
+                          const centersRes = await fetch(`${API_CONFIG.API_URL}/offline-module/${projectId}/centers`, {
+                            headers: {
+                              'Authorization': `Bearer ${token}`,
+                              'Content-Type': 'application/json',
+                            },
+                          });
+                          
+                          const centersData = await centersRes.json();
+                          
+                          if (centersData.success && Array.isArray(centersData.centers)) {
+                            setCenters(centersData.centers);
+                          } else {
+                            setCenters([]);
+                          }
+                        } catch (error) {
+                          console.error('Error fetching centers for project:', error);
+                          setCenters([]);
+                        }
+                      } else {
+                        setCenters([]);
+                      }
+                    }} 
+                    style={{ 
+                      width: '100%', 
+                      padding: '12px', 
+                      border: '2px solid #fbbf24', 
+                      borderRadius: '6px', 
+                      fontSize: '14px', 
+                      outline: 'none', 
+                      boxSizing: 'border-box',
+                      backgroundColor: 'white',
+                      fontWeight: '500'
+                    }}
+                  >
+                    <option value="">{getText('⚠️ Select a project first', '⚠️ प्रथम प्रोजेक्ट निवडा', '⚠️ प्रथम प्रोजेक्ट निवडा')}</option>
+                    {projects.map(project => (
+                      <option key={project._id} value={project._id}>
+                        {project.name} {project.code ? `(${project.code})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p style={{ fontSize: '12px', color: '#92400e', marginTop: '8px', fontStyle: 'italic' }}>
+                    💡 {getText('Roles and centers will be filtered based on this project', 'या प्रोजेक्टच्या आधारे भूमिका आणि केंद्रे फिल्टर केली जातील', 'या प्रोजेक्टच्या आधारे भूमिका आणि केंद्रे फिल्टर केली जातील')}
+                  </p>
+                </div>
+
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '6px' }}>
@@ -1475,12 +1990,42 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
                   <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '6px' }}>
                     {getText('Role', 'रोल', 'रोल')} <span style={{ color: '#ef4444' }}>*</span>
                   </label>
-                  <select value={formData.role} onChange={(e) => setFormData({ ...formData, role: e.target.value })} style={{ width: '100%', padding: '12px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}>
-                    <option value="">{getText('Select Role', 'रोल निवडा', 'रोल निवडा')}</option>
-                    {roles.map(role => (
+                  <select 
+                    value={formData.role} 
+                    onChange={(e) => setFormData({ ...formData, role: e.target.value })} 
+                    disabled={!formData.primaryProject}
+                    style={{ 
+                      width: '100%', 
+                      padding: '12px', 
+                      border: '1px solid #d1d5db', 
+                      borderRadius: '6px', 
+                      fontSize: '14px', 
+                      outline: 'none', 
+                      boxSizing: 'border-box',
+                      backgroundColor: !formData.primaryProject ? '#f3f4f6' : 'white',
+                      cursor: !formData.primaryProject ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    <option value="">
+                      {!formData.primaryProject 
+                        ? getText('⚠️ Select project first', '⚠️ प्रथम प्रोजेक्ट निवडा', '⚠️ प्रथम प्रोजेक्ट निवडा')
+                        : getText('Select Role', 'रोल निवडा', 'रोल निवडा')
+                      }
+                    </option>
+                    {filteredRoles.map(role => (
                       <option key={role._id} value={role._id}>{role.name}</option>
                     ))}
                   </select>
+                  {!formData.primaryProject && (
+                    <p style={{ fontSize: '12px', color: '#ef4444', marginTop: '4px', fontStyle: 'italic' }}>
+                      {getText('Please select a project first to see available roles', 'उपलब्ध भूमिका पाहण्यासाठी कृपया प्रथम प्रोजेक्ट निवडा', 'उपलब्ध भूमिका पाहण्यासाठी कृपया प्रथम प्रोजेक्ट निवडा')}
+                    </p>
+                  )}
+                  {formData.primaryProject && filteredRoles.length === 0 && (
+                    <p style={{ fontSize: '12px', color: '#f59e0b', marginTop: '4px', fontStyle: 'italic' }}>
+                      {getText('No roles configured for this project', 'या प्रोजेक्टसाठी कोणत्याही भूमिका कॉन्फिगर केल्या नाहीत', 'या प्रोजेक्टसाठी कोणत्याही भूमिका कॉन्फिगर केल्या नाहीत')}
+                    </p>
+                  )}
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '16px' }}>
@@ -1514,67 +2059,75 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
                   </select>
                 </div>
 
+
+
+                {/* Center Assignment - Multi-select with checkboxes */}
                 <div style={{ marginTop: '16px' }}>
-                  <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '10px' }}>
-                    {getText('Assigned Projects', 'नियुक्त प्रकल्प', 'नियुक्त प्रकल्प')}
+                  <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '6px' }}>
+                    🏢 {getText('Assigned Centers (Offline Module)', 'नियुक्त केंद्रे (ऑफलाइन मॉड्यूल)', 'नियुक्त केंद्रे (ऑफलाइन मॉड्यूल)')}
+                    {formData.primaryProject && filteredCenters.length > 0 && (
+                      <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: 'normal', marginLeft: '8px' }}>
+                        ({filteredCenters.length} {getText('centers available', 'केंद्रे उपलब्ध', 'केंद्रे उपलब्ध')})
+                      </span>
+                    )}
                   </label>
-                  <div style={{ 
-                    border: '1px solid #d1d5db', 
-                    borderRadius: '6px', 
-                    padding: '12px',
-                    maxHeight: '150px',
-                    overflowY: 'auto',
-                    backgroundColor: '#f9fafb'
-                  }}>
-                    {projects && projects.length > 0 ? (
-                      projects.map(project => (
+                  <div 
+                    style={{
+                      maxHeight: '200px',
+                      overflowY: 'auto',
+                      border: '1px solid #d1d5db',
+                      borderRadius: '6px',
+                      padding: '8px',
+                      backgroundColor: !formData.primaryProject ? '#f3f4f6' : 'white',
+                    }}
+                  >
+                    {!formData.primaryProject ? (
+                      <p style={{ fontSize: '12px', color: '#9ca3af', fontStyle: 'italic', margin: 0, padding: '8px' }}>
+                        ⚠️ {getText('Select project first', 'प्रथम प्रोजेक्ट निवडा', 'प्रथम प्रोजेक्ट निवडा')}
+                      </p>
+                    ) : filteredCenters && filteredCenters.length > 0 ? (
+                      filteredCenters.map(center => (
                         <label 
-                          key={project._id} 
+                          key={center._id} 
                           style={{ 
                             display: 'flex', 
                             alignItems: 'center', 
-                            padding: '8px',
+                            padding: '8px', 
                             cursor: 'pointer',
                             borderRadius: '4px',
-                            transition: 'background-color 0.2s',
-                            marginBottom: '4px'
+                            transition: 'background-color 0.2s'
                           }}
-                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#e5e7eb'}
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f3f4f6'}
                           onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                         >
                           <input
                             type="checkbox"
-                            value={project._id}
-                            checked={formData.projects.includes(project._id)}
+                            checked={formData.centers.includes(center._id)}
                             onChange={(e) => {
-                              const projectId = e.target.value;
-                              const isChecked = e.target.checked;
+                              const centerId = center._id;
                               setFormData({
                                 ...formData,
-                                projects: isChecked
-                                  ? [...formData.projects, projectId]
-                                  : formData.projects.filter(id => id !== projectId)
+                                centers: e.target.checked
+                                  ? [...formData.centers, centerId]
+                                  : formData.centers.filter(id => id !== centerId)
                               });
                             }}
-                            style={{
-                              width: '16px',
-                              height: '16px',
-                              marginRight: '8px',
-                              cursor: 'pointer',
-                              accentColor: '#7c3aed'
-                            }}
+                            style={{ marginRight: '10px', cursor: 'pointer', width: '16px', height: '16px' }}
                           />
-                          <span style={{ fontSize: '14px', color: '#374151' }}>
-                            {project.name}
+                          <span style={{ fontSize: '14px', color: '#374151', flex: 1 }}>
+                            {center.centerName} - {center.city}, {center.state}
                           </span>
                         </label>
                       ))
                     ) : (
-                      <p style={{ fontSize: '14px', color: '#6b7280', textAlign: 'center', padding: '12px' }}>
-                        {getText('No projects available', 'कोणतेही प्रकल्प उपलब्ध नाहीत', 'कोणतेही प्रकल्प उपलब्ध नाहीत')}
+                      <p style={{ fontSize: '12px', color: '#9ca3af', fontStyle: 'italic', margin: 0, padding: '8px' }}>
+                        {getText('No centers configured for this project', 'या प्रोजेक्टसाठी कोणतेही केंद्रे कॉन्फिगर केलेले नाहीत', 'या प्रोजेक्टसाठी कोणतेही केंद्रे कॉन्फिगर केलेले नाहीत')}
                       </p>
                     )}
                   </div>
+                  <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '6px', fontStyle: 'italic' }}>
+                    💡 {getText('Users can be assigned to multiple centers for offline ticket management', 'ऑफलाइन तिकीट व्यवस्थापनासाठी वापरकर्त्यांना एकाधिक केंद्रे नियुक्त केली जाऊ शकतात', 'ऑफलाइन तिकीट व्यवस्थापनासाठी वापरकर्त्यांना एकाधिक केंद्रे नियुक्त केली जाऊ शकतात')}
+                  </p>
                 </div>
               </div>
 

@@ -20,7 +20,7 @@ interface Ticket {
   description: string;
   status: number; // 1=Open, 2=In Progress, 3=On Hold, 4=Resolved, 5=Closed
   priority: 'low' | 'medium' | 'high' | 'urgent';
-  category: string;
+  category: string | { _id: string; name: string };
   createdAt: string;
   updatedAt: string;
   attachments?: Array<{
@@ -187,7 +187,7 @@ const StudentTicketDetail: React.FC = () => {
   };
 
   const handleCloseTicket = async () => {
-    if (!confirm('Are you sure you want to close this ticket? You won\'t be able to reopen it.')) {
+    if (!confirm('Are you sure you want to close this query? You won\'t be able to reopen it.')) {
       return;
     }
 
@@ -200,11 +200,11 @@ const StudentTicketDetail: React.FC = () => {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      // Refresh ticket data
+      // Refresh query data
       fetchData();
-      alert('Ticket closed successfully');
+      alert('Query closed successfully');
     } catch (error: any) {
-      alert(error.response?.data?.message || 'Failed to close ticket');
+      alert(error.response?.data?.message || 'Failed to close query');
     } finally {
       setClosingTicket(false);
     }
@@ -254,7 +254,10 @@ const StudentTicketDetail: React.FC = () => {
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
     return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
   };
-
+  // Replace "Ticket" with "Query" in messages for consistent terminology
+  const formatMessage = (message: string): string => {
+    return message.replace(/\bTicket\b/g, 'Query').replace(/\bticket\b/g, 'query');
+  };
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -272,7 +275,7 @@ const StudentTicketDetail: React.FC = () => {
             onClick={() => navigate(`/${customUrlPath}/student/my-tickets`)}
             className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
-            Back to My Tickets
+            Back to My Queries
           </button>
         </div>
       </div>
@@ -287,12 +290,12 @@ const StudentTicketDetail: React.FC = () => {
           <button
             onClick={() => navigate(`/${customUrlPath}/student/my-tickets`)}
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-            title="Back to My Tickets"
+            title="Back to My Queries"
           >
             <ArrowLeftIcon className="h-6 w-6 text-gray-600" />
           </button>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Ticket Details</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Query Details</h1>
             <p className="text-gray-600 text-sm">{ticket.ticketNumber}</p>
           </div>
         </div>
@@ -391,7 +394,7 @@ const StudentTicketDetail: React.FC = () => {
                             </p>
                           </div>
                         </div>
-                        <p className="text-gray-700 whitespace-pre-wrap">{thread.message}</p>
+                        <p className="text-gray-700 whitespace-pre-wrap">{formatMessage(thread.message)}</p>
 
                         {/* Thread Attachments */}
                         {thread.attachments && thread.attachments.length > 0 && (
@@ -487,13 +490,15 @@ const StudentTicketDetail: React.FC = () => {
 
           {/* Sidebar */}
           <div className="space-y-6">
-            {/* Ticket Details */}
+            {/* Query Details */}
             <div className="bg-white rounded-xl shadow-sm p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Ticket Information</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Query Information</h3>
               <dl className="space-y-3">
                 <div>
                   <dt className="text-sm font-medium text-gray-500">Category</dt>
-                  <dd className="text-sm text-gray-900 mt-1">{ticket.category}</dd>
+                  <dd className="text-sm text-gray-900 mt-1">
+                    {typeof ticket.category === 'string' ? ticket.category : ticket.category?.name || 'N/A'}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-sm font-medium text-gray-500">Created</dt>
@@ -520,7 +525,7 @@ const StudentTicketDetail: React.FC = () => {
               </dl>
             </div>
 
-            {/* Close Ticket Button */}
+            {/* Close Query Button */}
             {/* 5 = Closed */}
             {ticketSettings?.allowStudentToCloseTicket && ticket.status !== 5 && (
               <div className="bg-white rounded-xl shadow-sm p-6">
@@ -548,10 +553,10 @@ const StudentTicketDetail: React.FC = () => {
                 📝 Share Your Feedback
               </h2>
               <p className="text-gray-600">
-                Your ticket has been resolved. We'd love to hear about your experience!
+                Your query has been resolved. We'd love to hear about your experience!
               </p>
               <p className="text-sm text-gray-500 mt-2">
-                Ticket: <span className="font-semibold">{ticket.ticketNumber}</span>
+                Query: <span className="font-semibold">{ticket.ticketNumber}</span>
                 {studentIdFromUrl && emailFromUrl && (
                   <span className="ml-2">• Student: <span className="font-semibold">{emailFromUrl}</span></span>
                 )}

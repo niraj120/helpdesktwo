@@ -79,6 +79,8 @@ export interface ITicket extends Document {
   tags: string[];
   submissionSource?: 'online' | 'offline'; // Track where ticket was created
   metadata?: any;
+  resolvedAt?: Date; // Timestamp when status changed to Resolved (4)
+  closedAt?: Date; // Timestamp when status changed to Closed (5)
   createdAt: Date;
   updatedAt: Date;
 }
@@ -172,7 +174,8 @@ const TicketSchema: Schema = new Schema(
       // Common codes: LOW, MEDIUM, HIGH, CRITICAL
     },
     category: {
-      type: String,
+      type: Schema.Types.ObjectId,
+      ref: 'Category',
       trim: true,
       index: true,
     },
@@ -208,6 +211,14 @@ const TicketSchema: Schema = new Schema(
     },
     metadata: {
       type: Schema.Types.Mixed,
+    },
+    resolvedAt: {
+      type: Date,
+      index: true,
+    },
+    closedAt: {
+      type: Date,
+      index: true,
     },
   },
   {

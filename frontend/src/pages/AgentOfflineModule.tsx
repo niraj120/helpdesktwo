@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { API_CONFIG } from '../config/constants';
+import ModuleHeader from '../components/ModuleHeader';
 import {
   UserPlusIcon,
   TicketIcon,
@@ -37,6 +38,22 @@ interface Center {
   address: string;
   city: string;
   state: string;
+  country?: string;
+  pincode?: string;
+  phone?: string;
+  email?: string;
+  workingHours?: string;
+  latitude?: number;
+  longitude?: number;
+  mapLink?: string;
+  googleMapLink?: string;
+  features?: string[];
+  contacts?: Array<{
+    name: string;
+    role?: string;
+    mobile?: string;
+    email?: string;
+  }>;
   isActive: boolean;
 }
 
@@ -225,7 +242,6 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
     } catch (error) {
       console.error('Error fetching centers:', error);
     }
-  };}
   };
 
   const searchUser = async () => {
@@ -613,12 +629,10 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Offline Support Center</h1>
-        <p className="text-gray-600 mt-2">
-          Register users and create queries for walk-in support
-        </p>
-      </div>
+      <ModuleHeader 
+        title="Offline Support Center"
+        subtitle="Register users and create queries for walk-in support"
+      />
 
       {/* Tab Navigation */}
       <div className="flex space-x-4 border-b border-gray-200 mb-8">
@@ -645,7 +659,7 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
         >
           <div className="flex items-center space-x-2">
             <TicketIcon className="h-5 w-5" />
-            <span>Create Ticket</span>
+            <span>Create Query</span>
           </div>
         </button>
       </div>
@@ -779,7 +793,7 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
             <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-start space-x-3">
               <CheckCircleIcon className="h-6 w-6 text-green-600 flex-shrink-0 mt-0.5" />
               <div>
-                <h4 className="font-semibold text-green-900">Ticket Created Successfully!</h4>
+                <h4 className="font-semibold text-green-900">Query Created Successfully!</h4>
                 <p className="text-sm text-green-700 mt-1">
                   Query #{createdTicketNumber} has been created
                   {ticketForm.markAsResolved && ' and marked as resolved'}
@@ -793,7 +807,7 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
             {/* User Search */}
             <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg mb-4">
               <p className="text-sm text-amber-900 mb-3">
-                <span className="font-semibold">Important:</span> You must search for and select a user before creating a ticket.
+                <span className="font-semibold">Important:</span> You must search for and select a user before creating a query.
               </p>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -847,7 +861,7 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
             </div>
 
             {/* Center Selection */}
-            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-3">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Select Center <span className="text-red-500">*</span>
               </label>
@@ -868,6 +882,42 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                 <p className="text-sm text-amber-600 mt-2">
                   No centers configured. Please add centers in project settings.
                 </p>
+              )}
+              
+              {/* Selected Center Details */}
+              {selectedCenter && centers.find(c => c._id === selectedCenter) && (
+                <div className="mt-3 p-3 bg-white rounded-lg border border-blue-300 space-y-2">
+                  {(() => {
+                    const center = centers.find(c => c._id === selectedCenter);
+                    return (
+                      <>
+                        <h4 className="font-medium text-gray-900">{center?.centerName}</h4>
+                        <div className="text-sm text-gray-600 space-y-1">
+                          <p>📍 {center?.address}</p>
+                          <p>{center?.city}, {center?.state} {center?.pincode}</p>
+                          {center?.phone && <p>📞 {center.phone}</p>}
+                          {center?.email && <p>✉️ {center.email}</p>}
+                          {center?.workingHours && (
+                            <p>🕒 {center.workingHours}</p>
+                          )}
+                          {(center?.googleMapLink || center?.mapLink) && (
+                            <a
+                              href={center.googleMapLink || center.mapLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium"
+                            >
+                              🗺️ View on Google Maps
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                              </svg>
+                            </a>
+                          )}
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
               )}
             </div>
 
@@ -998,7 +1048,7 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                 ) : selectedUser ? (
                   <>
                     <TicketIcon className="h-5 w-5" />
-                    <span>Create Ticket</span>
+                    <span>Create Query</span>
                   </>
                 ) : (
                   <>

@@ -194,7 +194,7 @@ const AgentDashboard: React.FC<AgentDashboardProps> = ({ projectId }) => {
         return (
           <div style={{ padding: '2rem' }}>
             <h1 style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '2rem' }}>
-              My Tickets
+              My Queries
             </h1>
             <div style={{ 
               background: 'white', 
