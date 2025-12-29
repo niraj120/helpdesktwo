@@ -72,6 +72,7 @@ interface OfflineCenter {
   features?: string[];
   mapLink?: string;
   googleMapLink?: string;
+  isActive?: boolean;
   contacts?: Array<{
     name: string;
     role: string;
