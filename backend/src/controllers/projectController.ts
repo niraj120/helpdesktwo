@@ -20,7 +20,8 @@ export const getAllProjects = async (req: Request, res: Response) => {
     // Filter projects based on user's assigned projects if they don't have PROJECT_VIEW_ALL permission
     if (authReq.user?.userId) {
       const user = await User.findById(authReq.user.userId).populate('role');
-      const userPermissions = user?.role?.permissions || [];
+      const userRole = user?.role as any;
+      const userPermissions = userRole?.permissions || [];
       const hasViewAllPermission = userPermissions.includes('PROJECT_VIEW_ALL');
       
       // If user doesn't have PROJECT_VIEW_ALL, only show their assigned projects

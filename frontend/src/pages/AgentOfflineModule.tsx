@@ -923,8 +923,8 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
 
             {/* Dynamic Ticket Fields */}
             <div className="space-y-6">
-              {offlineSettings.ticketFields
-                .filter((field) => field.isFixed ? field.isEnabled !== false : true) // Only show category if enabled
+              {offlineSettings?.ticketFields
+                ?.filter((field) => field.isFixed ? field.isEnabled !== false : true) // Only show category if enabled
                 .sort((a, b) => (a.order || 0) - (b.order || 0))
                 .map((field) => (
                   <div key={field.id}>
