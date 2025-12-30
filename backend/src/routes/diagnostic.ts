@@ -103,4 +103,86 @@ router.get('/check-deployment', authMiddleware, (req: AuthRequest, res: Response
   }
 });
 
+/**
+ * Test the centers endpoint directly to see the actual error
+ */
+router.get('/test-centers', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'SUPER_ADMIN') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only super admins can access diagnostics',
+      });
+    }
+
+    const testResult: any = {
+      timestamp: new Date().toISOString(),
+      tests: {},
+    };
+
+    // Test 1: Can we import Center model?
+    try {
+      const { Center } = require('../models/Center');
+      testResult.tests.centerModelImport = {
+        success: true,
+        modelName: Center.modelName,
+        collection: Center.collection.name,
+      };
+
+      // Test 2: Can we query centers?
+      try {
+        const projectId = req.query.projectId || '693bd61817834e29eb111ec2';
+        const centers = await Center.find({ projectId, isActive: true });
+        testResult.tests.centersQuery = {
+          success: true,
+          count: centers.length,
+          sampleIds: centers.slice(0, 3).map((c: any) => c._id),
+        };
+
+        // Test 3: Can we populate?
+        try {
+          const centersWithPopulate = await Center.find({ projectId, isActive: true })
+            .populate('projectId', 'name')
+            .limit(1);
+          testResult.tests.centersPopulate = {
+            success: true,
+            sampleData: centersWithPopulate[0] || null,
+          };
+        } catch (populateError: any) {
+          testResult.tests.centersPopulate = {
+            success: false,
+            error: populateError.message,
+            stack: populateError.stack,
+          };
+        }
+      } catch (queryError: any) {
+        testResult.tests.centersQuery = {
+          success: false,
+          error: queryError.message,
+          stack: queryError.stack,
+        };
+      }
+    } catch (importError: any) {
+      testResult.tests.centerModelImport = {
+        success: false,
+        error: importError.message,
+        stack: importError.stack,
+      };
+    }
+
+    return res.json({
+      success: true,
+      data: testResult,
+    });
+  } catch (error: any) {
+    console.error('Test centers error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Test failed',
+      error: error.message,
+      stack: error.stack,
+    });
+  }
+});
+
 export default router;
