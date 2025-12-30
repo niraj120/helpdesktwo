@@ -17,7 +17,7 @@ export const getCenters = async (req: AuthRequest, res: Response) => {
     }
     
     const centers = await Center.find(query)
-      .populate('projectId', 'name projectName')
+      .populate('projectId', 'name')
       .sort({ centerName: 1 });
     
     return res.json({
@@ -41,7 +41,7 @@ export const getCenterById = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     
     const center = await Center.findById(id)
-      .populate('projectId', 'name projectName');
+      .populate('projectId', 'name');
     
     if (!center) {
       return res.status(404).json({
