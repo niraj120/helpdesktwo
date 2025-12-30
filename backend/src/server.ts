@@ -48,6 +48,7 @@ import feedbackResponseRoutes from './routes/feedbackResponse';
 import assetRoutes from './routes/asset';
 import centerAssetRoutes from './routes/centerAsset';
 import centerRoutes from './routes/centers';
+import seedRoutes from './routes/seed';
 // import integrationRoutes from './routes/integrations'; // TODO: Implement
 import { setupSocketHandlers } from './socket/socketHandlers';
 import { initializeDatabase } from './utils/dbInit';
@@ -203,6 +204,9 @@ app.use('/api/offline-module', offlineModuleRoutes);
 app.use('/api/assets', assetRoutes);
 app.use('/api/center-assets', centerAssetRoutes);
 app.use('/api/centers', centerRoutes);
+
+// Seed Routes (for initial data population)
+app.use('/api/seed', seedRoutes);
 
 // Email Configuration Routes
 app.use('/api/email-config', emailConfigRoutes);
