@@ -226,7 +226,8 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
       }
     } catch (error) {
       console.error('Error fetching categories:', error);
-    
+    }
+  };
 
   const fetchCenters = async () => {
     try {
