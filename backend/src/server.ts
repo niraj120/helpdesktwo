@@ -49,6 +49,7 @@ import assetRoutes from './routes/asset';
 import centerAssetRoutes from './routes/centerAsset';
 import centerRoutes from './routes/centers';
 import seedRoutes from './routes/seed';
+import diagnosticRoutes from './routes/diagnostic';
 // import integrationRoutes from './routes/integrations'; // TODO: Implement
 import { setupSocketHandlers } from './socket/socketHandlers';
 import { initializeDatabase } from './utils/dbInit';
@@ -207,6 +208,9 @@ app.use('/api/centers', centerRoutes);
 
 // Seed Routes (for initial data population)
 app.use('/api/seed', seedRoutes);
+
+// Diagnostic Routes (for deployment troubleshooting)
+app.use('/api/diagnostic', diagnosticRoutes);
 
 // Email Configuration Routes
 app.use('/api/email-config', emailConfigRoutes);
