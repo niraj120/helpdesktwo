@@ -31,9 +31,9 @@ import AuthenticatedStudentSubmitTicket from './AuthenticatedStudentSubmitTicket
 import { API_CONFIG } from '../config/constants';
 
 interface ProjectBranding {
-  projectId: string;
-  name: string;
-  code: string;
+  projectId?: string;
+  name?: string;
+  code?: string;
   branding?: {
     logo?: string | null;
     colorTheme?: {

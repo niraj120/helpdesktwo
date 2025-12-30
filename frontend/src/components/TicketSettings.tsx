@@ -40,7 +40,7 @@ interface FormField {
   id?: string;
   fieldName: string;
   fieldLabel: string;
-  fieldType: 'text' | 'email' | 'phone' | 'textarea' | 'dropdown' | 'file' | 'number' | 'date';
+  fieldType: 'text' | 'email' | 'phone' | 'textarea' | 'dropdown' | 'file' | 'number' | 'date' | 'multiselect' | 'radio' | 'checkbox';
   required: boolean;
   placeholder?: string;
   options?: string[];
@@ -50,6 +50,9 @@ interface FormField {
     maxLength?: number;
     pattern?: string;
   };
+  allowedFileTypes?: string[];
+  maxFileSizeMB?: number;
+  allowMultiple?: boolean;
 }
 
 const TicketSettings: React.FC = () => {

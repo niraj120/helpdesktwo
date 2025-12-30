@@ -474,7 +474,7 @@ const ActivityLogs: React.FC<ActivityLogsProps> = ({ wrapWithLayout = true }) =>
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap'
                       }}>
-                        {formatDisplayText(log.description) || '-'}
+                        {log.description ? formatDisplayText(log.description) : '-'}
                       </td>
                       <td style={{
                         padding: '12px 16px',
@@ -482,7 +482,7 @@ const ActivityLogs: React.FC<ActivityLogsProps> = ({ wrapWithLayout = true }) =>
                         color: '#6b7280',
                         borderBottom: '1px solid #e5e7eb'
                       }}>
-                        {log.ipAddress || '-'}
+                        {log.ipAddress ?? '-'}
                       </td>
                       <td style={{
                         padding: '12px 16px',

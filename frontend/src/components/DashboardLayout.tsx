@@ -8,6 +8,7 @@ import { designSystem } from '../styles/designSystem';
 import { usePermissions } from '../hooks/usePermissions';
 import { useBranding } from '../contexts/BrandingContext';
 import { menuConfig, projectPortalMenuConfig, getFilteredMenuItems } from '../config/menuConfig';
+import { API_CONFIG } from '../config/constants';
 import {
   MdDashboard, 
   MdFolder, 
