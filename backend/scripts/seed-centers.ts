@@ -65,17 +65,14 @@ async function seedCenters() {
 
     // Find the MH CET project
     const project = await Project.findOne({ 
-      $or: [
-        { name: { $regex: /MH CET/i } },
-        { projectName: { $regex: /MH CET/i } }
-      ]
+      name: { $regex: /MH CET/i }
     });
 
     if (!project) {
       throw new Error('MH CET project not found. Please create the project first.');
     }
 
-    console.log(`✅ Found project: ${project.name || project.projectName}`);
+    console.log(`✅ Found project: ${project.name}`);
 
     // Find a super admin user to assign as creator
     const superAdmin = await User.findOne({ role: 'SUPER_ADMIN' });
