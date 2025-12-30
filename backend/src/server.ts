@@ -50,6 +50,7 @@ import centerAssetRoutes from './routes/centerAsset';
 import centerRoutes from './routes/centers';
 import seedRoutes from './routes/seed';
 import diagnosticRoutes from './routes/diagnostic';
+import healthcheckRoutes from './routes/healthcheck';
 // import integrationRoutes from './routes/integrations'; // TODO: Implement
 import { setupSocketHandlers } from './socket/socketHandlers';
 import { initializeDatabase } from './utils/dbInit';
@@ -211,6 +212,9 @@ app.use('/api/seed', seedRoutes);
 
 // Diagnostic Routes (for deployment troubleshooting)
 app.use('/api/diagnostic', diagnosticRoutes);
+
+// Healthcheck Route (public, no auth)
+app.use('/api/healthcheck', healthcheckRoutes);
 
 // Email Configuration Routes
 app.use('/api/email-config', emailConfigRoutes);
