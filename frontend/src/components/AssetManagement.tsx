@@ -27,6 +27,8 @@ interface Asset {
   createdBy: {
     _id: string;
     name: string;
+    firstName?: string;
+    lastName?: string;
   };
   createdAt: string;
 }
@@ -299,10 +301,13 @@ const AssetManagement: React.FC = () => {
   };
 
   const filteredAssets = assets.filter((asset) => {
+    const categoryName = typeof asset.category === 'object' && asset.category !== null 
+      ? asset.category.name 
+      : asset.category;
     const matchesSearch =
       asset.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       asset.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      asset.category?.toLowerCase().includes(searchQuery.toLowerCase());
+      categoryName?.toLowerCase().includes(searchQuery.toLowerCase());
 
     const matchesFilter =
       filterActive === 'all' ||

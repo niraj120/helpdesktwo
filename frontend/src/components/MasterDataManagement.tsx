@@ -18,6 +18,7 @@ interface MasterItem {
   displayOrder?: number;
   isActive: boolean;
   color?: string;
+  icon?: string;
   projectId?: string;
   isClosed?: boolean;
   description?: string;

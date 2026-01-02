@@ -1038,7 +1038,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                 {activeTab === 'replies' && (
                   <div className="space-y-6">
                     {/* Closed Ticket Notice */}
-                    {(ticket.status === '5' || ticket.status === 5 || String(ticket.status).toLowerCase() === 'closed') && (
+                    {(String(ticket.status) === '5' || String(ticket.status).toLowerCase() === 'closed') && (
                       <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                         <div className="flex items-start">
                           <ExclamationTriangleIcon className="h-5 w-5 text-yellow-600 mr-2 flex-shrink-0" />
@@ -1053,7 +1053,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                     )}
 
                     {/* Reply Form (only if ticket is not closed) */}
-                    {!(ticket.status === '5' || ticket.status === 5 || String(ticket.status).toLowerCase() === 'closed') && (
+                    {!(String(ticket.status) === '5' || String(ticket.status).toLowerCase() === 'closed') && (
                     <form onSubmit={handleSubmitReply} className="space-y-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1390,8 +1390,8 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                   
                   // Check if ticket is resolved or closed (handle both numeric and string values)
                   const statusLower = String(ticket.status).toLowerCase();
-                  const isResolved = ticket.status === '4' || ticket.status === 4 || statusLower === 'resolved';
-                  const isClosed = ticket.status === '5' || ticket.status === 5 || statusLower === 'closed' || statusLower === 'close';
+                  const isResolved = String(ticket.status) === '4' || statusLower === 'resolved';
+                  const isClosed = String(ticket.status) === '5' || statusLower === 'closed' || statusLower === 'close';
                   const isComplete = isResolved || isClosed;
                   
                   console.log('🎯 Is Complete:', isComplete, 'isResolved:', isResolved, 'isClosed:', isClosed);
@@ -1507,7 +1507,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
                   <select
-                    value={typeof ticket.category === 'object' ? ticket.category.name : ticket.category}
+                    value={typeof ticket.category === 'object' && ticket.category !== null && 'name' in ticket.category ? ticket.category.name : String(ticket.category || '')}
                     onChange={(e) => {
                       setNewCategory(e.target.value);
                       // Auto-save on change
