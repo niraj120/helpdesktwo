@@ -1507,7 +1507,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
                   <select
-                    value={typeof ticket.category === 'object' && ticket.category !== null && 'name' in ticket.category ? ticket.category.name : String(ticket.category || '')}
+                    value={typeof ticket.category === 'object' && ticket.category !== null && (ticket.category as any).name ? (ticket.category as any).name : String(ticket.category || '')}
                     onChange={(e) => {
                       setNewCategory(e.target.value);
                       // Auto-save on change
