@@ -29,6 +29,13 @@ interface Ticket {
     };
     studentName?: string;
     studentEmail?: string;
+    centerId?: string | {
+      _id: string;
+      centerName: string;
+      city?: string;
+      state?: string;
+    };
+    submissionType?: string;
   };
   createdAt: string;
 }
@@ -301,37 +308,37 @@ const ViewTickets: React.FC = () => {
                 </div>
 
                 <div style={{ display: 'flex', gap: '24px', fontSize: '14px', color: '#6B7280', flexWrap: 'wrap' }}>
-                  {ticket.metadata?.projectId && (
+                  <div>
+                    <span style={{ fontWeight: 600 }}>Priority:</span>{' '}
+                    <span style={{ textTransform: 'capitalize' }}>{ticket.priority}</span>
+                  </div>
+                  <div>
+                    <span style={{ fontWeight: 600 }}>Center:</span>{' '}
+                    <span style={{
+                      padding: '2px 8px',
+                      background: ticket.metadata?.centerId === 'online' || ticket.metadata?.submissionType === 'online' ? '#DBEAFE' : '#FEF3C7',
+                      color: ticket.metadata?.centerId === 'online' || ticket.metadata?.submissionType === 'online' ? '#1E40AF' : '#92400E',
+                      borderRadius: '4px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                    }}>
+                      {ticket.metadata?.centerId === 'online' || ticket.metadata?.submissionType === 'online' 
+                        ? 'Online' 
+                        : typeof ticket.metadata?.centerId === 'object' 
+                          ? `${ticket.metadata.centerId.centerName}${ticket.metadata.centerId.city ? ` (${ticket.metadata.centerId.city})` : ''}` 
+                          : 'Online'}
+                    </span>
+                  </div>
+                  {ticket.metadata?.studentEmail && (
                     <div>
-                      <span style={{ fontWeight: 600 }}>Project:</span>{' '}
-                      <span style={{
-                        padding: '2px 8px',
-                        background: '#EEF2FF',
-                        color: '#4F46E5',
-                        borderRadius: '4px',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                      }}>
-                        {ticket.metadata.projectId.name}
-                      </span>
+                      <span style={{ fontWeight: 600 }}>Created By:</span>{' '}
+                      {ticket.metadata?.studentName || ticket.metadata.studentEmail}
                     </div>
                   )}
                   {ticket.assignedTo && (
                     <div>
-                      <span style={{ fontWeight: 600 }}>Assigned:</span>{' '}
+                      <span style={{ fontWeight: 600 }}>Assigned To:</span>{' '}
                       {ticket.assignedTo.firstName} {ticket.assignedTo.lastName}
-                    </div>
-                  )}
-                  {ticket.metadata?.studentEmail && (
-                    <div>
-                      <span style={{ fontWeight: 600 }}>Requester:</span>{' '}
-                      {ticket.metadata.studentEmail}
-                    </div>
-                  )}
-                  {ticket.priority && (
-                    <div>
-                      <span style={{ fontWeight: 600 }}>Priority:</span>{' '}
-                      <span style={{ textTransform: 'capitalize' }}>{ticket.priority}</span>
                     </div>
                   )}
                   {ticket.category && (

@@ -81,6 +81,8 @@ export interface ITicket extends Document {
   metadata?: any;
   resolvedAt?: Date; // Timestamp when status changed to Resolved (4)
   closedAt?: Date; // Timestamp when status changed to Closed (5)
+  resolutionTime?: string; // Calculated field for reporting (e.g., "2d 5h")
+  slaStatus?: string; // Calculated field for reporting (e.g., "Within SLA", "Outside SLA")
   createdAt: Date;
   updatedAt: Date;
 }

@@ -95,6 +95,7 @@ export const getAllAssets = async (req: Request, res: Response) => {
     const assets = await Asset.find(filter)
       .populate('createdBy', 'firstName lastName email')
       .populate('projectId', 'projectName')
+      .populate('category', 'name code color icon')
       .sort({ createdAt: -1 });
 
     return res.status(200).json({
@@ -119,7 +120,8 @@ export const getAssetById = async (req: Request, res: Response) => {
     const { id } = req.params;
 
     const asset = await Asset.findById(id)
-      .populate('createdBy', 'firstName lastName email');
+      .populate('createdBy', 'firstName lastName email')
+      .populate('category', 'name code color icon');
 
     if (!asset) {
       return res.status(404).json({

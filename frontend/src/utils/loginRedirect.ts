@@ -17,6 +17,10 @@ export const AGENT_MENU_ROUTES: MenuRoute[] = [
     permission: PERMISSIONS.TICKET_VIEW_OWN
   },
   {
+    path: 'tickets/assign',
+    permission: PERMISSIONS.TICKET_ASSIGN
+  },
+  {
     path: 'tickets',
     permission: [PERMISSIONS.TICKET_VIEW_ALL, PERMISSIONS.TICKET_CREATE]
   },

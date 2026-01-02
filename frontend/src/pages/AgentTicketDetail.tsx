@@ -16,6 +16,7 @@ import {
   CheckCircleIcon,
   XCircleIcon,
   ArrowUpIcon,
+  TicketIcon,
 } from '@heroicons/react/24/outline';
 
 interface Ticket {
@@ -29,6 +30,8 @@ interface Ticket {
   category: string;
   createdAt: string;
   updatedAt: string;
+  resolvedAt?: string;
+  closedAt?: string;
   createdBy?: {
     _id: string;
     firstName: string;
@@ -176,6 +179,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
   const navigate = useNavigate();
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [loading, setLoading] = useState(true);
+  const [permissions, setPermissions] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<'details' | 'replies' | 'notes' | 'history'>('replies');
   
   // Reply states
@@ -216,6 +220,18 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
     const code = typeof statusCode === 'string' ? Number(statusCode) : statusCode;
     const status = statusOptions.find((s: any) => s.code === code);
     return status?.name || `Status ${code}`;
+  };
+
+  // Helper function to format change history values (converts status IDs to names)
+  const formatChangeValue = (field: string, value: any) => {
+    if (!value) return value;
+    
+    // Convert status codes to names
+    if (field === 'Status' || field === 'status') {
+      return getStatusDisplayName(value);
+    }
+    
+    return value;
   };
 
   // Function to calculate resolution time remaining
@@ -264,6 +280,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
   useEffect(() => {
     fetchTicketDetails();
     fetchMasterData();
+    fetchUserPermissions();
   }, [ticketId]);
 
   // Fetch priority details when ticket priority changes
@@ -498,6 +515,24 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
       if (axios.isAxiosError(error)) {
         console.error('❌ Response:', error.response?.data);
       }
+    }
+  };
+
+  const fetchUserPermissions = async () => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await axios.get(`${API_CONFIG.API_URL}/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (response.data.success && response.data.data) {
+        const userPermissions = response.data.data.role?.permissions || [];
+        console.log('🔐 User Permissions Loaded:', userPermissions);
+        console.log('✅ Has TICKET_ESCALATE?', userPermissions.includes('TICKET_ESCALATE'));
+        setPermissions(userPermissions);
+      }
+    } catch (error) {
+      console.error('Error fetching user permissions:', error);
     }
   };
 
@@ -831,12 +866,29 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
           {/* Left Column - Main Content */}
           <div className="lg:col-span-2 space-y-6">
             {/* Ticket Details Card */}
-            <div className="bg-white rounded-xl shadow-sm p-6">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">
-                {ticket.title || ticket.subject || 'No Subject'}
-              </h2>
-              <div className="prose max-w-none">
-                <p className="text-gray-700 whitespace-pre-wrap">{ticket.description}</p>
+            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+              <div className="p-6 border-b border-gray-100">
+                <div className="flex items-center space-x-2 mb-3">
+                  <div className="p-1.5 bg-blue-100 rounded-lg">
+                    <TicketIcon className="h-4 w-4 text-blue-600" />
+                  </div>
+                  <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Subject</span>
+                </div>
+                <h2 className="text-lg font-semibold text-gray-900 leading-tight">
+                  {ticket.title || ticket.subject || 'No Subject'}
+                </h2>
+              </div>
+              
+              <div className="p-6">
+                <div className="flex items-center space-x-2 mb-3">
+                  <div className="p-1.5 bg-purple-100 rounded-lg">
+                    <DocumentTextIcon className="h-4 w-4 text-purple-600" />
+                  </div>
+                  <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Description</span>
+                </div>
+                <div className="prose max-w-none">
+                  <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">{ticket.description}</p>
+                </div>
               </div>
 
               {ticket.attachments && ticket.attachments.length > 0 && (
@@ -985,7 +1037,23 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                 {/* Replies Tab */}
                 {activeTab === 'replies' && (
                   <div className="space-y-6">
-                    {/* Reply Form */}
+                    {/* Closed Ticket Notice */}
+                    {(ticket.status === '5' || ticket.status === 5 || String(ticket.status).toLowerCase() === 'closed') && (
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                        <div className="flex items-start">
+                          <ExclamationTriangleIcon className="h-5 w-5 text-yellow-600 mr-2 flex-shrink-0" />
+                          <div>
+                            <h4 className="text-sm font-semibold text-yellow-900">Query is Closed</h4>
+                            <p className="text-sm text-yellow-700 mt-1">
+                              This query is closed. To add a reply, please change the status to "Open" first.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Reply Form (only if ticket is not closed) */}
+                    {!(ticket.status === '5' || ticket.status === 5 || String(ticket.status).toLowerCase() === 'closed') && (
                     <form onSubmit={handleSubmitReply} className="space-y-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1033,6 +1101,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                         </button>
                       </div>
                     </form>
+                    )}
 
                     {/* Full Conversation Thread */}
                     {ticket.threads && ticket.threads.length > 0 && (
@@ -1041,7 +1110,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                           Full Conversation ({ticket.threads.length} {ticket.threads.length === 1 ? 'message' : 'messages'})
                         </h4>
                         {ticket.threads
-                          .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+                          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
                           .map((thread) => (
                             <div key={thread._id} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                               <div className="flex items-start space-x-3">
@@ -1141,7 +1210,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                           All Internal Notes ({ticket.internalNotes.length} {ticket.internalNotes.length === 1 ? 'note' : 'notes'})
                         </h4>
                         {ticket.internalNotes
-                          .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+                          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
                           .map((note) => (
                             <div key={note._id} className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
                               <div className="flex items-start space-x-3">
@@ -1200,20 +1269,20 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                                 <div className="mt-2 text-sm">
                                   {change.changeType === 'add' ? (
                                     <span className="text-green-700">
-                                      + {change.newValue}
+                                      + {formatChangeValue(change.field, change.newValue)}
                                     </span>
                                   ) : change.changeType === 'remove' ? (
                                     <span className="text-red-700">
-                                      - {change.oldValue}
+                                      - {formatChangeValue(change.field, change.oldValue)}
                                     </span>
                                   ) : (
                                     <div className="space-y-1">
                                       <span className="text-red-700 line-through">
-                                        {change.oldValue}
+                                        {formatChangeValue(change.field, change.oldValue)}
                                       </span>
                                       <span className="mx-2">→</span>
                                       <span className="text-green-700">
-                                        {change.newValue}
+                                        {formatChangeValue(change.field, change.newValue)}
                                       </span>
                                     </div>
                                   )}
@@ -1315,6 +1384,17 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                 {(() => {
                   console.log('🎯 SLA Rules:', slaRules);
                   console.log('🎯 Ticket Priority:', ticket.priority);
+                  console.log('🎯 Ticket Status:', ticket.status);
+                  console.log('🎯 Resolved At:', ticket.resolvedAt);
+                  console.log('🎯 Closed At:', ticket.closedAt);
+                  
+                  // Check if ticket is resolved or closed (handle both numeric and string values)
+                  const statusLower = String(ticket.status).toLowerCase();
+                  const isResolved = ticket.status === '4' || ticket.status === 4 || statusLower === 'resolved';
+                  const isClosed = ticket.status === '5' || ticket.status === 5 || statusLower === 'closed' || statusLower === 'close';
+                  const isComplete = isResolved || isClosed;
+                  
+                  console.log('🎯 Is Complete:', isComplete, 'isResolved:', isResolved, 'isClosed:', isClosed);
                   
                   // Find matching SLA rule for this ticket's priority
                   const matchingSlaRule = slaRules.find(
@@ -1357,27 +1437,64 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                   
                   const createdAt = new Date(ticket.createdAt);
                   const resolutionDeadline = new Date(createdAt.getTime() + resolutionMs);
-                  const now = new Date();
-                  const diffMs = resolutionDeadline.getTime() - now.getTime();
-                  const isBreached = diffMs < 0;
                   
-                  const absDiffMs = Math.abs(diffMs);
-                  const totalHours = Math.floor(absDiffMs / (1000 * 60 * 60));
-                  const minutes = Math.floor((absDiffMs % (1000 * 60 * 60)) / (1000 * 60));
+                  let displayText = '';
+                  let isBreached = false;
+                  let bgColor = '';
+                  let textColor = '';
+                  let borderColor = '';
                   
-                  const displayText = isBreached 
-                    ? `Overdue by ${totalHours}h ${minutes}m`
-                    : `${totalHours}h ${minutes}m remaining`;
+                  if (isComplete) {
+                    // Ticket is resolved or closed - show time taken
+                    const completedAt = new Date(ticket.resolvedAt || ticket.closedAt || ticket.updatedAt);
+                    const timeTakenMs = completedAt.getTime() - createdAt.getTime();
+                    const totalHours = Math.floor(timeTakenMs / (1000 * 60 * 60));
+                    const minutes = Math.floor((timeTakenMs % (1000 * 60 * 60)) / (1000 * 60));
+                    
+                    // Check if it was resolved within SLA
+                    isBreached = timeTakenMs > resolutionMs;
+                    
+                    displayText = `Resolved in ${totalHours}h ${minutes}m`;
+                    
+                    if (isBreached) {
+                      // Out of SLA - red
+                      bgColor = 'bg-red-50';
+                      borderColor = 'border-red-300';
+                      textColor = 'text-red-600';
+                    } else {
+                      // Within SLA - green
+                      bgColor = 'bg-green-50';
+                      borderColor = 'border-green-300';
+                      textColor = 'text-green-600';
+                    }
+                  } else {
+                    // Ticket is still open - show remaining time
+                    const now = new Date();
+                    const diffMs = resolutionDeadline.getTime() - now.getTime();
+                    isBreached = diffMs < 0;
+                    
+                    const absDiffMs = Math.abs(diffMs);
+                    const totalHours = Math.floor(absDiffMs / (1000 * 60 * 60));
+                    const minutes = Math.floor((absDiffMs % (1000 * 60 * 60)) / (1000 * 60));
+                    
+                    displayText = isBreached 
+                      ? `Overdue by ${totalHours}h ${minutes}m`
+                      : `${totalHours}h ${minutes}m remaining`;
+                    
+                    bgColor = isBreached ? 'bg-red-50' : 'bg-blue-50';
+                    borderColor = isBreached ? 'border-red-300' : 'border-blue-300';
+                    textColor = isBreached ? 'text-red-600' : 'text-blue-600';
+                  }
                   
                   console.log('🎯 Display Text:', displayText);
                   
                   return (
-                    <div className={`p-3 rounded-lg border ${isBreached ? 'bg-red-50 border-red-300' : 'bg-blue-50 border-blue-300'}`}>
+                    <div className={`p-3 rounded-lg border ${bgColor} ${borderColor}`}>
                       <div className="flex items-center space-x-2">
-                        <ClockIcon className={`h-5 w-5 ${isBreached ? 'text-red-600' : 'text-blue-600'}`} />
+                        <ClockIcon className={`h-5 w-5 ${textColor}`} />
                         <div className="flex-1">
                           <p className="text-xs font-medium text-gray-700">Resolution Time</p>
-                          <p className={`text-lg font-bold ${isBreached ? 'text-red-600' : 'text-blue-600'}`}>
+                          <p className={`text-lg font-bold ${textColor}`}>
                             {displayText}
                           </p>
                         </div>
@@ -1390,7 +1507,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
                   <select
-                    value={ticket.category}
+                    value={typeof ticket.category === 'object' ? ticket.category.name : ticket.category}
                     onChange={(e) => {
                       setNewCategory(e.target.value);
                       // Auto-save on change
@@ -1507,7 +1624,8 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
               </div>
             </div>
 
-            {/* Escalate Card */}
+            {/* Escalate Card - Only shown if user has TICKET_ESCALATE permission */}
+            {permissions.includes('TICKET_ESCALATE') && (
             <div className="bg-white rounded-xl shadow-sm p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Escalate Query</h3>
 
@@ -1589,6 +1707,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                 </button>
               )}
             </div>
+            )}
 
             {/* Quick Actions */}
             <div className="bg-white rounded-xl shadow-sm p-6">

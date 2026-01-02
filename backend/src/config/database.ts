@@ -34,12 +34,16 @@ export const connectDB = async (): Promise<void> => {
   try {
     const mongoURI = getMongoDBUri();
     
-    const conn = await mongoose.connect(mongoURI);
+    const conn = await mongoose.connect(mongoURI, {
+      serverSelectionTimeoutMS: 30000, // Increase timeout to 30 seconds
+      socketTimeoutMS: 45000,
+    });
 
     console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
     console.log(`📦 Database: ${conn.connection.name}`);
   } catch (error) {
     console.error('❌ Error connecting to MongoDB:', error);
+    console.error('💡 Please check if MongoDB server is running and accessible');
     process.exit(1);
   }
 };

@@ -147,7 +147,8 @@ const TicketSettings: React.FC = () => {
     setLoadingPriorities(true);
     try {
       const token = localStorage.getItem('authToken');
-      const response = await fetch(`${API_CONFIG.API_URL}/priorities?projectId=${projectId}`, {
+      // Fetch priorities from SLA rules for this project
+      const response = await fetch(`${API_CONFIG.API_URL}/sla-rules?projectId=${projectId}&isActive=true`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -156,18 +157,24 @@ const TicketSettings: React.FC = () => {
 
       if (response.ok) {
         const data = await response.json();
-        console.log('✅ Priority API Response:', data);
+        console.log('✅ SLA Rules API Response:', data);
         if (data.success && data.data) {
-          console.log('✅ Setting priorities:', data.data.length, 'items');
-          setPriorities(data.data);
+          // Use SLA rule names as priorities (e.g., "High", "Medium", "Low")
+          const prioritiesFromRules = data.data.map((rule: any) => ({
+            _id: rule._id,
+            code: rule.name.toLowerCase(),
+            name: rule.name,
+          }));
+          console.log('✅ Setting priorities from SLA rules:', prioritiesFromRules.length, 'items');
+          setPriorities(prioritiesFromRules);
         } else {
-          console.error('❌ Priority API returned success=false or no data:', data);
+          console.error('❌ SLA Rules API returned success=false or no data:', data);
         }
       } else {
-        console.error('❌ Priority API response not OK:', response.status, response.statusText);
+        console.error('❌ SLA Rules API response not OK:', response.status, response.statusText);
       }
     } catch (error) {
-      console.error('❌ Error loading priorities:', error);
+      console.error('❌ Error loading priorities from SLA rules:', error);
     } finally {
       setLoadingPriorities(false);
     }

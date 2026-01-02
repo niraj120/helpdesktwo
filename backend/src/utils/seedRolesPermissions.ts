@@ -181,6 +181,13 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
   },
   {
     module: 'Master Data',
+    name: 'Manage Asset Categories',
+    code: 'MASTER_DATA_MANAGE_ASSET_CATEGORIES',
+    description: 'Can create and manage asset categories',
+    category: 'master-data',
+  },
+  {
+    module: 'Master Data',
     name: 'Manage Departments',
     code: 'MASTER_DATA_MANAGE_DEPARTMENTS',
     description: 'Can create and manage departments',
@@ -960,6 +967,13 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
   },
   {
     module: 'Tickets',
+    name: 'Escalate Ticket',
+    code: 'TICKET_ESCALATE',
+    description: 'Can manually escalate tickets to higher level support',
+    category: 'tickets',
+  },
+  {
+    module: 'Tickets',
     name: 'Merge Tickets',
     code: 'TICKET_MERGE',
     description: 'Can merge multiple tickets into one',
@@ -1156,7 +1170,7 @@ const defaultRoles = [
     permissions: [
       'TICKET_VIEW_ALL', 'TICKET_CREATE', 'TICKET_EDIT', 'TICKET_DELETE', 'TICKET_ASSIGN', 'TICKET_CHANGE_STATUS',
       'TICKET_CHANGE_PRIORITY', 'TICKET_ADD_COMMENT', 'TICKET_EDIT_COMMENT', 'TICKET_DELETE_COMMENT', 'TICKET_ADD_ATTACHMENT',
-      'TICKET_DELETE_ATTACHMENT', 'TICKET_MERGE', 'TICKET_BULK_UPDATE', 'TICKET_EXPORT', 'USER_VIEW_ALL', 'USER_CREATE',
+      'TICKET_DELETE_ATTACHMENT', 'TICKET_ESCALATE', 'TICKET_MERGE', 'TICKET_BULK_UPDATE', 'TICKET_EXPORT', 'USER_VIEW_ALL', 'USER_CREATE',
       'USER_EDIT', 'USER_DELETE', 'USER_TOGGLE_STATUS', 'USER_ASSIGN_ROLE', 'USER_RESET_PASSWORD', 'USER_IMPORT',
       'PROJECT_VIEW_ALL', 'PROJECT_EDIT', 'PROJECT_TOGGLE_STATUS', 'PROJECT_MANAGE_SETTINGS', 'REPORT_VIEW_TICKETS',
       'REPORT_VIEW_AGENT_PERFORMANCE', 'REPORT_VIEW_CSAT', 'REPORT_VIEW_SLA', 'REPORT_EXPORT', 'REPORT_CREATE_CUSTOM',
@@ -1171,7 +1185,7 @@ const defaultRoles = [
     description: 'Manages support operations and settings',
     type: 'custom',
     permissions: [
-      'TICKET_VIEW_ALL', 'TICKET_CREATE', 'TICKET_EDIT', 'TICKET_ASSIGN', 'TICKET_CHANGE_STATUS', 'TICKET_CHANGE_PRIORITY',
+      'TICKET_VIEW_ALL', 'TICKET_CREATE', 'TICKET_EDIT', 'TICKET_ASSIGN', 'TICKET_ESCALATE', 'TICKET_CHANGE_STATUS', 'TICKET_CHANGE_PRIORITY',
       'TICKET_ADD_COMMENT', 'TICKET_EDIT_COMMENT', 'TICKET_ADD_ATTACHMENT', 'TICKET_MERGE', 'TICKET_BULK_UPDATE', 'TICKET_EXPORT',
       'USER_VIEW_ALL', 'USER_CREATE', 'USER_EDIT', 'USER_TOGGLE_STATUS', 'USER_ASSIGN_ROLE', 'USER_IMPORT',
       'REPORT_VIEW_TICKETS', 'REPORT_VIEW_AGENT_PERFORMANCE', 'REPORT_VIEW_CSAT', 'REPORT_VIEW_SLA', 'REPORT_EXPORT',
@@ -1186,7 +1200,7 @@ const defaultRoles = [
     description: 'Manages team and ticket operations',
     type: 'custom',
     permissions: [
-      'TICKET_VIEW_ALL', 'TICKET_CREATE', 'TICKET_EDIT', 'TICKET_ASSIGN', 'TICKET_CHANGE_STATUS', 'TICKET_CHANGE_PRIORITY',
+      'TICKET_VIEW_ALL', 'TICKET_CREATE', 'TICKET_EDIT', 'TICKET_ASSIGN', 'TICKET_ESCALATE', 'TICKET_CHANGE_STATUS', 'TICKET_CHANGE_PRIORITY',
       'TICKET_ADD_COMMENT', 'TICKET_ADD_ATTACHMENT', 'TICKET_MERGE', 'TICKET_BULK_UPDATE', 'TICKET_EXPORT', 'USER_VIEW_ALL',
       'REPORT_VIEW_TICKETS', 'REPORT_VIEW_AGENT_PERFORMANCE', 'REPORT_VIEW_CSAT', 'REPORT_VIEW_SLA', 'REPORT_EXPORT',
       'FORM_VIEW', 'FORM_CREATE', 'FORM_EDIT', 'FORM_DELETE', 'FORM_ASSIGN_CONTEXT', 'FORM_VIEW_AUDIT_LOGS',
@@ -1221,13 +1235,28 @@ import mongoose from 'mongoose';
 
 export async function seedRolesAndPermissions() {
 	try {
-		// Check if roles already exist (skip seeding if they do)
+		// Check if roles already exist
 		const existingRolesCount = await Role.countDocuments();
 		const existingPermissionsCount = await Permission.countDocuments();
+		
+		// If both exist, check if we need to add any new permissions
 		if (existingRolesCount > 0 && existingPermissionsCount > 0) {
-			console.log('ℹ️  Roles and permissions already exist, skipping seed');
+			console.log('ℹ️  Roles and permissions already exist, checking for new permissions...');
 			console.log(`   - ${existingRolesCount} roles found`);
 			console.log(`   - ${existingPermissionsCount} permissions found`);
+			
+			// Check for new permissions to add
+			const existingPermissionCodes = (await Permission.find({}, 'code')).map(p => p.code);
+			const newPermissions = helpDeskPermissions.filter(p => !existingPermissionCodes.includes(p.code));
+			
+			if (newPermissions.length > 0) {
+				console.log(`🌱 Adding ${newPermissions.length} new permission(s)...`);
+				const insertedPermissions = await Permission.insertMany(newPermissions);
+				console.log(`✅ Added new permissions:`, insertedPermissions.map(p => p.code));
+			} else {
+				console.log('✅ No new permissions to add');
+			}
+			
 			return;
 		}
 		console.log('🌱 Seeding permissions...');

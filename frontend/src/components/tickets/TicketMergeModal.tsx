@@ -9,7 +9,7 @@ interface Ticket {
   ticketNumber: string;
   title: string;
   status: string;
-  priority: string;
+  priority?: string;
   createdAt: string;
 }
 
@@ -225,7 +225,7 @@ export const TicketMergeModal: React.FC<TicketMergeModalProps> = ({
                             {ticket.status}
                           </span>
                           <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded">
-                            {ticket.priority}
+                            {ticket.priority || 'N/A'}
                           </span>
                         </div>
                       </div>

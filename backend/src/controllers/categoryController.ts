@@ -49,7 +49,7 @@ export const getCategoriesByProject = async (req: AuthRequest, res: Response) =>
 
     const categories = await Category.find(filter)
       .sort({ order: 1, name: 1 })
-      .select('name description color icon order isActive projectId');
+      .select('name description color icon order isActive projectId defaultPriority');
 
     console.log(`📁 Found ${categories.length} categories for project ${projectId}`);
     

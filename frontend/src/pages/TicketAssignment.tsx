@@ -30,6 +30,13 @@ interface Ticket {
       name: string;
       code: string;
     } | string;
+    centerId?: string | {
+      _id: string;
+      centerName: string;
+      city?: string;
+      state?: string;
+    };
+    centerName?: string;
   };
   createdAt: string;
 }
@@ -64,6 +71,8 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
   const [loading, setLoading] = useState(true);
   const [assigning, setAssigning] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterAssignment, setFilterAssignment] = useState<string>('all'); // all, assigned, unassigned
+  const [filterCounselor, setFilterCounselor] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
@@ -210,7 +219,18 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
       matchesProject = ticketProjectId === selectedProject;
     }
     
-    return matchesStatus && matchesSearch && matchesProject;
+    // Filter by assignment status
+    const matchesAssignment = 
+      filterAssignment === 'all' ||
+      (filterAssignment === 'assigned' && ticket.assignedTo) ||
+      (filterAssignment === 'unassigned' && !ticket.assignedTo);
+    
+    // Filter by counselor
+    const matchesCounselor = 
+      filterCounselor === 'all' ||
+      ticket.assignedTo?._id === filterCounselor;
+    
+    return matchesStatus && matchesSearch && matchesProject && matchesAssignment && matchesCounselor;
   });
 
   const getStatusColor = (status: string | number) => {
@@ -368,6 +388,8 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
                 }}
               />
             </div>
+            
+            {/* Status Filter */}
             <div>
               <select
                 value={filterStatus}
@@ -377,14 +399,56 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
                   border: '1px solid #D1D5DB',
                   borderRadius: '8px',
                   fontSize: '14px',
+                  minWidth: '120px',
                 }}
               >
-                <option value="all">All</option>
-                <option value="open">Open</option>
-                <option value="in-progress">In Progress</option>
-                <option value="pending">Pending</option>
-                <option value="resolved">Resolved</option>
-                <option value="closed">Closed</option>
+                <option value="all">All Status</option>
+                <option value="1">Open</option>
+                <option value="2">In Progress</option>
+                <option value="3">On Hold</option>
+                <option value="4">Resolved</option>
+                <option value="5">Closed</option>
+              </select>
+            </div>
+
+            {/* Assignment Filter */}
+            <div>
+              <select
+                value={filterAssignment}
+                onChange={(e) => setFilterAssignment(e.target.value)}
+                style={{
+                  padding: '10px 12px',
+                  border: '1px solid #D1D5DB',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  minWidth: '140px',
+                }}
+              >
+                <option value="all">All Queries</option>
+                <option value="unassigned">Unassigned</option>
+                <option value="assigned">Assigned</option>
+              </select>
+            </div>
+
+            {/* Counselor Filter */}
+            <div>
+              <select
+                value={filterCounselor}
+                onChange={(e) => setFilterCounselor(e.target.value)}
+                style={{
+                  padding: '10px 12px',
+                  border: '1px solid #D1D5DB',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  minWidth: '180px',
+                }}
+              >
+                <option value="all">All Counselors</option>
+                {agents.map(agent => (
+                  <option key={agent._id} value={agent._id}>
+                    {agent.firstName} {agent.lastName}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -414,16 +478,11 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' }}>
                   Subject
                 </th>
-                {isSuperAdmin && (
-                  <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' }}>
-                    Project
-                  </th>
-                )}
-                <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' }}>
-                  Status
-                </th>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' }}>
                   Priority
+                </th>
+                <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' }}>
+                  Center
                 </th>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' }}>
                   Currently Assigned
@@ -431,12 +490,15 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' }}>
                   Requester
                 </th>
+                <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' }}>
+                  Status
+                </th>
               </tr>
             </thead>
             <tbody>
               {filteredTickets.length === 0 ? (
                 <tr>
-                  <td colSpan={isSuperAdmin ? 8 : 7} style={{ padding: '48px', textAlign: 'center', color: '#6B7280' }}>
+                  <td colSpan={8} style={{ padding: '48px', textAlign: 'center', color: '#6B7280' }}>
                     No tickets found
                   </td>
                 </tr>
@@ -463,36 +525,6 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
                     <td style={{ padding: '12px 16px', fontSize: '14px', color: '#111827' }}>
                       {ticket.subject || 'No subject'}
                     </td>
-                    {isSuperAdmin && (
-                      <td style={{ padding: '12px 16px' }}>
-                        {ticket.metadata?.projectId && typeof ticket.metadata.projectId === 'object' ? (
-                          <span style={{
-                            padding: '4px 12px',
-                            borderRadius: '12px',
-                            fontSize: '12px',
-                            fontWeight: 600,
-                            background: '#EEF2FF',
-                            color: '#4F46E5',
-                          }}>
-                            {ticket.metadata.projectId.name}
-                          </span>
-                        ) : (
-                          <span style={{ color: '#9CA3AF', fontSize: '14px' }}>-</span>
-                        )}
-                      </td>
-                    )}
-                    <td style={{ padding: '12px 16px' }}>
-                      <span style={{
-                        padding: '4px 12px',
-                        borderRadius: '12px',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        background: getStatusColor(ticket.status) + '20',
-                        color: getStatusColor(ticket.status),
-                      }}>
-                        {getStatusName(ticket.status)}
-                      </span>
-                    </td>
                     <td style={{ padding: '12px 16px' }}>
                       <span style={{
                         padding: '4px 12px',
@@ -506,6 +538,16 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
                       </span>
                     </td>
                     <td style={{ padding: '12px 16px', fontSize: '14px', color: '#6B7280' }}>
+                      {(() => {
+                        const centerId = ticket.metadata?.centerId;
+                        if (!centerId || centerId === 'online') return 'Online';
+                        if (typeof centerId === 'object') {
+                          return centerId.centerName + (centerId.city ? `, ${centerId.city}` : '');
+                        }
+                        return ticket.metadata?.centerName || 'Online';
+                      })()}
+                    </td>
+                    <td style={{ padding: '12px 16px', fontSize: '14px', color: '#6B7280' }}>
                       {ticket.assignedTo 
                         ? `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}`
                         : 'Unassigned'
@@ -513,6 +555,18 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
                     </td>
                     <td style={{ padding: '12px 16px', fontSize: '14px', color: '#6B7280' }}>
                       {ticket.metadata?.studentName || ticket.metadata?.studentEmail || 'N/A'}
+                    </td>
+                    <td style={{ padding: '12px 16px' }}>
+                      <span style={{
+                        padding: '4px 12px',
+                        borderRadius: '12px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        background: getStatusColor(ticket.status) + '20',
+                        color: getStatusColor(ticket.status),
+                      }}>
+                        {getStatusName(ticket.status)}
+                      </span>
                     </td>
                   </tr>
                 ))

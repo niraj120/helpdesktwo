@@ -13,6 +13,8 @@ interface Ticket {
   status: string;
   statusName?: string;
   priority: string;
+  resolutionTime?: string;
+  slaStatus?: string;
   category?: string | {
     _id: string;
     name: string;
@@ -28,6 +30,13 @@ interface Ticket {
       name: string;
       code: string;
     };
+    centerId?: string | {
+      _id: string;
+      centerName: string;
+      city?: string;
+      state?: string;
+    };
+    centerName?: string;
     studentName?: string;
     studentEmail?: string;
   };
@@ -53,6 +62,13 @@ interface Status {
   name: string;
   code: string;
   color?: string;
+}
+
+interface Center {
+  _id: string;
+  centerName: string;
+  city?: string;
+  state?: string;
 }
 
 interface TicketListReportProps {
@@ -99,10 +115,12 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
   const [projects, setProjects] = useState<Project[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [statuses, setStatuses] = useState<Status[]>([]);
+  const [centers, setCenters] = useState<Center[]>([]);
   
   const [selectedProject, setSelectedProject] = useState(projectId || '');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
+  const [selectedCenter, setSelectedCenter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   
   // Pagination
@@ -125,9 +143,11 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
     if (selectedProject) {
       fetchCategories(selectedProject);
       fetchStatuses(selectedProject);
+      fetchCenters(selectedProject);
     } else {
       setCategories([]);
       setStatuses([]);
+      setCenters([]);
     }
   }, [selectedProject]);
 
@@ -200,6 +220,21 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
     }
   };
 
+  const fetchCenters = async (projectId: string) => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await axios.get(`${API_CONFIG.API_URL}/centers?projectId=${projectId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (response.data.success && Array.isArray(response.data.data)) {
+        setCenters(response.data.data);
+      }
+    } catch (error) {
+      console.error('Error fetching centers:', error);
+      setCenters([]);
+    }
+  };
+
   const fetchTickets = async () => {
     try {
       setLoading(true);
@@ -243,6 +278,7 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
     setSelectedProject('');
     setSelectedCategory('');
     setSelectedStatus('');
+    setSelectedCenter('');
     setSearchQuery('');
     setPage(1);
   };
@@ -266,6 +302,22 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
       }
     }
     
+    // Filter by center
+    if (selectedCenter) {
+      const ticketCenterId = typeof ticket.metadata?.centerId === 'object' 
+        ? ticket.metadata?.centerId?._id 
+        : ticket.metadata?.centerId;
+      if (selectedCenter === 'online') {
+        if (ticketCenterId && ticketCenterId !== 'online') {
+          return false;
+        }
+      } else {
+        if (ticketCenterId !== selectedCenter) {
+          return false;
+        }
+      }
+    }
+    
     // Filter by search query (ticket number)
     if (searchQuery) {
       if (!ticket.ticketNumber.toLowerCase().includes(searchQuery.toLowerCase())) {
@@ -278,16 +330,26 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
 
   // Export functions
   const getExportData = () => {
-    return displayTickets.map(ticket => ({
-      'Query Number': ticket.ticketNumber,
-      'Project': ticket.metadata?.projectId?.name || 'N/A',
-      'Student Name': ticket.metadata?.studentName || 'N/A',
-      'Subject': ticket.subject || ticket.title || 'N/A',
-      'Category': typeof ticket.category === 'string' ? ticket.category : (ticket.category?.name || 'N/A'),
-      'Status': getStatusName(ticket.status),
-      'Assigned To': ticket.assignedTo ? `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}` : 'Unassigned',
-      'Created Date': new Date(ticket.createdAt).toLocaleDateString('en-IN'),
-    }));
+    return displayTickets.map(ticket => {
+      const centerId = ticket.metadata?.centerId;
+      const centerName = !centerId || centerId === 'online'
+        ? 'Online'
+        : (typeof centerId === 'object' ? centerId.centerName : ticket.metadata?.centerName || 'N/A');
+      
+      return {
+        'Query Number': ticket.ticketNumber,
+        'Student Name': ticket.metadata?.studentName || 'N/A',
+        'Subject': ticket.subject || ticket.title || 'N/A',
+        'Category': typeof ticket.category === 'string' ? ticket.category : (ticket.category?.name || 'N/A'),
+        'Priority': ticket.priority?.toUpperCase() || 'N/A',
+        'Center': centerName,
+        'Resolution Time': ticket.resolutionTime || '-',
+        'SLA Status': ticket.slaStatus || 'N/A',
+        'Status': getStatusName(ticket.status),
+        'Assigned To': ticket.assignedTo ? `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}` : 'Unassigned',
+        'Created Date': new Date(ticket.createdAt).toLocaleDateString('en-IN'),
+      };
+    });
   };
 
   const exportToPDF = async () => {
@@ -321,21 +383,38 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
       doc.text(`Generated on: ${new Date().toLocaleString('en-IN')}`, 14, 34);
 
       // Table
-      const tableData = displayTickets.map(ticket => [
-        ticket.ticketNumber,
-        ticket.metadata?.projectId?.name || 'N/A',
-        ticket.metadata?.studentName || 'N/A',
-        typeof ticket.category === 'string' ? ticket.category : (ticket.category?.name || 'N/A'),
-        ticket.statusName || ticket.status || 'N/A',
-        ticket.assignedTo ? `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}` : 'Unassigned',
+      const data = getExportData();
+      const tableData = data.map(row => [
+        row['Query Number'],
+        row['Student Name'],
+        row['Subject'],
+        row['Category'],
+        row['Priority'],
+        row['Center'],
+        row['Resolution Time'],
+        row['SLA Status'],
+        row['Status'],
+        row['Assigned To'],
       ]);
 
       autoTable(doc, {
-        head: [['Ticket #', 'Project', 'Student Name', 'Category', 'Status', 'Assigned To']],
+        head: [['Query #', 'Student Name', 'Subject', 'Category', 'Priority', 'Center', 'Resolution Time', 'SLA Status', 'Status', 'Assigned To']],
         body: tableData,
         startY: 40,
-        styles: { fontSize: 8 },
+        styles: { fontSize: 7 },
         headStyles: { fillColor: [59, 130, 246] },
+        columnStyles: {
+          0: { cellWidth: 22 }, // Query #
+          1: { cellWidth: 25 }, // Student Name
+          2: { cellWidth: 30 }, // Subject
+          3: { cellWidth: 35 }, // Category
+          4: { cellWidth: 18 }, // Priority
+          5: { cellWidth: 25 }, // Center
+          6: { cellWidth: 22 }, // Resolution Time
+          7: { cellWidth: 20 }, // SLA Status
+          8: { cellWidth: 18 }, // Status
+          9: { cellWidth: 25 }, // Assigned To
+        },
       });
 
       doc.save(`ticket-report-${new Date().toISOString().split('T')[0]}.pdf`);
@@ -581,6 +660,34 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
             </select>
           </div>
 
+          {/* Center Filter */}
+          <div>
+            <label style={{ display: 'block', marginBottom: '4px', fontSize: '14px', fontWeight: '500', color: '#374151' }}>
+              Center
+            </label>
+            <select
+              value={selectedCenter}
+              onChange={(e) => setSelectedCenter(e.target.value)}
+              disabled={!selectedProject}
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                border: '1px solid #d1d5db',
+                borderRadius: '6px',
+                fontSize: '14px',
+                background: !selectedProject ? '#f3f4f6' : 'white',
+              }}
+            >
+              <option value="">All Centers</option>
+              <option value="online">Online</option>
+              {centers.map(center => (
+                <option key={center._id} value={center._id}>
+                  {center.centerName}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* Search */}
           <div>
             <label style={{ display: 'block', marginBottom: '4px', fontSize: '14px', fontWeight: '500', color: '#374151' }}>
@@ -635,7 +742,7 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
       {/* Results Summary */}
       <div style={{ marginBottom: '16px', color: '#6b7280', fontSize: '14px' }}>
         Showing {displayTickets.length} of {tickets.length} queries
-        {(selectedCategory || selectedStatus || searchQuery) && ' (filtered)'}
+        {(selectedCategory || selectedStatus || selectedCenter || searchQuery) && ' (filtered)'}
       </div>
 
       {/* Table */}
@@ -662,13 +769,25 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
                     Query #
                   </th>
                   <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600', color: '#374151', fontSize: '14px' }}>
-                    Project
-                  </th>
-                  <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600', color: '#374151', fontSize: '14px' }}>
                     Student Name
                   </th>
-                  <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600', color: '#374151', fontSize: '14px' }}>
+                  <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600', color: '#374151', fontSize: '14px', minWidth: '120px', maxWidth: '150px' }}>
+                    Subject
+                  </th>
+                  <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600', color: '#374151', fontSize: '14px', minWidth: '120px', maxWidth: '150px' }}>
                     Category
+                  </th>
+                  <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600', color: '#374151', fontSize: '14px' }}>
+                    Priority
+                  </th>
+                  <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600', color: '#374151', fontSize: '14px' }}>
+                    Center
+                  </th>
+                  <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600', color: '#374151', fontSize: '14px' }}>
+                    Resolution Time
+                  </th>
+                  <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600', color: '#374151', fontSize: '14px' }}>
+                    SLA Status
                   </th>
                   <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600', color: '#374151', fontSize: '14px' }}>
                     Status
@@ -691,13 +810,74 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
                       {ticket.ticketNumber}
                     </td>
                     <td style={{ padding: '12px 16px', fontSize: '14px', color: '#374151' }}>
-                      {ticket.metadata?.projectId?.name || 'N/A'}
-                    </td>
-                    <td style={{ padding: '12px 16px', fontSize: '14px', color: '#374151' }}>
                       {ticket.metadata?.studentName || 'N/A'}
                     </td>
-                    <td style={{ padding: '12px 16px', fontSize: '14px', color: '#374151' }}>
+                    <td style={{ padding: '12px 16px', fontSize: '14px', color: '#374151', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={ticket.subject || ticket.title || 'N/A'}>
+                      {ticket.subject || ticket.title || 'N/A'}
+                    </td>
+                    <td style={{ padding: '12px 16px', fontSize: '14px', color: '#374151', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={typeof ticket.category === 'string' ? ticket.category : (ticket.category?.name || 'N/A')}>
                       {typeof ticket.category === 'string' ? ticket.category : (ticket.category?.name || 'N/A')}
+                    </td>
+                    <td style={{ padding: '12px 16px', fontSize: '14px' }}>
+                      <span style={{
+                        padding: '4px 12px',
+                        borderRadius: '12px',
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        background: ticket.priority?.toLowerCase() === 'high' || ticket.priority?.toLowerCase() === 'critical' ? '#fee2e2' : ticket.priority?.toLowerCase() === 'medium' ? '#fef3c7' : '#dbeafe',
+                        color: ticket.priority?.toLowerCase() === 'high' || ticket.priority?.toLowerCase() === 'critical' ? '#991b1b' : ticket.priority?.toLowerCase() === 'medium' ? '#92400e' : '#1e40af',
+                      }}>
+                        {ticket.priority?.toUpperCase() || 'N/A'}
+                      </span>
+                    </td>
+                    <td style={{ padding: '12px 16px', fontSize: '14px', color: '#374151' }}>
+                      {!ticket.metadata?.centerId || ticket.metadata?.centerId === 'online'
+                        ? 'Online'
+                        : (typeof ticket.metadata?.centerId === 'object'
+                          ? ticket.metadata?.centerId?.centerName
+                          : ticket.metadata?.centerName || 'Online')
+                      }
+                    </td>
+                    <td style={{ padding: '12px 16px', fontSize: '14px', color: '#374151' }}>
+                      {ticket.resolutionTime || '-'}
+                    </td>
+                    <td style={{ padding: '12px 16px', fontSize: '14px' }}>
+                      {ticket.slaStatus === 'Within SLA' ? (
+                        <span style={{
+                          padding: '4px 12px',
+                          borderRadius: '12px',
+                          fontSize: '12px',
+                          background: '#d1fae5',
+                          color: '#065f46',
+                          fontWeight: '600',
+                        }}>
+                          Within SLA
+                        </span>
+                      ) : ticket.slaStatus === 'Outside SLA' ? (
+                        <span style={{
+                          padding: '4px 12px',
+                          borderRadius: '12px',
+                          fontSize: '12px',
+                          background: '#fee2e2',
+                          color: '#991b1b',
+                          fontWeight: '600',
+                        }}>
+                          Outside SLA
+                        </span>
+                      ) : ticket.slaStatus === 'Pending' ? (
+                        <span style={{
+                          padding: '4px 12px',
+                          borderRadius: '12px',
+                          fontSize: '12px',
+                          background: '#fef3c7',
+                          color: '#92400e',
+                          fontWeight: '600',
+                        }}>
+                          Pending
+                        </span>
+                      ) : (
+                        <span style={{ color: '#9ca3af' }}>N/A</span>
+                      )}
                     </td>
                     <td style={{ padding: '12px 16px', fontSize: '14px' }}>
                       <span style={{

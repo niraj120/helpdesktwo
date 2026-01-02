@@ -317,7 +317,9 @@ export const login = async (req: Request<{}, {}, LoginRequest>, res: Response) =
     });
 
   } catch (error) {
-    console.error('Logout error:', error);
+    console.error('❌ Login error:', error);
+    console.error('Error details:', error instanceof Error ? error.message : error);
+    console.error('Stack:', error instanceof Error ? error.stack : 'No stack trace');
     return res.status(500).json({
       success: false,
       error: 'Internal server error'

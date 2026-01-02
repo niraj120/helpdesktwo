@@ -9,7 +9,7 @@ export const getAllSLARules = async (req: Request, res: Response): Promise<void>
     const filter: any = {};
 
     if (projectId) {
-      filter.projectIds = projectId;
+      filter.projectIds = { $in: [projectId] }; // Query array field correctly
     }
     if (priority) {
       filter.priority = priority;

@@ -6,7 +6,8 @@ import {
   getAllTickets,
   getTicketById, 
   replyToTicket, 
-  closeTicket, 
+  closeTicket,
+  reopenTicket,
   getAgentAssignedTickets,
   updateTicketStatus,
   updateTicketCategory,
@@ -126,6 +127,11 @@ router.post('/:id/reply', authMiddleware, checkPermission('TICKET_ADD_COMMENT'),
 // @access  Private (Student)
 router.patch('/:id/close', authMiddleware, checkPermission('TICKET_CHANGE_STATUS'), closeTicket);
 
+// @desc    Reopen closed ticket
+// @route   PATCH /api/tickets/:id/reopen
+// @access  Private (Student)
+router.patch('/:id/reopen', authMiddleware, reopenTicket);
+
 // @desc    Update ticket
 // @route   PUT /api/tickets/:id
 // @access  Private
@@ -168,8 +174,8 @@ router.post('/:id/notes', authMiddleware, checkPermission('TICKET_ADD_COMMENT'),
 
 // @desc    Escalate ticket
 // @route   POST /api/tickets/:id/escalate
-// @access  Private (Agent) - Authorization handled in controller
-router.post('/:id/escalate', authMiddleware, escalateTicket);
+// @access  Private (Agent with TICKET_ESCALATE permission)
+router.post('/:id/escalate', authMiddleware, checkPermission('TICKET_ESCALATE'), escalateTicket);
 
 // @desc    Assign ticket to agent
 // @route   PUT /api/tickets/:id/assign

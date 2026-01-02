@@ -80,6 +80,7 @@ const StudentTicketDetail: React.FC = () => {
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [closingTicket, setClosingTicket] = useState(false);
+  const [reopeningTicket, setReopeningTicket] = useState(false);
   
   // Feedback mode detection
   const showFeedbackForm = searchParams.get('feedback') === 'true';
@@ -186,8 +187,32 @@ const StudentTicketDetail: React.FC = () => {
     }
   };
 
+  const handleReopenTicket = async () => {
+    if (!confirm('Are you sure you want to reopen this query?')) {
+      return;
+    }
+
+    setReopeningTicket(true);
+    try {
+      const token = localStorage.getItem('authToken');
+      await axios.patch(
+        `${API_CONFIG.API_URL}/tickets/${ticketId}/reopen`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      setSubmitSuccess(true);
+      fetchData();
+      setTimeout(() => setSubmitSuccess(false), 3000);
+    } catch (error: any) {
+      setSubmitError(error.response?.data?.message || 'Failed to reopen query');
+    } finally {
+      setReopeningTicket(false);
+    }
+  };
+
   const handleCloseTicket = async () => {
-    if (!confirm('Are you sure you want to close this query? You won\'t be able to reopen it.')) {
+    if (!confirm('Are you sure you want to close this query?')) {
       return;
     }
 
@@ -328,10 +353,18 @@ const StudentTicketDetail: React.FC = () => {
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-6">
             {/* Ticket Info */}
-            <div className="bg-white rounded-xl shadow-sm p-6">
-              <div className="flex items-start justify-between mb-4">
-                <h2 className="text-2xl font-bold text-gray-900">{ticket.title}</h2>
-                <div className="flex flex-col items-end space-y-2">
+            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+              <div className="flex items-start justify-between p-6 border-b border-gray-100">
+                <div className="flex-1">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <div className="p-1.5 bg-blue-100 rounded-lg">
+                      <TicketIcon className="h-4 w-4 text-blue-600" />
+                    </div>
+                    <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Subject</span>
+                  </div>
+                  <h2 className="text-xl font-semibold text-gray-900">{ticket.title}</h2>
+                </div>
+                <div className="flex flex-col items-end space-y-2 ml-4">
                   <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(ticket.status)}`}>
                     {getStatusName(ticket.status).toUpperCase()}
                   </span>
@@ -341,8 +374,16 @@ const StudentTicketDetail: React.FC = () => {
                 </div>
               </div>
 
-              <div className="prose max-w-none">
-                <p className="text-gray-700 whitespace-pre-wrap">{ticket.description}</p>
+              <div className="p-6">
+                <div className="flex items-center space-x-2 mb-3">
+                  <div className="p-1.5 bg-purple-100 rounded-lg">
+                    <DocumentArrowUpIcon className="h-4 w-4 text-purple-600" />
+                  </div>
+                  <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Description</span>
+                </div>
+                <div className="prose max-w-none">
+                  <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">{ticket.description}</p>
+                </div>
               </div>
 
               {/* Original Attachments */}
@@ -418,6 +459,28 @@ const StudentTicketDetail: React.FC = () => {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* Reopen Button (only if ticket is closed) */}
+            {ticket.status === 5 && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6">
+                <div className="flex items-start">
+                  <ExclamationCircleIcon className="h-6 w-6 text-yellow-600 mr-3 flex-shrink-0" />
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold text-yellow-900 mb-2">Query is Closed</h3>
+                    <p className="text-sm text-yellow-700 mb-4">
+                      This query has been closed. If you need further assistance, you can reopen it.
+                    </p>
+                    <button
+                      onClick={handleReopenTicket}
+                      disabled={reopeningTicket}
+                      className="px-6 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {reopeningTicket ? 'Reopening...' : 'Reopen Query'}
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
 

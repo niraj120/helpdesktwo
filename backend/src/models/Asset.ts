@@ -4,7 +4,7 @@ export interface IAsset extends Document {
   projectId: mongoose.Types.ObjectId;
   name: string;
   description?: string;
-  category?: string;
+  category?: mongoose.Types.ObjectId | string; // Reference to AssetCategory or legacy string
   predefinedCount: number;
   unit?: string;
   isActive: boolean;
@@ -31,8 +31,9 @@ const AssetSchema = new Schema<IAsset>(
       trim: true
     },
     category: {
-      type: String,
-      trim: true
+      type: Schema.Types.ObjectId,
+      ref: 'AssetCategory',
+      required: false
     },
     predefinedCount: {
       type: Number,

@@ -6,11 +6,21 @@ import { PERMISSIONS } from '../constants/permissions';
 import DashboardLayout from './DashboardLayout';
 import ModuleHeader from './ModuleHeader';
 
+interface AssetCategory {
+  _id: string;
+  name: string;
+  code: string;
+  description?: string;
+  color?: string;
+  icon?: string;
+  isActive: boolean;
+}
+
 interface Asset {
   _id: string;
   name: string;
   description?: string;
-  category?: string;
+  category?: string | AssetCategory; // Support both string (legacy) and object (populated)
   predefinedCount: number;
   unit?: string;
   isActive: boolean;
@@ -40,7 +50,7 @@ const AssetManagement: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>('');
   const [assets, setAssets] = useState<Asset[]>([]);
-  const [categories, setCategories] = useState<string[]>([]);
+  const [categories, setCategories] = useState<AssetCategory[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterActive, setFilterActive] = useState<'all' | 'active' | 'inactive'>('all');
@@ -125,24 +135,28 @@ const AssetManagement: React.FC = () => {
     
     try {
       const token = localStorage.getItem('authToken');
-      const response = await fetch(`${API_CONFIG.API_URL}/assets/categories/list?projectId=${selectedProject}`, {
+      const response = await fetch(`${API_CONFIG.API_URL}/asset-categories/project/${selectedProject}`, {
         headers: { 'Authorization': `Bearer ${token}` },
         credentials: 'include',
       });
       const data = await response.json();
       setCategories(data.data || []);
     } catch (error) {
-      console.error('Failed to fetch categories:', error);
+      console.error('Failed to fetch asset categories:', error);
     }
   };
 
   const handleOpenModal = (asset?: Asset) => {
     if (asset) {
       setEditingAsset(asset);
+      // Extract category ID if it's an object (populated), otherwise use string
+      const categoryId = typeof asset.category === 'object' && asset.category !== null 
+        ? asset.category._id 
+        : asset.category || '';
       setFormData({
         name: asset.name,
         description: asset.description || '',
-        category: asset.category || '',
+        category: categoryId,
         predefinedCount: asset.predefinedCount,
         unit: asset.unit || 'units',
       });
@@ -245,6 +259,35 @@ const AssetManagement: React.FC = () => {
       fetchAssets();
     } catch (error: any) {
       showMessage('error', error.message || 'Failed to delete asset. It may be mapped to centers.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleToggleStatus = async (assetId: string, currentStatus: boolean) => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`${API_CONFIG.API_URL}/assets/${assetId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        credentials: 'include',
+        body: JSON.stringify({ isActive: !currentStatus }),
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to update asset status');
+      }
+
+      showMessage('success', `Asset ${!currentStatus ? 'activated' : 'deactivated'} successfully`);
+      fetchAssets();
+    } catch (error: any) {
+      showMessage('error', error.message || 'Failed to update asset status');
     } finally {
       setLoading(false);
     }
@@ -425,18 +468,43 @@ const AssetManagement: React.FC = () => {
                 filteredAssets.map((asset) => (
                   <tr key={asset._id} className="hover:bg-gray-50">
                     <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">{asset.name}</td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">{asset.category || '-'}</td>
+                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
+                      {typeof asset.category === 'object' && asset.category !== null 
+                        ? asset.category.name 
+                        : asset.category || '-'}
+                    </td>
                     <td className="px-6 py-4 text-sm text-gray-500">
                       <div className="max-w-xs truncate">{asset.description || '-'}</div>
                     </td>
                     <td className="whitespace-nowrap px-6 py-4 text-right text-sm text-gray-900">{asset.predefinedCount}</td>
                     <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">{asset.unit || 'units'}</td>
                     <td className="whitespace-nowrap px-6 py-4">
-                      <span className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold leading-5 ${asset.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
-                        {asset.isActive ? 'Active' : 'Inactive'}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs font-medium ${asset.isActive ? 'text-green-700' : 'text-gray-500'}`}>
+                          {asset.isActive ? 'Active' : 'Inactive'}
+                        </span>
+                        <button
+                          onClick={() => handleToggleStatus(asset._id, asset.isActive)}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                            asset.isActive ? 'bg-green-600' : 'bg-gray-200'
+                          }`}
+                          role="switch"
+                          aria-checked={asset.isActive}
+                          title={`Click to ${asset.isActive ? 'deactivate' : 'activate'}`}
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                              asset.isActive ? 'translate-x-6' : 'translate-x-1'
+                            }`}
+                          />
+                        </button>
+                      </div>
                     </td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">{asset.createdBy?.name || 'Unknown'}</td>
+                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
+                      {asset.createdBy 
+                        ? `${asset.createdBy.firstName || ''} ${asset.createdBy.lastName || ''}`.trim() || 'Unknown'
+                        : 'Unknown'}
+                    </td>
                     <td className="whitespace-nowrap px-6 py-4 text-center text-sm font-medium">
                       <div className="flex justify-center gap-2">
                         {canEdit && (
@@ -492,28 +560,24 @@ const AssetManagement: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Category</label>
+                    <label className="block text-sm font-medium text-gray-700">Asset Category</label>
                     <select
                       value={formData.category}
                       onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                       className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     >
-                      <option value="">Select or enter custom...</option>
-                      {categories.map((cat) => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
+                      <option value="">Select category...</option>
+                      {categories
+                        .filter(cat => cat.isActive)
+                        .map((cat) => (
+                          <option key={cat._id} value={cat._id}>
+                            {cat.icon && `${cat.icon} `}{cat.name}
+                          </option>
+                        ))}
                     </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Custom Category</label>
-                    <input
-                      type="text"
-                      value={formData.category}
-                      onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                      placeholder="Enter new category name"
-                      className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    />
+                    <p className="mt-1 text-sm text-gray-500">
+                      Manage categories in Master Data Management
+                    </p>
                   </div>
 
                   <div>

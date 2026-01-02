@@ -45,6 +45,7 @@ const MASTER_CATEGORIES = [
   { key: 'states', label: 'States', icon: '🗺️', api: '/api/master/states', requiresProject: false },
   { key: 'cities', label: 'Cities', icon: '🏙️', api: '/api/master/cities', requiresProject: false },
   { key: 'categories', label: 'Categories', icon: '📁', api: '/api/categories/project', requiresProject: true },
+  { key: 'assetCategories', label: 'Asset Categories', icon: '📦', api: '/api/asset-categories/project', requiresProject: true },
   { key: 'statuses', label: 'Status', icon: '🏷️', api: '/api/statuses/project', requiresProject: true },
 ];
 
@@ -74,6 +75,7 @@ const MasterDataManagement = () => {
     state: '',
     displayOrder: 0,
     color: '#3b82f6',
+    icon: '',
     description: '',
     defaultPriority: '',
     isActive: true,
@@ -160,14 +162,22 @@ const MasterDataManagement = () => {
     if (!selectedProjectId) return;
     try {
       const token = localStorage.getItem('authToken');
-      const response = await axios.get(`${API_CONFIG.API_URL}/priorities?projectId=${selectedProjectId}`, {
+      // Fetch priorities from SLA rules for this project
+      const response = await axios.get(`${API_CONFIG.API_URL}/sla-rules?projectId=${selectedProjectId}&isActive=true`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      if (response.data.success) {
-        setPriorities(response.data.data || []);
+      if (response.data.success && response.data.data) {
+        // Use SLA rule names as priorities (e.g., "High", "Medium", "Low")
+        const prioritiesFromRules = response.data.data.map((rule: any) => ({
+          _id: rule._id,
+          code: rule.name.toLowerCase(),
+          name: rule.name,
+          color: undefined, // SLA rules don't have colors
+        }));
+        setPriorities(prioritiesFromRules);
       }
     } catch (error) {
-      console.error('Error fetching priorities:', error);
+      console.error('Error fetching priorities from SLA rules:', error);
     }
   };
 
@@ -263,15 +273,17 @@ const MasterDataManagement = () => {
       let url: string;
       let method: 'post' | 'put';
       
-      if (activeTab === 'categories' || activeTab === 'statuses') {
-        // Categories and Status have different URL patterns
+      if (activeTab === 'categories' || activeTab === 'statuses' || activeTab === 'assetCategories') {
+        // Categories, Asset Categories, and Status have different URL patterns
         if (editingItem) {
-          // Update: PUT /api/categories/:id or PUT /api/statuses/:id
-          const baseApi = activeTab === 'categories' ? '/api/categories' : '/api/statuses';
+          // Update: PUT /api/categories/:id or PUT /api/statuses/:id or PUT /api/asset-categories/:id
+          let baseApi = '/api/categories';
+          if (activeTab === 'statuses') baseApi = '/api/statuses';
+          if (activeTab === 'assetCategories') baseApi = '/api/asset-categories';
           url = `${API_CONFIG.BASE_URL}${baseApi}/${editingItem._id}`;
           method = 'put';
         } else {
-          // Create: POST /api/categories/project/:projectId or POST /api/statuses/project/:projectId
+          // Create: POST /api/categories/project/:projectId or POST /api/statuses/project/:projectId or POST /api/asset-categories/project/:projectId
           if (!selectedProjectId) {
             alert('Please select a project first');
             return;
@@ -323,6 +335,14 @@ const MasterDataManagement = () => {
           defaultPriority: formData.defaultPriority,
           isActive: formData.isActive,
         };
+      } else if (activeTab === 'assetCategories') {
+        data = {
+          name: formData.name,
+          description: formData.description,
+          color: formData.color,
+          icon: formData.icon,
+          isActive: formData.isActive,
+        };
       } else if (activeTab === 'statuses') {
         data = {
           name: formData.name,
@@ -360,6 +380,8 @@ const MasterDataManagement = () => {
         url = `${API_CONFIG.API_URL}/categories/${id}`;
       } else if (activeTab === 'statuses') {
         url = `${API_CONFIG.API_URL}/statuses/${id}`;
+      } else if (activeTab === 'assetCategories') {
+        url = `${API_CONFIG.API_URL}/asset-categories/${id}`;
       } else {
         url = `${API_CONFIG.BASE_URL}${currentCategory?.api}/${id}`;
       }
@@ -550,6 +572,117 @@ const MasterDataManagement = () => {
                 onChange={(e) => setFormData({ ...formData, color: e.target.value })}
                 style={{ width: '100%', padding: '4px', border: '1px solid #ddd', borderRadius: '4px' }}
               />
+            </div>
+          </>
+        );
+
+      case 'assetCategories':
+        const assetIcons = [
+          { emoji: '🪑', label: 'Chair/Furniture' },
+          { emoji: '🖥️', label: 'Computer' },
+          { emoji: '💻', label: 'Laptop' },
+          { emoji: '🖨️', label: 'Printer' },
+          { emoji: '📱', label: 'Phone/Mobile' },
+          { emoji: '⌨️', label: 'Keyboard' },
+          { emoji: '🖱️', label: 'Mouse' },
+          { emoji: '📺', label: 'Monitor/TV' },
+          { emoji: '🎧', label: 'Headphones' },
+          { emoji: '📷', label: 'Camera' },
+          { emoji: '🔌', label: 'Electronics' },
+          { emoji: '💡', label: 'Lighting' },
+          { emoji: '📦', label: 'Package/Box' },
+          { emoji: '🔧', label: 'Tools' },
+          { emoji: '📚', label: 'Books' },
+          { emoji: '🗄️', label: 'Cabinet' },
+          { emoji: '🚗', label: 'Vehicle' },
+          { emoji: '🏢', label: 'Building' },
+          { emoji: '📄', label: 'Document' },
+          { emoji: '🎯', label: 'Other' },
+        ];
+        
+        return (
+          <>
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Category Name *</label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}
+                required
+                placeholder="e.g., Furniture, Electronics"
+              />
+              <small style={{ color: '#6b7280', fontSize: '12px' }}>Code will be auto-generated from name</small>
+            </div>
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Description</label>
+              <textarea
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px', minHeight: '80px' }}
+                placeholder="Optional description for this asset category"
+              />
+            </div>
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Color</label>
+              <input
+                type="color"
+                value={formData.color}
+                onChange={(e) => setFormData({ ...formData, color: e.target.value })}
+                style={{ width: '100%', padding: '4px', border: '1px solid #ddd', borderRadius: '4px' }}
+              />
+            </div>
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Icon</label>
+              <div style={{ 
+                display: 'grid', 
+                gridTemplateColumns: 'repeat(5, 1fr)', 
+                gap: '8px',
+                padding: '8px',
+                border: '1px solid #ddd',
+                borderRadius: '4px',
+                maxHeight: '200px',
+                overflowY: 'auto'
+              }}>
+                {assetIcons.map((icon) => (
+                  <button
+                    key={icon.emoji}
+                    type="button"
+                    onClick={() => setFormData({ ...formData, icon: icon.emoji })}
+                    style={{
+                      padding: '12px',
+                      border: formData.icon === icon.emoji ? '2px solid var(--primary-main)' : '1px solid #ddd',
+                      borderRadius: '8px',
+                      background: formData.icon === icon.emoji ? '#eff6ff' : 'white',
+                      cursor: 'pointer',
+                      fontSize: '24px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      transition: 'all 0.2s',
+                      position: 'relative'
+                    }}
+                    title={icon.label}
+                    onMouseEnter={(e) => {
+                      if (formData.icon !== icon.emoji) {
+                        e.currentTarget.style.background = '#f9fafb';
+                        e.currentTarget.style.transform = 'scale(1.05)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (formData.icon !== icon.emoji) {
+                        e.currentTarget.style.background = 'white';
+                        e.currentTarget.style.transform = 'scale(1)';
+                      }
+                    }}
+                  >
+                    {icon.emoji}
+                  </button>
+                ))}
+              </div>
+              <small style={{ color: '#6b7280', fontSize: '12px', display: 'block', marginTop: '8px' }}>
+                {formData.icon ? `Selected: ${formData.icon}` : 'Select an icon (optional)'}
+              </small>
             </div>
           </>
         );
@@ -756,6 +889,16 @@ const MasterDataManagement = () => {
                       <th style={{ padding: '12px', textAlign: 'center' }}>Actions</th>
                     </>
                   )}
+                  {activeTab === 'assetCategories' && (
+                    <>
+                      <th style={{ padding: '12px', textAlign: 'left' }}>Icon</th>
+                      <th style={{ padding: '12px', textAlign: 'left' }}>Category Name</th>
+                      <th style={{ padding: '12px', textAlign: 'left' }}>Code</th>
+                      <th style={{ padding: '12px', textAlign: 'center' }}>Color</th>
+                      <th style={{ padding: '12px', textAlign: 'center' }}>Status</th>
+                      <th style={{ padding: '12px', textAlign: 'center' }}>Actions</th>
+                    </>
+                  )}
                   {activeTab === 'statuses' && (
                     <>
                       <th style={{ padding: '12px', textAlign: 'left' }}>Status Name</th>
@@ -891,6 +1034,39 @@ const MasterDataManagement = () => {
                               return <span style={{ color: '#9ca3af' }}>Not set</span>;
                             })()}
                           </td>
+                          <td style={{ padding: '12px', textAlign: 'center' }}>
+                            <div style={{ width: '30px', height: '30px', background: item.color, borderRadius: '4px', margin: '0 auto' }}></div>
+                          </td>
+                          <td style={{ padding: '12px', textAlign: 'center' }}>
+                            <span style={{
+                              padding: '4px 12px',
+                              borderRadius: '12px',
+                              fontSize: '12px',
+                              background: item.isActive ? '#dcfce7' : '#fee2e2',
+                              color: item.isActive ? '#166534' : '#991b1b',
+                            }}>
+                              {item.isActive ? 'Active' : 'Inactive'}
+                            </span>
+                          </td>
+                          <td style={{ padding: '12px', textAlign: 'center' }}>
+                            {hasPermission(PERMISSIONS.MASTER_DATA_EDIT) && (
+                              <button onClick={() => handleEdit(item)} style={{ marginRight: '8px', padding: '6px', border: 'none', background: '#dbeafe', color: '#1e40af', borderRadius: '4px', cursor: 'pointer' }}>
+                                <MdEdit size={18} />
+                              </button>
+                            )}
+                            {hasPermission(PERMISSIONS.MASTER_DATA_DELETE) && (
+                              <button onClick={() => handleDelete(item._id)} style={{ padding: '6px', border: 'none', background: '#fee2e2', color: '#991b1b', borderRadius: '4px', cursor: 'pointer' }}>
+                                <MdDelete size={18} />
+                              </button>
+                            )}
+                          </td>
+                        </>
+                      )}
+                      {activeTab === 'assetCategories' && (
+                        <>
+                          <td style={{ padding: '12px', fontSize: '24px' }}>{item.icon || '📦'}</td>
+                          <td style={{ padding: '12px' }}>{item.name || 'N/A'}</td>
+                          <td style={{ padding: '12px', fontFamily: 'monospace' }}>{item.code}</td>
                           <td style={{ padding: '12px', textAlign: 'center' }}>
                             <div style={{ width: '30px', height: '30px', background: item.color, borderRadius: '4px', margin: '0 auto' }}></div>
                           </td>

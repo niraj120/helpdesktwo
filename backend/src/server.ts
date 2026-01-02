@@ -12,6 +12,27 @@ import compression from 'compression';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 
+// Import all models FIRST to ensure they're registered before controllers use them
+import './models/Category';
+import './models/Ticket';
+import './models/User';
+import './models/Role';
+import './models/Permission';
+import './models/Project';
+import './models/Status';
+import './models/Center';
+import './models/Asset';
+import './models/CenterAssetMapping';
+import './models/FeedbackForm';
+import './models/FeedbackResponse';
+import './models/KBCategory';
+import './models/KBSubcategory';
+import './models/KnowledgeBaseArticle';
+import './models/MasterData';
+import './models/EmailLog';
+import './models/EmailConfig';
+import './models/FAQ';
+
 import { connectDB } from './config/database';
 import { errorHandler } from './middleware/errorHandler';
 import { notFound } from './middleware/notFound';
@@ -27,6 +48,7 @@ import permissionRoutes from './routes/permissionRoutes';
 import masterRoutes from './routes/masterRoutes'; // Country, State, City routes (consolidated)
 import categoryRoutes from './routes/categories';
 import statusRoutes from './routes/statuses';
+import assetCategoryRoutes from './routes/assetCategories';
 // import { ticketFieldRoutes, autoAssignmentRoutes } from './routes/ticket-module'; // TODO: Implement
 import slaRuleRoutes from './routes/sla-module/slaRuleRoutes';
 import escalationPolicyRoutes from './routes/sla-module/escalationPolicyRoutes';
@@ -168,6 +190,7 @@ app.use('/api/permissions', permissionRoutes);
 app.use('/api/master', masterRoutes); // Master data: Countries, States, Cities (all endpoints)
 app.use('/api/categories', categoryRoutes);
 app.use('/api/statuses', statusRoutes);
+app.use('/api/asset-categories', assetCategoryRoutes);
 
 // Ticket Module Routes (TODO: Implement)
 // app.use('/api/ticket-fields', ticketFieldRoutes);

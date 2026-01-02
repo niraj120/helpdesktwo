@@ -4,6 +4,8 @@ import { Project } from '../models/Project';
 import { User } from '../models/User';
 import { Role } from '../models/Role';
 import { Permission } from '../models/Permission';
+import { Center } from '../models/Center';
+import { Category } from '../models/Category';
 import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
@@ -396,6 +398,54 @@ export const submitTicket = async (req: Request, res: Response) => {
     }
     console.timeEnd('⏱️ Student user lookup/create');
     
+    // Fetch category to get default priority
+    console.time('⏱️ Category lookup');
+    let ticketPriority = 'medium'; // Default fallback
+    const categoryValue = ticketData.Category || 'General';
+    
+    try {
+      // Use mongoose.models to ensure the model is available
+      const CategoryModel = mongoose.models.Category || Category;
+      
+      let category;
+      // Check if categoryValue is an ObjectId (24 hex chars) or a name string
+      if (mongoose.Types.ObjectId.isValid(categoryValue) && categoryValue.length === 24) {
+        // Search by ObjectId
+        category = await CategoryModel.findOne({ 
+          _id: categoryValue, 
+          projectId: projectId,
+          isActive: true 
+        });
+        console.log(`🔍 Looking up category by ID: ${categoryValue}`);
+      } else {
+        // Search by name
+        category = await CategoryModel.findOne({ 
+          name: categoryValue, 
+          projectId: projectId,
+          isActive: true 
+        });
+        console.log(`🔍 Looking up category by name: ${categoryValue}`);
+      }
+      
+      console.log(`🔍 Category found:`, category ? {
+        _id: category._id,
+        name: category.name,
+        defaultPriority: category.defaultPriority
+      } : 'NOT FOUND');
+      
+      if (category && category.defaultPriority) {
+        ticketPriority = category.defaultPriority.toLowerCase();
+        console.log(`✅ Using category default priority: ${ticketPriority} (from category: ${category.name})`);
+      } else if (category) {
+        console.log(`⚠️ Category found but defaultPriority is not set: ${category.name}`);
+      } else {
+        console.log(`⚠️ Category not found: ${categoryValue}, using fallback: ${ticketPriority}`);
+      }
+    } catch (error) {
+      console.error('Error fetching category:', error);
+    }
+    console.timeEnd('⏱️ Category lookup');
+    
     // Create ticket (using actual student user ID)
     console.time('⏱️ Ticket save');
     const ticket = new Ticket({
@@ -403,8 +453,8 @@ export const submitTicket = async (req: Request, res: Response) => {
       title: ticketData.Subject || 'New Ticket',
       description: ticketData.Description || '',
       status: 1, // 1 = Open (numeric code)
-      priority: 'medium',
-      category: ticketData.Category || 'General',
+      priority: ticketPriority, // Use priority from category default or fallback
+      category: categoryValue,
       createdBy: studentUserId, // Use actual student user ID
       assignedTo: assignedAgent, // Auto-assigned agent (if enabled)
       submissionSource: 'online', // Mark as online submission
@@ -609,12 +659,17 @@ export const getMyTickets = async (req: Request, res: Response) => {
         );
         
         if (userCenterIds.length > 0) {
-          // Agents with centers should only see tickets matching their centers
+          // Agents with centers should see tickets:
+          // 1. From their assigned centers
+          // 2. Online tickets (centerId = 'online')
+          // 3. Tickets without center field (legacy/online tickets)
+          // 4. Tickets they created (metadata.createdByAgent matches)
           const centerFilter = {
             $or: [
               { 'metadata.centerId': 'online' }, // Include all online tickets
               { 'metadata.centerId': { $in: userCenterIds } }, // Include offline tickets from their centers
-              { 'metadata.centerId': { $exists: false } } // Include tickets without center (legacy data)
+              { 'metadata.centerId': { $exists: false } }, // Include tickets without center (legacy data)
+              { 'metadata.createdByAgent': userId } // Include tickets created by this agent regardless of center
             ]
           };
           
@@ -648,7 +703,7 @@ export const getMyTickets = async (req: Request, res: Response) => {
 
     console.log(`🔍 [TICKET QUERY] Tickets found: ${tickets.length}`);
 
-    // Manually populate project data since metadata.projectId is in a Mixed type field
+    // Manually populate project and center data since metadata fields are in a Mixed type field
     const ticketsWithProject = await Promise.all(
       tickets.map(async (ticket) => {
         const ticketObj = ticket.toObject();
@@ -659,6 +714,18 @@ export const getMyTickets = async (req: Request, res: Response) => {
               _id: project._id,
               name: project.name,
               code: project.code,
+            };
+          }
+        }
+        // Populate center data if centerId exists and is not 'online'
+        if (ticketObj.metadata?.centerId && ticketObj.metadata.centerId !== 'online') {
+          const center = await Center.findById(ticketObj.metadata.centerId).select('centerName city state');
+          if (center) {
+            ticketObj.metadata.centerId = {
+              _id: center._id,
+              centerName: center.centerName,
+              city: center.city,
+              state: center.state,
             };
           }
         }
@@ -752,6 +819,37 @@ export const getAllTickets = async (req: Request, res: Response) => {
           data: [],
         });
       }
+
+      // For TICKET_VIEW_ALL users with centers: Add additional center filter
+      console.log(`🔍 [VIEW_TICKETS] Checking user.centers:`, user.centers);
+      const userCenterIds = (user.centers || []).map((c: any) => {
+        const centerId = typeof c === 'string' ? c : c._id?.toString() || c.toString();
+        return new mongoose.Types.ObjectId(centerId);
+      });
+      console.log(`🔍 [VIEW_TICKETS] Extracted userCenterIds:`, userCenterIds);
+      
+      if (userCenterIds.length > 0) {
+        // Users with centers assigned should only see:
+        // 1. Online tickets (metadata.centerId = 'online')
+        // 2. Offline tickets that match their assigned centers (as ObjectId)
+        const centerFilter = {
+          $or: [
+            { 'metadata.centerId': 'online' }, // Include all online tickets
+            { 'metadata.centerId': { $in: userCenterIds } }, // Include offline tickets from their centers (ObjectId comparison)
+            { 'metadata.centerId': { $exists: false } }, // Include tickets without center (legacy data)
+            { 'metadata.centerId': null } // Include tickets with null center (legacy data)
+          ]
+        };
+        
+        // Merge center filter with existing query
+        if (query.$and) {
+          query.$and.push(centerFilter);
+        } else {
+          query = { $and: [query, centerFilter] };
+        }
+        
+        console.log(`🔍 [VIEW_TICKETS] TICKET_VIEW_ALL user has ${userCenterIds.length} center(s) - filtering tickets by centers: ${userCenterIds.map(id => id.toString()).join(', ')}`);
+      }
     } else if (isAgent || hasViewOwn) {
       // Agents or users with TICKET_VIEW_OWN see tickets assigned to them within their projects
       if (assignedProjectIds.length > 0) {
@@ -820,7 +918,17 @@ export const getAllTickets = async (req: Request, res: Response) => {
 
     console.log(`🔍 [VIEW_TICKETS] Tickets found: ${tickets.length}`);
 
-    // Manually populate project data
+    // Get priorities for SLA calculation
+    const Priority = require('../models/master-data/Priority').Priority;
+    const priorities = await Priority.find({});
+    console.log(`📊 [SLA] Found ${priorities.length} priorities in database`);
+    const priorityMap = new Map();
+    priorities.forEach((p: any) => {
+      priorityMap.set(p.code.toUpperCase(), p);
+      console.log(`📊 [SLA] Loaded priority: ${p.code} (${p.name}) - ResolutionTime: ${p.resolutionTime?.value} ${p.resolutionTime?.unit}`);
+    });
+
+    // Manually populate project and center data, calculate resolution time and SLA status
     const ticketsWithProject = await Promise.all(
       tickets.map(async (ticket) => {
         const ticketObj = ticket.toObject();
@@ -834,6 +942,68 @@ export const getAllTickets = async (req: Request, res: Response) => {
             };
           }
         }
+        // Populate center data if centerId exists and is not 'online'
+        if (ticketObj.metadata?.centerId && ticketObj.metadata.centerId !== 'online') {
+          const center = await Center.findById(ticketObj.metadata.centerId).select('centerName city state');
+          if (center) {
+            ticketObj.metadata.centerId = {
+              _id: center._id,
+              centerName: center.centerName,
+              city: center.city,
+              state: center.state,
+            };
+          }
+        }
+        
+        // Calculate resolution time and SLA status for resolved/closed tickets
+        if ((ticketObj.status === 4 || ticketObj.status === 5) && ticketObj.resolvedAt) {
+          const createdDate = new Date(ticketObj.createdAt);
+          const resolvedDate = new Date(ticketObj.resolvedAt);
+          const timeDiffMs = resolvedDate.getTime() - createdDate.getTime();
+          const hours = Math.floor(timeDiffMs / (1000 * 60 * 60));
+          const days = Math.floor(hours / 24);
+          const remainingHours = hours % 24;
+          
+          if (days > 0) {
+            ticketObj.resolutionTime = `${days}d ${remainingHours}h`;
+          } else {
+            ticketObj.resolutionTime = `${hours}h`;
+          }
+          
+          // Calculate SLA status
+          console.log(`📊 [SLA] Calculating SLA for ticket ${ticketObj.ticketNumber}, priority: "${ticketObj.priority}" (type: ${typeof ticketObj.priority})`);
+          let prioritySettings = null;
+          if (typeof ticketObj.priority === 'string') {
+            const priorityCode = ticketObj.priority.toUpperCase();
+            prioritySettings = priorityMap.get(priorityCode);
+            console.log(`📊 [SLA] Looking for priority code: "${priorityCode}" - Found: ${prioritySettings ? 'YES' : 'NO'}`);
+          }
+          
+          if (prioritySettings && prioritySettings.resolutionTime) {
+            const resTime = prioritySettings.resolutionTime;
+            console.log(`📊 [SLA] Priority settings found: ${resTime.value} ${resTime.unit}`);
+            let resolutionTimeMs = 0;
+            
+            if (resTime.unit === 'minutes') {
+              resolutionTimeMs = resTime.value * 60 * 1000;
+            } else if (resTime.unit === 'hours') {
+              resolutionTimeMs = resTime.value * 60 * 60 * 1000;
+            } else if (resTime.unit === 'days') {
+              resolutionTimeMs = resTime.value * 24 * 60 * 60 * 1000;
+            }
+            
+            const slaDeadline = new Date(createdDate.getTime() + resolutionTimeMs);
+            const withinSLA = resolvedDate <= slaDeadline;
+            ticketObj.slaStatus = withinSLA ? 'Within SLA' : 'Outside SLA';
+            console.log(`📊 [SLA] Ticket ${ticketObj.ticketNumber}: Created=${createdDate.toISOString()}, Resolved=${resolvedDate.toISOString()}, SLA Deadline=${slaDeadline.toISOString()}, Status=${ticketObj.slaStatus}`);
+          } else {
+            console.log(`📊 [SLA] No priority settings or resolutionTime found for ticket ${ticketObj.ticketNumber}`);
+            ticketObj.slaStatus = 'N/A';
+          }
+        } else {
+          ticketObj.slaStatus = 'Pending';
+        }
+        
         return ticketObj;
       })
     );
@@ -884,11 +1054,42 @@ export const getAgentAssignedTickets = async (req: Request, res: Response) => {
       .select('+submissionSource') // Explicitly select submissionSource field
       .populate('assignedTo', 'firstName lastName email')
       .populate('createdBy', 'firstName lastName email')
+      .populate('category', 'name')
       .sort({ createdAt: -1 });
+
+    // Manually populate project and center data
+    const ticketsWithDetails = await Promise.all(
+      tickets.map(async (ticket) => {
+        const ticketObj = ticket.toObject();
+        if (ticketObj.metadata?.projectId) {
+          const project = await Project.findById(ticketObj.metadata.projectId).select('name code');
+          if (project) {
+            ticketObj.metadata.projectId = {
+              _id: project._id,
+              name: project.name,
+              code: project.code,
+            };
+          }
+        }
+        // Populate center data if centerId exists and is not 'online'
+        if (ticketObj.metadata?.centerId && ticketObj.metadata.centerId !== 'online') {
+          const center = await Center.findById(ticketObj.metadata.centerId).select('centerName city state');
+          if (center) {
+            ticketObj.metadata.centerId = {
+              _id: center._id,
+              centerName: center.centerName,
+              city: center.city,
+              state: center.state,
+            };
+          }
+        }
+        return ticketObj;
+      })
+    );
 
     return res.status(200).json({
       success: true,
-      data: tickets,
+      data: ticketsWithDetails,
     });
 
   } catch (error) {
@@ -1094,7 +1295,7 @@ export const replyToTicket = async (req: Request, res: Response) => {
     if (ticket.status === 5) {
       return res.status(400).json({
         success: false,
-        message: 'Cannot reply to a closed ticket',
+        message: 'Cannot reply to a closed ticket. Please reopen the ticket first.',
       });
     }
 
@@ -1269,6 +1470,90 @@ export const closeTicket = async (req: Request, res: Response) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to close ticket',
+    });
+  }
+};
+
+// Reopen a closed ticket (students only)
+export const reopenTicket = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = (req as any).user?.userId;
+    
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Unauthorized',
+      });
+    }
+
+    // Get user to verify ownership
+    const user = await User.findById(userId);
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    // Find ticket
+    const ticket = await Ticket.findById(id);
+
+    if (!ticket) {
+      return res.status(404).json({
+        success: false,
+        message: 'Ticket not found',
+      });
+    }
+
+    // Verify student owns this ticket
+    if (ticket.metadata?.studentEmail !== user.email) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to reopen this ticket',
+      });
+    }
+
+    // Check if ticket is actually closed (status 5 = closed)
+    if (ticket.status !== 5) {
+      return res.status(400).json({
+        success: false,
+        message: 'Ticket is not closed',
+      });
+    }
+
+    // Reopen the ticket (1 = open)
+    ticket.status = 1;
+    ticket.updatedAt = new Date();
+
+    // Add system thread
+    if (!ticket.threads) {
+      ticket.threads = [];
+    }
+
+    ticket.threads.push({
+      message: `Ticket reopened by ${user.firstName} ${user.lastName} (Student)`,
+      createdBy: userId,
+      isSystemMessage: true,
+      createdAt: new Date(),
+    } as any);
+
+    await ticket.save();
+
+    console.log(`✅ Ticket reopened by student: ${ticket._id} by ${user.email}`);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Ticket reopened successfully',
+      data: ticket,
+    });
+
+  } catch (error) {
+    console.error('Reopen ticket error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to reopen ticket',
       error: error instanceof Error ? error.message : 'Unknown error',
     });
   }
@@ -1996,8 +2281,8 @@ export const bulkUpdateByTags = async (req: Request, res: Response) => {
  */
 export const getDashboardStats = async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user?.id;
-    const user = await User.findById(userId).populate('role');
+    const userId = (req as any).user?.userId;
+    const user = await User.findById(userId).populate('role').populate('centers').populate('projects');
     
     if (!user) {
       return res.status(404).json({
@@ -2017,7 +2302,37 @@ export const getDashboardStats = async (req: Request, res: Response) => {
     const hasViewOwnTickets = userPermissions.includes('TICKET_VIEW_OWN');
     
     if (hasViewAllTickets) {
-      // Users with TICKET_VIEW_ALL see all tickets (no query filter)
+      // Users with TICKET_VIEW_ALL see tickets from their mapped projects
+      const userProjects = user.projects || [];
+      
+      if (userProjects.length > 0) {
+        const projectIds = userProjects.map((p: any) => p._id || p);
+        query['metadata.projectId'] = { $in: projectIds.map(id => id.toString()) };
+      }
+      
+      // Add center filtering for TICKET_VIEW_ALL users with centers
+      const userCenterIds = (user.centers || []).map((c: any) => {
+        const centerId = typeof c === 'string' ? c : c._id?.toString() || c.toString();
+        return new mongoose.Types.ObjectId(centerId);
+      });
+      
+      if (userCenterIds.length > 0) {
+        const centerFilter = {
+          $or: [
+            { 'metadata.centerId': 'online' }, // Include all online tickets
+            { 'metadata.centerId': { $in: userCenterIds } }, // Include offline tickets from their centers
+            { 'metadata.centerId': { $exists: false } }, // Include tickets without center (legacy data)
+            { 'metadata.centerId': null } // Include tickets with null center (legacy data)
+          ]
+        };
+        
+        // Merge center filter with existing query
+        if (query.$and) {
+          query.$and.push(centerFilter);
+        } else {
+          query = { $and: [query, centerFilter] };
+        }
+      }
     } else if (hasViewOwnTickets) {
       // Users with TICKET_VIEW_OWN see tickets from their mapped projects OR assigned to them
       const userProjects = user.projects || [];
@@ -2197,6 +2512,33 @@ export const getProjectDashboardStats = async (req: Request, res: Response) => {
     if (hasViewAllTickets) {
       // Users with TICKET_VIEW_ALL see all tickets for the project
       console.log('✅ User has TICKET_VIEW_ALL - showing all project tickets');
+      
+      // Add center filtering for TICKET_VIEW_ALL users with centers (if centerId not provided)
+      if (!centerId) {
+        const userCenterIds = (user.centers || []).map((c: any) => {
+          const cId = typeof c === 'string' ? c : c._id?.toString() || c.toString();
+          return new mongoose.Types.ObjectId(cId);
+        });
+        
+        if (userCenterIds.length > 0) {
+          const centerFilter = {
+            $or: [
+              { 'metadata.centerId': 'online' },
+              { 'metadata.centerId': { $in: userCenterIds } },
+              { 'metadata.centerId': { $exists: false } },
+              { 'metadata.centerId': null }
+            ]
+          };
+          
+          if (query.$and) {
+            query.$and.push(centerFilter);
+          } else {
+            query = { $and: [query, centerFilter] };
+          }
+          
+          console.log('🏢 User has centers - filtering by:', userCenterIds.map(id => id.toString()));
+        }
+      }
     } else if (isStudent && await checkPermission('TICKET_VIEW_OWN')) {
       // Students see only tickets they created (not assigned)
       query['metadata.studentEmail'] = user.email;
@@ -2603,7 +2945,7 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
     }
 
     // Get the agent's full details including centers
-    const agentDetails = await User.findById(agent.userId);
+    const agentDetails = await User.findById(agent.userId).select('centers firstName lastName email');
     if (!agentDetails) {
       return res.status(404).json({
         success: false,
@@ -2613,12 +2955,24 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
 
     // Use the agent's first center (if available) as the ticket's center
     // This ensures the ticket is mapped to the same center as the agent creating it
-    const ticketCenterId = agentDetails.centers && agentDetails.centers.length > 0 
-      ? agentDetails.centers[0] 
-      : centerId || null; // Fallback to provided centerId or null
+    let ticketCenterId: any = null;
+    
+    if (agentDetails.centers && agentDetails.centers.length > 0) {
+      // Agent has centers assigned - use the first one
+      ticketCenterId = agentDetails.centers[0];
+      console.log(`📍 Using agent's first center: ${ticketCenterId}`);
+    } else if (centerId) {
+      // No agent centers, but centerId provided in request
+      ticketCenterId = centerId;
+      console.log(`📍 Using centerId from request: ${ticketCenterId}`);
+    } else {
+      // No center available - this will be an online ticket
+      ticketCenterId = null;
+      console.log(`📍 No center available - ticket will be marked as online`);
+    }
     
     console.log(`📍 Agent Center Mapping: Agent ${agent.email} has ${agentDetails.centers?.length || 0} center(s)`);
-    console.log(`📍 Using Center ID for ticket: ${ticketCenterId}`);
+    console.log(`📍 Final Center ID for ticket: ${ticketCenterId}`);
 
     // Get project and offline ticket numbering configuration
     const project = await Project.findById(projectId);
@@ -2723,13 +3077,61 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
     const ticketSubject = Subject || Title || subject || description?.substring(0, 100) || 'No subject provided';
     const ticketDescription = Description || description || 'No description provided';
 
+    // Fetch category to get default priority (same logic as submitTicket)
+    // IMPORTANT: Always use category's defaultPriority, ignore frontend-provided priority
+    console.time('⏱️ Category lookup (offline)');
+    let ticketPriority = 'medium'; // Default fallback
+    
+    try {
+      // Use mongoose.models to ensure the model is available
+      const CategoryModel = mongoose.models.Category || Category;
+      
+      let category;
+      // Check if categoryId is an ObjectId (24 hex chars) or a name string
+      if (mongoose.Types.ObjectId.isValid(categoryId) && categoryId.length === 24) {
+        // Search by ObjectId
+        category = await CategoryModel.findOne({ 
+          _id: categoryId, 
+          projectId: new mongoose.Types.ObjectId(projectId),
+          isActive: true 
+        });
+        console.log(`🔍 Looking up category by ID: ${categoryId} [OFFLINE]`);
+      } else {
+        // Search by name
+        category = await CategoryModel.findOne({ 
+          name: categoryId, 
+          projectId: new mongoose.Types.ObjectId(projectId),
+          isActive: true 
+        });
+        console.log(`🔍 Looking up category by name: ${categoryId} [OFFLINE]`);
+      }
+      
+      console.log(`🔍 Category found:`, category ? {
+        _id: category._id,
+        name: category.name,
+        defaultPriority: category.defaultPriority
+      } : 'NOT FOUND');
+      
+      if (category && category.defaultPriority) {
+        ticketPriority = category.defaultPriority.toLowerCase();
+        console.log(`✅ Using category default priority: ${ticketPriority} (from category: ${category.name}) [OFFLINE]`);
+      } else if (category) {
+        console.log(`⚠️ Category found but defaultPriority is not set: ${category.name} [OFFLINE]`);
+      } else {
+        console.log(`⚠️ Category not found: ${categoryId}, using fallback: ${ticketPriority} [OFFLINE]`);
+      }
+    } catch (error) {
+      console.error('Error fetching category for offline ticket:', error);
+    }
+    console.timeEnd('⏱️ Category lookup (offline)');
+
     // Create ticket (priority defaults to 'medium' if not provided - agent will set it later based on SLA)
     const ticket = await Ticket.create({
       ticketNumber,
       subject: ticketSubject,
       description: ticketDescription,
       category: categoryId,
-      priority: priority || 'medium', // Default to medium, agent will update based on SLA rules
+      priority: ticketPriority, // Now dynamic based on category defaultPriority
       status: ticketStatus,
       createdBy: new mongoose.Types.ObjectId(studentId), // Ticket owned by student
       assignedTo: new mongoose.Types.ObjectId(assignedToAgentId), // Assign to escalated agent or creating agent

@@ -1295,6 +1295,18 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
                     letterSpacing: '0.05em',
                     fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
                   }}>
+                    {getText('Centers', 'केंद्रे', 'केंद्रे')}
+                  </th>
+                  <th style={{ 
+                    padding: '12px 24px', 
+                    textAlign: 'left', 
+                    fontSize: '12px', 
+                    fontWeight: 600, 
+                    color: '#6B7280', 
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+                  }}>
                     {getText('Status', 'स्थिती', 'स्थिती')}
                   </th>
                   <th style={{ 
@@ -1435,6 +1447,33 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
                             fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
                           }}>
                             {user.projects.length}
+                          </span>
+                        </div>
+                      ) : (
+                        <span style={{ color: '#9ca3af', fontSize: '14px' }}>-</span>
+                      )}
+                    </td>
+                    <td style={{ padding: '16px 24px' }}>
+                      {user.centers && user.centers.length > 0 ? (
+                        <div style={{ 
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          padding: '4px 10px',
+                          background: '#FEF3C7',
+                          borderRadius: '6px',
+                        }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
+                            <circle cx="12" cy="10" r="3"/>
+                          </svg>
+                          <span style={{ 
+                            fontSize: '12px', 
+                            fontWeight: 600, 
+                            color: '#d97706',
+                            fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+                          }}>
+                            {user.centers.length}
                           </span>
                         </div>
                       ) : (
