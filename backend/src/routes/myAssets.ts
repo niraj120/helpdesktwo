@@ -6,21 +6,12 @@ import {
   updateMyAssetCounts,
   getAssetAuditLogs,
   submitAudit,
-  getAssetReport,
 } from '../controllers/myAssetsController';
 
 const router = express.Router();
 
 // All routes require authentication
 router.use(authMiddleware);
-
-/**
- * @route   GET /api/my-assets/report
- * @desc    Get asset report for all centers
- * @access  Private (MY_ASSETS_VIEW permission)
- * @note    MUST be before /:id routes to avoid conflicts
- */
-router.get('/report', checkPermission('MY_ASSETS_VIEW'), getAssetReport);
 
 /**
  * @route   GET /api/my-assets
