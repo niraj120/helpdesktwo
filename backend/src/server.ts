@@ -66,6 +66,7 @@ import emailConfigRoutes from './routes/emailConfig';
 import emailLogRoutes from './routes/emailLogs';
 import whatsappConfigRoutes from './routes/whatsappConfig';
 import smsConfigRoutes from './routes/smsConfig';
+import dpdpRoutes from './routes/dpdp.routes';
 import apiLogRoutes from './routes/apiLogs';
 import feedbackFormRoutes from './routes/feedbackForm';
 import feedbackResponseRoutes from './routes/feedbackResponse';
@@ -249,6 +250,9 @@ app.use('/api/whatsapp-config', whatsappConfigRoutes);
 
 // SMS Configuration Routes
 app.use('/api/sms-config', smsConfigRoutes);
+
+// DPDP Act 2023 Compliance Routes
+app.use('/api/dpdp', dpdpRoutes);
 
 // Email Logs Routes
 app.use('/api/email-logs', emailLogRoutes);
