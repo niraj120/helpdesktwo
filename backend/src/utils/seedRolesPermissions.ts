@@ -786,6 +786,27 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
   },
   {
     module: 'Reports',
+    name: 'View Query Reports',
+    code: 'REPORT_VIEW_QUERY',
+    description: 'Can view query list reports',
+    category: 'reports',
+  },
+  {
+    module: 'Reports',
+    name: 'View Asset Reports',
+    code: 'REPORT_VIEW_ASSET',
+    description: 'Can view asset reports',
+    category: 'reports',
+  },
+  {
+    module: 'Reports',
+    name: 'View Employee Reports',
+    code: 'REPORT_VIEW_EMPLOYEE',
+    description: 'Can view employee/manpower reports',
+    category: 'reports',
+  },
+  {
+    module: 'Reports',
     name: 'Export Reports',
     code: 'REPORT_EXPORT',
     description: 'Can export reports to various formats',
@@ -1147,6 +1168,13 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     name: 'View Asset Statistics',
     code: 'ASSET_VIEW_STATS',
     description: 'Can view asset statistics and summary reports',
+    category: 'asset-management',
+  },
+  {
+    module: 'Asset Management',
+    name: 'View My Assets',
+    code: 'MY_ASSETS_VIEW',
+    description: 'Can view and manage assets assigned to their center',
     category: 'asset-management',
   },
 ];
