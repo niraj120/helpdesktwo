@@ -3,6 +3,8 @@ import bcrypt from 'bcryptjs';
 import jwt, { SignOptions } from 'jsonwebtoken';
 import crypto from 'crypto';
 import { sendOTPEmail } from '../utils/emailService';
+import { sendOTPWhatsApp } from '../utils/whatsappService';
+import { sendOTPSMS } from '../utils/smsService';
 import { User } from '../models/User';
 import { Project } from '../models/Project';
 import EulaAcceptance from '../models/EulaAcceptance';
@@ -69,10 +71,10 @@ export const login = async (req: Request<{}, {}, LoginRequest>, res: Response) =
       const isAuthorized = user.projects?.some(
         (pid) => pid.toString() === projectId.toString()
       );
-      
+
       if (!isAuthorized) {
         console.log('❌ User not authorized for project:', projectId);
-        
+
         await logLogin(
           user._id.toString(),
           `${user.firstName} ${user.lastName}`,
@@ -81,7 +83,7 @@ export const login = async (req: Request<{}, {}, LoginRequest>, res: Response) =
           'failure',
           'User not authorized for this project'
         );
-        
+
         return res.status(403).json({
           success: false,
           error: 'You are not authorized to access this project'
@@ -111,7 +113,7 @@ export const login = async (req: Request<{}, {}, LoginRequest>, res: Response) =
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
       console.log('❌ Invalid password for:', email);
-      
+
       await logLogin(
         user._id.toString(),
         `${user.firstName} ${user.lastName}`,
@@ -120,7 +122,7 @@ export const login = async (req: Request<{}, {}, LoginRequest>, res: Response) =
         'failure',
         'Invalid password'
       );
-      
+
       return res.status(401).json({
         success: false,
         error: 'Invalid credentials'
@@ -191,7 +193,7 @@ export const login = async (req: Request<{}, {}, LoginRequest>, res: Response) =
 
     // Generate JWT token with dynamic permissions using utility
     // Use project-specific JWT if projectId was provided, otherwise standard JWT
-    const token = projectForJWT 
+    const token = projectForJWT
       ? await generateProjectJWT(user, projectForJWT)
       : await generateUserJWT(user);
 
@@ -208,16 +210,16 @@ export const login = async (req: Request<{}, {}, LoginRequest>, res: Response) =
     // Get project information based on origin/domain
     let projectName = 'Individual'; // Default for Super Admin or no project
     const origin = req.get('origin') || req.get('referer');
-    
+
     if (origin) {
       console.log('🌐 Login origin:', origin);
-      
+
       // Try to find project by domain URL
-      const project = await Project.findOne({ 
+      const project = await Project.findOne({
         'branding.domainUrl': { $regex: origin.replace(/https?:\/\//, ''), $options: 'i' },
-        isActive: true 
+        isActive: true
       });
-      
+
       if (project) {
         projectName = project.name;
         console.log('✅ Project found:', projectName);
@@ -257,7 +259,7 @@ export const login = async (req: Request<{}, {}, LoginRequest>, res: Response) =
             console.log('🔍 First permission value:', user.role.permissions[0]);
             console.log('🔍 First permission keys:', Object.keys(user.role.permissions[0] || {}));
           }
-          
+
           permissions = user.role.permissions
             .map((p: any) => {
               // If p is already a string, return it
@@ -333,7 +335,7 @@ export const login = async (req: Request<{}, {}, LoginRequest>, res: Response) =
 export const getMe = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    
+
     if (!userId) {
       return res.status(401).json({
         success: false,
@@ -348,7 +350,7 @@ export const getMe = async (req: AuthRequest, res: Response) => {
         path: 'permissions'
       }
     });
-    
+
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -357,8 +359,8 @@ export const getMe = async (req: AuthRequest, res: Response) => {
     }
 
     // Get role information with permissions
-    const roleData = user.role && typeof user.role === 'object' 
-      ? user.role as any 
+    const roleData = user.role && typeof user.role === 'object'
+      ? user.role as any
       : { name: 'User', code: 'USER', permissions: [] };
 
     // Extract permission codes
@@ -416,8 +418,10 @@ export const forgotPassword = async (req: Request<{}, {}, ForgotPasswordRequest>
       });
     }
 
-    // Check if user exists (For demo, only allow specific email)
-    if (email !== 'admin@helpdesk.gov.in') {
+    // Check if user exists
+    const user = await User.findOne({ email: email.toLowerCase(), isActive: true });
+
+    if (!user) {
       return res.status(404).json({
         success: false,
         error: 'Email address not found in our records'
@@ -430,16 +434,65 @@ export const forgotPassword = async (req: Request<{}, {}, ForgotPasswordRequest>
     // Store OTP using central otpStore (stores hashed value, optional Redis)
     const otpId = await otpStore.createOtp(email, otp, 10 * 60, { purpose: 'forgot_password' });
 
-    // Send OTP email
-    try {
-      await sendOTPEmail(email, otp);
-    } catch (emailError) {
-      console.error('Email sending failed:', emailError);
-      // For demo, continue without sending actual email
+    // Send OTP via Email and WhatsApp concurrently
+    const promises = [];
+
+    // 1. Email Promise
+    const emailPromise = (async () => {
+      try {
+        await sendOTPEmail(email, otp);
+        console.log(`✅ OTP email dispatch initiated for ${email}`);
+      } catch (emailError) {
+        console.error('Email sending failed:', emailError);
+      }
+    })();
+    promises.push(emailPromise);
+
+    // 2. WhatsApp Promise (try to find a project context)
+    // We strive to find a project ID to use for WhatsApp config
+    let projectIdForWhatsApp: string | undefined;
+    if (user.projects && user.projects.length > 0) {
+      projectIdForWhatsApp = user.projects[0].toString();
     }
 
+    if (user.phone && projectIdForWhatsApp) {
+      const whatsappPromise = (async () => {
+        try {
+          const result = await sendOTPWhatsApp(projectIdForWhatsApp!, user.phone!, otp);
+          if (result.success) {
+            console.log(`✅ OTP WhatsApp sent to ${user.phone}`);
+          } else {
+            console.log(`⚠️  OTP WhatsApp failed: ${result.error}`);
+          }
+        } catch (waError) {
+          console.error('WhatsApp sending failed:', waError);
+        }
+      })();
+      promises.push(whatsappPromise);
+    }
+
+    // 3. SMS Promise (try to use same project context and phone)
+    if (user.phone && projectIdForWhatsApp) {
+      const smsPromise = (async () => {
+        try {
+          const result = await sendOTPSMS(projectIdForWhatsApp!, user.phone!, otp);
+          if (result.success) {
+            console.log(`✅ OTP SMS sent to ${user.phone}`);
+          } else {
+            console.log(`⚠️  OTP SMS failed: ${result.error}`);
+          }
+        } catch (smsError) {
+          console.error('SMS sending failed:', smsError);
+        }
+      })();
+      promises.push(smsPromise);
+    }
+
+    // Wait for all to settle
+    await Promise.allSettled(promises);
+
     // NOTE: Do not log OTP plaintext in production. We only indicate generation here.
-    console.log(`🔐 Password reset OTP generated for ${email}`);
+    console.log(`🔐 Password reset OTP generated and dispatched for ${email}`);
 
     return res.json({
       success: true,
@@ -683,19 +736,19 @@ export const verify2FA = async (req: Request, res: Response) => {
 export const logout = async (req: AuthRequest, res: Response) => {
   try {
     console.log('🔓 Logout request received');
-    
+
     // Get user info from auth middleware
     const userId = req.user?.userId;
     const userEmail = req.user?.email;
-    
+
     console.log('User info from token:', { userId, userEmail });
-    
+
     // If we have user info, fetch full user details for logging
     if (userId) {
       try {
         const user = await User.findById(userId).populate('role');
         console.log('User found:', user ? `${user.firstName} ${user.lastName}` : 'Not found');
-        
+
         if (user) {
           // Get role name
           let roleName = 'User';
@@ -703,20 +756,20 @@ export const logout = async (req: AuthRequest, res: Response) => {
             roleName = (user.role as any).name;
             console.log('✅ Logout - Using role name:', roleName);
           }
-          
+
           // Get project information based on origin/domain
           let projectName = 'Individual'; // Default for Super Admin or no project
           const origin = req.get('origin') || req.get('referer');
-          
+
           if (origin) {
             console.log('🌐 Logout origin:', origin);
-            
+
             // Try to find project by domain URL
-            const project = await Project.findOne({ 
+            const project = await Project.findOne({
               'branding.domainUrl': { $regex: origin.replace(/https?:\/\//, ''), $options: 'i' },
-              isActive: true 
+              isActive: true
             });
-            
+
             if (project) {
               projectName = project.name;
               console.log('✅ Project found:', projectName);
@@ -736,7 +789,7 @@ export const logout = async (req: AuthRequest, res: Response) => {
               console.log('✅ Using user\'s project (no origin):', projectName);
             }
           }
-          
+
           console.log('Logging logout activity...');
           await logLogout(
             user._id.toString(),

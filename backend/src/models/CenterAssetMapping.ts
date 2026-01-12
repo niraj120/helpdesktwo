@@ -17,10 +17,6 @@ export interface ICenterAssetMapping extends Document {
   workingAsset: number;
   notWorkingAsset: number; // Auto-calculated: assetUsed - workingAsset
   photos: IAssetPhoto[];
-  lastAuditDate?: Date;
-  auditFrequencyMonths?: number;
-  nextAuditDate?: Date;
-  auditSubmitted?: boolean;
   lastUpdatedBy: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -95,23 +91,6 @@ const CenterAssetMappingSchema = new Schema<ICenterAssetMapping>(
       min: 0
     },
     photos: [AssetPhotoSchema],
-    lastAuditDate: {
-      type: Date,
-      required: false
-    },
-    auditFrequencyMonths: {
-      type: Number,
-      required: false
-    },
-    nextAuditDate: {
-      type: Date,
-      required: false
-    },
-    auditSubmitted: {
-      type: Boolean,
-      default: false,
-      required: false
-    },
     lastUpdatedBy: {
       type: Schema.Types.ObjectId,
       ref: 'User',
@@ -131,8 +110,8 @@ CenterAssetMappingSchema.index({ updatedAt: -1 });
 
 // Pre-save hook to calculate notWorkingAsset
 CenterAssetMappingSchema.pre('save', function (next) {
-  if (this.isModified('totalAssigned') || this.isModified('workingAsset')) {
-    this.notWorkingAsset = Math.max(0, this.totalAssigned - this.workingAsset);
+  if (this.isModified('assetUsed') || this.isModified('workingAsset')) {
+    this.notWorkingAsset = Math.max(0, this.assetUsed - this.workingAsset);
   }
   next();
 });

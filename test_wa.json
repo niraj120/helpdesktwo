@@ -1,0 +1,34 @@
+{
+    "to": "919152653533",
+    "recipient_type": "individual",
+    "type": "template",
+    "template": {
+        "language": {
+            "policy": "deterministic",
+            "code": "en"
+        },
+        "name": "test_otp",
+        "components": [
+            {
+                "type": "body",
+                "parameters": [
+                    {
+                        "type": "text",
+                        "text": "98787"
+                    }
+                ]
+            },
+            {
+                "type": "button",
+                "sub_type": "url",
+                "index": 0,
+                "parameters": [
+                    {
+                        "type": "text",
+                        "text": "98787"
+                    }
+                ]
+            }
+        ]
+    }
+}

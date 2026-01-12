@@ -4,6 +4,8 @@ import { Role } from '../models/Role';
 import { Project } from '../models/Project';
 import { generateProjectJWT, generateUserJWT } from '../utils/jwtUtils';
 import { sendOTPEmail } from '../utils/emailService';
+import { sendOTPWhatsApp } from '../utils/whatsappService';
+import { sendOTPSMS } from '../utils/smsService';
 import otpStore from '../utils/otpStore';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
@@ -30,7 +32,7 @@ export const sendOTP = async (req: Request, res: Response) => {
 
     // Find student user
     const user = await User.findOne({ email: email.toLowerCase() }).populate('role');
-    
+
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -65,17 +67,69 @@ export const sendOTP = async (req: Request, res: Response) => {
     // Do not log OTP plaintext in production; indicate generation only
     console.log(`📧 OTP generated for ${email} (dispatched)`);
 
-    // Send email with OTP
-    try {
-      const emailSent = await sendOTPEmail(email, otp, projectId);
-      if (emailSent) {
-        console.log(`✅ OTP email sent to ${email}`);
-      } else {
-        console.log(`⚠️  OTP email not sent (email config might be disabled)`);
+    // Send OTP via Email and WhatsApp concurrently
+    const promises = [];
+
+    // 1. Email Promise
+    const emailPromise = (async () => {
+      try {
+        const emailSent = await sendOTPEmail(email, otp, projectId);
+        if (emailSent) {
+          console.log(`✅ OTP email sent to ${email}`);
+          return 'email_sent';
+        } else {
+          console.log(`⚠️  OTP email not sent (email config might be disabled)`);
+          return 'email_disabled';
+        }
+      } catch (emailError) {
+        console.error('Failed to send OTP email:', emailError);
+        throw emailError;
       }
-    } catch (emailError) {
-      console.error('Failed to send OTP email:', emailError);
+    })();
+    promises.push(emailPromise);
+
+    // 2. WhatsApp Promise (if phone and project available)
+    if (projectId && user.phone) {
+      const whatsappPromise = (async () => {
+        try {
+          const result = await sendOTPWhatsApp(projectId, user.phone!, otp);
+          if (result.success) {
+            console.log(`✅ OTP WhatsApp sent to ${user.phone}`);
+            return 'whatsapp_sent';
+          } else {
+            console.log(`⚠️  OTP WhatsApp failed: ${result.error}`);
+            return 'whatsapp_failed';
+          }
+        } catch (waError) {
+          console.error('Failed to send OTP WhatsApp:', waError);
+          return 'whatsapp_failed';
+        }
+      })();
+      promises.push(whatsappPromise);
     }
+
+    // 3. SMS Promise (same conditions)
+    if (projectId && user.phone) {
+      const smsPromise = (async () => {
+        try {
+          const result = await sendOTPSMS(projectId, user.phone!, otp);
+          if (result.success) {
+            console.log(`✅ OTP SMS sent to ${user.phone}`);
+            return 'sms_sent';
+          } else {
+            console.log(`⚠️  OTP SMS failed: ${result.error}`);
+            return 'sms_failed';
+          }
+        } catch (smsError) {
+          console.error('Failed to send OTP SMS:', smsError);
+          return 'sms_failed';
+        }
+      })();
+      promises.push(smsPromise);
+    }
+
+    // Wait for all to settle (don't fail if one fails)
+    await Promise.allSettled(promises);
 
     return res.status(200).json({
       success: true,
@@ -234,7 +288,7 @@ export const setPassword = async (req: Request, res: Response) => {
 
     // Find user and set password
     const user = await User.findById(decoded.userId).populate('role');
-    
+
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -253,11 +307,11 @@ export const setPassword = async (req: Request, res: Response) => {
     console.log(`🔐 Password set for ${user.email}`);
 
     // Generate JWT token with dynamic permissions using utility
-    const project = await Project.findOne({ 
-      'branding.customUrlPath': customUrlPath 
+    const project = await Project.findOne({
+      'branding.customUrlPath': customUrlPath
     });
-    const token = project ? 
-      await generateProjectJWT(user, project) : 
+    const token = project ?
+      await generateProjectJWT(user, project) :
       await generateUserJWT(user);
 
     return res.status(200).json({
@@ -304,7 +358,7 @@ export const login = async (req: Request, res: Response) => {
     }
 
     // Find student user
-    const user = await User.findOne({ 
+    const user = await User.findOne({
       email: email.toLowerCase(),
       isActive: true,
     }).populate({
@@ -341,7 +395,7 @@ export const login = async (req: Request, res: Response) => {
 
     // Verify password
     const isMatch = await user.comparePassword(password);
-    
+
     if (!isMatch) {
       return res.status(401).json({
         success: false,

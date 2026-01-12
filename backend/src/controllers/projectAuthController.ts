@@ -5,6 +5,8 @@ import { User } from '../models/User';
 import { Project } from '../models/Project';
 import { logLogin } from '../utils/logger';
 import { sendOTPEmail } from '../utils/emailService';
+import { sendOTPWhatsApp } from '../utils/whatsappService';
+import { sendOTPSMS } from '../utils/smsService';
 import otpStore from '../utils/otpStore';
 import { generateProjectJWT } from '../utils/jwtUtils';
 
@@ -14,7 +16,7 @@ import { generateProjectJWT } from '../utils/jwtUtils';
 export const getProjectBrandingByUrl = async (req: Request, res: Response) => {
   try {
     const { urlPath } = req.params;
-    
+
     console.log('🎨 Fetching project branding for:', urlPath);
 
     // Try to find project by customUrlPath first, then by domain
@@ -112,9 +114,9 @@ export const projectLoginByUrl = async (req: Request, res: Response) => {
     }
 
     // Find user in database and populate role with permissions
-    const user = await User.findOne({ 
-      email: email.toLowerCase(), 
-      isActive: true 
+    const user = await User.findOne({
+      email: email.toLowerCase(),
+      isActive: true
     }).populate({
       path: 'role',
       populate: {
@@ -125,7 +127,7 @@ export const projectLoginByUrl = async (req: Request, res: Response) => {
 
     if (!user) {
       console.log('❌ User not found:', email);
-      
+
       await logLogin(
         '',
         '',
@@ -134,7 +136,7 @@ export const projectLoginByUrl = async (req: Request, res: Response) => {
         'failure',
         'User not found'
       );
-      
+
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
@@ -145,10 +147,10 @@ export const projectLoginByUrl = async (req: Request, res: Response) => {
     const isAuthorized = user.projects?.some(
       (pid) => pid.toString() === project._id.toString()
     );
-    
+
     if (!isAuthorized) {
       console.log('❌ User not authorized for project:', project.name);
-      
+
       await logLogin(
         user._id.toString(),
         `${user.firstName} ${user.lastName}`,
@@ -157,7 +159,7 @@ export const projectLoginByUrl = async (req: Request, res: Response) => {
         'failure',
         'User not authorized for this project'
       );
-      
+
       return res.status(403).json({
         success: false,
         message: 'You are not authorized to access this project'
@@ -168,7 +170,7 @@ export const projectLoginByUrl = async (req: Request, res: Response) => {
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
       console.log('❌ Invalid password for:', email);
-      
+
       await logLogin(
         user._id.toString(),
         `${user.firstName} ${user.lastName}`,
@@ -177,7 +179,7 @@ export const projectLoginByUrl = async (req: Request, res: Response) => {
         'failure',
         'Invalid password'
       );
-      
+
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
@@ -198,12 +200,12 @@ export const projectLoginByUrl = async (req: Request, res: Response) => {
     console.log('✅ Project login successful:', email, 'Project:', project.name);
 
     // Get role information and permissions
-    const roleData = user.role && typeof user.role === 'object' 
-      ? user.role as any 
+    const roleData = user.role && typeof user.role === 'object'
+      ? user.role as any
       : { name: 'User', code: 'USER', permissions: [] };
 
     // Extract permission codes from populated permissions
-    const permissions = roleData.permissions 
+    const permissions = roleData.permissions
       ? roleData.permissions.map((p: any) => p.code || p).filter(Boolean)
       : [];
 
@@ -270,9 +272,9 @@ export const projectLogin = async (req: Request, res: Response) => {
     }
 
     // Find user in database and populate role with permissions
-    const user = await User.findOne({ 
-      email: email.toLowerCase(), 
-      isActive: true 
+    const user = await User.findOne({
+      email: email.toLowerCase(),
+      isActive: true
     }).populate({
       path: 'role',
       populate: {
@@ -283,7 +285,7 @@ export const projectLogin = async (req: Request, res: Response) => {
 
     if (!user) {
       console.log('❌ User not found:', email);
-      
+
       await logLogin(
         '',
         '',
@@ -292,7 +294,7 @@ export const projectLogin = async (req: Request, res: Response) => {
         'failure',
         'User not found'
       );
-      
+
       return res.status(401).json({
         success: false,
         error: 'Invalid credentials'
@@ -303,10 +305,10 @@ export const projectLogin = async (req: Request, res: Response) => {
     const isAuthorized = user.projects?.some(
       (pid) => pid.toString() === projectId.toString()
     );
-    
+
     if (!isAuthorized) {
       console.log('❌ User not authorized for project:', projectId);
-      
+
       await logLogin(
         user._id.toString(),
         `${user.firstName} ${user.lastName}`,
@@ -315,7 +317,7 @@ export const projectLogin = async (req: Request, res: Response) => {
         'failure',
         'User not authorized for this project'
       );
-      
+
       return res.status(403).json({
         success: false,
         error: 'You are not authorized to access this project'
@@ -326,7 +328,7 @@ export const projectLogin = async (req: Request, res: Response) => {
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
       console.log('❌ Invalid password for:', email);
-      
+
       await logLogin(
         user._id.toString(),
         `${user.firstName} ${user.lastName}`,
@@ -335,7 +337,7 @@ export const projectLogin = async (req: Request, res: Response) => {
         'failure',
         'Invalid password'
       );
-      
+
       return res.status(401).json({
         success: false,
         error: 'Invalid credentials'
@@ -481,15 +483,65 @@ export const projectForgotPassword = async (req: Request, res: Response) => {
     // Store OTP using central otpStore (stores hashed value, optional Redis)
     const otpId = await otpStore.createOtp(email.toLowerCase(), otp, 10 * 60, { customUrlPath: customUrlPath.toLowerCase(), purpose: 'project_forgot_password' });
 
-    // Send OTP email
-    try {
-      await sendOTPEmail(email, otp);
-    } catch (emailError) {
-      console.error('Email sending failed:', emailError);
-      // Continue without failing the request
-    }
+    // Send OTP via Email and WhatsApp concurrently
+    const promises = [];
 
-    console.log(`✅ Password reset OTP generated and sent for ${email} in project ${project.name}`);
+    // 1. Email Promise
+    const emailPromise = (async () => {
+      try {
+        await sendOTPEmail(email, otp);
+        console.log(`✅ OTP email dispatch initiated for ${email}`);
+      } catch (emailError) {
+        console.error('Email sending failed:', emailError);
+        // Continue without failing the request
+      }
+    })();
+    promises.push(emailPromise);
+
+    // 2. WhatsApp Promise (if phone exists)
+    if (user.phone) {
+      const whatsappPromise = (async () => {
+        try {
+          const result = await sendOTPWhatsApp(project._id.toString(), user.phone!, otp);
+          if (result.success) {
+            console.log(`✅ OTP WhatsApp sent to ${user.phone}`);
+            return 'whatsapp_sent';
+          } else {
+            console.log(`⚠️  OTP WhatsApp failed: ${result.error}`);
+            return 'whatsapp_failed';
+          }
+        } catch (waError) {
+          console.error('WhatsApp sending failed:', waError);
+          return 'whatsapp_failed';
+        }
+      })();
+      promises.push(whatsappPromise);
+    }
+    
+    // 3. SMS Promise (same conditions)
+    if (user.phone) {
+      const smsPromise = (async () => {
+        try {
+          const result = await sendOTPSMS(project._id.toString(), user.phone!, otp);
+          if (result.success) {
+            console.log(`✅ OTP SMS sent to ${user.phone}`);
+            return 'sms_sent';
+          } else {
+            console.log(`⚠️  OTP SMS failed: ${result.error}`);
+            return 'sms_failed';
+          }
+        } catch (smsError) {
+          console.error('Failed to send OTP SMS:', smsError);
+          return 'sms_failed';
+        }
+      })();
+      promises.push(smsPromise);
+    }
+    
+    // Wait for all to settle
+    await Promise.allSettled(promises);
+    
+    console.log(`✅ Password reset OTP generated and dispatched for ${email} in project ${project.name}`);
 
     return res.json({
       success: true,
