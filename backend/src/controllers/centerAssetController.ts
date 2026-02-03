@@ -42,8 +42,25 @@ export const uploadAssetPhotos = multer({
 // @access  Private (Super Admin)
 export const bulkMapAssets = async (req: Request, res: Response) => {
   try {
-    const { assetIds, projectIds, applyToAllCenters } = req.body;
+    const { 
+      assetIds, 
+      projectIds, 
+      applyToAllCenters, 
+      quantities, 
+      lastAuditDate, 
+      auditFrequencyMonths, 
+      nextAuditDate 
+    } = req.body;
     const userId = (req as any).user.userId;
+
+    console.log('📥 Bulk map request received:', {
+      assetIds,
+      projectIds,
+      quantities,
+      lastAuditDate,
+      auditFrequencyMonths,
+      nextAuditDate
+    });
 
     if (!assetIds || !Array.isArray(assetIds) || assetIds.length === 0) {
       return res.status(400).json({
@@ -70,9 +87,24 @@ export const bulkMapAssets = async (req: Request, res: Response) => {
     const mappings = [];
     const errors = [];
 
+    // Optimized: Batch fetch all assets and existing mappings upfront
+    const [assets, existingMappings] = await Promise.all([
+      Asset.find({ _id: { $in: assetIds } }).lean(),
+      CenterAssetMapping.find({
+        assetId: { $in: assetIds },
+        projectId: { $in: targetProjectIds }
+      })
+    ]);
+
+    // Create lookup maps
+    const assetMap = new Map(assets.map(a => [a._id.toString(), a]));
+    const mappingLookup = new Map(
+      existingMappings.map(m => [`${m.assetId.toString()}-${m.projectId.toString()}`, m])
+    );
+
     for (const assetId of assetIds) {
-      // Verify asset exists
-      const asset = await Asset.findById(assetId);
+      // Verify asset exists using pre-fetched data
+      const asset = assetMap.get(assetId.toString());
       if (!asset) {
         errors.push(`Asset ${assetId} not found`);
         continue;
@@ -80,30 +112,79 @@ export const bulkMapAssets = async (req: Request, res: Response) => {
 
       for (const projectId of targetProjectIds) {
         try {
-          // Check if mapping already exists
-          const existingMapping = await CenterAssetMapping.findOne({
-            projectId,
-            assetId
-          });
+          // Get quantity for this project (or use predefined count)
+          const quantity = quantities && quantities[projectId] !== undefined 
+            ? quantities[projectId] 
+            : asset.predefinedCount;
+
+          // Check if mapping already exists using pre-fetched data
+          const existingMapping = mappingLookup.get(`${assetId}-${projectId}`);
 
           if (existingMapping) {
-            mappings.push(existingMapping);
-          } else {
-            // Create new mapping with predefined count
-            const newMapping = await CenterAssetMapping.create({
+            // Update existing mapping with new values
+            existingMapping.totalAssigned = quantity;
+            existingMapping.assetNotUsed = quantity;
+            existingMapping.lastUpdatedBy = userId;
+            
+            // Update audit fields if provided
+            if (lastAuditDate) {
+              existingMapping.lastAuditDate = new Date(lastAuditDate);
+            }
+            if (auditFrequencyMonths !== undefined) {
+              existingMapping.auditFrequencyMonths = auditFrequencyMonths;
+            }
+            if (nextAuditDate) {
+              existingMapping.nextAuditDate = new Date(nextAuditDate);
+            }
+            
+            await existingMapping.save();
+            console.log('✅ Updated mapping:', {
               projectId,
               assetId,
-              totalAssigned: asset.predefinedCount,
+              quantity,
+              lastAuditDate: existingMapping.lastAuditDate,
+              auditFrequencyMonths: existingMapping.auditFrequencyMonths,
+              nextAuditDate: existingMapping.nextAuditDate
+            });
+            mappings.push(existingMapping);
+          } else {
+            // Create new mapping
+            const mappingData: any = {
+              projectId,
+              assetId,
+              totalAssigned: quantity,
               assetUsed: 0,
-              assetNotUsed: asset.predefinedCount,
+              assetNotUsed: quantity,
               workingAsset: 0,
               notWorkingAsset: 0,
               photos: [],
               lastUpdatedBy: userId
+            };
+            
+            // Add audit fields if provided
+            if (lastAuditDate) {
+              mappingData.lastAuditDate = new Date(lastAuditDate);
+            }
+            if (auditFrequencyMonths !== undefined) {
+              mappingData.auditFrequencyMonths = auditFrequencyMonths;
+            }
+            if (nextAuditDate) {
+              mappingData.nextAuditDate = new Date(nextAuditDate);
+            }
+            
+            const newMapping = await CenterAssetMapping.create(mappingData);
+            console.log('✅ Created new mapping:', {
+              projectId,
+              assetId,
+              quantity,
+              lastAuditDate: newMapping.lastAuditDate,
+              auditFrequencyMonths: newMapping.auditFrequencyMonths,
+              nextAuditDate: newMapping.nextAuditDate
             });
             mappings.push(newMapping);
           }
         } catch (error: any) {
+          console.error('❌ Error mapping asset:', error);
           errors.push(`Error mapping asset ${assetId} to project ${projectId}: ${error.message}`);
         }
       }

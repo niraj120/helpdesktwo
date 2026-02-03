@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
@@ -7,6 +7,7 @@ import { API_CONFIG } from '../config/constants';
 import { PERMISSIONS } from '../constants/permissions';
 import { usePermissions } from '../hooks/usePermissions';
 import { LanguageToggle } from '../components/LanguageToggle';
+import FAQViewer from '../components/FAQViewer';
 import {
   HomeIcon,
   TicketIcon,
@@ -27,6 +28,11 @@ import {
   ArrowLeftIcon,
   PaperClipIcon,
   EyeIcon,
+  UserCircleIcon,
+  KeyIcon,
+  ChevronDownIcon,
+  QuestionMarkCircleIcon,
+  InboxIcon,
 } from '@heroicons/react/24/outline';
 
 interface Ticket {
@@ -128,14 +134,33 @@ interface KBArticle {
 const StudentDashboard: React.FC = () => {
   const navigate = useNavigate();
   const { customUrlPath } = useParams();
-  const { hasPermission } = usePermissions();
+  const { hasPermission, hasAnyPermission } = usePermissions();
   const { t } = useTranslation();
-  const [activeModule, setActiveModule] = useState<'dashboard' | 'submit-ticket' | 'find-center' | 'knowledge-base' | 'ticket-detail'>('dashboard');
+  const [activeModule, setActiveModule] = useState<'dashboard' | 'my-queries' | 'submit-ticket' | 'find-center' | 'knowledge-base' | 'faq' | 'ticket-detail' | 'profile' | 'change-password'>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
+  const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+  const profileDropdownRef = useRef<HTMLDivElement>(null);
+  
+  // Extended user profile data
+  const [userProfile, setUserProfile] = useState<{
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone?: string;
+    parentPhone?: string;
+  } | null>(null);
+  
+  // Change password states
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
   
   // Initialize projectBranding from sessionStorage immediately to prevent flickering
   const [projectBranding, setProjectBranding] = useState<any>(() => {
@@ -187,6 +212,88 @@ const StudentDashboard: React.FC = () => {
       }
     }
   }, []);
+
+  // Close profile dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (profileDropdownRef.current && !profileDropdownRef.current.contains(event.target as Node)) {
+        setProfileDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Fetch user profile data
+  const fetchUserProfile = async () => {
+    try {
+      const token = localStorage.getItem('authToken');
+      if (!token) return;
+      
+      const response = await axios.get(`${API_CONFIG.API_URL}/auth/profile`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (response.data) {
+        setUserProfile({
+          firstName: response.data.firstName || '',
+          lastName: response.data.lastName || '',
+          email: response.data.email || '',
+          phone: response.data.phone || response.data.mobileNumber || '',
+          parentPhone: response.data.parentPhone || response.data.guardianPhone || '',
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+    }
+  };
+
+  // Handle password change
+  const handleChangePassword = async () => {
+    setPasswordError('');
+    setPasswordSuccess('');
+    
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setPasswordError('All fields are required');
+      return;
+    }
+    
+    if (newPassword !== confirmPassword) {
+      setPasswordError('New passwords do not match');
+      return;
+    }
+    
+    if (newPassword.length < 6) {
+      setPasswordError('New password must be at least 6 characters');
+      return;
+    }
+    
+    try {
+      setChangingPassword(true);
+      const token = localStorage.getItem('authToken');
+      
+      await axios.post(`${API_CONFIG.API_URL}/auth/change-password`, {
+        currentPassword,
+        newPassword,
+      }, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      setPasswordSuccess('Password changed successfully!');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      
+      setTimeout(() => {
+        setPasswordSuccess('');
+        setActiveModule('dashboard');
+      }, 2000);
+    } catch (error: any) {
+      setPasswordError(error.response?.data?.message || 'Failed to change password');
+    } finally {
+      setChangingPassword(false);
+    }
+  };
 
   useEffect(() => {
     const token = localStorage.getItem('authToken');
@@ -898,33 +1005,106 @@ const StudentDashboard: React.FC = () => {
               )}
             </button>
             {projectBranding?.logoUrl && (
-              <img
-                src={projectBranding.logoUrl}
-                alt={projectBranding.name}
-                className="h-10 w-auto"
-              />
+              projectBranding?.branding?.logoLinkbackUrl || projectBranding?.logoLinkbackUrl ? (
+                <a 
+                  href={(projectBranding?.branding?.logoLinkbackUrl || projectBranding?.logoLinkbackUrl).startsWith('http') 
+                    ? (projectBranding?.branding?.logoLinkbackUrl || projectBranding?.logoLinkbackUrl) 
+                    : `https://${projectBranding?.branding?.logoLinkbackUrl || projectBranding?.logoLinkbackUrl}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <img
+                    src={projectBranding.logoUrl}
+                    alt={projectBranding.name}
+                    loading="lazy"
+                    className="h-10 w-auto cursor-pointer hover:opacity-80 transition-opacity"
+                  />
+                </a>
+              ) : (
+                <img
+                  src={projectBranding.logoUrl}
+                  alt={projectBranding.name}
+                  loading="lazy"
+                  className="h-10 w-auto"
+                />
+              )
             )}
             <h1 className="text-xl font-bold text-white hidden sm:block">
               {projectBranding?.name || 'Candidate Portal'}
             </h1>
           </div>
 
-          {/* Right: User Info */}
+          {/* Right: User Info with Profile Dropdown */}
           <div className="flex items-center space-x-4">
             <LanguageToggle />
-            <div className="text-right hidden sm:block">
-              <p className="text-white font-medium text-sm">
-                {user?.firstName} {user?.lastName}
-              </p>
-              <p className="text-white/70 text-xs">{user?.email}</p>
+            
+            {/* Profile Dropdown */}
+            <div className="relative" ref={profileDropdownRef}>
+              <button
+                onClick={() => {
+                  setProfileDropdownOpen(!profileDropdownOpen);
+                  if (!userProfile) fetchUserProfile();
+                }}
+                className="flex items-center space-x-2 px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-colors"
+              >
+                <UserCircleIcon className="h-8 w-8" />
+                <div className="text-left hidden sm:block">
+                  <p className="text-white font-medium text-sm">
+                    {user?.firstName} {user?.lastName}
+                  </p>
+                  <p className="text-white/70 text-xs">{user?.email}</p>
+                </div>
+                <ChevronDownIcon className={`h-4 w-4 text-white transition-transform ${profileDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+              
+              {/* Dropdown Menu */}
+              {profileDropdownOpen && (
+                <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
+                  {/* User Info Header */}
+                  <div className="px-4 py-3 border-b border-gray-100">
+                    <p className="font-medium text-gray-900">{user?.firstName} {user?.lastName}</p>
+                    <p className="text-sm text-gray-500">{user?.email}</p>
+                  </div>
+                  
+                  {/* Profile Option */}
+                  <button
+                    onClick={() => {
+                      setProfileDropdownOpen(false);
+                      setActiveModule('profile');
+                      fetchUserProfile();
+                    }}
+                    className="w-full flex items-center space-x-3 px-4 py-2.5 text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    <UserCircleIcon className="h-5 w-5 text-gray-400" />
+                    <span>My Profile</span>
+                  </button>
+                  
+                  {/* Change Password Option */}
+                  <button
+                    onClick={() => {
+                      setProfileDropdownOpen(false);
+                      setActiveModule('change-password');
+                    }}
+                    className="w-full flex items-center space-x-3 px-4 py-2.5 text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    <KeyIcon className="h-5 w-5 text-gray-400" />
+                    <span>Change Password</span>
+                  </button>
+                  
+                  {/* Divider */}
+                  <div className="border-t border-gray-100 my-1"></div>
+                  
+                  {/* Logout Option */}
+                  <button
+                    onClick={handleLogout}
+                    className="w-full flex items-center space-x-3 px-4 py-2.5 text-red-600 hover:bg-red-50 transition-colors"
+                  >
+                    <ArrowRightOnRectangleIcon className="h-5 w-5" />
+                    <span>{t('logout')}</span>
+                  </button>
+                </div>
+              )}
             </div>
-            <button
-              onClick={handleLogout}
-              className="flex items-center space-x-2 px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-colors"
-            >
-              <ArrowRightOnRectangleIcon className="h-5 w-5" />
-              <span className="hidden sm:inline">{t('logout')}</span>
-            </button>
           </div>
         </div>
       </header>
@@ -949,20 +1129,50 @@ const StudentDashboard: React.FC = () => {
             <span>{t('dashboard')}</span>
           </button>
 
-          {/* Submit Ticket - Requires TICKET_CREATE or TICKET_VIEW_OWN permission */}
+          {/* My Queries - View student's own tickets */}
           {(hasPermission(PERMISSIONS.TICKET_CREATE) || 
             hasPermission(PERMISSIONS.TICKET_VIEW_OWN) || 
             hasPermission(PERMISSIONS.OFFLINE_TICKET_CREATE)) && (
             <button
-              onClick={() => setActiveModule('submit-ticket')}
+              onClick={() => setActiveModule('my-queries')}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
-                activeModule === 'submit-ticket'
+                activeModule === 'my-queries'
                   ? 'bg-blue-50 text-blue-600 font-medium'
                   : 'text-gray-700 hover:bg-gray-50'
               }`}
             >
-              <TicketIcon className="h-5 w-5" />
-              <span>{t('submitTicket')}</span>
+              <InboxIcon className="h-5 w-5" />
+              <span>My Queries</span>
+            </button>
+          )}
+
+          {/* Knowledge Base - Requires KB_VIEW permission */}
+          {hasAnyPermission([PERMISSIONS.KB_VIEW, PERMISSIONS.KB_VIEW_CONTENT, PERMISSIONS.KB_MANAGE, PERMISSIONS.KB_MANAGE_LEVELS, PERMISSIONS.KB_MANAGE_ARTICLES, PERMISSIONS.KB_MANAGE_TABLES]) && (
+            <button
+              onClick={() => setActiveModule('knowledge-base')}
+              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
+                activeModule === 'knowledge-base'
+                  ? 'bg-blue-50 text-blue-600 font-medium'
+                  : 'text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <BookOpenIcon className="h-5 w-5" />
+              <span>Knowledge Base</span>
+            </button>
+          )}
+
+          {/* FAQ - Requires FAQ_VIEW permission */}
+          {hasAnyPermission([PERMISSIONS.FAQ_VIEW, 'FAQ_CREATE', 'FAQ_EDIT']) && (
+            <button
+              onClick={() => setActiveModule('faq')}
+              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
+                activeModule === 'faq'
+                  ? 'bg-blue-50 text-blue-600 font-medium'
+                  : 'text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <QuestionMarkCircleIcon className="h-5 w-5" />
+              <span>FAQ</span>
             </button>
           )}
 
@@ -980,21 +1190,6 @@ const StudentDashboard: React.FC = () => {
               <span>Find Center</span>
             </button>
           )}
-
-          {/* Knowledge Base - Requires KB_VIEW permission */}
-          {hasPermission(PERMISSIONS.KB_VIEW) && (
-            <button
-              onClick={() => setActiveModule('knowledge-base')}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
-                activeModule === 'knowledge-base'
-                  ? 'bg-blue-50 text-blue-600 font-medium'
-                  : 'text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              <BookOpenIcon className="h-5 w-5" />
-              <span>Knowledge Base</span>
-            </button>
-          )}
         </nav>
       </aside>
 
@@ -1004,9 +1199,9 @@ const StudentDashboard: React.FC = () => {
           sidebarOpen ? 'lg:pl-64' : 'pl-0'
         }`}
       >
-        <div className="p-6">
+        <div className="p-6 relative">
           {/* Dashboard Module */}
-          <div style={{ display: activeModule === 'dashboard' ? 'block' : 'none' }}>
+          <div className={`transition-opacity duration-200 ${activeModule === 'dashboard' ? 'opacity-100' : 'opacity-0 absolute pointer-events-none'}`}>
             <div>
               <h2 className="text-2xl font-bold text-gray-900 mb-6">{t('myTickets')}</h2>
               
@@ -1086,8 +1281,108 @@ const StudentDashboard: React.FC = () => {
             </div>
           </div>
 
+          {/* My Queries Module */}
+          <div className={`transition-opacity duration-200 ${activeModule === 'my-queries' ? 'opacity-100' : 'opacity-0 absolute pointer-events-none'}`}>
+            <div>
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold text-gray-900">My Queries</h2>
+                <button
+                  onClick={() => setActiveModule('submit-ticket')}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                >
+                  <DocumentArrowUpIcon className="h-5 w-5" />
+                  <span>Submit New Query</span>
+                </button>
+              </div>
+              
+              {tickets.length === 0 ? (
+                <div className="bg-white rounded-xl shadow-sm p-12 text-center">
+                  <InboxIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">
+                    No Queries Yet
+                  </h3>
+                  <p className="text-gray-500 mb-6">
+                    You haven't submitted any queries yet. Click below to create your first query.
+                  </p>
+                  <button
+                    onClick={() => setActiveModule('submit-ticket')}
+                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Submit Your First Query
+                  </button>
+                </div>
+              ) : (
+                <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Ticket #
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Subject
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Status
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Priority
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Created
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Action
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {tickets.map((ticket) => (
+                        <tr key={ticket._id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="text-sm font-medium text-blue-600">{ticket.ticketNumber}</span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="text-sm text-gray-900">{ticket.title}</span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(ticket.status)}`}>
+                              {getStatusName(ticket.status)}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`text-xs font-medium ${getPriorityColor(ticket.priority)}`}>
+                              {ticket.priority.toUpperCase()}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="text-sm text-gray-500">
+                              {new Date(ticket.createdAt).toLocaleDateString()}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <button
+                              onClick={() => {
+                                setSelectedTicketId(ticket._id);
+                                setActiveModule('ticket-detail');
+                              }}
+                              className="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center space-x-1"
+                            >
+                              <EyeIcon className="h-4 w-4" />
+                              <span>View</span>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Submit Ticket Module */}
-          <div style={{ display: activeModule === 'submit-ticket' ? 'block' : 'none' }}>
+          <div className={`transition-opacity duration-200 ${activeModule === 'submit-ticket' ? 'opacity-100' : 'opacity-0 absolute pointer-events-none'}`}>
             {ticketSettings && (
             <div>
               <h2 className="text-2xl font-bold text-gray-900 mb-6">Submit New Query</h2>
@@ -1148,7 +1443,7 @@ const StudentDashboard: React.FC = () => {
           </div>
 
           {/* Find Center Module */}
-          <div style={{ display: activeModule === 'find-center' ? 'block' : 'none' }}>
+          <div className={`transition-opacity duration-200 ${activeModule === 'find-center' ? 'opacity-100' : 'opacity-0 absolute pointer-events-none'}`}>
             {ticketSettings && (
             <div>
               <h2 className="text-2xl font-bold text-gray-900 mb-6">Find Nearest Center</h2>
@@ -1313,7 +1608,7 @@ const StudentDashboard: React.FC = () => {
           </div>
 
           {/* Knowledge Base Module */}
-          <div style={{ display: activeModule === 'knowledge-base' ? 'block' : 'none' }}>
+          <div className={`transition-opacity duration-200 ${activeModule === 'knowledge-base' ? 'opacity-100' : 'opacity-0 absolute pointer-events-none'}`}>
             <div>
               <h2 className="text-2xl font-bold text-gray-900 mb-6">Knowledge Base</h2>
               
@@ -1537,8 +1832,175 @@ const StudentDashboard: React.FC = () => {
             </div>
           </div>
 
+          {/* FAQ Module */}
+          <div className={`transition-opacity duration-200 ${activeModule === 'faq' ? 'opacity-100' : 'opacity-0 absolute pointer-events-none'}`}>
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-6">Frequently Asked Questions</h2>
+              <div className="bg-white rounded-xl shadow-sm p-6">
+                <FAQViewer />
+              </div>
+            </div>
+          </div>
+
+          {/* Profile Module */}
+          <div className={`transition-opacity duration-200 ${activeModule === 'profile' ? 'opacity-100' : 'opacity-0 absolute pointer-events-none'}`}>
+            <div>
+              <div className="flex items-center space-x-4 mb-6">
+                <button
+                  onClick={() => setActiveModule('dashboard')}
+                  className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition-colors"
+                >
+                  <ArrowLeftIcon className="h-5 w-5" />
+                  <span>Back to Dashboard</span>
+                </button>
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-6">My Profile</h2>
+              <div className="bg-white rounded-xl shadow-sm p-6">
+                <div className="flex items-center space-x-6 mb-8">
+                  <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+                    <span className="text-3xl font-bold text-white">
+                      {userProfile?.firstName?.charAt(0)}{userProfile?.lastName?.charAt(0)}
+                    </span>
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-bold text-gray-900">
+                      {userProfile?.firstName} {userProfile?.lastName}
+                    </h3>
+                    <p className="text-gray-500">Student</p>
+                  </div>
+                </div>
+                
+                <div className="grid gap-6 md:grid-cols-2">
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-500 mb-1">Full Name</label>
+                      <p className="text-lg text-gray-900 bg-gray-50 px-4 py-3 rounded-lg">
+                        {userProfile?.firstName} {userProfile?.lastName}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-500 mb-1">Email Address</label>
+                      <p className="text-lg text-gray-900 bg-gray-50 px-4 py-3 rounded-lg flex items-center space-x-2">
+                        <EnvelopeIcon className="h-5 w-5 text-gray-400" />
+                        <span>{userProfile?.email || 'Not provided'}</span>
+                      </p>
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-500 mb-1">Mobile Number</label>
+                      <p className="text-lg text-gray-900 bg-gray-50 px-4 py-3 rounded-lg flex items-center space-x-2">
+                        <PhoneIcon className="h-5 w-5 text-gray-400" />
+                        <span>{userProfile?.phone || 'Not provided'}</span>
+                      </p>
+                    </div>
+                    {userProfile?.parentPhone && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-500 mb-1">Parent/Guardian Phone</label>
+                        <p className="text-lg text-gray-900 bg-gray-50 px-4 py-3 rounded-lg flex items-center space-x-2">
+                          <PhoneIcon className="h-5 w-5 text-gray-400" />
+                          <span>{userProfile.parentPhone}</span>
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="mt-8 pt-6 border-t border-gray-200">
+                  <button
+                    onClick={() => setActiveModule('change-password')}
+                    className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    <KeyIcon className="h-5 w-5" />
+                    <span>Change Password</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Change Password Module */}
+          <div className={`transition-opacity duration-200 ${activeModule === 'change-password' ? 'opacity-100' : 'opacity-0 absolute pointer-events-none'}`}>
+            <div>
+              <div className="flex items-center space-x-4 mb-6">
+                <button
+                  onClick={() => setActiveModule('profile')}
+                  className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition-colors"
+                >
+                  <ArrowLeftIcon className="h-5 w-5" />
+                  <span>Back to Profile</span>
+                </button>
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-6">Change Password</h2>
+              <div className="bg-white rounded-xl shadow-sm p-6 max-w-md">
+                {passwordError && (
+                  <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center space-x-3">
+                    <ExclamationCircleIcon className="h-5 w-5 text-red-500" />
+                    <span className="text-red-700">{passwordError}</span>
+                  </div>
+                )}
+                {passwordSuccess && (
+                  <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center space-x-3">
+                    <CheckCircleIcon className="h-5 w-5 text-green-500" />
+                    <span className="text-green-700">{passwordSuccess}</span>
+                  </div>
+                )}
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Current Password</label>
+                    <input
+                      type="password"
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Enter current password"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+                    <input
+                      type="password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Enter new password"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
+                    <input
+                      type="password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Confirm new password"
+                    />
+                  </div>
+                  <button
+                    onClick={handleChangePassword}
+                    disabled={changingPassword}
+                    className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+                  >
+                    {changingPassword ? (
+                      <>
+                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        <span>Changing...</span>
+                      </>
+                    ) : (
+                      <>
+                        <KeyIcon className="h-5 w-5" />
+                        <span>Change Password</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Ticket Detail Module */}
-          <div style={{ display: activeModule === 'ticket-detail' ? 'block' : 'none' }}>
+          <div className={`transition-opacity duration-200 ${activeModule === 'ticket-detail' ? 'opacity-100' : 'opacity-0 absolute pointer-events-none'}`}>
             <div className="space-y-6">
               {/* Header with Back Button */}
               <div className="flex items-center space-x-4">

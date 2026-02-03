@@ -167,6 +167,7 @@ const OfflineModuleConfigPage: React.FC = () => {
                     <img 
                       src={project.branding.logo} 
                       alt={project.name}
+                      loading="lazy"
                       style={{
                         width: '48px',
                         height: '48px',

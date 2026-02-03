@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import {
   DocumentArrowUpIcon,
   CheckCircleIcon,
   ExclamationCircleIcon,
   XMarkIcon,
+  BookOpenIcon,
 } from '@heroicons/react/24/outline';
 import { API_CONFIG } from '../config/constants';
 
@@ -422,6 +423,25 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
               <p className="text-gray-600">{ticketSettings.welcomeMessage}</p>
             )}
           </div>
+        )}
+
+        {/* KB Link Banner */}
+        {branding?.customUrlPath && (
+          <Link
+            to={`/${branding.customUrlPath}/kb`}
+            className="block bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 hover:bg-blue-100 transition-colors"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <BookOpenIcon className="w-6 h-6 text-blue-600" />
+                <div>
+                  <h3 className="text-sm font-semibold text-blue-900">Need help?</h3>
+                  <p className="text-xs text-blue-700">Check our Knowledge Base for quick answers</p>
+                </div>
+              </div>
+              <span className="text-blue-600 text-sm font-medium">View KB →</span>
+            </div>
+          </Link>
         )}
 
         {/* Announcement */}

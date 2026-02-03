@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import API_BASE_URL from '../../config/api';
+import { useProjectContext } from '../../contexts/ProjectContext';
 
 interface User {
   _id: string;
@@ -34,6 +35,13 @@ interface Ticket {
   };
   createdAt: string;
   slaDeadline?: string;
+  metadata?: {
+    projectId?: string | {
+      _id: string;
+      name: string;
+      code: string;
+    };
+  };
 }
 
 interface Agent {
@@ -59,6 +67,10 @@ export const TicketsModule: React.FC<TicketsModuleProps> = ({ user, permissions 
   const [selectedAgent, setSelectedAgent] = useState('');
   const [loading, setLoading] = useState(false);
   const [bulkMode, setBulkMode] = useState(false);
+  const [projectFilter, setProjectFilter] = useState('all'); // Project filter for All Projects mode
+
+  // Get viewMode and currentProjectId from context
+  const { viewMode, currentProjectId, userProjects } = useProjectContext();
 
   // Calculate SLA time remaining in hours
   const calculateSLARemaining = (createdAt: string, priority: string): { hours: number; isBreached: boolean } => {
@@ -99,14 +111,49 @@ export const TicketsModule: React.FC<TicketsModuleProps> = ({ user, permissions 
     if (canAssign) {
       fetchAgents();
     }
-  }, []);
+  }, [viewMode, currentProjectId]); // Re-fetch when project selection changes
+
+  // Reset project filter when switching to single project mode
+  useEffect(() => {
+    if (viewMode === 'single') {
+      setProjectFilter('all');
+    }
+  }, [viewMode]);
 
   const fetchTickets = async () => {
     try {
       const token = localStorage.getItem('authToken');
       const endpoint = canViewAll ? '/tickets' : '/tickets/my-tickets';
       
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      // Determine projectId based on viewMode
+      // If viewMode is 'unified', don't send projectId to get ALL user's tickets
+      // If viewMode is 'single', send the currentProjectId
+      let projectId = '';
+      
+      if (viewMode === 'single' && currentProjectId) {
+        projectId = currentProjectId;
+      } else if (viewMode === 'single') {
+        // Fallback to projectContext from localStorage
+        const projectContext = localStorage.getItem('projectContext');
+        if (projectContext) {
+          try {
+            const parsed = JSON.parse(projectContext);
+            projectId = parsed.projectId;
+          } catch (err) {
+            console.error('Error parsing projectContext:', err);
+          }
+        }
+      }
+      // If viewMode is 'unified', projectId stays empty - backend will return all user's tickets
+
+      // Build URL - only add projectId if in single project mode
+      const url = projectId 
+        ? `${API_BASE_URL}${endpoint}?projectId=${projectId}`
+        : `${API_BASE_URL}${endpoint}`;
+      
+      console.log('🎫 TicketsModule: Fetching tickets - viewMode:', viewMode, 'projectId:', projectId || 'ALL PROJECTS');
+      
+      const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -125,7 +172,17 @@ export const TicketsModule: React.FC<TicketsModuleProps> = ({ user, permissions 
   const fetchAgents = async () => {
     try {
       const token = localStorage.getItem('authToken');
-      const response = await fetch(`${API_BASE_URL}/users?role=AGENT`, {
+      
+      // Build URL with project filter if in single project mode
+      let url = `${API_BASE_URL}/users?role=AGENT`;
+      if (viewMode === 'single' && currentProjectId) {
+        url += `&project=${currentProjectId}`;
+        console.log('🧑‍💼 [AGENTS] Filtering by project:', currentProjectId);
+      } else {
+        console.log('🧑‍💼 [AGENTS] Fetching agents for all projects');
+      }
+      
+      const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -138,6 +195,7 @@ export const TicketsModule: React.FC<TicketsModuleProps> = ({ user, permissions 
           u.role?.code === 'AGENT' || u.role?.name?.toLowerCase() === 'agent'
         );
         setAgents(agentUsers);
+        console.log(`🧑‍💼 [AGENTS] Found ${agentUsers.length} agents`);
       }
     } catch (error) {
       console.error('Error fetching agents:', error);
@@ -205,14 +263,41 @@ export const TicketsModule: React.FC<TicketsModuleProps> = ({ user, permissions 
     setShowAssignModal(true);
   };
 
+  // Get display title based on viewMode
+  const getPageTitle = () => {
+    if (viewMode === 'unified') {
+      return 'Assign Queries - All Projects';
+    }
+    const project = userProjects.find(p => p._id === currentProjectId);
+    return project ? `Assign Queries - ${project.name}` : 'Assign Queries';
+  };
+
+  const getPageSubtitle = () => {
+    if (viewMode === 'unified') {
+      return `Managing queries from all ${userProjects.length} assigned projects`;
+    }
+    return canViewAll ? 'All queries in this project' : 'Queries assigned to you';
+  };
+
+  // Filter tickets by project if in unified mode with project filter
+  const filteredTickets = tickets.filter((ticket) => {
+    if (viewMode === 'single' || projectFilter === 'all') {
+      return true;
+    }
+    const ticketProjectId = typeof ticket.metadata?.projectId === 'object' 
+      ? ticket.metadata?.projectId?._id 
+      : ticket.metadata?.projectId;
+    return ticketProjectId === projectFilter;
+  });
+
   return (
     <div className="p-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Queries</h2>
+          <h2 className="text-2xl font-bold text-gray-900">{getPageTitle()}</h2>
           <p className="text-sm text-gray-500 mt-1">
-            {canViewAll ? 'All Queries' : 'My Queries'}
+            {getPageSubtitle()}
           </p>
         </div>
         <div className="flex gap-3">
@@ -235,6 +320,27 @@ export const TicketsModule: React.FC<TicketsModuleProps> = ({ user, permissions 
           )}
         </div>
       </div>
+
+      {/* Project Filter - Only show in All Projects mode */}
+      {viewMode === 'unified' && userProjects.length > 1 && (
+        <div className="mb-4 bg-white rounded-lg shadow p-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Filter by Project
+          </label>
+          <select
+            value={projectFilter}
+            onChange={(e) => setProjectFilter(e.target.value)}
+            className="w-64 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="all">All Projects</option>
+            {userProjects.map((project) => (
+              <option key={project._id} value={project._id}>
+                {project.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Bulk Actions Toolbar */}
       {bulkMode && (
@@ -297,6 +403,12 @@ export const TicketsModule: React.FC<TicketsModuleProps> = ({ user, permissions 
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Title
               </th>
+              {/* Show Project column only in All Projects mode */}
+              {viewMode === 'unified' && (
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Project
+                </th>
+              )}
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Status
               </th>
@@ -320,14 +432,14 @@ export const TicketsModule: React.FC<TicketsModuleProps> = ({ user, permissions 
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {tickets.length === 0 ? (
+            {filteredTickets.length === 0 ? (
               <tr>
-                <td colSpan={bulkMode ? 9 : 8} className="px-6 py-8 text-center text-gray-500">
+                <td colSpan={bulkMode ? 10 : 9} className="px-6 py-8 text-center text-gray-500">
                   No tickets found
                 </td>
               </tr>
             ) : (
-              tickets.map((ticket) => {
+              filteredTickets.map((ticket) => {
                 const isAgentTicket = ticket.assignedTo?.role?.isAgent === true;
                 const sla = isAgentTicket ? calculateSLARemaining(ticket.createdAt, ticket.priority) : null;
                 
@@ -349,6 +461,16 @@ export const TicketsModule: React.FC<TicketsModuleProps> = ({ user, permissions 
                   <td className="px-6 py-4 text-sm text-gray-900">
                     {ticket.title}
                   </td>
+                  {/* Show Project column only in All Projects mode */}
+                  {viewMode === 'unified' && (
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="px-2 py-1 text-xs font-medium rounded-full bg-indigo-100 text-indigo-800">
+                        {typeof ticket.metadata?.projectId === 'object' 
+                          ? (ticket.metadata.projectId.name || ticket.metadata.projectId.code)
+                          : 'Unknown'}
+                      </span>
+                    </td>
+                  )}
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`px-2 py-1 text-xs font-medium rounded-full ${
                       ticket.status === 1 ? 'bg-green-100 text-green-800' :

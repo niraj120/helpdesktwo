@@ -1096,29 +1096,6 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         {errors.browserTabTitle}
                       </div>
                     )}
-                    <div style={{ marginTop: '12px' }}>
-                      <label style={{ 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        cursor: 'pointer', 
-                        gap: '8px',
-                        fontSize: '14px',
-                        color: '#374151'
-                      }}>
-                        <input
-                          type="checkbox"
-                          checked={formData.displayPortalNameInNav}
-                          onChange={(e) => setFormData({ ...formData, displayPortalNameInNav: e.target.checked })}
-                          className="checkbox"
-                        />
-                        <span style={{ fontSize: '14px', color: '#111827', lineHeight: '1.5' }}>
-                          Display portal name in the top navigation bar
-                        </span>
-                      </label>
-                      <p style={{ fontSize: '12px', color: '#6b7280', marginLeft: '26px', marginTop: '4px', lineHeight: '1.5' }}>
-                        If your logo image has a brand name, you can uncheck this option so that the same name does not appear twice in the navigation bar.
-                      </p>
-                </div>
               </div>
 
               {/* Footer Text */}
@@ -1309,7 +1286,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       padding: '12px'
                     }}>
                       {formData.logo ? (
-                        <img src={formData.logo} alt="Logo Preview" style={{ maxWidth: '100%', maxHeight: '100px', objectFit: 'contain' }} />
+                        <img src={formData.logo} alt="Logo Preview" loading="lazy" style={{ maxWidth: '100%', maxHeight: '100px', objectFit: 'contain' }} />
                       ) : (
                         <div style={{ textAlign: 'center', padding: '20px' }}>
                           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" style={{ margin: '0 auto 8px' }}>
@@ -1434,7 +1411,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       padding: '12px'
                     }}>
                       {formData.favicon ? (
-                        <img src={formData.favicon} alt="Favicon Preview" style={{ width: '48px', height: '48px', objectFit: 'contain' }} />
+                        <img src={formData.favicon} alt="Favicon Preview" loading="lazy" style={{ width: '48px', height: '48px', objectFit: 'contain' }} />
                       ) : (
                         <div style={{ textAlign: 'center', padding: '20px' }}>
                           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" style={{ margin: '0 auto 8px' }}>
@@ -1726,35 +1703,10 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   The announcement banner can be used to communicate an important message to the users. It appears on the top of the login page for all project-specific logins (Admin, Agent, Counselor, Center Manager) except Student Login.
                 </p>
 
-                <div style={{ display: 'flex', gap: '16px', marginBottom: '12px' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
-                    <input
-                      type="radio"
-                      name="bannerType"
-                      value="plain"
-                      checked={formData.announcementBannerType === 'plain'}
-                      onChange={(e) => setFormData({ ...formData, announcementBannerType: 'plain' })}
-                      style={{ cursor: 'pointer' }}
-                    />
-                    <span style={{ fontSize: '14px', color: '#374151' }}>Plain Text</span>
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
-                    <input
-                      type="radio"
-                      name="bannerType"
-                      value="rich"
-                      checked={formData.announcementBannerType === 'rich'}
-                      onChange={(e) => setFormData({ ...formData, announcementBannerType: 'rich' })}
-                      style={{ cursor: 'pointer' }}
-                    />
-                    <span style={{ fontSize: '14px', color: '#374151' }}>Rich Text</span>
-                  </label>
-                </div>
-
                 <textarea
                   value={formData.announcementBannerMessage}
                   onChange={(e) => setFormData({ ...formData, announcementBannerMessage: e.target.value })}
-                  placeholder="Enter text here"
+                  placeholder="Enter announcement message here"
                   rows={3}
                   style={{
                     width: '100%',
@@ -3168,6 +3120,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       <img 
                         src={formData.loginPageBackgroundImageUrl} 
                         alt="Login background preview" 
+                        loading="lazy"
                         style={{ 
                           width: '120px', 
                           height: '68px', 

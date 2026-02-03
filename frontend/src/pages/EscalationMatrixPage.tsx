@@ -17,6 +17,7 @@ interface EscalationLevel {
     targetName: string;
   };
   notifyMethod: ('email' | 'sms' | 'push')[];
+  escalationMode: 'manual' | 'auto';
   emailTemplate?: string;
   actions?: {
     changePriority?: 'Urgent' | 'High' | 'Normal' | 'Low';
@@ -451,7 +452,7 @@ const EscalationMatrixPage: React.FC = () => {
                       </div>
 
                       {/* Level Details */}
-                      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+                      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
                         <div>
                           <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>
                             Escalate After
@@ -476,6 +477,24 @@ const EscalationMatrixPage: React.FC = () => {
                               color: '#1e40af',
                             }}>
                               {level.escalateTo.type}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div>
+                          <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>
+                            Escalation Mode
+                          </div>
+                          <div style={{ fontSize: '14px', fontWeight: 500 }}>
+                            <span style={{
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                              fontSize: '11px',
+                              background: level.escalationMode === 'auto' ? '#dcfce7' : '#fef3c7',
+                              color: level.escalationMode === 'auto' ? '#166534' : '#92400e',
+                              fontWeight: 600,
+                            }}>
+                              {level.escalationMode === 'auto' ? '🤖 Auto' : '👆 Manual'}
                             </span>
                           </div>
                         </div>

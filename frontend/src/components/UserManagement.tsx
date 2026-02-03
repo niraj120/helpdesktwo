@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from './DashboardLayout';
 import { getText } from '../utils/language';
 import { usePermissions } from '../hooks/usePermissions';
+import { useProjectContext } from '../contexts/ProjectContext';
 import { API_CONFIG } from '../config/constants';
 
 
@@ -64,6 +65,7 @@ interface UserManagementProps {
 const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }) => {
   const { i18n } = useTranslation();
   const { hasPermission } = usePermissions();
+  const { viewMode, currentProjectId, userProjects } = useProjectContext();
   
   // State management
   const [users, setUsers] = useState<User[]>([]);
@@ -113,14 +115,20 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
     centers: [] as string[],
   });
   
-  // Filtered data based on primary project selection
-  const filteredRoles = formData.primaryProject 
-    ? roles.filter(role => !role.projectId || role.projectId === formData.primaryProject)
-    : roles;
+  // Filtered data based on primary project selection - memoized to prevent recalculation
+  const filteredRoles = useMemo(() => {
+    if (formData.primaryProject) {
+      return roles.filter(role => !role.projectId || role.projectId === formData.primaryProject);
+    }
+    return roles;
+  }, [formData.primaryProject, roles]);
   
-  const filteredCenters = formData.primaryProject
-    ? centers.filter(center => center.projectId === formData.primaryProject)
-    : [];
+  const filteredCenters = useMemo(() => {
+    if (formData.primaryProject) {
+      return centers.filter(center => center.projectId === formData.primaryProject);
+    }
+    return [];
+  }, [formData.primaryProject, centers]);
   
   // HRMS data for bulk selection
   const [hrmsEmployees, setHrmsEmployees] = useState<HRMSEmployee[]>([]);
@@ -179,10 +187,13 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
       if (filterRole) params.append('role', filterRole);
       if (filterStatus) params.append('isActive', filterStatus);
       
-      // Get projectId if in project portal context
-      const projectContextStr = localStorage.getItem('projectContext');
-      const projectId = projectContextStr ? JSON.parse(projectContextStr).projectId : null;
-      if (projectId) params.append('project', projectId); // Backend uses 'project' not 'projectId'
+      // Filter by project based on viewMode from context
+      if (viewMode === 'single' && currentProjectId) {
+        params.append('project', currentProjectId); // Backend uses 'project' not 'projectId'
+        console.log('👤 [USER MGMT] Filtering by project:', currentProjectId);
+      } else {
+        console.log('👤 [USER MGMT] Unified mode - fetching users from all projects');
+      }
       
       const token = localStorage.getItem('authToken');
       const url = `${API_CONFIG.API_URL}/users?${params}`;
@@ -223,15 +234,23 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
     try {
       const token = localStorage.getItem('authToken');
       
+      // Check if we're in unified view mode (All Projects)
+      const isUnifiedMode = viewMode === 'unified';
+      
       // Check if we're in project portal context
       const projectContextStr = localStorage.getItem('projectContext');
-      const isProjectPortal = !!projectContextStr;
       const projectContext = projectContextStr ? JSON.parse(projectContextStr) : null;
       
-      // Fetch roles with project filter if in project portal
+      // In unified mode, always fetch ALL projects and roles
+      // In single project mode, filter by current project
+      const isProjectPortal = !isUnifiedMode && !!projectContextStr;
+      
+      // Fetch roles with project filter if in single project mode
       const rolesUrl = isProjectPortal && projectContext?.projectId
         ? `${API_CONFIG.API_URL}/roles?projectId=${projectContext.projectId}`
         : `${API_CONFIG.API_URL}/roles`;
+      
+      console.log('🔄 Fetching roles and projects:', { isUnifiedMode, isProjectPortal, rolesUrl });
       
       const rolesRes = await fetch(rolesUrl, { 
         headers: {
@@ -244,10 +263,12 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
       
       if (rolesData.success && Array.isArray(rolesData.data)) {
         setRoles(rolesData.data);
+        console.log('📋 Loaded roles:', rolesData.data.length);
       }
       
-      // Only fetch projects if in super admin portal
-      if (!isProjectPortal) {
+      // Fetch projects based on view mode
+      if (isUnifiedMode || !isProjectPortal) {
+        // In unified mode or super admin portal, fetch ALL projects from API
         const projectsRes = await fetch(`${API_CONFIG.API_URL}/projects`, { 
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -256,19 +277,34 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
         });
         
         const projectsData = await projectsRes.json();
+        console.log('🌐 Projects API response:', projectsData);
         
-        if (projectsData.success && projectsData.data && Array.isArray(projectsData.data.projects)) {
-          setProjects(projectsData.data.projects);
-          // Centers will be fetched when user selects a project
+        if (projectsData.success) {
+          // Handle multiple response formats
+          let projectsList: Project[] = [];
+          
+          if (Array.isArray(projectsData.data)) {
+            projectsList = projectsData.data;
+          } else if (projectsData.data && Array.isArray(projectsData.data.projects)) {
+            projectsList = projectsData.data.projects;
+          } else if (projectsData.projects && Array.isArray(projectsData.projects)) {
+            projectsList = projectsData.projects;
+          }
+          
+          console.log('📋 Loaded projects for dropdown:', projectsList.length, projectsList.map(p => p.name));
+          setProjects(projectsList);
+        } else {
+          console.warn('⚠️ No projects data in API response');
+          setProjects([]);
         }
       } else {
-        // In project portal, set the current project from context
+        // In single project mode, set only the current project
+        console.log('📍 Single project mode, using:', projectContext.projectName);
         setProjects([{
           _id: projectContext.projectId,
           name: projectContext.projectName,
           code: projectContext.projectCode,
         }]);
-        // Centers will be fetched when user selects a project in the form
       }
     } catch (error) {
       console.error('Error fetching roles/projects:', error);
@@ -287,7 +323,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
       fetchUsers();
       fetchRolesAndProjects();
     }
-  }, [searchQuery, filterRole, filterStatus, filterProject, filterCenter]);
+  }, [searchQuery, filterRole, filterStatus, filterProject, filterCenter, viewMode, currentProjectId]); // Added viewMode and currentProjectId
 
   // Separate effect for page changes
   useEffect(() => {
@@ -295,6 +331,92 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
       fetchUsers();
     }
   }, [currentPage]);
+
+  // Listen for viewMode changes from ViewModeToggle
+  useEffect(() => {
+    const handleViewModeChange = () => {
+      console.log('🔄 UserManagement: View mode changed, refetching users and projects...');
+      setCurrentPage(1); // Reset to first page
+      hasFetchedInitialData.current = false; // Allow re-fetch
+      fetchUsers();
+      fetchRolesAndProjects(); // Also refetch projects list
+    };
+
+    window.addEventListener('viewModeChanged', handleViewModeChange);
+    window.addEventListener('projectChanged', handleViewModeChange); // Also listen for project changes
+    return () => {
+      window.removeEventListener('viewModeChanged', handleViewModeChange);
+      window.removeEventListener('projectChanged', handleViewModeChange);
+    };
+  }, [viewMode, currentProjectId]);
+
+  // Refetch projects when modal opens to ensure fresh data
+  useEffect(() => {
+    if (showUserModal) {
+      console.log('🔄 UserManagement: Modal opened, loading projects');
+      
+      // Check if user is Super Admin
+      const userRole = localStorage.getItem('userRole');
+      const isSuperAdmin = userRole === 'SUPER_ADMIN' || userRole === 'Super Admin';
+      
+      if (isSuperAdmin) {
+        // Super Admin: Fetch ALL projects from the system
+        console.log('👑 Super Admin detected: Fetching ALL projects');
+        fetchAllProjectsForSuperAdmin();
+      } else {
+        // Regular users: Use projects from ProjectContext (already filtered by user's role)
+        if (viewMode === 'unified') {
+          // In unified mode, use ALL accessible projects
+          console.log('📋 Unified mode: Using all', userProjects.length, 'projects');
+          setProjects(userProjects);
+        } else {
+          // In single project mode, filter by current project
+          const projectContextStr = localStorage.getItem('projectContext');
+          if (projectContextStr) {
+            const projectContext = JSON.parse(projectContextStr);
+            const currentProject = userProjects.find(p => p._id === projectContext.projectId);
+            
+            if (currentProject) {
+              console.log('📍 Single project mode: Using', currentProject.name);
+              setProjects([currentProject]);
+            } else {
+              console.log('⚠️ Current project not found in userProjects, showing all');
+              setProjects(userProjects);
+            }
+          } else {
+            console.log('📋 No project context, showing all accessible projects');
+            setProjects(userProjects);
+          }
+        }
+      }
+    }
+  }, [showUserModal, userProjects, viewMode]);
+
+  // Fetch ALL projects for Super Admin
+  const fetchAllProjectsForSuperAdmin = async () => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`${API_CONFIG.API_URL}/projects`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && Array.isArray(data.data)) {
+          const activeProjects = data.data.filter((p: any) => p.status === 'active');
+          console.log('✅ Fetched', activeProjects.length, 'projects for Super Admin');
+          setProjects(activeProjects);
+        }
+      } else {
+        console.error('❌ Failed to fetch projects for Super Admin');
+      }
+    } catch (error) {
+      console.error('❌ Error fetching projects for Super Admin:', error);
+    }
+  };
 
   // Fetch centers when filterProject changes
   useEffect(() => {
@@ -1888,7 +2010,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
                       setFormData({ 
                         ...formData, 
                         primaryProject: projectId,
-                        projects: projectId ? [projectId] : [],
+                        projects: projectId ? (formData.projects.includes(projectId) ? formData.projects : [...formData.projects, projectId]) : formData.projects,
                         role: '',
                         centers: []
                       });
@@ -1932,14 +2054,25 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
                     }}
                   >
                     <option value="">{getText('⚠️ Select a project first', '⚠️ प्रथम प्रोजेक्ट निवडा', '⚠️ प्रथम प्रोजेक्ट निवडा')}</option>
-                    {projects.map(project => (
-                      <option key={project._id} value={project._id}>
-                        {project.name} {project.code ? `(${project.code})` : ''}
+                    {projects && projects.length > 0 ? (
+                      projects.map(project => (
+                        <option key={project._id} value={project._id}>
+                          {project.name} {project.code ? `(${project.code})` : ''}
+                        </option>
+                      ))
+                    ) : (
+                      <option value="" disabled>
+                        {getText('No projects available', 'कोणतेही प्रोजेक्ट उपलब्ध नाहीत', 'कोणतेही प्रोजेक्ट उपलब्ध नाहीत')}
                       </option>
-                    ))}
+                    )}
                   </select>
                   <p style={{ fontSize: '12px', color: '#92400e', marginTop: '8px', fontStyle: 'italic' }}>
                     💡 {getText('Roles and centers will be filtered based on this project', 'या प्रोजेक्टच्या आधारे भूमिका आणि केंद्रे फिल्टर केली जातील', 'या प्रोजेक्टच्या आधारे भूमिका आणि केंद्रे फिल्टर केली जातील')}
+                    {projects.length === 0 && (
+                      <span style={{ display: 'block', color: '#ef4444', marginTop: '4px' }}>
+                        ⚠️ {getText('Loading projects...', 'प्रोजेक्ट लोड करत आहे...', 'प्रोजेक्ट लोड करत आहे...')}
+                      </span>
+                    )}
                   </p>
                 </div>
 
@@ -2065,6 +2198,101 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
                       {getText('No roles configured for this project', 'या प्रोजेक्टसाठी कोणत्याही भूमिका कॉन्फिगर केल्या नाहीत', 'या प्रोजेक्टसाठी कोणत्याही भूमिका कॉन्फिगर केल्या नाहीत')}
                     </p>
                   )}
+                </div>
+
+                {/* Multi-Project Assignment Section */}
+                <div style={{ marginTop: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '6px' }}>
+                    🏢 {getText('Assigned Projects', 'नियुक्त प्रकल्प', 'नियुक्त प्रकल्प')}
+                    {projects.length > 0 && (
+                      <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: 'normal', marginLeft: '8px' }}>
+                        ({projects.length} {getText('projects available', 'प्रकल्प उपलब्ध', 'प्रकल्प उपलब्ध')})
+                      </span>
+                    )}
+                  </label>
+                  <div 
+                    style={{
+                      maxHeight: '180px',
+                      overflowY: 'auto',
+                      border: '1px solid #d1d5db',
+                      borderRadius: '6px',
+                      padding: '8px',
+                      backgroundColor: 'white',
+                    }}
+                  >
+                    {projects && projects.length > 0 ? (
+                      projects.map(project => (
+                        <label 
+                          key={project._id} 
+                          style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            padding: '8px', 
+                            cursor: 'pointer',
+                            borderRadius: '4px',
+                            transition: 'background-color 0.2s'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f3f4f6'}
+                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={formData.projects.includes(project._id)}
+                            onChange={(e) => {
+                              const projectId = project._id;
+                              const newProjects = e.target.checked
+                                ? [...formData.projects, projectId]
+                                : formData.projects.filter(id => id !== projectId);
+                              
+                              setFormData({
+                                ...formData,
+                                projects: newProjects,
+                                // If unchecking the primary project, clear it
+                                primaryProject: !e.target.checked && formData.primaryProject === projectId 
+                                  ? (newProjects.length > 0 ? newProjects[0] : '')
+                                  : formData.primaryProject,
+                                // Clear role if primary project changes
+                                role: !e.target.checked && formData.primaryProject === projectId ? '' : formData.role,
+                                // Clear centers if primary project changes
+                                centers: !e.target.checked && formData.primaryProject === projectId ? [] : formData.centers
+                              });
+                            }}
+                            style={{ marginRight: '10px', cursor: 'pointer', width: '16px', height: '16px' }}
+                          />
+                          <div style={{ flex: 1 }}>
+                            <span style={{ fontSize: '14px', color: '#374151', fontWeight: '500' }}>
+                              {project.name}
+                            </span>
+                            {project.code && (
+                              <span style={{ fontSize: '12px', color: '#6b7280', marginLeft: '8px' }}>
+                                ({project.code})
+                              </span>
+                            )}
+                            {formData.primaryProject === project._id && (
+                              <span style={{ 
+                                fontSize: '11px', 
+                                marginLeft: '8px',
+                                padding: '2px 8px', 
+                                borderRadius: '12px',
+                                backgroundColor: '#dbeafe',
+                                color: '#1e40af',
+                                fontWeight: '500'
+                              }}>
+                                {getText('Primary', 'प्राथमिक', 'प्राथमिक')}
+                              </span>
+                            )}
+                          </div>
+                        </label>
+                      ))
+                    ) : (
+                      <p style={{ fontSize: '12px', color: '#9ca3af', fontStyle: 'italic', margin: 0, padding: '8px' }}>
+                        {getText('No projects available', 'कोणतेही प्रकल्प उपलब्ध नाहीत', 'कोणतेही प्रकल्प उपलब्ध नाहीत')}
+                      </p>
+                    )}
+                  </div>
+                  <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '6px', fontStyle: 'italic' }}>
+                    💡 {getText('Users can be assigned to multiple projects. Select a primary project above for role and center filtering.', 'वापरकर्त्यांना एकाधिक प्रकल्प नियुक्त केले जाऊ शकतात. भूमिका आणि केंद्र फिल्टरिंगसाठी वर एक प्राथमिक प्रकल्प निवडा.', 'वापरकर्त्यांना एकाधिक प्रकल्प नियुक्त केले जाऊ शकतात. भूमिका आणि केंद्र फिल्टरिंगसाठी वर एक प्राथमिक प्रकल्प निवडा.')}
+                  </p>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '16px' }}>

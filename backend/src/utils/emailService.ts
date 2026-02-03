@@ -3,6 +3,10 @@ import EmailConfig from '../models/EmailConfig';
 import EmailLog from '../models/EmailLog';
 import { Project } from '../models/Project';
 import { decrypt, isEncrypted } from './encryption';
+import { logOutgoingEmail } from './emailCommunicationLogger';
+import { logEmailError, ErrorContext, ErrorSeverity } from './errorLogger'; // Task 8.1
+import { testSmtpConnection, updateConnectionStatus, handleConnectionFailure, shouldRetryConnection } from './connectionMonitor'; // Task 8.2
+import mongoose from 'mongoose';
 
 // Helper function to log email attempts
 const logEmail = async (params: {
@@ -58,6 +62,30 @@ const getEmailTransporter = async (projectId?: string) => {
       return null;
     }
 
+    // Task 8.2: Check connection status before attempting to use
+    if (emailConfig.connectionStatus === 'disconnected' || emailConfig.connectionStatus === 'error') {
+      if (!shouldRetryConnection(emailConfig)) {
+        const minutesToRetry = emailConfig.nextRetryAt 
+          ? Math.ceil((emailConfig.nextRetryAt.getTime() - Date.now()) / 60000)
+          : 0;
+        console.log(`⏭️  Skipping email - SMTP disconnected. Retry in ${minutesToRetry} minutes`);
+        return null;
+      }
+
+      // Time to retry - test connection
+      console.log('🔄 Retry cooldown elapsed, testing connection...');
+      const testResult = await testSmtpConnection(emailConfig);
+      
+      if (!testResult.success) {
+        await handleConnectionFailure(emailConfig, testResult.error || 'Connection test failed', 'smtp');
+        return null;
+      }
+      
+      // Connection restored
+      await updateConnectionStatus(emailConfig._id.toString(), 'connected');
+      console.log('✅ Connection restored successfully');
+    }
+
     // Decrypt SMTP password if it's encrypted
     let smtpPassword = emailConfig.smtpPassword;
     if (isEncrypted(smtpPassword)) {
@@ -65,6 +93,19 @@ const getEmailTransporter = async (projectId?: string) => {
         smtpPassword = decrypt(smtpPassword);
       } catch (error) {
         console.error('Failed to decrypt SMTP password:', error);
+        return null;
+      }
+    }
+
+    // Test connection for untested configs
+    if (emailConfig.connectionStatus === 'untested') {
+      console.log('🔍 Testing new SMTP configuration...');
+      const testResult = await testSmtpConnection(emailConfig);
+      
+      if (testResult.success) {
+        await updateConnectionStatus(emailConfig._id.toString(), 'connected');
+      } else {
+        await handleConnectionFailure(emailConfig, testResult.error || 'Initial connection test failed', 'smtp');
         return null;
       }
     }
@@ -222,6 +263,16 @@ export const sendWelcomeEmail = async (email: string, name: string): Promise<boo
   }
 };
 
+/**
+ * Send ticket confirmation email with threading support (Task 5.5)
+ * 
+ * @param email - Recipient email address
+ * @param ticketNumber - Ticket number (e.g., TKT-1234)
+ * @param ticketTitle - Ticket subject/title
+ * @param projectId - Project ID for email config
+ * @param additionalData - Additional data and threading headers
+ * @returns Promise<boolean> - True if sent successfully
+ */
 export const sendTicketCreatedEmail = async (
   email: string,
   ticketNumber: string,
@@ -231,6 +282,9 @@ export const sendTicketCreatedEmail = async (
     studentName?: string;
     status?: string;
     priority?: string;
+    ticketId?: string | mongoose.Types.ObjectId;
+    originalMessageId?: string; // For threading - In-Reply-To header
+    references?: string[]; // For threading - References header
   }
 ): Promise<boolean> => {
   try {
@@ -248,22 +302,23 @@ export const sendTicketCreatedEmail = async (
     const priority = additionalData?.priority || 'Medium';
 
     // Default templates
-    const defaultSubject = `Ticket Created - {{ticketNumber}}`;
+    const defaultSubject = `Ticket Created: {{ticketTitle}} [#{{ticketNumber}}]`;
     const defaultBody = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2>Ticket Created Successfully</h2>
+        <h2 style="color: #2c3e50;">Ticket Created Successfully</h2>
         <p>Hello {{studentName}},</p>
         <p>Your support ticket has been created and our team will review it shortly.</p>
-        <div style="background-color: #f4f4f4; padding: 20px; margin: 20px 0;">
-          <p><strong>Ticket Number:</strong> {{ticketNumber}}</p>
-          <p><strong>Subject:</strong> {{ticketTitle}}</p>
-          <p><strong>Status:</strong> {{ticketStatus}}</p>
-          <p><strong>Priority:</strong> {{ticketPriority}}</p>
+        <div style="background-color: #f4f4f4; padding: 20px; margin: 20px 0; border-radius: 5px;">
+          <p style="margin: 8px 0;"><strong>Ticket Number:</strong> {{ticketNumber}}</p>
+          <p style="margin: 8px 0;"><strong>Subject:</strong> {{ticketTitle}}</p>
+          <p style="margin: 8px 0;"><strong>Status:</strong> {{ticketStatus}}</p>
+          <p style="margin: 8px 0;"><strong>Priority:</strong> {{ticketPriority}}</p>
         </div>
         <p>We will update you via email when there are any changes to your ticket.</p>
+        <p><strong>Important:</strong> Please keep the ticket number in your replies to maintain the conversation thread.</p>
         <p>Thank you for contacting us!</p>
-        <hr style="margin: 30px 0;">
-        <p style="color: #666; font-size: 12px;">This is an automated message, please do not reply.</p>
+        <hr style="margin: 30px 0; border: none; border-top: 1px solid #ddd;">
+        <p style="color: #666; font-size: 12px;">This is an automated message. You can reply to this email to add to your ticket.</p>
       </div>
     `;
 
@@ -294,6 +349,10 @@ export const sendTicketCreatedEmail = async (
         .join('');
     }
 
+    // Generate Message-ID for this confirmation email
+    const confirmationMessageId = `<ticket-${ticketNumber}-${Date.now()}@sac-helpdesk.com>`;
+    const fromEmail = emailConfig?.fromEmail || emailConfig?.smtpUser || 'support@sac-helpdesk.com';
+
     if (!transporter) {
       console.log('✅ Email sent successfully (simulated)');
       await logEmail({
@@ -303,8 +362,37 @@ export const sendTicketCreatedEmail = async (
         body,
         type: 'ticket_created',
         status: 'simulated',
-        metadata: { ticketNumber, ticketTitle, status, priority }
+        metadata: { 
+          ticketNumber, 
+          ticketTitle, 
+          status, 
+          priority,
+          messageId: confirmationMessageId,
+          inReplyTo: additionalData?.originalMessageId,
+        }
       });
+
+      // Log to TicketEmailCommunication for threading (Task 5.4)
+      if (additionalData?.ticketId) {
+        try {
+          await logOutgoingEmail(additionalData.ticketId, {
+            messageId: confirmationMessageId,
+            from: { address: fromEmail, name: emailConfig?.fromName || 'SAC Helpdesk' },
+            to: [{ address: email, name: studentName }],
+            subject,
+            body: body.replace(/<[^>]*>/g, ''), // Strip HTML for plain text
+            htmlBody: body,
+            inReplyTo: additionalData.originalMessageId,
+            references: additionalData.references || (additionalData.originalMessageId ? [additionalData.originalMessageId] : []),
+            date: new Date(),
+          });
+          console.log(`   ✅ Outgoing email logged to TicketEmailCommunication`);
+        } catch (logError) {
+          console.error('   ⚠️ Failed to log outgoing email:', logError);
+          // Don't fail the email send if logging fails
+        }
+      }
+
       return true;
     }
 
@@ -325,13 +413,28 @@ export const sendTicketCreatedEmail = async (
     }
 
     console.log(`📧 Sending email with subject: ${subject}`);
+    console.log(`   🔗 Message-ID: ${confirmationMessageId}`);
+    if (additionalData?.originalMessageId) {
+      console.log(`   🔗 In-Reply-To: ${additionalData.originalMessageId}`);
+    }
 
-    await transporter.sendMail({
-      from: `"${emailConfig?.fromName || 'SAC Helpdesk'}" <${emailConfig?.fromEmail || emailConfig?.smtpUser}>`,
+    // Prepare email options with threading headers
+    const mailOptions: any = {
+      from: `"${emailConfig?.fromName || 'SAC Helpdesk'}" <${fromEmail}>`,
       to: email,
       subject: subject,
       html: body,
-    });
+      messageId: confirmationMessageId, // Set Message-ID for this email
+    };
+
+    // Add threading headers if original email exists
+    if (additionalData?.originalMessageId) {
+      mailOptions.inReplyTo = additionalData.originalMessageId; // Link to original email
+      mailOptions.references = additionalData.references || [additionalData.originalMessageId]; // Build reference chain
+      console.log(`   ✅ Threading headers added (reply to original email)`);
+    }
+
+    await transporter.sendMail(mailOptions);
 
     console.log('✅ Ticket creation email sent successfully via SMTP');
     await logEmail({
@@ -342,9 +445,38 @@ export const sendTicketCreatedEmail = async (
       type: 'ticket_created',
       status: 'sent',
       smtpHost: emailConfig?.smtpHost,
-      fromEmail: emailConfig?.fromEmail || emailConfig?.smtpUser,
-      metadata: { ticketNumber, ticketTitle, status, priority }
+      fromEmail,
+      metadata: { 
+        ticketNumber, 
+        ticketTitle, 
+        status, 
+        priority,
+        messageId: confirmationMessageId,
+        inReplyTo: additionalData?.originalMessageId,
+      }
     });
+
+    // Log to TicketEmailCommunication for threading (Task 5.4)
+    if (additionalData?.ticketId) {
+      try {
+        await logOutgoingEmail(additionalData.ticketId, {
+          messageId: confirmationMessageId,
+          from: { address: fromEmail, name: emailConfig?.fromName || 'SAC Helpdesk' },
+          to: [{ address: email, name: studentName }],
+          subject,
+          body: body.replace(/<[^>]*>/g, ''), // Strip HTML for plain text
+          htmlBody: body,
+          inReplyTo: additionalData.originalMessageId,
+          references: additionalData.references || (additionalData.originalMessageId ? [additionalData.originalMessageId] : []),
+          date: new Date(),
+        });
+        console.log(`   ✅ Outgoing email logged to TicketEmailCommunication`);
+      } catch (logError) {
+        console.error('   ⚠️ Failed to log outgoing email:', logError);
+        // Don't fail the email send if logging fails
+      }
+    }
+
     return true;
   } catch (error) {
     console.error('❌ [EMAIL SERVICE] Failed to send ticket creation email:', error);
@@ -1051,6 +1183,135 @@ export const sendTicketCommentAddedEmail = async (
 };
 
 /**
+ * Send agent notification about new email reply on ticket (Task 5.6)
+ * 
+ * @param agentEmail - Agent's email address
+ * @param ticketNumber - Ticket number
+ * @param ticketTitle - Ticket subject
+ * @param replyPreview - Preview of the reply (first 200 chars)
+ * @param customerName - Name of customer who replied
+ * @param projectId - Project ID for email config
+ * @returns Promise<boolean> - True if sent successfully
+ */
+export const sendAgentNewReplyNotification = async (
+  agentEmail: string,
+  ticketNumber: string,
+  ticketTitle: string,
+  replyPreview: string,
+  customerName: string,
+  projectId?: string
+): Promise<boolean> => {
+  try {
+    console.log(`📧 [EMAIL SERVICE] Sending new reply notification to agent ${agentEmail}`);
+
+    const emailConfig = await EmailConfig.findOne(projectId ? { projectId } : {});
+    const transporter = await getEmailTransporter(projectId);
+    const projectName = emailConfig?.fromName || 'SAC Helpdesk';
+
+    // Truncate reply preview if too long
+    const truncatedReply = replyPreview.length > 200 
+      ? replyPreview.substring(0, 200) + '...' 
+      : replyPreview;
+
+    const defaultSubject = `New Reply on Ticket {{ticketNumber}}`;
+    const defaultBody = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #2c3e50;">New Customer Reply</h2>
+        <p>A customer has replied to a ticket assigned to you.</p>
+        <div style="background-color: #e3f2fd; padding: 20px; margin: 20px 0; border-left: 4px solid #2196f3; border-radius: 5px;">
+          <p style="margin: 8px 0;"><strong>Ticket Number:</strong> {{ticketNumber}}</p>
+          <p style="margin: 8px 0;"><strong>Subject:</strong> {{ticketTitle}}</p>
+          <p style="margin: 8px 0;"><strong>From:</strong> {{customerName}}</p>
+        </div>
+        <div style="background-color: #f9f9f9; padding: 15px; margin: 20px 0; border-radius: 5px;">
+          <p style="margin: 0 0 10px 0; color: #666; font-size: 12px; text-transform: uppercase;">Reply Preview:</p>
+          <p style="margin: 0; color: #333; font-style: italic;">"{{replyPreview}}"</p>
+        </div>
+        <p>Please review and respond to this reply at your earliest convenience.</p>
+        <hr style="margin: 30px 0; border: none; border-top: 1px solid #ddd;">
+        <p style="color: #666; font-size: 12px;">This is an automated notification from {{projectName}}.</p>
+      </div>
+    `;
+
+    const trigger = emailConfig?.triggers?.ticketReplied || emailConfig?.triggers?.ticketCommentAdded;
+
+    let subject = (trigger?.subject || defaultSubject)
+      .replace(/\{\{ticketNumber\}\}/g, ticketNumber)
+      .replace(/\{\{ticketTitle\}\}/g, ticketTitle);
+
+    let body = (trigger?.body || defaultBody)
+      .replace(/\{\{ticketNumber\}\}/g, ticketNumber)
+      .replace(/\{\{ticketTitle\}\}/g, ticketTitle)
+      .replace(/\{\{ticketSubject\}\}/g, ticketTitle)
+      .replace(/\{\{customerName\}\}/g, customerName)
+      .replace(/\{\{replyPreview\}\}/g, truncatedReply)
+      .replace(/\{\{projectName\}\}/g, projectName);
+
+    if (!transporter) {
+      console.log('✅ Agent notification sent (simulated)');
+      await logEmail({
+        projectId,
+        recipient: agentEmail,
+        subject,
+        body,
+        type: 'other',
+        status: 'simulated',
+        metadata: { ticketNumber, ticketTitle, customerName, replyPreview: truncatedReply }
+      });
+      return true;
+    }
+
+    if (!trigger?.enabled) {
+      console.log('⚠️  Agent notification trigger is disabled');
+      await logEmail({
+        projectId,
+        recipient: agentEmail,
+        subject,
+        body,
+        type: 'other',
+        status: 'blocked',
+        error: 'Trigger disabled',
+        metadata: { ticketNumber, ticketTitle, customerName }
+      });
+      return false;
+    }
+
+    await transporter.sendMail({
+      from: `"${projectName}" <${emailConfig?.fromEmail || emailConfig?.smtpUser}>`,
+      to: agentEmail,
+      subject,
+      html: body,
+    });
+
+    console.log('✅ Agent notification sent successfully');
+    await logEmail({
+      projectId,
+      recipient: agentEmail,
+      subject,
+      body,
+      type: 'other',
+      status: 'sent',
+      smtpHost: emailConfig?.smtpHost,
+      fromEmail: emailConfig?.fromEmail || emailConfig?.smtpUser,
+      metadata: { ticketNumber, ticketTitle, customerName, replyPreview: truncatedReply }
+    });
+    return true;
+  } catch (error) {
+    console.error('❌ [EMAIL SERVICE] Failed to send agent notification:', error);
+    await logEmail({
+      projectId,
+      recipient: agentEmail,
+      subject: `New Reply on Ticket ${ticketNumber}`,
+      type: 'other',
+      status: 'failed',
+      error: error instanceof Error ? error.message : 'Unknown error',
+      metadata: { ticketNumber, ticketTitle, customerName }
+    });
+    return false;
+  }
+};
+
+/**
  * Send ticket replied email
  */
 export const sendTicketRepliedEmail = async (
@@ -1216,5 +1477,204 @@ export const sendTicketReassignedEmail = async (
   } catch (error) {
     console.error('❌ Failed to send ticket reassigned email:', error);
     return false;
+  }
+};
+
+/**
+ * Send ticket reply email with threading support (Task 7.1, 7.3)
+ * 
+ * @param params - Email parameters
+ * @returns Promise<{ success: boolean; messageId?: string; error?: string }>
+ */
+export const sendTicketReplyEmail = async (params: {
+  ticketId: string;
+  ticketNumber: string;
+  ticketSubject?: string;
+  recipientEmail: string;
+  recipientName?: string;
+  replyContent: string;
+  replyContentHtml?: string;
+  agentName: string;
+  agentEmail: string;
+  originalMessageId?: string; // For threading - In-Reply-To header
+  referencesChain?: string[]; // Task 7.3: Full chain of previous Message-IDs
+  projectId?: string;
+}): Promise<{ success: boolean; messageId?: string; fromEmail?: string; fromName?: string; error?: string }> => {
+  try {
+    console.log(`📧 [EMAIL SERVICE] Sending ticket reply to ${params.recipientEmail}`);
+    console.log(`🎫 Ticket Number: ${params.ticketNumber}`);
+    console.log(`👤 Agent: ${params.agentName} (${params.agentEmail})`);
+    console.log(`📦 Project ID: ${params.projectId || 'not provided'}`);
+
+    // Try to find email config by projectId, fallback to any enabled config
+    let emailConfig = params.projectId 
+      ? await EmailConfig.findOne({ projectId: params.projectId, enabled: true })
+      : null;
+    
+    // Fallback: If no config for specific project, use any enabled config
+    if (!emailConfig) {
+      emailConfig = await EmailConfig.findOne({ enabled: true });
+      if (emailConfig) {
+        console.log(`   ℹ️ Using fallback email config (no config for projectId: ${params.projectId})`);
+      }
+    }
+    
+    const transporter = await getEmailTransporter(params.projectId);
+
+    // Prepare subject with ticket subject for threading (fallback to ticket number)
+    const subject = `Re: ${params.ticketSubject || params.ticketNumber}`;
+
+    // Build HTML body with agent reply
+    const htmlBody = params.replyContentHtml || `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h3 style="color: #2c3e50;">Reply from ${params.agentName}</h3>
+        <div style="background-color: #f9f9f9; padding: 20px; margin: 20px 0; border-left: 4px solid #3498db; border-radius: 3px;">
+          ${params.replyContent.replace(/\n/g, '<br>')}
+        </div>
+        <hr style="margin: 30px 0; border: none; border-top: 1px solid #ddd;">
+        <p style="color: #666; font-size: 12px;">
+          <strong>Ticket Number:</strong> ${params.ticketNumber}<br>
+          This is a reply from our support team. You can respond to this email to continue the conversation.
+        </p>
+      </div>
+    `;
+
+    // Generate Message-ID for this reply
+    const replyMessageId = `<ticket-${params.ticketNumber}-reply-${Date.now()}@sac-helpdesk.com>`;
+    const fromEmail = emailConfig?.fromEmail || emailConfig?.smtpUser || params.agentEmail || 'support@sac-helpdesk.com';
+    const fromName = emailConfig?.fromName || params.agentName || 'SAC Helpdesk';
+
+    console.log(`📧 [EMAIL SERVICE] From email resolved to: ${fromEmail} (name: ${fromName})`);
+    console.log(`   EmailConfig found: ${!!emailConfig}`);
+    if (emailConfig) {
+      console.log(`   EmailConfig._id: ${emailConfig._id}`);
+      console.log(`   EmailConfig.fromEmail: ${emailConfig.fromEmail}`);
+      console.log(`   EmailConfig.smtpUser: ${emailConfig.smtpUser}`);
+      console.log(`   EmailConfig.enabled: ${emailConfig.enabled}`);
+    }
+    console.log(`   Agent fallback email: ${params.agentEmail}`);
+
+    if (!transporter) {
+      console.log('✅ Email reply simulated (no transporter configured)');
+      await logEmail({
+        projectId: params.projectId,
+        recipient: params.recipientEmail,
+        subject,
+        body: params.replyContent,
+        type: 'ticket_update',
+        status: 'simulated',
+        metadata: { 
+          ticketNumber: params.ticketNumber,
+          agentName: params.agentName,
+          messageId: replyMessageId,
+          inReplyTo: params.originalMessageId,
+        }
+      });
+      return { success: true, messageId: replyMessageId, fromEmail, fromName };
+    }
+
+    console.log(`📧 Sending reply with subject: ${subject}`);
+    console.log(`   🔗 Message-ID: ${replyMessageId}`);
+    if (params.originalMessageId) {
+      console.log(`   🔗 In-Reply-To: ${params.originalMessageId}`);
+    }
+    if (params.referencesChain && params.referencesChain.length > 0) {
+      console.log(`   🔗 References: ${params.referencesChain.length} previous messages`);
+    }
+
+    // Prepare email options with threading headers
+    const mailOptions: any = {
+      from: `"${fromName}" <${fromEmail}>`,
+      to: params.recipientEmail,
+      subject: subject,
+      text: params.replyContent, // Plain text version
+      html: htmlBody,
+      messageId: replyMessageId, // Set Message-ID for this email
+    };
+
+    // Task 7.3: Add threading headers to maintain conversation thread
+    if (params.originalMessageId) {
+      mailOptions.inReplyTo = params.originalMessageId; // Link to most recent email
+      
+      // Build complete References chain: all previous Message-IDs + new reply
+      if (params.referencesChain && params.referencesChain.length > 0) {
+        // Use the full chain of previous messages
+        mailOptions.references = params.referencesChain;
+      } else {
+        // Fallback: just use the original message ID
+        mailOptions.references = [params.originalMessageId];
+      }
+      
+      console.log(`   ✅ Threading headers added (In-Reply-To: last message, References: ${mailOptions.references.length} messages)`);
+    }
+
+    await transporter.sendMail(mailOptions);
+
+    console.log('✅ Ticket reply email sent successfully via SMTP');
+    await logEmail({
+      projectId: params.projectId,
+      recipient: params.recipientEmail,
+      subject,
+      body: params.replyContent,
+      type: 'ticket_update',
+      status: 'sent',
+      smtpHost: emailConfig?.smtpHost,
+      fromEmail,
+      metadata: { 
+        ticketNumber: params.ticketNumber,
+        agentName: params.agentName,
+        messageId: replyMessageId,
+        inReplyTo: params.originalMessageId,
+      }
+    });
+
+    return { success: true, messageId: replyMessageId, fromEmail, fromName };
+  } catch (error) {
+    console.error('❌ [EMAIL SERVICE] Failed to send ticket reply email:', error);
+    console.error('Error details:', error);
+
+    // Task 8.2: Handle connection failures
+    if (emailConfig && (error instanceof Error && 
+        (error.message.includes('ECONNREFUSED') || 
+         error.message.includes('ETIMEDOUT') ||
+         error.message.includes('Authentication failed') ||
+         error.message.includes('Invalid login')))) {
+      console.error('🚨 SMTP connection failure detected');
+      const { handleConnectionFailure } = await import('./connectionMonitor');
+      await handleConnectionFailure(emailConfig, error, 'smtp');
+    }
+
+    // Task 8.1: Log error with detailed context
+    await logEmailError(
+      error as Error,
+      ErrorContext.EMAIL_SENDING,
+      {
+        ticketNumber: params.ticketNumber,
+        ticketId: params.ticketId,
+        recipientEmail: params.recipientEmail,
+        agentName: params.agentName,
+        agentEmail: params.agentEmail,
+        errorType: 'reply_email_send_failure'
+      }
+    );
+
+    await logEmail({
+      projectId: params.projectId,
+      recipient: params.recipientEmail,
+      subject: `Re: ${params.ticketNumber}`,
+      body: params.replyContent,
+      type: 'ticket_update',
+      status: 'failed',
+      error: error instanceof Error ? error.message : 'Unknown error',
+      metadata: { 
+        ticketNumber: params.ticketNumber,
+        agentName: params.agentName,
+      }
+    });
+
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Unknown error sending email' 
+    };
   }
 };

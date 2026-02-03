@@ -4,7 +4,7 @@ import DashboardLayout from '../components/DashboardLayout';
 import ModuleHeader from '../components/ModuleHeader';
 import { API_CONFIG } from '../config/constants';
 import { MdRefresh } from 'react-icons/md';
-import * as XLSX from 'xlsx';
+// XLSX is now dynamically imported in exportToExcel() to reduce bundle size (~500KB)
 
 interface Employee {
   _id: string;
@@ -49,9 +49,12 @@ const EmployeeReport: React.FC<EmployeeReportProps> = ({ wrapWithLayout = true }
     fetchEmployees();
   }, []);
 
-  const exportToExcel = () => {
+  const exportToExcel = async () => {
     setExporting(true);
     try {
+      // Dynamic import - XLSX (~500KB) only loads when user clicks export
+      const XLSX = await import('xlsx');
+      
       const exportData = employees.map(emp => ({
         'Employee ID': emp.employeeCode,
         'Name': emp.fullName,

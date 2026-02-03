@@ -228,13 +228,30 @@ const Login: React.FC = () => {
       console.log('🔐 Permissions from response:', result.data?.user?.permissions);
       
       if (result.success) {
+        // Clear any stale project context - Super Admin login should not be in project portal mode
+        localStorage.removeItem('projectContext');
+        localStorage.removeItem('projectBranding');
+        localStorage.removeItem('projectId');
+        localStorage.removeItem('selectedProject');
+        localStorage.removeItem('recentProjects');
+        localStorage.removeItem('favoriteProjects');
+        
         // Store auth data
         const token = result.data.token;
         localStorage.setItem('authToken', token);
         localStorage.setItem('userId', result.data.user.id);
         localStorage.setItem('userEmail', result.data.user.email);
         localStorage.setItem('user', JSON.stringify(result.data.user));
-        localStorage.setItem('userRole', result.data.user.role?.code || result.data.user.role);
+        
+        const roleCode = result.data.user.role?.code || result.data.user.role;
+        localStorage.setItem('userRole', roleCode);
+        
+        // For Super Admin, set unified view mode by default (no project filtering)
+        const isSuperAdmin = roleCode === 'SUPER_ADMIN' || roleCode === 'Super Admin';
+        if (isSuperAdmin) {
+          localStorage.setItem('viewMode', 'unified');
+          console.log('👑 Super Admin login - setting unified view mode');
+        }
         
         // Store user permissions - ALWAYS extract from token (primary source)
         let permissions: string[] = [];
@@ -284,13 +301,30 @@ const Login: React.FC = () => {
       });
 
       if (result.success) {
+        // Clear any stale project context - Super Admin login should not be in project portal mode
+        localStorage.removeItem('projectContext');
+        localStorage.removeItem('projectBranding');
+        localStorage.removeItem('projectId');
+        localStorage.removeItem('selectedProject');
+        localStorage.removeItem('recentProjects');
+        localStorage.removeItem('favoriteProjects');
+        
         // Store auth data
         const token = result.data.token;
         localStorage.setItem('authToken', token);
         localStorage.setItem('userId', result.data.user.id);
         localStorage.setItem('userEmail', result.data.user.email);
         localStorage.setItem('user', JSON.stringify(result.data.user));
-        localStorage.setItem('userRole', result.data.user.role?.code || result.data.user.role);
+        
+        const roleCode = result.data.user.role?.code || result.data.user.role;
+        localStorage.setItem('userRole', roleCode);
+        
+        // For Super Admin, set unified view mode by default (no project filtering)
+        const isSuperAdmin = roleCode === 'SUPER_ADMIN' || roleCode === 'Super Admin';
+        if (isSuperAdmin) {
+          localStorage.setItem('viewMode', 'unified');
+          console.log('👑 Super Admin login (2FA) - setting unified view mode');
+        }
         
         // Store user permissions
         let permissions: string[] = [];

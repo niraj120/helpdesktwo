@@ -209,6 +209,9 @@ const CenterAssetMappingAccordion: React.FC = () => {
       if (data.data && Array.isArray(data.data)) {
         const newSelections: { [centerId: string]: CenterAssetSelection } = {};
         
+        // Preserve existing user input values first
+        const existingSelections = { ...centerSelections };
+        
         // Initialize all centers with empty selections
         centers.forEach((center: Center) => {
           newSelections[center._id] = {
@@ -230,20 +233,23 @@ const CenterAssetMappingAccordion: React.FC = () => {
               if (!newSelections[center._id].selectedAssets.includes(assetId)) {
                 newSelections[center._id].selectedAssets.push(assetId);
               }
-              newSelections[center._id].assetQuantities[assetId] = mapping.totalAssigned;
               
-              // Load audit data from database (only set once per center, don't overwrite)
-              if (!newSelections[center._id].lastAuditDate && mapping.lastAuditDate) {
-                newSelections[center._id].lastAuditDate = mapping.lastAuditDate;
+              // Use existing user-modified value if available, otherwise use DB value
+              const existingQty = existingSelections[center._id]?.assetQuantities?.[assetId];
+              newSelections[center._id].assetQuantities[assetId] = existingQty !== undefined ? existingQty : mapping.totalAssigned;
+              
+              // Load audit data from database (prefer existing values to avoid reset)
+              if (!newSelections[center._id].lastAuditDate) {
+                newSelections[center._id].lastAuditDate = existingSelections[center._id]?.lastAuditDate || mapping.lastAuditDate;
               }
-              if (!newSelections[center._id].auditFrequencyMonths && mapping.auditFrequencyMonths) {
-                newSelections[center._id].auditFrequencyMonths = mapping.auditFrequencyMonths;
+              if (!newSelections[center._id].auditFrequencyMonths) {
+                newSelections[center._id].auditFrequencyMonths = existingSelections[center._id]?.auditFrequencyMonths || mapping.auditFrequencyMonths;
               }
-              if (!newSelections[center._id].auditStartDate && mapping.lastAuditDate) {
-                newSelections[center._id].auditStartDate = mapping.lastAuditDate;
+              if (!newSelections[center._id].auditStartDate) {
+                newSelections[center._id].auditStartDate = existingSelections[center._id]?.auditStartDate || mapping.lastAuditDate;
               }
-              if (!newSelections[center._id].nextAuditDate && mapping.nextAuditDate) {
-                newSelections[center._id].nextAuditDate = mapping.nextAuditDate;
+              if (!newSelections[center._id].nextAuditDate) {
+                newSelections[center._id].nextAuditDate = existingSelections[center._id]?.nextAuditDate || mapping.nextAuditDate;
               }
             }
           });

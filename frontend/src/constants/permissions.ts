@@ -81,7 +81,7 @@ export const PERMISSIONS = {
   TICKET_CONFIG_MANAGE_TYPES: 'TICKET_CONFIG_MANAGE_TYPES',
   TICKET_CONFIG_MANAGE_TEMPLATES: 'TICKET_CONFIG_MANAGE_TEMPLATES',
 
-  // Knowledge Base
+  // Knowledge Base - Legacy permissions (old system)
   KB_VIEW: 'KB_VIEW',
   KB_CREATE: 'KB_CREATE',
   KB_EDIT: 'KB_EDIT',
@@ -91,6 +91,13 @@ export const PERMISSIONS = {
   KB_MANAGE_CATEGORIES: 'KB_MANAGE_CATEGORIES',
   KB_APPROVE: 'KB_APPROVE',
   KB_EXPORT: 'KB_EXPORT',
+  
+  // Knowledge Base - New Modular System
+  KB_MANAGE: 'KB_MANAGE', // Full KB system admin access
+  KB_MANAGE_LEVELS: 'KB_MANAGE_LEVELS', // Manage KB levels/categories
+  KB_MANAGE_ARTICLES: 'KB_MANAGE_ARTICLES', // Manage KB articles
+  KB_MANAGE_TABLES: 'KB_MANAGE_TABLES', // Manage KB tables
+  KB_VIEW_CONTENT: 'KB_VIEW_CONTENT', // View KB content only
 
   // FAQ
   FAQ_VIEW: 'FAQ_VIEW',

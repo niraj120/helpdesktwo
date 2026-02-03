@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import DashboardLayout from '../components/DashboardLayout';
 import ModuleHeader from '../components/ModuleHeader';
 import TicketListReport from './TicketListReport';
 import AssetReport from './AssetReport';
@@ -11,6 +12,10 @@ type ReportType = 'query' | 'asset' | 'employee';
 
 const ReportsPage: React.FC = () => {
   const { hasPermission } = usePermissions();
+  
+  // Check if user is Super Admin (always has access to all reports)
+  const userRole = localStorage.getItem('userRole');
+  const isSuperAdmin = userRole === 'Super Admin' || userRole === 'SUPER_ADMIN';
   
   // Filter report options based on user permissions
   const reportOptions = useMemo(() => {
@@ -35,8 +40,18 @@ const ReportsPage: React.FC = () => {
       },
     ];
     
-    return allOptions.filter(option => hasPermission(option.permission));
-  }, [hasPermission]);
+    // Super Admin has access to all reports
+    if (isSuperAdmin) {
+      console.log('📊 Super Admin detected - showing all reports');
+      return allOptions;
+    }
+    
+    return allOptions.filter(option => {
+      const access = hasPermission(option.permission);
+      console.log(`📊 Report permission check: ${option.label} = ${access}`);
+      return access;
+    });
+  }, [hasPermission, isSuperAdmin]);
 
   const [selectedReport, setSelectedReport] = useState<ReportType | null>(null);
 
@@ -50,32 +65,35 @@ const ReportsPage: React.FC = () => {
   // If no reports are available, show message
   if (reportOptions.length === 0) {
     return (
-      <div style={{ padding: '24px' }}>
-        <ModuleHeader
-          title="Reports"
-          subtitle="View and export various reports"
-        />
-        <div style={{ 
-          padding: '48px', 
-          textAlign: 'center', 
-          background: '#f9fafb', 
-          borderRadius: '8px',
-          marginTop: '24px'
-        }}>
-          <p style={{ fontSize: '16px', color: '#6b7280' }}>
-            You don't have permission to view any reports.
-          </p>
+      <DashboardLayout>
+        <div style={{ padding: '24px' }}>
+          <ModuleHeader
+            title="Reports"
+            subtitle="View and export various reports"
+          />
+          <div style={{ 
+            padding: '48px', 
+            textAlign: 'center', 
+            background: '#f9fafb', 
+            borderRadius: '8px',
+            marginTop: '24px'
+          }}>
+            <p style={{ fontSize: '16px', color: '#6b7280' }}>
+              You don't have permission to view any reports.
+            </p>
+          </div>
         </div>
-      </div>
+      </DashboardLayout>
     );
   }
 
   return (
-    <div style={{ padding: '24px' }}>
-        <ModuleHeader
-          title="Reports"
-          subtitle="View and export various reports"
-        />
+    <DashboardLayout>
+      <div style={{ padding: '24px' }}>
+          <ModuleHeader
+            title="Reports"
+            subtitle="View and export various reports"
+          />
 
         {/* Report Type Selector */}
         <div style={{ marginBottom: '24px' }}>
@@ -145,7 +163,8 @@ const ReportsPage: React.FC = () => {
           {selectedReport === 'asset' && <AssetReport wrapWithLayout={false} />}
           {selectedReport === 'employee' && <EmployeeReport wrapWithLayout={false} />}
         </div>
-    </div>
+      </div>
+    </DashboardLayout>
   );
 };
 

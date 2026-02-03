@@ -85,7 +85,7 @@ const AgentDashboard: React.FC<AgentDashboardProps> = ({ projectId }) => {
       icon: BookOpenIcon, 
       key: 'kb',
       description: 'Access help articles and documentation',
-      permission: PERMISSIONS.KB_VIEW
+      permission: [PERMISSIONS.KB_VIEW_CONTENT, PERMISSIONS.KB_MANAGE, PERMISSIONS.KB_MANAGE_LEVELS, PERMISSIONS.KB_MANAGE_ARTICLES, PERMISSIONS.KB_MANAGE_TABLES]
     },
     { 
       name: t('myProfile'), 

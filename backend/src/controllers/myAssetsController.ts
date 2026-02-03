@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import { CenterAssetMapping } from '../models/CenterAssetMapping';
 import { AssetAuditLog } from '../models/AssetAuditLog';
 import { User } from '../models/User';
@@ -21,6 +22,9 @@ export const getMyAssets = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
     
+    console.log('=== GET MY ASSETS ===');
+    console.log('User ID:', userId);
+    
     if (!userId) {
       return res.status(401).json({
         success: false,
@@ -32,21 +36,31 @@ export const getMyAssets = async (req: AuthRequest, res: Response) => {
     const user = await User.findById(userId).populate('centers');
     
     if (!user) {
+      console.log('❌ User not found');
       return res.status(404).json({
         success: false,
         message: 'User not found',
       });
     }
 
-    // Get user's center IDs
-    let centerIds: string[] = [];
+    console.log('✅ User found:', user.email);
+    console.log('Raw centers:', user.centers);
+
+    // Get user's center IDs and convert to ObjectIds for MongoDB query
+    let centerIds: mongoose.Types.ObjectId[] = [];
     if (Array.isArray(user.centers)) {
-      centerIds = user.centers.map((c: any) => c._id.toString());
+      // Filter out null/undefined centers
+      centerIds = user.centers
+        .filter((c: any) => c && c._id)
+        .map((c: any) => new mongoose.Types.ObjectId(c._id));
     } else if (user.centers) {
-      centerIds = [(user.centers as any)._id.toString()];
+      centerIds = [new mongoose.Types.ObjectId((user.centers as any)._id)];
     }
 
+    console.log('Center IDs:', centerIds);
+
     if (centerIds.length === 0) {
+      console.log('⚠️ No centers assigned');
       return res.status(200).json({
         success: true,
         data: [],
@@ -56,16 +70,40 @@ export const getMyAssets = async (req: AuthRequest, res: Response) => {
 
     // Get centers to find their project IDs
     const centers = await Center.find({ _id: { $in: centerIds } });
-    const projectIds = [...new Set(centers.map(c => c.projectId.toString()))];
+    const projectIds = [...new Set(
+      centers
+        .filter(c => c.projectId) // Filter out centers without projectId
+        .map(c => new mongoose.Types.ObjectId(c.projectId))
+    )];
 
-    // Fetch asset mappings for the user's project(s)
-    const mappings = await CenterAssetMapping.find({
-      projectId: { $in: projectIds },
-    })
-      .populate({
-        path: 'projectId',
-        select: 'name projectName',
-      })
+    console.log('Centers found:', centers.length);
+    console.log('Center details:', centers.map(c => ({ 
+      _id: c._id.toString(), 
+      centerName: c.centerName, 
+      projectId: c.projectId?.toString() 
+    })));
+    console.log('Project IDs extracted:', projectIds.map(id => id.toString()));
+
+    if (projectIds.length === 0) {
+      console.log('⚠️ No valid project IDs found from user centers');
+      return res.status(200).json({
+        success: true,
+        data: [],
+        message: 'No projects found for user centers',
+      });
+    }
+
+    // Fetch asset mappings - the system stores mappings at PROJECT level
+    // The projectId field in CenterAssetMapping contains the actual PROJECT ID
+    const query = {
+      projectId: { $in: projectIds }
+    };
+    
+    console.log('Query for asset mappings:', JSON.stringify(query, null, 2));
+    console.log('Looking for mappings with projectIds:', projectIds.map(id => id.toString()));
+    
+    // Don't populate projectId - in old structure it contains center ID which will fail to populate from Project collection
+    const mappings = await CenterAssetMapping.find(query)
       .populate({
         path: 'assetId',
         select: 'name category unit predefinedCount icon',
@@ -80,60 +118,91 @@ export const getMyAssets = async (req: AuthRequest, res: Response) => {
       })
       .sort({ createdAt: -1 });
 
-    // Map centers to their names for response
+    console.log('📊 Mappings found:', mappings.length);
+
+    if (mappings.length === 0) {
+      console.log('⚠️ No asset mappings found for user projects');
+      return res.status(200).json({
+        success: true,
+        data: [],
+        message: 'No assets assigned to your centers yet',
+      });
+    }
+
+    // For project-level mappings, all centers in the same project should see the same assets
+    // We'll replicate mappings for each center in the project
+    const formattedMappings: any[] = [];
+
+    // Map center IDs to their names
     const centerMap = centers.reduce((acc, center) => {
-      acc[center.projectId.toString()] = center.centerName;
+      acc[center._id.toString()] = center.centerName;
       return acc;
     }, {} as Record<string, string>);
 
-    // Format response with center names
-    const formattedMappings = mappings.map(mapping => {
-      const projectId = typeof mapping.projectId === 'object' 
-        ? (mapping.projectId as any)._id.toString() 
-        : String(mapping.projectId);
+    console.log('Center map for user:', centerMap);
+
+    // For each mapping (which is at project level), create entries for ALL user's centers in that project
+    mappings.forEach(mapping => {
+      // Find which of user's centers belong to this mapping's project
+      const matchingCenters = centers.filter(c => c.projectId?.toString() === String(mapping.projectId));
       
-      // Check if audit date has arrived and reset auditSubmitted
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      let canEdit = false;
-      
-      // Check if we have audit configuration
-      if (mapping.lastAuditDate && mapping.auditFrequencyMonths) {
-        const lastAudit = new Date(mapping.lastAuditDate);
-        lastAudit.setHours(0, 0, 0, 0);
+      console.log(`Mapping ${mapping._id} (project: ${mapping.projectId}) matches ${matchingCenters.length} user centers`);
+
+      // Create a formatted entry for EACH matching center
+      matchingCenters.forEach(center => {
+        // Check if audit date has arrived and reset auditSubmitted
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
         
-        const nextAudit = mapping.nextAuditDate ? new Date(mapping.nextAuditDate) : null;
-        if (nextAudit) {
-          nextAudit.setHours(0, 0, 0, 0);
+        let canEdit = false;
+        
+        // Check if we have audit configuration
+        if (mapping.lastAuditDate && mapping.auditFrequencyMonths) {
+          const lastAudit = new Date(mapping.lastAuditDate);
+          lastAudit.setHours(0, 0, 0, 0);
+          
+          const nextAudit = mapping.nextAuditDate ? new Date(mapping.nextAuditDate) : null;
+          if (nextAudit) {
+            nextAudit.setHours(0, 0, 0, 0);
+          }
+          
+          // Allow editing if:
+          // 1. Today is the start date (lastAuditDate) - for initial audit
+          // 2. Today >= nextAuditDate - for subsequent audits
+          const isStartDate = today.getTime() === lastAudit.getTime();
+          const isAuditDue = nextAudit && today >= nextAudit;
+          
+          // If audit date has arrived and audit was previously submitted, reset it
+          if (isAuditDue && mapping.auditSubmitted) {
+            mapping.auditSubmitted = false;
+            mapping.save(); // Reset for next audit cycle
+          }
+          
+          // Can edit if it's the start date OR audit is due, AND not yet submitted
+          canEdit = (isStartDate || !!isAuditDue) && !mapping.auditSubmitted;
         }
         
-        // Allow editing if:
-        // 1. Today is the start date (lastAuditDate) - for initial audit
-        // 2. Today >= nextAuditDate - for subsequent audits
-        const isStartDate = today.getTime() === lastAudit.getTime();
-        const isAuditDue = nextAudit && today >= nextAudit;
-        
-        // If audit date has arrived and audit was previously submitted, reset it
-        if (isAuditDue && mapping.auditSubmitted) {
-          mapping.auditSubmitted = false;
-          mapping.save(); // Reset for next audit cycle
-        }
-        
-        // Can edit if it's the start date OR audit is due, AND not yet submitted
-        canEdit = (isStartDate || !!isAuditDue) && !mapping.auditSubmitted;
-      }
-      
-      return {
-        ...mapping.toObject(),
-        centerName: centerMap[projectId] || 'Unknown Center',
-        canEdit, // Add this flag for frontend
-      };
+        formattedMappings.push({
+          ...mapping.toObject(),
+          centerName: center.centerName,
+          centerId: center._id,
+          canEdit,
+        });
+      });
     });
+
+    // TEMPORARILY DISABLED: Filter out orphaned assets with Unknown Center (deleted center/project references)
+    // const validMappings = formattedMappings.filter(m => m.centerName !== 'Unknown Center');
+
+    console.log('📊 Total mappings:', formattedMappings.length);
+    // console.log('✅ Valid mappings (excluding orphaned):', validMappings.length);
+    // if (formattedMappings.length !== validMappings.length) {
+    //   console.log('⚠️  Filtered out', formattedMappings.length - validMappings.length, 'orphaned assets');
+    // }
 
     return res.status(200).json({
       success: true,
-      data: formattedMappings,
+      data: formattedMappings, // Return all for now to debug
     });
   } catch (error: any) {
     console.error('Error fetching my assets:', error);

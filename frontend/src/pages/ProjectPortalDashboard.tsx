@@ -9,15 +9,20 @@ import { useBranding } from '../contexts/BrandingContext';
 // Import existing super admin components
 import ActivityLogs from '../components/ActivityLogs';
 import AccessLogs from '../components/AccessLogs';
-import KnowledgeBaseViewer from '../components/KnowledgeBaseViewer';
 import FAQViewer from '../components/FAQViewer';
+
+// Import NEW KB Management Pages
+import KBLevelManagementPage from './KBLevelManagementPage';
+import KBArticleManagementPage from './KBArticleManagementPage';
+import KBTableManagementPage from './KBTableManagementPage';
+import KBViewerPage from './KBViewerPage';
 import AgentOfflineModule from './AgentOfflineModule';
 import AgentStudentWorkflow from './AgentStudentWorkflow';
 import UserManagement from '../components/UserManagement';
 import RedirectToFirstRoute from '../components/RedirectToFirstRoute';
 import EmailConfigPage from './EmailConfigPage';
 import ProjectDashboard from './ProjectDashboard';
-import MyAssetsStatic from '../components/MyAssetsStatic';
+import MyAssets from '../components/MyAssets';
 import TicketListReport from './TicketListReport';
 import AssetReport from './AssetReport';
 import ManpowerReport from './ManpowerReport';
@@ -1136,14 +1141,25 @@ const ProjectPortalDashboard = () => {
         } />
         <Route path="/tickets" element={<AgentTicketsContent projectBranding={projectBranding} user={user} />} />
         
-        <Route path="/knowledge-base" element={
-          <ProtectedRoute permission={PERMISSIONS.KB_VIEW}>
-            <KnowledgeBaseViewer />
+        {/* NEW KB System - Modular Routes */}
+        <Route path="/kb-new/levels" element={
+          <ProtectedRoute permission={[PERMISSIONS.KB_MANAGE, PERMISSIONS.KB_MANAGE_LEVELS]}>
+            <KBLevelManagementPage wrapWithLayout={false} />
           </ProtectedRoute>
         } />
-        <Route path="/kb" element={
-          <ProtectedRoute permission={PERMISSIONS.KB_VIEW}>
-            <KnowledgeBaseViewer />
+        <Route path="/kb-new/articles" element={
+          <ProtectedRoute permission={[PERMISSIONS.KB_MANAGE, PERMISSIONS.KB_MANAGE_ARTICLES]}>
+            <KBArticleManagementPage wrapWithLayout={false} />
+          </ProtectedRoute>
+        } />
+        <Route path="/kb-new/tables" element={
+          <ProtectedRoute permission={[PERMISSIONS.KB_MANAGE, PERMISSIONS.KB_MANAGE_TABLES]}>
+            <KBTableManagementPage wrapWithLayout={false} />
+          </ProtectedRoute>
+        } />
+        <Route path="/kb-new/viewer" element={
+          <ProtectedRoute permission={[PERMISSIONS.KB_VIEW_CONTENT, PERMISSIONS.KB_MANAGE, PERMISSIONS.KB_MANAGE_LEVELS, PERMISSIONS.KB_MANAGE_ARTICLES, PERMISSIONS.KB_MANAGE_TABLES]}>
+            <KBViewerPage wrapWithLayout={false} />
           </ProtectedRoute>
         } />
         <Route path="/faq" element={
@@ -1154,9 +1170,9 @@ const ProjectPortalDashboard = () => {
         {/* NEW: Student Workflow replaces old Offline Module */}
         <Route path="/offline" element={<AgentStudentWorkflow />} />
         <Route path="/student-workflow" element={<AgentStudentWorkflow />} />
-        <Route path="/my-assets-demo" element={
-          <ProtectedRoute requireAuth={true} excludeForRoles={['STUDENT', 'COUNSELOR_L1', 'CET_STATE_CELL', 'AGENT', 'SUPPORT_ADMIN', 'ACCOUNT_OWNER']}>
-            <MyAssetsStatic />
+        <Route path="/my-assets" element={
+          <ProtectedRoute permission={PERMISSIONS.MY_ASSETS_VIEW} excludeForRoles={['STUDENT', 'COUNSELOR_L1', 'CET_STATE_CELL', 'AGENT', 'SUPPORT_ADMIN', 'ACCOUNT_OWNER']}>
+            <MyAssets wrapWithLayout={false} />
           </ProtectedRoute>
         } />
         <Route path="/users" element={<ProjectUserManagement />} />

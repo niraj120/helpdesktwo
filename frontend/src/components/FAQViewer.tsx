@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MdSearch, MdExpandMore, MdExpandLess, MdThumbUp, MdThumbDown } from 'react-icons/md';
+import { MdSearch, MdExpandMore, MdExpandLess, MdThumbUp, MdThumbDown, MdQuestionAnswer, MdCategory, MdHelpOutline } from 'react-icons/md';
 import { useLocation } from 'react-router-dom';
 import { API_CONFIG } from '../config/constants';
 
@@ -151,280 +151,187 @@ const FAQViewer: React.FC = () => {
 
   if (loading) {
     return (
-      <div style={{ 
-        display: 'flex', 
-        alignItems: 'center', 
-        justifyContent: 'center', 
-        minHeight: '400px',
-      }}>
-        <div style={{
-          width: '48px',
-          height: '48px',
-          border: '4px solid #e5e7eb',
-          borderTopColor: 'var(--primary-main)',
-          borderRadius: '50%',
-          animation: 'spin 1s linear infinite'
-        }} />
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="w-12 h-12 border-4 border-gray-200 border-t-purple-500 rounded-full animate-spin" />
       </div>
     );
   }
 
   return (
-    <div style={{ 
-      padding: '24px',
-      maxWidth: '900px',
-      margin: '0 auto'
-    }}>
-      {/* Header */}
-      <div style={{
-        marginBottom: '32px',
-        textAlign: 'center'
-      }}>
-        <h1 style={{
-          fontSize: '32px',
-          fontWeight: '700',
-          color: 'var(--text-primary)',
-          marginBottom: '12px'
-        }}>
-          Frequently Asked Questions
-        </h1>
-        <p style={{
-          fontSize: '16px',
-          color: 'var(--text-secondary)'
-        }}>
-          Find answers to common questions
-        </p>
+    <div className="p-4 sm:p-6 md:p-8 max-w-4xl mx-auto">
+      {/* Hero Header */}
+      <div className="relative mb-8 sm:mb-12 text-center">
+        <div className="absolute inset-0 bg-gradient-to-r from-purple-500/10 via-pink-500/10 to-orange-500/10 rounded-3xl transform -skew-y-1" />
+        <div className="relative py-8 sm:py-12 px-4">
+          <div className="inline-flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl shadow-lg mb-4 sm:mb-6">
+            <MdQuestionAnswer className="w-8 h-8 sm:w-10 sm:h-10 text-white" />
+          </div>
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 bg-clip-text text-transparent mb-2 sm:mb-3">
+            Frequently Asked Questions
+          </h1>
+          <p className="text-gray-500 text-sm sm:text-base md:text-lg max-w-md mx-auto">
+            Find quick answers to common questions. Can't find what you're looking for? Contact our support team.
+          </p>
+        </div>
       </div>
 
       {/* Search and Filter */}
-      <div style={{
-        display: 'flex',
-        gap: '16px',
-        marginBottom: '32px',
-        flexWrap: 'wrap'
-      }}>
-        <div style={{
-          flex: '1',
-          minWidth: '250px',
-          position: 'relative'
-        }}>
-          <MdSearch style={{
-            position: 'absolute',
-            left: '16px',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            fontSize: '22px',
-            color: 'var(--text-secondary)'
-          }} />
+      <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-6 sm:mb-8">
+        <div className="flex-1 relative">
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">
+            <MdSearch className="w-5 h-5 sm:w-6 sm:h-6" />
+          </div>
           <input
             type="text"
             placeholder="Search FAQs..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '14px 16px 14px 48px',
-              border: '2px solid var(--border-subtle)',
-              borderRadius: '12px',
-              fontSize: '15px',
-              outline: 'none',
-              transition: 'border-color 0.2s',
-            }}
-            onFocus={(e) => e.currentTarget.style.borderColor = 'var(--primary-main)'}
-            onBlur={(e) => e.currentTarget.style.borderColor = 'var(--border-subtle)'}
+            className="w-full pl-11 sm:pl-14 pr-4 py-3 sm:py-4 bg-white border-2 border-gray-200 rounded-xl sm:rounded-2xl text-sm sm:text-base focus:border-purple-500 focus:ring-4 focus:ring-purple-500/10 outline-none transition-all shadow-sm hover:shadow-md"
           />
         </div>
 
-        <select
-          value={selectedCategory}
-          onChange={(e) => setSelectedCategory(e.target.value)}
-          style={{
-            padding: '14px 16px',
-            border: '2px solid var(--border-subtle)',
-            borderRadius: '12px',
-            fontSize: '15px',
-            outline: 'none',
-            minWidth: '180px',
-            cursor: 'pointer',
-          }}
-        >
-          {categories.map(category => (
-            <option key={category} value={category}>
-              {category === 'all' ? 'All Categories' : category}
-            </option>
-          ))}
-        </select>
+        <div className="relative">
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+            <MdCategory className="w-5 h-5" />
+          </div>
+          <select
+            value={selectedCategory}
+            onChange={(e) => setSelectedCategory(e.target.value)}
+            className="w-full sm:w-auto pl-11 pr-10 py-3 sm:py-4 bg-white border-2 border-gray-200 rounded-xl sm:rounded-2xl text-sm sm:text-base focus:border-purple-500 focus:ring-4 focus:ring-purple-500/10 outline-none transition-all shadow-sm hover:shadow-md cursor-pointer appearance-none min-w-[180px]"
+          >
+            {categories.map(category => (
+              <option key={category} value={category}>
+                {category === 'all' ? 'All Categories' : category}
+              </option>
+            ))}
+          </select>
+          <div className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+            <MdExpandMore className="w-5 h-5" />
+          </div>
+        </div>
       </div>
+
+      {/* Results count */}
+      {searchTerm && (
+        <p className="text-sm text-gray-500 mb-4">
+          Found {filteredFAQs.length} result{filteredFAQs.length !== 1 ? 's' : ''} for "{searchTerm}"
+        </p>
+      )}
 
       {/* FAQ List */}
       {filteredFAQs.length === 0 ? (
-        <div style={{
-          textAlign: 'center',
-          padding: '60px 20px',
-          color: 'var(--text-secondary)'
-        }}>
-          <p style={{ fontSize: '18px', marginBottom: '8px' }}>No FAQs found</p>
-          <p style={{ fontSize: '14px' }}>Try adjusting your search or filter</p>
+        <div className="text-center py-12 sm:py-16 bg-gray-50 rounded-2xl sm:rounded-3xl border-2 border-dashed border-gray-200">
+          <MdHelpOutline className="w-16 h-16 sm:w-20 sm:h-20 text-gray-300 mx-auto mb-4" />
+          <p className="text-lg sm:text-xl font-semibold text-gray-600 mb-2">No FAQs found</p>
+          <p className="text-sm sm:text-base text-gray-400">Try adjusting your search or filter criteria</p>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {filteredFAQs.map(faq => {
+        <div className="space-y-3 sm:space-y-4">
+          {filteredFAQs.map((faq, index) => {
             const isExpanded = expandedFAQ === faq._id;
             
             return (
               <div
                 key={faq._id}
-                style={{
-                  background: 'white',
-                  border: '2px solid var(--border-subtle)',
-                  borderRadius: '16px',
-                  overflow: 'hidden',
-                  transition: 'all 0.3s',
-                  boxShadow: isExpanded ? '0 8px 24px rgba(0,0,0,0.1)' : '0 2px 8px rgba(0,0,0,0.05)',
-                }}
+                className={`group bg-white rounded-xl sm:rounded-2xl overflow-hidden transition-all duration-300 ${
+                  isExpanded 
+                    ? 'shadow-xl ring-2 ring-purple-500/20' 
+                    : 'shadow-sm hover:shadow-lg border border-gray-100 hover:border-purple-200'
+                }`}
+                style={{ animationDelay: `${index * 50}ms` }}
               >
                 {/* Question Header */}
                 <div
                   onClick={() => handleFAQClick(faq._id)}
-                  style={{
-                    padding: '20px 24px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '16px',
-                    background: isExpanded ? 'var(--primary-light)' : 'white',
-                    transition: 'background 0.2s',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isExpanded) e.currentTarget.style.background = '#f9fafb';
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isExpanded) e.currentTarget.style.background = 'white';
-                  }}
+                  className={`p-4 sm:p-6 cursor-pointer flex items-start gap-3 sm:gap-4 transition-all ${
+                    isExpanded 
+                      ? 'bg-gradient-to-r from-purple-50 to-pink-50' 
+                      : 'hover:bg-gray-50'
+                  }`}
                 >
-                  <div style={{ flex: 1 }}>
-                    <div style={{
-                      fontSize: '16px',
-                      fontWeight: '600',
-                      color: 'var(--text-primary)',
-                      marginBottom: faq.category ? '8px' : '0',
-                    }}>
+                  {/* Question Number */}
+                  <div className={`flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl flex items-center justify-center text-sm sm:text-base font-bold transition-all ${
+                    isExpanded
+                      ? 'bg-gradient-to-br from-purple-500 to-pink-500 text-white'
+                      : 'bg-gray-100 text-gray-500 group-hover:bg-purple-100 group-hover:text-purple-600'
+                  }`}>
+                    {index + 1}
+                  </div>
+                  
+                  <div className="flex-1 min-w-0">
+                    <h3 className={`text-base sm:text-lg font-semibold leading-snug transition-colors ${
+                      isExpanded ? 'text-purple-700' : 'text-gray-800 group-hover:text-purple-600'
+                    }`}>
                       {faq.question}
-                    </div>
+                    </h3>
                     {faq.category && (
-                      <span style={{
-                        fontSize: '12px',
-                        color: 'var(--primary-main)',
-                        fontWeight: '500',
-                        padding: '4px 10px',
-                        background: 'var(--primary-light)',
-                        borderRadius: '12px',
-                      }}>
+                      <span className={`inline-flex items-center mt-2 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                        isExpanded
+                          ? 'bg-purple-100 text-purple-700'
+                          : 'bg-gray-100 text-gray-600'
+                      }`}>
                         {faq.category}
                       </span>
                     )}
                   </div>
-                  {isExpanded ? (
-                    <MdExpandLess size={28} color="var(--primary-main)" />
-                  ) : (
-                    <MdExpandMore size={28} color="var(--text-secondary)" />
-                  )}
+                  
+                  <div className={`flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all ${
+                    isExpanded
+                      ? 'bg-purple-500 text-white rotate-180'
+                      : 'bg-gray-100 text-gray-500 group-hover:bg-purple-100 group-hover:text-purple-600'
+                  }`}>
+                    <MdExpandMore className="w-5 h-5 sm:w-6 sm:h-6 transition-transform" />
+                  </div>
                 </div>
 
                 {/* Answer Content */}
-                {isExpanded && (
-                  <div style={{
-                    padding: '24px',
-                    borderTop: '1px solid var(--border-subtle)',
-                    animation: 'fadeIn 0.3s ease-in',
-                  }}>
-                    <div style={{
-                      fontSize: '15px',
-                      lineHeight: '1.7',
-                      color: 'var(--text-primary)',
-                      marginBottom: '24px',
-                      whiteSpace: 'pre-wrap',
-                    }}>
+                <div className={`overflow-hidden transition-all duration-300 ${
+                  isExpanded ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'
+                }`}>
+                  <div className="p-4 sm:p-6 pt-0 sm:pt-0 pl-14 sm:pl-20 border-t border-gray-100">
+                    <div className="prose prose-sm sm:prose max-w-none text-gray-600 leading-relaxed whitespace-pre-wrap">
                       {faq.answer}
                     </div>
 
                     {/* Feedback Section */}
-                    <div style={{
-                      marginTop: '24px',
-                      paddingTop: '20px',
-                      borderTop: '1px solid var(--border-subtle)',
-                    }}>
-                      <p style={{
-                        fontSize: '14px',
-                        fontWeight: '500',
-                        color: 'var(--text-secondary)',
-                        marginBottom: '12px'
-                      }}>
+                    <div className="mt-6 pt-5 border-t border-gray-100">
+                      <p className="text-sm font-medium text-gray-500 mb-3">
                         Was this answer helpful?
                       </p>
-                      <div style={{ display: 'flex', gap: '12px' }}>
+                      <div className="flex flex-wrap gap-2 sm:gap-3">
                         <button
-                          onClick={() => handleFeedback(faq._id, true)}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            padding: '8px 16px',
-                            background: 'white',
-                            border: '2px solid var(--primary-main)',
-                            color: 'var(--primary-main)',
-                            borderRadius: '8px',
-                            fontSize: '14px',
-                            fontWeight: '500',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s'
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = 'var(--primary-main)';
-                            e.currentTarget.style.color = 'white';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = 'white';
-                            e.currentTarget.style.color = 'var(--primary-main)';
-                          }}
+                          onClick={(e) => { e.stopPropagation(); handleFeedback(faq._id, true); }}
+                          className="inline-flex items-center gap-2 px-4 py-2 bg-white border-2 border-green-500 text-green-600 rounded-lg sm:rounded-xl text-sm font-medium hover:bg-green-500 hover:text-white transition-all shadow-sm hover:shadow-md"
                         >
-                          <MdThumbUp /> Yes ({faq.helpfulCount})
+                          <MdThumbUp className="w-4 h-4" />
+                          <span>Yes</span>
+                          <span className="text-xs opacity-70">({faq.helpfulCount})</span>
                         </button>
                         <button
-                          onClick={() => handleFeedback(faq._id, false)}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            padding: '8px 16px',
-                            background: 'white',
-                            border: '2px solid #6b7280',
-                            color: '#6b7280',
-                            borderRadius: '8px',
-                            fontSize: '14px',
-                            fontWeight: '500',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s'
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = '#6b7280';
-                            e.currentTarget.style.color = 'white';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = 'white';
-                            e.currentTarget.style.color = '#6b7280';
-                          }}
+                          onClick={(e) => { e.stopPropagation(); handleFeedback(faq._id, false); }}
+                          className="inline-flex items-center gap-2 px-4 py-2 bg-white border-2 border-gray-300 text-gray-600 rounded-lg sm:rounded-xl text-sm font-medium hover:bg-gray-500 hover:border-gray-500 hover:text-white transition-all shadow-sm hover:shadow-md"
                         >
-                          <MdThumbDown /> No ({faq.notHelpfulCount})
+                          <MdThumbDown className="w-4 h-4" />
+                          <span>No</span>
+                          <span className="text-xs opacity-70">({faq.notHelpfulCount})</span>
                         </button>
                       </div>
                     </div>
                   </div>
-                )}
+                </div>
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Quick Stats Footer */}
+      {faqs.length > 0 && (
+        <div className="mt-8 sm:mt-12 text-center">
+          <div className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 rounded-full text-sm text-gray-500">
+            <MdQuestionAnswer className="w-4 h-4" />
+            <span>{faqs.length} FAQ{faqs.length !== 1 ? 's' : ''} available</span>
+          </div>
         </div>
       )}
     </div>

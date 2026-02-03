@@ -1,12 +1,14 @@
 import { Request, Response } from 'express';
 import FAQ from '../models/FAQ';
 import { sendSuccessResponse, sendErrorResponse } from '../utils/responseHandler';
+import { getPaginationParams, sendPaginatedResponse } from '../utils/pagination';
 
 // Get all FAQs for a project
 export const getFAQsByProject = async (req: Request, res: Response) => {
   try {
     const { projectId } = req.params;
     const { status, category } = req.query;
+    const { page, limit, skip } = getPaginationParams(req.query);
 
     const query: any = { projectId };
     
@@ -18,9 +20,16 @@ export const getFAQsByProject = async (req: Request, res: Response) => {
       query.category = category;
     }
 
-    const faqs = await FAQ.find(query).sort({ displayOrder: 1, createdAt: -1 });
+    const [faqs, total] = await Promise.all([
+      FAQ.find(query)
+        .sort({ displayOrder: 1, createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      FAQ.countDocuments(query)
+    ]);
 
-    sendSuccessResponse(res, faqs, 'FAQs retrieved successfully');
+    sendPaginatedResponse(res, faqs, total, page, limit, { message: 'FAQs retrieved successfully' });
   } catch (error: any) {
     console.error('Error fetching FAQs:', error);
     sendErrorResponse(res, error.message || 'Failed to fetch FAQs', 500);

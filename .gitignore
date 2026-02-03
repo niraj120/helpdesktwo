@@ -7,6 +7,8 @@ backend/node_modules/
 dist/
 build/
 *.js.map
+build-result.txt
+frontend/build-result.txt
 
 # Environment variables
 .env
@@ -21,6 +23,9 @@ build/
 token.txt
 *.token
 .secrets
+**/gcs-key.json
+**/config/gcs-key.json
+backend/src/config/gcs-key.json
 
 # Logs
 logs/
@@ -79,6 +84,12 @@ serve-*.ps1
 run-script.ps1
 watchdog.ps1
 
+# Root-level debug/test/analysis scripts
+test-*.js
+check-*.js
+find-*.js
+analyze-*.js
+
 # Backend test/debug scripts (not needed in production)
 backend/test-scripts/
 backend/add-*.js
@@ -109,6 +120,9 @@ clear-token.html
 *_SUMMARY.md
 *_GUIDE.md
 *_STATUS.md
+*_REPORT.md
+*_FIX.md
+*_ANALYSIS*.md
 *_SECTIONS_REMOVED.txt
 *.backup.md
 

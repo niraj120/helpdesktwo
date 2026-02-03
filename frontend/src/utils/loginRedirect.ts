@@ -30,7 +30,7 @@ export const AGENT_MENU_ROUTES: MenuRoute[] = [
   },
   {
     path: 'knowledge-base',
-    permission: PERMISSIONS.KB_VIEW
+    permission: [PERMISSIONS.KB_VIEW_CONTENT, PERMISSIONS.KB_MANAGE, PERMISSIONS.KB_MANAGE_LEVELS, PERMISSIONS.KB_MANAGE_ARTICLES, PERMISSIONS.KB_MANAGE_TABLES]
   },
   {
     path: 'dashboard',

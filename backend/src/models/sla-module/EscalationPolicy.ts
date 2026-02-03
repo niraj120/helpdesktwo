@@ -2,6 +2,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IEscalationLevel {
   level: number;
+  escalationMode: 'manual' | 'auto'; // New field: manual or automatic escalation
   escalateAfter: {
     value: number;
     unit: 'minutes' | 'hours' | 'days';
@@ -41,6 +42,12 @@ const EscalationLevelSchema = new Schema<IEscalationLevel>(
       type: Number,
       required: true,
       min: 1,
+    },
+    escalationMode: {
+      type: String,
+      required: true,
+      enum: ['manual', 'auto'],
+      default: 'manual',
     },
     escalateAfter: {
       value: {

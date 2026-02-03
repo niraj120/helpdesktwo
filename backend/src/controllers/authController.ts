@@ -2,10 +2,12 @@ import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt, { SignOptions } from 'jsonwebtoken';
 import crypto from 'crypto';
+import mongoose from 'mongoose';
 import { sendOTPEmail } from '../utils/emailService';
 import { sendOTPWhatsApp } from '../utils/whatsappService';
 import { sendOTPSMS } from '../utils/smsService';
 import { User } from '../models/User';
+import { Role } from '../models/Role';
 import { Project } from '../models/Project';
 import EulaAcceptance from '../models/EulaAcceptance';
 import { logLogin, logLogout } from '../utils/logger';
@@ -65,15 +67,18 @@ export const login = async (req: Request<{}, {}, LoginRequest>, res: Response) =
       });
     }
 
-    // If projectId is provided, verify user is mapped to that project
+    // Get user's role with populated projects for authorization checks
+    const userRole = await Role.findById(user.role._id).populate('projects');
+
+    // If projectId is provided, verify user's role is mapped to that project
     let projectForJWT = null;
     if (projectId) {
-      const isAuthorized = user.projects?.some(
-        (pid) => pid.toString() === projectId.toString()
+      const isAuthorized = userRole?.projects?.some(
+        (pid: any) => pid.toString() === projectId.toString()
       );
 
       if (!isAuthorized) {
-        console.log('❌ User not authorized for project:', projectId);
+        console.log('❌ User role not authorized for project:', projectId);
 
         await logLogin(
           user._id.toString(),
@@ -81,12 +86,12 @@ export const login = async (req: Request<{}, {}, LoginRequest>, res: Response) =
           user.email,
           req,
           'failure',
-          'User not authorized for this project'
+          'User role not authorized for this project'
         );
 
         return res.status(403).json({
           success: false,
-          error: 'You are not authorized to access this project'
+          error: 'Your role does not have access to this project'
         });
       }
 
@@ -223,20 +228,20 @@ export const login = async (req: Request<{}, {}, LoginRequest>, res: Response) =
       if (project) {
         projectName = project.name;
         console.log('✅ Project found:', projectName);
-      } else if (user.projects && user.projects.length > 0) {
-        // If no project found by domain but user has projects, use first project
-        const userProject = await Project.findById(user.projects[0]);
-        if (userProject) {
-          projectName = userProject.name;
-          console.log('✅ Using user\'s first project:', projectName);
+      } else if (userRole?.projects && userRole.projects.length > 0) {
+        // If no project found by domain but user has projects via role, use first project
+        const roleProject = await Project.findById(userRole.projects[0]);
+        if (roleProject) {
+          projectName = roleProject.name;
+          console.log('✅ Using role\'s first project:', projectName);
         }
       }
-    } else if (user.projects && user.projects.length > 0) {
-      // No origin header, but user has projects
-      const userProject = await Project.findById(user.projects[0]);
-      if (userProject) {
-        projectName = userProject.name;
-        console.log('✅ Using user\'s project (no origin):', projectName);
+    } else if (userRole?.projects && userRole.projects.length > 0) {
+      // No origin header, but user has projects via role
+      const roleProject = await Project.findById(userRole.projects[0]);
+      if (roleProject) {
+        projectName = roleProject.name;
+        console.log('✅ Using role\'s project (no origin):', projectName);
       }
     }
 
@@ -251,37 +256,64 @@ export const login = async (req: Request<{}, {}, LoginRequest>, res: Response) =
         } else {
           console.log('⚠️  Role object exists but no name field, keys:', Object.keys(user.role));
         }
-        // Get permissions from role
-        if ('permissions' in user.role && Array.isArray(user.role.permissions)) {
-          console.log('🔍 Raw permissions array:', user.role.permissions.length);
-          console.log('🔍 First permission type:', typeof user.role.permissions[0]);
-          if (user.role.permissions[0]) {
-            console.log('🔍 First permission value:', user.role.permissions[0]);
-            console.log('🔍 First permission keys:', Object.keys(user.role.permissions[0] || {}));
+        
+        // CRITICAL FIX: Fetch permissions from rolepermissions junction table
+        // instead of relying on the old Role.permissions array
+        try {
+          const roleId = (user.role as any)._id;
+          console.log('🔍 Fetching permissions from RolePermissions table for role:', roleId);
+          
+          // Get permission IDs from junction table
+          const rolePermissions = await mongoose.connection.db
+            .collection('rolepermissions')
+            .find({ roleId: roleId })
+            .toArray();
+          
+          console.log('🔍 Found RolePermissions entries:', rolePermissions.length);
+          
+          if (rolePermissions.length > 0) {
+            // Get all permission details
+            const permissionIds = rolePermissions.map((rp: any) => rp.permissionId);
+            const permissionDocs = await mongoose.connection.db
+              .collection('permissions')
+              .find({ _id: { $in: permissionIds } })
+              .toArray();
+            
+            permissions = permissionDocs.map((p: any) => p.code).filter(Boolean);
+            console.log('✅ Extracted permissions from junction table:', permissions.length);
+            console.log('🔍 First 5 permissions:', permissions.slice(0, 5));
+          } else {
+            console.log('⚠️  No permissions found in junction table, falling back to old method');
+            
+            // Fallback to old method if junction table is empty
+            if ('permissions' in user.role && Array.isArray(user.role.permissions)) {
+              console.log('🔍 Raw permissions array:', user.role.permissions.length);
+              permissions = user.role.permissions
+                .map((p: any) => {
+                  if (typeof p === 'string') return p;
+                  if (p && typeof p === 'object' && 'code' in p) return p.code;
+                  const str = String(p);
+                  if (str && str.includes('_')) return str;
+                  return null;
+                })
+                .filter(Boolean);
+              console.log('✅ Extracted permissions from old array:', permissions.length);
+            }
           }
-
-          permissions = user.role.permissions
-            .map((p: any) => {
-              // If p is already a string, return it
-              if (typeof p === 'string') {
-                return p;
-              }
-              // If p is an object with code property
-              if (p && typeof p === 'object' && 'code' in p) {
-                return p.code;
-              }
-              // Otherwise, try to convert to string and check if it looks like a permission code
-              const str = String(p);
-              if (str && str.includes('_')) {
-                return str;
-              }
-              return null;
-            })
-            .filter(Boolean);
-          console.log('✅ Extracted permissions:', permissions.length);
-          console.log('🔍 First 5 permissions:', permissions.slice(0, 5));
-        } else {
-          console.log('⚠️  Permissions not found or not an array');
+        } catch (err) {
+          console.error('❌ Error fetching permissions from junction table:', err);
+          
+          // Fallback to old method on error
+          if ('permissions' in user.role && Array.isArray(user.role.permissions)) {
+            permissions = user.role.permissions
+              .map((p: any) => {
+                if (typeof p === 'string') return p;
+                if (p && typeof p === 'object' && 'code' in p) return p.code;
+                return null;
+              })
+              .filter(Boolean);
+            console.log('⚠️  Using fallback permissions:', permissions.length);
+          }
         }
       } else {
         console.log('⚠️  Role is not an object:', typeof user.role);
@@ -343,13 +375,8 @@ export const getMe = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Find user and populate role with permissions
-    const user = await User.findById(userId).populate({
-      path: 'role',
-      populate: {
-        path: 'permissions'
-      }
-    });
+    // Find user (no need to populate permissions from old array)
+    const user = await User.findById(userId).populate('role');
 
     if (!user) {
       return res.status(404).json({
@@ -358,14 +385,28 @@ export const getMe = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Get role information with permissions
+    // Get user's role with populated projects
+    const userRole = await Role.findById(user.role._id).populate('projects');
+
+    // Get role information
     const roleData = user.role && typeof user.role === 'object'
       ? user.role as any
-      : { name: 'User', code: 'USER', permissions: [] };
+      : { name: 'User', code: 'USER', _id: null };
 
-    // Extract permission codes
-    const permissions = roleData.permissions || [];
-    const permissionCodes = permissions.map((p: any) => p.code || p);
+    // ✅ Query RolePermissions junction table (NEW RBAC SYSTEM)
+    const rolePermissions = await mongoose.connection.db
+      .collection('rolepermissions')
+      .find({ roleId: roleData._id })
+      .toArray();
+    
+    const permissionIds = rolePermissions.map((rp: any) => rp.permissionId);
+    
+    const permissions = await mongoose.connection.db
+      .collection('permissions')
+      .find({ _id: { $in: permissionIds } })
+      .toArray();
+    
+    const permissionCodes = permissions.map((p: any) => p.code).filter(Boolean);
 
     console.log(`🔑 getMe - User: ${user.email}, Permissions: ${permissionCodes.length}`);
 
@@ -384,7 +425,7 @@ export const getMe = async (req: AuthRequest, res: Response) => {
           _id: roleData._id,
           permissions: permissionCodes // Include permission codes
         },
-        projects: user.projects,
+        projects: userRole?.projects || [], // Projects from role
         isActive: user.isActive
       }
     });
@@ -419,7 +460,7 @@ export const forgotPassword = async (req: Request<{}, {}, ForgotPasswordRequest>
     }
 
     // Check if user exists
-    const user = await User.findOne({ email: email.toLowerCase(), isActive: true });
+    const user = await User.findOne({ email: email.toLowerCase(), isActive: true }).populate('role');
 
     if (!user) {
       return res.status(404).json({
@@ -427,6 +468,9 @@ export const forgotPassword = async (req: Request<{}, {}, ForgotPasswordRequest>
         error: 'Email address not found in our records'
       });
     }
+
+    // Get user's role with populated projects
+    const userRole = await Role.findById(user.role._id).populate('projects');
 
     // Generate 6-digit OTP
     const otp = crypto.randomInt(100000, 999999).toString();
@@ -451,8 +495,8 @@ export const forgotPassword = async (req: Request<{}, {}, ForgotPasswordRequest>
     // 2. WhatsApp Promise (try to find a project context)
     // We strive to find a project ID to use for WhatsApp config
     let projectIdForWhatsApp: string | undefined;
-    if (user.projects && user.projects.length > 0) {
-      projectIdForWhatsApp = user.projects[0].toString();
+    if (userRole?.projects && userRole.projects.length > 0) {
+      projectIdForWhatsApp = userRole.projects[0].toString();
     }
 
     if (user.phone && projectIdForWhatsApp) {

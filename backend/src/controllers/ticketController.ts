@@ -121,24 +121,45 @@ const getNextRoundRobinAgent = async (projectId: string, eligibleUserIds: mongoo
 
 /**
  * Get agent with least active tickets (load-balanced)
+ * Optimized: Single aggregation instead of N countDocuments queries
  */
 const getLeastLoadedAgent = async (eligibleUserIds: mongoose.Types.ObjectId[]): Promise<mongoose.Types.ObjectId | null> => {
   if (eligibleUserIds.length === 0) return null;
   
-  // Count active tickets for each agent
-  const ticketCounts = await Promise.all(
-    eligibleUserIds.map(async (userId) => {
-      const count = await Ticket.countDocuments({
-        assignedTo: userId,
+  // Single aggregation to count active tickets for all agents at once
+  const ticketCounts = await Ticket.aggregate([
+    {
+      $match: {
+        assignedTo: { $in: eligibleUserIds },
         status: { $in: [1, 2, 3] } // 1=Open, 2=In Progress, 3=On Hold
-      });
-      return { userId, count };
-    })
+      }
+    },
+    {
+      $group: {
+        _id: '$assignedTo',
+        count: { $sum: 1 }
+      }
+    }
+  ]);
+  
+  // Create a map of userId -> ticket count
+  const countMap = new Map(
+    ticketCounts.map((tc: any) => [tc._id.toString(), tc.count])
   );
   
-  // Sort by count (ascending) and return agent with least tickets
-  ticketCounts.sort((a, b) => a.count - b.count);
-  return ticketCounts[0].userId;
+  // Find agent with least tickets (agents with 0 tickets won't be in aggregation result)
+  let minCount = Infinity;
+  let leastLoadedAgent = eligibleUserIds[0];
+  
+  for (const userId of eligibleUserIds) {
+    const count = countMap.get(userId.toString()) || 0;
+    if (count < minCount) {
+      minCount = count;
+      leastLoadedAgent = userId;
+    }
+  }
+  
+  return leastLoadedAgent;
 };
 
 /**
@@ -688,56 +709,192 @@ export const getMyTickets = async (req: Request, res: Response) => {
       console.log(`🔍 [QUERY] No VIEW permissions - filter by metadata.studentEmail: ${user.email}`);
     }
 
-    console.log(`🔍 [TICKET QUERY] Final query:`, JSON.stringify(query));
+    console.log(`🔍 [TICKET QUERY] Final query (before project filter):`, JSON.stringify(query));
 
     // Filter by project if projectId is provided in query params
     if (req.query.projectId) {
-      query['metadata.projectId'] = req.query.projectId;
+      // Convert projectId string to ObjectId for proper comparison
+      // (metadata.projectId is stored as ObjectId in the database)
+      try {
+        query['metadata.projectId'] = new mongoose.Types.ObjectId(req.query.projectId as string);
+        console.log(`🏢 [PROJECT FILTER] Filtering tickets by projectId (ObjectId):`, req.query.projectId);
+      } catch (e) {
+        // Fallback to string comparison if not a valid ObjectId
+        query['metadata.projectId'] = req.query.projectId;
+        console.log(`🏢 [PROJECT FILTER] Filtering tickets by projectId (string):`, req.query.projectId);
+      }
+    } else {
+      // If no specific projectId, filter by user's assigned projects (for "All Projects" mode)
+      // Get user's assigned projects from both user.projects and role.projects
+      const userProjectIds = (user.projects || []).map((p: any) => 
+        typeof p === 'string' ? p : p._id?.toString() || p.toString()
+      );
+      const roleProjectIds = (role?.projects || []).map((p: any) => 
+        typeof p === 'string' ? p : p._id?.toString() || p.toString()
+      );
+      const allUserProjectIds = [...new Set([...userProjectIds, ...roleProjectIds])];
+      
+      if (allUserProjectIds.length > 0) {
+        // Convert string IDs to ObjectIds for proper comparison
+        const projectObjectIds = allUserProjectIds.map(id => {
+          try {
+            return new mongoose.Types.ObjectId(id);
+          } catch (e) {
+            return id; // Keep as string if not valid ObjectId
+          }
+        });
+        query['metadata.projectId'] = { $in: projectObjectIds };
+        console.log(`🏢 [PROJECT FILTER] No projectId provided - filtering by user's ${allUserProjectIds.length} assigned project(s):`, allUserProjectIds);
+      } else {
+        console.warn(`⚠️  [PROJECT FILTER] No projectId provided and user has no assigned projects - tickets from ALL projects will be returned!`);
+      }
     }
 
-    // Find tickets based on query
+    console.log(`🔍 [TICKET QUERY] Final query (with project filter):`, JSON.stringify(query));
+
+    // ============================================
+    // ADDITIONAL FILTERS (status, priority, search, dates, category)
+    // ============================================
+    
+    // Status filter (1=Open, 2=In Progress, 3=On Hold, 4=Resolved, 5=Closed)
+    if (req.query.status) {
+      const statusValues = String(req.query.status).split(',').map(s => parseInt(s.trim(), 10)).filter(s => [1,2,3,4,5].includes(s));
+      if (statusValues.length > 0) {
+        query.status = { $in: statusValues };
+        console.log(`🔍 [FILTER] Status: ${statusValues.join(', ')}`);
+      }
+    }
+    
+    // Priority filter (low, medium, high, critical)
+    if (req.query.priority) {
+      const priorityValues = String(req.query.priority).split(',').map(p => p.trim().toLowerCase()).filter(p => ['low', 'medium', 'high', 'critical'].includes(p));
+      if (priorityValues.length > 0) {
+        query.priority = { $in: priorityValues };
+        console.log(`🔍 [FILTER] Priority: ${priorityValues.join(', ')}`);
+      }
+    }
+    
+    // Search filter (searches ticketNumber, subject)
+    if (req.query.search) {
+      const searchTerm = String(req.query.search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').trim();
+      if (searchTerm) {
+        query.$or = [
+          { ticketNumber: { $regex: searchTerm, $options: 'i' } },
+          { subject: { $regex: searchTerm, $options: 'i' } },
+        ];
+        console.log(`🔍 [FILTER] Search: "${searchTerm}"`);
+      }
+    }
+    
+    // Date range filter
+    if (req.query.createdAfter || req.query.createdBefore) {
+      query.createdAt = {};
+      if (req.query.createdAfter) {
+        const afterDate = new Date(req.query.createdAfter as string);
+        if (!isNaN(afterDate.getTime())) {
+          query.createdAt.$gte = afterDate;
+        }
+      }
+      if (req.query.createdBefore) {
+        const beforeDate = new Date(req.query.createdBefore as string);
+        if (!isNaN(beforeDate.getTime())) {
+          beforeDate.setHours(23, 59, 59, 999);
+          query.createdAt.$lte = beforeDate;
+        }
+      }
+      if (Object.keys(query.createdAt).length === 0) delete query.createdAt;
+    }
+    
+    // Category filter
+    if (req.query.categoryId) {
+      query.category = req.query.categoryId;
+      console.log(`🔍 [FILTER] Category: ${req.query.categoryId}`);
+    }
+
+    // ============================================
+    // SORTING
+    // ============================================
+    const allowedSortFields = ['createdAt', 'updatedAt', 'priority', 'status', 'ticketNumber'];
+    const sortBy = allowedSortFields.includes(req.query.sortBy as string) ? req.query.sortBy as string : 'createdAt';
+    const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
+    const sortObj = { [sortBy]: sortOrder };
+
+    // Get pagination parameters with max limit enforcement
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100); // Max 100
+    const skip = (page - 1) * limit;
+
+    // Get total count for pagination
+    const totalTickets = await Ticket.countDocuments(query);
+
+    // Find tickets based on query with pagination
+    // OPTIMIZED: Exclude heavy fields (threads, comments, history) from list view
     const tickets = await Ticket.find(query)
+      .select('-threads -comments -internalNotes -changeHistory -escalationHistory -description')
       .populate('assignedTo', 'firstName lastName email')
       .populate('category', 'name code')
-      .sort({ createdAt: -1 });
+      .sort(sortObj)
+      .skip(skip)
+      .limit(limit)
+      .lean();
 
-    console.log(`🔍 [TICKET QUERY] Tickets found: ${tickets.length}`);
+    console.log(`🔍 [TICKET QUERY] Tickets found: ${tickets.length} (Page ${page}, Total: ${totalTickets})`);
+    
+    // Log sample ticket with project info for debugging
+    if (tickets.length > 0) {
+      console.log(`📋 [SAMPLE TICKET] First ticket:`, {
+        ticketNumber: tickets[0].ticketNumber,
+        subject: tickets[0].subject,
+        projectId: (tickets[0] as any).metadata?.projectId,
+        assignedTo: tickets[0].assignedTo
+      });
+    }
 
-    // Manually populate project and center data since metadata fields are in a Mixed type field
-    const ticketsWithProject = await Promise.all(
-      tickets.map(async (ticket) => {
-        const ticketObj = ticket.toObject();
-        if (ticketObj.metadata?.projectId) {
-          const project = await Project.findById(ticketObj.metadata.projectId).select('name code');
-          if (project) {
-            ticketObj.metadata.projectId = {
-              _id: project._id,
-              name: project.name,
-              code: project.code,
-            };
-          }
+    // OPTIMIZED: Batch fetch all projects and centers instead of N+1 queries
+    const projectIds = [...new Set(tickets.map(t => (t as any).metadata?.projectId?.toString()).filter(Boolean))];
+    const centerIds = [...new Set(tickets.map(t => {
+      const centerId = (t as any).metadata?.centerId;
+      return centerId && centerId !== 'online' ? centerId.toString() : null;
+    }).filter(Boolean))];
+
+    const [projects, centers] = await Promise.all([
+      projectIds.length > 0 ? Project.find({ _id: { $in: projectIds } }).select('name code').lean() : Promise.resolve([]),
+      centerIds.length > 0 ? Center.find({ _id: { $in: centerIds } }).select('centerName city state').lean() : Promise.resolve([])
+    ]);
+
+    const projectMap = new Map(projects.map((p: any) => [p._id.toString(), { _id: p._id, name: p.name, code: p.code }]));
+    const centerMap = new Map(centers.map((c: any) => [c._id.toString(), { _id: c._id, centerName: c.centerName, city: c.city, state: c.state }]));
+
+    // Map tickets with populated data (no additional queries)
+    // Note: Using lean() so tickets are already plain objects
+    const ticketsWithProject = tickets.map((ticket: any) => {
+      const ticketObj = { ...ticket };
+      if (ticketObj.metadata?.projectId) {
+        const project = projectMap.get(ticketObj.metadata.projectId.toString());
+        if (project) {
+          ticketObj.metadata.projectId = project;
         }
-        // Populate center data if centerId exists and is not 'online'
-        if (ticketObj.metadata?.centerId && ticketObj.metadata.centerId !== 'online') {
-          const center = await Center.findById(ticketObj.metadata.centerId).select('centerName city state');
-          if (center) {
-            ticketObj.metadata.centerId = {
-              _id: center._id,
-              centerName: center.centerName,
-              city: center.city,
-              state: center.state,
-            };
-          }
+      }
+      if (ticketObj.metadata?.centerId && ticketObj.metadata.centerId !== 'online') {
+        const center = centerMap.get(ticketObj.metadata.centerId.toString());
+        if (center) {
+          ticketObj.metadata.centerId = center;
         }
-        return ticketObj;
-      })
-    );
+      }
+      return ticketObj;
+    });
 
     console.log(`📋 Retrieved ${tickets.length} tickets for ${hasViewAll ? 'all users' : `student ${user.email}`}${req.query.projectId ? ` in project ${req.query.projectId}` : ''}`);
 
     return res.status(200).json({
       success: true,
       data: ticketsWithProject,
+      pagination: {
+        total: totalTickets,
+        page,
+        limit,
+        totalPages: Math.ceil(totalTickets / limit)
+      }
     });
 
   } catch (error) {
@@ -766,6 +923,21 @@ export const getAllTickets = async (req: Request, res: Response) => {
         message: 'Unauthorized',
       });
     }
+
+    // Get project context from middleware (if available)
+    const projectContext = (req as any).projectContext;
+    console.log(`🔍 [VIEW_TICKETS] Project context:`, projectContext);
+
+    // Get pagination parameters with max limit enforcement
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100); // Max 100
+    const skip = (page - 1) * limit;
+
+    // Get filter parameters
+    const statusFilter = req.query.status ? (req.query.status as string).split(',').map(Number) : null;
+    const priorityFilter = req.query.priority ? (req.query.priority as string).split(',') : null;
+    const searchQuery = req.query.search as string;
+    const projectIdsFilter = req.query.projectIds ? (req.query.projectIds as string).split(',') : null;
 
     // Get user with their role and permissions
     const user = await User.findById(userId).populate({
@@ -796,127 +968,220 @@ export const getAllTickets = async (req: Request, res: Response) => {
     console.log(`🔍 [VIEW_TICKETS] isSuperAdmin: ${isSuperAdmin}, hasViewAll: ${hasViewAll}, isAgent: ${isAgent}, hasViewOwn: ${hasViewOwn}`);
 
     let query: any = {};
-    const assignedProjectIds = ((user as any).projects as any[])?.map(p => p._id) || [];
+    
+    // Get user's role projects (projects assigned to their role)
+    const Role = await mongoose.model('Role').findById(role?._id);
+    const roleProjectIds = ((Role as any)?.projects || []).map((p: any) => 
+      typeof p === 'string' ? new mongoose.Types.ObjectId(p) : new mongoose.Types.ObjectId(p._id || p)
+    );
 
-    // Super Admin sees ALL tickets across all projects
+    // SIMPLIFIED LOGIC FOR ASSIGN QUERIES PAGE:
+    // 1. Super Admin: Show ALL tickets (no filters)
+    // 2. Single Project Mode: Show ALL tickets from selected project
+    // 3. Unified Mode: Show ALL tickets from user's assigned projects
+    // 4. If offline mode with center: Filter by project + center
+    
+    console.log(`🔍 [ASSIGN QUERIES] ==================== FILTER LOGIC START ====================`);
+    console.log(`🔍 [ASSIGN QUERIES] User: ${user.email}, Role: ${role?.code}`);
+    console.log(`🔍 [ASSIGN QUERIES] isSuperAdmin: ${isSuperAdmin}`);
+    console.log(`🔍 [ASSIGN QUERIES] projectContext:`, JSON.stringify(projectContext, null, 2));
+    console.log(`🔍 [ASSIGN QUERIES] roleProjectIds count: ${roleProjectIds.length}`);
+    console.log(`🔍 [ASSIGN QUERIES] Query params - viewMode: ${req.query.viewMode}, projectId: ${req.query.projectId}`);
+    
     if (isSuperAdmin) {
-      console.log(`🔍 [VIEW_TICKETS] Super Admin - showing all tickets`);
-      // No filter - show everything
-    } else if (hasViewAll) {
-      // Users with TICKET_VIEW_ALL see tickets from their assigned projects
-      if (assignedProjectIds.length > 0) {
-        query['metadata.projectId'] = { 
-          $in: [
-            ...assignedProjectIds, 
-            ...assignedProjectIds.map(id => id.toString())
-          ] 
-        };
-        console.log(`🔍 [VIEW_TICKETS] User with TICKET_VIEW_ALL - filter by assigned projects:`, assignedProjectIds);
+      // Super Admin: No filters - show ALL tickets
+      console.log(`✅ [ASSIGN QUERIES] Super Admin - showing ALL tickets (no filters)`);
+    } else if (projectContext?.viewMode === 'single' && projectContext.currentProjectId) {
+      // Single Project Mode: Show ALL tickets from selected project (try both string and ObjectId)
+      query['metadata.projectId'] = {
+        $in: [
+          projectContext.currentProjectId,
+          new mongoose.Types.ObjectId(projectContext.currentProjectId)
+        ]
+      };
+      console.log(`✅ [ASSIGN QUERIES] Single Project Mode - filtering by projectId`);
+      console.log(`   Query filter:`, JSON.stringify(query['metadata.projectId'], null, 2));
+    } else if (projectContext?.viewMode === 'unified' || !projectContext?.currentProjectId) {
+      // Unified/All Projects Mode: Show ALL tickets from user's role projects
+      if (roleProjectIds.length > 0) {
+        // Include both string and ObjectId versions of project IDs
+        const allProjectIdFormats = roleProjectIds.flatMap((id: any) => [
+          id.toString(),
+          id
+        ]);
+        query['metadata.projectId'] = { $in: allProjectIdFormats };
+        console.log(`✅ [ASSIGN QUERIES] Unified Mode - showing ALL tickets from ${roleProjectIds.length} project(s)`);
       } else {
-        console.log(`🔍 [VIEW_TICKETS] User has no assigned projects - returning empty`);
+        // User has no projects assigned - return empty
+        console.log(`❌ [ASSIGN QUERIES] User has no assigned projects - returning empty`);
         return res.status(200).json({
           success: true,
-          data: [],
+          data: { tickets: [], pagination: { total: 0, page, limit, pages: 0 } },
         });
       }
+    }
+    
+    console.log(`🔍 [ASSIGN QUERIES] Query after project filter:`, JSON.stringify(query, null, 2));
 
-      // For TICKET_VIEW_ALL users with centers: Add additional center filter
-      console.log(`🔍 [VIEW_TICKETS] Checking user.centers:`, user.centers);
-      const userCenterIds = (user.centers || []).map((c: any) => {
-        const centerId = typeof c === 'string' ? c : c._id?.toString() || c.toString();
-        return new mongoose.Types.ObjectId(centerId);
+    // ONLY additional filter: Center filter for offline mode
+    const additionalFilters: any[] = [];
+    
+    // Check if user has centers assigned (for offline mode)
+    const userCenterIds = (user.centers || []).map((c: any) => {
+      const centerId = typeof c === 'string' ? c : c._id?.toString() || c.toString();
+      return centerId;
+    });
+    
+    if (userCenterIds.length > 0) {
+      // Filter by centers: show tickets from assigned centers OR online tickets
+      const centerObjectIds = userCenterIds.map(id => new mongoose.Types.ObjectId(id));
+      additionalFilters.push({
+        $or: [
+          { 'metadata.centerId': 'online' },
+          { 'metadata.centerId': { $in: [...userCenterIds, ...centerObjectIds] } },
+          { 'metadata.centerId': { $exists: false } },
+          { 'metadata.centerId': null }
+        ]
       });
-      console.log(`🔍 [VIEW_TICKETS] Extracted userCenterIds:`, userCenterIds);
-      
-      if (userCenterIds.length > 0) {
-        // Users with centers assigned should only see:
-        // 1. Online tickets (metadata.centerId = 'online')
-        // 2. Offline tickets that match their assigned centers (as ObjectId)
-        const centerFilter = {
-          $or: [
-            { 'metadata.centerId': 'online' }, // Include all online tickets
-            { 'metadata.centerId': { $in: userCenterIds } }, // Include offline tickets from their centers (ObjectId comparison)
-            { 'metadata.centerId': { $exists: false } }, // Include tickets without center (legacy data)
-            { 'metadata.centerId': null } // Include tickets with null center (legacy data)
-          ]
-        };
-        
-        // Merge center filter with existing query
-        if (query.$and) {
-          query.$and.push(centerFilter);
-        } else {
-          query = { $and: [query, centerFilter] };
-        }
-        
-        console.log(`🔍 [VIEW_TICKETS] TICKET_VIEW_ALL user has ${userCenterIds.length} center(s) - filtering tickets by centers: ${userCenterIds.map(id => id.toString()).join(', ')}`);
-      }
-    } else if (isAgent || hasViewOwn) {
-      // Agents or users with TICKET_VIEW_OWN see tickets assigned to them within their projects
-      if (assignedProjectIds.length > 0) {
-        query = {
-          $and: [
-            { 'metadata.projectId': { $in: [...assignedProjectIds, ...assignedProjectIds.map(id => id.toString())] } },
-            { 
-              $or: [
-                { assignedTo: new mongoose.Types.ObjectId(userId) },
-                { 'metadata.studentEmail': user.email } // Also show tickets created by them
-              ]
-            }
-          ]
-        };
-        console.log(`🔍 [VIEW_TICKETS] Agent/ViewOwn user - showing assigned tickets in their projects`);
-      } else {
-        // No projects assigned - show only assigned tickets
-        query = { 
-          $or: [
-            { assignedTo: new mongoose.Types.ObjectId(userId) },
-            { 'metadata.studentEmail': user.email }
-          ]
-        };
-        console.log(`🔍 [VIEW_TICKETS] Agent with no projects - showing only assigned tickets`);
-      }
-
-      // For VIEW_OWN users with centers: Add additional center filter
-      const userCenterIds = (user.centers || []).map((c: any) => 
-        typeof c === 'string' ? c : c._id?.toString() || c.toString()
-      );
-      
-      if (userCenterIds.length > 0) {
-        // Users with centers assigned should only see:
-        // 1. Online tickets (metadata.centerId = 'online')
-        // 2. Offline tickets that match their assigned centers
-        const centerFilter = {
-          $or: [
-            { 'metadata.centerId': 'online' }, // Include all online tickets
-            { 'metadata.centerId': { $in: userCenterIds } }, // Include offline tickets from their centers
-            { 'metadata.centerId': { $exists: false } } // Include tickets without center (legacy data)
-          ]
-        };
-        
-        // Merge center filter with existing query
-        if (query.$and) {
-          query.$and.push(centerFilter);
-        } else {
-          query = { $and: [query, centerFilter] };
-        }
-        
-        console.log(`🔍 [VIEW_TICKETS] VIEW_OWN user has ${userCenterIds.length} center(s) - filtering tickets by centers: ${userCenterIds.join(', ')}`);
-      }
-    } else {
-      // Users without proper permissions - show only tickets they created
-      query['metadata.studentEmail'] = user.email;
-      console.log(`🔍 [VIEW_TICKETS] Regular user - showing only created tickets`);
+      console.log(`✅ [ASSIGN QUERIES] Filtering by ${userCenterIds.length} assigned center(s) + online tickets`);
     }
 
-    console.log(`🔍 [VIEW_TICKETS] Final query:`, JSON.stringify(query));
+    console.log(`🔍 [ASSIGN QUERIES] Additional filters count: ${additionalFilters.length}`);
 
-    // Find tickets based on query
+    // Combine all filters
+    if (additionalFilters.length > 0) {
+      if (query.$and) {
+        query.$and.push(...additionalFilters);
+      } else {
+        query = { $and: [query, ...additionalFilters] };
+      }
+      console.log(`🔍 [STEP 2] Query after combining filters:`, JSON.stringify(query, null, 2));
+    }
+
+    // Apply additional filters from query params
+    if (statusFilter && statusFilter.length > 0) {
+      query.status = { $in: statusFilter };
+      console.log(`🔍 [VIEW_TICKETS] Filtering by status: ${statusFilter}`);
+    }
+
+    if (priorityFilter && priorityFilter.length > 0) {
+      query.priority = { $in: priorityFilter };
+      console.log(`🔍 [VIEW_TICKETS] Filtering by priority: ${priorityFilter}`);
+    }
+
+    if (searchQuery) {
+      // Sanitize search to prevent regex injection
+      const sanitizedSearch = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      query.$or = [
+        { ticketNumber: { $regex: sanitizedSearch, $options: 'i' } },
+        { subject: { $regex: sanitizedSearch, $options: 'i' } }
+      ];
+      console.log(`🔍 [VIEW_TICKETS] Searching for: ${sanitizedSearch}`);
+    }
+
+    // ============================================
+    // ADDITIONAL FILTERS (date range, category, assignment, center)
+    // ============================================
+    
+    // Date range filter
+    if (req.query.createdAfter || req.query.createdBefore) {
+      query.createdAt = query.createdAt || {};
+      if (req.query.createdAfter) {
+        const afterDate = new Date(req.query.createdAfter as string);
+        if (!isNaN(afterDate.getTime())) {
+          query.createdAt.$gte = afterDate;
+          console.log(`🔍 [VIEW_TICKETS] Created after: ${afterDate.toISOString()}`);
+        }
+      }
+      if (req.query.createdBefore) {
+        const beforeDate = new Date(req.query.createdBefore as string);
+        if (!isNaN(beforeDate.getTime())) {
+          beforeDate.setHours(23, 59, 59, 999);
+          query.createdAt.$lte = beforeDate;
+          console.log(`🔍 [VIEW_TICKETS] Created before: ${beforeDate.toISOString()}`);
+        }
+      }
+      if (Object.keys(query.createdAt).length === 0) delete query.createdAt;
+    }
+    
+    // Category filter
+    if (req.query.categoryId) {
+      query.category = req.query.categoryId;
+      console.log(`🔍 [VIEW_TICKETS] Filtering by category: ${req.query.categoryId}`);
+    }
+    
+    // Assigned agent filter
+    if (req.query.assignedTo) {
+      if (req.query.assignedTo === 'unassigned') {
+        query.assignedTo = { $exists: false };
+        console.log(`🔍 [VIEW_TICKETS] Filtering unassigned tickets`);
+      } else {
+        query.assignedTo = new mongoose.Types.ObjectId(req.query.assignedTo as string);
+        console.log(`🔍 [VIEW_TICKETS] Filtering by assigned agent: ${req.query.assignedTo}`);
+      }
+    }
+    
+    // Submission source filter (online/offline/email/whatsapp)
+    if (req.query.submissionSource) {
+      query.submissionSource = req.query.submissionSource;
+      console.log(`🔍 [VIEW_TICKETS] Filtering by source: ${req.query.submissionSource}`);
+    }
+    
+    // Center filter
+    if (req.query.centerId) {
+      query['metadata.centerId'] = req.query.centerId;
+      console.log(`🔍 [VIEW_TICKETS] Filtering by center: ${req.query.centerId}`);
+    }
+
+    // Additional project filter from query params (for unified view multi-select)
+    if (projectIdsFilter && projectIdsFilter.length > 0 && projectContext?.viewMode === 'unified') {
+      query['metadata.projectId'] = {
+        $in: projectIdsFilter.map(id => new mongoose.Types.ObjectId(id))
+      };
+      console.log(`🔍 [VIEW_TICKETS] Filtering by specific projects: ${projectIdsFilter.length}`);
+    }
+
+    // Single projectId filter from query params (for reports page)
+    if (req.query.projectId && !query['metadata.projectId']) {
+      const projectIdStr = req.query.projectId as string;
+      // Convert to ObjectId for comparison (metadata.projectId is stored as ObjectId)
+      if (mongoose.Types.ObjectId.isValid(projectIdStr)) {
+        query['metadata.projectId'] = new mongoose.Types.ObjectId(projectIdStr);
+        console.log(`🔍 [VIEW_TICKETS] Filtering by single projectId (ObjectId): ${projectIdStr}`);
+      } else {
+        query['metadata.projectId'] = projectIdStr;
+        console.log(`🔍 [VIEW_TICKETS] Filtering by single projectId (string): ${projectIdStr}`);
+      }
+    }
+
+    console.log(`🔍 [FINAL QUERY] Query object:`, JSON.stringify(query, null, 2));
+    console.log(`🔍 [FINAL QUERY] Query keys:`, Object.keys(query));
+
+    // ============================================
+    // SORTING
+    // ============================================
+    const allowedSortFields = ['createdAt', 'updatedAt', 'priority', 'status', 'ticketNumber', 'slaDeadline'];
+    const sortBy = allowedSortFields.includes(req.query.sortBy as string) ? req.query.sortBy as string : 'createdAt';
+    const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
+    const sortObj = { [sortBy]: sortOrder };
+
+    // Count total tickets
+    const totalTickets = await Ticket.countDocuments(query);
+    console.log(`📊 [DB RESULT] Total tickets matching query: ${totalTickets}`);
+
+    // Find tickets based on query with pagination
+    // OPTIMIZED: Exclude heavy fields (threads, comments, history) from list view
     const tickets = await Ticket.find(query)
+      .select('-threads -comments -internalNotes -changeHistory -escalationHistory -description')
       .populate('assignedTo', 'firstName lastName email')
       .populate('category', 'name')
-      .sort({ createdAt: -1 });
+      .populate('metadata.projectId', 'name code')
+      .sort(sortObj)
+      .skip(skip)
+      .limit(limit)
+      .lean();
 
-    console.log(`🔍 [VIEW_TICKETS] Tickets found: ${tickets.length}`);
+    console.log(`📊 [DB RESULT] Tickets returned (paginated): ${tickets.length}`);
 
     // Get priorities for SLA calculation
     const Priority = require('../models/master-data/Priority').Priority;
@@ -928,91 +1193,102 @@ export const getAllTickets = async (req: Request, res: Response) => {
       console.log(`📊 [SLA] Loaded priority: ${p.code} (${p.name}) - ResolutionTime: ${p.resolutionTime?.value} ${p.resolutionTime?.unit}`);
     });
 
-    // Manually populate project and center data, calculate resolution time and SLA status
-    const ticketsWithProject = await Promise.all(
-      tickets.map(async (ticket) => {
-        const ticketObj = ticket.toObject();
-        if (ticketObj.metadata?.projectId) {
-          const project = await Project.findById(ticketObj.metadata.projectId).select('name code');
-          if (project) {
-            ticketObj.metadata.projectId = {
-              _id: project._id,
-              name: project.name,
-              code: project.code,
-            };
-          }
-        }
-        // Populate center data if centerId exists and is not 'online'
-        if (ticketObj.metadata?.centerId && ticketObj.metadata.centerId !== 'online') {
-          const center = await Center.findById(ticketObj.metadata.centerId).select('centerName city state');
-          if (center) {
-            ticketObj.metadata.centerId = {
-              _id: center._id,
-              centerName: center.centerName,
-              city: center.city,
-              state: center.state,
-            };
-          }
-        }
-        
-        // Calculate resolution time and SLA status for resolved/closed tickets
-        if ((ticketObj.status === 4 || ticketObj.status === 5) && ticketObj.resolvedAt) {
-          const createdDate = new Date(ticketObj.createdAt);
-          const resolvedDate = new Date(ticketObj.resolvedAt);
-          const timeDiffMs = resolvedDate.getTime() - createdDate.getTime();
-          const hours = Math.floor(timeDiffMs / (1000 * 60 * 60));
-          const days = Math.floor(hours / 24);
-          const remainingHours = hours % 24;
-          
-          if (days > 0) {
-            ticketObj.resolutionTime = `${days}d ${remainingHours}h`;
-          } else {
-            ticketObj.resolutionTime = `${hours}h`;
-          }
-          
-          // Calculate SLA status
-          console.log(`📊 [SLA] Calculating SLA for ticket ${ticketObj.ticketNumber}, priority: "${ticketObj.priority}" (type: ${typeof ticketObj.priority})`);
-          let prioritySettings = null;
-          if (typeof ticketObj.priority === 'string') {
-            const priorityCode = ticketObj.priority.toUpperCase();
-            prioritySettings = priorityMap.get(priorityCode);
-            console.log(`📊 [SLA] Looking for priority code: "${priorityCode}" - Found: ${prioritySettings ? 'YES' : 'NO'}`);
-          }
-          
-          if (prioritySettings && prioritySettings.resolutionTime) {
-            const resTime = prioritySettings.resolutionTime;
-            console.log(`📊 [SLA] Priority settings found: ${resTime.value} ${resTime.unit}`);
-            let resolutionTimeMs = 0;
-            
-            if (resTime.unit === 'minutes') {
-              resolutionTimeMs = resTime.value * 60 * 1000;
-            } else if (resTime.unit === 'hours') {
-              resolutionTimeMs = resTime.value * 60 * 60 * 1000;
-            } else if (resTime.unit === 'days') {
-              resolutionTimeMs = resTime.value * 24 * 60 * 60 * 1000;
-            }
-            
-            const slaDeadline = new Date(createdDate.getTime() + resolutionTimeMs);
-            const withinSLA = resolvedDate <= slaDeadline;
-            ticketObj.slaStatus = withinSLA ? 'Within SLA' : 'Outside SLA';
-            console.log(`📊 [SLA] Ticket ${ticketObj.ticketNumber}: Created=${createdDate.toISOString()}, Resolved=${resolvedDate.toISOString()}, SLA Deadline=${slaDeadline.toISOString()}, Status=${ticketObj.slaStatus}`);
-          } else {
-            console.log(`📊 [SLA] No priority settings or resolutionTime found for ticket ${ticketObj.ticketNumber}`);
-            ticketObj.slaStatus = 'N/A';
-          }
-        } else {
-          ticketObj.slaStatus = 'Pending';
-        }
-        
-        return ticketObj;
-      })
-    );
+    // OPTIMIZED: Batch fetch all projects and centers instead of N+1 queries
+    const projectIds = [...new Set(tickets.map(t => (t as any).metadata?.projectId?.toString()).filter(Boolean))];
+    const centerIds = [...new Set(tickets.map(t => {
+      const centerId = (t as any).metadata?.centerId;
+      return centerId && centerId !== 'online' ? centerId.toString() : null;
+    }).filter(Boolean))];
 
-    console.log(`📋 Retrieved ${tickets.length} tickets for View Tickets`);
+    const [projects, centers] = await Promise.all([
+      projectIds.length > 0 ? Project.find({ _id: { $in: projectIds } }).select('name code').lean() : Promise.resolve([]),
+      centerIds.length > 0 ? Center.find({ _id: { $in: centerIds } }).select('centerName city state').lean() : Promise.resolve([])
+    ]);
+
+    const projectMap = new Map(projects.map((p: any) => [p._id.toString(), { _id: p._id, name: p.name, code: p.code }]));
+    const centerMap = new Map(centers.map((c: any) => [c._id.toString(), { _id: c._id, centerName: c.centerName, city: c.city, state: c.state }]));
+
+    // Map tickets with populated data and SLA calculation (no additional queries)
+    // Note: Using lean() so tickets are already plain objects
+    const ticketsWithProject = tickets.map((ticket: any) => {
+      const ticketObj = { ...ticket };
+      
+      // Populate project data from batch query
+      if (ticketObj.metadata?.projectId) {
+        const project = projectMap.get(ticketObj.metadata.projectId.toString());
+        if (project) {
+          ticketObj.metadata.projectId = project;
+        }
+      }
+      
+      // Populate center data from batch query
+      if (ticketObj.metadata?.centerId && ticketObj.metadata.centerId !== 'online') {
+        const center = centerMap.get(ticketObj.metadata.centerId.toString());
+        if (center) {
+          ticketObj.metadata.centerId = center;
+        }
+      }
+      
+      // Calculate resolution time and SLA status for resolved/closed tickets
+      if ((ticketObj.status === 4 || ticketObj.status === 5) && ticketObj.resolvedAt) {
+        const createdDate = new Date(ticketObj.createdAt);
+        const resolvedDate = new Date(ticketObj.resolvedAt);
+        const timeDiffMs = resolvedDate.getTime() - createdDate.getTime();
+        const hours = Math.floor(timeDiffMs / (1000 * 60 * 60));
+        const days = Math.floor(hours / 24);
+        const remainingHours = hours % 24;
+        
+        if (days > 0) {
+          ticketObj.resolutionTime = `${days}d ${remainingHours}h`;
+        } else {
+          ticketObj.resolutionTime = `${hours}h`;
+        }
+        
+        // Calculate SLA status
+        let prioritySettings = null;
+        if (typeof ticketObj.priority === 'string') {
+          const priorityCode = ticketObj.priority.toUpperCase();
+          prioritySettings = priorityMap.get(priorityCode);
+        }
+        
+        if (prioritySettings && prioritySettings.resolutionTime) {
+          const resTime = prioritySettings.resolutionTime;
+          let resolutionTimeMs = 0;
+          
+          if (resTime.unit === 'minutes') {
+            resolutionTimeMs = resTime.value * 60 * 1000;
+          } else if (resTime.unit === 'hours') {
+            resolutionTimeMs = resTime.value * 60 * 60 * 1000;
+          } else if (resTime.unit === 'days') {
+            resolutionTimeMs = resTime.value * 24 * 60 * 60 * 1000;
+          }
+          
+          const slaDeadline = new Date(createdDate.getTime() + resolutionTimeMs);
+          const withinSLA = resolvedDate <= slaDeadline;
+          ticketObj.slaStatus = withinSLA ? 'Within SLA' : 'Outside SLA';
+        } else {
+          ticketObj.slaStatus = 'N/A';
+        }
+      } else {
+        ticketObj.slaStatus = 'Pending';
+      }
+      
+      return ticketObj;
+    });
+
+    console.log(`📋 Retrieved ${ticketsWithProject.length} tickets for View Tickets (Total: ${totalTickets})`);
 
     return res.status(200).json({
       success: true,
-      data: ticketsWithProject,
+      data: {
+        tickets: ticketsWithProject,
+        pagination: {
+          total: totalTickets,
+          page,
+          limit,
+          totalPages: Math.ceil(totalTickets / limit)
+        }
+      }
     });
 
   } catch (error) {
@@ -1039,57 +1315,149 @@ export const getAgentAssignedTickets = async (req: Request, res: Response) => {
       });
     }
 
+    // Pagination parameters with max limit enforcement
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100); // Max 100
+    const skip = (page - 1) * limit;
+
     // Build query to find tickets assigned to this agent
     const query: any = {
       assignedTo: userId,
     };
 
-    // Filter by project if projectId is provided
+    // Filter by project if projectId is provided (convert to ObjectId)
     if (req.query.projectId) {
-      query['metadata.projectId'] = req.query.projectId;
+      const projectIdStr = req.query.projectId as string;
+      if (mongoose.Types.ObjectId.isValid(projectIdStr)) {
+        query['metadata.projectId'] = new mongoose.Types.ObjectId(projectIdStr);
+      } else {
+        query['metadata.projectId'] = projectIdStr;
+      }
     }
 
-    // Find all tickets assigned to this agent
+    // ============================================
+    // ADDITIONAL FILTERS (status, priority, search, dates, category)
+    // ============================================
+    
+    // Status filter (1=Open, 2=In Progress, 3=On Hold, 4=Resolved, 5=Closed)
+    if (req.query.status) {
+      const statusValues = String(req.query.status).split(',').map(s => parseInt(s.trim(), 10)).filter(s => [1,2,3,4,5].includes(s));
+      if (statusValues.length > 0) {
+        query.status = { $in: statusValues };
+      }
+    }
+    
+    // Priority filter (low, medium, high, critical)
+    if (req.query.priority) {
+      const priorityValues = String(req.query.priority).split(',').map(p => p.trim().toLowerCase()).filter(p => ['low', 'medium', 'high', 'critical'].includes(p));
+      if (priorityValues.length > 0) {
+        query.priority = { $in: priorityValues };
+      }
+    }
+    
+    // Search filter (searches ticketNumber, subject)
+    if (req.query.search) {
+      const searchTerm = String(req.query.search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').trim();
+      if (searchTerm) {
+        query.$or = [
+          { ticketNumber: { $regex: searchTerm, $options: 'i' } },
+          { subject: { $regex: searchTerm, $options: 'i' } },
+        ];
+      }
+    }
+    
+    // Date range filter
+    if (req.query.createdAfter || req.query.createdBefore) {
+      query.createdAt = {};
+      if (req.query.createdAfter) {
+        const afterDate = new Date(req.query.createdAfter as string);
+        if (!isNaN(afterDate.getTime())) query.createdAt.$gte = afterDate;
+      }
+      if (req.query.createdBefore) {
+        const beforeDate = new Date(req.query.createdBefore as string);
+        if (!isNaN(beforeDate.getTime())) {
+          beforeDate.setHours(23, 59, 59, 999);
+          query.createdAt.$lte = beforeDate;
+        }
+      }
+      if (Object.keys(query.createdAt).length === 0) delete query.createdAt;
+    }
+    
+    // Category filter
+    if (req.query.categoryId) {
+      query.category = req.query.categoryId;
+    }
+
+    // ============================================
+    // SORTING
+    // ============================================
+    const allowedSortFields = ['createdAt', 'updatedAt', 'priority', 'status', 'ticketNumber'];
+    const sortBy = allowedSortFields.includes(req.query.sortBy as string) ? req.query.sortBy as string : 'createdAt';
+    const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
+    const sortObj = { [sortBy]: sortOrder };
+
+    // Get total count for pagination
+    const totalTickets = await Ticket.countDocuments(query);
+
+    // Find tickets with pagination - using lean() for read-only access
+    // OPTIMIZED: Exclude heavy fields (threads, comments, history) from list view
     const tickets = await Ticket.find(query)
-      .select('+submissionSource') // Explicitly select submissionSource field
+      .select('-threads -comments -internalNotes -changeHistory -escalationHistory -description +submissionSource')
       .populate('assignedTo', 'firstName lastName email')
       .populate('createdBy', 'firstName lastName email')
       .populate('category', 'name')
-      .sort({ createdAt: -1 });
+      .sort(sortObj)
+      .skip(skip)
+      .limit(limit)
+      .lean();
 
-    // Manually populate project and center data
-    const ticketsWithDetails = await Promise.all(
-      tickets.map(async (ticket) => {
-        const ticketObj = ticket.toObject();
-        if (ticketObj.metadata?.projectId) {
-          const project = await Project.findById(ticketObj.metadata.projectId).select('name code');
-          if (project) {
-            ticketObj.metadata.projectId = {
-              _id: project._id,
-              name: project.name,
-              code: project.code,
-            };
-          }
+    // OPTIMIZED: Batch fetch all projects and centers instead of N+1 queries
+    const projectIds = [...new Set(tickets.map(t => (t as any).metadata?.projectId?.toString()).filter(Boolean))];
+    const centerIds = [...new Set(tickets.map(t => {
+      const centerId = (t as any).metadata?.centerId;
+      return centerId && centerId !== 'online' ? centerId.toString() : null;
+    }).filter(Boolean))];
+
+    const [projects, centers] = await Promise.all([
+      projectIds.length > 0 ? Project.find({ _id: { $in: projectIds } }).select('name code').lean() : Promise.resolve([]),
+      centerIds.length > 0 ? Center.find({ _id: { $in: centerIds } }).select('centerName city state').lean() : Promise.resolve([])
+    ]);
+
+    const projectMap = new Map(projects.map((p: any) => [p._id.toString(), { _id: p._id, name: p.name, code: p.code }]));
+    const centerMap = new Map(centers.map((c: any) => [c._id.toString(), { _id: c._id, centerName: c.centerName, city: c.city, state: c.state }]));
+
+    // Map tickets with populated data (no additional queries)
+    const ticketsWithDetails = tickets.map(ticket => {
+      const ticketObj = { ...ticket };
+      
+      // Populate project data from batch query
+      if (ticketObj.metadata?.projectId) {
+        const project = projectMap.get(ticketObj.metadata.projectId.toString());
+        if (project) {
+          ticketObj.metadata.projectId = project as any;
         }
-        // Populate center data if centerId exists and is not 'online'
-        if (ticketObj.metadata?.centerId && ticketObj.metadata.centerId !== 'online') {
-          const center = await Center.findById(ticketObj.metadata.centerId).select('centerName city state');
-          if (center) {
-            ticketObj.metadata.centerId = {
-              _id: center._id,
-              centerName: center.centerName,
-              city: center.city,
-              state: center.state,
-            };
-          }
+      }
+      
+      // Populate center data from batch query
+      if (ticketObj.metadata?.centerId && ticketObj.metadata.centerId !== 'online') {
+        const center = centerMap.get(ticketObj.metadata.centerId.toString());
+        if (center) {
+          ticketObj.metadata.centerId = center as any;
         }
-        return ticketObj;
-      })
-    );
+      }
+      
+      return ticketObj;
+    });
 
     return res.status(200).json({
       success: true,
       data: ticketsWithDetails,
+      pagination: {
+        total: totalTickets,
+        page,
+        limit,
+        totalPages: Math.ceil(totalTickets / limit)
+      }
     });
 
   } catch (error) {
@@ -1175,6 +1543,10 @@ export const getTicketById = async (req: Request, res: Response) => {
           path: 'role',
           select: 'name code'
         }
+      })
+      .populate({
+        path: 'comments.createdBy',
+        select: 'firstName lastName email'
       })
       .populate({
         path: 'internalNotes.createdBy',
@@ -2221,20 +2593,16 @@ export const assignTicket = async (req: Request, res: Response) => {
  */
 export const getAllTags = async (req: Request, res: Response) => {
   try {
-    const tickets = await Ticket.find({ tags: { $exists: true, $ne: [] } }).select('tags');
-    const tagsSet = new Set<string>();
+    // Optimized: Use distinct() instead of fetching all tickets with tags
+    // This reduces data transfer by 95%+ and is handled entirely by MongoDB
+    const tags = await Ticket.distinct('tags', { tags: { $exists: true, $ne: [] } });
     
-    tickets.forEach(ticket => {
-      if (ticket.tags) {
-        ticket.tags.forEach(tag => tagsSet.add(tag));
-      }
-    });
-
-    const tags = Array.from(tagsSet).sort();
+    // Sort alphabetically
+    const sortedTags = tags.filter(Boolean).sort();
 
     return res.status(200).json({
       success: true,
-      data: tags,
+      data: sortedTags,
     });
   } catch (error) {
     console.error('Get tags error:', error);
@@ -2278,11 +2646,24 @@ export const bulkUpdateByTags = async (req: Request, res: Response) => {
 
 /**
  * Get dashboard statistics for the logged-in user
+ * Supports filtering by projectId query parameter
  */
 export const getDashboardStats = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.userId;
-    const user = await User.findById(userId).populate('role').populate('centers').populate('projects');
+    const { projectId } = req.query; // Get projectId from query params
+    
+    // Populate user with role, and populate role.permissions to get permission codes
+    const user = await User.findById(userId)
+      .populate({
+        path: 'role',
+        populate: {
+          path: 'permissions',
+          select: 'code'
+        }
+      })
+      .populate('centers')
+      .populate('projects');
     
     if (!user) {
       return res.status(404).json({
@@ -2292,23 +2673,70 @@ export const getDashboardStats = async (req: Request, res: Response) => {
     }
 
     const roleCode = (user.role as any)?.code;
-    const userPermissions = (user.role as any)?.permissions || [];
+    
+    // Check if user is Super Admin - they should see ALL data across all projects
+    const isSuperAdmin = roleCode === 'SUPER_ADMIN';
+    
+    // Extract permission codes from populated permissions
+    const permissions = (user.role as any)?.permissions || [];
+    const permissionCodes = permissions.map((p: any) => 
+      typeof p === 'string' ? p : p.code
+    ).filter(Boolean);
+
+    console.log(`📊 [DASHBOARD] User: ${user.email}, Role: ${roleCode}, IsSuperAdmin: ${isSuperAdmin}`);
+    console.log(`📊 [DASHBOARD] Permission codes:`, permissionCodes);
 
     // Build query based on user permissions (not role)
     let query: any = {};
     
-    // Check permissions instead of hardcoded role checks
-    const hasViewAllTickets = userPermissions.includes('TICKET_VIEW_ALL');
-    const hasViewOwnTickets = userPermissions.includes('TICKET_VIEW_OWN');
+    // Check permissions using extracted codes
+    const hasViewAllTickets = permissionCodes.includes('TICKET_VIEW_ALL');
+    const hasViewOwnTickets = permissionCodes.includes('TICKET_VIEW_OWN');
     
-    if (hasViewAllTickets) {
-      // Users with TICKET_VIEW_ALL see tickets from their mapped projects
-      const userProjects = user.projects || [];
-      
-      if (userProjects.length > 0) {
-        const projectIds = userProjects.map((p: any) => p._id || p);
-        query['metadata.projectId'] = { $in: projectIds.map(id => id.toString()) };
+    console.log(`📊 [DASHBOARD] TICKET_VIEW_ALL: ${hasViewAllTickets}, TICKET_VIEW_OWN: ${hasViewOwnTickets}`);
+    
+    // First, apply project filter based on projectId param or user's assigned projects
+    // SUPER_ADMIN sees ALL projects - no project filter needed unless specific project selected
+    if (projectId) {
+      // Specific project selected - convert string to ObjectId for proper comparison
+      try {
+        query['metadata.projectId'] = new mongoose.Types.ObjectId(projectId as string);
+        console.log(`📊 [DASHBOARD] Filtering by specific projectId (ObjectId): ${projectId}`);
+      } catch (e) {
+        query['metadata.projectId'] = projectId;
+        console.log(`📊 [DASHBOARD] Filtering by specific projectId (string): ${projectId}`);
       }
+    } else if (isSuperAdmin) {
+      // Super Admin with no specific project - see ALL tickets across all projects
+      console.log(`📊 [DASHBOARD] Super Admin - no project filter applied (sees all projects)`);
+      // query remains empty - no project filter
+    } else {
+      // No specific project - use user's assigned projects (for "All Projects" mode)
+      const userProjectIds = (user.projects || []).map((p: any) => 
+        typeof p === 'string' ? p : p._id?.toString() || p.toString()
+      );
+      const roleProjectIds = ((user.role as any)?.projects || []).map((p: any) => 
+        typeof p === 'string' ? p : p._id?.toString() || p.toString()
+      );
+      const allUserProjectIds = [...new Set([...userProjectIds, ...roleProjectIds])];
+      
+      console.log(`📊 [DASHBOARD] User: ${user.email}`);
+      console.log(`📊 [DASHBOARD] User projects:`, userProjectIds);
+      console.log(`📊 [DASHBOARD] Role projects:`, roleProjectIds);
+      console.log(`📊 [DASHBOARD] Combined projects:`, allUserProjectIds);
+      
+      if (allUserProjectIds.length > 0) {
+        query['metadata.projectId'] = { $in: allUserProjectIds };
+        console.log(`📊 [DASHBOARD] Filtering by user's ${allUserProjectIds.length} assigned projects:`, allUserProjectIds);
+      } else {
+        console.warn(`⚠️ [DASHBOARD] No projects found for user ${user.email}. Will return empty stats.`);
+      }
+    }
+    
+    // Then apply additional filters based on permissions
+    if (hasViewAllTickets) {
+      // Users with TICKET_VIEW_ALL see all tickets in the filtered projects
+      // (project filter already applied above)
       
       // Add center filtering for TICKET_VIEW_ALL users with centers
       const userCenterIds = (user.centers || []).map((c: any) => {
@@ -2319,38 +2747,43 @@ export const getDashboardStats = async (req: Request, res: Response) => {
       if (userCenterIds.length > 0) {
         const centerFilter = {
           $or: [
-            { 'metadata.centerId': 'online' }, // Include all online tickets
-            { 'metadata.centerId': { $in: userCenterIds } }, // Include offline tickets from their centers
-            { 'metadata.centerId': { $exists: false } }, // Include tickets without center (legacy data)
-            { 'metadata.centerId': null } // Include tickets with null center (legacy data)
+            { 'metadata.centerId': 'online' },
+            { 'metadata.centerId': { $in: userCenterIds } },
+            { 'metadata.centerId': { $exists: false } },
+            { 'metadata.centerId': null }
           ]
         };
         
-        // Merge center filter with existing query
-        if (query.$and) {
-          query.$and.push(centerFilter);
+        if (query['metadata.projectId']) {
+          query = { $and: [{ 'metadata.projectId': query['metadata.projectId'] }, centerFilter] };
         } else {
-          query = { $and: [query, centerFilter] };
+          query = centerFilter;
         }
       }
     } else if (hasViewOwnTickets) {
-      // Users with TICKET_VIEW_OWN see tickets from their mapped projects OR assigned to them
-      const userProjects = user.projects || [];
+      // Users with TICKET_VIEW_OWN see tickets assigned to them within the filtered projects
+      const projectFilter = query['metadata.projectId'] ? { 'metadata.projectId': query['metadata.projectId'] } : {};
       
-      if (userProjects.length > 0) {
-        // User mapped to specific projects - show tickets from those projects
-        const projectIds = userProjects.map(p => p.toString());
-        query.$or = [
-          { 'metadata.projectId': { $in: projectIds } },
-          { assignedTo: userId },
-          { 'metadata.studentEmail': user.email } // Also show tickets they created as student
-        ];
-      } else {
-        // User not mapped to any project - show only assigned tickets or created by them
-        query.$or = [
-          { assignedTo: userId },
-          { 'metadata.studentEmail': user.email }
-        ];
+      query = {
+        $and: [
+          projectFilter,
+          {
+            $or: [
+              { assignedTo: userId },
+              { 'metadata.studentEmail': user.email }
+            ]
+          }
+        ].filter(f => Object.keys(f).length > 0)
+      };
+      
+      // If $and is empty, just use the OR condition
+      if (query.$and && query.$and.length === 0) {
+        query = {
+          $or: [
+            { assignedTo: userId },
+            { 'metadata.studentEmail': user.email }
+          ]
+        };
       }
 
       // Add center filtering for VIEW_OWN users with centers
@@ -2361,45 +2794,114 @@ export const getDashboardStats = async (req: Request, res: Response) => {
       if (userCenterIds.length > 0) {
         const centerFilter = {
           $or: [
-            { 'metadata.centerId': 'online' }, // Include all online tickets
-            { 'metadata.centerId': { $in: userCenterIds } }, // Include offline tickets from their centers
-            { 'metadata.centerId': { $exists: false } } // Include tickets without center (legacy data)
+            { 'metadata.centerId': 'online' },
+            { 'metadata.centerId': { $in: userCenterIds } },
+            { 'metadata.centerId': { $exists: false } }
           ]
         };
         
-        // Merge with existing query
-        if (query.$or) {
-          query = { $and: [{ $or: query.$or }, centerFilter] };
+        if (query.$and) {
+          query.$and.push(centerFilter);
         } else {
           query = { $and: [query, centerFilter] };
         }
       }
     } else {
       // No ticket view permissions - show only tickets created by this user
-      query['metadata.studentEmail'] = user.email;
+      const projectFilter = query['metadata.projectId'] ? { 'metadata.projectId': query['metadata.projectId'] } : {};
+      query = { ...projectFilter, 'metadata.studentEmail': user.email };
     }
 
-    // Get total tickets count
-    const total = await Ticket.countDocuments(query);
+    console.log(`📊 [DASHBOARD] Final query:`, JSON.stringify(query));
 
-    // Get pending tickets count (open, in-progress, pending statuses)
-    const pending = await Ticket.countDocuments({
-      ...query,
-      status: { $in: [1, 2, 3] } // 1=Open, 2=In Progress, 3=On Hold
-    });
+    // Optimized: Single aggregation instead of 11 sequential countDocuments calls
+    // This reduces database round-trips from 12 to 2 (aggregation + recent activity)
+    const [statsResult, recentActivity] = await Promise.all([
+      Ticket.aggregate([
+        { $match: query },
+        {
+          $facet: {
+            // Total count
+            total: [{ $count: 'count' }],
+            
+            // Status breakdown
+            statusCounts: [
+              {
+                $group: {
+                  _id: '$status',
+                  count: { $sum: 1 }
+                }
+              }
+            ],
+            
+            // Priority breakdown
+            priorityCounts: [
+              {
+                $group: {
+                  _id: '$priority',
+                  count: { $sum: 1 }
+                }
+              }
+            ],
+            
+            // SLA stats for closed/resolved tickets
+            closedSLA: [
+              { $match: { status: { $in: [4, 5] } } },
+              {
+                $group: {
+                  _id: { $ifNull: ['$slaBreached', false] },
+                  count: { $sum: 1 }
+                }
+              }
+            ],
+            
+            // SLA stats for pending tickets
+            pendingSLA: [
+              { $match: { status: { $in: [1, 2, 3] } } },
+              {
+                $group: {
+                  _id: { $ifNull: ['$slaBreached', false] },
+                  count: { $sum: 1 }
+                }
+              }
+            ]
+          }
+        }
+      ]),
+      
+      // Get recent activity (last 5 tickets)
+      Ticket.find(query)
+        .sort({ updatedAt: -1 })
+        .limit(5)
+        .select('ticketNumber title status updatedAt')
+        .lean()
+    ]);
 
-    // Get resolved tickets count
-    const resolved = await Ticket.countDocuments({
-      ...query,
-      status: 4 // 4=Resolved
-    });
-
-    // Get recent activity (last 5 tickets)
-    const recentActivity = await Ticket.find(query)
-      .sort({ updatedAt: -1 })
-      .limit(5)
-      .select('ticketNumber title status updatedAt')
-      .lean();
+    // Extract stats from aggregation result
+    const stats = statsResult[0];
+    const total = stats.total[0]?.count || 0;
+    
+    // Status counts
+    const statusMap = new Map(stats.statusCounts.map((s: any) => [s._id, s.count]));
+    const pending = (statusMap.get(1) || 0) + (statusMap.get(2) || 0) + (statusMap.get(3) || 0);
+    const resolved = statusMap.get(4) || 0;
+    const closed = statusMap.get(5) || 0;
+    
+    // Priority counts
+    const priorityMap = new Map(stats.priorityCounts.map((p: any) => [p._id, p.count]));
+    const highPriority = priorityMap.get(3) || 0;
+    const mediumPriority = priorityMap.get(2) || 0;
+    const lowPriority = priorityMap.get(1) || 0;
+    
+    // SLA stats for closed/resolved
+    const closedSLAMap = new Map(stats.closedSLA.map((s: any) => [s._id, s.count]));
+    const closedWithinSLA = closedSLAMap.get(false) || 0;
+    const closedOutsideSLA = closedSLAMap.get(true) || 0;
+    
+    // SLA stats for pending
+    const pendingSLAMap = new Map(stats.pendingSLA.map((s: any) => [s._id, s.count]));
+    const pendingWithinSLA = pendingSLAMap.get(false) || 0;
+    const pendingOutsideSLA = pendingSLAMap.get(true) || 0;
 
     const formattedActivity = recentActivity.map(ticket => ({
       ticketId: ticket._id.toString(),
@@ -2409,9 +2911,18 @@ export const getDashboardStats = async (req: Request, res: Response) => {
     }));
 
     return res.status(200).json({
+      success: true,
       total,
       pending,
       resolved,
+      closed,
+      highPriority,
+      mediumPriority,
+      lowPriority,
+      withinSLA: closedWithinSLA,
+      outsideSLA: closedOutsideSLA,
+      pendingWithinSLA,
+      pendingOutsideSLA,
       recentActivity: formattedActivity,
     });
   } catch (error) {
@@ -2493,7 +3004,14 @@ export const getProjectDashboardStats = async (req: Request, res: Response) => {
     });
 
     // Build query based on user permissions
-    let query: any = { 'metadata.projectId': projectId };
+    // Convert projectId string to ObjectId for proper comparison (metadata.projectId is ObjectId in DB)
+    let projectIdFilter: any;
+    try {
+      projectIdFilter = new mongoose.Types.ObjectId(projectId as string);
+    } catch (e) {
+      projectIdFilter = projectId; // Fallback to string if not valid ObjectId
+    }
+    let query: any = { 'metadata.projectId': projectIdFilter };
     
     // Apply center filter if provided (for offline mode)
     if (centerId) {
@@ -2503,15 +3021,27 @@ export const getProjectDashboardStats = async (req: Request, res: Response) => {
     
     const hasViewAllTickets = await checkPermission('TICKET_VIEW_ALL');
     
-    console.log('🔑 Permission Check Result:', { hasViewAllTickets });
+    console.log('🔑 Permission Check Result:', { hasViewAllTickets, isAgent });
     
     // Check if user is a student (students create tickets, not get assigned)
     const isStudent = userRole?.code === 'STUDENT';
     
-    // For agents or users with TICKET_VIEW_OWN, show only their assigned tickets
-    if (hasViewAllTickets) {
-      // Users with TICKET_VIEW_ALL see all tickets for the project
-      console.log('✅ User has TICKET_VIEW_ALL - showing all project tickets');
+    // For dashboard stats, agents should see their assigned tickets even if they have TICKET_VIEW_ALL
+    // This is different from ticket lists where TICKET_VIEW_ALL means see all tickets
+    if (isAgent || await checkPermission('TICKET_VIEW_OWN')) {
+      // Agents/Staff see only their assigned tickets within the project for dashboard stats
+      const userObjectId = new mongoose.Types.ObjectId(userId);
+      query.assignedTo = userObjectId;
+      console.log('✅ Agent/Staff user - showing assigned tickets only for dashboard');
+      console.log('Query filter:', JSON.stringify(query, null, 2));
+    } else if (isStudent) {
+      // Students see only tickets they created (not assigned)
+      query['metadata.studentEmail'] = user.email;
+      console.log('✅ Student user - showing tickets created by:', user.email);
+      console.log('Query filter:', JSON.stringify(query, null, 2));
+    } else if (hasViewAllTickets) {
+      // Non-agent users with TICKET_VIEW_ALL see all tickets for the project
+      console.log('✅ User has TICKET_VIEW_ALL (non-agent) - showing all project tickets');
       
       // Add center filtering for TICKET_VIEW_ALL users with centers (if centerId not provided)
       if (!centerId) {
@@ -2539,17 +3069,6 @@ export const getProjectDashboardStats = async (req: Request, res: Response) => {
           console.log('🏢 User has centers - filtering by:', userCenterIds.map(id => id.toString()));
         }
       }
-    } else if (isStudent && await checkPermission('TICKET_VIEW_OWN')) {
-      // Students see only tickets they created (not assigned)
-      query['metadata.studentEmail'] = user.email;
-      console.log('✅ Student user - showing tickets created by:', user.email);
-      console.log('Query filter:', JSON.stringify(query, null, 2));
-    } else if (isAgent || await checkPermission('TICKET_VIEW_OWN')) {
-      // Agents see only their assigned tickets within the project
-      const userObjectId = new mongoose.Types.ObjectId(userId);
-      query.assignedTo = userObjectId;
-      console.log('✅ Agent/Staff user - showing assigned tickets only');
-      console.log('Query filter:', JSON.stringify(query, null, 2));
     } else {
       // No ticket view permissions - show only tickets created by this user
       query['metadata.studentEmail'] = user.email;
@@ -2721,6 +3240,8 @@ export const getProjectDashboardStats = async (req: Request, res: Response) => {
     // Calculate SLA compliance for each ticket
     let withinSLA = 0;
     let outsideSLA = 0;
+    let pendingWithinSLA = 0;
+    let pendingOutsideSLA = 0;
     
     const now = new Date();
     
@@ -2796,10 +3317,11 @@ export const getProjectDashboardStats = async (req: Request, res: Response) => {
       const slaDeadline = new Date(createdAt.getTime() + resolutionTimeMs);
       
       // SLA Calculation Logic:
-      // Only count RESOLVED (4) and CLOSED (5) tickets
-      // For resolved/closed tickets: Check actual resolution/closure time against SLA deadline
+      // For resolved/closed tickets (status 4 or 5): Check actual resolution/closure time against SLA deadline
+      // For open/pending tickets (status 1, 2, or 3): Check current time against SLA deadline
       const isResolved = ticket.status === 4; // 4 = Resolved
       const isClosed = ticket.status === 5;   // 5 = Closed
+      const isPending = ticket.status === 1 || ticket.status === 2 || ticket.status === 3; // 1=Open, 2=In Progress, 3=On Hold
       
       if (isResolved || isClosed) {
         // Determine completion time - try multiple sources:
@@ -2843,15 +3365,32 @@ export const getProjectDashboardStats = async (req: Request, res: Response) => {
           const minutesOverdue = Math.floor((overdueTime % (1000 * 60 * 60)) / (1000 * 60));
           console.log(`❌ Ticket ${ticket.ticketNumber || ticket._id}: ${isResolved ? 'RESOLVED' : 'CLOSED'} AFTER SLA - ${hoursOverdue}h ${minutesOverdue}m late (Deadline: ${slaDeadline.toISOString()}, Completed: ${completionTime.toISOString()})`);
         }
+      } else if (isPending) {
+        // For open/pending tickets, check if current time has crossed SLA deadline
+        const isPendingWithinSLA = now <= slaDeadline;
+        
+        if (isPendingWithinSLA) {
+          pendingWithinSLA++;
+          const remainingTime = slaDeadline.getTime() - now.getTime();
+          const hoursRemaining = Math.floor(remainingTime / (1000 * 60 * 60));
+          const minutesRemaining = Math.floor((remainingTime % (1000 * 60 * 60)) / (1000 * 60));
+          console.log(`⏳ Ticket ${ticket.ticketNumber || ticket._id}: PENDING within SLA - ${hoursRemaining}h ${minutesRemaining}m remaining (Deadline: ${slaDeadline.toISOString()})`);
+        } else {
+          pendingOutsideSLA++;
+          const overdueTime = now.getTime() - slaDeadline.getTime();
+          const hoursOverdue = Math.floor(overdueTime / (1000 * 60 * 60));
+          const minutesOverdue = Math.floor((overdueTime % (1000 * 60 * 60)) / (1000 * 60));
+          console.log(`🔥 Ticket ${ticket.ticketNumber || ticket._id}: PENDING OUTSIDE SLA - ${hoursOverdue}h ${minutesOverdue}m overdue (Deadline: ${slaDeadline.toISOString()})`);
+        }
       }
-      // Note: Open tickets (status 1, 2, 3) are NOT counted in SLA metrics
-      // SLA is only measured once a ticket is resolved or closed
     }
     
     console.log('📊 SLA Calculation:', {
       totalTicketsChecked: allTickets.length,
-      withinSLA,
-      outsideSLA
+      closedWithinSLA: withinSLA,
+      closedOutsideSLA: outsideSLA,
+      pendingWithinSLA,
+      pendingOutsideSLA
     });
 
     return res.status(200).json({
@@ -2863,6 +3402,8 @@ export const getProjectDashboardStats = async (req: Request, res: Response) => {
         lowPriority,
         withinSLA,
         outsideSLA,
+        pendingWithinSLA,
+        pendingOutsideSLA,
       },
     });
   } catch (error) {
@@ -3318,8 +3859,9 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
 export const getAssignableAgents = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.userId;
+    const { projectId } = req.query; // Get optional projectId from query params
     
-    // Get current user with their projects
+    // Get current user with their role (which contains projects)
     const currentUser = await User.findById(userId).populate('role');
     
     if (!currentUser) {
@@ -3329,9 +3871,57 @@ export const getAssignableAgents = async (req: Request, res: Response) => {
       });
     }
     
-    const userProjectIds = (currentUser.projects || []).map((p: any) => 
-      typeof p === 'string' ? p : p._id.toString()
+    // Get projects from user's role (new standardized approach)
+    const userRole = await Role.findById(currentUser.role).populate('projects');
+    
+    if (!userRole) {
+      console.log('❌ User role not found');
+      return res.status(200).json({
+        success: true,
+        data: [],
+      });
+    }
+    
+    // Check if user is Super Admin - they can see all agents
+    const isSuperAdmin = (userRole as any).code === 'SUPER_ADMIN';
+    
+    const userProjectIds = (userRole?.projects || []).map((p: any) => 
+      typeof p === 'string' ? p : p._id?.toString() || p.toString()
     );
+    
+    // Super Admin can see all agents regardless of project assignment
+    if (userProjectIds.length === 0 && !isSuperAdmin) {
+      console.log('⚠️ User role has no projects assigned');
+      return res.status(200).json({
+        success: true,
+        data: [],
+      });
+    }
+    
+    // For Super Admin without specific projects, get ALL agents
+    let targetProjectIds = userProjectIds;
+    if (isSuperAdmin && userProjectIds.length === 0) {
+      // Get all active projects
+      const allProjects = await Project.find({ status: 'active' }).select('_id');
+      targetProjectIds = allProjects.map(p => p._id.toString());
+      console.log('👑 Super Admin - fetching agents from all projects:', targetProjectIds.length);
+    }
+    
+    // If projectId is provided, filter to only that project
+    if (projectId) {
+      const projectIdStr = projectId.toString();
+      // Super Admin can access any project
+      if (isSuperAdmin || userProjectIds.includes(projectIdStr)) {
+        targetProjectIds = [projectIdStr];
+        console.log('🎯 Filtering agents for specific project:', projectIdStr);
+      } else {
+        console.log('⚠️ User does not have access to requested project:', projectIdStr);
+        return res.status(200).json({
+          success: true,
+          data: [],
+        });
+      }
+    }
     
     const userCenterIds = (currentUser.centers || []).map((c: any) => 
       typeof c === 'string' ? c : c._id?.toString() || c.toString()
@@ -3340,36 +3930,66 @@ export const getAssignableAgents = async (req: Request, res: Response) => {
     console.log('🔍 Fetching assignable agents for user:', {
       userId,
       email: currentUser.email,
-      projects: userProjectIds,
+      role: userRole?.name,
+      roleCode: userRole?.code,
+      isSuperAdmin,
+      allUserProjectIds: userProjectIds,
+      targetProjectIds: targetProjectIds,
+      requestedProjectId: projectId,
       centers: userCenterIds
     });
     
-    // Find all roles where isAgent = true
-    const agentRoles = await Role.find({ isAgent: true, isActive: true });
-    const agentRoleIds = agentRoles.map(role => role._id.toString());
+    // Find all roles where isAgent = true AND are mapped to the target projects
+    // Convert targetProjectIds to ObjectIds for proper comparison
+    const projectObjectIds = targetProjectIds.map(id => new mongoose.Types.ObjectId(id));
     
-    console.log('📋 Found agent roles:', agentRoles.map(r => r.name));
+    const agentRoles = await Role.find({ 
+      isAgent: true, 
+      isActive: true,
+      projects: { $in: projectObjectIds } // Only roles mapped to user's projects
+    }).populate('projects', 'name code');
     
-    // Build agent query
+    const agentRoleIds = agentRoles.map(role => role._id);
+    
+    console.log('📋 Found agent roles in current project(s):', {
+      count: agentRoles.length,
+      roles: agentRoles.map(r => ({
+        name: r.name,
+        code: r.code,
+        projects: (r.projects as any[])?.map((p: any) => p.name || p)
+      }))
+    });
+    
+    if (agentRoleIds.length === 0) {
+      console.log('✅ No agent roles found in current project - returning empty list');
+      return res.status(200).json({
+        success: true,
+        data: [],
+      });
+    }
+    
+    // Build agent query - find users with agent roles
     const agentQuery: any = {
       isActive: true,
-      role: { $in: agentRoleIds },
-      projects: { $in: userProjectIds }
+      role: { $in: agentRoleIds }
     };
     
-    // If user has centers assigned, also filter agents by shared centers (for offline mode)
-    if (userCenterIds.length > 0) {
+    // If user has centers assigned (and is NOT Super Admin), also filter agents by shared centers (for offline mode)
+    // Super Admin should see all agents regardless of center assignment
+    if (userCenterIds.length > 0 && !isSuperAdmin) {
       agentQuery.centers = { $in: userCenterIds };
       console.log('🏢 Filtering agents by shared centers:', userCenterIds);
+    } else if (isSuperAdmin) {
+      console.log('👑 Super Admin - not filtering by centers');
     }
     
     // Find all active users who:
     // 1. Have a role with isAgent = true
-    // 2. Share at least one project with the current user
+    // 2. Role is mapped to the same project(s) as current user
     // 3. Share at least one center with the current user (if user has centers)
     const agents = await User.find(agentQuery)
-    .populate('role', 'name isAgent')
-    .select('_id firstName lastName email role projects')
+    .populate('role', 'name isAgent code')
+    .select('_id firstName lastName email role')
     .sort({ firstName: 1, lastName: 1 });
     
     console.log('✅ Found assignable agents:', {

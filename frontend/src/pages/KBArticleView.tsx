@@ -148,6 +148,7 @@ const KBArticleView: React.FC = () => {
                 <img
                   src={project.logoUrl}
                   alt={project.name}
+                  loading="lazy"
                   className="h-10 w-auto"
                 />
               )}

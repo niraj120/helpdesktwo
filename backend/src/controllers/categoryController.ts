@@ -3,6 +3,7 @@ import { Category } from '../models/Category';
 import { Project } from '../models/Project';
 import { AuthRequest } from '../middleware/auth';
 import { logActivity } from '../utils/logger';
+import { cache, CACHE_KEYS, CACHE_TTL, invalidateCache } from '../utils/cache';
 
 // Get all categories across all projects (for debugging/admin)
 export const getAllCategories = async (req: AuthRequest, res: Response) => {

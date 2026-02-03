@@ -31,6 +31,7 @@ export interface IProject extends Document {
   // Branding Configuration
   branding?: {
     logo?: string; // URL or base64
+    logoLinkbackUrl?: string; // URL to navigate when logo is clicked
     colorTheme?: {
       primary?: string;
       secondary?: string;
@@ -318,6 +319,7 @@ const projectSchema = new Schema<IProject>({
   // Branding Configuration
   branding: {
     logo: String,
+    logoLinkbackUrl: String, // URL to navigate when logo is clicked
     colorTheme: {
       primary: { type: String, default: '#f97316' },
       secondary: { type: String, default: '#1f2937' },
@@ -446,6 +448,18 @@ const projectSchema = new Schema<IProject>({
       themeColor: { type: String, default: '#444ce7' },
       customCSS: { type: String },
       customJS: { type: String },
+    },
+    // Footer Links for policy URLs
+    footerLinks: {
+      copyright: { type: String },
+      termsOfUse: { type: String },
+      privacyPolicy: { type: String },
+      cookiePolicy: { type: String },
+    },
+    // Announcement Banner for login page
+    announcementBanner: {
+      message: { type: String },
+      type: { type: String, enum: ['plain', 'rich'], default: 'plain' },
     },
     ticketSubmissionSettings: {
       mode: { type: String, enum: ['online', 'offline', 'both'], default: 'both' },

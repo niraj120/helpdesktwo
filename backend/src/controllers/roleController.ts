@@ -2,6 +2,10 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { Role } from '../models/Role';
 import { logActivity } from '../utils/logger';
+import multer from 'multer';
+import path from 'path';
+import { GCSService } from '../services/gcsService';
+import { cache, CACHE_KEYS, CACHE_TTL, invalidateCache } from '../utils/cache';
 
 // @desc    Get all roles
 // @route   GET /api/roles
@@ -433,6 +437,78 @@ export const getMasterRoles = async (req: AuthRequest, res: Response) => {
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to fetch master roles',
+    });
+  }
+};
+
+// Multer memory storage for role document uploads
+const storage = multer.memoryStorage();
+
+export const uploadRoleDocument = multer({
+  storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    // Allow PDF, DOC, DOCX, and image files
+    const allowedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'image/jpeg',
+      'image/png',
+      'image/gif',
+    ];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only PDF, DOC, DOCX, and images are allowed.'));
+    }
+  },
+});
+
+// @desc    Delete role document
+// @route   DELETE /api/roles/:id/document
+// @access  Private
+export const deleteRoleDocument = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const role = await Role.findById(id);
+    if (!role) {
+      return res.status(404).json({
+        success: false,
+        error: 'Role not found',
+      });
+    }
+
+    // Delete from GCS if exists
+    if (role.document?.url) {
+      try {
+        const gcsService = new GCSService();
+        await gcsService.deleteFile(role.document.url);
+      } catch (gcsError) {
+        console.error('Error deleting document from GCS:', gcsError);
+      }
+    }
+
+    // Clear document field
+    role.document = undefined;
+    await role.save();
+
+    await logActivity(req, 'role', 'document_deleted', role._id, role.name, {
+      action: 'Document removed from role',
+    });
+
+    return res.json({
+      success: true,
+      message: 'Document deleted successfully',
+    });
+  } catch (error: any) {
+    console.error('Delete role document error:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to delete document',
     });
   }
 };

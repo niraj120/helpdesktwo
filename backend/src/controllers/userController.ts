@@ -38,7 +38,33 @@ export const getAllUsers = async (req: Request, res: Response): Promise<void> =>
     }
 
     if (role) {
-      filter.role = role;
+      // Check if role is a valid 24-character hex ObjectId
+      const isValidObjectId = typeof role === 'string' && 
+        role.length === 24 && 
+        /^[0-9a-fA-F]{24}$/.test(role);
+      
+      if (isValidObjectId) {
+        filter.role = new mongoose.Types.ObjectId(role as string);
+      } else {
+        // If not a valid ObjectId, treat it as a role code and look up the role
+        const roleDoc = await Role.findOne({ code: { $regex: new RegExp(`^${role}$`, 'i') } }).select('_id');
+        if (roleDoc) {
+          filter.role = roleDoc._id;
+        } else {
+          // Role code not found, return empty results
+          res.json({
+            success: true,
+            data: [],
+            pagination: {
+              page: parseInt(page as string),
+              limit: parseInt(limit as string),
+              total: 0,
+              pages: 0,
+            },
+          });
+          return;
+        }
+      }
     }
 
     if (isActive !== '') {
@@ -46,23 +72,82 @@ export const getAllUsers = async (req: Request, res: Response): Promise<void> =>
     }
 
     if (project) {
-      filter.projects = project;
+      // Only use project filter if it's a valid ObjectId
+      if (mongoose.Types.ObjectId.isValid(project as string)) {
+        filter.projects = project;
+      }
     }
 
     if (department) {
       filter.department = { $regex: department, $options: 'i' };
     }
 
+    // ============================================
+    // ADDITIONAL FILTERS (date range, centers)
+    // ============================================
+    
+    // Date range filter
+    if (req.query.createdAfter || req.query.createdBefore) {
+      filter.createdAt = {};
+      if (req.query.createdAfter) {
+        const afterDate = new Date(req.query.createdAfter as string);
+        if (!isNaN(afterDate.getTime())) filter.createdAt.$gte = afterDate;
+      }
+      if (req.query.createdBefore) {
+        const beforeDate = new Date(req.query.createdBefore as string);
+        if (!isNaN(beforeDate.getTime())) {
+          beforeDate.setHours(23, 59, 59, 999);
+          filter.createdAt.$lte = beforeDate;
+        }
+      }
+      if (Object.keys(filter.createdAt).length === 0) delete filter.createdAt;
+    }
+    
+    // Centers filter
+    if (req.query.centers) {
+      const centerIds = String(req.query.centers).split(',').map(c => c.trim()).filter(Boolean);
+      if (centerIds.length > 0) {
+        filter.centers = { $in: centerIds };
+      }
+    }
+
+    // ============================================
+    // SORTING
+    // ============================================
+    const allowedSortFields = ['createdAt', 'firstName', 'lastName', 'email', 'lastLogin'];
+    const sortBy = allowedSortFields.includes(req.query.sortBy as string) ? req.query.sortBy as string : 'createdAt';
+    const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
+    const sortObj = { [sortBy]: sortOrder };
+
+    // Enforce max limit
+    const effectiveLimit = Math.min(limitNum || 20, 100);
+
+    // Build the final query filter
+    // Ensure role field is a valid ObjectId (exclude documents with string role values like "agent")
+    // This prevents "Cast to ObjectId failed" errors during populate
+    const roleFilter = filter.role;
+    if (roleFilter) {
+      // If a specific role filter is set, use $and to combine with type check
+      filter.$and = filter.$and || [];
+      filter.$and.push({ role: roleFilter });
+      filter.$and.push({ role: { $type: 'objectId' } });
+      delete filter.role;
+    } else {
+      // Just ensure role is a valid ObjectId
+      filter.role = { $type: 'objectId' };
+    }
+
     const [users, total] = await Promise.all([
       User.find(filter)
-        .select('-password -resetPasswordOTP -resetPasswordOTPExpires')
+        // OPTIMIZED: Exclude password and heavy fields, reduce populate data for list view
+        .select('-password -resetPasswordOTP -resetPasswordOTPExpires -permissions -notificationPreferences -metadata')
         .populate('role', 'name code isAgent')
-        .populate('projects', 'name code')
-        .populate('centers', 'centerName city state')
-        .populate('reportingManager', 'firstName lastName email employeeCode')
-        .sort({ createdAt: -1 })
+        .populate('projects', 'name') // Only name for list view
+        .populate('centers', 'centerName') // Only name for list view
+        .populate('reportingManager', 'firstName lastName') // Reduced fields
+        .sort(sortObj)
         .skip(skip)
-        .limit(limitNum)
+        .limit(effectiveLimit)
         .lean(),
       User.countDocuments(filter),
     ]);
@@ -1279,6 +1364,51 @@ export const getEscalationAgents = async (req: Request, res: Response): Promise<
     res.status(500).json({
       success: false,
       error: 'Failed to fetch escalation agents',
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * Get employee report data
+ * @route GET /api/users/report
+ */
+export const getUserReport = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const users = await User.find({ isActive: true })
+      .select('employeeCode firstName lastName email mobile isActive role centers')
+      .populate('role', 'name')
+      .populate('centers', 'centerName')
+      .sort({ employeeCode: 1 })
+      .lean();
+
+    const reportData = users.map(user => ({
+      _id: user._id,
+      employeeCode: user.employeeCode || 'N/A',
+      firstName: user.firstName,
+      lastName: user.lastName,
+      fullName: `${user.firstName} ${user.lastName}`,
+      email: user.email,
+      mobile: user.mobile || 'N/A',
+      centersMapped: Array.isArray(user.centers) 
+        ? user.centers.map((c: any) => c.centerName || 'N/A').join(', ') 
+        : 'N/A',
+      isActive: user.isActive,
+      status: user.isActive ? 'Active' : 'Inactive',
+      role: (user.role as any)?.name || 'N/A',
+    }));
+
+    res.json({
+      success: true,
+      data: reportData,
+      count: reportData.length,
+    });
+
+  } catch (error: any) {
+    console.error('Get user report error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch user report',
       message: error.message,
     });
   }

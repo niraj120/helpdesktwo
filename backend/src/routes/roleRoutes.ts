@@ -9,6 +9,8 @@ import {
   deleteRole,
   cloneRole,
   getMasterRoles,
+  uploadRoleDocument,
+  deleteRoleDocument,
 } from '../controllers/roleController';
 
 const router = Router();
@@ -34,7 +36,7 @@ router.get('/:id', getRoleById);
 // @desc    Create new role
 // @route   POST /api/roles
 // @access  Private (requires permission)
-router.post('/', checkPermission('RBAC_CREATE_ROLE'), createRole);
+router.post('/', checkPermission('RBAC_CREATE_ROLE'), uploadRoleDocument.single('document'), createRole);
 
 // @desc    Clone role from master
 // @route   POST /api/roles/:id/clone
@@ -44,7 +46,12 @@ router.post('/:id/clone', checkPermission('RBAC_CREATE_ROLE'), cloneRole);
 // @desc    Update role
 // @route   PUT /api/roles/:id
 // @access  Private (requires permission)
-router.put('/:id', checkPermission('RBAC_EDIT_ROLE'), updateRole);
+router.put('/:id', checkPermission('RBAC_EDIT_ROLE'), uploadRoleDocument.single('document'), updateRole);
+
+// @desc    Delete role document
+// @route   DELETE /api/roles/:id/document
+// @access  Private (requires permission)
+router.delete('/:id/document', checkPermission('RBAC_EDIT_ROLE'), deleteRoleDocument);
 
 // @desc    Delete role
 // @route   DELETE /api/roles/:id

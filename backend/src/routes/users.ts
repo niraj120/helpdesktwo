@@ -16,6 +16,7 @@ import {
   registerStudent,
   searchStudents,
   getEscalationAgents,
+  getUserReport,
 } from '../controllers/userController';
 
 const router = Router();
@@ -33,6 +34,12 @@ router.get('/hrms/search', checkPermission('USER_CREATE'), searchHRMSEmployees);
 // @route   GET /api/users/hrms/validate/:employeeCode
 // @access  Private
 router.get('/hrms/validate/:employeeCode', checkPermission('USER_CREATE'), validateEmployeeCode);
+
+// Report routes (must be before /:id route to avoid conflicts)
+// @desc    Get employee report
+// @route   GET /api/users/report
+// @access  Private
+router.get('/report', checkPermission('REPORT_VIEW_EMPLOYEE'), getUserReport);
 
 // Offline module routes
 // @desc    Search user by email

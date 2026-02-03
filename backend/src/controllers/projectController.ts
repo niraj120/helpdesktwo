@@ -6,6 +6,8 @@ import { Status } from '../models/Status';
 import SLARule from '../models/sla-module/SLARule';
 import { AuthRequest } from '../middleware/auth';
 import { logActivity } from '../utils/logger';
+import { cache, CACHE_KEYS, CACHE_TTL, invalidateCache } from '../utils/cache';
+import { GCSService } from '../services/gcsService';
 
 /**
  * Get all projects with optional filtering
@@ -19,50 +21,141 @@ export const getAllProjects = async (req: Request, res: Response) => {
     
     // Filter projects based on user's assigned projects if they don't have PROJECT_VIEW_ALL permission
     if (authReq.user?.userId) {
-      const user = await User.findById(authReq.user.userId).populate('role');
-      const userRole = user?.role as any;
-      const userPermissions = userRole?.permissions || [];
-      const hasViewAllPermission = userPermissions.includes('PROJECT_VIEW_ALL');
+      // Use the role from auth middleware which has populated permissions
+      const authRole = authReq.user?.role;
+      let hasViewAllPermission = false;
       
-      // If user doesn't have PROJECT_VIEW_ALL, only show their assigned projects
-      if (!hasViewAllPermission && user?.projects && user.projects.length > 0) {
-        query._id = { $in: user.projects };
-        console.log(`🔒 Filtering projects for user ${user.email}: ${user.projects.length} projects`);
+      // Check if role permissions are populated (array of Permission objects with 'code')
+      if (authRole?.permissions && Array.isArray(authRole.permissions)) {
+        hasViewAllPermission = authRole.permissions.some((p: any) => 
+          p?.code === 'PROJECT_VIEW_ALL' || p === 'PROJECT_VIEW_ALL'
+        );
+      }
+      
+      // Also check role code - Super Admin should see all projects
+      if (authRole?.code === 'SUPER_ADMIN') {
+        hasViewAllPermission = true;
+      }
+      
+      console.log(`👤 User: ${authReq.user?.email}, Role: ${authRole?.code}, Has PROJECT_VIEW_ALL: ${hasViewAllPermission}`);
+      
+      // If user doesn't have PROJECT_VIEW_ALL, filter by assigned projects
+      if (!hasViewAllPermission) {
+        const user = await User.findById(authReq.user.userId).populate({
+          path: 'role',
+          populate: {
+            path: 'projects',
+            model: 'Project'
+          }
+        });
+        const userRole = user?.role as any;
+        
+        console.log(`📁 User's assigned projects (user.projects):`, user?.projects);
+        console.log(`📁 User's role projects (role.projects):`, userRole?.projects);
+        
+        // Combine projects from both user.projects and role.projects
+        const userProjectIds = user?.projects?.map((p: any) => p.toString()) || [];
+        const roleProjectIds = userRole?.projects?.map((p: any) => 
+          typeof p === 'string' ? p : p._id?.toString() || p.toString()
+        ) || [];
+        
+        // Merge unique project IDs
+        const allProjectIds = [...new Set([...userProjectIds, ...roleProjectIds])];
+        
+        console.log(`📁 Combined project IDs:`, allProjectIds);
+        
+        if (allProjectIds.length > 0) {
+          query._id = { $in: allProjectIds };
+          console.log(`🔒 Filtering projects for user ${user?.email}: ${allProjectIds.length} projects`);
+        } else {
+          console.log(`⚠️  User ${user?.email} has no assigned projects (neither on user nor role)!`);
+        }
+      } else {
+        console.log(`✅ User ${authReq.user?.email} has PROJECT_VIEW_ALL - showing all projects`);
       }
     }
     
     // Search by name, code, or projectId
     if (search && typeof search === 'string') {
-      query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { code: { $regex: search, $options: 'i' } },
-        { projectId: { $regex: search, $options: 'i' } },
-      ];
+      // Sanitize search to prevent regex injection
+      const sanitizedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').trim();
+      if (sanitizedSearch) {
+        query.$or = [
+          { name: { $regex: sanitizedSearch, $options: 'i' } },
+          { code: { $regex: sanitizedSearch, $options: 'i' } },
+          { projectId: { $regex: sanitizedSearch, $options: 'i' } },
+        ];
+      }
     }
     
     if (status) {
-      query.status = status;
+      const validStatuses = ['active', 'inactive', 'archived'];
+      if (validStatuses.includes(status as string)) {
+        query.status = status;
+      }
     }
+
+    // ============================================
+    // ADDITIONAL FILTERS (date range)
+    // ============================================
     
-    const skip = (Number(page) - 1) * Number(limit);
+    // Date range filter
+    if (req.query.createdAfter || req.query.createdBefore) {
+      query.createdAt = {};
+      if (req.query.createdAfter) {
+        const afterDate = new Date(req.query.createdAfter as string);
+        if (!isNaN(afterDate.getTime())) query.createdAt.$gte = afterDate;
+      }
+      if (req.query.createdBefore) {
+        const beforeDate = new Date(req.query.createdBefore as string);
+        if (!isNaN(beforeDate.getTime())) {
+          beforeDate.setHours(23, 59, 59, 999);
+          query.createdAt.$lte = beforeDate;
+        }
+      }
+      if (Object.keys(query.createdAt).length === 0) delete query.createdAt;
+    }
+
+    // ============================================
+    // SORTING
+    // ============================================
+    const allowedSortFields = ['createdAt', 'name', 'code', 'status'];
+    const sortBy = allowedSortFields.includes(req.query.sortBy as string) ? req.query.sortBy as string : 'createdAt';
+    const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
+    const sortObj: { [key: string]: 1 | -1 } = { [sortBy]: sortOrder };
+
+    // Enforce max limit
+    const effectiveLimit = Math.min(Number(limit) || 10, 100);
+    const skip = (Number(page) - 1) * effectiveLimit;
     
     const projects = await Project.find(query)
-      .sort({ createdAt: -1 })
+      // OPTIMIZED: Exclude heavy config fields from list view
+      .select('-ticketConfig -slaConfig -notificationConfig -integrations -emailConfig')
+      .sort(sortObj)
       .skip(skip)
-      .limit(Number(limit))
-      .populate('createdBy', 'firstName lastName email')
-      .populate('updatedBy', 'firstName lastName email');
+      .limit(effectiveLimit)
+      .populate('createdBy', 'firstName lastName')
+      .populate('updatedBy', 'firstName lastName')
+      .lean();
     
-    // Calculate actual user count for each project
-    const projectsWithUserCount = await Promise.all(
-      projects.map(async (project) => {
-        const userCount = await User.countDocuments({ projects: project._id });
-        return {
-          ...project.toObject(),
-          users: userCount,
-        };
-      })
+    // Optimized: Single aggregation to get user counts for all projects
+    // This reduces N+1 queries to just 1 additional query
+    const projectIds = projects.map(p => p._id);
+    const userCounts = await User.aggregate([
+      { $match: { projects: { $in: projectIds } } },
+      { $unwind: '$projects' },
+      { $match: { projects: { $in: projectIds } } },
+      { $group: { _id: '$projects', count: { $sum: 1 } } }
+    ]);
+    
+    const userCountMap = new Map(
+      userCounts.map((uc: any) => [uc._id.toString(), uc.count])
     );
+    
+    const projectsWithUserCount = projects.map((project) => ({
+      ...project,
+      users: userCountMap.get(project._id.toString()) || 0,
+    }));
     
     const total = await Project.countDocuments(query);
     
@@ -83,6 +176,121 @@ export const getAllProjects = async (req: Request, res: Response) => {
     
   } catch (error) {
     console.error('Get all projects error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
+  }
+};
+
+/**
+ * Get projects assigned to the current user (for project switcher)
+ * This endpoint doesn't require PROJECT_VIEW_ALL permission - only authentication
+ */
+export const getMyProjects = async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthRequest;
+    
+    if (!authReq.user?.userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+    }
+    
+    // Use permissions from auth middleware (already populated)
+    // authReq.user.role.permissions contains populated Permission documents
+    const authRole = authReq.user?.role;
+    let hasViewAllPermission = false;
+    
+    // Check if role permissions are populated (array of Permission objects with 'code')
+    if (authRole?.permissions && Array.isArray(authRole.permissions)) {
+      hasViewAllPermission = authRole.permissions.some((p: any) => 
+        p?.code === 'PROJECT_VIEW_ALL' || p === 'PROJECT_VIEW_ALL'
+      );
+    }
+    
+    // Also check role code - Super Admin should see all projects
+    if (authRole?.code === 'SUPER_ADMIN') {
+      hasViewAllPermission = true;
+    }
+    
+    console.log(`🔄 getMyProjects - User: ${authReq.user.email}, Role: ${authRole?.code}, Has PROJECT_VIEW_ALL: ${hasViewAllPermission}`);
+    
+    let projects: any[] = [];
+    
+    if (hasViewAllPermission) {
+      // User can see all active projects
+      projects = await Project.find({ status: 'active' })
+        .sort({ name: 1 })
+        .select('_id projectId name code customUrlPath branding logo status')
+        .lean();
+      console.log(`✅ User has PROJECT_VIEW_ALL, returning all ${projects.length} active projects`);
+    } else {
+      // Get user with their role and projects for non-admin users
+      const user = await User.findById(authReq.user.userId).populate({
+        path: 'role',
+        populate: {
+          path: 'projects',
+          model: 'Project'
+        }
+      });
+      
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found',
+        });
+      }
+      
+      const userRole = user.role as any;
+      
+      console.log(`📁 User's assigned projects (user.projects):`, user.projects);
+      console.log(`📁 User's role projects (role.projects):`, userRole?.projects?.map((p: any) => p._id || p));
+      
+      // Combine projects from both user.projects and role.projects
+      const userProjectIds = user.projects?.map((p: any) => p.toString()) || [];
+      const roleProjectIds = userRole?.projects?.map((p: any) => 
+        typeof p === 'string' ? p : p._id?.toString() || p.toString()
+      ) || [];
+      
+      // Merge unique project IDs
+      const allProjectIds = [...new Set([...userProjectIds, ...roleProjectIds])];
+      
+      console.log(`📁 Combined project IDs:`, allProjectIds);
+      
+      if (allProjectIds.length > 0) {
+        projects = await Project.find({ 
+          _id: { $in: allProjectIds },
+          status: 'active'
+        })
+          .sort({ name: 1 })
+          .select('_id projectId name code customUrlPath branding logo status')
+          .lean();
+        console.log(`✅ Returning ${projects.length} assigned projects for user ${user.email}`);
+      } else {
+        console.log(`⚠️ User ${user.email} has no assigned projects`);
+      }
+    }
+    
+    return res.json({
+      success: true,
+      data: {
+        projects: projects.map(p => ({
+          _id: p._id,
+          projectId: p.projectId,
+          name: p.name,
+          code: p.code,
+          customUrlPath: p.branding?.customUrlPath || p.code?.toLowerCase(), // Root level for easy access
+          branding: p.branding,
+          logo: p.logo,
+          status: p.status,
+        })),
+      },
+    });
+    
+  } catch (error) {
+    console.error('Get my projects error:', error);
     return res.status(500).json({
       success: false,
       message: 'Internal server error',
@@ -239,6 +447,54 @@ export const updateProject = async (req: Request, res: Response) => {
       updateData.configuration.offlineModuleSettings = existingProject.configuration.offlineModuleSettings;
     }
     
+    // Debug: Log loginSettings being saved
+    if (updateData.configuration?.loginSettings) {
+      console.log('📝 Saving loginSettings:', JSON.stringify(updateData.configuration.loginSettings));
+    }
+    
+    // Upload logo and favicon to GCS if they are base64 encoded
+    const projectCode = updateData.code || existingProject.code || id;
+    
+    if (updateData.branding?.logo && updateData.branding.logo.startsWith('data:image/')) {
+      try {
+        // Delete old logo from GCS if exists
+        if (existingProject.branding?.logo?.startsWith('https://storage.googleapis.com/')) {
+          await GCSService.deleteProjectBrandingImage(existingProject.branding.logo);
+        }
+        
+        const logoUrl = await GCSService.uploadProjectBrandingImage(
+          updateData.branding.logo,
+          projectCode,
+          'logo'
+        );
+        updateData.branding.logo = logoUrl;
+        console.log(`☁️ Uploaded logo to GCS for project: ${projectCode}`);
+      } catch (gcsError) {
+        console.warn('⚠️ Failed to upload logo to GCS, keeping base64:', gcsError);
+        // Keep the base64 data as fallback
+      }
+    }
+    
+    if (updateData.branding?.favicon && updateData.branding.favicon.startsWith('data:image/')) {
+      try {
+        // Delete old favicon from GCS if exists
+        if (existingProject.branding?.favicon?.startsWith('https://storage.googleapis.com/')) {
+          await GCSService.deleteProjectBrandingImage(existingProject.branding.favicon);
+        }
+        
+        const faviconUrl = await GCSService.uploadProjectBrandingImage(
+          updateData.branding.favicon,
+          projectCode,
+          'favicon'
+        );
+        updateData.branding.favicon = faviconUrl;
+        console.log(`☁️ Uploaded favicon to GCS for project: ${projectCode}`);
+      } catch (gcsError) {
+        console.warn('⚠️ Failed to upload favicon to GCS, keeping base64:', gcsError);
+        // Keep the base64 data as fallback
+      }
+    }
+    
     const project = await Project.findByIdAndUpdate(
       id,
       {
@@ -256,6 +512,16 @@ export const updateProject = async (req: Request, res: Response) => {
     }
     
     console.log(`✅ Updated project: ${project.name} (${project.projectId})`);
+    
+    // Invalidate cache
+    invalidateCache.project(id);
+    if (project.branding?.customUrlPath) {
+      invalidateCache.projectBranding(project.branding.customUrlPath);
+    }
+    // Also invalidate by project code as fallback
+    if (project.code) {
+      invalidateCache.projectBranding(project.code.toLowerCase());
+    }
     
     // Log activity
     try {
@@ -486,7 +752,21 @@ export const getProjectBranding = async (req: Request, res: Response) => {
     
     console.log(`🔍 Looking for project with customUrlPath: ${urlPath}`);
     
-    const project = await Project.findOne({ 'branding.customUrlPath': urlPath });
+    // Check cache first (15 min TTL for branding data)
+    const cacheKey = CACHE_KEYS.PROJECT_BRANDING(urlPath);
+    const cachedProject = cache.get<any>(cacheKey);
+    
+    let project;
+    if (cachedProject) {
+      console.log(`✅ [CACHE HIT] Project branding: ${urlPath}`);
+      project = cachedProject;
+    } else {
+      project = await Project.findOne({ 'branding.customUrlPath': urlPath }).lean();
+      if (project) {
+        cache.set(cacheKey, project, CACHE_TTL.LONG);
+        console.log(`📦 [CACHE SET] Project branding: ${urlPath}`);
+      }
+    }
     
     if (!project) {
       console.log(`❌ Project not found with customUrlPath: ${urlPath}`);
@@ -505,6 +785,7 @@ export const getProjectBranding = async (req: Request, res: Response) => {
       branding: {
         customUrlPath: project.branding?.customUrlPath,
         logo: project.branding?.logo,
+        logoLinkbackUrl: project.branding?.logoLinkbackUrl,
         favicon: project.branding?.favicon,
         headerText: project.branding?.headerText,
         browserTitle: project.branding?.browserTitle,
@@ -515,6 +796,17 @@ export const getProjectBranding = async (req: Request, res: Response) => {
           accent: project.branding?.colorTheme?.accent || '#764ba2',
           background: project.branding?.colorTheme?.background || '#ffffff',
         },
+      },
+      logoUrl: project.branding?.logo, // Adding at root level for convenience
+      logoLinkbackUrl: project.branding?.logoLinkbackUrl, // Adding at root level for convenience
+      footerLinks: (project as any).configuration?.footerLinks, // Footer policy URLs
+      announcementBanner: (project as any).configuration?.announcementBanner, // Announcement banner
+      loginSettings: {
+        enableFormLogin: (project as any).configuration?.loginSettings?.enableFormLogin ?? true,
+        enableGoogleRecaptcha: (project as any).configuration?.loginSettings?.enableGoogleRecaptcha ?? false,
+        recaptchaSiteKey: (project as any).configuration?.loginSettings?.enableGoogleRecaptcha 
+          ? (process.env.RECAPTCHA_SITE_KEY || '6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI') // Test key as fallback
+          : undefined,
       },
       knowledgeBase: (project as any).knowledgeBase ?? true, // Enable KB by default
       ticketSubmissionMode: (project as any).ticketSubmissionSettings?.mode || 'both', // online, offline, or both
@@ -1273,6 +1565,110 @@ export const deleteFormField = async (req: AuthRequest, res: Response) => {
     });
   } catch (error) {
     console.error('Delete form field error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
+  }
+};
+
+/**
+ * Upload project branding image (logo or favicon) to GCS
+ */
+export const uploadBrandingImage = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { imageData, imageType } = req.body;
+    
+    if (!imageData) {
+      return res.status(400).json({
+        success: false,
+        message: 'Image data is required',
+      });
+    }
+    
+    if (!imageType || !['logo', 'favicon'].includes(imageType)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Image type must be either "logo" or "favicon"',
+      });
+    }
+    
+    const project = await Project.findById(id);
+    
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: 'Project not found',
+      });
+    }
+    
+    // Check if it's already a GCS URL (no need to re-upload)
+    if (imageData.startsWith('https://storage.googleapis.com/')) {
+      return res.json({
+        success: true,
+        data: { url: imageData },
+        message: 'Image URL already in GCS format',
+      });
+    }
+    
+    // Check if it's base64 data
+    if (!imageData.startsWith('data:image/')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid image data format. Expected base64 encoded image.',
+      });
+    }
+    
+    try {
+      // Delete old image if it exists in GCS
+      const oldImageUrl = imageType === 'logo' 
+        ? project.branding?.logo 
+        : project.branding?.favicon;
+      
+      if (oldImageUrl && oldImageUrl.startsWith('https://storage.googleapis.com/')) {
+        await GCSService.deleteProjectBrandingImage(oldImageUrl);
+      }
+      
+      // Upload new image to GCS
+      const publicUrl = await GCSService.uploadProjectBrandingImage(
+        imageData,
+        project.code || project._id.toString(),
+        imageType as 'logo' | 'favicon'
+      );
+      
+      // Update project with new URL
+      if (!project.branding) {
+        project.branding = {};
+      }
+      
+      if (imageType === 'logo') {
+        project.branding.logo = publicUrl;
+      } else {
+        project.branding.favicon = publicUrl;
+      }
+      
+      await project.save();
+      
+      console.log(`✅ Uploaded ${imageType} to GCS for project: ${project.name}`);
+      
+      return res.json({
+        success: true,
+        data: { url: publicUrl },
+        message: `${imageType} uploaded successfully to GCS`,
+      });
+    } catch (gcsError: any) {
+      console.error(`GCS upload error for ${imageType}:`, gcsError);
+      
+      // If GCS fails, return the base64 data as fallback (will still work, just stored in DB)
+      return res.status(500).json({
+        success: false,
+        message: `Failed to upload to GCS: ${gcsError.message}. Please check GCS configuration.`,
+      });
+    }
+    
+  } catch (error) {
+    console.error('Upload branding image error:', error);
     return res.status(500).json({
       success: false,
       message: 'Internal server error',

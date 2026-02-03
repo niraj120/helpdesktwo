@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo, useCallback } from 'react';
 import axios from 'axios';
 import { useLocation } from 'react-router-dom';
 import { API_CONFIG } from '../config/constants';
@@ -26,6 +26,7 @@ interface ProjectBranding {
     colorTheme?: ColorTheme;
     browserTitle?: string;
     headerText?: string;
+    logoLinkbackUrl?: string;
   };
 }
 
@@ -212,8 +213,21 @@ export const BrandingProvider: React.FC<BrandingProviderProps> = ({ children }) 
     }
   }, [branding]);
 
+  // Memoize refetch callback to maintain stable reference
+  const memoizedRefetch = useCallback(async () => {
+    await fetchBranding();
+  }, [fetchBranding]);
+
+  // Memoize context value to prevent unnecessary re-renders of consumers
+  const contextValue = useMemo(() => ({
+    branding,
+    loading,
+    error,
+    refetch: memoizedRefetch
+  }), [branding, loading, error, memoizedRefetch]);
+
   return (
-    <BrandingContext.Provider value={{ branding, loading, error, refetch: fetchBranding }}>
+    <BrandingContext.Provider value={contextValue}>
       {children}
     </BrandingContext.Provider>
   );

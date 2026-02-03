@@ -17,7 +17,7 @@ export interface IUser extends Document {
   eulaAccepted?: boolean; // EULA acceptance status
   eulaAcceptedAt?: Date; // When EULA was accepted
   requirePasswordSetup?: boolean; // Flag for first-time student users who need to set password via OTP
-  registrationSource?: 'online' | 'offline' | 'hrms' | 'manual'; // Track where user was created from
+  registrationSource?: 'online' | 'offline' | 'hrms' | 'manual' | 'email'; // Track where user was created from
   createdAt: Date;
   updatedAt: Date;
   
@@ -143,7 +143,7 @@ const userSchema = new Schema<IUser>({
   },
   registrationSource: {
     type: String,
-    enum: ['online', 'offline', 'hrms', 'manual'],
+    enum: ['online', 'offline', 'hrms', 'manual', 'email'],
     default: 'manual',
   },
   // HRMS Integration fields

@@ -133,10 +133,10 @@ const StudentLayout = ({ children }: StudentLayoutProps) => {
     //   permission: PERMISSIONS.TICKET_VIEW_OWN, // Changed from TICKET_CREATE to TICKET_VIEW_OWN
     // },
     {
-      path: `/${customUrlPath}/kb`,
+      path: `/${customUrlPath}/kb-new/viewer`,
       icon: <MdBook />,
       label: 'Knowledge Base',
-      permission: null, // Public access for students
+      permission: PERMISSIONS.KB_VIEW, // Requires KB_VIEW permission
     },
     {
       path: `/${customUrlPath}/student/faq`,
@@ -193,6 +193,7 @@ const StudentLayout = ({ children }: StudentLayoutProps) => {
             <img 
               src={branding.logo} 
               alt="Logo" 
+              loading="lazy"
               style={{ 
                 height: sidebarOpen ? '40px' : '32px',
                 width: 'auto',

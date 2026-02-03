@@ -10,6 +10,7 @@ export interface IAssetPhoto {
 
 export interface ICenterAssetMapping extends Document {
   projectId: mongoose.Types.ObjectId;
+  centerId: mongoose.Types.ObjectId;
   assetId: mongoose.Types.ObjectId;
   totalAssigned: number;
   assetUsed: number;
@@ -59,6 +60,11 @@ const CenterAssetMappingSchema = new Schema<ICenterAssetMapping>(
       type: Schema.Types.ObjectId,
       ref: 'Project',
       required: true
+    },
+    centerId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Center',
+      required: false // Optional for backward compatibility
     },
     assetId: {
       type: Schema.Types.ObjectId,
@@ -133,8 +139,9 @@ CenterAssetMappingSchema.index({ updatedAt: -1 });
 
 // Pre-save hook to calculate notWorkingAsset
 CenterAssetMappingSchema.pre('save', function (next) {
-  if (this.isModified('assetUsed') || this.isModified('workingAsset')) {
-    this.notWorkingAsset = Math.max(0, this.assetUsed - this.workingAsset);
+  // Calculate notWorkingAsset = totalAssigned - workingAsset
+  if (this.isModified('totalAssigned') || this.isModified('workingAsset')) {
+    this.notWorkingAsset = Math.max(0, this.totalAssigned - this.workingAsset);
   }
   next();
 });

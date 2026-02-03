@@ -41,8 +41,26 @@ const SimpleStudentDashboard = () => {
         return;
       }
       
+      // Get project context from localStorage
+      const projectContext = localStorage.getItem('projectContext');
+      let projectId = '';
+      
+      if (projectContext) {
+        try {
+          const parsed = JSON.parse(projectContext);
+          projectId = parsed.projectId;
+        } catch (err) {
+          console.error('Error parsing projectContext:', err);
+        }
+      }
+
+      // Add projectId as query parameter if available
+      const url = projectId 
+        ? `${API_BASE_URL}/tickets/my-tickets?projectId=${projectId}`
+        : `${API_BASE_URL}/tickets/my-tickets`;
+      
       // Fetch all student's tickets
-      const response = await axios.get(`${API_BASE_URL}/tickets/my-tickets`, {
+      const response = await axios.get(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -310,35 +328,6 @@ const SimpleStudentDashboard = () => {
             </div>
           </div>
         )}
-
-        {/* Information Card */}
-        <div style={{
-          background: 'white',
-          padding: '24px',
-          borderRadius: '12px',
-          border: '1px solid #e5e7eb',
-          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
-        }}>
-          <h2 style={{ 
-            fontSize: '18px', 
-            fontWeight: '600', 
-            marginBottom: '16px',
-            color: '#1f2937'
-          }}>
-            Welcome to Your Support Portal
-          </h2>
-          <div style={{ color: '#6b7280', fontSize: '14px', lineHeight: '1.6' }}>
-            <p style={{ marginBottom: '12px' }}>
-              You can view and manage all your support tickets from this portal. Here's what you can do:
-            </p>
-            <ul style={{ paddingLeft: '20px', margin: 0 }}>
-              <li style={{ marginBottom: '8px' }}>View all your submitted tickets and their current status</li>
-              <li style={{ marginBottom: '8px' }}>Track the progress of your tickets in real-time</li>
-              <li style={{ marginBottom: '8px' }}>Add comments and attachments to your tickets</li>
-              <li style={{ marginBottom: '8px' }}>Get notified when your tickets are updated</li>
-            </ul>
-          </div>
-        </div>
       </div>
     </StudentLayout>
   );

@@ -173,7 +173,16 @@ const resources = {
       loginWithPassword: "Login with Password",
       loginWithOtp: "Login with OTP",
       firstTimeUser: "First time user?",
-      getOtpToSetup: "Get OTP to setup password"
+      getOtpToSetup: "Get OTP to setup password",
+      
+      // View Mode Toggle
+      viewMode: {
+        label: "View mode",
+        single: "Single Project",
+        unified: "All Projects",
+        singleProject: "Single project view",
+        allProjects: "All projects view"
+      }
     }
   },
   hi: {
@@ -348,7 +357,16 @@ const resources = {
       loginWithPassword: "पासवर्ड से लॉगिन करें",
       loginWithOtp: "OTP से लॉगिन करें",
       firstTimeUser: "पहली बार उपयोगकर्ता?",
-      getOtpToSetup: "पासवर्ड सेटअप के लिए OTP प्राप्त करें"
+      getOtpToSetup: "पासवर्ड सेटअप के लिए OTP प्राप्त करें",
+      
+      // View Mode Toggle
+      viewMode: {
+        label: "देखने का तरीका",
+        single: "एकल परियोजना",
+        unified: "सभी परियोजनाएं",
+        singleProject: "एकल परियोजना दृश्य",
+        allProjects: "सभी परियोजनाएं दृश्य"
+      }
     }
   },
   mr: {
@@ -518,16 +536,35 @@ const resources = {
       loginWithPassword: "पासवर्डसह लॉगिन करा",
       loginWithOtp: "OTP सह लॉगिन करा",
       firstTimeUser: "प्रथमच वापरकर्ता?",
-      getOtpToSetup: "पासवर्ड सेटअपसाठी OTP मिळवा"
+      getOtpToSetup: "पासवर्ड सेटअपसाठी OTP मिळवा",
+      
+      // View Mode Toggle
+      viewMode: {
+        label: "पाहण्याची पद्धत",
+        single: "एकच प्रकल्प",
+        unified: "सर्व प्रकल्प",
+        singleProject: "एकच प्रकल्प दृश्य",
+        allProjects: "सर्व प्रकल्प दृश्य"
+      }
     }
   }
+};
+
+// Get saved language, validate it's a supported language, default to English
+const getSavedLanguage = (): string => {
+  const saved = localStorage.getItem('preferredLanguage');
+  // Only accept valid language codes, otherwise default to English
+  if (saved && ['en', 'mr', 'hi'].includes(saved)) {
+    return saved;
+  }
+  return 'en'; // Default to English
 };
 
 i18n
   .use(initReactI18next)
   .init({
     resources,
-    lng: localStorage.getItem('preferredLanguage') || 'en', // Load saved language or default to English
+    lng: getSavedLanguage(), // Load saved language or default to English
     fallbackLng: 'en',
     interpolation: {
       escapeValue: false,

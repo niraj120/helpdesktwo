@@ -109,6 +109,16 @@ const KBArticleEditor: React.FC<KBArticleEditorProps> = ({ article, onSave, onCa
   const projectContext = JSON.parse(localStorage.getItem('projectContext') || '{}');
   const token = localStorage.getItem('authToken');
 
+  // Get project code from localStorage or projectContext
+  const getProjectCode = () => {
+    const storedProject = localStorage.getItem('selectedProject');
+    if (storedProject) {
+      const project = JSON.parse(storedProject);
+      return project.code || project.projectCode || 'DEFAULT';
+    }
+    return projectContext.projectCode || 'DEFAULT';
+  };
+
   // Removed useEffect for fetchCategories as categories are no longer in UI
 
   useEffect(() => {
@@ -149,6 +159,7 @@ const KBArticleEditor: React.FC<KBArticleEditorProps> = ({ article, onSave, onCa
     const formDataToUpload = new FormData();
     formDataToUpload.append('file', file);
     formDataToUpload.append('projectId', projectContext.projectId);
+    formDataToUpload.append('projectCode', getProjectCode());
 
     try {
       setUploadingPdf(true);

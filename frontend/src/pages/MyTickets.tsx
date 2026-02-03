@@ -6,6 +6,7 @@ import API_BASE_URL from '../config/api';
 import { TicketExportModal } from '../components/tickets/TicketExportModal';
 import { TicketMergeModal } from '../components/tickets/TicketMergeModal';
 import { ArrowDownTrayIcon, ArrowsPointingInIcon } from '@heroicons/react/24/outline';
+import { useProjectContext } from '../contexts/ProjectContext';
 
 interface Ticket {
   _id: string;
@@ -23,8 +24,11 @@ interface Ticket {
     lastName: string;
     email: string;
   };
+  submissionSource?: 'online' | 'offline' | 'email'; // Source filter (Task 6.1)
+  sourceEmail?: string; // Task 6.3: Sender email for email tickets
   metadata?: {
-    projectId?: {
+    projectId?: string | {
+      _id: string;
       name: string;
       code: string;
     };
@@ -54,7 +58,11 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
   const navigate = useNavigate();
   const location = useLocation();
   
+  // Get viewMode and currentProjectId from context
+  const { viewMode, currentProjectId, userProjects } = useProjectContext();
+  
   console.log('🎯 Hooks initialized, location:', location.pathname);
+  console.log('🎯 ProjectContext - viewMode:', viewMode, 'currentProjectId:', currentProjectId);
   
   // Helper function to check permissions from localStorage
   const checkPermission = (permission: string): boolean => {
@@ -72,6 +80,8 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [sourceFilter, setSourceFilter] = useState('all'); // Task 6.1: Source filter
+  const [projectFilter, setProjectFilter] = useState('all'); // Project filter for All Projects mode
   
   // Ref to prevent duplicate API calls from React.StrictMode
   const hasFetchedTickets = useRef(false);
@@ -137,7 +147,35 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
         return;
       }
 
-      const response = await axios.get(`${API_BASE_URL}/tickets/my-tickets`, {
+      // Determine projectId based on viewMode
+      // If viewMode is 'unified', don't send projectId to get ALL user's tickets
+      // If viewMode is 'single', send the currentProjectId
+      let projectId = '';
+      
+      if (viewMode === 'single' && currentProjectId) {
+        projectId = currentProjectId;
+      } else if (viewMode === 'single') {
+        // Fallback to projectContext from localStorage
+        const projectContext = localStorage.getItem('projectContext');
+        if (projectContext) {
+          try {
+            const parsed = JSON.parse(projectContext);
+            projectId = parsed.projectId;
+          } catch (err) {
+            console.error('Error parsing projectContext:', err);
+          }
+        }
+      }
+      // If viewMode is 'unified', projectId stays empty - backend will return all user's tickets
+
+      // Build URL - only add projectId if in single project mode
+      const url = projectId 
+        ? `${API_BASE_URL}/tickets/my-tickets?projectId=${projectId}`
+        : `${API_BASE_URL}/tickets/my-tickets`;
+
+      console.log('🎯 Fetching my tickets - viewMode:', viewMode, 'projectId:', projectId || 'ALL PROJECTS');
+
+      const response = await axios.get(url, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -171,26 +209,23 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
     } finally {
       setLoading(false);
     }
-  }, [navigate]);
+  }, [navigate, viewMode, currentProjectId]);
 
   console.log('🎯 useCallback defined');
 
   useEffect(() => {
-    console.log('🎯 useEffect running, hasFetchedTickets.current:', hasFetchedTickets.current);
-    // Always fetch on mount, reset ref on unmount
-    if (!hasFetchedTickets.current) {
-      hasFetchedTickets.current = true;
-      console.log('🎯 Calling fetchMyTickets from useEffect');
-      fetchMasterData();
-      fetchMyTickets();
+    console.log('🎯 useEffect running, viewMode:', viewMode, 'currentProjectId:', currentProjectId);
+    // Fetch tickets whenever viewMode or currentProjectId changes
+    fetchMasterData();
+    fetchMyTickets();
+  }, [fetchMyTickets, fetchMasterData, viewMode, currentProjectId]);
+
+  // Reset project filter when switching to single project mode
+  useEffect(() => {
+    if (viewMode === 'single') {
+      setProjectFilter('all');
     }
-    
-    // Reset ref on unmount so fresh fetch happens on remount
-    return () => {
-      console.log('🎯 Component unmounting, resetting ref');
-      hasFetchedTickets.current = false;
-    };
-  }, [fetchMyTickets, fetchMasterData]);
+  }, [viewMode]);
 
   console.log('🎯 About to define helper functions');
 
@@ -230,6 +265,16 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
     return priority ? (colors[priority.toLowerCase()] || '#6B7280') : '#6B7280';
   };
 
+  // Task 6.2: Source indicator styling
+  const getSourceBadge = (source?: 'online' | 'offline' | 'email') => {
+    const badges = {
+      online: { icon: '🌐', label: 'Online', color: '#3B82F6', bgColor: '#DBEAFE', tooltip: 'Submitted via online portal' },
+      offline: { icon: '📍', label: 'Offline', color: '#8B5CF6', bgColor: '#EDE9FE', tooltip: 'Walk-in or phone submission' },
+      email: { icon: '📧', label: 'Email', color: '#10B981', bgColor: '#D1FAE5', tooltip: 'Created from email' },
+    };
+    return badges[source || 'online'] || badges.online;
+  };
+
   console.log('🎯 About to filter tickets, tickets.length:', tickets.length);
   
   const filteredTickets = tickets.filter((ticket) => {
@@ -239,12 +284,22 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
       const filterStatus = statusFilter === 'all' ? 'all' : Number(statusFilter);
       const matchesStatus = statusFilter === 'all' || ticketStatus === filterStatus;
       const matchesPriority = priorityFilter === 'all' || (ticket.priority && ticket.priority.toLowerCase() === priorityFilter.toLowerCase());
+      
+      // Task 6.1: Source filter
+      const matchesSource = sourceFilter === 'all' || ticket.submissionSource === sourceFilter;
+      
+      // Project filter (only in All Projects mode)
+      const ticketProjectId = typeof ticket.metadata?.projectId === 'object' 
+        ? ticket.metadata?.projectId?._id 
+        : ticket.metadata?.projectId;
+      const matchesProject = projectFilter === 'all' || ticketProjectId === projectFilter;
+      
       const matchesSearch = 
         (ticket.ticketNumber && ticket.ticketNumber.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (ticket.subject && ticket.subject.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (ticket.description && ticket.description.toLowerCase().includes(searchTerm.toLowerCase()));
       
-      return matchesStatus && matchesPriority && matchesSearch;
+      return matchesStatus && matchesPriority && matchesSource && matchesProject && matchesSearch;
     } catch (err) {
       console.error('🎯 Error filtering ticket:', ticket, err);
       return false;
@@ -302,14 +357,30 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
 
   console.log('🎯 About to create content JSX');
 
+  // Get display title based on viewMode
+  const getPageTitle = () => {
+    if (viewMode === 'unified') {
+      return 'My Queries - All Projects';
+    }
+    const project = userProjects.find(p => p._id === currentProjectId);
+    return project ? `My Queries - ${project.name}` : 'My Queries';
+  };
+
+  const getPageSubtitle = () => {
+    if (viewMode === 'unified') {
+      return `Queries from all ${userProjects.length} assigned projects`;
+    }
+    return 'View and manage queries assigned to you or created by you';
+  };
+
   const content = (
     <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
         <div style={{ marginBottom: '32px' }}>
           <h1 style={{ fontSize: '28px', fontWeight: 700, color: '#111827', marginBottom: '8px' }}>
-            My Queries
+            {getPageTitle()}
           </h1>
           <p style={{ color: '#6B7280', fontSize: '14px' }}>
-            View and manage queries assigned to you or created by you
+            {getPageSubtitle()}
           </p>
         </div>
 
@@ -334,7 +405,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
           boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
           marginBottom: '24px',
         }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
             <div>
               <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 500, color: '#374151' }}>
                 Search Queries
@@ -353,6 +424,33 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                 }}
               />
             </div>
+            {/* Project Filter - Only show in All Projects mode */}
+            {viewMode === 'unified' && userProjects.length > 1 && (
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 500, color: '#374151' }}>
+                  Project
+                </label>
+                <select
+                  value={projectFilter}
+                  onChange={(e) => setProjectFilter(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    border: '1px solid #D1D5DB',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    background: 'white',
+                  }}
+                >
+                  <option value="all">All Projects</option>
+                  {userProjects.map((project) => (
+                    <option key={project._id} value={project._id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div>
               <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 500, color: '#374151' }}>
                 Status
@@ -397,6 +495,29 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                 {priorities.map((priority) => (
                   <option key={priority.code} value={priority.code}>
                     {priority.name}
+            {/* Task 6.1: Source Filter */}
+            <div>
+              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 500, color: '#374151' }}>
+                Source
+              </label>
+              <select
+                value={sourceFilter}
+                onChange={(e) => setSourceFilter(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  border: '1px solid #D1D5DB',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  background: 'white',
+                }}
+              >
+                <option value="all">All Sources</option>
+                <option value="online">Online</option>
+                <option value="offline">Offline</option>
+                <option value="email">Email</option>
+              </select>
+            </div>
                   </option>
                 ))}
               </select>
@@ -433,6 +554,18 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                     </th>
                     <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' }}>
                       Subject
+                    </th>
+                    {/* Show Project column only in All Projects mode */}
+                    {viewMode === 'unified' && (
+                      <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' }}>
+                        Project
+                      </th>
+                    )}
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' }}>
+                      Source
+                    </th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' }}>
+                      Sender Email
                     </th>
                     <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' }}>
                       Priority
@@ -479,6 +612,117 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                         }}>
                           {ticket.subject}
                         </div>
+                      </td>
+                      {/* Show Project column only in All Projects mode */}
+                      {viewMode === 'unified' && (
+                        <td style={{ padding: '12px 16px', fontSize: '14px', color: '#111827' }}>
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              padding: '4px 10px',
+                              borderRadius: '12px',
+                              fontSize: '12px',
+                              fontWeight: 500,
+                              color: '#6366F1',
+                              backgroundColor: '#EEF2FF',
+                              border: '1px solid #6366F120',
+                            }}
+                          >
+                            {typeof ticket.metadata?.projectId === 'object' 
+                              ? (ticket.metadata.projectId.name || ticket.metadata.projectId.code)
+                              : 'Unknown'}
+                          </span>
+                        </td>
+                      )}
+                      {/* Task 6.2: Source indicator badge */}
+                      <td style={{ padding: '12px 16px' }}>
+                        {(() => {
+                          const sourceBadge = getSourceBadge(ticket.submissionSource);
+                          return (
+                            <span 
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '4px 10px',
+                                borderRadius: '12px',
+                                fontSize: '12px',
+                                fontWeight: 500,
+                                color: sourceBadge.color,
+                                backgroundColor: sourceBadge.bgColor,
+                                border: `1px solid ${sourceBadge.color}20`,
+                              }}
+                              title={sourceBadge.tooltip}
+                            >
+                              <span style={{ fontSize: '14px' }}>{sourceBadge.icon}</span>
+                              <span>{sourceBadge.label}</span>
+                            </span>
+                          );
+                        })()}
+                      </td>
+                      {/* Task 6.3: Source email cell - only for email tickets */}
+                      <td 
+                        style={{ padding: '12px 16px', fontSize: '14px', color: '#6B7280', maxWidth: '200px' }}
+                        onClick={(e) => {
+                          if (ticket.submissionSource === 'email' && ticket.sourceEmail) {
+                            e.stopPropagation();
+                          }
+                        }}
+                      >
+                        {ticket.submissionSource === 'email' && ticket.sourceEmail ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <a
+                              href={`mailto:${ticket.sourceEmail}`}
+                              onClick={(e) => e.stopPropagation()}
+                              style={{
+                                color: '#3B82F6',
+                                textDecoration: 'none',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                flex: 1,
+                              }}
+                              title={ticket.sourceEmail}
+                              onMouseEnter={(e) => {
+                                (e.target as HTMLAnchorElement).style.textDecoration = 'underline';
+                              }}
+                              onMouseLeave={(e) => {
+                                (e.target as HTMLAnchorElement).style.textDecoration = 'none';
+                              }}
+                            >
+                              {ticket.sourceEmail}
+                            </a>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(ticket.sourceEmail || '');
+                                // Optional: Show toast notification
+                              }}
+                              style={{
+                                padding: '4px 6px',
+                                borderRadius: '4px',
+                                border: '1px solid #D1D5DB',
+                                background: 'white',
+                                cursor: 'pointer',
+                                fontSize: '11px',
+                                color: '#6B7280',
+                              }}
+                              title="Copy email"
+                              onMouseEnter={(e) => {
+                                (e.target as HTMLButtonElement).style.background = '#F3F4F6';
+                              }}
+                              onMouseLeave={(e) => {
+                                (e.target as HTMLButtonElement).style.background = 'white';
+                              }}
+                            >
+                              📋
+                            </button>
+                          </div>
+                        ) : (
+                          <span style={{ color: '#D1D5DB' }}>-</span>
+                        )}
                       </td>
                       <td style={{ padding: '12px 16px' }}>
                         <span style={{

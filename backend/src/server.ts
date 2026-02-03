@@ -56,6 +56,10 @@ import priorityRoutes from './routes/priorityRoutes';
 import activityLogRoutes from './routes/activityLogs';
 import accessLogRoutes from './routes/accessLogs';
 import knowledgeBaseRoutes from './routes/knowledgeBase';
+import kbLevelsRoutes from './routes/kbLevels';
+import kbArticlesRoutes from './routes/kbArticles';
+import kbTablesRoutes from './routes/kbTables';
+import kbPublicRoutes from './routes/kbPublic';
 import uploadRoutes from './routes/upload';
 import faqRoutes from './routes/faqRoutes';
 import approvalRoutes from './routes/approvals';
@@ -64,6 +68,8 @@ import offlineModuleRoutes from './routes/offlineModule';
 import dashboardRoutes from './routes/dashboard';
 import emailConfigRoutes from './routes/emailConfig';
 import emailLogRoutes from './routes/emailLogs';
+import emailActivityRoutes from './routes/emailActivity';
+import projectEmailConfigRoutes from './routes/projectEmailConfigRoutes';
 import whatsappConfigRoutes from './routes/whatsappConfig';
 import smsConfigRoutes from './routes/smsConfig';
 import dpdpRoutes from './routes/dpdp.routes';
@@ -72,14 +78,17 @@ import feedbackFormRoutes from './routes/feedbackForm';
 import feedbackResponseRoutes from './routes/feedbackResponse';
 import assetRoutes from './routes/asset';
 import centerAssetRoutes from './routes/centerAsset';
+import myAssetsRoutes from './routes/myAssets';
 import centerRoutes from './routes/centers';
 import seedRoutes from './routes/seed';
 import diagnosticRoutes from './routes/diagnostic';
 import healthcheckRoutes from './routes/healthcheck';
+import cacheRoutes from './routes/cacheRoutes';
 // import integrationRoutes from './routes/integrations'; // TODO: Implement
 import { setupSocketHandlers } from './socket/socketHandlers';
 import { initializeDatabase } from './utils/dbInit';
 import { seedRolesAndPermissions } from './utils/seedRolesPermissions';
+import { emailPollingService } from './services/emailPollingService';
 
 const app = express();
 const httpServer = createServer(app);
@@ -212,6 +221,11 @@ app.use('/api/access-logs', accessLogRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 
 // Knowledge Base Routes
+// IMPORTANT: Specific KB routes MUST be registered BEFORE /api/kb to avoid /:id matching route names
+app.use('/api/kb/levels', kbLevelsRoutes);
+app.use('/api/kb/articles', kbArticlesRoutes);
+app.use('/api/kb/tables', kbTablesRoutes);
+app.use('/api/kb/public', kbPublicRoutes);
 app.use('/api/kb', knowledgeBaseRoutes);
 app.use('/api/knowledge-base', knowledgeBaseRoutes);
 
@@ -231,6 +245,7 @@ app.use('/api/offline-module', offlineModuleRoutes);
 // Asset Management Routes
 app.use('/api/assets', assetRoutes);
 app.use('/api/center-assets', centerAssetRoutes);
+app.use('/api/my-assets', myAssetsRoutes);
 app.use('/api/centers', centerRoutes);
 
 // Seed Routes (for initial data population)
@@ -244,6 +259,12 @@ app.use('/api/healthcheck', healthcheckRoutes);
 
 // Email Configuration Routes
 app.use('/api/email-config', emailConfigRoutes);
+
+// Email Activity Routes (real-time polling status)
+app.use('/api/email-activity', emailActivityRoutes);
+
+// Project Email Configuration Routes (for project-specific email settings)
+app.use('/api/projects', projectEmailConfigRoutes);
 
 // WhatsApp Configuration Routes
 app.use('/api/whatsapp-config', whatsappConfigRoutes);
@@ -266,6 +287,9 @@ app.use('/api/feedback-responses', feedbackResponseRoutes);
 
 // Integration Routes (TODO: Implement)
 // app.use('/api/integrations', integrationRoutes);
+
+// Cache Management Routes
+app.use('/api/cache', cacheRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -296,6 +320,10 @@ httpServer.listen(PORT, async () => {
     
     // Then initialize database (creates admin user with role reference)
     await initializeDatabase();
+    
+    // Start email polling service
+    console.log('📧 Starting Email Polling Service...');
+    await emailPollingService.start();
   } catch (error) {
     console.error('⚠️  Database initialization failed, but server is still running');
   }

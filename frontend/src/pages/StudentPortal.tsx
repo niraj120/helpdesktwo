@@ -15,6 +15,7 @@ import {
 import { StudentLoginModal } from '../components/StudentLoginModal';
 import { LanguageToggle } from '../components/LanguageToggle';
 import KBChatbot from '../components/KBChatbot';
+import KnowledgeBaseViewer from '../components/knowledge-base/KnowledgeBaseViewer';
 import { useBranding } from '../contexts/BrandingContext';
 import { API_CONFIG } from '../config/constants';
 import './StudentPortal.css';
@@ -33,9 +34,16 @@ interface ProjectBranding {
   primaryColor: string;
   secondaryColor: string;
   logoUrl: string | null;
+  logoLinkbackUrl?: string;
   welcomeText: string;
   footerText: string;
   knowledgeBase?: boolean;
+  footerLinks?: {
+    copyright?: string;
+    termsOfUse?: string;
+    privacyPolicy?: string;
+    cookiePolicy?: string;
+  };
   branding?: {
     colorTheme?: {
       primary: string;
@@ -45,6 +53,7 @@ interface ProjectBranding {
     };
     logo?: string;
     headerText?: string;
+    logoLinkbackUrl?: string;
   };
 }
 
@@ -181,6 +190,10 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
 
   useEffect(() => {
     const fetchProjectData = async () => {
+      console.log('📋 StudentPortal: fetchProjectData called');
+      console.log('📋 contextBranding:', contextBranding);
+      console.log('📋 brandingLoading:', brandingLoading);
+      
       // Use branding from context if available
       if (contextBranding && !brandingLoading) {
         const colorTheme = contextBranding.branding?.colorTheme || contextBranding.colorTheme;
@@ -190,18 +203,22 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
           name: contextBranding.name || contextBranding.projectName || '',
           customUrlPath: customUrlPath || '',
           logoUrl: contextBranding.branding?.logo || contextBranding.logo || null,
+          logoLinkbackUrl: contextBranding.branding?.logoLinkbackUrl || (contextBranding as any).logoLinkbackUrl || '',
           welcomeText: contextBranding.branding?.headerText || 'Welcome!',
           footerText: (contextBranding as any).branding?.footerText || '© 2025. All rights reserved.',
           knowledgeBase: (contextBranding as any).knowledgeBase,
+          footerLinks: (contextBranding as any).footerLinks || (contextBranding as any).configuration?.footerLinks,
           primaryColor: colorTheme?.primary || '#49bc8f',
           secondaryColor: colorTheme?.secondary || '#64748b',
           branding: {
             colorTheme,
             logo: contextBranding.branding?.logo || undefined,
-            headerText: contextBranding.branding?.headerText
+            headerText: contextBranding.branding?.headerText,
+            logoLinkbackUrl: contextBranding.branding?.logoLinkbackUrl
           },
         };
         
+        console.log('📋 Setting branding from context, projectId:', branding.projectId);
         setProjectBranding(branding);
         console.log('✅ Using branding from context (no API call)');
       }
@@ -240,17 +257,21 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
             name: brandingData.name,
             customUrlPath: brandingData.customUrlPath,
             logoUrl: brandingData.branding?.logo || null,
+            logoLinkbackUrl: brandingData.branding?.logoLinkbackUrl || brandingData.logoLinkbackUrl || '',
             welcomeText: brandingData.branding?.headerText || 'Welcome!',
             footerText: brandingData.branding?.footerText || '© 2025. All rights reserved.',
             knowledgeBase: brandingData.knowledgeBase,
+            footerLinks: brandingData.footerLinks || brandingData.configuration?.footerLinks,
             primaryColor: colorTheme?.primary || '#49bc8f',
             secondaryColor: colorTheme?.secondary || '#64748b',
             branding: { ...brandingData.branding, colorTheme },
           };
           
+          console.log('📋 Setting branding from API, projectId:', branding.projectId);
           setProjectBranding(branding);
         } else {
           branding = projectBranding!;
+          console.log('📋 Using existing projectBranding, projectId:', branding?.projectId);
         }
 
         // Fetch ticket submission settings (mode and form fields only)
@@ -798,7 +819,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                   className="text-sm font-medium hover:underline"
                   style={{ color: projectBranding?.primaryColor }}
                 >
-                  Choose files
+                  {t('clickToUpload')}
                 </span>
                 <input
                   type="file"
@@ -826,7 +847,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                       onClick={() => removeFieldFile(field.fieldName, idx)}
                       className="text-red-600 hover:text-red-700 text-sm font-medium"
                     >
-                      Remove
+                      {t('remove')}
                     </button>
                   </li>
                 ))}
@@ -844,7 +865,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 to-blue-50">
         <div className="flex flex-col items-center">
           <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-indigo-600"></div>
-          <p className="mt-4 text-gray-600 font-medium">Loading portal...</p>
+          <p className="mt-4 text-gray-600 font-medium">{t('loadingPortal')}</p>
         </div>
       </div>
     );
@@ -855,15 +876,15 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-red-50 to-orange-50">
         <div className="bg-white rounded-xl shadow-lg p-8 max-w-md w-full text-center">
           <ExclamationCircleIcon className="w-16 h-16 text-red-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Portal Not Found</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">{t('portalNotFound')}</h2>
           <p className="text-gray-600 mb-6">
-            {error || 'The requested portal could not be found.'}
+            {error || t('portalNotFoundMessage')}
           </p>
           <button
             onClick={() => navigate('/')}
             className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
           >
-            Go Home
+            {t('goBack')}
           </button>
         </div>
       </div>
@@ -883,11 +904,28 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
               {/* Logo and Brand */}
               <div className="flex items-center space-x-2 sm:space-x-4 flex-1 min-w-0">
                 {projectBranding.logoUrl && (
-                  <img
-                    src={projectBranding.logoUrl}
-                    alt={projectBranding.name}
-                    className="h-8 sm:h-12 w-auto flex-shrink-0"
-                  />
+                  projectBranding.logoLinkbackUrl ? (
+                    <a 
+                      href={projectBranding.logoLinkbackUrl.startsWith('http') ? projectBranding.logoLinkbackUrl : `https://${projectBranding.logoLinkbackUrl}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-shrink-0"
+                    >
+                      <img
+                        src={projectBranding.logoUrl}
+                        alt={projectBranding.name}
+                        loading="lazy"
+                        className="h-8 sm:h-12 w-auto cursor-pointer hover:opacity-80 transition-opacity"
+                      />
+                    </a>
+                  ) : (
+                    <img
+                      src={projectBranding.logoUrl}
+                      alt={projectBranding.name}
+                      loading="lazy"
+                      className="h-8 sm:h-12 w-auto flex-shrink-0"
+                    />
+                  )
                 )}
                 <div className="min-w-0">
                   <h1 className="text-base sm:text-xl font-bold text-gray-900 truncate">{projectBranding.name}</h1>
@@ -1020,11 +1058,10 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
             <CheckCircleIcon className="w-7 h-7 text-green-600 flex-shrink-0 mt-0.5" />
             <div>
               <h3 className="text-lg font-bold text-green-900 mb-1">
-                🎉 Ticket Submitted Successfully!
+                🎉 {t('querySubmittedSuccess')}
               </h3>
               <p className="text-green-700 font-medium">
-                {ticketSettings.successMessage ||
-                  'Your ticket has been submitted. Our team will get back to you soon.'}
+                {ticketSettings.successMessage || t('querySubmittedMessage')}
               </p>
             </div>
           </div>
@@ -1041,7 +1078,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
           >
             <ExclamationCircleIcon className="w-7 h-7 text-red-600 flex-shrink-0 mt-0.5" />
             <div>
-              <h3 className="text-lg font-bold text-red-900 mb-1">⚠️ Submission Error</h3>
+              <h3 className="text-lg font-bold text-red-900 mb-1">⚠️ {t('submissionError')}</h3>
               <p className="text-red-700 font-medium">{submitError}</p>
             </div>
           </div>
@@ -1053,9 +1090,9 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
           {showOnline && activeTab === 'online' && (
             <div className="p-4 sm:p-8 md:p-12">
               <div className="mb-6 sm:mb-8">
-                <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Submit Your Query</h2>
+                <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">{t('submitYourQuery')}</h2>
                 <p className="text-sm sm:text-base text-gray-600">
-                  {ticketSettings.welcomeMessage || 'Fill out the form below and our team will assist you.'}
+                  {ticketSettings.welcomeMessage || t('fillFormToSubmit')}
                 </p>
               </div>
               <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
@@ -1086,12 +1123,12 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                           </svg>
-                          <span>Submitting...</span>
+                          <span>{t('submittingQuery')}</span>
                         </>
                       ) : (
                         <>
                           <DocumentArrowUpIcon className="w-6 h-6" />
-                          <span>Submit Ticket</span>
+                          <span>{t('submitQuery')}</span>
                         </>
                       )}
                     </span>
@@ -1592,7 +1629,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
               {filteredCenters.length === 0 ? (
                 <div className="col-span-2 text-center py-12">
                   <MapPinIcon className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                  <p className="text-gray-500 text-lg">No centers found matching your search</p>
+                  <p className="text-gray-500 text-lg">{t('noCentersMatchSearch')}</p>
                 </div>
               ) : (
                 filteredCenters.map((center, idx) => (
@@ -1773,166 +1810,11 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
 
           {/* Knowledge Base View */}
           {projectBranding.knowledgeBase && activeTab === 'kb' && (
-            <div className="p-8 md:p-12">
-              {!selectedArticle ? (
-                <>
-                  <div className="mb-8">
-                    <h2 className="text-3xl font-bold text-gray-900 mb-2">{t('knowledgeBaseTitle')}</h2>
-                    <p className="text-gray-600">{t('browseArticles')}</p>
-                  </div>
-
-                  {/* Search Bar */}
-                  <div className="mb-6">
-                    <div className="relative">
-                      <input
-                        type="text"
-                        placeholder={t('searchArticlesPlaceholder')}
-                        value={kbSearchQuery}
-                        onChange={(e) => setKbSearchQuery(e.target.value)}
-                        className="w-full px-5 py-4 pl-12 rounded-xl border-2 border-gray-300 focus:border-blue-500 focus:outline-none text-lg"
-                      />
-                      <svg 
-                        className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400"
-                        fill="none" 
-                        stroke="currentColor" 
-                        viewBox="0 0 24 24"
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                      </svg>
-                    </div>
-                  </div>
-
-                  {/* Loading State */}
-                  {kbLoading && (
-                    <div className="text-center py-12">
-                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 mx-auto mb-4" style={{ borderColor: projectBranding.primaryColor }}></div>
-                      <p className="text-gray-600">{t('loadingArticles')}</p>
-                    </div>
-                  )}
-
-                  {/* Articles List */}
-                  {!kbLoading && kbArticles.length === 0 && (
-                    <div className="text-center py-12 bg-gray-50 rounded-2xl">
-                      <BookOpenIcon className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                      <p className="text-gray-500 text-lg">{t('noArticlesAvailable')}</p>
-                    </div>
-                  )}
-
-                  {!kbLoading && kbArticles.length > 0 && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                      {kbArticles
-                        .filter(article => 
-                          (article.status === 'published' || article.status === 'archived') && 
-                          (kbSearchQuery === '' || 
-                           article.title?.toLowerCase().includes(kbSearchQuery.toLowerCase()) ||
-                           article.content?.toLowerCase().includes(kbSearchQuery.toLowerCase()))
-                        )
-                        .map((article, idx) => (
-                          <div
-                            key={article._id || idx}
-                            onClick={() => setSelectedArticle(article)}
-                            className="bg-white border-2 border-gray-200 rounded-xl p-6 hover-lift cursor-pointer transition-all duration-300 hover:border-blue-300"
-                          >
-                            <div className="flex items-start justify-between mb-3">
-                              <h3 className="text-lg font-bold text-gray-900 line-clamp-2 flex-1">
-                                {article.title}
-                              </h3>
-                              <svg 
-                                className="w-5 h-5 text-gray-400 flex-shrink-0 ml-2"
-                                fill="none" 
-                                stroke="currentColor" 
-                                viewBox="0 0 24 24"
-                              >
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                              </svg>
-                            </div>
-                            
-                            {article.category && (
-                              <span className="inline-block px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 mb-3">
-                                {article.category}
-                              </span>
-                            )}
-                            
-                            <p className="text-sm text-gray-600 line-clamp-3 mb-4">
-                              {article.content?.replace(/<[^>]*>/g, '').substring(0, 150)}...
-                            </p>
-                            
-                            <div className="flex items-center text-xs text-gray-500">
-                              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                              {article.updatedAt ? new Date(article.updatedAt).toLocaleDateString() : t('recentlyUpdated')}
-                            </div>
-                          </div>
-                        ))}
-                    </div>
-                  )}
-                </>
-              ) : (
-                /* Article Detail View - Inline */
-                <div>
-                  <button
-                    onClick={() => setSelectedArticle(null)}
-                    className="mb-6 flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-all"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                    </svg>
-                    {t('backToArticles')}
-                  </button>
-
-                  <div className="bg-white rounded-2xl border-2 border-gray-200 shadow-lg p-8 md:p-12">
-                    <div className="mb-6">
-                      <h1 className="text-4xl font-bold text-gray-900 mb-4">{selectedArticle.title}</h1>
-                      {selectedArticle.category && (
-                        <span className="inline-block px-4 py-2 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
-                          {selectedArticle.category}
-                        </span>
-                      )}
-                    </div>
-                    
-                    <style>{`
-                      .kb-article-content ol {
-                        list-style-type: decimal !important;
-                        padding-left: 2em !important;
-                        margin: 1em 0 !important;
-                      }
-                      .kb-article-content ul {
-                        list-style-type: disc !important;
-                        padding-left: 2em !important;
-                        margin: 1em 0 !important;
-                      }
-                      .kb-article-content ol > li,
-                      .kb-article-content ul > li {
-                        display: list-item !important;
-                        margin-bottom: 0.5em !important;
-                        line-height: 1.8 !important;
-                        list-style-position: outside !important;
-                      }
-                      .kb-article-content ol > li {
-                        list-style-type: decimal !important;
-                      }
-                      .kb-article-content ul > li {
-                        list-style-type: disc !important;
-                      }
-                      .kb-article-content li.ql-indent-1 { padding-left: 3em !important; }
-                      .kb-article-content li.ql-indent-2 { padding-left: 4.5em !important; }
-                      .kb-article-content li.ql-indent-3 { padding-left: 6em !important; }
-                      .kb-article-content li.ql-indent-4 { padding-left: 7.5em !important; }
-                      .kb-article-content li.ql-indent-5 { padding-left: 9em !important; }
-                      .kb-article-content h1 { font-size: 2em; font-weight: bold; margin: 1em 0 0.5em; }
-                      .kb-article-content h2 { font-size: 1.5em; font-weight: bold; margin: 0.83em 0 0.5em; }
-                      .kb-article-content h3 { font-size: 1.17em; font-weight: bold; margin: 1em 0 0.5em; }
-                      .kb-article-content strong { font-weight: 700; }
-                    `}</style>
-                    
-                    <div 
-                      className="prose prose-lg max-w-none kb-article-content text-gray-700 leading-relaxed"
-                      dangerouslySetInnerHTML={{ __html: selectedArticle.content }}
-                    />
-                  </div>
-                </div>
-              )}
+            <div className="p-4 md:p-8">
+              <KnowledgeBaseViewer 
+                projectId={projectBranding.projectId} 
+                showControls={false}
+              />
             </div>
           )}
         </div>
@@ -1942,6 +1824,63 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ hideHeader = false }) => 
       <footer className="bg-white border-t border-gray-200 mt-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <p className="text-center text-gray-600 text-sm">{projectBranding.footerText}</p>
+          
+          {/* Footer Links */}
+          {(projectBranding.footerLinks?.copyright || 
+            projectBranding.footerLinks?.termsOfUse || 
+            projectBranding.footerLinks?.privacyPolicy || 
+            projectBranding.footerLinks?.cookiePolicy) && (
+            <div className="flex flex-wrap justify-center gap-4 mt-3 text-sm">
+              {projectBranding.footerLinks?.copyright && (
+                <a 
+                  href={projectBranding.footerLinks.copyright.startsWith('http') 
+                    ? projectBranding.footerLinks.copyright 
+                    : `https://${projectBranding.footerLinks.copyright}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-gray-500 hover:text-gray-700 hover:underline transition-colors"
+                >
+                  Copyright
+                </a>
+              )}
+              {projectBranding.footerLinks?.termsOfUse && (
+                <a 
+                  href={projectBranding.footerLinks.termsOfUse.startsWith('http') 
+                    ? projectBranding.footerLinks.termsOfUse 
+                    : `https://${projectBranding.footerLinks.termsOfUse}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-gray-500 hover:text-gray-700 hover:underline transition-colors"
+                >
+                  Terms of Use
+                </a>
+              )}
+              {projectBranding.footerLinks?.privacyPolicy && (
+                <a 
+                  href={projectBranding.footerLinks.privacyPolicy.startsWith('http') 
+                    ? projectBranding.footerLinks.privacyPolicy 
+                    : `https://${projectBranding.footerLinks.privacyPolicy}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-gray-500 hover:text-gray-700 hover:underline transition-colors"
+                >
+                  Privacy Policy
+                </a>
+              )}
+              {projectBranding.footerLinks?.cookiePolicy && (
+                <a 
+                  href={projectBranding.footerLinks.cookiePolicy.startsWith('http') 
+                    ? projectBranding.footerLinks.cookiePolicy 
+                    : `https://${projectBranding.footerLinks.cookiePolicy}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-gray-500 hover:text-gray-700 hover:underline transition-colors"
+                >
+                  Cookie Policy
+                </a>
+              )}
+            </div>
+          )}
         </div>
       </footer>
 

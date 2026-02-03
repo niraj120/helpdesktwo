@@ -5,13 +5,13 @@ import { AuthRequest } from '../middleware/auth';
 // @desc    Get all KB articles for a project
 // @route   GET /api/kb/project/:projectId
 // @access  Public (for student portal) / Private (for admin)
+// OPTIMIZED: Added pagination and field projection
 export const getArticlesByProject = async (req: AuthRequest, res: Response) => {
   console.log('🔍 [KB Controller] getArticlesByProject called');
-  console.log('🔍 [KB Controller] req.user:', req.user ? 'EXISTS' : 'UNDEFINED (public access)');
   
   try {
     const { projectId } = req.params;
-    const { category, search, status = 'published' } = req.query;
+    const { category, search, status = 'published', page, limit, includeContent = 'false' } = req.query;
 
     const query: any = { 
       projectId,
@@ -36,12 +36,52 @@ export const getArticlesByProject = async (req: AuthRequest, res: Response) => {
       query.$text = { $search: search as string };
     }
 
+    // Field projection - exclude large content field in list view unless explicitly requested
+    const selectFields = includeContent === 'true' 
+      ? '-__v'
+      : '-content -__v'; // Exclude content for list view (performance optimization)
+
+    // Check if pagination is requested
+    const isPaginated = page !== undefined || limit !== undefined;
+    
+    if (isPaginated) {
+      const pageNum = parseInt(page as string) || 1;
+      const limitNum = Math.min(parseInt(limit as string) || 20, 100); // Max 100
+      const skip = (pageNum - 1) * limitNum;
+      
+      const [articles, total] = await Promise.all([
+        KnowledgeBaseArticle.find(query)
+          .select(selectFields)
+          .populate('author', 'name email')
+          .sort({ displayOrder: 1, publishedAt: -1, createdAt: -1 })
+          .skip(skip)
+          .limit(limitNum)
+          .lean(),
+        KnowledgeBaseArticle.countDocuments(query)
+      ]);
+
+      return res.json({
+        success: true,
+        data: articles,
+        count: articles.length,
+        pagination: {
+          total,
+          page: pageNum,
+          limit: limitNum,
+          totalPages: Math.ceil(total / limitNum)
+        }
+      });
+    }
+
+    // Non-paginated (backward compatibility) - add safety limit
     const articles = await KnowledgeBaseArticle.find(query)
+      .select(selectFields)
       .populate('author', 'name email')
       .sort({ displayOrder: 1, publishedAt: -1, createdAt: -1 })
+      .limit(100)
       .lean();
 
-    res.json({
+    return res.json({
       success: true,
       data: articles,
       count: articles.length

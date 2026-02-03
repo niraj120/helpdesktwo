@@ -23,7 +23,7 @@ router.get('/', checkPermission('MY_ASSETS_VIEW'), getMyAssets);
 /**
  * @route   PUT /api/my-assets/:id
  * @desc    Update asset working/not working counts
- * @access  Private (MY_ASSETS_VIEW permission)
+ * @access  Private (MY_ASSETS_VIEW permission - users can update their own assets)
  */
 router.put('/:id', checkPermission('MY_ASSETS_VIEW'), updateMyAssetCounts);
 
@@ -37,7 +37,7 @@ router.get('/:id/audit-logs', checkPermission('MY_ASSETS_VIEW'), getAssetAuditLo
 /**
  * @route   POST /api/my-assets/:id/submit-audit
  * @desc    Submit audit (locks editing until next audit date)
- * @access  Private (MY_ASSETS_VIEW permission)
+ * @access  Private (MY_ASSETS_VIEW permission - users submit their own audits)
  */
 router.post('/:id/submit-audit', checkPermission('MY_ASSETS_VIEW'), submitAudit);
 

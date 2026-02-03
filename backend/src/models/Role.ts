@@ -13,6 +13,12 @@ export interface IRole extends Document {
   isMaster: boolean; // Can be used as template for creating new roles
   masterRoleId?: mongoose.Types.ObjectId; // Reference to master role if cloned from one
   isAgent: boolean; // Flag to identify roles that are agents for auto-assignment
+  document?: {
+    fileName: string;
+    filePath: string;
+    fileUrl: string;
+    uploadedAt: Date;
+  }; // Optional document to display in footer for users with this role
   isSystem: boolean; // Virtual property
   createdAt: Date;
   updatedAt: Date;
@@ -75,6 +81,15 @@ const roleSchema = new Schema<IRole>(
     isAgent: {
       type: Boolean,
       default: false,
+    },
+    document: {
+      fileName: String,
+      filePath: String,
+      fileUrl: String,
+      uploadedAt: {
+        type: Date,
+        default: Date.now
+      }
     },
   },
   {

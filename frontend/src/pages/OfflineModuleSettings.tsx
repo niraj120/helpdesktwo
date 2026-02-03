@@ -1494,7 +1494,7 @@ const OfflineModuleSettings: React.FC = () => {
       {activeTab === 'centers' && (
         <div className="space-y-6">
           <div className="bg-white rounded-xl shadow-md p-6">
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center justify-between mb-6" style={{ position: 'relative', zIndex: 10 }}>
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">Offline Support Centers</h3>
                 <p className="text-sm text-gray-600 mt-1">
@@ -1507,6 +1507,7 @@ const OfflineModuleSettings: React.FC = () => {
                   setShowCenterForm(true);
                 }}
                 className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                style={{ position: 'relative', zIndex: 20 }}
               >
                 <PlusIcon className="h-5 w-5" />
                 <span>Add Center</span>
@@ -1619,7 +1620,7 @@ const OfflineModuleSettings: React.FC = () => {
 
           {/* Right Column - Preview Panel */}
           <div className="col-span-5">
-            <div className="sticky top-6">
+            <div className="sticky top-6" style={{ zIndex: 1 }}>
               <div className="bg-white rounded-xl shadow-md p-6">
                 <div className="flex items-center space-x-2 mb-4">
                   <EyeIcon className="h-5 w-5 text-gray-600" />

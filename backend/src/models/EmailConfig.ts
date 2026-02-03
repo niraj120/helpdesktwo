@@ -23,6 +23,14 @@ export interface IEmailConfig extends Document {
   fromEmail: string;
   fromName: string;
   
+  // Task 8.2: Connection Status & Retry Logic
+  connectionStatus: 'connected' | 'disconnected' | 'error' | 'untested';
+  lastConnectionTest?: Date;
+  lastConnectionError?: string;
+  lastSuccessfulConnection?: Date;
+  failedAttempts: number;
+  nextRetryAt?: Date;
+  
   // Email Triggers
   triggers: {
     // Account & User Management
@@ -97,6 +105,19 @@ const emailConfigSchema = new Schema(
     smtpPassword: { type: String, default: '' },
     fromEmail: { type: String, default: '' },
     fromName: { type: String, default: 'SAC Helpdesk' },
+    
+    // Task 8.2: Connection Status & Retry Logic
+    connectionStatus: {
+      type: String,
+      enum: ['connected', 'disconnected', 'error', 'untested'],
+      default: 'untested',
+      index: true
+    },
+    lastConnectionTest: { type: Date },
+    lastConnectionError: { type: String },
+    lastSuccessfulConnection: { type: Date },
+    failedAttempts: { type: Number, default: 0 },
+    nextRetryAt: { type: Date },
     
     // Email Triggers
     triggers: {

@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
 import axios from 'axios';
+import DOMPurify from 'dompurify';
 import { useTranslation } from 'react-i18next';
+import ReCAPTCHA from 'react-google-recaptcha';
 import { getFirstAvailableRoute } from '../utils/loginRedirect';
 import { API_CONFIG } from '../config/constants';
 import { LanguageToggle } from '../components/LanguageToggle';
@@ -21,6 +23,7 @@ interface ProjectBranding {
   code: string;
   branding: {
     logo: string | null;
+    logoLinkbackUrl?: string;
     colorTheme: {
       primary: string;
       secondary: string;
@@ -28,6 +31,21 @@ interface ProjectBranding {
       background: string;
     };
     footerText?: string;
+  };
+  announcementBanner?: {
+    message: string;
+    type: 'plain' | 'rich';
+  };
+  footerLinks?: {
+    copyright?: string;
+    termsOfUse?: string;
+    privacyPolicy?: string;
+    cookiePolicy?: string;
+  };
+  loginSettings?: {
+    enableFormLogin?: boolean;
+    enableGoogleRecaptcha?: boolean;
+    recaptchaSiteKey?: string;
   };
 }
 
@@ -43,6 +61,8 @@ const ProjectPortalLogin: React.FC = () => {
   const [projectBranding, setProjectBranding] = useState<ProjectBranding | null>(null);
   const [brandingLoading, setBrandingLoading] = useState(true);
   const [retryCount, setRetryCount] = useState(0);
+  const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
+  const recaptchaRef = useRef<ReCAPTCHA>(null);
 
   // Validation schema
   const loginSchema = yup.object({
@@ -65,6 +85,49 @@ const ProjectPortalLogin: React.FC = () => {
   useEffect(() => {
     fetchProjectBranding();
   }, [customUrlPath]);
+
+  // Set favicon and browser title when branding data is loaded
+  useEffect(() => {
+    if (projectBranding) {
+      // Set browser title
+      if (projectBranding.branding?.browserTitle) {
+        document.title = projectBranding.branding.browserTitle;
+      } else if (projectBranding.name) {
+        document.title = `${projectBranding.name} - Login`;
+      }
+      
+      // Set favicon dynamically
+      if (projectBranding.branding?.favicon) {
+        const favicon = projectBranding.branding.favicon;
+        let link: HTMLLinkElement | null = document.querySelector("link[rel*='icon']");
+        
+        if (!link) {
+          link = document.createElement('link');
+          link.rel = 'icon';
+          document.head.appendChild(link);
+        }
+        
+        // Set the href to either the GCS URL or base64 data
+        link.href = favicon;
+        
+        // Also set shortcut icon for legacy browser support
+        let shortcutLink: HTMLLinkElement | null = document.querySelector("link[rel='shortcut icon']");
+        if (!shortcutLink) {
+          shortcutLink = document.createElement('link');
+          shortcutLink.rel = 'shortcut icon';
+          document.head.appendChild(shortcutLink);
+        }
+        shortcutLink.href = favicon;
+        
+        console.log('✅ Favicon set:', favicon.substring(0, 100) + (favicon.length > 100 ? '...' : ''));
+      }
+    }
+    
+    // Cleanup - reset to default when component unmounts
+    return () => {
+      document.title = 'SAC Helpdesk';
+    };
+  }, [projectBranding]);
 
   useEffect(() => {
     // Check if user is already logged in
@@ -177,12 +240,20 @@ const ProjectPortalLogin: React.FC = () => {
     setIsLoading(true);
 
     try {
+      // Build request payload
+      const requestPayload: any = {
+        email: data.email,
+        password: data.password,
+      };
+
+      // Include reCAPTCHA token if enabled
+      if (projectBranding?.loginSettings?.enableGoogleRecaptcha && recaptchaToken) {
+        requestPayload.recaptchaToken = recaptchaToken;
+      }
+
       const response = await axios.post(
         `${API_CONFIG.API_URL}/auth/project/${customUrlPath}/login`,
-        {
-          email: data.email,
-          password: data.password,
-        }
+        requestPayload
       );
 
       if (response.data.success) {
@@ -218,6 +289,11 @@ const ProjectPortalLogin: React.FC = () => {
       } else {
         setErrorMessage('Login failed. Please try again.');
       }
+      // Reset reCAPTCHA on error
+      if (recaptchaRef.current) {
+        recaptchaRef.current.reset();
+        setRecaptchaToken(null);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -249,59 +325,113 @@ const ProjectPortalLogin: React.FC = () => {
   const accentColor = projectBranding?.branding?.colorTheme?.accent || '#764ba2';
 
   return (
-    <div className="min-h-screen flex" style={{ fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif' }}>
-      {/* Language Toggle - Top Right */}
-      <div style={{
-        position: 'fixed',
-        top: '1rem',
-        right: '1rem',
-        zIndex: 1000,
-      }}>
-        <LanguageToggle />
-      </div>
-      
-      {/* Left Side - Branding & Image */}
-      <div style={{
-        flex: 1,
-        background: `linear-gradient(135deg, ${primaryColor} 0%, ${accentColor} 100%)`,
-        position: 'relative',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: '4rem',
-        color: 'white',
-      }}>
-        {/* Decorative Pattern Overlay */}
+    <div className="min-h-screen flex flex-col" style={{ fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif' }}>
+      {/* Fixed Announcement Banner */}
+      {projectBranding?.announcementBanner?.message && (
         <div style={{
-          position: 'absolute',
+          position: 'fixed',
           top: 0,
           left: 0,
           right: 0,
-          bottom: 0,
-          backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%23ffffff\' fill-opacity=\'0.05\'%3E%3Cpath d=\'M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")',
-          opacity: 0.4,
-        }}></div>
+          zIndex: 1100,
+          background: 'linear-gradient(90deg, #1e3a5f 0%, #2d5a87 50%, #1e3a5f 100%)',
+          padding: '10px 16px',
+          color: 'white',
+          textAlign: 'center',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '10px',
+        }}>
+          {/* Info Icon */}
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" style={{ width: '18px', height: '18px', flexShrink: 0 }}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+          </svg>
+          <p style={{ margin: 0, fontSize: '14px', fontWeight: '500', lineHeight: '1.4' }}>
+            {projectBranding.announcementBanner.message}
+          </p>
+        </div>
+      )}
 
-        {/* Content */}
-        <div style={{ position: 'relative', zIndex: 1, textAlign: 'center', maxWidth: '500px' }}>
-          {/* Logo/Icon */}
-          {projectBranding?.branding?.logo ? (
-            <div style={{
-              margin: '0 auto 2rem',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
+      {/* Main Content - Add top padding when banner is present */}
+      <div className="flex-1 flex" style={{ marginTop: projectBranding?.announcementBanner?.message ? '44px' : '0' }}>
+        {/* Language Toggle - Top Right */}
+        <div style={{
+          position: 'fixed',
+          top: projectBranding?.announcementBanner?.message ? '56px' : '1rem',
+          right: '1rem',
+          zIndex: 1000,
+        }}>
+          <LanguageToggle />
+        </div>
+        
+        {/* Left Side - Branding & Image */}
+        <div style={{
+          flex: 1,
+          background: `linear-gradient(135deg, ${primaryColor} 0%, ${accentColor} 100%)`,
+          position: 'relative',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: '4rem',
+          color: 'white',
+        }}>
+          {/* Decorative Pattern Overlay */}
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%23ffffff\' fill-opacity=\'0.05\'%3E%3Cpath d=\'M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")',
+            opacity: 0.4,
+          }}></div>
+
+          {/* Content */}
+          <div style={{ position: 'relative', zIndex: 1, textAlign: 'center', maxWidth: '500px' }}>
+            {/* Logo/Icon */}
+            {projectBranding?.branding?.logo ? (
+              <div style={{
+                margin: '0 auto 2rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
             }}>
-              <img
-                src={projectBranding.branding.logo}
-                alt={projectBranding.name}
-                style={{
-                  maxWidth: '200px',
-                  maxHeight: '120px',
-                  height: 'auto',
-                }}
-              />
+              {projectBranding?.branding?.logoLinkbackUrl ? (
+                <a 
+                  href={projectBranding.branding.logoLinkbackUrl.startsWith('http') 
+                    ? projectBranding.branding.logoLinkbackUrl 
+                    : `https://${projectBranding.branding.logoLinkbackUrl}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <img
+                    src={projectBranding.branding.logo}
+                    alt={projectBranding.name}
+                    loading="lazy"
+                    style={{
+                      maxWidth: '200px',
+                      maxHeight: '120px',
+                      height: 'auto',
+                      cursor: 'pointer',
+                    }}
+                    className="hover:opacity-80 transition-opacity"
+                  />
+                </a>
+              ) : (
+                <img
+                  src={projectBranding.branding.logo}
+                  alt={projectBranding.name}
+                  loading="lazy"
+                  style={{
+                    maxWidth: '200px',
+                    maxHeight: '120px',
+                    height: 'auto',
+                  }}
+                />
+              )}
             </div>
           ) : (
             <div style={{
@@ -457,6 +587,7 @@ const ProjectPortalLogin: React.FC = () => {
           )}
 
           {/* Login Form */}
+          {(projectBranding?.loginSettings?.enableFormLogin !== false) ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <div style={{ textAlign: 'center' }}>
               <div style={{
@@ -618,33 +749,51 @@ const ProjectPortalLogin: React.FC = () => {
                 </Link>
               </div>
 
+              {/* Google reCAPTCHA */}
+              {console.log('reCAPTCHA check:', {
+                enableGoogleRecaptcha: projectBranding?.loginSettings?.enableGoogleRecaptcha,
+                recaptchaSiteKey: projectBranding?.loginSettings?.recaptchaSiteKey,
+                shouldShow: projectBranding?.loginSettings?.enableGoogleRecaptcha && projectBranding?.loginSettings?.recaptchaSiteKey
+              })}
+              {projectBranding?.loginSettings?.enableGoogleRecaptcha && projectBranding?.loginSettings?.recaptchaSiteKey && (
+                <div style={{ display: 'flex', justifyContent: 'center', marginTop: '0.5rem' }}>
+                  <ReCAPTCHA
+                    ref={recaptchaRef}
+                    sitekey={projectBranding.loginSettings.recaptchaSiteKey}
+                    onChange={(token) => setRecaptchaToken(token)}
+                    onExpired={() => setRecaptchaToken(null)}
+                    onErrored={() => setRecaptchaToken(null)}
+                  />
+                </div>
+              )}
+
               {/* Submit Button */}
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isLoading || (projectBranding?.loginSettings?.enableGoogleRecaptcha && !recaptchaToken)}
                 style={{
                   width: '100%',
                   padding: '0.875rem 1.5rem',
-                  background: isLoading ? '#9CA3AF' : primaryColor,
+                  background: (isLoading || (projectBranding?.loginSettings?.enableGoogleRecaptcha && !recaptchaToken)) ? '#9CA3AF' : primaryColor,
                   color: 'white',
                   border: 'none',
                   borderRadius: '8px',
                   fontSize: '0.875rem',
                   fontWeight: 600,
-                  cursor: isLoading ? 'not-allowed' : 'pointer',
-                  opacity: isLoading ? 0.6 : 1,
+                  cursor: (isLoading || (projectBranding?.loginSettings?.enableGoogleRecaptcha && !recaptchaToken)) ? 'not-allowed' : 'pointer',
+                  opacity: (isLoading || (projectBranding?.loginSettings?.enableGoogleRecaptcha && !recaptchaToken)) ? 0.6 : 1,
                   boxShadow: `0 2px 6px ${primaryColor}40`,
                   transition: 'all 0.2s ease',
                   fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
                 }}
                 onMouseEnter={(e) => {
-                  if (!isLoading) {
+                  if (!isLoading && !(projectBranding?.loginSettings?.enableGoogleRecaptcha && !recaptchaToken)) {
                     e.currentTarget.style.transform = 'translateY(-1px)';
                     e.currentTarget.style.boxShadow = `0 4px 12px ${primaryColor}50`;
                   }
                 }}
                 onMouseLeave={(e) => {
-                  if (!isLoading) {
+                  if (!isLoading && !(projectBranding?.loginSettings?.enableGoogleRecaptcha && !recaptchaToken)) {
                     e.currentTarget.style.transform = 'translateY(0)';
                     e.currentTarget.style.boxShadow = `0 2px 6px ${primaryColor}40`;
                   }
@@ -654,6 +803,44 @@ const ProjectPortalLogin: React.FC = () => {
               </button>
             </form>
           </div>
+          ) : (
+            /* Login Disabled Message */
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.5rem', padding: '2rem' }}>
+              <div style={{
+                width: '80px',
+                height: '80px',
+                background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 4px 14px rgba(239, 68, 68, 0.3)',
+              }}>
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+                </svg>
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <h1 style={{ fontSize: '1.5rem', fontWeight: 600, color: '#111827', marginBottom: '0.75rem' }}>
+                  Login Currently Disabled
+                </h1>
+                <p style={{ fontSize: '0.95rem', color: '#6B7280', lineHeight: '1.6', maxWidth: '320px' }}>
+                  The login form for this portal has been temporarily disabled by the administrator. Please contact support for assistance.
+                </p>
+              </div>
+              <div style={{
+                marginTop: '0.5rem',
+                padding: '12px 24px',
+                background: '#f3f4f6',
+                borderRadius: '8px',
+                fontSize: '0.875rem',
+                color: '#374151',
+              }}>
+                Portal: <strong>{projectBranding?.name || 'Portal'}</strong>
+              </div>
+            </div>
+          )}
 
           {/* Trust Indicators */}
           <div style={{ marginTop: '2rem', textAlign: 'center' }}>
@@ -679,14 +866,25 @@ const ProjectPortalLogin: React.FC = () => {
               fontSize: '0.75rem',
               color: '#9CA3AF',
             }}>
-              <a href="#" style={{ color: '#9CA3AF', textDecoration: 'none' }}>{t('privacyPolicy')}</a>
-              <span>•</span>
-              <a href="#" style={{ color: '#9CA3AF', textDecoration: 'none' }}>{t('termsOfService')}</a>
-              <span>•</span>
-              <a href="#" style={{ color: '#9CA3AF', textDecoration: 'none' }}>{t('helpSupport')}</a>
+              {projectBranding?.footerLinks?.privacyPolicy && (
+                <>
+                  <a href={projectBranding.footerLinks.privacyPolicy} target="_blank" rel="noopener noreferrer" style={{ color: '#9CA3AF', textDecoration: 'none' }}>{t('privacyPolicy')}</a>
+                  <span>•</span>
+                </>
+              )}
+              {projectBranding?.footerLinks?.termsOfUse && (
+                <>
+                  <a href={projectBranding.footerLinks.termsOfUse} target="_blank" rel="noopener noreferrer" style={{ color: '#9CA3AF', textDecoration: 'none' }}>{t('termsOfService')}</a>
+                  {projectBranding?.footerLinks?.cookiePolicy && <span>•</span>}
+                </>
+              )}
+              {projectBranding?.footerLinks?.cookiePolicy && (
+                <a href={projectBranding.footerLinks.cookiePolicy} target="_blank" rel="noopener noreferrer" style={{ color: '#9CA3AF', textDecoration: 'none' }}>{t('cookiePolicy')}</a>
+              )}
             </div>
           </div>
         </main>
+      </div>
       </div>
     </div>
   );

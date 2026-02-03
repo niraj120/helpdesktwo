@@ -28,6 +28,12 @@ interface Role {
   isMaster: boolean;
   masterRoleId?: string;
   isAgent: boolean;
+  document?: {
+    fileName: string;
+    filePath: string;
+    fileUrl: string;
+    uploadedAt: string;
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -73,6 +79,9 @@ const RBACSetup = () => {
     isAgent: false,
     roleType: 'custom' as 'super_admin' | 'agent' | 'student' | 'manager' | 'custom', // Add role type
   });
+
+  const [selectedDocument, setSelectedDocument] = useState<File | null>(null);
+  const [existingDocument, setExistingDocument] = useState<{fileName: string; fileUrl: string} | null>(null);
 
   useEffect(() => {
     // Prevent duplicate calls from React.StrictMode
@@ -134,10 +143,31 @@ const RBACSetup = () => {
     e.preventDefault();
     try {
       const token = localStorage.getItem('authToken');
+      
+      // Create FormData for multipart/form-data upload
+      const formDataToSend = new FormData();
+      formDataToSend.append('name', formData.name);
+      formDataToSend.append('code', formData.code);
+      formDataToSend.append('description', formData.description);
+      formDataToSend.append('permissions', JSON.stringify(formData.permissions));
+      formDataToSend.append('projects', JSON.stringify(formData.projects));
+      formDataToSend.append('isMaster', String(formData.isMaster));
+      formDataToSend.append('isAgent', String(formData.isAgent));
+      formDataToSend.append('roleType', formData.roleType);
+      
+      if (selectedDocument) {
+        formDataToSend.append('document', selectedDocument);
+      }
+      
       await axios.post(
         `${API_CONFIG.API_URL}/roles`,
-        formData,
-        { headers: { Authorization: `Bearer ${token}` } }
+        formDataToSend,
+        { 
+          headers: { 
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'multipart/form-data'
+          } 
+        }
       );
       setShowRoleModal(false);
       resetForm();
@@ -155,10 +185,31 @@ const RBACSetup = () => {
       console.log('🔍 isAgent value:', formData.isAgent);
       
       const token = localStorage.getItem('authToken');
+      
+      // Create FormData for multipart/form-data upload
+      const formDataToSend = new FormData();
+      formDataToSend.append('name', formData.name);
+      formDataToSend.append('code', formData.code);
+      formDataToSend.append('description', formData.description);
+      formDataToSend.append('permissions', JSON.stringify(formData.permissions));
+      formDataToSend.append('projects', JSON.stringify(formData.projects));
+      formDataToSend.append('isMaster', String(formData.isMaster));
+      formDataToSend.append('isAgent', String(formData.isAgent));
+      formDataToSend.append('roleType', formData.roleType);
+      
+      if (selectedDocument) {
+        formDataToSend.append('document', selectedDocument);
+      }
+      
       const response = await axios.put(
         `${API_CONFIG.API_URL}/roles/${editingRole._id}`,
-        formData,
-        { headers: { Authorization: `Bearer ${token}` } }
+        formDataToSend,
+        { 
+          headers: { 
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'multipart/form-data'
+          } 
+        }
       );
       
       console.log('✅ Role update response:', response.data);
@@ -233,7 +284,7 @@ const RBACSetup = () => {
     }
   };
 
-  const openEditModal = (role: Role) => {
+  const openEditModal = (role: Role & { document?: {fileName: string; fileUrl: string} }) => {
     console.log('🔍 Opening Edit Modal for role:', role.name);
     console.log('🔍 Role projects:', role.projects);
     console.log('🔍 Role isAgent:', role.isAgent);
@@ -252,6 +303,17 @@ const RBACSetup = () => {
       isAgent: role.isAgent || false,
       roleType: role.roleType || 'custom',
     });
+    
+    // Set existing document if available
+    if (role.document) {
+      setExistingDocument({
+        fileName: role.document.fileName,
+        fileUrl: role.document.fileUrl
+      });
+    } else {
+      setExistingDocument(null);
+    }
+    
     setShowRoleModal(true);
   };
 
@@ -281,6 +343,8 @@ const RBACSetup = () => {
       isAgent: false,
       roleType: 'custom',
     });
+    setSelectedDocument(null);
+    setExistingDocument(null);
   };
 
   // Filter permissions based on role type
@@ -289,11 +353,11 @@ const RBACSetup = () => {
 
     // Define permission categories for each role type
     const rolePermissionMap: Record<string, string[]> = {
-      super_admin: ['RBAC', 'USER', 'PROJECT', 'TICKET', 'KB_', 'FAQ', 'FEEDBACK', 'AUDIT', 'OFFLINE', 'STUDENT', 'FIELDS', 'SLA', 'AUTOMATION', 'REPORT', 'INTEGRATION', 'FORM', 'WORKFLOW', 'APPROVAL', 'MASTER_DATA', 'TICKET_CONFIG', 'DASHBOARD'],
-      manager: ['USER', 'TICKET', 'KB_', 'FAQ', 'FEEDBACK', 'AUDIT', 'OFFLINE', 'STUDENT', 'REPORT'],
-      agent: ['TICKET', 'KB_', 'FAQ', 'FEEDBACK', 'OFFLINE', 'STUDENT'],
+      super_admin: ['RBAC', 'USER', 'PROJECT', 'TICKET', 'KB_', 'FAQ', 'FEEDBACK', 'AUDIT', 'OFFLINE', 'STUDENT', 'FIELDS', 'SLA', 'AUTOMATION', 'REPORT', 'INTEGRATION', 'FORM', 'WORKFLOW', 'APPROVAL', 'MASTER_DATA', 'TICKET_CONFIG', 'DASHBOARD', 'ASSET', 'MY_ASSETS'],
+      manager: ['USER', 'TICKET', 'KB_', 'FAQ', 'FEEDBACK', 'AUDIT', 'OFFLINE', 'STUDENT', 'REPORT', 'ASSET', 'MY_ASSETS'],
+      agent: ['TICKET', 'KB_', 'FAQ', 'FEEDBACK', 'OFFLINE', 'STUDENT', 'MY_ASSETS'],
       student: ['TICKET', 'FAQ', 'OFFLINE', 'STUDENT'],
-      custom: ['RBAC', 'USER', 'PROJECT', 'TICKET', 'KB_', 'FAQ', 'FEEDBACK', 'AUDIT', 'OFFLINE', 'STUDENT', 'FIELDS', 'SLA', 'AUTOMATION', 'REPORT', 'INTEGRATION', 'FORM', 'WORKFLOW', 'APPROVAL', 'MASTER_DATA', 'TICKET_CONFIG', 'DASHBOARD'], // All
+      custom: ['RBAC', 'USER', 'PROJECT', 'TICKET', 'KB_', 'FAQ', 'FEEDBACK', 'AUDIT', 'OFFLINE', 'STUDENT', 'FIELDS', 'SLA', 'AUTOMATION', 'REPORT', 'INTEGRATION', 'FORM', 'WORKFLOW', 'APPROVAL', 'MASTER_DATA', 'TICKET_CONFIG', 'DASHBOARD', 'ASSET', 'MY_ASSETS'], // All
     };
 
     const allowedPrefixes = rolePermissionMap[roleType] || rolePermissionMap.custom;
@@ -694,6 +758,101 @@ const RBACSetup = () => {
                         resize: 'vertical',
                       }}
                     />
+                  </div>
+
+                  {/* Document Upload */}
+                  <div style={{ marginTop: '16px' }}>
+                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500' }}>
+                      Role Document (Optional)
+                    </label>
+                    <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '8px' }}>
+                      Upload a document that will be displayed in the footer for users with this role
+                    </p>
+                    
+                    {existingDocument && !selectedDocument && (
+                      <div style={{ 
+                        padding: '12px', 
+                        backgroundColor: '#eff6ff',
+                        border: '1px solid #3b82f6',
+                        borderRadius: '6px',
+                        marginBottom: '8px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                      }}>
+                        <div>
+                          <span style={{ fontSize: '14px', fontWeight: '500' }}>📄 {existingDocument.fileName}</span>
+                          <a 
+                            href={existingDocument.fileUrl} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            style={{ 
+                              marginLeft: '12px',
+                              fontSize: '12px',
+                              color: '#3b82f6',
+                              textDecoration: 'underline'
+                            }}
+                          >
+                            View
+                          </a>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (confirm('Are you sure you want to delete this document?')) {
+                              try {
+                                const token = localStorage.getItem('authToken');
+                                await axios.delete(
+                                  `${API_CONFIG.API_URL}/roles/${editingRole?._id}/document`,
+                                  { headers: { Authorization: `Bearer ${token}` } }
+                                );
+                                setExistingDocument(null);
+                                alert('Document deleted successfully');
+                              } catch (error: any) {
+                                alert(error.response?.data?.error || 'Failed to delete document');
+                              }
+                            }
+                          }}
+                          style={{
+                            padding: '6px 12px',
+                            fontSize: '12px',
+                            backgroundColor: '#ef4444',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    )}
+                    
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setSelectedDocument(file);
+                        }
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '8px',
+                        border: '1px solid #d1d5db',
+                        borderRadius: '6px',
+                        fontSize: '14px'
+                      }}
+                    />
+                    {selectedDocument && (
+                      <p style={{ fontSize: '12px', color: '#10b981', marginTop: '4px' }}>
+                        📎 Selected: {selectedDocument.name}
+                      </p>
+                    )}
+                    <p style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>
+                      Accepted formats: PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, TXT (Max 10MB)
+                    </p>
                   </div>
 
                   {/* Role Type Selector */}

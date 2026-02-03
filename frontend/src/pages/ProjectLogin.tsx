@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import { useTranslation } from 'react-i18next';
+import DOMPurify from 'dompurify';
 import { API_CONFIG } from '../config/constants';
 import {
   EyeIcon, 
@@ -23,8 +24,13 @@ interface ProjectBranding {
   primaryColor: string;
   secondaryColor: string;
   logoUrl?: string;
+  logoLinkbackUrl?: string;
   welcomeText?: string;
   footerText?: string;
+  announcementBanner?: {
+    message: string;
+    type: 'plain' | 'rich';
+  };
 }
 
 const ProjectLogin: React.FC = () => {
@@ -233,45 +239,66 @@ const ProjectLogin: React.FC = () => {
   const secondaryColor = projectBranding.secondaryColor || '#764ba2';
   
   return (
-    <div className="min-h-screen flex" style={{ fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif' }}>
-      {/* Skip to main content */}
-      <a 
-        href="#main-content" 
-        className="skip-link"
-        aria-label={t('skipToMain')}
-        style={{
-          position: 'absolute',
-          left: '-9999px',
-          zIndex: 999,
-          padding: '1rem',
-          background: primaryColor,
-          color: 'white',
-          textDecoration: 'none',
-        }}
-      >
-        {t('skipToMain')}
-      </a>
-
-      {/* Left Side - Project Branding */}
-      <div style={{
-        flex: 1,
-        background: `linear-gradient(135deg, ${primaryColor} 0%, ${secondaryColor} 100%)`,
-        position: 'relative',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: '4rem',
-        color: 'white',
-      }}>
-        {/* Decorative Pattern Overlay */}
+    <div className="min-h-screen flex flex-col" style={{ fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif' }}>
+      {/* Announcement Banner */}
+      {projectBranding.announcementBanner?.message && (
         <div style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%23ffffff\' fill-opacity=\'0.05\'%3E%3Cpath d=\'M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")',
+          backgroundColor: '#fef3c7',
+          borderBottom: '1px solid #fbbf24',
+          padding: '12px 16px',
+          color: '#92400e',
+          textAlign: 'center'
+        }}>
+          {projectBranding.announcementBanner.type === 'rich' ? (
+            <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(projectBranding.announcementBanner.message) }} style={{ fontSize: '14px', lineHeight: '1.5' }} />
+          ) : (
+            <p style={{ margin: 0, fontSize: '14px', lineHeight: '1.5' }}>
+              {projectBranding.announcementBanner.message}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Main Content */}
+      <div className="flex-1 flex">
+        {/* Skip to main content */}
+        <a 
+          href="#main-content" 
+          className="skip-link"
+          aria-label={t('skipToMain')}
+          style={{
+            position: 'absolute',
+            left: '-9999px',
+            zIndex: 999,
+            padding: '1rem',
+            background: primaryColor,
+            color: 'white',
+            textDecoration: 'none',
+          }}
+        >
+          {t('skipToMain')}
+        </a>
+
+        {/* Left Side - Project Branding */}
+        <div style={{
+          flex: 1,
+          background: `linear-gradient(135deg, ${primaryColor} 0%, ${secondaryColor} 100%)`,
+          position: 'relative',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: '4rem',
+          color: 'white',
+        }}>
+          {/* Decorative Pattern Overlay */}
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%23ffffff\' fill-opacity=\'0.05\'%3E%3Cpath d=\'M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")',
           opacity: 0.4,
         }}></div>
 
@@ -293,15 +320,40 @@ const ProjectLogin: React.FC = () => {
             overflow: 'hidden',
           }}>
             {projectBranding.logoUrl ? (
-              <img 
-                src={projectBranding.logoUrl} 
-                alt={`${projectBranding.name} logo`}
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'contain',
-                }}
-              />
+              projectBranding.logoLinkbackUrl ? (
+                <a 
+                  href={projectBranding.logoLinkbackUrl.startsWith('http') 
+                    ? projectBranding.logoLinkbackUrl 
+                    : `https://${projectBranding.logoLinkbackUrl}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ width: '100%', height: '100%' }}
+                >
+                  <img 
+                    src={projectBranding.logoUrl} 
+                    alt={`${projectBranding.name} logo`}
+                    loading="lazy"
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'contain',
+                      cursor: 'pointer',
+                    }}
+                    className="hover:opacity-80 transition-opacity"
+                  />
+                </a>
+              ) : (
+                <img 
+                  src={projectBranding.logoUrl} 
+                  alt={`${projectBranding.name} logo`}
+                  loading="lazy"
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'contain',
+                  }}
+                />
+              )
             ) : (
               <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 2L2 7l10 5 10-5-10-5z"/>
@@ -757,6 +809,7 @@ const ProjectLogin: React.FC = () => {
           100% { transform: rotate(360deg); }
         }
       `}</style>
+      </div>
     </div>
   );
 };

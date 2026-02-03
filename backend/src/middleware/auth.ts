@@ -3,6 +3,13 @@ import * as jwt from 'jsonwebtoken';
 import { User } from '../models/User';
 import { config } from '../config';
 
+export interface ProjectContext {
+  viewMode: 'single' | 'unified';
+  currentProjectId: string | null;
+  accessibleProjectIds: string[]; // Empty array means all projects (admin)
+  isAdmin: boolean;
+}
+
 export interface AuthRequest extends Request {
   user?: {
     userId: string;
@@ -11,7 +18,9 @@ export interface AuthRequest extends Request {
     firstName?: string;
     lastName?: string;
     tokenVersion?: number;
+    projects?: any[]; // User's assigned projects
   };
+  projectContext?: ProjectContext; // Attached by attachProjectContext middleware
 }
 
 export const authMiddleware = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
@@ -34,13 +43,14 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
     // Check if token version matches user's current token version
     // AND fetch the full role with permissions for permission checking
     const user = await User.findById(decoded.userId)
-      .select('tokenVersion')
+      .select('tokenVersion projects') // Include projects array
       .populate({
         path: 'role',
         populate: {
           path: 'permissions'
         }
-      });
+      })
+      .populate('projects', 'name code branding status'); // Populate project details
       
     if (user) {
       const currentTokenVersion = user.tokenVersion || 0;
@@ -64,7 +74,8 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
         role: role, // Full role object with permissions populated
         firstName: decoded.firstName,
         lastName: decoded.lastName,
-        tokenVersion: decoded.tokenVersion
+        tokenVersion: decoded.tokenVersion,
+        projects: (role as any)?.projects || [] // Projects from user's role
       };
     } else {
       // User not found in database

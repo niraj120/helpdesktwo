@@ -44,6 +44,9 @@ interface Ticket {
     lastName: string;
     email: string;
   };
+  submissionSource?: 'online' | 'offline' | 'email'; // Task 6.4: Ticket source
+  sourceEmail?: string; // Task 6.4: Sender email for email tickets
+  sourceEmailMessageId?: string; // Task 7.5: Original email message ID for threading
   metadata?: {
     studentName?: string;
     studentEmail?: string;
@@ -52,6 +55,7 @@ interface Ticket {
   };
   tags?: string[];
   threads?: Thread[];
+  comments?: Comment[]; // Task 7.5: Email replies stored as comments
   internalNotes?: InternalNote[];
   attachments?: Attachment[];
   escalationHistory?: EscalationRecord[];
@@ -88,11 +92,55 @@ interface InternalNote {
   createdAt: string;
 }
 
+// Task 7.5: Comment interface for email replies
+interface Comment {
+  _id?: string;
+  text: string;
+  createdBy: {
+    _id?: string;
+    firstName: string;
+    lastName: string;
+    email?: string;
+  };
+  createdAt: string;
+  updatedAt?: string;
+  isSystemComment?: boolean;
+}
+
 interface Attachment {
   filename: string;
   path: string;
   size: number;
   uploadedAt: string;
+}
+
+// Task 6.5: Email communication interface
+interface EmailCommunication {
+  _id: string;
+  ticketId: string;
+  direction: 'incoming' | 'outgoing' | 'inbound' | 'outbound';
+  fromEmail: string;
+  toEmail: string;
+  ccEmails?: string[];
+  subject: string;
+  body: string;
+  htmlBody?: string;
+  bodyHtml?: string;
+  messageId: string;
+  inReplyTo?: string;
+  references?: string | string[];
+  attachments?: Array<{
+    filename: string;
+    originalName: string;
+    mimetype: string;
+    size: number;
+    path?: string;
+  }>;
+  sentAt?: string;
+  receivedAt?: string;
+  status?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface EscalationRecord {
@@ -180,7 +228,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [loading, setLoading] = useState(true);
   const [permissions, setPermissions] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState<'details' | 'replies' | 'notes' | 'history'>('replies');
+  const [activeTab, setActiveTab] = useState<'details' | 'replies' | 'notes' | 'history' | 'emails'>('replies'); // Task 6.5: Added 'emails' tab
   
   // Reply states
   const [replyMessage, setReplyMessage] = useState('');
@@ -214,6 +262,28 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
   const [priorityOptions, setPriorityOptions] = useState<string[]>([]);
   const [priorityData, setPriorityData] = useState<any>(null);
   const [slaRules, setSlaRules] = useState<any[]>([]);
+
+  // Task 6.5: Email communications state
+  const [emailCommunications, setEmailCommunications] = useState<EmailCommunication[]>([]);
+  const [loadingEmails, setLoadingEmails] = useState(false);
+  const [expandedEmails, setExpandedEmails] = useState<Set<string>>(new Set());
+
+  // Task 7.1: Email reply state
+  const [replyContent, setReplyContent] = useState('');
+  const [sendingReply, setSendingReply] = useState(false);
+  const [replySuccess, setReplySuccess] = useState('');
+  const [replyError, setReplyError] = useState('');
+  const [showReplyForm, setShowReplyForm] = useState(false);
+
+  // Task 6.4: Source badge helper function
+  const getSourceBadge = (source?: 'online' | 'offline' | 'email') => {
+    const badges = {
+      online: { icon: '🌐', label: 'Online', color: '#3B82F6', bgColor: '#DBEAFE', tooltip: 'Submitted via online portal' },
+      offline: { icon: '📍', label: 'Offline', color: '#8B5CF6', bgColor: '#EDE9FE', tooltip: 'Walk-in or phone submission' },
+      email: { icon: '📧', label: 'Email', color: '#10B981', bgColor: '#D1FAE5', tooltip: 'Created from email' },
+    };
+    return badges[source || 'online'] || badges.online;
+  };
 
   // Helper function to get status display name from numeric code
   const getStatusDisplayName = (statusCode: number | string) => {
@@ -283,50 +353,33 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
     fetchUserPermissions();
   }, [ticketId]);
 
-  // Fetch priority details when ticket priority changes
+  // Task 6.5: Fetch email communications when ticket loads or changes
   useEffect(() => {
-    const fetchPriorityData = async () => {
-      if (!ticket?.priority) return;
+    if (ticket && ticket.submissionSource === 'email') {
+      fetchEmailCommunications();
+    }
+  }, [ticket?.submissionSource, ticketId]);
 
-      try {
-        const token = localStorage.getItem('authToken');
-        const projectContext = JSON.parse(localStorage.getItem('projectContext') || '{}');
-        
-        if (!projectContext.projectId) return;
-          
-        // Fetch ticket settings which includes SLA rules with priorities
-        const response = await axios.get(
-          `${API_CONFIG.API_URL}/projects/${projectContext.projectId}/ticket-settings`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-        
-        if (response.data.success && response.data.data?.slaRules) {
-          // Find the matching SLA rule by priority name
-          const matchingSlaRule = response.data.data.slaRules.find(
-            (rule: any) => rule.priority?.name?.toUpperCase() === ticket.priority.toUpperCase()
-          );
-            
-          if (matchingSlaRule?.priority) {
-            // Set priority data with resolution time
-            setPriorityData({
-              name: matchingSlaRule.priority.name,
-              code: ticket.priority.toUpperCase(),
-              resolutionTime: {
-                value: matchingSlaRule.resolutionTime?.value || 0,
-                unit: matchingSlaRule.resolutionTime?.unit || 'hours'
-              }
-            });
-          }
+  // Update priority data when ticket or slaRules change (no additional API call needed)
+  useEffect(() => {
+    if (!ticket?.priority || !slaRules.length) return;
+    
+    // Find the matching SLA rule by priority name from already-fetched slaRules
+    const matchingSlaRule = slaRules.find(
+      (rule: any) => rule.priority?.name?.toUpperCase() === ticket.priority.toUpperCase()
+    );
+      
+    if (matchingSlaRule?.priority) {
+      setPriorityData({
+        name: matchingSlaRule.priority.name,
+        code: ticket.priority.toUpperCase(),
+        resolutionTime: {
+          value: matchingSlaRule.resolutionTime?.value || 0,
+          unit: matchingSlaRule.resolutionTime?.unit || 'hours'
         }
-      } catch (error) {
-        console.error('Error fetching priority data:', error);
-      }
-    };
-
-    fetchPriorityData();
-  }, [ticket?.priority]);
+      });
+    }
+  }, [ticket?.priority, slaRules]);
 
   const fetchTicketDetails = async () => {
     setLoading(true);
@@ -391,125 +444,90 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
     }
   };
 
+  // PERFORMANCE: Consolidated master data fetch using Promise.all for parallel requests
   const fetchMasterData = async () => {
     try {
       const token = localStorage.getItem('authToken');
       const projectContext = JSON.parse(localStorage.getItem('projectContext') || '{}');
+      const headers = { Authorization: `Bearer ${token}` };
 
-      // Fetch ticket configuration (statuses, priorities, categories)
-      if (projectContext.projectId) {
-        // Add cache-busting parameter to force fresh data
-        const cacheBuster = `?t=${Date.now()}`;
-        const ticketConfigRes = await axios.get(
-          `${API_CONFIG.API_URL}/projects/${projectContext.projectId}/ticket-settings${cacheBuster}`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
+      if (!projectContext.projectId) {
+        console.warn('⚠️ No projectId available, skipping master data fetch');
+        return;
+      }
+
+      // PERFORMANCE: Fetch all data in parallel using Promise.all
+      const [ticketConfigRes, tagsRes, escalationRes] = await Promise.all([
+        // Ticket settings (statuses, priorities, categories, SLA rules)
+        axios.get(
+          `${API_CONFIG.API_URL}/projects/${projectContext.projectId}/ticket-settings`,
+          { headers }
+        ),
+        // Available tags
+        axios.get(`${API_CONFIG.API_URL}/tickets/tags`, { headers }),
+        // Escalation policies
+        axios.get(
+          `${API_CONFIG.API_URL}/escalation-policies?projectId=${projectContext.projectId}&isActive=true`,
+          { headers }
+        ).catch(err => {
+          console.error('❌ Error fetching escalation policies:', err);
+          return { data: { data: [] } };
+        })
+      ]);
+
+      // Process ticket configuration
+      if (ticketConfigRes.data.success && ticketConfigRes.data.data) {
+        const ticketConfig = ticketConfigRes.data.data;
         
-        if (ticketConfigRes.data.success && ticketConfigRes.data.data) {
-          const ticketConfig = ticketConfigRes.data.data;
-          
-          // Set statuses from Status master table
-          if (ticketConfig.allowedStatuses && ticketConfig.allowedStatuses.length > 0) {
-            console.log('📊 Received allowedStatuses from backend:', ticketConfig.allowedStatuses);
-            // Store full status objects with name and code
-            setStatusOptions(ticketConfig.allowedStatuses);
-          }
-          
-          // Set categories from add project form
-          if (ticketConfig.categories && ticketConfig.categories.length > 0) {
-            setCategories(ticketConfig.categories.map((cat: string) => ({ 
-              _id: cat, 
-              name: cat 
-            })));
-          }
-          
-          // Set priorities from SLA Rules
-          if (ticketConfig.allowedPriorities && ticketConfig.allowedPriorities.length > 0) {
-            setPriorityOptions(ticketConfig.allowedPriorities);
-          }
-          
-          // Store SLA rules for resolution time calculation
-          if (ticketConfig.slaRules && ticketConfig.slaRules.length > 0) {
-            setSlaRules(ticketConfig.slaRules);
-          }
+        if (ticketConfig.allowedStatuses?.length > 0) {
+          setStatusOptions(ticketConfig.allowedStatuses);
+        }
+        
+        if (ticketConfig.categories?.length > 0) {
+          setCategories(ticketConfig.categories.map((cat: string) => ({ 
+            _id: cat, 
+            name: cat 
+          })));
+        }
+        
+        if (ticketConfig.allowedPriorities?.length > 0) {
+          setPriorityOptions(ticketConfig.allowedPriorities);
+        }
+        
+        if (ticketConfig.slaRules?.length > 0) {
+          setSlaRules(ticketConfig.slaRules);
         }
       }
 
-      // Fetch available tags
-      const tagsRes = await axios.get(
-        `${API_CONFIG.API_URL}/tickets/tags`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
+      // Process tags
       setAvailableTags(tagsRes.data.data || []);
 
-      // Fetch escalation contacts
-      console.log('🔍 Fetching escalation policies for projectId:', projectContext.projectId);
-      
-      if (projectContext.projectId) {
-        try {
-          const escalationContactsRes = await axios.get(
-            `${API_CONFIG.API_URL}/escalation-policies?projectId=${projectContext.projectId}&isActive=true`,
-            {
-              headers: { Authorization: `Bearer ${token}` },
-            }
-          );
-          
-          console.log('📋 Escalation Policies Response:', escalationContactsRes.data);
-          
-          // Transform escalation policies into contact format for the dropdown
-          const policies = escalationContactsRes.data.data || [];
-          console.log('📋 Policies array:', policies);
-          console.log('📋 Number of policies:', policies.length);
-          
-          const contacts = policies.flatMap((policy: any) => {
-            console.log('📋 Processing policy:', policy.name, 'Levels:', policy.levels);
-            return (policy.levels || []).flatMap((level: any) => {
-              // If level has users array, create a contact for each user
-              if (level.users && level.users.length > 0) {
-                return level.users.map((user: any) => {
-                  const contact = {
-                    _id: `${policy._id}-L${level.level}-${user._id}`,
-                    name: `${user.firstName} ${user.lastName}`,
-                    email: user.email,
-                    role: user.role?.name || level.escalateTo?.targetName || 'N/A',
-                    priority: policy.name || '',
-                    userId: user._id,
-                  };
-                  console.log('📋 Created contact from user:', contact);
-                  return contact;
-                });
-              } else {
-                // Fallback to old format if no users found
-                const contact = {
-                  _id: `${policy._id}-L${level.level}`,
-                  name: level.escalateTo?.targetName || `Level ${level.level}`,
-                  email: level.escalateTo?.targetId || '',
-                  role: level.escalateTo?.type || 'role',
-                  priority: policy.name || '',
-                };
-                console.log('📋 Created contact (fallback):', contact);
-                return [contact];
-              }
-            });
-          });
-          
-          console.log('📋 Final contacts array:', contacts);
-          console.log('📋 Number of contacts:', contacts.length);
-          setEscalationContacts(contacts);
-        } catch (escalationError) {
-          console.error('❌ Error fetching escalation policies:', escalationError);
-          if (axios.isAxiosError(escalationError)) {
-            console.error('❌ Response:', escalationError.response?.data);
-            console.error('❌ Status:', escalationError.response?.status);
+      // Process escalation contacts
+      const policies = escalationRes.data.data || [];
+      const contacts = policies.flatMap((policy: any) => {
+        return (policy.levels || []).flatMap((level: any) => {
+          if (level.users && level.users.length > 0) {
+            return level.users.map((user: any) => ({
+              _id: `${policy._id}-L${level.level}-${user._id}`,
+              name: `${user.firstName} ${user.lastName}`,
+              email: user.email,
+              role: user.role?.name || level.escalateTo?.targetName || 'N/A',
+              priority: policy.name || '',
+              userId: user._id,
+            }));
+          } else {
+            return [{
+              _id: `${policy._id}-L${level.level}`,
+              name: level.escalateTo?.targetName || `Level ${level.level}`,
+              email: level.escalateTo?.targetId || '',
+              role: level.escalateTo?.type || 'role',
+              priority: policy.name || '',
+            }];
           }
-        }
-      } else {
-        console.warn('⚠️ No projectId available, skipping escalation policies fetch');
-      }
+        });
+      });
+      setEscalationContacts(contacts);
+
     } catch (error) {
       console.error('❌ Error fetching master data:', error);
       if (axios.isAxiosError(error)) {
@@ -534,6 +552,107 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
     } catch (error) {
       console.error('Error fetching user permissions:', error);
     }
+  };
+
+  // Task 6.5: Fetch email communications
+  const fetchEmailCommunications = async () => {
+    if (!ticketId || !ticket?.submissionSource || ticket.submissionSource !== 'email') {
+      // Only fetch for email tickets
+      return;
+    }
+
+    setLoadingEmails(true);
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await axios.get(
+        `${API_CONFIG.API_URL}/tickets/${ticketId}/communications`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (response.data.success) {
+        setEmailCommunications(response.data.data || []);
+      }
+    } catch (error) {
+      console.error('Error fetching email communications:', error);
+    } finally {
+      setLoadingEmails(false);
+    }
+  };
+
+  // Task 7.1: Send email reply
+  const handleSendReply = async () => {
+    if (!replyContent.trim() || !ticket) {
+      setReplyError('Reply content is required');
+      return;
+    }
+
+    // Validate ticket is from email source
+    if (ticket.submissionSource !== 'email' || !ticket.sourceEmail) {
+      setReplyError('Cannot send email reply: This ticket was not created via email');
+      return;
+    }
+
+    setSendingReply(true);
+    setReplyError('');
+    setReplySuccess('');
+
+    try {
+      const token = localStorage.getItem('authToken');
+      
+      // Get the original message ID for threading
+      const originalMessageId = ticket.sourceEmailMessageId || 
+        (emailCommunications.length > 0 ? emailCommunications[0].messageId : undefined);
+
+      const response = await axios.post(
+        `${API_CONFIG.API_URL}/tickets/${ticket._id}/reply-email`,
+        {
+          replyContent: replyContent.trim(),
+          inReplyToMessageId: originalMessageId
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (response.data.success) {
+        setReplySuccess('Email reply sent successfully!');
+        setReplyContent(''); // Clear form
+        setShowReplyForm(false); // Hide form
+        
+        // Refresh email communications to show the new reply
+        await fetchEmailCommunications();
+        
+        // Clear success message after 3 seconds
+        setTimeout(() => {
+          setReplySuccess('');
+        }, 3000);
+      } else {
+        setReplyError(response.data.error || 'Failed to send reply');
+      }
+    } catch (error: any) {
+      console.error('Error sending email reply:', error);
+      const errorMessage = error.response?.data?.error || 
+        error.response?.data?.details || 
+        'Failed to send email reply. Please try again.';
+      setReplyError(errorMessage);
+    } finally {
+      setSendingReply(false);
+    }
+  };
+
+  // Toggle email expand/collapse
+  const toggleEmailExpanded = (emailId: string) => {
+    setExpandedEmails(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(emailId)) {
+        newSet.delete(emailId);
+      } else {
+        newSet.add(emailId);
+      }
+      return newSet;
+    });
   };
 
   const handleUpdateStatus = async (statusOverride?: string | number) => {
@@ -850,10 +969,57 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                     <span className={`px-3 py-1 rounded-full text-xs font-medium ${getPriorityColor(ticket.priority)}`}>
                       {ticket.priority}
                     </span>
+                    {/* Task 6.4: Source badge */}
+                    {(() => {
+                      const sourceBadge = getSourceBadge(ticket.submissionSource);
+                      return (
+                        <span 
+                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium"
+                          style={{
+                            color: sourceBadge.color,
+                            backgroundColor: sourceBadge.bgColor,
+                            border: `1px solid ${sourceBadge.color}40`,
+                          }}
+                          title={sourceBadge.tooltip}
+                        >
+                          <span>{sourceBadge.icon}</span>
+                          <span>{sourceBadge.label}</span>
+                        </span>
+                      );
+                    })()}
                   </div>
-                  <p className="text-sm text-gray-600 mt-1">
-                    Created {new Date(ticket.createdAt).toLocaleString()}
-                  </p>
+                  <div className="flex items-center gap-3 mt-1">
+                    <p className="text-sm text-gray-600">
+                      Created {new Date(ticket.createdAt).toLocaleString()}
+                    </p>
+                    {/* Task 6.4: Show sender email for email tickets */}
+                    {ticket.submissionSource === 'email' && ticket.sourceEmail && (
+                      <>
+                        <span className="text-gray-400">•</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-gray-600">From:</span>
+                          <a
+                            href={`mailto:${ticket.sourceEmail}`}
+                            className="text-sm text-blue-600 hover:text-blue-700 hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                            title={ticket.sourceEmail}
+                          >
+                            {ticket.sourceEmail}
+                          </a>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigator.clipboard.writeText(ticket.sourceEmail || '');
+                            }}
+                            className="text-xs px-2 py-0.5 border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+                            title="Copy email"
+                          >
+                            📋
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1030,6 +1196,22 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                     <ClockIcon className="h-5 w-5 inline-block mr-2" />
                     History
                   </button>
+                  {/* Task 6.5: Emails tab - only show for email tickets */}
+                  {ticket.submissionSource === 'email' && (
+                    <button
+                      onClick={() => setActiveTab('emails')}
+                      className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                        activeTab === 'emails'
+                          ? 'border-blue-500 text-blue-600'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      }`}
+                    >
+                      <svg className="h-5 w-5 inline-block mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                      Email Thread ({emailCommunications.length})
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -1103,13 +1285,68 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                     </form>
                     )}
 
-                    {/* Full Conversation Thread */}
-                    {ticket.threads && ticket.threads.length > 0 && (
+                    {/* Task 7.5: Combined Timeline - Comments (Email Replies) + Threads */}
+                    {((ticket.comments && ticket.comments.length > 0) || (ticket.threads && ticket.threads.length > 0)) && (
                       <div className="space-y-4 mt-8">
                         <h4 className="text-base font-semibold text-gray-900 border-b pb-2">
-                          Full Conversation ({ticket.threads.length} {ticket.threads.length === 1 ? 'message' : 'messages'})
+                          Full Conversation ({(ticket.comments?.length || 0) + (ticket.threads?.length || 0)} messages)
                         </h4>
-                        {ticket.threads
+
+                        {/* Task 7.5: Display Email Replies (from comments) */}
+                        {ticket.comments && ticket.comments.length > 0 && ticket.comments
+                          .filter(comment => comment.text?.startsWith('📧'))
+                          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                          .map((comment) => {
+                            // Extract email and content from comment text
+                            const emailMatch = comment.text.match(/📧 Email reply sent to ([^:]+):\n\n(.+)/s);
+                            const recipientEmail = emailMatch ? emailMatch[1].trim() : '';
+                            const replyContent = emailMatch ? emailMatch[2].trim() : comment.text;
+
+                            return (
+                              <div key={comment._id} className="bg-blue-50 rounded-lg p-4 border-l-4 border-blue-500">
+                                <div className="flex items-start space-x-3">
+                                  <div className="flex-shrink-0">
+                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-blue-400 flex items-center justify-center text-white font-semibold">
+                                      {comment.createdBy?.firstName?.charAt(0) || 'A'}
+                                    </div>
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <div className="flex items-center gap-2">
+                                        <p className="text-sm font-medium text-gray-900">
+                                          {comment.createdBy?.firstName} {comment.createdBy?.lastName}
+                                        </p>
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                          📧 Sent via Email
+                                        </span>
+                                      </div>
+                                      <p className="text-xs text-gray-500">
+                                        {new Date(comment.createdAt).toLocaleString('en-US', {
+                                          year: 'numeric',
+                                          month: 'short',
+                                          day: 'numeric',
+                                          hour: '2-digit',
+                                          minute: '2-digit'
+                                        })}
+                                      </p>
+                                    </div>
+                                    {recipientEmail && (
+                                      <p className="text-xs text-blue-700 mb-2">
+                                        To: {recipientEmail}
+                                      </p>
+                                    )}
+                                    <div className="text-sm text-gray-700 whitespace-pre-wrap break-words">
+                                      {replyContent}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })
+                        }
+
+                        {/* Original Threads/Replies */}
+                        {ticket.threads && ticket.threads.length > 0 && ticket.threads
                           .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
                           .map((thread) => (
                             <div key={thread._id} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
@@ -1324,6 +1561,246 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                     {(!(ticket as any).changeHistory || (ticket as any).changeHistory.length === 0) && 
                      (!ticket.escalationHistory || ticket.escalationHistory.length === 0) && (
                       <p className="text-center text-gray-500 py-8">No history yet</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Task 6.5: Email Communications Tab */}
+                {activeTab === 'emails' && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold text-gray-900">Email Communication Thread</h3>
+                      {loadingEmails && (
+                        <span className="text-sm text-gray-500">Loading...</span>
+                      )}
+                    </div>
+
+                    {!loadingEmails && emailCommunications.length === 0 && (
+                      <div className="text-center py-12 bg-gray-50 rounded-lg">
+                        <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                        </svg>
+                        <p className="mt-4 text-sm text-gray-600">No email communications found</p>
+                        <p className="mt-1 text-xs text-gray-500">Email thread will appear here once messages are exchanged</p>
+                      </div>
+                    )}
+
+                    {emailCommunications.map((email, index) => {
+                      const isIncoming = email.direction === 'incoming' || email.direction === 'inbound';
+                      const isExpanded = expandedEmails.has(email._id);
+                      const emailBody = email.htmlBody || email.bodyHtml || email.body;
+                      const isLongEmail = emailBody.length > 500;
+                      const displayBody = !isExpanded && isLongEmail 
+                        ? emailBody.substring(0, 500) + '...' 
+                        : emailBody;
+
+                      return (
+                        <div 
+                          key={email._id}
+                          className={`relative border-l-4 pl-6 pr-4 py-4 rounded-r-lg ${
+                            isIncoming 
+                              ? 'bg-blue-50 border-blue-500' 
+                              : 'bg-green-50 border-green-500'
+                          }`}
+                        >
+                          {/* Thread indicator line */}
+                          {index > 0 && (
+                            <div 
+                              className="absolute left-0 -top-4 w-0.5 h-4 bg-gray-300"
+                              style={{ marginLeft: '-2px' }}
+                            />
+                          )}
+
+                          {/* Email header */}
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className={`text-xs font-semibold px-2 py-1 rounded ${
+                                  isIncoming 
+                                    ? 'bg-blue-100 text-blue-700' 
+                                    : 'bg-green-100 text-green-700'
+                                }`}>
+                                  {isIncoming ? '📥 INCOMING' : '📤 OUTGOING'}
+                                </span>
+                                <span className="text-xs text-gray-500">
+                                  {new Date(email.createdAt).toLocaleString()}
+                                </span>
+                              </div>
+                              <div className="text-sm">
+                                <p className="font-medium text-gray-900">
+                                  <span className="text-gray-600">From:</span> {email.fromEmail}
+                                </p>
+                                <p className="text-gray-700">
+                                  <span className="text-gray-600">To:</span> {email.toEmail}
+                                </p>
+                                {email.ccEmails && email.ccEmails.length > 0 && (
+                                  <p className="text-gray-600 text-xs">
+                                    CC: {email.ccEmails.join(', ')}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Email subject */}
+                          <div className="mb-3">
+                            <p className="text-sm font-semibold text-gray-900">
+                              Subject: {email.subject}
+                            </p>
+                          </div>
+
+                          {/* Email body */}
+                          <div className="mb-3">
+                            {email.htmlBody || email.bodyHtml ? (
+                              <div 
+                                className="prose prose-sm max-w-none text-gray-700 bg-white p-3 rounded border border-gray-200"
+                                dangerouslySetInnerHTML={{ 
+                                  __html: displayBody 
+                                }}
+                              />
+                            ) : (
+                              <div className="text-sm text-gray-700 bg-white p-3 rounded border border-gray-200 whitespace-pre-wrap">
+                                {displayBody}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Expand/Collapse button for long emails */}
+                          {isLongEmail && (
+                            <button
+                              onClick={() => toggleEmailExpanded(email._id)}
+                              className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                            >
+                              {isExpanded ? '▲ Show less' : '▼ Show more'}
+                            </button>
+                          )}
+
+                          {/* Attachments */}
+                          {email.attachments && email.attachments.length > 0 && (
+                            <div className="mt-3 pt-3 border-t border-gray-200">
+                              <p className="text-xs font-medium text-gray-700 mb-2">
+                                📎 Attachments ({email.attachments.length})
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                {email.attachments.map((att, i) => (
+                                  <span 
+                                    key={i}
+                                    className="text-xs bg-white px-2 py-1 rounded border border-gray-300 text-gray-700"
+                                  >
+                                    {att.originalName || att.filename} ({(att.size / 1024).toFixed(1)} KB)
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Email metadata */}
+                          <div className="mt-3 pt-3 border-t border-gray-200 text-xs text-gray-500">
+                            <div className="flex items-center gap-4">
+                              <span>Message ID: {email.messageId.substring(0, 20)}...</span>
+                              {email.inReplyTo && (
+                                <span>↩️ Reply to: {email.inReplyTo.substring(0, 20)}...</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Task 7.1: Email Reply Form */}
+                {!loadingEmails && ticket.sourceEmail && (
+                  <div className="mt-6">
+                    {/* Success/Error Messages */}
+                    {replySuccess && (
+                      <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
+                        <span className="text-green-600">✅</span>
+                        <span className="text-sm text-green-700">{replySuccess}</span>
+                      </div>
+                    )}
+                    {replyError && (
+                      <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
+                        <span className="text-red-600">❌</span>
+                        <span className="text-sm text-red-700">{replyError}</span>
+                      </div>
+                    )}
+
+                    {/* Reply Button or Form */}
+                    {!showReplyForm ? (
+                      <button
+                        onClick={() => setShowReplyForm(true)}
+                        className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center justify-center gap-2 transition-colors"
+                      >
+                        <span>📧</span>
+                        <span>Reply via Email</span>
+                      </button>
+                    ) : (
+                      <div className="bg-white border border-gray-200 rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-sm font-semibold text-gray-900">
+                            Reply to: {ticket.sourceEmail}
+                          </h4>
+                          <button
+                            onClick={() => {
+                              setShowReplyForm(false);
+                              setReplyContent('');
+                              setReplyError('');
+                            }}
+                            className="text-gray-400 hover:text-gray-600 transition-colors"
+                            disabled={sendingReply}
+                          >
+                            ✕
+                          </button>
+                        </div>
+
+                        {/* Reply Textarea */}
+                        <textarea
+                          value={replyContent}
+                          onChange={(e) => setReplyContent(e.target.value)}
+                          placeholder="Type your reply here..."
+                          rows={6}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y"
+                          disabled={sendingReply}
+                        />
+
+                        {/* Action Buttons */}
+                        <div className="flex items-center justify-between mt-3">
+                          <span className="text-xs text-gray-500">
+                            {replyContent.length} characters
+                          </span>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => {
+                                setShowReplyForm(false);
+                                setReplyContent('');
+                                setReplyError('');
+                              }}
+                              className="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                              disabled={sendingReply}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={handleSendReply}
+                              disabled={sendingReply || !replyContent.trim()}
+                              className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2"
+                            >
+                              {sendingReply ? (
+                                <>
+                                  <span className="animate-spin">⏳</span>
+                                  <span>Sending...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <span>📤</span>
+                                  <span>Send Reply</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                     )}
                   </div>
                 )}

@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'react-hot-toast'
 import { BrandingProvider } from './contexts/BrandingContext'
+import { ProjectContextProvider } from './contexts/ProjectContext'
 
 import './i18n/index' // Initialize i18n
 import App from './App.tsx'
@@ -28,27 +29,29 @@ const AppWrapper = () => (
   <QueryClientProvider client={queryClient}>
     <BrowserRouter future={{ v7_relativeSplatPath: true }}>
       <BrandingProvider>
-        <App />
-        <Toaster 
-          position="top-right"
-          toastOptions={{
-            duration: 4000,
-            style: {
-              background: '#363636',
-              color: '#fff',
-            },
-            success: {
+        <ProjectContextProvider>
+          <App />
+          <Toaster 
+            position="top-right"
+            toastOptions={{
+              duration: 4000,
               style: {
-                background: '#22c55e',
+                background: '#363636',
+                color: '#fff',
               },
-            },
-            error: {
-              style: {
-                background: '#ef4444',
+              success: {
+                style: {
+                  background: '#22c55e',
+                },
               },
-            },
-          }}
-        />
+              error: {
+                style: {
+                  background: '#ef4444',
+                },
+              },
+            }}
+          />
+        </ProjectContextProvider>
       </BrandingProvider>
     </BrowserRouter>
   </QueryClientProvider>

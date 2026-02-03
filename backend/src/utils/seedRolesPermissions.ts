@@ -539,35 +539,39 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     category: 'ticket-configuration',
   },
   // =====================================================
-  // KNOWLEDGE BASE CATEGORY
+  // KNOWLEDGE BASE CATEGORY - Legacy System (DEPRECATED)
   // =====================================================
   {
     module: 'Knowledge Base',
-    name: 'View Knowledge Base',
+    name: 'View Knowledge Base (Legacy)',
     code: 'KB_VIEW',
-    description: 'Can view knowledge base articles',
+    description: 'Can view knowledge base articles (legacy system)',
     category: 'knowledge-base',
+    isActive: false, // ⛔ DEPRECATED - Use new KB system
   },
   {
     module: 'Knowledge Base',
-    name: 'Create Articles',
+    name: 'Create Articles (Legacy)',
     code: 'KB_CREATE',
-    description: 'Can create new knowledge base articles',
+    description: 'Can create new knowledge base articles (legacy system)',
     category: 'knowledge-base',
+    isActive: false, // ⛔ DEPRECATED - Use new KB system
   },
   {
     module: 'Knowledge Base',
-    name: 'Edit Articles',
+    name: 'Edit Articles (Legacy)',
     code: 'KB_EDIT',
-    description: 'Can edit existing knowledge base articles',
+    description: 'Can edit existing knowledge base articles (legacy system)',
     category: 'knowledge-base',
+    isActive: false, // ⛔ DEPRECATED - Use new KB system
   },
   {
     module: 'Knowledge Base',
-    name: 'Delete Articles',
+    name: 'Delete Articles (Legacy)',
     code: 'KB_DELETE',
-    description: 'Can delete knowledge base articles',
+    description: 'Can delete knowledge base articles (legacy system)',
     category: 'knowledge-base',
+    isActive: false, // ⛔ DEPRECATED - Use new KB system
   },
   {
     module: 'Knowledge Base',
@@ -575,6 +579,7 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     code: 'KB_PUBLISH',
     description: 'Can publish knowledge base articles',
     category: 'knowledge-base',
+    isActive: false, // ⛔ DEPRECATED - Use new KB system
   },
   {
     module: 'Knowledge Base',
@@ -582,13 +587,15 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     code: 'KB_UNPUBLISH',
     description: 'Can unpublish knowledge base articles',
     category: 'knowledge-base',
+    isActive: false, // ⛔ DEPRECATED - Use new KB system
   },
   {
     module: 'Knowledge Base',
-    name: 'Manage Categories',
+    name: 'Manage Categories (Legacy)',
     code: 'KB_MANAGE_CATEGORIES',
-    description: 'Can create and manage KB categories',
+    description: 'Can create and manage KB categories (legacy system)',
     category: 'knowledge-base',
+    isActive: false, // ⛔ DEPRECATED - Use new KB system
   },
   {
     module: 'Knowledge Base',
@@ -596,12 +603,52 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     code: 'KB_APPROVE',
     description: 'Can approve KB articles for publishing',
     category: 'knowledge-base',
+    isActive: false, // ⛔ DEPRECATED - Use new KB system
   },
   {
     module: 'Knowledge Base',
     name: 'Export Articles',
     code: 'KB_EXPORT',
     description: 'Can export knowledge base articles',
+    category: 'knowledge-base',
+    isActive: false, // ⛔ DEPRECATED - Use new KB system
+  },
+  // =====================================================
+  // KNOWLEDGE BASE - NEW MODULAR SYSTEM
+  // =====================================================
+  {
+    module: 'Knowledge Base (New)',
+    name: 'Manage KB System',
+    code: 'KB_MANAGE',
+    description: 'Full administrative access to the new KB system (levels, articles, tables)',
+    category: 'knowledge-base',
+  },
+  {
+    module: 'Knowledge Base (New)',
+    name: 'Manage KB Levels',
+    code: 'KB_MANAGE_LEVELS',
+    description: 'Can create, edit, and delete KB levels/categories in the new modular system',
+    category: 'knowledge-base',
+  },
+  {
+    module: 'Knowledge Base (New)',
+    name: 'Manage KB Articles',
+    code: 'KB_MANAGE_ARTICLES',
+    description: 'Can create, edit, and delete KB articles in the new modular system',
+    category: 'knowledge-base',
+  },
+  {
+    module: 'Knowledge Base (New)',
+    name: 'Manage KB Tables',
+    code: 'KB_MANAGE_TABLES',
+    description: 'Can create, edit, and delete KB tables in the new modular system',
+    category: 'knowledge-base',
+  },
+  {
+    module: 'Knowledge Base (New)',
+    name: 'View KB Content',
+    code: 'KB_VIEW_CONTENT',
+    description: 'Can view KB content (levels, articles, tables) in the new modular system',
     category: 'knowledge-base',
   },
   // =====================================================
@@ -1201,8 +1248,8 @@ const defaultRoles = [
       'TICKET_DELETE_ATTACHMENT', 'TICKET_ESCALATE', 'TICKET_MERGE', 'TICKET_BULK_UPDATE', 'TICKET_EXPORT', 'USER_VIEW_ALL', 'USER_CREATE',
       'USER_EDIT', 'USER_DELETE', 'USER_TOGGLE_STATUS', 'USER_ASSIGN_ROLE', 'USER_RESET_PASSWORD', 'USER_IMPORT',
       'PROJECT_VIEW_ALL', 'PROJECT_EDIT', 'PROJECT_TOGGLE_STATUS', 'PROJECT_MANAGE_SETTINGS', 'REPORT_VIEW_TICKETS',
-      'REPORT_VIEW_AGENT_PERFORMANCE', 'REPORT_VIEW_CSAT', 'REPORT_VIEW_SLA', 'REPORT_EXPORT', 'REPORT_CREATE_CUSTOM',
-      'REPORT_SCHEDULE', 'FORM_VIEW', 'FORM_CREATE', 'FORM_EDIT', 'FORM_DELETE', 'FORM_ASSIGN_CONTEXT', 'FORM_VIEW_AUDIT_LOGS',
+      'REPORT_VIEW_AGENT_PERFORMANCE', 'REPORT_VIEW_CSAT', 'REPORT_VIEW_SLA', 'REPORT_VIEW_QUERY', 'REPORT_VIEW_ASSET', 'REPORT_VIEW_EMPLOYEE',
+      'REPORT_EXPORT', 'REPORT_CREATE_CUSTOM', 'REPORT_SCHEDULE', 'FORM_VIEW', 'FORM_CREATE', 'FORM_EDIT', 'FORM_DELETE', 'FORM_ASSIGN_CONTEXT', 'FORM_VIEW_AUDIT_LOGS',
       'EMAIL_CONFIG_VIEW', 'EMAIL_CONFIG_EDIT', 'EMAIL_CONFIG_TEST', 'EMAIL_TRIGGER_MANAGE',
     ],
   },
@@ -1216,7 +1263,7 @@ const defaultRoles = [
       'TICKET_VIEW_ALL', 'TICKET_CREATE', 'TICKET_EDIT', 'TICKET_ASSIGN', 'TICKET_ESCALATE', 'TICKET_CHANGE_STATUS', 'TICKET_CHANGE_PRIORITY',
       'TICKET_ADD_COMMENT', 'TICKET_EDIT_COMMENT', 'TICKET_ADD_ATTACHMENT', 'TICKET_MERGE', 'TICKET_BULK_UPDATE', 'TICKET_EXPORT',
       'USER_VIEW_ALL', 'USER_CREATE', 'USER_EDIT', 'USER_TOGGLE_STATUS', 'USER_ASSIGN_ROLE', 'USER_IMPORT',
-      'REPORT_VIEW_TICKETS', 'REPORT_VIEW_AGENT_PERFORMANCE', 'REPORT_VIEW_CSAT', 'REPORT_VIEW_SLA', 'REPORT_EXPORT',
+      'REPORT_VIEW_TICKETS', 'REPORT_VIEW_AGENT_PERFORMANCE', 'REPORT_VIEW_CSAT', 'REPORT_VIEW_SLA', 'REPORT_VIEW_QUERY', 'REPORT_VIEW_ASSET', 'REPORT_VIEW_EMPLOYEE', 'REPORT_EXPORT',
       'FORM_VIEW', 'FORM_CREATE', 'FORM_EDIT', 'FORM_DELETE', 'FORM_ASSIGN_CONTEXT', 'FORM_VIEW_AUDIT_LOGS',
       'EMAIL_CONFIG_VIEW', 'EMAIL_CONFIG_EDIT', 'EMAIL_CONFIG_TEST', 'EMAIL_TRIGGER_MANAGE',
     ],
@@ -1230,7 +1277,7 @@ const defaultRoles = [
     permissions: [
       'TICKET_VIEW_ALL', 'TICKET_CREATE', 'TICKET_EDIT', 'TICKET_ASSIGN', 'TICKET_ESCALATE', 'TICKET_CHANGE_STATUS', 'TICKET_CHANGE_PRIORITY',
       'TICKET_ADD_COMMENT', 'TICKET_ADD_ATTACHMENT', 'TICKET_MERGE', 'TICKET_BULK_UPDATE', 'TICKET_EXPORT', 'USER_VIEW_ALL',
-      'REPORT_VIEW_TICKETS', 'REPORT_VIEW_AGENT_PERFORMANCE', 'REPORT_VIEW_CSAT', 'REPORT_VIEW_SLA', 'REPORT_EXPORT',
+      'REPORT_VIEW_TICKETS', 'REPORT_VIEW_AGENT_PERFORMANCE', 'REPORT_VIEW_CSAT', 'REPORT_VIEW_SLA', 'REPORT_VIEW_QUERY', 'REPORT_VIEW_ASSET', 'REPORT_VIEW_EMPLOYEE', 'REPORT_EXPORT',
       'FORM_VIEW', 'FORM_CREATE', 'FORM_EDIT', 'FORM_DELETE', 'FORM_ASSIGN_CONTEXT', 'FORM_VIEW_AUDIT_LOGS',
     ],
   },
@@ -1267,26 +1314,125 @@ export async function seedRolesAndPermissions() {
 		const existingRolesCount = await Role.countDocuments();
 		const existingPermissionsCount = await Permission.countDocuments();
 		
-		// If both exist, check if we need to add any new permissions
+		// =====================================================
+		// COMPREHENSIVE PERMISSION SYNCHRONIZATION
+		// =====================================================
 		if (existingRolesCount > 0 && existingPermissionsCount > 0) {
-			console.log('ℹ️  Roles and permissions already exist, checking for new permissions...');
+			console.log('🔄 SYNCING PERMISSIONS WITH DATABASE...');
 			console.log(`   - ${existingRolesCount} roles found`);
-			console.log(`   - ${existingPermissionsCount} permissions found`);
+			console.log(`   - ${existingPermissionsCount} permissions found\n`);
 			
-			// Check for new permissions to add
-			const existingPermissionCodes = (await Permission.find({}, 'code')).map(p => p.code);
+			// Step 1: Get all existing permissions from database
+			const existingPermissions = await Permission.find({}, 'code isActive').lean();
+			const existingPermissionCodes = existingPermissions.map(p => p.code);
+			const existingPermMap = new Map(existingPermissions.map(p => [p.code, p]));
+			
+			// Step 2: Categorize permissions from seed file
+			const seedPermissionCodes = helpDeskPermissions.map(p => p.code);
 			const newPermissions = helpDeskPermissions.filter(p => !existingPermissionCodes.includes(p.code));
+			const updatedPermissions = helpDeskPermissions.filter(p => existingPermissionCodes.includes(p.code));
 			
-			if (newPermissions.length > 0) {
-				console.log(`🌱 Adding ${newPermissions.length} new permission(s)...`);
-				const insertedPermissions = await Permission.insertMany(newPermissions);
-				console.log(`✅ Added new permissions:`, insertedPermissions.map(p => p.code));
-			} else {
-				console.log('✅ No new permissions to add');
+			// Step 3: UPDATE existing permissions (sync name, description, isActive, etc.)
+			console.log('📝 Updating existing permissions...');
+			let updateCount = 0;
+			for (const seedPerm of updatedPermissions) {
+				const dbPerm = existingPermMap.get(seedPerm.code);
+				
+				// Update permission with all fields from seed file
+				const result = await Permission.updateOne(
+					{ code: seedPerm.code },
+					{ 
+						$set: {
+							name: seedPerm.name,
+							description: seedPerm.description,
+							module: seedPerm.module,
+							category: seedPerm.category,
+							isActive: seedPerm.isActive !== undefined ? seedPerm.isActive : true,
+							updatedAt: new Date()
+						}
+					}
+				);
+				
+				if (result.modifiedCount > 0) {
+					updateCount++;
+					const statusChange = (dbPerm?.isActive !== (seedPerm.isActive !== false)) 
+						? (seedPerm.isActive === false ? ' → ⛔ DEACTIVATED' : ' → ✅ ACTIVATED')
+						: '';
+					console.log(`   ✓ ${seedPerm.code}${statusChange}`);
+				}
 			}
+			
+			if (updateCount > 0) {
+				console.log(`✅ Updated ${updateCount} existing permissions\n`);
+			} else {
+				console.log(`✓ All existing permissions are up to date\n`);
+			}
+			
+			// Step 4: INSERT new permissions
+			if (newPermissions.length > 0) {
+				console.log(`🆕 Adding ${newPermissions.length} new permission(s)...`);
+				const insertedPermissions = await Permission.insertMany(newPermissions);
+				console.log(`✅ Inserted new permissions:`);
+				insertedPermissions.forEach(p => console.log(`   + ${p.code} - ${p.name}`));
+				
+				// Step 5: AUTO-ASSIGN new permissions to Super Admin
+				const RolePermission = mongoose.model('RolePermission');
+				const superAdminRole = await Role.findOne({ code: 'SUPER_ADMIN' });
+				
+				if (superAdminRole) {
+					console.log('\n🔑 Auto-assigning new permissions to Super Admin...');
+					let assignedCount = 0;
+					
+					for (const perm of insertedPermissions) {
+						// Check if already assigned (prevent duplicates)
+						const exists = await RolePermission.findOne({
+							roleId: superAdminRole._id,
+							permissionId: perm._id
+						});
+						
+						if (!exists) {
+							await RolePermission.create({
+								roleId: superAdminRole._id,
+								permissionId: perm._id,
+								createdAt: new Date(),
+								updatedAt: new Date()
+							});
+							assignedCount++;
+						}
+					}
+					
+					if (assignedCount > 0) {
+						console.log(`✅ Assigned ${assignedCount} new permissions to Super Admin`);
+						
+						// Verify final count
+						const finalCount = await RolePermission.countDocuments({ roleId: superAdminRole._id });
+						console.log(`📊 Super Admin now has ${finalCount} permissions in RolePermissions table`);
+					}
+				}
+				
+				console.log('');
+			} else {
+				console.log('✓ No new permissions to add\n');
+			}
+			
+			// Step 6: Summary
+			const totalActivePermissions = await Permission.countDocuments({ isActive: true });
+			const totalInactivePermissions = await Permission.countDocuments({ isActive: false });
+			console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+			console.log('📊 PERMISSION SYNC SUMMARY:');
+			console.log(`   Total Permissions: ${existingPermissionsCount}`);
+			console.log(`   Active: ${totalActivePermissions}`);
+			console.log(`   Inactive: ${totalInactivePermissions}`);
+			console.log(`   Updated: ${updateCount}`);
+			console.log(`   Added: ${newPermissions.length}`);
+			console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 			
 			return;
 		}
+		
+		// =====================================================
+		// INITIAL SEEDING (First Time Setup)
+		// =====================================================
 		console.log('🌱 Seeding permissions...');
 		// Clear existing permissions
 		await Permission.deleteMany({});

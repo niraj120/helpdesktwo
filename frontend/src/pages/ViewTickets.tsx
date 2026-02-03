@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import ModuleHeader from '../components/ModuleHeader';
@@ -60,6 +60,12 @@ const ViewTickets: React.FC = () => {
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalTickets, setTotalTickets] = useState(0);
+  const pageSize = 20;
+  
   // Ref to prevent duplicate API calls from React.StrictMode
   const hasFetchedTickets = useRef(false);
   const [showExportModal, setShowExportModal] = useState(false);
@@ -78,11 +84,12 @@ const ViewTickets: React.FC = () => {
       return;
     }
     hasFetchedTickets.current = true;
-    fetchTickets();
+    fetchTickets(1);
   }, []);
 
-  const fetchTickets = async () => {
+  const fetchTickets = async (page: number = currentPage) => {
     try {
+      setLoading(true);
       const token = localStorage.getItem('authToken');
       
       if (!token) {
@@ -95,10 +102,27 @@ const ViewTickets: React.FC = () => {
       // - Project-specific tickets for other roles with TICKET_VIEW_ALL
       const response = await axios.get(`${API_CONFIG.API_URL}/tickets`, {
         headers: { Authorization: `Bearer ${token}` },
+        params: {
+          page: page,
+          limit: pageSize,
+        },
       });
 
       if (response.data.success) {
-        setTickets(response.data.data);
+        const ticketsData = response.data.data.tickets || response.data.data;
+        const pagination = response.data.data.pagination;
+        
+        setTickets(Array.isArray(ticketsData) ? ticketsData : []);
+        
+        // Update pagination state
+        if (pagination) {
+          setCurrentPage(pagination.page || page);
+          setTotalPages(pagination.totalPages || 1);
+          setTotalTickets(pagination.total || ticketsData.length);
+        } else {
+          setTotalTickets(ticketsData.length);
+          setTotalPages(1);
+        }
       }
     } catch (error: any) {
       console.error('Error fetching tickets:', error);
@@ -111,18 +135,22 @@ const ViewTickets: React.FC = () => {
     }
   };
 
-  const filteredTickets = tickets.filter(ticket => {
-    const matchesStatus = filterStatus === 'all' || ticket.status === filterStatus;
-    const matchesSearch = 
-      ticket.ticketNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      ticket.subject?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      ticket.metadata?.studentEmail?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      ticket.metadata?.projectId?.name?.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    return matchesStatus && matchesSearch;
-  });
+  // Memoized filtered tickets to prevent recalculation on every render
+  const filteredTickets = useMemo(() => {
+    return tickets.filter(ticket => {
+      const matchesStatus = filterStatus === 'all' || ticket.status === filterStatus;
+      const matchesSearch = 
+        ticket.ticketNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        ticket.subject?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        ticket.metadata?.studentEmail?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        ticket.metadata?.projectId?.name?.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      return matchesStatus && matchesSearch;
+    });
+  }, [tickets, filterStatus, searchQuery]);
 
-  const getStatusColor = (status: string) => {
+  // Memoized status color getter to prevent creating new function on each render
+  const getStatusColor = useCallback((status: string) => {
     const colors: Record<string, string> = {
       'open': '#3B82F6',
       'in-progress': '#F59E0B',
@@ -131,7 +159,7 @@ const ViewTickets: React.FC = () => {
       'pending': '#EF4444',
     };
     return colors[status.toLowerCase()] || '#6B7280';
-  };
+  }, []);
 
   if (loading) {
     return (
@@ -353,8 +381,58 @@ const ViewTickets: React.FC = () => {
           )}
         </div>
 
-        <div style={{ marginTop: '16px', textAlign: 'right', fontSize: '14px', color: '#6B7280' }}>
-          Showing {filteredTickets.length} of {tickets.length} tickets
+        {/* Pagination and Summary */}
+        <div style={{ 
+          marginTop: '16px', 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          fontSize: '14px', 
+          color: '#6B7280' 
+        }}>
+          {/* Pagination Controls */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              onClick={() => fetchTickets(currentPage - 1)}
+              disabled={currentPage <= 1 || loading}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '6px',
+                border: '1px solid #D1D5DB',
+                background: currentPage <= 1 ? '#F3F4F6' : 'white',
+                color: currentPage <= 1 ? '#9CA3AF' : '#374151',
+                cursor: currentPage <= 1 ? 'not-allowed' : 'pointer',
+                fontSize: '13px',
+              }}
+            >
+              ← Previous
+            </button>
+            
+            <span style={{ padding: '0 12px' }}>
+              Page {currentPage} of {totalPages}
+            </span>
+            
+            <button
+              onClick={() => fetchTickets(currentPage + 1)}
+              disabled={currentPage >= totalPages || loading}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '6px',
+                border: '1px solid #D1D5DB',
+                background: currentPage >= totalPages ? '#F3F4F6' : 'white',
+                color: currentPage >= totalPages ? '#9CA3AF' : '#374151',
+                cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer',
+                fontSize: '13px',
+              }}
+            >
+              Next →
+            </button>
+          </div>
+
+          {/* Summary */}
+          <div>
+            Showing {totalTickets > 0 ? ((currentPage - 1) * pageSize) + 1 : 0}-{Math.min(currentPage * pageSize, totalTickets)} of {totalTickets} tickets
+          </div>
         </div>
       </div>
 

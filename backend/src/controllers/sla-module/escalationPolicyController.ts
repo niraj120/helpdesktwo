@@ -27,52 +27,77 @@ export const getAllEscalationPolicies = async (req: Request, res: Response): Pro
       .populate('projectIds', 'name code')
       .populate('createdBy', 'firstName lastName email')
       .populate('updatedBy', 'firstName lastName email')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
     console.log(`✅ Found ${policies.length} escalation policies`);
 
-    // For each policy, populate the users based on role/user in escalateTo
-    const enrichedPolicies = await Promise.all(
-      policies.map(async (policy) => {
-        const policyObj = policy.toObject();
-        
-        // Enrich each level with actual user information
-        if (policyObj.levels && policyObj.levels.length > 0) {
-          policyObj.levels = await Promise.all(
-            policyObj.levels.map(async (level: any) => {
-              if (level.escalateTo?.type === 'role' && level.escalateTo?.targetId) {
-                // Find users with this role in the specified project
-                const users = await User.find({
-                  role: level.escalateTo.targetId,
-                  isActive: true,
-                  ...(projectId && { projects: { $in: [projectId] } })
-                })
-                  .populate('role', 'name code')
-                  .select('firstName lastName email role')
-                  .lean();
-                
-                // Attach users to this level
-                level.users = users;
-              } else if (level.escalateTo?.type === 'user' && level.escalateTo?.targetId) {
-                // Fetch specific user
-                const user = await User.findById(level.escalateTo.targetId)
-                  .populate('role', 'name code')
-                  .select('firstName lastName email role')
-                  .lean();
-                
-                if (user) {
-                  level.users = [user];
-                }
-              }
-              
-              return level;
-            })
-          );
+    // Optimized: Batch fetch all users by roles and specific user IDs
+    // Collect all role IDs and user IDs from all policies
+    const roleIds = new Set<string>();
+    const userIds = new Set<string>();
+    
+    policies.forEach((policy: any) => {
+      policy.levels?.forEach((level: any) => {
+        if (level.escalateTo?.type === 'role' && level.escalateTo?.targetId) {
+          roleIds.add(level.escalateTo.targetId.toString());
+        } else if (level.escalateTo?.type === 'user' && level.escalateTo?.targetId) {
+          userIds.add(level.escalateTo.targetId.toString());
         }
-        
-        return policyObj;
-      })
+      });
+    });
+    
+    // Batch fetch users by role and specific users
+    const [usersByRole, specificUsers] = await Promise.all([
+      roleIds.size > 0 
+        ? User.find({
+            role: { $in: Array.from(roleIds) },
+            isActive: true,
+            ...(projectId && { projects: { $in: [projectId] } })
+          })
+          .populate('role', 'name code')
+          .select('firstName lastName email role')
+          .lean()
+        : Promise.resolve([]),
+      userIds.size > 0
+        ? User.find({ _id: { $in: Array.from(userIds) } })
+          .populate('role', 'name code')
+          .select('firstName lastName email role')
+          .lean()
+        : Promise.resolve([])
+    ]);
+    
+    // Create maps for quick lookup
+    const usersByRoleMap = new Map<string, any[]>();
+    usersByRole.forEach((user: any) => {
+      const roleId = user.role?._id?.toString() || user.role?.toString();
+      if (roleId) {
+        if (!usersByRoleMap.has(roleId)) {
+          usersByRoleMap.set(roleId, []);
+        }
+        usersByRoleMap.get(roleId)!.push(user);
+      }
+    });
+    
+    const specificUsersMap = new Map(
+      specificUsers.map((user: any) => [user._id.toString(), user])
     );
+    
+    // Enrich policies with pre-fetched user data
+    const enrichedPolicies = policies.map((policy: any) => {
+      if (policy.levels && policy.levels.length > 0) {
+        policy.levels = policy.levels.map((level: any) => {
+          if (level.escalateTo?.type === 'role' && level.escalateTo?.targetId) {
+            level.users = usersByRoleMap.get(level.escalateTo.targetId.toString()) || [];
+          } else if (level.escalateTo?.type === 'user' && level.escalateTo?.targetId) {
+            const user = specificUsersMap.get(level.escalateTo.targetId.toString());
+            level.users = user ? [user] : [];
+          }
+          return level;
+        });
+      }
+      return policy;
+    });
 
     res.status(200).json({
       success: true,

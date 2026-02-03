@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
 import ModuleHeader from '../components/ModuleHeader';
 import axios from 'axios';
@@ -144,17 +144,31 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
       fetchCategories(selectedProject);
       fetchStatuses(selectedProject);
       fetchCenters(selectedProject);
-    } else {
+    } else if (!projectId) {
+      // If no project selected and not embedded, clear dependent filters
       setCategories([]);
       setStatuses([]);
       setCenters([]);
     }
-  }, [selectedProject]);
+  }, [selectedProject, projectId]);
 
   useEffect(() => {
-    fetchTickets();
+    // Check if user is Super Admin - they don't need project selection
+    const userStr = localStorage.getItem('user');
+    const isSuperAdmin = userStr ? JSON.parse(userStr).role === 'Super Admin' : false;
+    
+    // Fetch tickets if:
+    // 1. Super Admin (no project selection needed), OR
+    // 2. A project is selected, OR
+    // 3. projectId prop is provided (embedded in project view)
+    if (isSuperAdmin || selectedProject || projectId) {
+      console.log('📊 TicketListReport: Fetching tickets...', { isSuperAdmin, selectedProject, projectId });
+      fetchTickets();
+    } else {
+      console.log('⏸️ TicketListReport: Waiting for project selection...');
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedProject]); // Only refetch when project changes, other filters are client-side
+  }, [selectedProject]); // Refetch when project changes (including initial load with empty project)
 
   const fetchProjects = async () => {
     try {
@@ -240,26 +254,38 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
       setLoading(true);
       const token = localStorage.getItem('authToken');
       
-      // Only projectId filter works server-side, category/status/search are filtered client-side
+      // Build query parameters
       const params = new URLSearchParams({
         page: '1',
         limit: '1000', // Get all tickets, filter client-side
-        ...(selectedProject && { projectId: selectedProject }),
       });
+      
+      // Only add projectId if a specific project is selected (not "All Projects")
+      if (selectedProject) {
+        params.append('projectId', selectedProject);
+      }
 
       const response = await axios.get(`${API_CONFIG.API_URL}/tickets?${params}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
-      if (response.data.success && Array.isArray(response.data.data)) {
+      console.log('📊 API Response:', response.data);
+
+      if (response.data.success && response.data.data?.tickets && Array.isArray(response.data.data.tickets)) {
+        setTickets(response.data.data.tickets);
+        setTotal(response.data.data.pagination?.total || response.data.data.tickets.length);
+        console.log('✅ Tickets set:', response.data.data.tickets.length);
+      } else if (Array.isArray(response.data.data)) {
+        // Fallback for old response format
         setTickets(response.data.data);
-        setTotal(response.data.pagination?.total || response.data.data.length);
+        setTotal(response.data.length);
       } else if (Array.isArray(response.data)) {
         setTickets(response.data);
         setTotal(response.data.length);
       } else {
         setTickets([]);
         setTotal(0);
+        console.warn('⚠️ Unexpected response structure');
       }
     } catch (error) {
       console.error('Error fetching tickets:', error);
@@ -270,66 +296,68 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
     }
   };
 
-  const handleSearch = () => {
+  const handleSearch = useCallback(() => {
     setPage(1);
-  };
+  }, []);
 
-  const handleReset = () => {
+  const handleReset = useCallback(() => {
     setSelectedProject('');
     setSelectedCategory('');
     setSelectedStatus('');
     setSelectedCenter('');
     setSearchQuery('');
     setPage(1);
-  };
+  }, []);
 
-  // Get filtered tickets for display - apply client-side filtering
-  const displayTickets = tickets.filter(ticket => {
-    // Filter by category (category is stored as string name)
-    if (selectedCategory) {
-      const category = categories.find(c => c._id === selectedCategory);
-      const ticketCategory = typeof ticket.category === 'string' ? ticket.category : ticket.category?.name;
-      if (category && ticketCategory?.toLowerCase() !== category.name?.toLowerCase()) {
-        return false;
-      }
-    }
-    
-    // Filter by status (status is stored as string code like 'open', 'closed')
-    // Compare case-insensitively since ticket.status might be 'open' and status.code might be 'OPEN'
-    if (selectedStatus) {
-      if (ticket.status?.toLowerCase() !== selectedStatus.toLowerCase()) {
-        return false;
-      }
-    }
-    
-    // Filter by center
-    if (selectedCenter) {
-      const ticketCenterId = typeof ticket.metadata?.centerId === 'object' 
-        ? ticket.metadata?.centerId?._id 
-        : ticket.metadata?.centerId;
-      if (selectedCenter === 'online') {
-        if (ticketCenterId && ticketCenterId !== 'online') {
-          return false;
-        }
-      } else {
-        if (ticketCenterId !== selectedCenter) {
+  // Get filtered tickets for display - memoized for performance
+  const displayTickets = useMemo(() => {
+    return tickets.filter(ticket => {
+      // Filter by category (category is stored as string name)
+      if (selectedCategory) {
+        const category = categories.find(c => c._id === selectedCategory);
+        const ticketCategory = typeof ticket.category === 'string' ? ticket.category : ticket.category?.name;
+        if (category && ticketCategory?.toLowerCase() !== category.name?.toLowerCase()) {
           return false;
         }
       }
-    }
-    
-    // Filter by search query (ticket number)
-    if (searchQuery) {
-      if (!ticket.ticketNumber.toLowerCase().includes(searchQuery.toLowerCase())) {
-        return false;
+      
+      // Filter by status (status is stored as string code like 'open', 'closed')
+      // Compare case-insensitively since ticket.status might be 'open' and status.code might be 'OPEN'
+      if (selectedStatus) {
+        if (ticket.status?.toLowerCase() !== selectedStatus.toLowerCase()) {
+          return false;
+        }
       }
-    }
-    
-    return true;
-  });
+      
+      // Filter by center
+      if (selectedCenter) {
+        const ticketCenterId = typeof ticket.metadata?.centerId === 'object' 
+          ? ticket.metadata?.centerId?._id 
+          : ticket.metadata?.centerId;
+        if (selectedCenter === 'online') {
+          if (ticketCenterId && ticketCenterId !== 'online') {
+            return false;
+          }
+        } else {
+          if (ticketCenterId !== selectedCenter) {
+            return false;
+          }
+        }
+      }
+      
+      // Filter by search query (ticket number)
+      if (searchQuery) {
+        if (!ticket.ticketNumber.toLowerCase().includes(searchQuery.toLowerCase())) {
+          return false;
+        }
+      }
+      
+      return true;
+    });
+  }, [tickets, selectedCategory, selectedStatus, selectedCenter, searchQuery, categories]);
 
-  // Export functions
-  const getExportData = () => {
+  // Export data memoized to avoid recomputation
+  const exportData = useMemo(() => {
     return displayTickets.map(ticket => {
       const centerId = ticket.metadata?.centerId;
       const centerName = !centerId || centerId === 'online'
@@ -350,7 +378,7 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
         'Created Date': new Date(ticket.createdAt).toLocaleDateString('en-IN'),
       };
     });
-  };
+  }, [displayTickets]);
 
   const exportToPDF = async () => {
     setExporting(true);
@@ -382,9 +410,8 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
       doc.text(filterText, 14, 28);
       doc.text(`Generated on: ${new Date().toLocaleString('en-IN')}`, 14, 34);
 
-      // Table
-      const data = getExportData();
-      const tableData = data.map(row => [
+      // Table - use memoized exportData
+      const tableData = exportData.map(row => [
         row['Query Number'],
         row['Student Name'],
         row['Subject'],
@@ -430,13 +457,13 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
     setExporting(true);
     try {
       const XLSXModule = await import('xlsx');
-      const data = getExportData();
-      const ws = XLSXModule.utils.json_to_sheet(data);
+      // Use memoized exportData
+      const ws = XLSXModule.utils.json_to_sheet(exportData);
       const wb = XLSXModule.utils.book_new();
       XLSXModule.utils.book_append_sheet(wb, ws, 'Ticket Report');
       
       // Auto-size columns
-      const colWidths = Object.keys(data[0] || {}).map(key => ({ wch: Math.max(key.length + 2, 15) }));
+      const colWidths = Object.keys(exportData[0] || {}).map(key => ({ wch: Math.max(key.length + 2, 15) }));
       ws['!cols'] = colWidths;
       
       XLSXModule.writeFile(wb, `ticket-report-${new Date().toISOString().split('T')[0]}.xlsx`);
@@ -452,8 +479,8 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
     setExporting(true);
     try {
       const XLSXModule = await import('xlsx');
-      const data = getExportData();
-      const ws = XLSXModule.utils.json_to_sheet(data);
+      // Use memoized exportData
+      const ws = XLSXModule.utils.json_to_sheet(exportData);
       const csv = XLSXModule.utils.sheet_to_csv(ws);
       
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });

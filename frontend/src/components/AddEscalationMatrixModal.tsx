@@ -3,6 +3,7 @@ import { API_CONFIG } from '../config/constants';
 
 interface EscalationLevel {
   level: number;
+  escalationMode: 'manual' | 'auto';
   escalateAfter: {
     value: number;
     unit: 'minutes' | 'hours' | 'days';
@@ -51,6 +52,7 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
   const [levels, setLevels] = useState<EscalationLevel[]>([
     {
       level: 1,
+      escalationMode: 'manual' as const,
       escalateAfter: { value: 30, unit: 'minutes' as const },
       escalateTo: { type: 'role' as const, targetId: '', targetName: '' },
       notifyMethod: ['email'] as ('email' | 'sms' | 'push')[],
@@ -300,6 +302,7 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
   const handleAddLevel = () => {
     const newLevel: EscalationLevel = {
       level: levels.length + 1,
+      escalationMode: 'manual',
       escalateAfter: { value: 60, unit: 'minutes' },
       escalateTo: { type: 'role', targetId: '', targetName: '' },
       notifyMethod: ['email'],
@@ -421,6 +424,7 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
     setLevels([
       {
         level: 1,
+        escalationMode: 'auto',
         escalateAfter: { value: 30, unit: 'minutes' },
         escalateTo: { type: 'role', targetId: '', targetName: '' },
         notifyMethod: ['email'],
@@ -730,6 +734,65 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
                         Remove
                       </button>
                     )}
+                  </div>
+
+                  {/* Escalation Mode */}
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500, color: '#374151' }}>
+                      Escalation Mode <span style={{ color: '#dc2626' }}>*</span>
+                    </label>
+                    <div style={{ display: 'flex', gap: '12px' }}>
+                      <label
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          padding: '10px 16px',
+                          border: level.escalationMode === 'manual' ? '2px solid #3b82f6' : '1px solid #d1d5db',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          backgroundColor: level.escalationMode === 'manual' ? '#eff6ff' : 'white',
+                          flex: 1,
+                        }}
+                      >
+                        <input
+                          type="radio"
+                          name={`escalationMode-${index}`}
+                          value="manual"
+                          checked={level.escalationMode === 'manual'}
+                          onChange={(e) => handleLevelChange(index, 'escalationMode', e.target.value)}
+                          style={{ marginRight: '8px' }}
+                        />
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: '13px', color: '#374151' }}>Manual</div>
+                          <div style={{ fontSize: '11px', color: '#6b7280' }}>Requires user action to escalate</div>
+                        </div>
+                      </label>
+                      <label
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          padding: '10px 16px',
+                          border: level.escalationMode === 'auto' ? '2px solid #3b82f6' : '1px solid #d1d5db',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          backgroundColor: level.escalationMode === 'auto' ? '#eff6ff' : 'white',
+                          flex: 1,
+                        }}
+                      >
+                        <input
+                          type="radio"
+                          name={`escalationMode-${index}`}
+                          value="auto"
+                          checked={level.escalationMode === 'auto'}
+                          onChange={(e) => handleLevelChange(index, 'escalationMode', e.target.value)}
+                          style={{ marginRight: '8px' }}
+                        />
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: '13px', color: '#374151' }}>Auto</div>
+                          <div style={{ fontSize: '11px', color: '#6b7280' }}>Automatically escalates when SLA breached</div>
+                        </div>
+                      </label>
+                    </div>
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>

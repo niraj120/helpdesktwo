@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
 import ModuleHeader from '../components/ModuleHeader';
 import axios from 'axios';
-import { usePermissions } from '../hooks/usePermissions';
+// import { usePermissions } from '../hooks/usePermissions'; // Commented out - not used
 import { API_CONFIG } from '../config/constants';
+import { useProjectContext } from '../contexts/ProjectContext';
+import { useBranding } from '../contexts/BrandingContext';
 
 interface TicketAssignmentProps {
   wrapWithLayout?: boolean;
@@ -46,7 +48,7 @@ interface Agent {
   firstName: string;
   lastName: string;
   email: string;
-  role: {
+  role?: {
     name: string;
     code: string;
     isAgent?: boolean;
@@ -61,7 +63,9 @@ interface Project {
 }
 
 const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = true }) => {
-  const { hasPermission } = usePermissions();
+  // const { hasPermission } = usePermissions(); // Commented out - not used
+  const { viewMode, currentProjectId, userProjects } = useProjectContext();
+  const { branding: brandingProject } = useBranding();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -75,19 +79,41 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
   const [filterCounselor, setFilterCounselor] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalTickets, setTotalTickets] = useState(0);
+  const pageSize = 20;
 
   useEffect(() => {
     checkUserRole();
-    fetchTickets();
   }, []);
+
+  // Fetch tickets when viewMode or currentProjectId changes
+  useEffect(() => {
+    fetchTickets(1); // Reset to page 1 when context changes
+  }, [viewMode, currentProjectId]);
 
   useEffect(() => {
     if (isSuperAdmin) {
       fetchProjects();
     }
-    // Fetch agents after role is determined
-    fetchAgents();
   }, [isSuperAdmin]);
+
+  // Separate effect for fetching agents - re-fetch when viewMode or project changes
+  useEffect(() => {
+    console.log('🔄 Agent fetch trigger:', {
+      viewMode,
+      currentProjectId,
+      hasBrandingProject: !!brandingProject,
+      projectId: brandingProject?.projectId,
+      projectName: brandingProject?.name
+    });
+    
+    // Fetch agents whenever viewMode or project changes
+    fetchAgents();
+  }, [viewMode, currentProjectId, brandingProject?.projectId]);
 
   const checkUserRole = () => {
     const userStr = localStorage.getItem('user');
@@ -112,20 +138,70 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
     }
   };
 
-  const fetchTickets = async () => {
+  const fetchTickets = async (page: number = currentPage) => {
     try {
+      setLoading(true);
       const token = localStorage.getItem('authToken');
-      // Use /api/tickets endpoint which shows ALL tickets for Super Admin, project-specific for others
-      const response = await axios.get(`${API_CONFIG.API_URL}/tickets`, {
+      
+      console.log('📊 [FETCH_TICKETS] viewMode from context:', viewMode);
+      console.log('📊 [FETCH_TICKETS] currentProjectId from context:', currentProjectId);
+      console.log('📊 [FETCH_TICKETS] localStorage viewMode:', localStorage.getItem('viewMode'));
+      
+      // Build URL with projectId parameter based on viewMode
+      let url = `${API_CONFIG.API_URL}/tickets`;
+      const params: any = {
+        viewMode: viewMode, // Always send viewMode to backend
+        page: page,
+        limit: pageSize,
+      };
+      
+      if (viewMode === 'single' && currentProjectId) {
+        params.projectId = currentProjectId;
+        console.log('📊 Fetching tickets for single project:', currentProjectId);
+      } else if (viewMode === 'unified') {
+        console.log('📊 Fetching tickets for all projects (unified mode)');
+        // Don't pass projectId - backend will return tickets from all user's projects
+      }
+      
+      console.log('📊 [FETCH_TICKETS] Final params being sent:', params);
+      
+      const response = await axios.get(url, {
         headers: { Authorization: `Bearer ${token}` },
+        params,
       });
 
-      if (response.data.success) {
-        console.log('📋 Fetched tickets for assignment:', response.data.data.length);
-        setTickets(response.data.data);
+      console.log('📋 Full API Response:', response.data);
+
+      if (response.data.success && response.data.data) {
+        // API returns {tickets: [], pagination: {}} structure
+        const ticketsData = response.data.data.tickets || response.data.data;
+        const pagination = response.data.data.pagination;
+        
+        console.log('📋 Fetched tickets for assignment:', Array.isArray(ticketsData) ? ticketsData.length : 0);
+        console.log('📋 Pagination info:', pagination);
+        
+        setTickets(Array.isArray(ticketsData) ? ticketsData : []);
+        
+        // Update pagination state
+        if (pagination) {
+          setCurrentPage(pagination.page || page);
+          setTotalPages(pagination.totalPages || 1);
+          setTotalTickets(pagination.total || ticketsData.length);
+        } else {
+          setTotalTickets(ticketsData.length);
+          setTotalPages(1);
+        }
+      } else {
+        console.warn('⚠️ No ticket data returned from API');
+        setTickets([]);
+        setTotalTickets(0);
+        setTotalPages(1);
       }
     } catch (error) {
       console.error('Error fetching tickets:', error);
+      setTickets([]);
+      setTotalTickets(0);
+      setTotalPages(1);
     } finally {
       setLoading(false);
     }
@@ -135,15 +211,32 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
     try {
       const token = localStorage.getItem('authToken');
       
-      // Use the assignable-agents endpoint
-      const response = await axios.get(`${API_CONFIG.API_URL}/tickets/assignable-agents`, {
+      const url = `${API_CONFIG.API_URL}/tickets/assignable-agents`;
+      const params: any = {
+        viewMode: viewMode, // Always send viewMode to backend
+      };
+      
+      // In single project mode, pass projectId to get agents for that specific project
+      // In unified mode, don't pass projectId to get agents from ALL user's projects
+      if (viewMode === 'single' && currentProjectId) {
+        params.projectId = currentProjectId;
+        console.log('🔍 Fetching agents for single project:', currentProjectId);
+      } else if (viewMode === 'unified') {
+        console.log('🔍 Fetching agents for all projects (unified mode)');
+        // Don't pass projectId - backend will return agents from all user's projects
+      }
+      
+      console.log('📡 API Request:', { url, params, viewMode });
+      
+      const response = await axios.get(url, {
         headers: { Authorization: `Bearer ${token}` },
+        params,
       });
       
       if (response.data.success) {
         console.log('📋 Loaded assignable agents:', {
           totalAgents: response.data.data.length,
-          agents: response.data.data.map((a: any) => `${a.firstName} ${a.lastName} (${a.role?.name})`)
+          agents: response.data.data.map((a: any) => `${a.firstName} ${a.lastName} (${a.role?.name || 'No Role'}) [${a.role?.code || 'NO_CODE'}]`)
         });
         setAgents(response.data.data);
       }
@@ -206,7 +299,7 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
   const filteredTickets = tickets.filter(ticket => {
     const matchesStatus = filterStatus === 'all' || ticket.status === filterStatus;
     const matchesSearch = 
-      ticket.ticketNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      ticket.ticketNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       ticket.subject?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       ticket.metadata?.studentEmail?.toLowerCase().includes(searchQuery.toLowerCase());
     
@@ -311,7 +404,7 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
                   }}
                 >
                   <option value="all">All Projects</option>
-                  {projects.map(project => (
+                  {projects && projects.length > 0 && projects.map(project => (
                     <option key={project._id} value={project._id}>
                       {project.name} ({project.code})
                     </option>
@@ -336,9 +429,9 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
                 }}
               >
                 <option value="">-- Choose a counselor --</option>
-                {agents.map(agent => (
+                {agents && agents.length > 0 && agents.map(agent => (
                   <option key={agent._id} value={agent._id}>
-                    {agent.firstName} {agent.lastName} ({agent.role.name})
+                    {agent.firstName} {agent.lastName} {agent.role?.name ? `(${agent.role.name})` : ''}
                   </option>
                 ))}
               </select>
@@ -444,7 +537,7 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
                 }}
               >
                 <option value="all">All Counselors</option>
-                {agents.map(agent => (
+                {agents && agents.length > 0 && agents.map(agent => (
                   <option key={agent._id} value={agent._id}>
                     {agent.firstName} {agent.lastName}
                   </option>
@@ -496,7 +589,7 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
               </tr>
             </thead>
             <tbody>
-              {filteredTickets.length === 0 ? (
+              {!filteredTickets || filteredTickets.length === 0 ? (
                 <tr>
                   <td colSpan={8} style={{ padding: '48px', textAlign: 'center', color: '#6B7280' }}>
                     No tickets found
@@ -575,10 +668,59 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
           </table>
         </div>
 
-        {/* Summary */}
-        <div style={{ marginTop: '16px', textAlign: 'right', fontSize: '14px', color: '#6B7280' }}>
-          Showing {filteredTickets.length} of {tickets.length} tickets
-          {selectedTickets.length > 0 && ` • ${selectedTickets.length} selected`}
+        {/* Pagination and Summary */}
+        <div style={{ 
+          marginTop: '16px', 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          fontSize: '14px', 
+          color: '#6B7280' 
+        }}>
+          {/* Pagination Controls */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              onClick={() => fetchTickets(currentPage - 1)}
+              disabled={currentPage <= 1 || loading}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '6px',
+                border: '1px solid #D1D5DB',
+                background: currentPage <= 1 ? '#F3F4F6' : 'white',
+                color: currentPage <= 1 ? '#9CA3AF' : '#374151',
+                cursor: currentPage <= 1 ? 'not-allowed' : 'pointer',
+                fontSize: '13px',
+              }}
+            >
+              ← Previous
+            </button>
+            
+            <span style={{ padding: '0 12px' }}>
+              Page {currentPage} of {totalPages}
+            </span>
+            
+            <button
+              onClick={() => fetchTickets(currentPage + 1)}
+              disabled={currentPage >= totalPages || loading}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '6px',
+                border: '1px solid #D1D5DB',
+                background: currentPage >= totalPages ? '#F3F4F6' : 'white',
+                color: currentPage >= totalPages ? '#9CA3AF' : '#374151',
+                cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer',
+                fontSize: '13px',
+              }}
+            >
+              Next →
+            </button>
+          </div>
+
+          {/* Summary */}
+          <div>
+            Showing {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, totalTickets)} of {totalTickets} tickets
+            {selectedTickets.length > 0 && ` • ${selectedTickets.length} selected`}
+          </div>
         </div>
       </div>
   );

@@ -4,7 +4,7 @@ import DashboardLayout from '../components/DashboardLayout';
 import ModuleHeader from '../components/ModuleHeader';
 import { API_CONFIG } from '../config/constants';
 import { MdGridOn, MdDescription, MdRefresh } from 'react-icons/md';
-import * as XLSX from 'xlsx';
+// XLSX is now dynamically imported in exportToExcel() to reduce bundle size (~500KB)
 
 interface AssetUsage {
   _id: string;
@@ -252,9 +252,12 @@ const AssetReport: React.FC<AssetReportProps> = ({ projectId, wrapWithLayout = t
     setAssets(DEMO_ASSETS);
   }, [projectId]);
 
-  const exportToExcel = () => {
+  const exportToExcel = async () => {
     setExporting(true);
     try {
+      // Dynamic import - XLSX (~500KB) only loads when user clicks export
+      const XLSX = await import('xlsx');
+      
       const exportData = assets.map(asset => ({
         'Asset Name': asset.assetId.name,
         'Category': asset.assetId.category,

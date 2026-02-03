@@ -412,6 +412,13 @@ export const login = async (req: Request, res: Response) => {
     // Generate JWT token with proper permission structure using utility
     const token = await generateUserJWT(user);
 
+    // Extract permission codes from populated permissions
+    const permissions = role.permissions
+      ? role.permissions.map((p: any) => p.code || p).filter(Boolean)
+      : [];
+
+    console.log(`📋 Student permissions: ${permissions.join(', ')}`);
+
     return res.status(200).json({
       success: true,
       message: 'Login successful',
@@ -426,6 +433,7 @@ export const login = async (req: Request, res: Response) => {
             _id: role._id,
             code: role.code,
             name: role.name,
+            permissions: permissions, // Include permissions array
           },
         },
       },

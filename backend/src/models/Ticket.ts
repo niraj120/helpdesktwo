@@ -77,7 +77,10 @@ export interface ITicket extends Document {
   escalationHistory?: IEscalationRecord[];
   changeHistory?: IChangeHistory[]; // Track all changes to the ticket
   tags: string[];
-  submissionSource?: 'online' | 'offline'; // Track where ticket was created
+  submissionSource?: 'online' | 'offline' | 'email'; // Track where ticket was created
+  sourceEmail?: string; // Email address from which ticket was created (for email-to-ticket)
+  sourceEmailMessageId?: string; // Message ID of the original email (for threading)
+  sourceEmailName?: string; // Display name from the email sender
   metadata?: any;
   resolvedAt?: Date; // Timestamp when status changed to Resolved (4)
   closedAt?: Date; // Timestamp when status changed to Closed (5)
@@ -207,9 +210,27 @@ const TicketSchema: Schema = new Schema(
     }],
     submissionSource: {
       type: String,
-      enum: ['online', 'offline'],
+      enum: ['online', 'offline', 'email'],
       default: 'online',
       index: true,
+    },
+    sourceEmail: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      index: true,
+      // Nullable - only populated for email-originated tickets
+    },
+    sourceEmailMessageId: {
+      type: String,
+      trim: true,
+      index: true,
+      // Message ID of the original email for threading
+    },
+    sourceEmailName: {
+      type: String,
+      trim: true,
+      // Display name of the email sender
     },
     metadata: {
       type: Schema.Types.Mixed,

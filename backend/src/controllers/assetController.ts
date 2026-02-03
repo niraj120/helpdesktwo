@@ -67,9 +67,10 @@ export const createAsset = async (req: Request, res: Response) => {
 // @desc    Get all assets
 // @route   GET /api/assets
 // @access  Private
+// OPTIMIZED: Added pagination support
 export const getAllAssets = async (req: Request, res: Response) => {
   try {
-    const { projectId, isActive, search } = req.query;
+    const { projectId, isActive, search, page, limit } = req.query;
 
     if (!projectId) {
       return res.status(400).json({
@@ -92,11 +93,46 @@ export const getAllAssets = async (req: Request, res: Response) => {
       ];
     }
 
+    // Check if pagination is requested
+    const isPaginated = page !== undefined || limit !== undefined;
+    
+    if (isPaginated) {
+      const pageNum = parseInt(page as string) || 1;
+      const limitNum = Math.min(parseInt(limit as string) || 50, 100); // Max 100
+      const skip = (pageNum - 1) * limitNum;
+      
+      const [assets, total] = await Promise.all([
+        Asset.find(filter)
+          .populate('createdBy', 'firstName lastName email')
+          .populate('projectId', 'projectName')
+          .populate('category', 'name code color icon')
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limitNum)
+          .lean(),
+        Asset.countDocuments(filter)
+      ]);
+
+      return res.status(200).json({
+        success: true,
+        data: assets,
+        pagination: {
+          total,
+          page: pageNum,
+          limit: limitNum,
+          totalPages: Math.ceil(total / limitNum)
+        }
+      });
+    }
+
+    // Non-paginated (for backward compatibility) - add safety limit
     const assets = await Asset.find(filter)
       .populate('createdBy', 'firstName lastName email')
       .populate('projectId', 'projectName')
       .populate('category', 'name code color icon')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .limit(500)
+      .lean();
 
     return res.status(200).json({
       success: true,

@@ -1,6 +1,7 @@
 import express from 'express';
 import {
   getAllProjects,
+  getMyProjects,
   getProjectById,
   createProject,
   updateProject,
@@ -18,11 +19,16 @@ import {
   createFormField,
   updateFormField,
   deleteFormField,
+  uploadBrandingImage,
 } from '../controllers/projectController';
 import { authMiddleware } from '../middleware/auth';
 import { checkPermission } from '../middleware/permissions';
 
 const router = express.Router();
+
+// Get user's assigned projects (for project switcher - no special permission required)
+// MUST be before /:id to avoid conflicts
+router.get('/my-projects', authMiddleware, getMyProjects);
 
 // Get all projects with optional filtering
 // Allow agents with OFFLINE_MODULE_ACCESS to view their assigned projects
@@ -72,5 +78,8 @@ router.patch('/:id/toggle-status', authMiddleware, checkPermission('PROJECT_TOGG
 
 // Update project modules
 router.patch('/:id/modules', authMiddleware, checkPermission('PROJECT_MANAGE_SETTINGS'), updateProjectModules);
+
+// Upload branding image (logo or favicon) to GCS
+router.post('/:id/branding-image', authMiddleware, checkPermission('PROJECT_EDIT'), uploadBrandingImage);
 
 export default router;

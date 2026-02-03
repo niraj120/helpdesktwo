@@ -2,24 +2,10 @@ import { Request, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { GCSService } from '../services/gcsService';
 
-// Configure multer for PDF uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadPath = path.join(__dirname, '../../uploads/kb-pdfs');
-    // Ensure directory exists
-    if (!fs.existsSync(uploadPath)) {
-      fs.mkdirSync(uploadPath, { recursive: true });
-    }
-    cb(null, uploadPath);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    // Sanitize filename - remove special characters
-    const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
-    cb(null, uniqueSuffix + '-' + sanitizedName);
-  }
-});
+// Configure multer to use memory storage for GCS upload
+const storage = multer.memoryStorage();
 
 const upload = multer({
   storage,
@@ -38,13 +24,13 @@ export const uploadPdfMiddleware = upload.single('file');
 
 /**
  * @route   POST /api/upload/kb-pdf
- * @desc    Upload PDF file for KB article
+ * @desc    Upload PDF file for KB article (to GCS)
  * @access  Private (KB_CREATE or KB_EDIT permission)
  */
 export const uploadKBPdf = async (req: Request, res: Response) => {
   try {
     const file = req.file;
-    const { projectId } = req.body;
+    const { projectId, projectCode } = req.body;
 
     if (!file) {
       return res.status(400).json({ 
@@ -54,34 +40,36 @@ export const uploadKBPdf = async (req: Request, res: Response) => {
     }
 
     if (!projectId) {
-      // Delete uploaded file if projectId not provided
-      if (fs.existsSync(file.path)) {
-        fs.unlinkSync(file.path);
-      }
       return res.status(400).json({ 
         success: false,
         message: 'Project ID is required' 
       });
     }
 
+    if (!projectCode) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Project code is required' 
+      });
+    }
+
+    // Upload to GCS
+    const uploadResult = await GCSService.uploadPDF(file, projectCode);
+
     // Return file information
     return res.status(200).json({
       success: true,
-      message: 'PDF uploaded successfully',
+      message: 'PDF uploaded successfully to cloud storage',
       data: {
         fileName: file.originalname,
-        fileUrl: `/uploads/kb-pdfs/${file.filename}`,
-        fileSize: file.size,
+        fileUrl: uploadResult.url,
+        storedFileName: uploadResult.filename,
+        fileSize: uploadResult.size,
         mimeType: file.mimetype
       }
     });
   } catch (error: any) {
     console.error('Error uploading KB PDF:', error);
-    
-    // Clean up uploaded file on error
-    if (req.file && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
-    }
     
     return res.status(500).json({
       success: false,
@@ -92,24 +80,22 @@ export const uploadKBPdf = async (req: Request, res: Response) => {
 
 /**
  * @route   DELETE /api/upload/kb-pdf/:filename
- * @desc    Delete KB PDF file
+ * @desc    Delete KB PDF file from GCS
  * @access  Private (KB_DELETE permission)
  */
 export const deleteKBPdf = async (req: Request, res: Response) => {
   try {
     const { filename } = req.params;
-    const filePath = path.join(__dirname, '../../uploads/kb-pdfs', filename);
 
-    // Check if file exists
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({
+    if (!filename) {
+      return res.status(400).json({
         success: false,
-        message: 'File not found'
+        message: 'Filename is required'
       });
     }
 
-    // Delete the file
-    fs.unlinkSync(filePath);
+    // Delete from GCS
+    await GCSService.deletePDF(filename);
 
     return res.status(200).json({
       success: true,

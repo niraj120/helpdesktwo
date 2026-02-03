@@ -222,13 +222,27 @@ export const authUtils = {
     } catch (error) {
       console.error('Logout API error:', error);
     } finally {
-      // Clear all auth data
+      // Clear ALL auth and project data
       authUtils.removeToken();
       localStorage.removeItem('userName');
       localStorage.removeItem('userEmail');
       localStorage.removeItem('userId');
       localStorage.removeItem('userRole');
+      localStorage.removeItem('userRoleName');
+      localStorage.removeItem('user');
+      localStorage.removeItem('userPermissions');
       localStorage.removeItem('projectContext');
+      localStorage.removeItem('projectBranding');
+      localStorage.removeItem('projectId');
+      localStorage.removeItem('selectedProject');
+      localStorage.removeItem('permissions');
+      localStorage.removeItem('moduleAccess');
+      localStorage.removeItem('viewMode');
+      localStorage.removeItem('recentProjects');
+      localStorage.removeItem('favoriteProjects');
+      
+      // Clear sessionStorage as well
+      sessionStorage.clear();
       
       // Redirect to login
       const loginRoute = customUrlPath ? `/${customUrlPath}/agent/login` : '/login';

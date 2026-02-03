@@ -26,6 +26,7 @@ import {
 } from '../controllers/ticketController';
 import { authMiddleware } from '../middleware/auth';
 import { checkPermission } from '../middleware/permissions';
+import { attachProjectContext } from '../middleware/projectScope';
 
 // Attachment controllers
 import { 
@@ -42,6 +43,14 @@ import {
   updateComment,
   deleteComment
 } from '../controllers/ticketCommentController';
+
+// Email communication controllers (Task 6.5, 7.1)
+import {
+  getEmailCommunications,
+  getEmailCommunicationById,
+  sendTicketReply,
+  getAllIncomingEmails
+} from '../controllers/emailCommunicationController';
 
 // Export controller
 import { exportTickets } from '../controllers/ticketExportController';
@@ -100,7 +109,8 @@ router.post('/bulk-update', authMiddleware, checkPermission('TICKET_BULK_UPDATE'
 // @desc    Get all tickets (for View Tickets page)
 // @route   GET /api/tickets
 // @access  Private - TICKET_VIEW_ALL permission required
-router.get('/', authMiddleware, checkPermission('TICKET_VIEW_ALL'), getAllTickets);
+// Supports unified and single project views via attachProjectContext middleware
+router.get('/', authMiddleware, attachProjectContext, checkPermission('TICKET_VIEW_ALL'), getAllTickets);
 
 // @desc    Create new ticket
 // @route   POST /api/tickets
@@ -119,8 +129,8 @@ router.get('/:id', authMiddleware, checkPermission(['TICKET_VIEW_ALL', 'TICKET_V
 
 // @desc    Add reply to ticket
 // @route   POST /api/tickets/:id/reply
-// @access  Private (Student)
-router.post('/:id/reply', authMiddleware, checkPermission('TICKET_ADD_COMMENT'), upload.any(), replyToTicket);
+// @access  Private (Student can reply to own tickets, Agents can reply to assigned tickets)
+router.post('/:id/reply', authMiddleware, checkPermission(['TICKET_ADD_COMMENT', 'TICKET_VIEW_OWN']), upload.any(), replyToTicket);
 
 // @desc    Close ticket
 // @route   PATCH /api/tickets/:id/close
@@ -208,6 +218,23 @@ router.delete('/:id/attachments/:attachmentId', authMiddleware, checkPermission(
 // @route   GET /api/tickets/:id/comments
 // @access  Private (TICKET_VIEW_ALL or TICKET_VIEW_OWN permission)
 router.get('/:id/comments', authMiddleware, checkPermission(['TICKET_VIEW_ALL', 'TICKET_VIEW_OWN']), getComments);
+
+// Task 6.5: Email communication routes
+// @desc    Get all email communications for a ticket
+// @route   GET /api/tickets/:id/communications
+// @access  Private (TICKET_VIEW_ALL or TICKET_VIEW_OWN permission)
+router.get('/:id/communications', authMiddleware, checkPermission(['TICKET_VIEW_ALL', 'TICKET_VIEW_OWN']), getEmailCommunications);
+
+// @desc    Get single email communication
+// @route   GET /api/tickets/:id/communications/:commId
+// @access  Private (TICKET_VIEW_ALL or TICKET_VIEW_OWN permission)
+router.get('/:id/communications/:commId', authMiddleware, checkPermission(['TICKET_VIEW_ALL', 'TICKET_VIEW_OWN']), getEmailCommunicationById);
+
+// Task 7.1: Send email reply route
+// @desc    Send email reply to ticket
+// @route   POST /api/tickets/:id/reply-email
+// @access  Private (TICKET_REPLY or TICKET_VIEW_ALL permission)
+router.post('/:id/reply-email', authMiddleware, checkPermission(['TICKET_REPLY', 'TICKET_VIEW_ALL']), sendTicketReply);
 
 // @desc    Add comment to ticket
 // @route   POST /api/tickets/:id/comments

@@ -6,19 +6,62 @@ import mongoose from 'mongoose';
 
 /**
  * Get all centers for a project or all projects
+ * Supports pagination for better performance
  */
 export const getCenters = async (req: AuthRequest, res: Response) => {
   try {
-    const { projectId } = req.query;
+    const { projectId, page, limit, search } = req.query;
     
     const query: any = { isActive: true };
     if (projectId) {
       query.projectId = projectId;
     }
     
+    // Add search filter if provided
+    if (search) {
+      query.$or = [
+        { centerName: { $regex: search, $options: 'i' } },
+        { city: { $regex: search, $options: 'i' } },
+        { state: { $regex: search, $options: 'i' } },
+      ];
+    }
+    
+    // Check if pagination is requested
+    const isPaginated = page !== undefined || limit !== undefined;
+    
+    if (isPaginated) {
+      const pageNum = parseInt(page as string) || 1;
+      const limitNum = Math.min(parseInt(limit as string) || 50, 100); // Max 100
+      const skip = (pageNum - 1) * limitNum;
+      
+      const [centers, total] = await Promise.all([
+        Center.find(query)
+          .populate('projectId', 'name')
+          .sort({ centerName: 1 })
+          .skip(skip)
+          .limit(limitNum)
+          .lean(),
+        Center.countDocuments(query)
+      ]);
+      
+      return res.json({
+        success: true,
+        data: centers,
+        pagination: {
+          total,
+          page: pageNum,
+          limit: limitNum,
+          totalPages: Math.ceil(total / limitNum)
+        }
+      });
+    }
+    
+    // Non-paginated (for backward compatibility) - add reasonable limit
     const centers = await Center.find(query)
       .populate('projectId', 'name')
-      .sort({ centerName: 1 });
+      .sort({ centerName: 1 })
+      .limit(500) // Safety limit
+      .lean();
     
     return res.json({
       success: true,

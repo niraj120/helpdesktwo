@@ -167,8 +167,9 @@ export const StudentLoginModal: React.FC<StudentLoginModalProps> = ({
         password,
       });
 
-      const { token } = response.data.data;
+      const { token, user } = response.data.data;
       console.log('✅ Login successful, token received');
+      console.log('📋 User permissions:', user?.role?.permissions);
       
       // Clear old token and permissions cache
       localStorage.removeItem('authToken');
@@ -177,6 +178,12 @@ export const StudentLoginModal: React.FC<StudentLoginModalProps> = ({
       // Store new token
       localStorage.setItem('authToken', token);
       console.log('💾 Token stored in localStorage');
+      
+      // Store permissions from response if available
+      if (user?.role?.permissions && Array.isArray(user.role.permissions)) {
+        localStorage.setItem('userPermissions', JSON.stringify(user.role.permissions));
+        console.log('💾 Permissions stored in localStorage:', user.role.permissions);
+      }
       
       // Close modal first
       handleClose();

@@ -1,10 +1,13 @@
-import { ReactNode, useState, useEffect, useRef } from 'react';
+import { ReactNode, useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { SkipLink } from './accessible/SkipLink';
 import { LanguageToggle } from './LanguageToggle';
+import { HeaderProjectSwitcher } from './HeaderProjectSwitcher';
+import { ViewModeToggle } from './ViewModeToggle';
 import KBChatbot from './KBChatbot';
 import { designSystem } from '../styles/designSystem';
+import { useEmailActivityPolling } from '../hooks/useEmailActivityPolling';
 import { usePermissions } from '../hooks/usePermissions';
 import { useBranding } from '../contexts/BrandingContext';
 import { menuConfig, projectPortalMenuConfig, getFilteredMenuItems } from '../config/menuConfig';
@@ -60,6 +63,12 @@ const DashboardLayout = ({ children, logoutRedirectPath }: DashboardLayoutProps)
   const location = useLocation();
   const { i18n } = useTranslation();
   
+  // Enable email activity polling for real-time ticket notifications
+  useEmailActivityPolling({
+    enabled: true,
+    showNotifications: true
+  });
+  
   // Load expanded menus from sessionStorage on mount
   const [expandedMenus, setExpandedMenus] = useState<Set<string>>(() => {
     const saved = sessionStorage.getItem('expandedMenus');
@@ -77,6 +86,88 @@ const DashboardLayout = ({ children, logoutRedirectPath }: DashboardLayoutProps)
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ top: number; left: number } | null>(null);
   const sidebarRef = useRef<HTMLElement>(null);
+  const [roleDocument, setRoleDocument] = useState<{fileName: string; fileUrl: string} | null>(null);
+  
+  // Fetch user's role document with caching
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchRoleDocument = async () => {
+      try {
+        const token = localStorage.getItem('authToken');
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        
+        if (!user.role) return;
+
+        // Extract role ID - user.role can be string (name/code) or object with _id
+        const roleId = typeof user.role === 'object' ? user.role._id : null;
+        
+        // Skip API call if we don't have a valid role ID (MongoDB ObjectId)
+        if (!roleId || !/^[a-f\d]{24}$/i.test(roleId)) {
+          console.log('⚠️ Role document fetch skipped - no valid role ID');
+          return;
+        }
+
+        // Check session cache first (5 minute TTL)
+        const cacheKey = `roleDoc_${roleId}`;
+        const cached = sessionStorage.getItem(cacheKey);
+        if (cached) {
+          const { data, timestamp } = JSON.parse(cached);
+          if (Date.now() - timestamp < 300000 && isMounted) { // 5 minutes
+            setRoleDocument(data);
+            return;
+          }
+        }
+
+        // Deduplicate concurrent requests
+        const fetchKey = `__roleDocFetch_${roleId}`;
+        if ((window as any)[fetchKey]) {
+          const result = await (window as any)[fetchKey];
+          if (isMounted && result) setRoleDocument(result);
+          return;
+        }
+
+        const fetchPromise = (async () => {
+          const response = await fetch(`${API_CONFIG.API_URL}/roles/${roleId}?includePermissions=false`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.data?.document) {
+              const docData = {
+                fileName: data.data.document.fileName,
+                fileUrl: data.data.document.fileUrl
+              };
+              // Cache for 5 minutes
+              sessionStorage.setItem(cacheKey, JSON.stringify({
+                data: docData,
+                timestamp: Date.now()
+              }));
+              return docData;
+            }
+          }
+          return null;
+        })();
+
+        (window as any)[fetchKey] = fetchPromise;
+        const result = await fetchPromise;
+        delete (window as any)[fetchKey];
+        
+        if (isMounted && result) {
+          setRoleDocument(result);
+        }
+      } catch (error) {
+        console.error('Error fetching role document:', error);
+      }
+    };
+    
+    fetchRoleDocument();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
   
   // Save sidebar scroll position to sessionStorage
   useEffect(() => {
@@ -160,14 +251,36 @@ const DashboardLayout = ({ children, logoutRedirectPath }: DashboardLayoutProps)
     return projectContextStr ? JSON.parse(projectContextStr) : null;
   });
 
+  // Define main system routes (Super Admin routes) - these should NEVER use project portal mode
+  const currentPath = location.pathname;
+  const mainSystemRoutes = [
+    '/dashboard', '/projects', '/users', '/rbac', '/master-data', '/settings',
+    '/tickets', '/reports', '/audit-logs', '/knowledge-base', '/kb-', '/email-config',
+    '/escalation', '/sla', '/approval', '/offline-support', '/faq', '/assets',
+    '/db-monitoring', '/login', '/no-access'
+  ];
+  const isMainSystemRoute = mainSystemRoutes.some(route => currentPath.startsWith(route));
+  
   // Derive isProjectPortal from BOTH URL and localStorage
   // If URL contains /portal/, we're definitely in project portal mode
-  const currentPath = location.pathname;
+  // If URL is a main system route, we're definitely NOT in project portal mode
   const urlHasPortal = currentPath.includes('/portal/');
   const customUrlPathFromUrl = urlHasPortal ? currentPath.split('/')[1] : null;
   
-  const isProjectPortal = urlHasPortal || !!projectContext;
+  // IMPORTANT: Main system routes take priority - they should never be treated as project portal
+  const isProjectPortal = urlHasPortal && !isMainSystemRoute;
   const customUrlPath = customUrlPathFromUrl || projectContext?.customUrlPath;
+
+  // Clear stale projectContext when accessing main system routes
+  useEffect(() => {
+    if (isMainSystemRoute && projectContext) {
+      console.log('🧹 Clearing stale projectContext for main system route:', currentPath);
+      localStorage.removeItem('projectContext');
+      localStorage.removeItem('projectBranding');
+      localStorage.removeItem('projectId');
+      setProjectContext(null);
+    }
+  }, [isMainSystemRoute, currentPath, projectContext]);
 
   // Update projectContext when URL changes
   useEffect(() => {
@@ -186,9 +299,10 @@ const DashboardLayout = ({ children, logoutRedirectPath }: DashboardLayoutProps)
     }
   }, [urlHasPortal, customUrlPathFromUrl]);
 
-  // Get filtered menu items based on permissions
-  const menuItems = isProjectPortal
-    ? getFilteredMenuItems(
+  // Get filtered menu items based on permissions - memoized for performance
+  const menuItems = useMemo(() => {
+    if (isProjectPortal) {
+      return getFilteredMenuItems(
         projectPortalMenuConfig.map(item => ({
           ...item,
           path: item.path ? `/${customUrlPath}/portal/${item.path}` : undefined,
@@ -198,8 +312,10 @@ const DashboardLayout = ({ children, logoutRedirectPath }: DashboardLayoutProps)
           }))
         })),
         permissions
-      )
-    : getFilteredMenuItems(menuConfig, permissions);
+      );
+    }
+    return getFilteredMenuItems(menuConfig, permissions);
+  }, [isProjectPortal, customUrlPath, permissions]);
 
   const userName = localStorage.getItem('userName') || 'Super Admin';
   
@@ -298,6 +414,7 @@ const DashboardLayout = ({ children, logoutRedirectPath }: DashboardLayoutProps)
             <img 
               src={projectBranding.logo} 
               alt={projectBranding.name}
+              loading="lazy"
               style={{
                 width: '40px',
                 height: '40px',
@@ -825,15 +942,28 @@ const DashboardLayout = ({ children, logoutRedirectPath }: DashboardLayoutProps)
               } catch (error) {
                 console.error('Logout API error:', error);
               } finally {
-                // Clear local storage and redirect
+                // Clear ALL local storage - complete cleanup for fresh login
                 localStorage.removeItem('authToken');
                 localStorage.removeItem('userName');
                 localStorage.removeItem('userEmail');
                 localStorage.removeItem('userId');
                 localStorage.removeItem('userRole');
+                localStorage.removeItem('userRoleName');
+                localStorage.removeItem('user');
+                localStorage.removeItem('userPermissions');
                 localStorage.removeItem('projectContext');
+                localStorage.removeItem('projectBranding');
+                localStorage.removeItem('projectId');
+                localStorage.removeItem('selectedProject');
                 localStorage.removeItem('permissions'); // Clear cached permissions
                 localStorage.removeItem('moduleAccess'); // Legacy - can be removed after full migration
+                localStorage.removeItem('viewMode');
+                localStorage.removeItem('recentProjects');
+                localStorage.removeItem('favoriteProjects');
+                
+                // Clear sessionStorage as well
+                sessionStorage.clear();
+                
                 window.location.href = logoutRedirectPath || '/login';
               }
             }}
@@ -882,10 +1012,62 @@ const DashboardLayout = ({ children, logoutRedirectPath }: DashboardLayoutProps)
           flex: 1, 
           backgroundColor: 'var(--background-secondary)',
           transition: 'margin-left 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
-          minHeight: '100vh'
+          minHeight: '100vh',
+          display: 'flex',
+          flexDirection: 'column'
         }}
       >
-        {children}
+        {/* Top Header Bar */}
+        <header style={{
+          height: '64px',
+          backgroundColor: 'var(--background-primary)',
+          borderBottom: '1px solid var(--border-light)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'flex-end',
+          padding: '0 24px',
+          gap: '16px',
+          position: 'sticky',
+          top: 0,
+          zIndex: 50
+        }}>
+          <ViewModeToggle />
+          <HeaderProjectSwitcher />
+        </header>
+
+        {/* Main Content */}
+        <div style={{ flex: 1 }}>
+          {children}
+        </div>
+
+        {/* Footer with Role Document */}
+        {roleDocument && (
+          <footer style={{
+            backgroundColor: 'var(--background-primary)',
+            borderTop: '1px solid var(--border-light)',
+            padding: '16px 24px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '12px',
+            fontSize: '14px',
+            color: 'var(--text-secondary)'
+          }}>
+            <span>📄</span>
+            <a 
+              href={roleDocument.fileUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                color: 'var(--primary-color)',
+                textDecoration: 'underline',
+                fontWeight: 500
+              }}
+            >
+              {roleDocument.fileName}
+            </a>
+          </footer>
+        )}
       </main>
     </div>
 

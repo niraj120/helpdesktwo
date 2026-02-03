@@ -10,6 +10,8 @@ interface ProjectDashboardStats {
   lowPriority: number;
   withinSLA: number;
   outsideSLA: number;
+  pendingWithinSLA?: number;
+  pendingOutsideSLA?: number;
 }
 
 interface ProjectDashboardProps {
@@ -88,7 +90,7 @@ const ProjectDashboard = ({ wrapWithLayout = true }: ProjectDashboardProps) => {
 
   const cards = [
     {
-      title: t('totalQueries'),
+      title: 'Total Queries',
       value: stats.totalTickets,
       icon: '🎫',
       bgColor: '#EFF6FF',
@@ -96,7 +98,7 @@ const ProjectDashboard = ({ wrapWithLayout = true }: ProjectDashboardProps) => {
       borderColor: '#3B82F6',
     },
     {
-      title: t('highPriority'),
+      title: 'High Priority',
       value: stats.highPriority,
       icon: '🔴',
       bgColor: '#FEF2F2',
@@ -104,7 +106,7 @@ const ProjectDashboard = ({ wrapWithLayout = true }: ProjectDashboardProps) => {
       borderColor: '#EF4444',
     },
     {
-      title: t('mediumPriority'),
+      title: 'Medium Priority',
       value: stats.mediumPriority,
       icon: '🟡',
       bgColor: '#FFFBEB',
@@ -112,7 +114,7 @@ const ProjectDashboard = ({ wrapWithLayout = true }: ProjectDashboardProps) => {
       borderColor: '#F59E0B',
     },
     {
-      title: t('lowPriority'),
+      title: 'Low Priority',
       value: stats.lowPriority,
       icon: '🟢',
       bgColor: '#F0FDF4',
@@ -120,7 +122,7 @@ const ProjectDashboard = ({ wrapWithLayout = true }: ProjectDashboardProps) => {
       borderColor: '#22C55E',
     },
     {
-      title: t('withinSLA'),
+      title: 'Closed Within SLA',
       value: stats.withinSLA,
       icon: '✅',
       bgColor: '#ECFDF5',
@@ -128,12 +130,28 @@ const ProjectDashboard = ({ wrapWithLayout = true }: ProjectDashboardProps) => {
       borderColor: '#10B981',
     },
     {
-      title: t('outsideSLA'),
+      title: 'Closed Outside SLA',
       value: stats.outsideSLA,
       icon: '⚠️',
       bgColor: '#FEF3C7',
       textColor: '#78350F',
       borderColor: '#F59E0B',
+    },
+    {
+      title: 'Pending Within SLA',
+      value: stats.pendingWithinSLA || 0,
+      icon: '⏳',
+      bgColor: '#EFF6FF',
+      textColor: '#1E3A8A',
+      borderColor: '#3B82F6',
+    },
+    {
+      title: 'Pending Outside SLA',
+      value: stats.pendingOutsideSLA || 0,
+      icon: '🔥',
+      bgColor: '#FEF2F2',
+      textColor: '#7F1D1D',
+      borderColor: '#DC2626',
     },
   ];
 
@@ -149,7 +167,7 @@ const ProjectDashboard = ({ wrapWithLayout = true }: ProjectDashboardProps) => {
           color: '#111827',
           lineHeight: '1.2'
         }}>
-          {t('projectDashboard')}
+          Project Dashboard
         </h1>
         <p style={{ 
           fontSize: '14px', 
@@ -157,7 +175,7 @@ const ProjectDashboard = ({ wrapWithLayout = true }: ProjectDashboardProps) => {
           margin: '0',
           lineHeight: '1.5'
         }}>
-          {t('overviewOfQueries')}
+          Overview of Queries
         </p>
       </div>
 

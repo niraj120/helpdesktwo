@@ -25,6 +25,11 @@ import {
   MdPriorityHigh,
   MdCategory,
   MdStyle,
+  MdArticle,
+  MdVisibility,
+  MdTableChart,
+  MdMonitorHeart,
+  MdStorage,
 } from 'react-icons/md';
 import { PERMISSIONS, PERMISSION_MODULES } from '../constants/permissions';
 
@@ -184,14 +189,47 @@ export const menuConfig: MenuItem[] = [
     modulePrefix: PERMISSION_MODULES.SLA,
   },
 
-  // Knowledge Base - Managers, Agents, Super Admin
+  // Knowledge Base - Modular system with levels, articles, and tables
   {
-    path: '/knowledge-base',
     icon: <MdBook />,
     label: 'Knowledge Base',
     labelHi: 'ज्ञान आधार',
     labelMr: 'ज्ञान आधार',
-    permission: [PERMISSIONS.KB_VIEW, PERMISSIONS.KB_CREATE, PERMISSIONS.KB_EDIT],
+    permission: [PERMISSIONS.KB_VIEW_CONTENT, PERMISSIONS.KB_MANAGE, PERMISSIONS.KB_MANAGE_LEVELS, PERMISSIONS.KB_MANAGE_ARTICLES, PERMISSIONS.KB_MANAGE_TABLES],
+    subItems: [
+      {
+        path: '/kb-new/levels',
+        icon: <MdCategory />,
+        label: 'Manage Levels',
+        labelHi: 'स्तर प्रबंधित करें',
+        labelMr: 'स्तर व्यवस्थापित करा',
+        permission: [PERMISSIONS.KB_MANAGE, PERMISSIONS.KB_MANAGE_LEVELS],
+      },
+      {
+        path: '/kb-new/articles',
+        icon: <MdArticle />,
+        label: 'Manage Articles',
+        labelHi: 'लेख प्रबंधित करें',
+        labelMr: 'लेख व्यवस्थापित करा',
+        permission: [PERMISSIONS.KB_MANAGE, PERMISSIONS.KB_MANAGE_ARTICLES],
+      },
+      {
+        path: '/kb-new/tables',
+        icon: <MdTableChart />,
+        label: 'Manage Tables',
+        labelHi: 'तालिका प्रबंधित करें',
+        labelMr: 'तक्ते व्यवस्थापित करा',
+        permission: [PERMISSIONS.KB_MANAGE, PERMISSIONS.KB_MANAGE_TABLES],
+      },
+      {
+        path: '/kb-new/viewer',
+        icon: <MdVisibility />,
+        label: 'View KB',
+        labelHi: 'KB देखें',
+        labelMr: 'KB पहा',
+        permission: [PERMISSIONS.KB_VIEW_CONTENT, PERMISSIONS.KB_MANAGE, PERMISSIONS.KB_MANAGE_LEVELS, PERMISSIONS.KB_MANAGE_ARTICLES, PERMISSIONS.KB_MANAGE_TABLES],
+      },
+    ],
   },
 
   // FAQ - All users (view), Admins (manage)
@@ -283,6 +321,14 @@ export const menuConfig: MenuItem[] = [
         labelMr: 'ईमेल कॉन्फिगरेशन',
         permission: 'PROJECT_MANAGE_SETTINGS',
       },
+      {
+        path: '/integrations/email-to-ticket',
+        icon: <MdMailOutline />,
+        label: 'Email-to-Ticket',
+        labelHi: 'ईमेल-टू-टिकट',
+        labelMr: 'ईमेल-टू-टिकट',
+        permission: 'EMAIL_CONFIG_VIEW',
+      },
     ],
   },
 
@@ -357,6 +403,25 @@ export const menuConfig: MenuItem[] = [
       // },
     ],
   },
+
+  // System Monitoring - Super Admin only
+  {
+    icon: <MdMonitorHeart />,
+    label: 'System Monitoring',
+    labelHi: 'सिस्टम मॉनिटरिंग',
+    labelMr: 'सिस्टम मॉनिटरिंग',
+    modulePrefix: PERMISSION_MODULES.AUDIT, // Reusing AUDIT module for now - Super Admin only
+    subItems: [
+      {
+        path: '/system/db-monitoring',
+        icon: <MdStorage />,
+        label: 'Database Monitoring',
+        labelHi: 'डेटाबेस मॉनिटरिंग',
+        labelMr: 'डेटाबेस मॉनिटरिंग',
+        permission: PERMISSIONS.AUDIT_VIEW_ACTIVITY, // Super Admin permission
+      },
+    ],
+  },
 ];
 
 /**
@@ -415,15 +480,6 @@ export const projectPortalMenuConfig: MenuItem[] = [
     ],
   },
   {
-    path: 'knowledge-base',
-    icon: <MdBook />,
-    label: 'Knowledge Base',
-    labelHi: 'ज्ञान आधार',
-    labelMr: 'ज्ञान आधार',
-    permission: PERMISSIONS.KB_VIEW, // Only need view permission to access KB
-    isProjectRoute: true,
-  },
-  {
     path: 'faq',
     icon: <MdQuestionAnswer />,
     label: 'FAQ',
@@ -442,12 +498,12 @@ export const projectPortalMenuConfig: MenuItem[] = [
     isProjectRoute: true,
   },
   {
-    path: 'my-assets-demo',
+    path: 'my-assets',
     icon: <MdPerson />,
     label: 'My Assets',
     labelHi: 'मेरी संपत्ति',
     labelMr: 'माझी मालमत्ता',
-    excludeForRoles: ['STUDENT', 'COUNSELOR_L1', 'CET_STATE_CELL', 'AGENT', 'SUPPORT_ADMIN', 'ACCOUNT_OWNER'],
+    permission: PERMISSIONS.MY_ASSETS_VIEW,
     isProjectRoute: true,
   },
   {
@@ -458,6 +514,58 @@ export const projectPortalMenuConfig: MenuItem[] = [
     labelMr: 'वापरकर्ता व्यवस्थापन',
     modulePrefix: PERMISSION_MODULES.USER,
     isProjectRoute: true,
+  },
+  {
+    icon: <MdBook />,
+    label: 'Knowledge Base',
+    labelHi: 'नॉलेज बेस',
+    labelMr: 'नॉलेज बेस',
+    permission: [
+      PERMISSIONS.KB_VIEW_CONTENT,
+      PERMISSIONS.KB_MANAGE,
+      PERMISSIONS.KB_MANAGE_LEVELS,
+      PERMISSIONS.KB_MANAGE_ARTICLES,
+      PERMISSIONS.KB_MANAGE_TABLES,
+    ],
+    isProjectRoute: true,
+    subItems: [
+      {
+        path: 'kb-new/levels',
+        icon: <MdCategory />,
+        label: 'Manage Levels',
+        labelHi: 'स्तर प्रबंधित करें',
+        labelMr: 'स्तर व्यवस्थापित करा',
+        permission: [PERMISSIONS.KB_MANAGE, PERMISSIONS.KB_MANAGE_LEVELS],
+        isProjectRoute: true,
+      },
+      {
+        path: 'kb-new/articles',
+        icon: <MdArticle />,
+        label: 'Manage Articles',
+        labelHi: 'लेख प्रबंधित करें',
+        labelMr: 'लेख व्यवस्थापित करा',
+        permission: [PERMISSIONS.KB_MANAGE, PERMISSIONS.KB_MANAGE_ARTICLES],
+        isProjectRoute: true,
+      },
+      {
+        path: 'kb-new/tables',
+        icon: <MdTableChart />,
+        label: 'Manage Tables',
+        labelHi: 'तालिका प्रबंधित करें',
+        labelMr: 'तक्ते व्यवस्थापित करा',
+        permission: [PERMISSIONS.KB_MANAGE, PERMISSIONS.KB_MANAGE_TABLES],
+        isProjectRoute: true,
+      },
+      {
+        path: 'kb-new/viewer',
+        icon: <MdVisibility />,
+        label: 'View KB',
+        labelHi: 'KB देखें',
+        labelMr: 'KB पहा',
+        permission: [PERMISSIONS.KB_VIEW_CONTENT, PERMISSIONS.KB_MANAGE, PERMISSIONS.KB_MANAGE_LEVELS, PERMISSIONS.KB_MANAGE_ARTICLES, PERMISSIONS.KB_MANAGE_TABLES],
+        isProjectRoute: true,
+      },
+    ],
   },
   {
     icon: <MdBarChart />,
