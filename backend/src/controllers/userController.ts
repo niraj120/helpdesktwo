@@ -117,7 +117,7 @@ export const getAllUsers = async (req: Request, res: Response): Promise<void> =>
     const allowedSortFields = ['createdAt', 'firstName', 'lastName', 'email', 'lastLogin'];
     const sortBy = allowedSortFields.includes(req.query.sortBy as string) ? req.query.sortBy as string : 'createdAt';
     const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
-    const sortObj = { [sortBy]: sortOrder };
+    const sortObj: Record<string, 1 | -1> = { [sortBy]: sortOrder as 1 | -1 };
 
     // Enforce max limit
     const effectiveLimit = Math.min(limitNum || 20, 100);

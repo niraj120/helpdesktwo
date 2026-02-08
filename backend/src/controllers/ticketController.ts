@@ -817,7 +817,7 @@ export const getMyTickets = async (req: Request, res: Response) => {
     const allowedSortFields = ['createdAt', 'updatedAt', 'priority', 'status', 'ticketNumber'];
     const sortBy = allowedSortFields.includes(req.query.sortBy as string) ? req.query.sortBy as string : 'createdAt';
     const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
-    const sortObj = { [sortBy]: sortOrder };
+    const sortObj: Record<string, 1 | -1> = { [sortBy]: sortOrder as 1 | -1 };
 
     // Get pagination parameters with max limit enforcement
     const page = parseInt(req.query.page as string) || 1;
@@ -1163,7 +1163,7 @@ export const getAllTickets = async (req: Request, res: Response) => {
     const allowedSortFields = ['createdAt', 'updatedAt', 'priority', 'status', 'ticketNumber', 'slaDeadline'];
     const sortBy = allowedSortFields.includes(req.query.sortBy as string) ? req.query.sortBy as string : 'createdAt';
     const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
-    const sortObj = { [sortBy]: sortOrder };
+    const sortObj: Record<string, 1 | -1> = { [sortBy]: sortOrder as 1 | -1 };
 
     // Count total tickets
     const totalTickets = await Ticket.countDocuments(query);
@@ -1394,7 +1394,7 @@ export const getAgentAssignedTickets = async (req: Request, res: Response) => {
     const allowedSortFields = ['createdAt', 'updatedAt', 'priority', 'status', 'ticketNumber'];
     const sortBy = allowedSortFields.includes(req.query.sortBy as string) ? req.query.sortBy as string : 'createdAt';
     const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
-    const sortObj = { [sortBy]: sortOrder };
+    const sortObj: Record<string, 1 | -1> = { [sortBy]: sortOrder as 1 | -1 };
 
     // Get total count for pagination
     const totalTickets = await Ticket.countDocuments(query);
@@ -2882,24 +2882,24 @@ export const getDashboardStats = async (req: Request, res: Response) => {
     const total = stats.total[0]?.count || 0;
     
     // Status counts
-    const statusMap = new Map(stats.statusCounts.map((s: any) => [s._id, s.count]));
+    const statusMap = new Map<number, number>(stats.statusCounts.map((s: any) => [s._id, s.count]));
     const pending = (statusMap.get(1) || 0) + (statusMap.get(2) || 0) + (statusMap.get(3) || 0);
     const resolved = statusMap.get(4) || 0;
     const closed = statusMap.get(5) || 0;
     
     // Priority counts
-    const priorityMap = new Map(stats.priorityCounts.map((p: any) => [p._id, p.count]));
+    const priorityMap = new Map<number, number>(stats.priorityCounts.map((p: any) => [p._id, p.count]));
     const highPriority = priorityMap.get(3) || 0;
     const mediumPriority = priorityMap.get(2) || 0;
     const lowPriority = priorityMap.get(1) || 0;
     
     // SLA stats for closed/resolved
-    const closedSLAMap = new Map(stats.closedSLA.map((s: any) => [s._id, s.count]));
+    const closedSLAMap = new Map<boolean, number>(stats.closedSLA.map((s: any) => [s._id, s.count]));
     const closedWithinSLA = closedSLAMap.get(false) || 0;
     const closedOutsideSLA = closedSLAMap.get(true) || 0;
     
     // SLA stats for pending
-    const pendingSLAMap = new Map(stats.pendingSLA.map((s: any) => [s._id, s.count]));
+    const pendingSLAMap = new Map<boolean, number>(stats.pendingSLA.map((s: any) => [s._id, s.count]));
     const pendingWithinSLA = pendingSLAMap.get(false) || 0;
     const pendingOutsideSLA = pendingSLAMap.get(true) || 0;
 

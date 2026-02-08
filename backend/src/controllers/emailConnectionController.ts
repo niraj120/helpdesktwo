@@ -97,7 +97,7 @@ export const testConnection = async (req: Request, res: Response) => {
     console.error('Error testing connection:', error);
     await logApiError(error, req, { action: 'test_connection', configId: req.params.id });
     
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to test connection',
       error: error.message
@@ -135,7 +135,7 @@ export const resetRetry = async (req: Request, res: Response) => {
     console.error('Error resetting retry:', error);
     await logApiError(error, req, { action: 'reset_retry', configId: req.params.id });
     
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to reset retry status',
       error: error.message

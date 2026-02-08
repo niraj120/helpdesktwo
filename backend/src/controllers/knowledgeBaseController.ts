@@ -87,7 +87,7 @@ export const getArticlesByProject = async (req: AuthRequest, res: Response) => {
       count: articles.length
     });
   } catch (error: any) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: error.message || 'Failed to fetch articles'
     });

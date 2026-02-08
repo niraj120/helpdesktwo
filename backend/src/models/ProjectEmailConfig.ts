@@ -19,6 +19,13 @@ export interface IProjectEmailConfig extends Document {
   lastCheckedAt?: Date;
   lastCheckStatus?: 'success' | 'failed';
   lastCheckError?: string;
+  // Task 8.2: Connection monitoring fields
+  lastConnectionTest?: Date;
+  connectionStatus?: 'connected' | 'error' | 'untested';
+  lastSuccessfulConnection?: Date;
+  failedAttempts?: number;
+  nextRetryAt?: Date;
+  lastConnectionError?: string;
   createdAt: Date;
   updatedAt: Date;
   
@@ -96,6 +103,28 @@ const ProjectEmailConfigSchema: Schema = new Schema(
       enum: ['success', 'failed'],
     },
     lastCheckError: {
+      type: String,
+    },
+    // Task 8.2: Connection monitoring fields
+    lastConnectionTest: {
+      type: Date,
+    },
+    connectionStatus: {
+      type: String,
+      enum: ['connected', 'error', 'untested'],
+      default: 'untested',
+    },
+    lastSuccessfulConnection: {
+      type: Date,
+    },
+    failedAttempts: {
+      type: Number,
+      default: 0,
+    },
+    nextRetryAt: {
+      type: Date,
+    },
+    lastConnectionError: {
       type: String,
     },
   },

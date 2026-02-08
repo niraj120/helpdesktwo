@@ -483,10 +483,9 @@ export const deleteRoleDocument = async (req: AuthRequest, res: Response) => {
     }
 
     // Delete from GCS if exists
-    if (role.document?.url) {
+    if (role.document?.filePath) {
       try {
-        const gcsService = new GCSService();
-        await gcsService.deleteFile(role.document.url);
+        await GCSService.deleteRoleDocument(role.document.filePath);
       } catch (gcsError) {
         console.error('Error deleting document from GCS:', gcsError);
       }
@@ -496,9 +495,21 @@ export const deleteRoleDocument = async (req: AuthRequest, res: Response) => {
     role.document = undefined;
     await role.save();
 
-    await logActivity(req, 'role', 'document_deleted', role._id, role.name, {
-      action: 'Document removed from role',
-    });
+    // Log activity
+    const currentUser = req.user;
+    if (currentUser) {
+      await logActivity({
+        userId: currentUser.userId,
+        userName: `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim(),
+        userEmail: currentUser.email,
+        action: 'delete',
+        entity: 'role',
+        entityId: role._id.toString(),
+        entityName: role.name,
+        description: 'Document removed from role',
+        req
+      });
+    }
 
     return res.json({
       success: true,

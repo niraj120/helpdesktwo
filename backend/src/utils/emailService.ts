@@ -1500,6 +1500,9 @@ export const sendTicketReplyEmail = async (params: {
   referencesChain?: string[]; // Task 7.3: Full chain of previous Message-IDs
   projectId?: string;
 }): Promise<{ success: boolean; messageId?: string; fromEmail?: string; fromName?: string; error?: string }> => {
+  // Declare emailConfig outside try block so it's accessible in catch
+  let emailConfig: any = null;
+  
   try {
     console.log(`📧 [EMAIL SERVICE] Sending ticket reply to ${params.recipientEmail}`);
     console.log(`🎫 Ticket Number: ${params.ticketNumber}`);
@@ -1507,7 +1510,7 @@ export const sendTicketReplyEmail = async (params: {
     console.log(`📦 Project ID: ${params.projectId || 'not provided'}`);
 
     // Try to find email config by projectId, fallback to any enabled config
-    let emailConfig = params.projectId 
+    emailConfig = params.projectId 
       ? await EmailConfig.findOne({ projectId: params.projectId, enabled: true })
       : null;
     
