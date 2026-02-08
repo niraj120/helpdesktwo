@@ -11,7 +11,8 @@ pipelines:
                 cd /home/ubuntu/helpdesk/frontend &&
                 node -v &&
                 git checkout dev &&
-                git pull &&
+                git fetch origin dev &&
+                git reset --hard origin/dev &&
                 npm ci &&
                 npm run build &&
                 pm2 restart helpdesk-frontend:3001 &&
@@ -27,7 +28,8 @@ pipelines:
                 cd /home/ubuntu/helpdesk/backend &&
                 node -v &&
                 git checkout dev &&
-                git pull &&
+                git fetch origin dev &&
+                git reset --hard origin/dev &&
                 npm ci &&
                 npm run build &&
                 pm2 restart helpdesk-backend:3003 &&
