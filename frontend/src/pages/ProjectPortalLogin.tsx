@@ -24,6 +24,8 @@ interface ProjectBranding {
   branding: {
     logo: string | null;
     logoLinkbackUrl?: string;
+    browserTitle?: string;
+    favicon?: string;
     colorTheme: {
       primary: string;
       secondary: string;
@@ -750,11 +752,6 @@ const ProjectPortalLogin: React.FC = () => {
               </div>
 
               {/* Google reCAPTCHA */}
-              {console.log('reCAPTCHA check:', {
-                enableGoogleRecaptcha: projectBranding?.loginSettings?.enableGoogleRecaptcha,
-                recaptchaSiteKey: projectBranding?.loginSettings?.recaptchaSiteKey,
-                shouldShow: projectBranding?.loginSettings?.enableGoogleRecaptcha && projectBranding?.loginSettings?.recaptchaSiteKey
-              })}
               {projectBranding?.loginSettings?.enableGoogleRecaptcha && projectBranding?.loginSettings?.recaptchaSiteKey && (
                 <div style={{ display: 'flex', justifyContent: 'center', marginTop: '0.5rem' }}>
                   <ReCAPTCHA
