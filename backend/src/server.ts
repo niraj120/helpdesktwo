@@ -91,6 +91,7 @@ import { initializeDatabase } from './utils/dbInit';
 import { seedRolesAndPermissions } from './utils/seedRolesPermissions';
 import { emailPollingService } from './services/emailPollingService';
 import { emailProcessingWorker } from './services/emailProcessingWorker';
+import { autoEscalationService } from './services/autoEscalationService';
 
 const app = express();
 const httpServer = createServer(app);
@@ -333,6 +334,10 @@ httpServer.listen(PORT, async () => {
     // Start email processing worker (creates tickets from queued emails)
     console.log('🤖 Starting Email Processing Worker...');
     emailProcessingWorker.start();
+    
+    // Start auto-escalation service (monitors and escalates tickets based on SLA)
+    console.log('⏰ Starting Auto-Escalation Service...');
+    autoEscalationService.start();
   } catch (error) {
     console.error('⚠️  Database initialization failed, but server is still running');
   }
