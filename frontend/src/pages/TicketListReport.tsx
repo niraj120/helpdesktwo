@@ -155,14 +155,37 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
   useEffect(() => {
     // Check if user is Super Admin - they don't need project selection
     const userStr = localStorage.getItem('user');
-    const isSuperAdmin = userStr ? JSON.parse(userStr).role === 'Super Admin' : false;
+    const userRole = localStorage.getItem('userRole');
+    
+    // Check both user object role and userRole string for super admin
+    let isSuperAdmin = false;
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        const roleCode = user.role?.code || user.role;
+        const roleName = user.role?.name || user.role;
+        isSuperAdmin = roleCode === 'SUPER_ADMIN' || roleName === 'Super Admin';
+      } catch (e) {
+        console.error('Error parsing user from localStorage:', e);
+      }
+    }
+    // Fallback: check userRole string
+    if (!isSuperAdmin && userRole) {
+      isSuperAdmin = userRole === 'Super Admin' || userRole === 'SUPER_ADMIN';
+    }
+    
+    // For super admins, clear project restrictions
+    if (isSuperAdmin && !projectId) {
+      console.log('📊 Super Admin detected - clearing project restrictions');
+      setSelectedProject(''); // Clear project selection for "All Projects" view
+    }
     
     // Fetch tickets if:
     // 1. Super Admin (no project selection needed), OR
     // 2. A project is selected, OR
     // 3. projectId prop is provided (embedded in project view)
     if (isSuperAdmin || selectedProject || projectId) {
-      console.log('📊 TicketListReport: Fetching tickets...', { isSuperAdmin, selectedProject, projectId });
+      console.log('📊 TicketListReport: Fetching tickets...', { isSuperAdmin, selectedProject, projectId, userRole });
       fetchTickets();
     } else {
       console.log('⏸️ TicketListReport: Waiting for project selection...');
@@ -254,15 +277,41 @@ const TicketListReport: React.FC<TicketListReportProps> = ({ projectId, wrapWith
       setLoading(true);
       const token = localStorage.getItem('authToken');
       
+      // Check if user is Super Admin
+      const userStr = localStorage.getItem('user');
+      const userRole = localStorage.getItem('userRole');
+      let isSuperAdmin = false;
+      if (userStr) {
+        try {
+          const user = JSON.parse(userStr);
+          const roleCode = user.role?.code || user.role;
+          const roleName = user.role?.name || user.role;
+          isSuperAdmin = roleCode === 'SUPER_ADMIN' || roleName === 'Super Admin';
+        } catch (e) {
+          // Fallback to userRole
+        }
+      }
+      if (!isSuperAdmin && userRole) {
+        isSuperAdmin = userRole === 'Super Admin' || userRole === 'SUPER_ADMIN';
+      }
+      
       // Build query parameters
       const params = new URLSearchParams({
         page: '1',
         limit: '1000', // Get all tickets, filter client-side
       });
       
-      // Only add projectId if a specific project is selected (not "All Projects")
-      if (selectedProject) {
+      // For super admins, NEVER add projectId filter  unless explicitly selected
+      // This ensures they see all tickets across all projects
+      if (!isSuperAdmin && selectedProject) {
         params.append('projectId', selectedProject);
+        console.log('📊 Adding project filter:', selectedProject);
+      } else if (isSuperAdmin && selectedProject) {
+        // Super admin with specific project selected
+        params.append('projectId', selectedProject);
+        console.log('📊 Super Admin with project filter:', selectedProject);
+      } else if (isSuperAdmin) {
+        console.log('📊 Super Admin - fetching ALL tickets (no project filter)');
       }
 
       const response = await axios.get(`${API_CONFIG.API_URL}/tickets?${params}`, {

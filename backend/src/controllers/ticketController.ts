@@ -1219,15 +1219,23 @@ export const getAllTickets = async (req: Request, res: Response) => {
     }
 
     // Single projectId filter from query params (for reports page)
+    // IMPORTANT: Super admins should NOT be restricted by projectId unless explicitly provided
     if (req.query.projectId && !query['metadata.projectId']) {
+      // For super admins, only apply project filter if they explicitly selected one
+      // (empty projectId or "all" means show all projects)
       const projectIdStr = req.query.projectId as string;
-      // Convert to ObjectId for comparison (metadata.projectId is stored as ObjectId)
-      if (mongoose.Types.ObjectId.isValid(projectIdStr)) {
-        query['metadata.projectId'] = new mongoose.Types.ObjectId(projectIdStr);
-        console.log(`🔍 [VIEW_TICKETS] Filtering by single projectId (ObjectId): ${projectIdStr}`);
-      } else {
-        query['metadata.projectId'] = projectIdStr;
-        console.log(`🔍 [VIEW_TICKETS] Filtering by single projectId (string): ${projectIdStr}`);
+      
+      if (projectIdStr && projectIdStr !== 'all' && projectIdStr !== '') {
+        // Convert to ObjectId for comparison (metadata.projectId is stored as ObjectId)
+        if (mongoose.Types.ObjectId.isValid(projectIdStr)) {
+          query['metadata.projectId'] = new mongoose.Types.ObjectId(projectIdStr);
+          console.log(`🔍 [VIEW_TICKETS] Filtering by single projectId (ObjectId): ${projectIdStr}`);
+        } else {
+          query['metadata.projectId'] = projectIdStr;
+          console.log(`🔍 [VIEW_TICKETS] Filtering by single projectId (string): ${projectIdStr}`);
+        }
+      } else if (isSuperAdmin) {
+        console.log(`✅ [VIEW_TICKETS] Super Admin with no/empty projectId - showing ALL projects`);
       }
     }
 

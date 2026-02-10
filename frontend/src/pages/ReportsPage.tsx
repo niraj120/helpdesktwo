@@ -14,8 +14,24 @@ const ReportsPage: React.FC = () => {
   const { hasPermission } = usePermissions();
   
   // Check if user is Super Admin (always has access to all reports)
+  // Check both localStorage locations to be thorough
   const userRole = localStorage.getItem('userRole');
-  const isSuperAdmin = userRole === 'Super Admin' || userRole === 'SUPER_ADMIN';
+  const userStr = localStorage.getItem('user');
+  let isSuperAdmin = userRole === 'Super Admin' || userRole === 'SUPER_ADMIN';
+  
+  // Also check the user object
+  if (!isSuperAdmin && userStr) {
+    try {
+      const user = JSON.parse(userStr);
+      const roleCode = user.role?.code || user.role;
+      const roleName = user.role?.name || user.role;
+      isSuperAdmin = roleCode === 'SUPER_ADMIN' || roleName === 'Super Admin';
+    } catch (e) {
+      console.error('Error parsing user for role check:', e);
+    }
+  }
+  
+  console.log('📊 ReportsPage: Super Admin check', { userRole, isSuperAdmin });
   
   // Filter report options based on user permissions
   const reportOptions = useMemo(() => {
