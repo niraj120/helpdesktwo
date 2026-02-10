@@ -6,6 +6,8 @@ import {
   toggleEmailConfig,
   deleteEmailConfig,
   testEmailCredentials,
+  getOAuth2AuthUrl,
+  handleOAuth2Callback,
 } from '../controllers/projectEmailConfigController';
 import { authMiddleware } from '../middleware/auth';
 
@@ -25,6 +27,18 @@ router.post('/:projectId/email-configs', addEmailConfig);
  * Test email credentials without saving (for add/edit modals)
  */
 router.post('/:projectId/email-configs/test-credentials', testEmailCredentials);
+
+/**
+ * POST /api/projects/:projectId/email-configs/oauth2/auth-url
+ * Generate OAuth2 authorization URL for Google or Microsoft
+ */
+router.post('/:projectId/email-configs/oauth2/auth-url', getOAuth2AuthUrl);
+
+/**
+ * POST /api/projects/:projectId/email-configs/oauth2/callback
+ * Handle OAuth2 callback and exchange code for tokens
+ */
+router.post('/:projectId/email-configs/oauth2/callback', handleOAuth2Callback);
 
 /**
  * GET /api/projects/:projectId/email-configs

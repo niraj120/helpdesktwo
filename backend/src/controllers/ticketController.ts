@@ -6,6 +6,8 @@ import { Role } from '../models/Role';
 import { Permission } from '../models/Permission';
 import { Center } from '../models/Center';
 import { Category } from '../models/Category';
+import SLATracking from '../models/sla-module/SLATracking';
+import EscalationPolicy from '../models/sla-module/EscalationPolicy';
 import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
@@ -14,6 +16,7 @@ import fs from 'fs';
 import { sendTicketCreatedEmail, sendStudentWelcomeEmail } from '../utils/emailService';
 import { logActivity } from '../utils/logger';
 import { config } from '../config';
+import { initializeSLATracking } from '../services/slaHelperService';
 
 // Helper: Convert status code to name for emails/display
 const getStatusName = (statusCode: number): string => {
@@ -500,6 +503,21 @@ export const submitTicket = async (req: Request, res: Response) => {
     
     console.log(`✅ Ticket created successfully: ${ticket._id} | Created by: ${studentUserId}${assignedAgent ? ` | Assigned to: ${assignedAgent}` : ' | Unassigned'}`);
     
+    // Initialize SLA tracking for the new ticket (non-blocking)
+    (async () => {
+      try {
+        await initializeSLATracking(
+          ticket._id,
+          new mongoose.Types.ObjectId(projectId),
+          ticketPriority,
+          ticket.createdAt
+        );
+        console.log(`✅ SLA tracking initialized for ticket ${ticket.ticketNumber}`);
+      } catch (error) {
+        console.error('❌ Failed to initialize SLA tracking:', error);
+      }
+    })();
+    
     // Check feedback triggers for ticket creation (non-blocking)
     (async () => {
       try {
@@ -713,15 +731,29 @@ export const getMyTickets = async (req: Request, res: Response) => {
 
     // Filter by project if projectId is provided in query params
     if (req.query.projectId) {
-      // Convert projectId string to ObjectId for proper comparison
-      // (metadata.projectId is stored as ObjectId in the database)
+      // Query for both ObjectId and string for backward compatibility
+      // (older email-to-ticket stored as string, newer stores as ObjectId)
+      const projectIdStr = req.query.projectId as string;
       try {
-        query['metadata.projectId'] = new mongoose.Types.ObjectId(req.query.projectId as string);
-        console.log(`🏢 [PROJECT FILTER] Filtering tickets by projectId (ObjectId):`, req.query.projectId);
+        const projectObjectId = new mongoose.Types.ObjectId(projectIdStr);
+        // Match either ObjectId or string representation
+        const existingQuery = { ...query };
+        query = {
+          $and: [
+            existingQuery,
+            {
+              $or: [
+                { 'metadata.projectId': projectObjectId },
+                { 'metadata.projectId': projectIdStr }
+              ]
+            }
+          ]
+        };
+        console.log(`🏢 [PROJECT FILTER] Filtering tickets by projectId (ObjectId + string fallback):`, projectIdStr);
       } catch (e) {
         // Fallback to string comparison if not a valid ObjectId
-        query['metadata.projectId'] = req.query.projectId;
-        console.log(`🏢 [PROJECT FILTER] Filtering tickets by projectId (string):`, req.query.projectId);
+        query['metadata.projectId'] = projectIdStr;
+        console.log(`🏢 [PROJECT FILTER] Filtering tickets by projectId (string only):`, projectIdStr);
       }
     } else {
       // If no specific projectId, filter by user's assigned projects (for "All Projects" mode)
@@ -1590,6 +1622,40 @@ export const getTicketById = async (req: Request, res: Response) => {
     const ticketData = ticket.toObject();
     if (isStudent) {
       ticketData.internalNotes = []; // Hide internal notes from students
+    }
+
+    console.log('🔍 [getTicketById] Fetching SLA tracking for ticket:', ticket._id);
+    
+    // Fetch SLA tracking data for this ticket
+    const slaTracking = await SLATracking.findOne({ ticketId: ticket._id })
+      .populate('escalationPolicyId')
+      .lean();
+    
+    console.log('🔍 [getTicketById] SLA tracking found:', !!slaTracking);
+    if (slaTracking) {
+      console.log('🔍 [getTicketById] SLA tracking details:', {
+        currentLevel: slaTracking.currentEscalationLevel,
+        resolutionDeadline: slaTracking.resolutionDeadline,
+        resolutionStatus: slaTracking.resolutionStatus
+      });
+    }
+    
+    // Add SLA tracking info to response
+    if (slaTracking) {
+      (ticketData as any).slaTracking = {
+        currentEscalationLevel: slaTracking.currentEscalationLevel || 0,
+        resolutionDeadline: slaTracking.resolutionDeadline,
+        nextEscalationDue: slaTracking.nextEscalationDue,
+        resolutionStatus: slaTracking.resolutionStatus,
+        isPaused: slaTracking.isPaused,
+        pausedDuration: slaTracking.pausedDuration || 0,
+        lastEscalationAt: slaTracking.lastEscalationAt,
+        escalationHistory: slaTracking.escalationHistory || [],
+        escalationPolicy: slaTracking.escalationPolicyId || null
+      };
+      console.log('✅ [getTicketById] Added slaTracking to response');
+    } else {
+      console.log('⚠️ [getTicketById] No SLA tracking found for ticket');
     }
 
     return res.status(200).json({
@@ -3004,14 +3070,21 @@ export const getProjectDashboardStats = async (req: Request, res: Response) => {
     });
 
     // Build query based on user permissions
-    // Convert projectId string to ObjectId for proper comparison (metadata.projectId is ObjectId in DB)
+    // Handle both ObjectId and string for metadata.projectId (some tickets may have string, others ObjectId)
     let projectIdFilter: any;
     try {
-      projectIdFilter = new mongoose.Types.ObjectId(projectId as string);
+      const projectObjectId = new mongoose.Types.ObjectId(projectId as string);
+      // Query both ObjectId and string representations
+      projectIdFilter = {
+        $or: [
+          { 'metadata.projectId': projectObjectId },
+          { 'metadata.projectId': projectId as string }
+        ]
+      };
     } catch (e) {
-      projectIdFilter = projectId; // Fallback to string if not valid ObjectId
+      projectIdFilter = { 'metadata.projectId': projectId }; // Fallback to string only
     }
-    let query: any = { 'metadata.projectId': projectIdFilter };
+    let query: any = projectIdFilter;
     
     // Apply center filter if provided (for offline mode)
     if (centerId) {
@@ -3749,6 +3822,21 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
     await ticket.save();
 
     console.log(`✅ Offline ticket created: ${ticket._id} | ${ticketNumber} | Agent: ${agent.email} | Student: ${student.email}`);
+    
+    // Initialize SLA tracking for the new ticket (non-blocking)
+    (async () => {
+      try {
+        await initializeSLATracking(
+          ticket._id,
+          new mongoose.Types.ObjectId(projectId),
+          ticketPriority,
+          ticket.createdAt
+        );
+        console.log(`✅ SLA tracking initialized for offline ticket ${ticketNumber}`);
+      } catch (error) {
+        console.error('❌ Failed to initialize SLA tracking for offline ticket:', error);
+      }
+    })();
     
     // Log activity
     try {

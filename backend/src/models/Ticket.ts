@@ -81,6 +81,7 @@ export interface ITicket extends Document {
   sourceEmail?: string; // Email address from which ticket was created (for email-to-ticket)
   sourceEmailMessageId?: string; // Message ID of the original email (for threading)
   sourceEmailName?: string; // Display name from the email sender
+  sourceEmailConfigId?: mongoose.Types.ObjectId; // Email config that received this email (for proper reply routing)
   metadata?: any;
   resolvedAt?: Date; // Timestamp when status changed to Resolved (4)
   closedAt?: Date; // Timestamp when status changed to Closed (5)
@@ -231,6 +232,11 @@ const TicketSchema: Schema = new Schema(
       type: String,
       trim: true,
       // Display name of the email sender
+    },
+    sourceEmailConfigId: {
+      type: Schema.Types.ObjectId,
+      ref: 'ProjectEmailConfig',
+      // Reference to the email config that received this email (for proper reply routing)
     },
     metadata: {
       type: Schema.Types.Mixed,

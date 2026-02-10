@@ -978,7 +978,8 @@ export const getProjectTicketSettings = async (req: Request, res: Response) => {
           name: rule.name,
           priority: rule.priority,
           resolutionTime: rule.resolutionTime,
-          responseTime: rule.responseTime
+          responseTime: rule.responseTime,
+          escalationPolicyId: rule.escalationPolicyId // Task 6.4: Include for level-based SLA timing
         }));
       })(),
     };
@@ -1270,9 +1271,14 @@ export const updateProjectTicketSettings = async (req: Request, res: Response) =
       console.log('✅ Updated online form fields:', onlineFormFields.length, 'fields');
     }
 
+    // Use markModified to ensure Mongoose detects nested object changes (like offlineModuleSettings does)
+    project.markModified('configuration.ticketNumberSettings');
+    project.markModified('configuration.ticketSubmissionSettings');
+    
     await project.save();
     
     console.log('✅ Ticket settings saved successfully');
+    console.log('📊 Verification - ticketNumberSettings in DB:', JSON.stringify((project as any).configuration?.ticketNumberSettings, null, 2));
 
     return res.json({
       success: true,

@@ -19,6 +19,41 @@ import {
   TicketIcon,
 } from '@heroicons/react/24/outline';
 
+// SLA Tracking interface for resolution time calculation
+interface SLATrackingData {
+  currentEscalationLevel: number;
+  resolutionDeadline?: string;
+  nextEscalationDue?: string;
+  resolutionStatus: 'met' | 'breached' | 'pending';
+  isPaused: boolean;
+  pausedDuration: number;
+  lastEscalationAt?: string;
+  escalationHistory: Array<{
+    level: number;
+    escalatedAt: string;
+    escalatedTo: string;
+    mode: 'manual' | 'auto';
+    reason: string;
+  }>;
+  escalationPolicy?: {
+    _id: string;
+    name: string;
+    levels: Array<{
+      level: number;
+      escalationMode: string;
+      escalateAfter: {
+        value: number;
+        unit: string;
+      };
+      escalateTo: {
+        type: string;
+        targetId: string;
+        targetName: string;
+      };
+    }>;
+  };
+}
+
 interface Ticket {
   _id: string;
   ticketNumber: string;
@@ -59,6 +94,7 @@ interface Ticket {
   internalNotes?: InternalNote[];
   attachments?: Attachment[];
   escalationHistory?: EscalationRecord[];
+  slaTracking?: SLATrackingData; // SLA tracking data from backend
 }
 
 interface Thread {
@@ -262,6 +298,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
   const [priorityOptions, setPriorityOptions] = useState<string[]>([]);
   const [priorityData, setPriorityData] = useState<any>(null);
   const [slaRules, setSlaRules] = useState<any[]>([]);
+  
+  // Task 6.4: State for escalation policies (for level-based SLA timing) and user role
+  const [escalationPolicies, setEscalationPolicies] = useState<EscalationPolicy[]>([]);
+  const [userRole, setUserRole] = useState<{ _id: string; name: string; code?: string } | null>(null);
 
   // Task 6.5: Email communications state
   const [emailCommunications, setEmailCommunications] = useState<EmailCommunication[]>([]);
@@ -289,7 +329,20 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
   const getStatusDisplayName = (statusCode: number | string) => {
     const code = typeof statusCode === 'string' ? Number(statusCode) : statusCode;
     const status = statusOptions.find((s: any) => s.code === code);
-    return status?.name || `Status ${code}`;
+    
+    // If status found in options, return it
+    if (status) return status.name;
+    
+    // Fallback to standard status names for common codes
+    const standardStatuses: { [key: number]: string } = {
+      1: 'Open',
+      2: 'In Progress',
+      3: 'Pending',
+      4: 'Resolved',
+      5: 'Closed'
+    };
+    
+    return standardStatuses[code] || `Status ${code}`;
   };
 
   // Helper function to format change history values (converts status IDs to names)
@@ -504,6 +557,11 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
 
       // Process escalation contacts
       const policies = escalationRes.data.data || [];
+      
+      // Task 6.4: Store raw escalation policies for SLA level calculation
+      setEscalationPolicies(policies);
+      console.log('📋 Raw Escalation Policies:', policies);
+      
       const contacts = policies.flatMap((policy: any) => {
         return (policy.levels || []).flatMap((level: any) => {
           if (level.users && level.users.length > 0) {
@@ -548,6 +606,13 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
         console.log('🔐 User Permissions Loaded:', userPermissions);
         console.log('✅ Has TICKET_ESCALATE?', userPermissions.includes('TICKET_ESCALATE'));
         setPermissions(userPermissions);
+        
+        // Task 6.4: Store user role for SLA level calculation
+        const role = response.data.data.role;
+        if (role) {
+          setUserRole({ _id: role._id, name: role.name, code: role.code });
+          console.log('👤 User Role:', role.name, role.code);
+        }
       }
     } catch (error) {
       console.error('Error fetching user permissions:', error);
@@ -967,7 +1032,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                       {getStatusDisplayName(ticket.status)}
                     </span>
                     <span className={`px-3 py-1 rounded-full text-xs font-medium ${getPriorityColor(ticket.priority)}`}>
-                      {ticket.priority}
+                      {ticket.priority.charAt(0).toUpperCase() + ticket.priority.slice(1).toLowerCase()}
                     </span>
                     {/* Task 6.4: Source badge */}
                     {(() => {
@@ -1209,7 +1274,11 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                       <svg className="h-5 w-5 inline-block mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                       </svg>
-                      Email Thread ({emailCommunications.length})
+                      Email Thread ({emailCommunications.filter(e => {
+                        const isOut = e.direction === 'outgoing' || e.direction === 'outbound';
+                        const isConf = e.subject?.toLowerCase().includes('ticket created:');
+                        return !(isOut && isConf);
+                      }).length})
                     </button>
                   )}
                 </div>
@@ -1575,17 +1644,28 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                       )}
                     </div>
 
-                    {!loadingEmails && emailCommunications.length === 0 && (
-                      <div className="text-center py-12 bg-gray-50 rounded-lg">
-                        <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                        </svg>
-                        <p className="mt-4 text-sm text-gray-600">No email communications found</p>
-                        <p className="mt-1 text-xs text-gray-500">Email thread will appear here once messages are exchanged</p>
-                      </div>
-                    )}
+                    {/* Filter out automatic ticket confirmation emails (outgoing with "Ticket Created:" subject) */}
+                    {(() => {
+                      const filteredEmails = emailCommunications.filter(email => {
+                        // Exclude automatic outgoing confirmation emails
+                        const isOutgoing = email.direction === 'outgoing' || email.direction === 'outbound';
+                        const isConfirmationEmail = email.subject?.toLowerCase().includes('ticket created:');
+                        return !(isOutgoing && isConfirmationEmail);
+                      });
+                      
+                      return (
+                        <>
+                          {!loadingEmails && filteredEmails.length === 0 && (
+                            <div className="text-center py-12 bg-gray-50 rounded-lg">
+                              <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                              </svg>
+                              <p className="mt-4 text-sm text-gray-600">No email communications found</p>
+                              <p className="mt-1 text-xs text-gray-500">Email thread will appear here once messages are exchanged</p>
+                            </div>
+                          )}
 
-                    {emailCommunications.map((email, index) => {
+                          {filteredEmails.map((email, index) => {
                       const isIncoming = email.direction === 'incoming' || email.direction === 'inbound';
                       const isExpanded = expandedEmails.has(email._id);
                       const emailBody = email.htmlBody || email.bodyHtml || email.body;
@@ -1706,6 +1786,9 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                         </div>
                       );
                     })}
+                        </>
+                      );
+                    })()}
                   </div>
                 )}
 
@@ -1859,11 +1942,12 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
 
                 {/* Resolution Time Countdown */}
                 {(() => {
-                  console.log('🎯 SLA Rules:', slaRules);
-                  console.log('🎯 Ticket Priority:', ticket.priority);
+                  console.log('🎯 Full Ticket Object:', ticket);
+                  console.log('🎯 SLA Tracking Data:', ticket.slaTracking);
+                  console.log('🎯 SLA Tracking Type:', typeof ticket.slaTracking);
+                  console.log('🎯 Resolution Deadline Value:', ticket.slaTracking?.resolutionDeadline);
+                  console.log('🎯 Resolution Deadline Type:', typeof ticket.slaTracking?.resolutionDeadline);
                   console.log('🎯 Ticket Status:', ticket.status);
-                  console.log('🎯 Resolved At:', ticket.resolvedAt);
-                  console.log('🎯 Closed At:', ticket.closedAt);
                   
                   // Check if ticket is resolved or closed (handle both numeric and string values)
                   const statusLower = String(ticket.status).toLowerCase();
@@ -1871,55 +1955,97 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                   const isClosed = String(ticket.status) === '5' || statusLower === 'closed' || statusLower === 'close';
                   const isComplete = isResolved || isClosed;
                   
-                  console.log('🎯 Is Complete:', isComplete, 'isResolved:', isResolved, 'isClosed:', isClosed);
+                  // Get escalation info from ticket's SLA tracking data
+                  const slaTracking = ticket.slaTracking;
+                  const currentLevel = slaTracking?.currentEscalationLevel || 0;
+                  const escalationPolicy = slaTracking?.escalationPolicy;
                   
-                  // Find matching SLA rule for this ticket's priority
-                  const matchingSlaRule = slaRules.find(
-                    (rule: any) => rule.priority?.name?.toUpperCase() === ticket.priority.toUpperCase()
-                  );
+                  // Determine the current level's name for display
+                  let timeLabel = 'Resolution Time';
+                  let currentLevelConfig = null;
                   
-                  console.log('🎯 Matching SLA Rule:', matchingSlaRule);
-                  
-                  // Fallback to default resolution times if no SLA rule found
-                  const defaultResolutionHours: { [key: string]: number } = {
-                    'CRITICAL': 2,
-                    'HIGH': 8,
-                    'MEDIUM': 24,
-                    'LOW': 48
-                  };
-                  
-                  let resolutionMs = 0;
-                  
-                  if (matchingSlaRule?.resolutionTime) {
-                    // Use SLA rule resolution time
-                    const { value, unit } = matchingSlaRule.resolutionTime;
-                    switch (unit?.toLowerCase()) {
-                      case 'minutes':
-                        resolutionMs = value * 60 * 1000;
-                        break;
-                      case 'hours':
-                        resolutionMs = value * 60 * 60 * 1000;
-                        break;
-                      case 'days':
-                        resolutionMs = value * 24 * 60 * 60 * 1000;
-                        break;
-                      default:
-                        resolutionMs = value * 60 * 60 * 1000; // Default to hours
+                  if (escalationPolicy?.levels && currentLevel >= 0) {
+                    // Level 0 means first level (L1), Level 1 means second level (L2), etc.
+                    const levelIndex = currentLevel;
+                    currentLevelConfig = escalationPolicy.levels.find(l => l.level === levelIndex + 1);
+                    if (currentLevelConfig) {
+                      timeLabel = `${currentLevelConfig.escalateTo?.targetName || `Level ${levelIndex + 1}`} SLA`;
+                    } else if (currentLevel > 0) {
+                      // Already escalated but no matching level found
+                      timeLabel = `Level ${currentLevel + 1} SLA`;
                     }
-                  } else {
-                    // Use default hours
-                    const hours = defaultResolutionHours[ticket.priority.toUpperCase()] || 24;
-                    resolutionMs = hours * 60 * 60 * 1000;
                   }
                   
+                  console.log('🎯 Current Escalation Level:', currentLevel);
+                  console.log('🎯 Current Level Config:', currentLevelConfig);
+                  
+                  let resolutionDeadline: Date;
                   const createdAt = new Date(ticket.createdAt);
-                  const resolutionDeadline = new Date(createdAt.getTime() + resolutionMs);
+                  
+                  // Use SLA tracking resolution deadline if available
+                  if (slaTracking?.resolutionDeadline) {
+                    resolutionDeadline = new Date(slaTracking.resolutionDeadline);
+                    console.log('🎯 Using SLA Tracking Deadline:', resolutionDeadline);
+                  } else {
+                    // Fallback: Calculate from escalation policy or SLA rules
+                    let resolutionMs = 0;
+                    
+                    // Try to get from escalation policy
+                    if (currentLevelConfig?.escalateAfter) {
+                      const { value, unit } = currentLevelConfig.escalateAfter;
+                      switch (unit?.toLowerCase()) {
+                        case 'minutes':
+                          resolutionMs = value * 60 * 1000;
+                          break;
+                        case 'hours':
+                          resolutionMs = value * 60 * 60 * 1000;
+                          break;
+                        case 'days':
+                          resolutionMs = value * 24 * 60 * 60 * 1000;
+                          break;
+                        default:
+                          resolutionMs = value * 60 * 60 * 1000;
+                      }
+                    } else {
+                      // Fallback to SLA rules or defaults
+                      const matchingSlaRule = slaRules.find(
+                        (rule: any) => rule.priority?.name?.toUpperCase() === ticket.priority.toUpperCase()
+                      );
+                      
+                      if (matchingSlaRule?.resolutionTime) {
+                        const { value, unit } = matchingSlaRule.resolutionTime;
+                        switch (unit?.toLowerCase()) {
+                          case 'minutes':
+                            resolutionMs = value * 60 * 1000;
+                            break;
+                          case 'hours':
+                            resolutionMs = value * 60 * 60 * 1000;
+                            break;
+                          case 'days':
+                            resolutionMs = value * 24 * 60 * 60 * 1000;
+                            break;
+                          default:
+                            resolutionMs = value * 60 * 60 * 1000;
+                        }
+                      } else {
+                        // Default resolution times
+                        const defaultHours: { [key: string]: number } = {
+                          'CRITICAL': 2, 'HIGH': 8, 'MEDIUM': 24, 'LOW': 48
+                        };
+                        resolutionMs = (defaultHours[ticket.priority.toUpperCase()] || 24) * 60 * 60 * 1000;
+                      }
+                    }
+                    
+                    resolutionDeadline = new Date(createdAt.getTime() + resolutionMs);
+                    console.log('🎯 Calculated Resolution Deadline:', resolutionDeadline);
+                  }
                   
                   let displayText = '';
                   let isBreached = false;
                   let bgColor = '';
                   let textColor = '';
                   let borderColor = '';
+                  let nextEscalationInfo = '';
                   
                   if (isComplete) {
                     // Ticket is resolved or closed - show time taken
@@ -1929,17 +2055,16 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                     const minutes = Math.floor((timeTakenMs % (1000 * 60 * 60)) / (1000 * 60));
                     
                     // Check if it was resolved within SLA
+                    const resolutionMs = resolutionDeadline.getTime() - createdAt.getTime();
                     isBreached = timeTakenMs > resolutionMs;
                     
                     displayText = `Resolved in ${totalHours}h ${minutes}m`;
                     
                     if (isBreached) {
-                      // Out of SLA - red
                       bgColor = 'bg-red-50';
                       borderColor = 'border-red-300';
                       textColor = 'text-red-600';
                     } else {
-                      // Within SLA - green
                       bgColor = 'bg-green-50';
                       borderColor = 'border-green-300';
                       textColor = 'text-green-600';
@@ -1961,6 +2086,17 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                     bgColor = isBreached ? 'bg-red-50' : 'bg-blue-50';
                     borderColor = isBreached ? 'border-red-300' : 'border-blue-300';
                     textColor = isBreached ? 'text-red-600' : 'text-blue-600';
+                    
+                    // Show next escalation info if available
+                    if (slaTracking?.nextEscalationDue && !isBreached) {
+                      const nextEscDate = new Date(slaTracking.nextEscalationDue);
+                      const nextDiff = nextEscDate.getTime() - now.getTime();
+                      if (nextDiff > 0) {
+                        const nextHours = Math.floor(nextDiff / (1000 * 60 * 60));
+                        const nextMins = Math.floor((nextDiff % (1000 * 60 * 60)) / (1000 * 60));
+                        nextEscalationInfo = `Auto-escalates in ${nextHours}h ${nextMins}m`;
+                      }
+                    }
                   }
                   
                   console.log('🎯 Display Text:', displayText);
@@ -1970,10 +2106,20 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                       <div className="flex items-center space-x-2">
                         <ClockIcon className={`h-5 w-5 ${textColor}`} />
                         <div className="flex-1">
-                          <p className="text-xs font-medium text-gray-700">Resolution Time</p>
+                          <p className="text-xs font-medium text-gray-700">{timeLabel}</p>
                           <p className={`text-lg font-bold ${textColor}`}>
                             {displayText}
                           </p>
+                          {nextEscalationInfo && (
+                            <p className="text-xs text-orange-600 mt-1">
+                              ⬆️ {nextEscalationInfo}
+                            </p>
+                          )}
+                          {currentLevel > 0 && (
+                            <p className="text-xs text-gray-500 mt-1">
+                              Escalated {currentLevel} time{currentLevel > 1 ? 's' : ''}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </div>

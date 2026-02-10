@@ -157,7 +157,15 @@ export const sendTicketReply = async (req: Request, res: Response): Promise<void
       hasMetadataMessageId: !!(ticket.metadata as any)?.emailMessageId
     });
 
-    // Send email with full References chain
+    // Get the email config ID that received this ticket (for proper reply routing)
+    const sourceEmailConfigId = ticket.sourceEmailConfigId?.toString() || undefined;
+    if (sourceEmailConfigId) {
+      console.log(`📧 Using source email config: ${sourceEmailConfigId}`);
+    } else {
+      console.log(`⚠️ No sourceEmailConfigId on ticket, will fallback to project email config`);
+    }
+
+    // Send email with full References chain - use the same email config that received the original email
     const emailResult = await sendTicketReplyEmail({
       ticketId: ticket._id.toString(),
       ticketNumber: ticket.ticketNumber,
@@ -170,7 +178,8 @@ export const sendTicketReply = async (req: Request, res: Response): Promise<void
       agentEmail,
       originalMessageId: lastMessageId,
       referencesChain: referencesChain.length > 0 ? referencesChain : undefined,
-      projectId: (ticket.project as any)?._id?.toString() || ticket.project?.toString() || undefined
+      projectId: (ticket.project as any)?._id?.toString() || ticket.project?.toString() || undefined,
+      emailConfigId: sourceEmailConfigId // Use the same email config that received the original email
     });
 
     if (!emailResult.success) {

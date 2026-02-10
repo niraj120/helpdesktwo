@@ -70,6 +70,7 @@ import emailConfigRoutes from './routes/emailConfig';
 import emailLogRoutes from './routes/emailLogs';
 import emailActivityRoutes from './routes/emailActivity';
 import projectEmailConfigRoutes from './routes/projectEmailConfigRoutes';
+import emailConfigToggleRoutes from './routes/emailConfigToggleRoutes';
 import whatsappConfigRoutes from './routes/whatsappConfig';
 import smsConfigRoutes from './routes/smsConfig';
 import dpdpRoutes from './routes/dpdp.routes';
@@ -89,6 +90,7 @@ import { setupSocketHandlers } from './socket/socketHandlers';
 import { initializeDatabase } from './utils/dbInit';
 import { seedRolesAndPermissions } from './utils/seedRolesPermissions';
 import { emailPollingService } from './services/emailPollingService';
+import { emailProcessingWorker } from './services/emailProcessingWorker';
 
 const app = express();
 const httpServer = createServer(app);
@@ -266,6 +268,9 @@ app.use('/api/email-activity', emailActivityRoutes);
 // Project Email Configuration Routes (for project-specific email settings)
 app.use('/api/projects', projectEmailConfigRoutes);
 
+// Email Config Toggle Routes (toggle, delete, test by configId)
+app.use('/api/email-configs', emailConfigToggleRoutes);
+
 // WhatsApp Configuration Routes
 app.use('/api/whatsapp-config', whatsappConfigRoutes);
 
@@ -324,6 +329,10 @@ httpServer.listen(PORT, async () => {
     // Start email polling service
     console.log('📧 Starting Email Polling Service...');
     await emailPollingService.start();
+    
+    // Start email processing worker (creates tickets from queued emails)
+    console.log('🤖 Starting Email Processing Worker...');
+    emailProcessingWorker.start();
   } catch (error) {
     console.error('⚠️  Database initialization failed, but server is still running');
   }

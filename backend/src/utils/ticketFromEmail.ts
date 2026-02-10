@@ -1,10 +1,14 @@
 import { Ticket } from '../models/Ticket';
 import { User } from '../models/User';
+import { Project } from '../models/Project';
 import ProjectEmailConfig from '../models/ProjectEmailConfig';
+import { Category } from '../models/Category';
+import { Priority } from '../models/master-data/Priority';
 import { ParsedEmailData } from './emailParser';
 import { autoAssignTicket } from './ticketAutoAssignment';
 import { sendTicketCreatedEmail, sendAgentNewReplyNotification } from './emailService';
 import { logIncomingEmail } from './emailCommunicationLogger';
+import { initializeSLATracking } from '../services/slaHelperService';
 import mongoose from 'mongoose';
 
 /**
@@ -113,8 +117,9 @@ async function findOrCreateUserByEmail(email: string, name?: string): Promise<mo
 /**
  * Extract priority from email
  * Checks X-Priority header and keywords in subject/body
+ * Returns null if no priority detected (will use project default)
  */
-function extractPriority(parsedEmail: ParsedEmailData): string {
+function extractPriorityFromEmail(parsedEmail: ParsedEmailData): string | null {
   // Check parsed priority from headers
   if (parsedEmail.priority) {
     switch (parsedEmail.priority) {
@@ -123,7 +128,7 @@ function extractPriority(parsedEmail: ParsedEmailData): string {
       case 'low':
         return 'LOW';
       default:
-        return 'MEDIUM';
+        return null; // Will use project default
     }
   }
 
@@ -138,33 +143,132 @@ function extractPriority(parsedEmail: ParsedEmailData): string {
     }
   }
 
-  // Default to MEDIUM
+  // Return null to use project default
+  return null;
+}
+
+/**
+ * Get project's default priority
+ * Returns the priority marked as isDefault, or first active priority, or 'MEDIUM' fallback
+ */
+async function getProjectDefaultPriority(projectId: mongoose.Types.ObjectId): Promise<string> {
+  // Try to find default priority for the project
+  let defaultPriority = await Priority.findOne({
+    projectId: projectId,
+    isDefault: true,
+    isActive: true
+  });
+  
+  if (defaultPriority) {
+    console.log(`      ✓ Using project's default priority: ${defaultPriority.code}`);
+    return defaultPriority.code;
+  }
+  
+  // Fallback: Find first active priority for the project
+  defaultPriority = await Priority.findOne({
+    projectId: projectId,
+    isActive: true
+  }).sort({ order: 1 });
+  
+  if (defaultPriority) {
+    console.log(`      ✓ Using first active priority: ${defaultPriority.code}`);
+    return defaultPriority.code;
+  }
+  
+  // Final fallback
+  console.log(`      ⚠️ No priority found for project, using MEDIUM fallback`);
   return 'MEDIUM';
 }
 
 /**
- * Generate unique ticket number
- * Format: YYYYMMDD-XXXX (e.g., 20240124-0001)
+ * Get project's default category for email tickets
+ * Returns the first active category for the project
  */
-async function generateTicketNumber(): Promise<string> {
-  const today = new Date();
-  const datePrefix = today.toISOString().split('T')[0].replace(/-/g, ''); // YYYYMMDD
-
-  // Find the last ticket created today
-  const lastTicket = await Ticket.findOne({
-    ticketNumber: new RegExp(`^${datePrefix}-`),
-  })
-    .sort({ ticketNumber: -1 })
-    .select('ticketNumber');
-
-  let sequence = 1;
-  if (lastTicket) {
-    const lastSequence = parseInt(lastTicket.ticketNumber.split('-')[1]);
-    sequence = lastSequence + 1;
+async function getProjectDefaultCategory(projectId: mongoose.Types.ObjectId): Promise<mongoose.Types.ObjectId | undefined> {
+  // Find first active category for the project
+  const category = await Category.findOne({
+    projectId: projectId,
+    isActive: true
+  }).sort({ order: 1 });
+  
+  if (category) {
+    console.log(`      ✓ Using project's default category: ${category.name} (${category._id})`);
+    return category._id;
   }
+  
+  console.log(`      ⚠️ No category found for project`);
+  return undefined;
+}
 
-  const ticketNumber = `${datePrefix}-${sequence.toString().padStart(4, '0')}`;
-  return ticketNumber;
+/**
+ * Generate unique ticket number using project's ticket number configuration
+ * Uses the same format as regular ticket creation
+ * @param projectId - Project ID to get ticket number configuration from
+ */
+async function generateTicketNumber(projectId: mongoose.Types.ObjectId): Promise<string> {
+  // Get project with ticket number configuration
+  const project = await Project.findById(projectId).select('configuration.ticketNumberSettings');
+  
+  const ticketNumberConfig = project?.configuration?.ticketNumberSettings;
+  console.log('🔧 [Email-to-Ticket] Ticket Number Config:', JSON.stringify(ticketNumberConfig, null, 2));
+  
+  const prefix = ticketNumberConfig?.prefix || 'TKT';
+  const format = ticketNumberConfig?.format || '{PREFIX}-{YYYY}{MM}{DD}-{NNNN}';
+  const resetPeriod = ticketNumberConfig?.resetPeriod || 'daily';
+  const startingNumber = ticketNumberConfig?.startingNumber || 1;
+  
+  console.log(`🎫 [Email-to-Ticket] Using: prefix="${prefix}", format="${format}", resetPeriod="${resetPeriod}"`);
+  
+  const today = new Date();
+  
+  // Build search pattern based on format (without the number part)
+  let searchPattern = format
+    .replace('{PREFIX}', prefix)
+    .replace('{YYYY}', String(today.getFullYear()))
+    .replace('{MM}', String(today.getMonth() + 1).padStart(2, '0'))
+    .replace('{DD}', String(today.getDate()).padStart(2, '0'))
+    .replace('{NNNN}', ''); // Remove the number part for search
+  
+  // Escape hyphens for regex
+  const regexPattern = searchPattern.replace(/[-]/g, '\\-');
+  
+  // Find the highest ticket number for the current period within the same project
+  const latestTicket = await Ticket.findOne({
+    project: projectId,
+    ticketNumber: new RegExp(`^${regexPattern}`)
+  }).sort({ ticketNumber: -1 }).select('ticketNumber');
+  
+  let nextNumber = startingNumber;
+  if (latestTicket && latestTicket.ticketNumber) {
+    // Extract the sequence number from the last ticket
+    const lastNumber = parseInt(latestTicket.ticketNumber.split('-').pop() || '0');
+    nextNumber = lastNumber + 1;
+  }
+  
+  // Try up to 10 times to find a unique number (in case of race conditions)
+  for (let attempt = 0; attempt < 10; attempt++) {
+    // Generate ticket number based on format
+    let ticketNumber = format
+      .replace('{PREFIX}', prefix)
+      .replace('{YYYY}', String(today.getFullYear()))
+      .replace('{MM}', String(today.getMonth() + 1).padStart(2, '0'))
+      .replace('{DD}', String(today.getDate()).padStart(2, '0'))
+      .replace('{NNNN}', String(nextNumber).padStart(4, '0'));
+    
+    // Check if this number already exists
+    const exists = await Ticket.findOne({ ticketNumber });
+    if (!exists) {
+      console.log(`🎫 [Email-to-Ticket] Generated ticket number: ${ticketNumber}`);
+      return ticketNumber;
+    }
+    
+    nextNumber++;
+  }
+  
+  // Fallback: use timestamp if all attempts fail
+  const fallbackNumber = `${prefix}-${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}-${Date.now().toString().slice(-4)}`;
+  console.log(`⚠️ [Email-to-Ticket] Using fallback ticket number: ${fallbackNumber}`);
+  return fallbackNumber;
 }
 
 /**
@@ -196,12 +300,13 @@ export async function createTicketFromEmail(
     const projectId = emailConfig.projectId;
     console.log(`      ✓ Project ID: ${projectId}`);
 
-    // 3. Extract priority from email
-    const priority = extractPriority(parsedEmail);
-    console.log(`      ✓ Priority: ${priority}`);
+    // 3. Get priority - first check email headers/keywords, then use project default
+    const emailPriority = extractPriorityFromEmail(parsedEmail);
+    const priority = emailPriority || await getProjectDefaultPriority(projectId);
+    console.log(`      ✓ Priority: ${priority}${emailPriority ? ' (from email)' : ' (project default)'}`);
 
-    // 4. Generate ticket number
-    const ticketNumber = await generateTicketNumber();
+    // 4. Generate ticket number using project's configuration
+    const ticketNumber = await generateTicketNumber(projectId);
     console.log(`      ✓ Ticket Number: ${ticketNumber}`);
 
     // 5. Extract description (prefer plain text, fallback to HTML)
@@ -234,27 +339,12 @@ export async function createTicketFromEmail(
       console.log(`      ℹ️ Email has ${attachments.length} attachment(s)`);
     }
 
-    // 7. Extract category from email (if categorization is enabled)
-    // Try to extract category from subject line keywords
-    let ticketCategory: string | undefined = undefined;
-    const categoryKeywords = [
-      { keywords: ['technical', 'tech', 'bug', 'error', 'issue'], category: 'Technical Support' },
-      { keywords: ['billing', 'payment', 'invoice', 'charge'], category: 'Billing' },
-      { keywords: ['account', 'login', 'password', 'access'], category: 'Account' },
-      { keywords: ['general', 'question', 'inquiry', 'help'], category: 'General' },
-    ];
-
-    const subjectLower = (parsedEmail.subject || '').toLowerCase();
-    for (const item of categoryKeywords) {
-      if (item.keywords.some((keyword) => subjectLower.includes(keyword))) {
-        ticketCategory = item.category;
-        console.log(`      ℹ️ Auto-detected category from subject: ${ticketCategory}`);
-        break;
-      }
-    }
+    // 7. Get category - use project's default category for email tickets
+    // (Project admin should configure the appropriate category for email-to-ticket)
+    const ticketCategoryId = await getProjectDefaultCategory(projectId);
 
     // 8. Auto-assign ticket based on project configuration
-    const assignedAgent = await autoAssignTicket(projectId.toString(), ticketCategory);
+    const assignedAgent = await autoAssignTicket(projectId.toString(), undefined);
 
     // 9. Create the ticket
     const ticket = new Ticket({
@@ -266,13 +356,15 @@ export async function createTicketFromEmail(
       createdBy: submitterId,
       assignedTo: assignedAgent || undefined,
       project: projectId,
-      category: ticketCategory,
+      category: ticketCategoryId, // Use ObjectId instead of string
       attachments,
       tags: ['email-to-ticket', `from-${parsedEmail.from.address}`],
       submissionSource: 'email',
       sourceEmail: parsedEmail.from.address,
+      sourceEmailName: parsedEmail.from.name || undefined,
+      sourceEmailConfigId: queueEntry.projectEmailConfigId, // Store which email config received this (for proper reply routing)
       metadata: {
-        projectId: projectId.toString(), // For dashboard queries
+        projectId: projectId, // Store as ObjectId for consistency with dashboard queries
         emailMessageId: parsedEmail.messageId,
         emailDate: parsedEmail.date,
         emailFrom: {
@@ -292,6 +384,21 @@ export async function createTicketFromEmail(
     if (assignedAgent) {
       console.log(`      ✓ Assigned to agent: ${assignedAgent}`);
     }
+
+    // Initialize SLA tracking for the new ticket (non-blocking)
+    (async () => {
+      try {
+        await initializeSLATracking(
+          ticket._id,
+          projectId,
+          ticket.priority,
+          ticket.createdAt
+        );
+        console.log(`   ✅ SLA tracking initialized for email ticket ${ticket.ticketNumber}`);
+      } catch (error) {
+        console.error('   ❌ Failed to initialize SLA tracking for email ticket:', error);
+      }
+    })();
 
     // 8. Log email communication (Task 5.4)
     const emailComm = await logIncomingEmail(ticket._id, parsedEmail);

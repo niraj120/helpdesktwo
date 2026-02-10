@@ -221,6 +221,14 @@ class AutoEscalationService {
         reason: `SLA breach - Auto-escalated to ${levelConfig.escalateTo.targetName}`,
       });
 
+      // Update resolution deadline based on the new level's SLA time
+      // The new deadline is calculated from NOW + the new level's escalateAfter time
+      if (levelConfig.escalateAfter) {
+        const newResolutionDeadline = this.calculateEscalationDeadline(levelConfig.escalateAfter);
+        tracking.resolutionDeadline = newResolutionDeadline;
+        console.log(`📅 Updated resolution deadline to ${newResolutionDeadline.toISOString()} for Level ${nextLevel}`);
+      }
+
       // Calculate next escalation deadline if there's another level
       const subsequentLevel = policy.levels.find((l: any) => l.level === nextLevel + 1);
       if (subsequentLevel && subsequentLevel.escalationMode === 'auto') {

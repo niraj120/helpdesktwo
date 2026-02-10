@@ -53,9 +53,26 @@ const logEmail = async (params: {
 };
 
 // Get email transporter from database configuration
-const getEmailTransporter = async (projectId?: string) => {
+// Supports direct emailConfigId lookup or fallback to projectId
+const getEmailTransporter = async (configIdOrProjectId?: string) => {
   try {
-    const emailConfig = await EmailConfig.findOne(projectId ? { projectId } : {});
+    let emailConfig = null;
+    
+    // Check if the provided ID is a valid ObjectId (could be emailConfigId or projectId)
+    if (configIdOrProjectId) {
+      // Try to find by direct _id first (emailConfigId)
+      emailConfig = await EmailConfig.findById(configIdOrProjectId).exec();
+      
+      // If not found, try by projectId
+      if (!emailConfig) {
+        emailConfig = await EmailConfig.findOne({ projectId: configIdOrProjectId, enabled: true }).exec();
+      }
+    }
+    
+    // Final fallback: any enabled config
+    if (!emailConfig) {
+      emailConfig = await EmailConfig.findOne({ enabled: true }).exec();
+    }
 
     if (!emailConfig || !emailConfig.smtpHost || !emailConfig.smtpUser || !emailConfig.smtpPassword) {
       console.log('⚠️  Email configuration not found or incomplete, using simulation mode');
@@ -1499,6 +1516,7 @@ export const sendTicketReplyEmail = async (params: {
   originalMessageId?: string; // For threading - In-Reply-To header
   referencesChain?: string[]; // Task 7.3: Full chain of previous Message-IDs
   projectId?: string;
+  emailConfigId?: string; // Specific email config to use (for proper reply routing)
 }): Promise<{ success: boolean; messageId?: string; fromEmail?: string; fromName?: string; error?: string }> => {
   // Declare emailConfig outside try block so it's accessible in catch
   let emailConfig: any = null;
@@ -1508,44 +1526,50 @@ export const sendTicketReplyEmail = async (params: {
     console.log(`🎫 Ticket Number: ${params.ticketNumber}`);
     console.log(`👤 Agent: ${params.agentName} (${params.agentEmail})`);
     console.log(`📦 Project ID: ${params.projectId || 'not provided'}`);
+    console.log(`📧 Email Config ID: ${params.emailConfigId || 'not provided'}`);
 
-    // Try to find email config by projectId, fallback to any enabled config
-    emailConfig = params.projectId 
-      ? await EmailConfig.findOne({ projectId: params.projectId, enabled: true })
-      : null;
-    
-    // Fallback: If no config for specific project, use any enabled config
-    if (!emailConfig) {
-      emailConfig = await EmailConfig.findOne({ enabled: true });
+    // Priority: 1. Use specific emailConfigId (same config that received the original email)
+    //          2. Fallback to any enabled config for the project
+    //          3. Fallback to any enabled config
+    if (params.emailConfigId) {
+      emailConfig = await EmailConfig.findById(params.emailConfigId);
       if (emailConfig) {
-        console.log(`   ℹ️ Using fallback email config (no config for projectId: ${params.projectId})`);
+        console.log(`   ✅ Using specific email config: ${emailConfig.fromEmail || emailConfig.smtpUser}`);
+      } else {
+        console.log(`   ⚠️ Email config ${params.emailConfigId} not found, trying project fallback`);
       }
     }
     
-    const transporter = await getEmailTransporter(params.projectId);
+    // Fallback: Use project's email config
+    if (!emailConfig && params.projectId) {
+      emailConfig = await EmailConfig.findOne({ projectId: params.projectId, enabled: true });
+      if (emailConfig) {
+        console.log(`   ℹ️ Using project email config: ${emailConfig.fromEmail || emailConfig.smtpUser}`);
+      }
+    }
+    
+    // Final fallback: Use any enabled config
+    if (!emailConfig) {
+      emailConfig = await EmailConfig.findOne({ enabled: true });
+      if (emailConfig) {
+        console.log(`   ⚠️ Using fallback email config: ${emailConfig.fromEmail || emailConfig.smtpUser}`);
+      }
+    }
+    
+    // Get transporter using the same email config
+    const transporter = await getEmailTransporter(params.emailConfigId || params.projectId);
 
     // Prepare subject with ticket subject for threading (fallback to ticket number)
     const subject = `Re: ${params.ticketSubject || params.ticketNumber}`;
 
-    // Build HTML body with agent reply
-    const htmlBody = params.replyContentHtml || `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h3 style="color: #2c3e50;">Reply from ${params.agentName}</h3>
-        <div style="background-color: #f9f9f9; padding: 20px; margin: 20px 0; border-left: 4px solid #3498db; border-radius: 3px;">
-          ${params.replyContent.replace(/\n/g, '<br>')}
-        </div>
-        <hr style="margin: 30px 0; border: none; border-top: 1px solid #ddd;">
-        <p style="color: #666; font-size: 12px;">
-          <strong>Ticket Number:</strong> ${params.ticketNumber}<br>
-          This is a reply from our support team. You can respond to this email to continue the conversation.
-        </p>
-      </div>
-    `;
+    // Send reply as raw text (no formatting, no headers, no footers)
+    const htmlBody = params.replyContentHtml || params.replyContent;
 
     // Generate Message-ID for this reply
     const replyMessageId = `<ticket-${params.ticketNumber}-reply-${Date.now()}@sac-helpdesk.com>`;
     const fromEmail = emailConfig?.fromEmail || emailConfig?.smtpUser || params.agentEmail || 'support@sac-helpdesk.com';
-    const fromName = emailConfig?.fromName || params.agentName || 'SAC Helpdesk';
+    // Use only email config's fromName - don't show agent name to customer
+    const fromName = emailConfig?.fromName || 'Support';
 
     console.log(`📧 [EMAIL SERVICE] From email resolved to: ${fromEmail} (name: ${fromName})`);
     console.log(`   EmailConfig found: ${!!emailConfig}`);

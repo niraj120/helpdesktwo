@@ -115,24 +115,60 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (statusResponse.data.success && Array.isArray(statusResponse.data.data)) {
-        setStatuses(statusResponse.data.data.map((s: any) => ({ code: s.code, name: s.name })));
+        // Use displayOrder as the numeric code (matches ticket.status which is numeric)
+        const statusData = statusResponse.data.data.map((s: any) => ({ 
+          code: s.displayOrder, // Use displayOrder (numeric) not code (text)
+          name: s.name 
+        }));
+        
+        // If no statuses found, use default standard statuses
+        if (statusData.length === 0) {
+          console.warn('⚠️ No statuses found for project, using defaults');
+          setStatuses([
+            { code: 1, name: 'Open' },
+            { code: 2, name: 'In Progress' },
+            { code: 3, name: 'On Hold' },
+            { code: 4, name: 'Resolved' },
+            { code: 5, name: 'Closed' },
+          ]);
+        } else {
+          setStatuses(statusData);
+        }
+      } else {
+        // API failed, use defaults
+        console.warn('⚠️ Status API failed, using defaults');
+        setStatuses([
+          { code: 1, name: 'Open' },
+          { code: 2, name: 'In Progress' },
+          { code: 3, name: 'On Hold' },
+          { code: 4, name: 'Resolved' },
+          { code: 5, name: 'Closed' },
+        ]);
       }
 
-      // Fetch priorities from SLA rules (use SLA rule names as priorities)
+      // Fetch priorities from SLA rules (use SLA rule priority field)
       const slaResponse = await axios.get(`${API_BASE_URL}/sla-rules?projectId=${projectId}&isActive=true`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
       if (slaResponse.data.success && Array.isArray(slaResponse.data.data)) {
-        // Use SLA rule names as priorities (e.g., "Low", "Medium", "High")
+        // Use SLA priority field (LOW, MEDIUM, HIGH) to match ticket.priority
         const priorityList = slaResponse.data.data.map((sla: any) => ({ 
-          code: sla.name.toLowerCase(), 
-          name: sla.name 
+          code: sla.priority, // Use priority field (e.g., "LOW", "MEDIUM", "HIGH")
+          name: sla.name // Display name (e.g., "Low", "Medium", "High")
         }));
         setPriorities(priorityList);
       }
     } catch (err) {
       console.error('Error fetching master data:', err);
+      // On error, set default statuses so filtering still works
+      setStatuses([
+        { code: 1, name: 'Open' },
+        { code: 2, name: 'In Progress' },
+        { code: 3, name: 'On Hold' },
+        { code: 4, name: 'Resolved' },
+        { code: 5, name: 'Closed' },
+      ]);
     }
   }, []);
 
@@ -495,6 +531,10 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                 {priorities.map((priority) => (
                   <option key={priority.code} value={priority.code}>
                     {priority.name}
+                  </option>
+                ))}
+              </select>
+            </div>
             {/* Task 6.1: Source Filter */}
             <div>
               <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 500, color: '#374151' }}>
@@ -516,10 +556,6 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                 <option value="online">Online</option>
                 <option value="offline">Offline</option>
                 <option value="email">Email</option>
-              </select>
-            </div>
-                  </option>
-                ))}
               </select>
             </div>
           </div>
@@ -734,7 +770,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                           color: 'white',
                           backgroundColor: getPriorityColor(ticket.priority),
                         }}>
-                          {ticket.priority || 'N/A'}
+                          {ticket.priority ? (ticket.priority.charAt(0).toUpperCase() + ticket.priority.slice(1).toLowerCase()) : 'N/A'}
                         </span>
                       </td>
                       <td style={{ padding: '12px 16px', fontSize: '14px', color: '#6B7280' }}>
@@ -746,7 +782,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                         }
                       </td>
                       <td style={{ padding: '12px 16px', fontSize: '14px', color: '#6B7280' }}>
-                        {ticket.metadata?.createdByName || ticket.metadata?.studentName || 'N/A'}
+                        {ticket.metadata?.createdByName || ticket.metadata?.studentName || (ticket.submissionSource === 'email' && ticket.sourceEmail) || 'N/A'}
                       </td>
                       <td style={{ padding: '12px 16px', fontSize: '14px', color: '#6B7280' }}>
                         {ticket.assignedTo ? `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}` : 'Unassigned'}

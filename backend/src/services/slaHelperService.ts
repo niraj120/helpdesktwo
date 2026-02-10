@@ -32,20 +32,34 @@ export const initializeSLATracking = async (
 
     // Calculate deadlines
     const responseDeadline = calculateDeadline(createdAt, slaRule.responseTime);
-    const resolutionDeadline = calculateDeadline(createdAt, slaRule.resolutionTime);
-
+    
     // Get escalation policy
     const escalationPolicy = slaRule.escalationPolicyId
       ? await EscalationPolicy.findById(slaRule.escalationPolicyId)
       : null;
 
-    // Calculate first auto-escalation deadline if policy exists
+    // Calculate resolution deadline - use first level's time if escalation policy exists
+    let resolutionDeadline: Date;
     let nextEscalationDue: Date | undefined = undefined;
+    
     if (escalationPolicy && escalationPolicy.levels.length > 0) {
       const firstLevel = escalationPolicy.levels.find(l => l.level === 1);
-      if (firstLevel && firstLevel.escalationMode === 'auto') {
-        nextEscalationDue = calculateDeadline(createdAt, firstLevel.escalateAfter);
+      if (firstLevel) {
+        // Use escalation policy's first level time as the initial SLA
+        resolutionDeadline = calculateDeadline(createdAt, firstLevel.escalateAfter);
+        console.log(`📅 Using L1 escalation time for resolution deadline: ${resolutionDeadline.toISOString()}`);
+        
+        // Set next escalation due for auto-escalation
+        if (firstLevel.escalationMode === 'auto') {
+          nextEscalationDue = resolutionDeadline; // Same as resolution deadline for L1
+        }
+      } else {
+        // Fallback to SLA rule resolution time
+        resolutionDeadline = calculateDeadline(createdAt, slaRule.resolutionTime);
       }
+    } else {
+      // No escalation policy - use SLA rule resolution time
+      resolutionDeadline = calculateDeadline(createdAt, slaRule.resolutionTime);
     }
 
     // Create SLA tracking record

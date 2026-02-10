@@ -89,22 +89,83 @@ export const createRole = async (req: AuthRequest, res: Response) => {
       return;
     }
 
+    // Sanitize permissions - handle stringified arrays and ensure valid ObjectIds
+    let sanitizedPermissions: string[] = [];
+    let permissionsToParse: any[] = [];
+    
+    // Handle case where permissions is a JSON string (from FormData/multipart)
+    if (permissions && typeof permissions === 'string') {
+      try {
+        const parsed = JSON.parse(permissions);
+        if (Array.isArray(parsed)) {
+          permissionsToParse = parsed;
+        }
+      } catch {
+        // Not valid JSON, ignore
+      }
+    } else if (permissions && Array.isArray(permissions)) {
+      permissionsToParse = permissions;
+    }
+    
+    for (const perm of permissionsToParse) {
+      if (typeof perm === 'string') {
+        if (perm.startsWith('[')) {
+          try {
+            const parsed = JSON.parse(perm);
+            if (Array.isArray(parsed)) {
+              sanitizedPermissions.push(...parsed.filter((p: any) => 
+                typeof p === 'string' && /^[0-9a-fA-F]{24}$/.test(p)
+              ));
+            }
+          } catch {
+            if (/^[0-9a-fA-F]{24}$/.test(perm)) {
+              sanitizedPermissions.push(perm);
+            }
+          }
+        } else if (/^[0-9a-fA-F]{24}$/.test(perm)) {
+          sanitizedPermissions.push(perm);
+        }
+      } else if (typeof perm === 'object' && perm) {
+        const id = perm._id?.toString() || perm.toString();
+        if (/^[0-9a-fA-F]{24}$/.test(id)) {
+          sanitizedPermissions.push(id);
+        }
+      }
+    }
+    sanitizedPermissions = [...new Set(sanitizedPermissions)];
+
     // Prepare role data
     const roleData: any = {
       name,
       code: roleCode,
       description,
-      permissions: permissions || [],
+      permissions: sanitizedPermissions,
       type: type || 'custom',
       isMaster: isMaster || false,
     };
 
-    // Handle project mapping
+    // Handle project mapping - handle JSON string from FormData
+    let projectsToUse: any[] | undefined;
+    if (projects) {
+      if (typeof projects === 'string') {
+        try {
+          const parsed = JSON.parse(projects);
+          if (Array.isArray(parsed)) {
+            projectsToUse = parsed;
+          }
+        } catch {
+          // Not valid JSON
+        }
+      } else if (Array.isArray(projects)) {
+        projectsToUse = projects;
+      }
+    }
+    
     // If projects array provided, use it
     // If single projectId provided (backward compatibility), convert to array
-    if (projects && Array.isArray(projects) && projects.length > 0) {
-      roleData.projects = projects;
-      roleData.projectId = projects[0]; // Set first project as projectId for backward compatibility
+    if (projectsToUse && projectsToUse.length > 0) {
+      roleData.projects = projectsToUse;
+      roleData.projectId = projectsToUse[0]; // Set first project as projectId for backward compatibility
     } else if (projectId) {
       roleData.projectId = projectId;
       roleData.projects = [projectId];
@@ -205,10 +266,62 @@ export const updateRole = async (req: AuthRequest, res: Response) => {
     // Check if permissions are actually changing
     let permissionsChanged = false;
     if (permissions !== undefined) {
+      // Sanitize permissions - handle stringified arrays and ensure valid ObjectIds
+      let sanitizedPermissions: string[] = [];
+      let permissionsToParse: any[] = [];
+      
+      // Handle case where permissions is a JSON string (from FormData/multipart)
+      if (typeof permissions === 'string') {
+        try {
+          const parsed = JSON.parse(permissions);
+          if (Array.isArray(parsed)) {
+            permissionsToParse = parsed;
+          }
+        } catch {
+          // Not valid JSON, ignore
+        }
+      } else if (Array.isArray(permissions)) {
+        permissionsToParse = permissions;
+      }
+      
+      for (const perm of permissionsToParse) {
+        if (typeof perm === 'string') {
+          // Check if it's a JSON array string
+          if (perm.startsWith('[')) {
+            try {
+              const parsed = JSON.parse(perm);
+              if (Array.isArray(parsed)) {
+                sanitizedPermissions.push(...parsed.filter((p: any) => 
+                  typeof p === 'string' && /^[0-9a-fA-F]{24}$/.test(p)
+                ));
+              }
+            } catch {
+              // Not valid JSON, check if plain ObjectId
+              if (/^[0-9a-fA-F]{24}$/.test(perm)) {
+                sanitizedPermissions.push(perm);
+              }
+            }
+          } else if (/^[0-9a-fA-F]{24}$/.test(perm)) {
+            sanitizedPermissions.push(perm);
+          }
+        } else if (typeof perm === 'object' && perm) {
+          // Handle populated objects or ObjectIds
+          const id = perm._id?.toString() || perm.toString();
+          if (/^[0-9a-fA-F]{24}$/.test(id)) {
+            sanitizedPermissions.push(id);
+          }
+        }
+      }
+      
+      // Remove duplicates
+      sanitizedPermissions = [...new Set(sanitizedPermissions)];
+      
+      console.log('📋 Permissions sanitized:', permissionsToParse.length, '→', sanitizedPermissions.length);
+      
       const oldPermissions = role.permissions.map(p => p.toString()).sort();
-      const newPermissions = permissions.map((p: any) => p.toString()).sort();
+      const newPermissions = sanitizedPermissions.sort();
       permissionsChanged = JSON.stringify(oldPermissions) !== JSON.stringify(newPermissions);
-      role.permissions = permissions;
+      role.permissions = sanitizedPermissions as any;
     }
 
     if (isMaster !== undefined) {
@@ -221,10 +334,26 @@ export const updateRole = async (req: AuthRequest, res: Response) => {
       console.log('✅ Set isAgent to:', isAgent);
     }
 
-    // Update project mapping
-    if (projects && Array.isArray(projects)) {
-      role.projects = projects;
-      role.projectId = projects.length > 0 ? projects[0] : undefined;
+    // Update project mapping - handle JSON string from FormData
+    let projectsToUpdate: any[] | undefined;
+    if (projects) {
+      if (typeof projects === 'string') {
+        try {
+          const parsed = JSON.parse(projects);
+          if (Array.isArray(parsed)) {
+            projectsToUpdate = parsed;
+          }
+        } catch {
+          // Not valid JSON
+        }
+      } else if (Array.isArray(projects)) {
+        projectsToUpdate = projects;
+      }
+    }
+    
+    if (projectsToUpdate && projectsToUpdate.length > 0) {
+      role.projects = projectsToUpdate;
+      role.projectId = projectsToUpdate[0];
     } else if (projectId) {
       role.projectId = projectId;
       role.projects = [projectId];

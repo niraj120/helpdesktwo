@@ -63,6 +63,7 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
   const [slaRules, setSlaRules] = useState<any[]>([]);
   const [allSlaRules, setAllSlaRules] = useState<any[]>([]); // Store all SLA rules
   const [roles, setRoles] = useState<any[]>([]);
+  const [allRoles, setAllRoles] = useState<any[]>([]); // Store all roles for filtering
 
   useEffect(() => {
     if (isOpen) {
@@ -103,6 +104,50 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
       setSlaRules([]);
     }
   }, [formData.projectId, allSlaRules]);
+
+  // Filter roles when project changes
+  useEffect(() => {
+    console.log('🔄 Role filtering effect triggered. Project ID:', formData.projectId, 'All roles:', allRoles.length);
+    
+    if (formData.projectId && allRoles.length > 0) {
+      const filtered = allRoles.filter(role => {
+        console.log(`  Checking role: ${role.name}`);
+        console.log('    - projects:', role.projects);
+        console.log('    - projectId:', role.projectId);
+        
+        // Check if role has the project in its projects array
+        let hasMatch = false;
+        
+        // Check projects array (new format)
+        if (role.projects && Array.isArray(role.projects) && role.projects.length > 0) {
+          hasMatch = role.projects.some((pid: any) => {
+            const pidString = typeof pid === 'object' ? (pid._id || pid.toString()) : pid.toString();
+            const formProjectIdString = formData.projectId.toString();
+            console.log(`    - Comparing projects: ${pidString} === ${formProjectIdString}`);
+            return pidString === formProjectIdString;
+          });
+        }
+        
+        // Also check single projectId (legacy format)
+        if (!hasMatch && role.projectId) {
+          const roleProjectIdString = typeof role.projectId === 'object' 
+            ? (role.projectId._id || role.projectId.toString()) 
+            : role.projectId.toString();
+          const formProjectIdString = formData.projectId.toString();
+          console.log(`    - Comparing projectId: ${roleProjectIdString} === ${formProjectIdString}`);
+          hasMatch = roleProjectIdString === formProjectIdString;
+        }
+        
+        console.log(`    - Match: ${hasMatch}`);
+        return hasMatch;
+      });
+      
+      setRoles(filtered);
+      console.log(`✅ Filtered ${filtered.length} roles for project ${formData.projectId}:`, filtered.map(r => r.name));
+    } else {
+      setRoles([]);
+    }
+  }, [formData.projectId, allRoles]);
 
   useEffect(() => {
     if (initialData && mode === 'edit') {
@@ -247,27 +292,21 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
 
       console.log('🔍 All roles fetched:', rolesList.length, rolesList);
 
-      // Filter roles: Only show roles with isAgent=true
-      const agentRoles = rolesList.filter(role => {
-        const hasIsAgent = role.isAgent === true;
-        console.log(`  Role: ${role.name}, isAgent: ${role.isAgent}, include: ${hasIsAgent}`);
-        return hasIsAgent;
-      });
-
-      console.log('✅ Agent roles (isAgent=true):', agentRoles.length, agentRoles.map(r => r.name));
-
-      // Normalize role objects to {_id, name, isAgent}
-      const normalized = agentRoles.map(r => ({
+      // Normalize role objects to {_id, name, isAgent, projects, projectId}
+      // Include ALL roles (removed isAgent filter per user request)
+      const normalized = rolesList.map(r => ({
         _id: r._id || r.id,
         name: r.name || r.title || r.displayName || r.code || '',
         isAgent: r.isAgent,
+        projects: r.projects || [], // Array of project IDs
+        projectId: r.projectId, // Single project ID (legacy)
       })).filter(r => r._id && r.name);
 
-      console.log('📋 Normalized agent roles for dropdown:', normalized);
-      setRoles(normalized);
+      console.log('📋 Normalized roles for dropdown:', normalized);
+      setAllRoles(normalized); // Store all roles, will be filtered by project
     } catch (error) {
       console.error('❌ Error fetching roles:', error);
-      setRoles([]);
+      setAllRoles([]);
     }
   };
 

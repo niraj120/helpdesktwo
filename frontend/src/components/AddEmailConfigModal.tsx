@@ -7,8 +7,13 @@ import {
   ServerIcon,
   SignalIcon,
   CheckCircleIcon,
-  ExclamationCircleIcon
+  ExclamationCircleIcon,
+  InformationCircleIcon
 } from '@heroicons/react/24/outline';
+
+// Provider and auth method types
+type EmailProvider = 'google' | 'microsoft' | 'other';
+type AuthMethod = 'basic' | 'app_password';// | 'oauth2'; // OAuth2 disabled for now
 
 interface EmailConfig {
   _id: string;
@@ -19,6 +24,8 @@ interface EmailConfig {
   smtpHost: string;
   smtpPort: number;
   smtpUsername: string;
+  provider?: EmailProvider;
+  authMethod?: AuthMethod;
 }
 
 interface EmailConfigModalProps {
@@ -39,11 +46,54 @@ interface FormData {
   smtpPort: number | string;
   smtpUsername: string;
   smtpPassword: string;
+  provider: EmailProvider;
+  authMethod: AuthMethod;
 }
 
 interface ValidationErrors {
   [key: string]: string;
 }
+
+// Detect email provider from email address
+const detectEmailProvider = (email: string): EmailProvider => {
+  const lowerEmail = email.toLowerCase();
+  if (lowerEmail.includes('@gmail.com') || lowerEmail.includes('@googlemail.com')) {
+    return 'google';
+  }
+  if (lowerEmail.includes('@outlook.') || lowerEmail.includes('@hotmail.') || 
+      lowerEmail.includes('@live.') || lowerEmail.includes('@msn.') ||
+      lowerEmail.includes('@microsoft.com')) {
+    return 'microsoft';
+  }
+  return 'other';
+};
+
+// Get provider defaults
+const getProviderDefaults = (provider: EmailProvider) => {
+  switch (provider) {
+    case 'google':
+      return {
+        imapHost: 'imap.gmail.com',
+        imapPort: 993,
+        smtpHost: 'smtp.gmail.com',
+        smtpPort: 587,
+      };
+    case 'microsoft':
+      return {
+        imapHost: 'outlook.office365.com',
+        imapPort: 993,
+        smtpHost: 'smtp.office365.com',
+        smtpPort: 587,
+      };
+    default:
+      return {
+        imapHost: '',
+        imapPort: 993,
+        smtpHost: '',
+        smtpPort: 587,
+      };
+  }
+};
 
 const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
   isOpen,
@@ -65,6 +115,8 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
         smtpPort: editingConfig.smtpPort,
         smtpUsername: editingConfig.smtpUsername,
         smtpPassword: '', // Don't pre-fill passwords for security
+        provider: editingConfig.provider || detectEmailProvider(editingConfig.emailAddress),
+        authMethod: editingConfig.authMethod || 'basic',
       };
     }
     return {
@@ -76,7 +128,9 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
       smtpHost: '',
       smtpPort: 587,
       smtpUsername: '',
-      smtpPassword: ''
+      smtpPassword: '',
+      provider: 'other',
+      authMethod: 'basic',
     };
   };
 
@@ -153,7 +207,29 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
   };
 
   const handleInputChange = (field: keyof FormData, value: string | number) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    let updatedData = { ...formData, [field]: value };
+    
+    // Auto-detect provider and set defaults when email changes
+    if (field === 'emailAddress' && typeof value === 'string') {
+      const provider = detectEmailProvider(value);
+      if (provider !== formData.provider) {
+        const defaults = getProviderDefaults(provider);
+        updatedData = {
+          ...updatedData,
+          provider,
+          imapHost: defaults.imapHost,
+          imapPort: defaults.imapPort,
+          smtpHost: defaults.smtpHost,
+          smtpPort: defaults.smtpPort,
+          imapUsername: value,
+          smtpUsername: value,
+          // Recommend app_password for Google/Microsoft
+          authMethod: (provider === 'google' || provider === 'microsoft') ? 'app_password' : 'basic',
+        };
+      }
+    }
+    
+    setFormData(updatedData);
     // Clear error for this field when user types
     if (errors[field]) {
       setErrors(prev => {
@@ -184,6 +260,7 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
       const response = await axios.post(
         `${API_CONFIG.API_URL}/projects/${projectId}/email-configs/test-credentials`,
         {
+          emailAddress: formData.emailAddress,
           imapHost: formData.imapHost,
           imapPort: Number(formData.imapPort),
           imapUsername: formData.imapUsername,
@@ -192,6 +269,8 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
           smtpPort: Number(formData.smtpPort),
           smtpUsername: formData.smtpUsername,
           smtpPassword: formData.smtpPassword,
+          provider: formData.provider,
+          authMethod: formData.authMethod,
         },
         {
           headers: { Authorization: `Bearer ${token}` },
@@ -247,6 +326,8 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
         smtp_host: formData.smtpHost,
         smtp_port: Number(formData.smtpPort),
         smtp_username: formData.smtpUsername,
+        provider: formData.provider,
+        authMethod: formData.authMethod,
       };
 
       // Only include passwords if provided (required for add, optional for edit)
@@ -362,6 +443,100 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
               />
               {errors.emailAddress && (
                 <p className="mt-1 text-sm text-red-600">{errors.emailAddress}</p>
+              )}
+            </div>
+
+            {/* Provider Info Banner */}
+            {formData.provider !== 'other' && (
+              <div className={`flex items-start p-4 rounded-lg ${
+                formData.provider === 'google' 
+                  ? 'bg-blue-50 border border-blue-200' 
+                  : 'bg-sky-50 border border-sky-200'
+              }`}>
+                <InformationCircleIcon className={`w-5 h-5 mt-0.5 mr-3 flex-shrink-0 ${
+                  formData.provider === 'google' ? 'text-blue-600' : 'text-sky-600'
+                }`} />
+                <div className="flex-1">
+                  <p className={`text-sm font-medium ${
+                    formData.provider === 'google' ? 'text-blue-800' : 'text-sky-800'
+                  }`}>
+                    {formData.provider === 'google' ? 'Google Gmail Detected' : 'Microsoft Outlook Detected'}
+                  </p>
+                  <p className={`text-sm mt-1 ${
+                    formData.provider === 'google' ? 'text-blue-700' : 'text-sky-700'
+                  }`}>
+                    {formData.provider === 'google' ? (
+                      <>
+                        Gmail requires an <strong>App Password</strong> instead of your regular password.
+                        <a 
+                          href="https://myaccount.google.com/apppasswords" 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="ml-1 underline hover:text-blue-900"
+                        >
+                          Create App Password
+                        </a>
+                        <span className="block mt-1 text-xs">
+                          Note: You must have 2-Step Verification enabled to create App Passwords.
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        Microsoft Outlook requires an <strong>App Password</strong> instead of your regular password.
+                        <a 
+                          href="https://account.live.com/proofs/AppPassword" 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="ml-1 underline hover:text-sky-900"
+                        >
+                          Create App Password
+                        </a>
+                        <span className="block mt-1 text-xs">
+                          Note: You must have 2-Step Verification enabled to create App Passwords.
+                        </span>
+                      </>
+                    )}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Authentication Method */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Authentication Method
+              </label>
+              <div className="flex gap-4">
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="authMethod"
+                    value="basic"
+                    checked={formData.authMethod === 'basic'}
+                    onChange={() => handleInputChange('authMethod', 'basic')}
+                    className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                  />
+                  <span className="ml-2 text-sm text-gray-700">Basic Password</span>
+                </label>
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="authMethod"
+                    value="app_password"
+                    checked={formData.authMethod === 'app_password'}
+                    onChange={() => handleInputChange('authMethod', 'app_password')}
+                    className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                  />
+                  <span className="ml-2 text-sm text-gray-700">App Password</span>
+                  {(formData.provider === 'google' || formData.provider === 'microsoft') && (
+                    <span className="ml-1 text-xs text-green-600 font-medium">(Recommended)</span>
+                  )}
+                </label>
+              </div>
+              {formData.authMethod === 'app_password' && (
+                <p className="mt-1 text-xs text-gray-500">
+                  App Passwords are 16-character codes that give apps access to your email without your main password.
+                </p>
               )}
             </div>
 
