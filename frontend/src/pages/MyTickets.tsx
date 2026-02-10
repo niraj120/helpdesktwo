@@ -504,8 +504,8 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                 }}
               >
                 <option value="all">All</option>
-                {statuses.map((status) => (
-                  <option key={status.code} value={status.code}>
+                {statuses.map((status, index) => (
+                  <option key={`status-${status.code}-${index}`} value={status.code}>
                     {status.name}
                   </option>
                 ))}
@@ -528,8 +528,8 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                 }}
               >
                 <option value="all">All</option>
-                {priorities.map((priority) => (
-                  <option key={priority.code} value={priority.code}>
+                {priorities.map((priority, index) => (
+                  <option key={`priority-${priority.code}-${index}`} value={priority.code}>
                     {priority.name}
                   </option>
                 ))}

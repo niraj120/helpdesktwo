@@ -224,18 +224,28 @@ class AutoEscalationService {
       // Update resolution deadline based on the new level's SLA time
       // The new deadline is calculated from NOW + the new level's escalateAfter time
       if (levelConfig.escalateAfter) {
+        const escalationTime = new Date(); // Time when escalation happens
         const newResolutionDeadline = this.calculateEscalationDeadline(levelConfig.escalateAfter);
         tracking.resolutionDeadline = newResolutionDeadline;
-        console.log(`📅 Updated resolution deadline to ${newResolutionDeadline.toISOString()} for Level ${nextLevel}`);
-      }
-
-      // Calculate next escalation deadline if there's another level
-      const subsequentLevel = policy.levels.find((l: any) => l.level === nextLevel + 1);
-      if (subsequentLevel && subsequentLevel.escalationMode === 'auto') {
-        const nextDueDate = this.calculateEscalationDeadline(
-          subsequentLevel.escalateAfter
-        );
-        tracking.nextEscalationDue = nextDueDate;
+        
+        const slaHours = levelConfig.escalateAfter.unit === 'hours' ? levelConfig.escalateAfter.value : 
+                        levelConfig.escalateAfter.unit === 'minutes' ? levelConfig.escalateAfter.value / 60 :
+                        levelConfig.escalateAfter.value * 24;
+        
+        console.log(`📅 L${nextLevel} SLA Timing:`);
+        console.log(`   ↳ Escalation Time: ${escalationTime.toISOString()}`);
+        console.log(`   ↳ SLA Duration: ${slaHours} hours`);
+        console.log(`   ↳ Resolution Deadline: ${newResolutionDeadline.toISOString()}`);
+        console.log(`   ↳ Calculation: NOW (${escalationTime.toISOString()}) + ${slaHours}h = ${newResolutionDeadline.toISOString()}`);
+        
+        // If there's another level and current level is auto-escalation, set next escalation to same as resolution deadline
+        const subsequentLevel = policy.levels.find((l: any) => l.level === nextLevel + 1);
+        if (subsequentLevel && levelConfig.escalationMode === 'auto') {
+          tracking.nextEscalationDue = newResolutionDeadline; // Same as resolution deadline - when current level expires
+          console.log(`   ↳ Next escalation due: ${newResolutionDeadline.toISOString()} (when L${nextLevel} SLA expires)`);
+        } else {
+          tracking.nextEscalationDue = undefined;
+        }
       } else {
         tracking.nextEscalationDue = undefined;
       }

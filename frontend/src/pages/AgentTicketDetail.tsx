@@ -94,6 +94,7 @@ interface Ticket {
   internalNotes?: InternalNote[];
   attachments?: Attachment[];
   escalationHistory?: EscalationRecord[];
+  changeHistory?: ChangeHistory[];
   slaTracking?: SLATrackingData; // SLA tracking data from backend
 }
 
@@ -192,6 +193,21 @@ interface EscalationRecord {
   };
   reason: string;
   escalatedAt: string;
+}
+
+interface ChangeHistory {
+  _id: string;
+  field: string;
+  oldValue: string;
+  newValue: string;
+  changedBy: {
+    _id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+  };
+  changedAt: string;
+  changeType: 'update' | 'add' | 'remove';
 }
 
 interface Category {
@@ -537,10 +553,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
         }
         
         if (ticketConfig.categories?.length > 0) {
-          setCategories(ticketConfig.categories.map((cat: string) => ({ 
-            _id: cat, 
-            name: cat 
-          })));
+          // Categories can be either objects {_id, name} or strings
+          setCategories(ticketConfig.categories.map((cat: any) => 
+            typeof cat === 'string' ? { _id: cat, name: cat } : cat
+          ));
         }
         
         if (ticketConfig.allowedPriorities?.length > 0) {
@@ -721,11 +737,22 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
   };
 
   const handleUpdateStatus = async (statusOverride?: string | number) => {
-    const statusToUpdate = statusOverride || newStatus;
-    if (!statusToUpdate || !ticket) return;
+    if (!ticket) return;
+    
+    const statusToUpdate = statusOverride !== undefined ? statusOverride : newStatus;
+    if (!statusToUpdate && statusToUpdate !== 0) return; // Allow 0 as a valid status
 
     // Convert to number (status codes are now numeric: 1=open, 2=in-progress, 3=on-hold, 4=resolved, 5=closed)
-    const statusCode = typeof statusToUpdate === 'string' ? Number(statusToUpdate) : statusToUpdate;
+    let statusCode: number;
+    if (typeof statusToUpdate === 'string') {
+      statusCode = Number(statusToUpdate);
+      if (isNaN(statusCode)) {
+        console.error('❌ Invalid status value:', statusToUpdate);
+        return;
+      }
+    } else {
+      statusCode = statusToUpdate;
+    }
 
     console.log('🔄 Updating status to:', statusToUpdate, '→', statusCode);
     console.log('🔍 Type of statusCode:', typeof statusCode);
@@ -757,24 +784,33 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
     }
   };
 
-  const handleUpdateCategory = async () => {
-    if (!newCategory || !ticket) return;
+  const handleUpdateCategory = async (categoryOverride?: string) => {
+    const categoryToUpdate = categoryOverride || newCategory;
+    if (!categoryToUpdate || !ticket) return;
+
+    console.log('🔄 Updating category to:', categoryToUpdate);
 
     try {
       const token = localStorage.getItem('authToken');
-      await axios.patch(
+      const response = await axios.patch(
         `${API_CONFIG.API_URL}/tickets/${ticket._id}/category`,
-        { category: newCategory },
+        { category: categoryToUpdate },
         {
           headers: { Authorization: `Bearer ${token}` },
         }
       );
+      
+      console.log('✅ Category update response:', response.data);
+      
       // Refresh ticket details to get updated data
       await fetchTicketDetails();
+      
+      console.log('🔄 Ticket refreshed, new category should be:', categoryToUpdate);
+      
       setIsEditingCategory(false);
       setNewCategory('');
     } catch (error) {
-      console.error('Error updating category:', error);
+      console.error('❌ Error updating category:', error);
       alert('Failed to update category');
     }
   };
@@ -1603,31 +1639,214 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                     {/* Escalation History */}
                     {ticket.escalationHistory && ticket.escalationHistory.length > 0 ? (
                       <div className="space-y-3">
-                        <h3 className="text-sm font-medium text-gray-900">Escalation History</h3>
-                        {ticket.escalationHistory.map((record) => (
-                          <div key={record._id} className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                            <div className="flex items-start space-x-3">
-                              <ArrowUpIcon className="h-5 w-5 text-red-600 flex-shrink-0 mt-1" />
-                              <div>
-                                <p className="text-sm text-gray-900">
-                                  Escalated to <span className="font-medium">{record.escalatedTo.firstName} {record.escalatedTo.lastName}</span>
-                                </p>
-                                <p className="text-xs text-gray-600 mt-1">
-                                  By {record.escalatedBy.firstName} {record.escalatedBy.lastName}
-                                </p>
-                                <p className="text-sm text-gray-700 mt-2">{record.reason}</p>
-                                <p className="text-xs text-gray-500 mt-1">
-                                  {new Date(record.escalatedAt).toLocaleString()}
-                                </p>
+                        <h3 className="text-sm font-medium text-gray-900">Escalation Timeline</h3>
+                        
+                        {/* Initial Creation Record */}
+                        {(() => {
+                          const createdAt = new Date(ticket.createdAt);
+                          const firstEscalation = ticket.escalationHistory[0];
+                          const firstEscalationTime = new Date(firstEscalation.escalatedAt);
+                          
+                          const timeAtL0 = firstEscalationTime.getTime() - createdAt.getTime();
+                          const hours = Math.floor(timeAtL0 / (1000 * 60 * 60));
+                          const minutes = Math.floor((timeAtL0 % (1000 * 60 * 60)) / (1000 * 60));
+                          
+                          return (
+                            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                              <div className="flex items-start space-x-3">
+                                <svg className="h-5 w-5 text-blue-600 flex-shrink-0 mt-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                </svg>
+                                <div className="flex-1">
+                                  <div className="flex items-center justify-between">
+                                    <p className="text-sm font-medium text-gray-900">
+                                      Ticket Created
+                                    </p>
+                                    <span className="text-xs font-medium text-blue-600 bg-blue-100 px-2 py-1 rounded">
+                                      Initial Level
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-gray-600 mt-1">
+                                    Created by {ticket.createdBy?.firstName} {ticket.createdBy?.lastName}
+                                  </p>
+                                  <div className="mt-3 grid grid-cols-2 gap-4 text-xs">
+                                    <div>
+                                      <p className="text-gray-500">Created At:</p>
+                                      <p className="font-medium text-gray-900">
+                                        {createdAt.toLocaleDateString()} {createdAt.toLocaleTimeString()}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-gray-500">Time Before Escalation:</p>
+                                      <p className="font-medium text-gray-900">
+                                        {hours > 0 ? `${hours}h ` : ''}{minutes}m
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })()}
+                        
+                        {/* Escalation Records */}
+                        {ticket.escalationHistory?.map((record, index) => {
+                          // Calculate time at this level (time until next escalation or now)
+                          const escalatedAt = new Date(record.escalatedAt);
+                          const nextEscalation = ticket.escalationHistory?.[index + 1];
+                          const endTime = nextEscalation 
+                            ? new Date(nextEscalation.escalatedAt) 
+                            : new Date();
+                          
+                          const timeAtLevel = endTime.getTime() - escalatedAt.getTime();
+                          const hours = Math.floor(timeAtLevel / (1000 * 60 * 60));
+                          const minutes = Math.floor((timeAtLevel % (1000 * 60 * 60)) / (1000 * 60));
+                          
+                          const isAutoEscalation = record.escalatedBy === null || record.escalatedBy === undefined;
+                          
+                          return (
+                            <div key={record._id} className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                              <div className="flex items-start space-x-3">
+                                <ArrowUpIcon className="h-5 w-5 text-orange-600 flex-shrink-0 mt-1" />
+                                <div className="flex-1">
+                                  <div className="flex items-center justify-between">
+                                    <p className="text-sm font-medium text-gray-900">
+                                      Escalated to <span className="text-orange-700">{record.escalatedTo.firstName} {record.escalatedTo.lastName}</span>
+                                    </p>
+                                    <span className="text-xs font-medium text-orange-600 bg-orange-100 px-2 py-1 rounded">
+                                      Level {index + 1}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-gray-600 mt-1">
+                                    {isAutoEscalation ? (
+                                      <span className="inline-flex items-center">
+                                        🤖 <span className="ml-1">Auto-escalated by system</span>
+                                      </span>
+                                    ) : (
+                                      <>By {record.escalatedBy.firstName} {record.escalatedBy.lastName}</>
+                                    )}
+                                  </p>
+                                  <p className="text-sm text-gray-700 mt-2">{record.reason}</p>
+                                  <div className="mt-3 grid grid-cols-2 gap-4 text-xs">
+                                    <div>
+                                      <p className="text-gray-500">Escalated At:</p>
+                                      <p className="font-medium text-gray-900">
+                                        {escalatedAt.toLocaleDateString()} {escalatedAt.toLocaleTimeString()}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-gray-500">Time at this Level:</p>
+                                      <p className="font-medium text-gray-900">
+                                        {hours > 0 ? `${hours}h ` : ''}{minutes}m
+                                        {!nextEscalation && <span className="text-orange-600 ml-1">(ongoing)</span>}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+
+                    {/* Change History */}
+                    {ticket.changeHistory && ticket.changeHistory.length > 0 ? (
+                      <div className="space-y-3 mt-6">
+                        <h3 className="text-sm font-medium text-gray-900">Change History</h3>
+                        
+                        {ticket.changeHistory.map((change) => {
+                          const changedAt = new Date(change.changedAt);
+                          
+                          // Format field name for display
+                          const fieldDisplayNames: Record<string, string> = {
+                            'status': 'Status',
+                            'priority': 'Priority',
+                            'assignedTo': 'Assigned Agent',
+                            'category': 'Category',
+                            'tags': 'Tags',
+                            'subject': 'Subject',
+                            'description': 'Description'
+                          };
+                          
+                          const fieldDisplay = fieldDisplayNames[change.field] || change.field;
+                          
+                          // Choose icon and color based on field
+                          let iconColor = 'text-gray-600';
+                          let bgColor = 'bg-gray-50';
+                          let borderColor = 'border-gray-200';
+                          let icon = null;
+                          
+                          if (change.field === 'status') {
+                            iconColor = 'text-green-600';
+                            bgColor = 'bg-green-50';
+                            borderColor = 'border-green-200';
+                            icon = <CheckCircleIcon className="h-5 w-5 text-green-600 flex-shrink-0 mt-1" />;
+                          } else if (change.field === 'priority') {
+                            iconColor = 'text-red-600';
+                            bgColor = 'bg-red-50';
+                            borderColor = 'border-red-200';
+                            icon = <ExclamationTriangleIcon className="h-5 w-5 text-red-600 flex-shrink-0 mt-1" />;
+                          } else if (change.field === 'assignedTo') {
+                            iconColor = 'text-blue-600';
+                            bgColor = 'bg-blue-50';
+                            borderColor = 'border-blue-200';
+                            icon = <UserIcon className="h-5 w-5 text-blue-600 flex-shrink-0 mt-1" />;
+                          } else if (change.field === 'tags' || change.field === 'category') {
+                            iconColor = 'text-purple-600';
+                            bgColor = 'bg-purple-50';
+                            borderColor = 'border-purple-200';
+                            icon = <TagIcon className="h-5 w-5 text-purple-600 flex-shrink-0 mt-1" />;
+                          } else {
+                            icon = <DocumentTextIcon className="h-5 w-5 text-gray-600 flex-shrink-0 mt-1" />;
+                          }
+                          
+                          return (
+                            <div key={change._id} className={`p-4 ${bgColor} border ${borderColor} rounded-lg`}>
+                              <div className="flex items-start space-x-3">
+                                {icon}
+                                <div className="flex-1">
+                                  <div className="flex items-center justify-between">
+                                    <p className="text-sm font-medium text-gray-900">
+                                      {fieldDisplay} {change.changeType === 'update' ? 'Updated' : change.changeType === 'add' ? 'Added' : 'Removed'}
+                                    </p>
+                                    <span className={`text-xs font-medium ${iconColor} px-2 py-1 rounded`}>
+                                      {change.changeType}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-gray-600 mt-1">
+                                    By {change.changedBy.firstName} {change.changedBy.lastName}
+                                  </p>
+                                  <div className="mt-3 grid grid-cols-2 gap-4 text-xs">
+                                    <div>
+                                      <p className="text-gray-500">From:</p>
+                                      <p className="font-medium text-gray-900">
+                                        {change.oldValue || <span className="text-gray-400 italic">Empty</span>}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-gray-500">To:</p>
+                                      <p className="font-medium text-gray-900">
+                                        {change.newValue || <span className="text-gray-400 italic">Empty</span>}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <div className="mt-2">
+                                    <p className="text-gray-500 text-xs">Changed At:</p>
+                                    <p className="font-medium text-gray-900 text-xs">
+                                      {changedAt.toLocaleDateString()} {changedAt.toLocaleTimeString()}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     ) : null}
 
                     {/* No history message */}
-                    {(!(ticket as any).changeHistory || (ticket as any).changeHistory.length === 0) && 
+                    {(!ticket.changeHistory || ticket.changeHistory.length === 0) && 
                      (!ticket.escalationHistory || ticket.escalationHistory.length === 0) && (
                       <p className="text-center text-gray-500 py-8">No history yet</p>
                     )}
@@ -1902,9 +2121,18 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
                   <select
-                    value={ticket.status}
+                    value={ticket.status || ''}
                     onChange={(e) => {
-                      const newStatusCode = Number(e.target.value);
+                      const value = e.target.value;
+                      if (!value) return; // Don't update if no value selected
+                      
+                      const newStatusCode = Number(value);
+                      if (isNaN(newStatusCode)) {
+                        console.error('❌ Invalid status value from dropdown:', value);
+                        return;
+                      }
+                      
+                      console.log('✅ Status dropdown changed:', value, '→', newStatusCode);
                       setNewStatus(newStatusCode);
                       // Call update directly with the new numeric code
                       handleUpdateStatus(newStatusCode);
@@ -2130,16 +2358,17 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
                   <select
-                    value={typeof ticket.category === 'object' && ticket.category !== null && (ticket.category as any).name ? (ticket.category as any).name : String(ticket.category || '')}
+                    value={typeof ticket.category === 'object' && ticket.category !== null ? (ticket.category as any)._id : String(ticket.category || '')}
                     onChange={(e) => {
-                      setNewCategory(e.target.value);
-                      // Auto-save on change
-                      setTimeout(() => handleUpdateCategory(), 100);
+                      const newCategoryId = e.target.value;
+                      setNewCategory(newCategoryId);
+                      // Call update directly with the new value
+                      handleUpdateCategory(newCategoryId);
                     }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     {categories.map((cat) => (
-                      <option key={cat._id} value={cat.name}>
+                      <option key={cat._id} value={cat._id}>
                         {cat.name}
                       </option>
                     ))}
@@ -2339,7 +2568,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                 <button
                   onClick={() => {
                     if (confirm('Mark this ticket as resolved?')) {
-                      handleUpdateStatus('resolved');
+                      handleUpdateStatus(4); // 4 = resolved
                     }
                   }}
                   className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100"
@@ -2351,7 +2580,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                 <button
                   onClick={() => {
                     if (confirm('Close this ticket?')) {
-                      handleUpdateStatus('closed');
+                      handleUpdateStatus(5); // 5 = closed
                     }
                   }}
                   className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-gray-50 text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-100"

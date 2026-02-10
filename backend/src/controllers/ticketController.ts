@@ -662,7 +662,9 @@ export const getMyTickets = async (req: Request, res: Response) => {
     
     // Check if user is a student based on role code
     const isStudent = role?.code === 'STUDENT';
-    const isAgent = role?.isAgent === true;
+    // Agent roles: L1, L2, L3, PM, AGENT, or has isAgent flag
+    const agentRoleCodes = ['L1', 'L2', 'L3', 'PM', 'AGENT ', 'COUNSELOR_L1'];
+    const isAgent = role?.isAgent === true || agentRoleCodes.includes(role?.code);
 
     console.log(`🔍 [MY_TICKETS] User: ${user.email}`);
     console.log(`🔍 [MY_TICKETS] Role: ${role?.name} (${role?.code})`);
@@ -691,31 +693,7 @@ export const getMyTickets = async (req: Request, res: Response) => {
         query.assignedTo = userObjectId;
         console.log(`🔍 [QUERY] TICKET_VIEW_OWN + Agent - filter by assignedTo: ${userId}`);
         console.log(`🔍 [QUERY] Using ObjectId for assignedTo:`, userObjectId);
-
-        // Add center filtering for agents with centers assigned
-        const userCenterIds = (user.centers || []).map((c: any) => 
-          typeof c === 'string' ? c : c._id?.toString() || c.toString()
-        );
-        
-        if (userCenterIds.length > 0) {
-          // Agents with centers should see tickets:
-          // 1. From their assigned centers
-          // 2. Online tickets (centerId = 'online')
-          // 3. Tickets without center field (legacy/online tickets)
-          // 4. Tickets they created (metadata.createdByAgent matches)
-          const centerFilter = {
-            $or: [
-              { 'metadata.centerId': 'online' }, // Include all online tickets
-              { 'metadata.centerId': { $in: userCenterIds } }, // Include offline tickets from their centers
-              { 'metadata.centerId': { $exists: false } }, // Include tickets without center (legacy data)
-              { 'metadata.createdByAgent': userId } // Include tickets created by this agent regardless of center
-            ]
-          };
-          
-          // Merge with existing query
-          query = { $and: [{ assignedTo: userObjectId }, centerFilter] };
-          console.log(`🔍 [MY_TICKETS] Agent has ${userCenterIds.length} center(s) - filtering by centers: ${userCenterIds.join(', ')}`);
-        }
+        // Note: Center filtering will be applied later based on project settings
       } else {
         // Fallback: check by studentEmail
         query['metadata.studentEmail'] = user.email;
@@ -783,6 +761,73 @@ export const getMyTickets = async (req: Request, res: Response) => {
     }
 
     console.log(`🔍 [TICKET QUERY] Final query (with project filter):`, JSON.stringify(query));
+
+    // ============================================
+    // CENTER FILTERING (based on project settings)
+    // ============================================
+    // Apply center filtering ONLY if project is in offline mode
+    if (isAgent && (user.centers || []).length > 0) {
+      // Determine which projects are being queried
+      let projectIdsToCheck: string[] = [];
+      
+      if (req.query.projectId) {
+        projectIdsToCheck = [req.query.projectId as string];
+      } else {
+        const userProjectIds = (user.projects || []).map((p: any) => 
+          typeof p === 'string' ? p : p._id?.toString() || p.toString()
+        );
+        const roleProjectIds = (role?.projects || []).map((p: any) => 
+          typeof p === 'string' ? p : p._id?.toString() || p.toString()
+        );
+        projectIdsToCheck = [...new Set([...userProjectIds, ...roleProjectIds])];
+      }
+
+      // Fetch project settings to check if offline mode is enabled
+      const projects = await Project.find({ 
+        _id: { $in: projectIdsToCheck.map(id => new mongoose.Types.ObjectId(id)) } 
+      }).select('settings.mode settings.enableOfflineCenter').lean();
+
+      // Check if ANY of the projects have offline mode enabled
+      const hasOfflineProject = projects.some((proj: any) => {
+        const mode = proj.settings?.mode;
+        const enableOffline = proj.settings?.enableOfflineCenter;
+        // Only apply center filtering if explicitly set to offline or both with offline enabled
+        // If mode is not set or is 'online', don't apply center filtering
+        if (!mode || mode === 'online') return false;
+        if (mode === 'offline') return true;
+        if (mode === 'both') return enableOffline !== false; // Default to true for 'both' mode
+        return false;
+      });
+
+      if (hasOfflineProject) {
+        // Apply center filtering only for offline projects
+        const userCenterIds = (user.centers || []).map((c: any) => 
+          typeof c === 'string' ? c : c._id?.toString() || c.toString()
+        );
+        
+        const centerFilter = {
+          $or: [
+            { 'metadata.centerId': 'online' }, // Include all online tickets
+            { 'metadata.centerId': { $in: userCenterIds } }, // Include offline tickets from assigned centers
+            { 'metadata.centerId': { $exists: false } }, // Include tickets without center (legacy data)
+            { 'metadata.createdByAgent': userId } // Include tickets created by this agent
+          ]
+        };
+        
+        // Merge center filter with existing query
+        const existingQuery = { ...query };
+        if (existingQuery.$and) {
+          query = { $and: [...existingQuery.$and, centerFilter] };
+        } else {
+          query = { $and: [existingQuery, centerFilter] };
+        }
+        console.log(`🏢 [CENTER FILTER] Offline mode enabled - filtering by ${userCenterIds.length} center(s): ${userCenterIds.join(', ')}`);
+      } else {
+        console.log(`🏢 [CENTER FILTER] All projects are online mode - no center filtering applied`);
+      }
+    }
+
+    console.log(`🔍 [TICKET QUERY] Final query (with center filter):`, JSON.stringify(query));
 
     // ============================================
     // ADDITIONAL FILTERS (status, priority, search, dates, category)
@@ -2055,7 +2100,7 @@ export const updateTicketStatus = async (req: Request, res: Response) => {
     }
     
     // Track change in history
-    await trackChange(ticket, 'Status', String(oldStatus), String(statusNum), userId);
+    await trackChange(ticket, 'status', String(oldStatus), String(statusNum), userId);
     
     await ticket.save();
     
@@ -2165,7 +2210,7 @@ export const updateTicketCategory = async (req: Request, res: Response) => {
     ticket.updatedAt = new Date();
     
     // Track change in history
-    await trackChange(ticket, 'Category', oldCategory || 'None', category, userId);
+    await trackChange(ticket, 'category', String(oldCategory || 'None'), String(category), userId);
     
     await ticket.save();
     
@@ -2237,7 +2282,7 @@ export const updateTicketPriority = async (req: Request, res: Response) => {
     ticket.updatedAt = new Date();
     
     // Track change in history
-    await trackChange(ticket, 'Priority', oldPriority, ticket.priority, userId);
+    await trackChange(ticket, 'priority', oldPriority, ticket.priority, userId);
     
     await ticket.save();
     
@@ -2493,10 +2538,82 @@ export const escalateTicket = async (req: Request, res: Response) => {
       escalatedAt: new Date(),
     } as any);
 
+    // Store old assignedTo for change tracking
+    const oldAssignedTo = ticket.assignedTo;
+    const oldAssignedToUser = oldAssignedTo ? await User.findById(oldAssignedTo) : null;
+
     // Update assigned agent
     ticket.assignedTo = new mongoose.Types.ObjectId(escalatedUserId);
     ticket.updatedAt = new Date();
+    
+    // Track assignment change in history
+    const oldAssignedName = oldAssignedToUser ? `${oldAssignedToUser.firstName} ${oldAssignedToUser.lastName}` : 'Unassigned';
+    const newAssignedName = `${escalatedUser.firstName} ${escalatedUser.lastName}`;
+    await trackChange(ticket, 'assignedTo', oldAssignedName, newAssignedName, userId);
+    
     await ticket.save();
+
+    // Update SLA tracking with new escalation level and deadline
+    const slaTracking = await SLATracking.findOne({ ticketId: ticket._id })
+      .populate('escalationPolicyId');
+    
+    if (slaTracking && slaTracking.escalationPolicyId) {
+      const policy = slaTracking.escalationPolicyId as any;
+      const newLevel = ticket.escalationHistory.length; // Escalation level based on history count
+      // When at level N (e.g., L2 = level 1), use level N+1 config for SLA time
+      const levelConfig = policy.levels?.find((l: any) => l.level === newLevel + 1);
+      
+      if (levelConfig && levelConfig.escalateAfter) {
+        console.log(`📅 Updating SLA for manual escalation to L${newLevel + 1} (using level ${newLevel + 1} config)`);
+        
+        // Calculate new resolution deadline from NOW + level's SLA time
+        const now = new Date();
+        let minutes = 0;
+        switch (levelConfig.escalateAfter.unit) {
+          case 'minutes':
+            minutes = levelConfig.escalateAfter.value;
+            break;
+          case 'hours':
+            minutes = levelConfig.escalateAfter.value * 60;
+            break;
+          case 'days':
+            minutes = levelConfig.escalateAfter.value * 24 * 60;
+            break;
+        }
+        
+        const newResolutionDeadline = new Date(now.getTime() + minutes * 60 * 1000);
+        slaTracking.currentEscalationLevel = newLevel;
+        slaTracking.resolutionDeadline = newResolutionDeadline;
+        slaTracking.lastEscalationAt = now;
+        
+        // Add to SLA escalation history
+        slaTracking.escalationHistory.push({
+          level: newLevel,
+          escalatedAt: now,
+          escalatedTo: new mongoose.Types.ObjectId(escalatedUserId),
+          escalatedBy: new mongoose.Types.ObjectId(userId),
+          mode: 'manual',
+          reason: reason,
+        } as any);
+        
+        // Set next escalation due if there's another level
+        const nextLevel = policy.levels?.find((l: any) => l.level === newLevel + 1);
+        if (nextLevel && levelConfig.escalationMode === 'auto') {
+          slaTracking.nextEscalationDue = newResolutionDeadline;
+          console.log(`📅 Next auto-escalation due: ${newResolutionDeadline.toISOString()}`);
+        } else {
+          slaTracking.nextEscalationDue = undefined;
+        }
+        
+        await slaTracking.save();
+        
+        console.log(`📅 Manual Escalation SLA Updated:`);
+        console.log(`   ↳ Escalation Time: ${now.toISOString()}`);
+        console.log(`   ↳ Level: L${newLevel}`);
+        console.log(`   ↳ SLA Duration: ${levelConfig.escalateAfter.value} ${levelConfig.escalateAfter.unit}`);
+        console.log(`   ↳ New Resolution Deadline: ${newResolutionDeadline.toISOString()}`);
+      }
+    }
 
     console.log(`✅ Ticket ${id} escalated by ${currentUser.email} to ${escalatedUser.email}`);
 
@@ -2583,10 +2700,17 @@ export const assignTicket = async (req: Request, res: Response) => {
 
     // Store old assignment for logging
     const oldAssignedTo = ticket.assignedTo;
+    const oldAssignedToUser = oldAssignedTo ? await User.findById(oldAssignedTo) : null;
 
     // Update ticket assignment
     ticket.assignedTo = new mongoose.Types.ObjectId(agentId);
     ticket.updatedAt = new Date();
+    
+    // Track change in history
+    const oldAssignedName = oldAssignedToUser ? `${oldAssignedToUser.firstName} ${oldAssignedToUser.lastName}` : 'Unassigned';
+    const newAssignedName = `${agent.firstName} ${agent.lastName}`;
+    await trackChange(ticket, 'assignedTo', oldAssignedName, newAssignedName, currentUser._id.toString());
+    
     await ticket.save();
 
     // Log activity

@@ -2,7 +2,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IStatus extends Document {
   name: string;
-  code: string; // Status code like OPEN, IN_PROGRESS, CLOSED
+  code: number; // Numeric status code: 1=open, 2=in-progress, 3=on-hold, 4=resolved, 5=closed
   color: string;
   projectId: mongoose.Types.ObjectId;
   isDefault: boolean;
@@ -24,10 +24,8 @@ const StatusSchema = new Schema<IStatus>(
       trim: true,
     },
     code: {
-      type: String, // Status code like OPEN, IN_PROGRESS, CLOSED
+      type: Number, // Numeric status code: 1=open, 2=in-progress, 3=on-hold, 4=resolved, 5=closed
       required: true,
-      uppercase: true,
-      trim: true,
     },
     color: {
       type: String,

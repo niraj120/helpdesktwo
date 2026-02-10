@@ -933,8 +933,8 @@ export const getProjectTicketSettings = async (req: Request, res: Response) => {
         const categories = await Category.find({ 
           projectId: project._id, 
           isActive: true 
-        }).select('name').sort({ order: 1, name: 1 });
-        return categories.map(cat => cat.name);
+        }).select('_id name').sort({ order: 1, name: 1 });
+        return categories.map(cat => ({ _id: cat._id, name: cat.name }));
       })(),
       // Fetch allowed statuses from Status model (master)
       allowedStatuses: await (async () => {
