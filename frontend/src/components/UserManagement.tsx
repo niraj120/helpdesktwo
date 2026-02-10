@@ -74,6 +74,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
   const [centers, setCenters] = useState<Center[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [filterRole, setFilterRole] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterProject, setFilterProject] = useState('');
@@ -187,12 +188,23 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
       if (filterRole) params.append('role', filterRole);
       if (filterStatus) params.append('isActive', filterStatus);
       
-      // Filter by project based on viewMode from context
-      if (viewMode === 'single' && currentProjectId) {
+      // Add project filter from dropdown
+      if (filterProject) {
+        params.append('project', filterProject);
+        console.log('👤 [USER MGMT] Filtering by dropdown project:', filterProject);
+      }
+      // Filter by project based on viewMode from context (if no dropdown filter)
+      else if (viewMode === 'single' && currentProjectId) {
         params.append('project', currentProjectId); // Backend uses 'project' not 'projectId'
         console.log('👤 [USER MGMT] Filtering by project:', currentProjectId);
       } else {
         console.log('👤 [USER MGMT] Unified mode - fetching users from all projects');
+      }
+      
+      // Add center filter from dropdown
+      if (filterCenter) {
+        params.append('center', filterCenter);
+        console.log('👤 [USER MGMT] Filtering by center:', filterCenter);
       }
       
       const token = localStorage.getItem('authToken');
@@ -311,19 +323,28 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
     }
   };
 
+  // Debounce search query
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 500); // 500ms debounce delay
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   useEffect(() => {
     // Prevent duplicate calls from React.StrictMode on initial load
-    if (!hasFetchedInitialData.current && !searchQuery && !filterRole && !filterStatus && !filterProject && !filterCenter) {
+    if (!hasFetchedInitialData.current && !debouncedSearchQuery && !filterRole && !filterStatus && !filterProject && !filterCenter) {
       hasFetchedInitialData.current = true;
       fetchUsers();
       fetchRolesAndProjects();
-    } else if (searchQuery || filterRole || filterStatus || filterProject || filterCenter) {
+    } else if (debouncedSearchQuery || filterRole || filterStatus || filterProject || filterCenter) {
       // Allow re-fetching when filters change
       setCurrentPage(1); // Reset to first page when filters change
       fetchUsers();
       fetchRolesAndProjects();
     }
-  }, [searchQuery, filterRole, filterStatus, filterProject, filterCenter, viewMode, currentProjectId]); // Added viewMode and currentProjectId
+  }, [debouncedSearchQuery, filterRole, filterStatus, filterProject, filterCenter, viewMode, currentProjectId]); // Added viewMode and currentProjectId
 
   // Separate effect for page changes
   useEffect(() => {
@@ -864,9 +885,11 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
   };
 
   // Apply filters to users
+  // Note: Most filtering is now done server-side via API params
+  // Only apply client-side search for immediate feedback while typing
   const filteredUsers = users.filter(user => {
-    // Search filter
-    if (searchQuery) {
+    // Search filter - only for immediate feedback before debounced API call
+    if (searchQuery && searchQuery !== debouncedSearchQuery) {
       const searchLower = searchQuery.toLowerCase();
       const matchesSearch = 
         user.firstName?.toLowerCase().includes(searchLower) ||
@@ -876,29 +899,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
       if (!matchesSearch) return false;
     }
 
-    // Role filter
-    if (filterRole && user.role?._id !== filterRole) {
-      return false;
-    }
-
-    // Status filter
-    if (filterStatus !== '') {
-      const isActive = filterStatus === 'true';
-      if (user.isActive !== isActive) return false;
-    }
-
-    // Project filter
-    if (filterProject) {
-      const userProjectIds = user.projects?.map(p => p._id) || [];
-      if (!userProjectIds.includes(filterProject)) return false;
-    }
-
-    // Center filter
-    if (filterCenter) {
-      const userCenterIds = user.centers?.map(c => c._id) || [];
-      if (!userCenterIds.includes(filterCenter)) return false;
-    }
-
+    // All other filters are handled server-side
     return true;
   });
 
