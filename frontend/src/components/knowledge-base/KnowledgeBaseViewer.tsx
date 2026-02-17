@@ -20,6 +20,8 @@ interface KBTable {
   tableName: string;
   description?: string;
   status: string;
+  displayStyle?: 'table' | 'tiles';
+  dataSource?: 'manual' | 'articles';
 }
 
 interface KBArticle {
@@ -200,6 +202,10 @@ const KnowledgeBaseViewer: React.FC<KnowledgeBaseViewerProps> = ({ projectId, sh
 
   const currentLevel = levels.find((l) => l.id === activeLevel);
 
+  // Check if any table in this level uses article data source (auto-populated from KB articles)
+  // If so, we hide article cards since articles are shown in the table instead
+  const hasArticleDataSourceTable = currentLevel?.tables?.some(t => t.dataSource === 'articles');
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-6">
       {/* Hero Section */}
@@ -310,7 +316,11 @@ const KnowledgeBaseViewer: React.FC<KnowledgeBaseViewerProps> = ({ projectId, sh
                         ? 'bg-white/30 text-white backdrop-blur-sm' 
                         : 'bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-700 group-hover:from-blue-200 group-hover:to-indigo-200'
                     }`}>
-                      {(level.articles?.length || 0) + (level.tables?.length || 0)}
+                      {/* If table uses article data source, show article count; otherwise show articles + manual tables */}
+                      {level.tables?.some(t => t.dataSource === 'articles')
+                        ? (level.articles?.length || 0)
+                        : (level.articles?.length || 0) + (level.tables?.length || 0)
+                      }
                     </span>
                   </div>
                 </button>
@@ -318,8 +328,9 @@ const KnowledgeBaseViewer: React.FC<KnowledgeBaseViewerProps> = ({ projectId, sh
             </div>
           </div>
 
-          {/* Content */}
-          {currentLevel && (viewMode === 'all' || viewMode === 'articles') && (
+          {/* Content - Article Cards */}
+          {/* Hide article cards if a table with dataSource='articles' exists (articles shown in table instead) */}
+          {currentLevel && !hasArticleDataSourceTable && (viewMode === 'all' || viewMode === 'articles') && (
             currentLevel.articles.length === 0 && viewMode === 'articles' ? (
               <div className="text-center py-12 bg-white rounded-lg shadow mb-6">
                 <FileText size={48} className="mx-auto text-gray-400 mb-4" />
@@ -408,7 +419,7 @@ const KnowledgeBaseViewer: React.FC<KnowledgeBaseViewerProps> = ({ projectId, sh
               <div className="space-y-6">
                 {currentLevel.tables.map((table) => (
                   <div key={table._id}>
-                    <KBTableViewer tableId={table._id} showHeader={false} autoPopulate={true} />
+                    <KBTableViewer tableId={table._id} levelId={currentLevel.id} showHeader={false} autoPopulate={true} />
                   </div>
                 ))}
               </div>

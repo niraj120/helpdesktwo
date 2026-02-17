@@ -143,6 +143,7 @@ export const getTables = async (req: Request, res: Response): Promise<void> => {
 export const getPublicTable = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
+    const { levelId } = req.query; // Optional: filter by specific level
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       res.status(400).json({
@@ -168,7 +169,7 @@ export const getPublicTable = async (req: Request, res: Response): Promise<void>
 
     // If table uses article data source, dynamically fetch fresh data from articles
     if (table.dataSource === 'articles') {
-      console.log(`📊 Dynamically fetching article data for table: ${table.tableName}`);
+      console.log(`📊 Dynamically fetching article data for table: ${table.tableName}${levelId ? ` (filtered by level: ${levelId})` : ''}`);
       
       // Build article query based on project and level mappings (same as populate logic)
       let articleQuery: any = {
@@ -176,10 +177,14 @@ export const getPublicTable = async (req: Request, res: Response): Promise<void>
         status: 'active',
       };
 
-      // If table is associated with specific levels, get articles from those levels
-      if (table.levelIds && table.levelIds.length > 0) {
-        const levelIds = table.levelIds.map((l: any) => l._id || l);
-        const mappings = await KBArticleLevelMapping.find({ levelId: { $in: levelIds } });
+      // If levelId is provided in query, filter by that specific level only
+      // Otherwise, get articles from all table's associated levels
+      const targetLevelIds = levelId && mongoose.Types.ObjectId.isValid(levelId as string)
+        ? [levelId]
+        : (table.levelIds && table.levelIds.length > 0 ? table.levelIds.map((l: any) => l._id || l) : []);
+
+      if (targetLevelIds.length > 0) {
+        const mappings = await KBArticleLevelMapping.find({ levelId: { $in: targetLevelIds } });
         const articleIds = mappings.map(m => m.articleId);
         
         if (articleIds.length > 0) {
@@ -191,7 +196,7 @@ export const getPublicTable = async (req: Request, res: Response): Promise<void>
       }
       
       const articles = await KBArticle.find(articleQuery)
-        .sort({ publishedDate: -1 })
+        .sort({ displayOrder: 1, publishedDate: -1 })
         .lean();
 
       console.log(`   Found ${articles.length} matching articles`);
@@ -643,7 +648,7 @@ export const populateTableFromArticles = async (req: Request, res: Response): Pr
       articleQuery._id = { $in: articleIds };
     }
 
-    const articles = await KBArticle.find(articleQuery).sort({ createdAt: -1 });
+    const articles = await KBArticle.find(articleQuery).sort({ displayOrder: 1, createdAt: -1 });
 
     console.log(`📊 Found ${articles.length} articles for table population`);
     if (articles.length > 0) {

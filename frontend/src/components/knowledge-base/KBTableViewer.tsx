@@ -32,6 +32,7 @@ interface KBTableData {
 
 interface KBTableViewerProps {
   tableId: string;
+  levelId?: string; // Optional: filter table data by specific level
   onClose?: () => void;
   showHeader?: boolean;
   autoPopulate?: boolean;
@@ -39,6 +40,7 @@ interface KBTableViewerProps {
 
 const KBTableViewer: React.FC<KBTableViewerProps> = ({ 
   tableId, 
+  levelId,
   onClose, 
   showHeader = true, 
   autoPopulate = true 
@@ -52,7 +54,7 @@ const KBTableViewer: React.FC<KBTableViewerProps> = ({
 
   useEffect(() => {
     fetchTable();
-  }, [tableId]);
+  }, [tableId, levelId]);
 
   const fetchTable = async () => {
     try {
@@ -62,9 +64,14 @@ const KBTableViewer: React.FC<KBTableViewerProps> = ({
       if (token) {
         headers.Authorization = `Bearer ${token}`;
       }
+      // Build query params - include levelId if provided to filter articles
+      const params: Record<string, string> = {};
+      if (levelId) {
+        params.levelId = levelId;
+      }
       const response = await axios.get(
         `${API_CONFIG.API_URL}/kb/tables/public/${tableId}`,
-        { headers }
+        { headers, params }
       );
       // Set default displayStyle for backward compatibility
       const tableData = response.data.data;
@@ -79,7 +86,7 @@ const KBTableViewer: React.FC<KBTableViewerProps> = ({
         // Refetch after population
         const updatedResponse = await axios.get(
           `${API_CONFIG.API_URL}/kb/tables/public/${tableId}`,
-          { headers }
+          { headers, params }
         );
         // Set default displayStyle for backward compatibility
         const updatedTableData = updatedResponse.data.data;

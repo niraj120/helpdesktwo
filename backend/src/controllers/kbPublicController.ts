@@ -51,10 +51,13 @@ export const getPublicArticles = async (req: Request, res: Response): Promise<vo
     const allArticleIds = [...new Set(allMappings.map(m => m.articleId.toString()))];
 
     // Build article filter for batch fetch
+    // Note: Most articles don't have publishType field, so we treat missing/null as "immediate" (published)
     const articleFilter: any = {
       _id: { $in: allArticleIds },
       status: 'active',
       $or: [
+        { publishType: { $exists: false } }, // No publishType = immediately published
+        { publishType: null }, // Null publishType = immediately published
         { publishType: 'immediate' },
         {
           publishType: 'scheduled',
@@ -62,6 +65,7 @@ export const getPublicArticles = async (req: Request, res: Response): Promise<vo
           $or: [
             { scheduledUnpublishDate: { $gte: new Date() } },
             { scheduledUnpublishDate: null },
+            { scheduledUnpublishDate: { $exists: false } },
           ],
         },
       ],
@@ -91,7 +95,7 @@ export const getPublicArticles = async (req: Request, res: Response): Promise<vo
     }
     
     const allTables = await KBTable.find(tablesQuery)
-      .select('tableName description status levelIds')
+      .select('tableName description status levelIds displayStyle dataSource')
       .sort({ tableName: 1 })
       .lean();
 
@@ -153,6 +157,8 @@ export const getPublicArticles = async (req: Request, res: Response): Promise<vo
           tableName: table.tableName,
           description: table.description,
           status: table.status,
+          displayStyle: table.displayStyle || 'table',
+          dataSource: table.dataSource || 'manual',
         })),
       };
     });
@@ -215,7 +221,9 @@ export const getPublicArticleById = async (req: Request, res: Response): Promise
     const articleData = article as any;
 
     // Check if article is published
+    // If publishType is missing/null, treat as immediately published (default)
     const isPublished =
+      !articleData.publishType ||
       articleData.publishType === 'immediate' ||
       (articleData.publishType === 'scheduled' &&
         articleData.scheduledPublishDate &&
@@ -320,9 +328,12 @@ export const searchPublicArticles = async (req: Request, res: Response): Promise
     }
 
     // Published articles only
+    // Note: Most articles don't have publishType field, so we treat missing/null as "immediate" (published)
     filter.$and = [
       {
         $or: [
+          { publishType: { $exists: false } },
+          { publishType: null },
           { publishType: 'immediate' },
           {
             publishType: 'scheduled',
@@ -330,6 +341,7 @@ export const searchPublicArticles = async (req: Request, res: Response): Promise
             $or: [
               { scheduledUnpublishDate: { $gte: new Date() } },
               { scheduledUnpublishDate: null },
+              { scheduledUnpublishDate: { $exists: false } },
             ],
           },
         ],
