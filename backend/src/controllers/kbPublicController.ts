@@ -116,8 +116,12 @@ export const getPublicArticles = async (req: Request, res: Response): Promise<vo
         .map(id => articleMap.get(id))
         .filter(Boolean)
         .sort((a: any, b: any) => {
+          // Featured articles first
           if (a.isFeatured !== b.isFeatured) return b.isFeatured ? 1 : -1;
-          return (a.displayOrder || 0) - (b.displayOrder || 0);
+          // Then sort by displayOrder ascending (lower number = higher priority/first)
+          const orderA = Number(a.displayOrder) || 0;
+          const orderB = Number(b.displayOrder) || 0;
+          return orderA - orderB;
         });
 
       // Get tables that include this level
