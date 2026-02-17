@@ -494,6 +494,23 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     category: 'sla-escalation',
   },
   // =====================================================
+  // ESCALATION MATRIX CATEGORY
+  // =====================================================
+  {
+    module: 'Escalation Matrix',
+    name: 'View Escalation Matrix',
+    code: 'ESCALATION_MATRIX_VIEW',
+    description: 'Can view escalation matrix configurations',
+    category: 'sla-escalation',
+  },
+  {
+    module: 'Escalation Matrix',
+    name: 'Manage Escalation Matrix',
+    code: 'ESCALATION_MATRIX_MANAGE',
+    description: 'Can create, edit, and delete escalation matrix configurations',
+    category: 'sla-escalation',
+  },
+  // =====================================================
   // TICKET CONFIGURATION CATEGORY
   // =====================================================
   {
@@ -1376,38 +1393,66 @@ export async function seedRolesAndPermissions() {
 				insertedPermissions.forEach(p => console.log(`   + ${p.code} - ${p.name}`));
 				
 				// Step 5: AUTO-ASSIGN new permissions to Super Admin
+				// IMPORTANT: Must add to BOTH RolePermission junction table AND Role.permissions array
+				// JWT generation reads from Role.permissions via populate, so both must be in sync!
 				const RolePermission = mongoose.model('RolePermission');
 				const superAdminRole = await Role.findOne({ code: 'SUPER_ADMIN' });
 				
 				if (superAdminRole) {
 					console.log('\n🔑 Auto-assigning new permissions to Super Admin...');
-					let assignedCount = 0;
+					let assignedToJunctionTable = 0;
+					let assignedToRoleArray = 0;
+					
+					// Get current permissions in role.permissions array as strings for comparison
+					const currentRolePermissions = (superAdminRole.permissions || []).map(
+						(p: any) => p.toString()
+					);
 					
 					for (const perm of insertedPermissions) {
-						// Check if already assigned (prevent duplicates)
-						const exists = await RolePermission.findOne({
+						const permIdStr = perm._id.toString();
+						
+						// 1. Add to RolePermission junction table (if not exists)
+						const existsInJunction = await RolePermission.findOne({
 							roleId: superAdminRole._id,
 							permissionId: perm._id
 						});
 						
-						if (!exists) {
+						if (!existsInJunction) {
 							await RolePermission.create({
 								roleId: superAdminRole._id,
 								permissionId: perm._id,
 								createdAt: new Date(),
 								updatedAt: new Date()
 							});
-							assignedCount++;
+							assignedToJunctionTable++;
+						}
+						
+						// 2. Add to Role.permissions array (if not exists)
+						// THIS IS CRITICAL - JWT generation reads from this array!
+						if (!currentRolePermissions.includes(permIdStr)) {
+							superAdminRole.permissions.push(perm._id);
+							assignedToRoleArray++;
 						}
 					}
 					
-					if (assignedCount > 0) {
-						console.log(`✅ Assigned ${assignedCount} new permissions to Super Admin`);
-						
-						// Verify final count
-						const finalCount = await RolePermission.countDocuments({ roleId: superAdminRole._id });
-						console.log(`📊 Super Admin now has ${finalCount} permissions in RolePermissions table`);
+					// Save the role if any permissions were added to the array
+					if (assignedToRoleArray > 0) {
+						await superAdminRole.save();
+						console.log(`✅ Added ${assignedToRoleArray} permissions to Role.permissions array`);
 					}
+					
+					if (assignedToJunctionTable > 0) {
+						console.log(`✅ Added ${assignedToJunctionTable} permissions to RolePermissions junction table`);
+					}
+					
+					// Verify final counts
+					const finalJunctionCount = await RolePermission.countDocuments({ roleId: superAdminRole._id });
+					const updatedRole = await Role.findOne({ code: 'SUPER_ADMIN' });
+					const finalRoleArrayCount = updatedRole?.permissions?.length || 0;
+					
+					console.log(`📊 Super Admin permissions:`);
+					console.log(`   - Role.permissions array: ${finalRoleArrayCount} (used by JWT)`);
+					console.log(`   - RolePermissions table: ${finalJunctionCount}`);
 				}
 				
 				console.log('');

@@ -42,29 +42,29 @@ const upload = multer({
   },
 });
 
-// All routes require authentication and KB management permission
+// All routes require authentication
 router.use(authMiddleware);
-router.use(checkPermission('KB_MANAGE'));
 
-// Create KB Article (with PDF upload)
-router.post('/', upload.single('pdf'), createArticle);
-
+// GET routes - allow KB_VIEW_CONTENT or KB_MANAGE permission
 // Get all KB Articles (with pagination)
-router.get('/', getArticles);
+router.get('/', checkPermission(['KB_VIEW_CONTENT', 'KB_MANAGE']), getArticles);
 
 // Search KB Articles
-router.get('/search', searchArticles);
+router.get('/search', checkPermission(['KB_VIEW_CONTENT', 'KB_MANAGE']), searchArticles);
 
-// Upload image for editor
-router.post('/upload-image', upload.single('image'), uploadEditorImage);
+// Upload image for editor - requires KB_MANAGE
+router.post('/upload-image', checkPermission('KB_MANAGE'), upload.single('image'), uploadEditorImage);
 
-// Get single KB Article
-router.get('/:id', getArticleById);
+// Create KB Article (with PDF upload) - requires KB_MANAGE
+router.post('/', checkPermission('KB_MANAGE'), upload.single('pdf'), createArticle);
 
-// Update KB Article (with PDF upload)
-router.put('/:id', upload.single('pdf'), updateArticle);
+// Get single KB Article - allow KB_VIEW_CONTENT or KB_MANAGE permission
+router.get('/:id', checkPermission(['KB_VIEW_CONTENT', 'KB_MANAGE']), getArticleById);
 
-// Delete KB Article
-router.delete('/:id', deleteArticle);
+// Update KB Article (with PDF upload) - requires KB_MANAGE
+router.put('/:id', checkPermission('KB_MANAGE'), upload.single('pdf'), updateArticle);
+
+// Delete KB Article - requires KB_MANAGE
+router.delete('/:id', checkPermission('KB_MANAGE'), deleteArticle);
 
 export default router;

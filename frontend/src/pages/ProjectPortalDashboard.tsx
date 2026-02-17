@@ -16,7 +16,6 @@ import KBLevelManagementPage from './KBLevelManagementPage';
 import KBArticleManagementPage from './KBArticleManagementPage';
 import KBTableManagementPage from './KBTableManagementPage';
 import KBViewerPage from './KBViewerPage';
-import AgentOfflineModule from './AgentOfflineModule';
 import AgentStudentWorkflow from './AgentStudentWorkflow';
 import UserManagement from '../components/UserManagement';
 import RedirectToFirstRoute from '../components/RedirectToFirstRoute';
@@ -1159,7 +1158,7 @@ const ProjectPortalDashboard = () => {
         } />
         <Route path="/kb-new/viewer" element={
           <ProtectedRoute permission={[PERMISSIONS.KB_VIEW_CONTENT, PERMISSIONS.KB_MANAGE, PERMISSIONS.KB_MANAGE_LEVELS, PERMISSIONS.KB_MANAGE_ARTICLES, PERMISSIONS.KB_MANAGE_TABLES]}>
-            <KBViewerPage wrapWithLayout={false} />
+            <KBViewerPage wrapWithLayout={false} projectId={projectBranding?.projectId} />
           </ProtectedRoute>
         } />
         <Route path="/faq" element={

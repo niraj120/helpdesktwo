@@ -5,6 +5,7 @@ import fs from 'fs';
 import { CenterAssetMapping } from '../models/CenterAssetMapping';
 import { Asset } from '../models/Asset';
 import { Project } from '../models/Project';
+import { Center } from '../models/Center';
 
 // Configure multer for asset photos
 const storage = multer.diskStorage({
@@ -44,22 +45,24 @@ export const bulkMapAssets = async (req: Request, res: Response) => {
   try {
     const { 
       assetIds, 
-      projectIds, 
+      centerIds,      // NEW: Direct center IDs
+      projectIds,     // LEGACY: Will be converted to center IDs
+      projectId,      // Single project reference
       applyToAllCenters, 
       quantities, 
       lastAuditDate, 
-      auditFrequencyMonths, 
-      nextAuditDate 
+      auditFrequencyMonths
     } = req.body;
     const userId = (req as any).user.userId;
 
     console.log('📥 Bulk map request received:', {
       assetIds,
+      centerIds,
       projectIds,
+      projectId,
       quantities,
       lastAuditDate,
-      auditFrequencyMonths,
-      nextAuditDate
+      auditFrequencyMonths
     });
 
     if (!assetIds || !Array.isArray(assetIds) || assetIds.length === 0) {
@@ -69,88 +72,100 @@ export const bulkMapAssets = async (req: Request, res: Response) => {
       });
     }
 
-    let targetProjectIds = projectIds;
+    // Determine target centers
+    let targetCenterIds: string[] = [];
 
-    // If applyToAllCenters is true, get all active projects
-    if (applyToAllCenters) {
+    if (centerIds && Array.isArray(centerIds) && centerIds.length > 0) {
+      // NEW: Direct center IDs provided
+      targetCenterIds = centerIds;
+    } else if (projectIds && Array.isArray(projectIds) && projectIds.length > 0) {
+      // LEGACY: Get all centers for the given projects
+      const centers = await Center.find({ projectId: { $in: projectIds } }, '_id');
+      targetCenterIds = centers.map(c => c._id.toString());
+    } else if (applyToAllCenters) {
+      // Get all centers from active projects
       const allProjects = await Project.find({ isActive: true }, '_id');
-      targetProjectIds = allProjects.map(p => p._id.toString());
+      const centers = await Center.find({ projectId: { $in: allProjects.map(p => p._id) } }, '_id');
+      targetCenterIds = centers.map(c => c._id.toString());
     }
 
-    if (!targetProjectIds || !Array.isArray(targetProjectIds) || targetProjectIds.length === 0) {
+    if (targetCenterIds.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'Project IDs are required'
+        message: 'Center IDs or Project IDs are required'
       });
     }
 
     const mappings = [];
     const errors = [];
 
-    // Optimized: Batch fetch all assets and existing mappings upfront
-    const [assets, existingMappings] = await Promise.all([
+    // Batch fetch all data upfront
+    const [assets, centers, existingMappings] = await Promise.all([
       Asset.find({ _id: { $in: assetIds } }).lean(),
+      Center.find({ _id: { $in: targetCenterIds } }).lean(),
       CenterAssetMapping.find({
         assetId: { $in: assetIds },
-        projectId: { $in: targetProjectIds }
+        centerId: { $in: targetCenterIds }
       })
     ]);
 
     // Create lookup maps
     const assetMap = new Map(assets.map(a => [a._id.toString(), a]));
+    const centerMap = new Map(centers.map(c => [c._id.toString(), c]));
+    // Key by centerId-assetId for per-center lookups
     const mappingLookup = new Map(
-      existingMappings.map(m => [`${m.assetId.toString()}-${m.projectId.toString()}`, m])
+      existingMappings.map(m => [`${m.centerId?.toString()}-${m.assetId.toString()}`, m])
     );
 
     for (const assetId of assetIds) {
-      // Verify asset exists using pre-fetched data
       const asset = assetMap.get(assetId.toString());
       if (!asset) {
         errors.push(`Asset ${assetId} not found`);
         continue;
       }
 
-      for (const projectId of targetProjectIds) {
+      for (const centerId of targetCenterIds) {
         try {
-          // Get quantity for this project (or use predefined count)
-          const quantity = quantities && quantities[projectId] !== undefined 
-            ? quantities[projectId] 
-            : asset.predefinedCount;
+          const center = centerMap.get(centerId);
+          if (!center) {
+            errors.push(`Center ${centerId} not found`);
+            continue;
+          }
 
-          // Check if mapping already exists using pre-fetched data
-          const existingMapping = mappingLookup.get(`${assetId}-${projectId}`);
+          // Get quantity for this center (or use predefined count)
+          const quantity = quantities && quantities[centerId] !== undefined 
+            ? quantities[centerId] 
+            : (asset as any).predefinedCount || 1;
+
+          // Check if mapping already exists for this center+asset
+          const existingMapping = mappingLookup.get(`${centerId}-${assetId}`);
 
           if (existingMapping) {
-            // Update existing mapping with new values
+            // Update existing mapping
             existingMapping.totalAssigned = quantity;
             existingMapping.assetNotUsed = quantity;
             existingMapping.lastUpdatedBy = userId;
             
-            // Update audit fields if provided
             if (lastAuditDate) {
               existingMapping.lastAuditDate = new Date(lastAuditDate);
             }
             if (auditFrequencyMonths !== undefined) {
               existingMapping.auditFrequencyMonths = auditFrequencyMonths;
             }
-            if (nextAuditDate) {
-              existingMapping.nextAuditDate = new Date(nextAuditDate);
-            }
             
             await existingMapping.save();
-            console.log('✅ Updated mapping:', {
-              projectId,
+            console.log('✅ Updated CENTER mapping:', {
+              centerId,
+              centerName: (center as any).centerName,
               assetId,
-              quantity,
-              lastAuditDate: existingMapping.lastAuditDate,
-              auditFrequencyMonths: existingMapping.auditFrequencyMonths,
-              nextAuditDate: existingMapping.nextAuditDate
+              quantity
             });
             mappings.push(existingMapping);
           } else {
-            // Create new mapping
+            // Create new mapping with centerId
             const mappingData: any = {
-              projectId,
+              projectId: (center as any).projectId,
+              centerId,  // Store center ID
               assetId,
               totalAssigned: quantity,
               assetUsed: 0,
@@ -161,31 +176,25 @@ export const bulkMapAssets = async (req: Request, res: Response) => {
               lastUpdatedBy: userId
             };
             
-            // Add audit fields if provided
             if (lastAuditDate) {
               mappingData.lastAuditDate = new Date(lastAuditDate);
             }
             if (auditFrequencyMonths !== undefined) {
               mappingData.auditFrequencyMonths = auditFrequencyMonths;
             }
-            if (nextAuditDate) {
-              mappingData.nextAuditDate = new Date(nextAuditDate);
-            }
             
             const newMapping = await CenterAssetMapping.create(mappingData);
-            console.log('✅ Created new mapping:', {
-              projectId,
+            console.log('✅ Created CENTER mapping:', {
+              centerId,
+              centerName: (center as any).centerName,
               assetId,
-              quantity,
-              lastAuditDate: newMapping.lastAuditDate,
-              auditFrequencyMonths: newMapping.auditFrequencyMonths,
-              nextAuditDate: newMapping.nextAuditDate
+              quantity
             });
             mappings.push(newMapping);
           }
         } catch (error: any) {
           console.error('❌ Error mapping asset:', error);
-          errors.push(`Error mapping asset ${assetId} to project ${projectId}: ${error.message}`);
+          errors.push(`Error mapping asset ${assetId} to center ${centerId}: ${error.message}`);
         }
       }
     }

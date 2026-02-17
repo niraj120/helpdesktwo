@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useEffect, lazy, Suspense } from 'react'
 import { PERMISSIONS } from './constants/permissions'
@@ -69,10 +69,12 @@ const MasterDataManagement = lazy(() => import('./components/MasterDataManagemen
 const RBACSetup = lazy(() => import('./pages/RBACSetup'))
 const UserManagement = lazy(() => import('./components/UserManagement'))
 const DashboardLayout = lazy(() => import('./components/DashboardLayout'))
+const TeamManagement = lazy(() => import('./pages/TeamManagement'))
 
-// SLA & Escalation
+// SLA & Escalation (unified in SLARulesPage with tabs)
 const SLARulesPage = lazy(() => import('./pages/SLARulesPage'))
-const EscalationMatrixPage = lazy(() => import('./pages/EscalationMatrixPage'))
+// Note: EscalationMatrixConfigPage and WorkingCalendarManagement are now
+// integrated into SLARulesPage via tabs for smooth transitions
 
 // Reports
 const ReportsPage = lazy(() => import('./pages/ReportsPage'))
@@ -321,6 +323,16 @@ function App() {
           } 
         />
         
+        {/* Team Hierarchy Management - Requires HIERARCHY_MANAGE_TEAM permission */}
+        <Route 
+          path="/team-management" 
+          element={
+            <ProtectedRoute permission={PERMISSIONS.HIERARCHY_MANAGE_TEAM}>
+              <TeamManagement />
+            </ProtectedRoute>
+          } 
+        />
+        
         {/* Tickets - View All Tickets */}
         <Route 
           path="/tickets/view" 
@@ -347,6 +359,16 @@ function App() {
           element={
             <ProtectedRoute permission="TICKET_ASSIGN">
               <TicketAssignment />
+            </ProtectedRoute>
+          } 
+        />
+        
+        {/* Ticket Detail - View specific ticket */}
+        <Route 
+          path="/tickets/:id" 
+          element={
+            <ProtectedRoute permission={['TICKET_VIEW_ALL', 'TICKET_VIEW_OWN']}>
+              <AgentTicketDetail />
             </ProtectedRoute>
           } 
         />
@@ -387,7 +409,7 @@ function App() {
           } 
         />
         
-        {/* SLA & Escalation - Requires SLA_* permissions */}
+        {/* SLA & Escalation - Unified page with tabs for smooth transitions */}
         <Route 
           path="/sla" 
           element={
@@ -396,13 +418,14 @@ function App() {
             </ProtectedRoute>
           } 
         />
+        {/* Redirect old routes to unified SLA page with appropriate tab */}
         <Route 
           path="/escalation-matrix" 
-          element={
-            <ProtectedRoute permission={PERMISSIONS.SLA_MANAGE_ESCALATIONS}>
-              <EscalationMatrixPage />
-            </ProtectedRoute>
-          } 
+          element={<Navigate to="/sla?tab=escalation" replace />}
+        />
+        <Route 
+          path="/working-calendars" 
+          element={<Navigate to="/sla?tab=working" replace />}
         />
         
         {/* Reports - Requires REPORT_* permissions */}

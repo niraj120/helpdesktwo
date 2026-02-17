@@ -8,6 +8,10 @@ interface EscalationLevel {
     value: number;
     unit: 'minutes' | 'hours' | 'days';
   };
+  responseTime?: {
+    value: number;
+    unit: 'minutes' | 'hours' | 'days';
+  };
   escalateTo: {
     type: 'user' | 'group' | 'role';
     targetId: string;
@@ -20,6 +24,19 @@ interface EscalationLevel {
     addWatchers?: string[];
     changeStatus?: string;
   };
+}
+
+interface PriorityConfig {
+  priorityCode: string;
+  levels: EscalationLevel[];
+}
+
+interface ValidationResult {
+  priorityCode: string;
+  valid: boolean;
+  reason?: string;
+  totalHours: number;
+  priorityHours: number;
 }
 
 interface AddEscalationMatrixModalProps {
@@ -49,6 +66,12 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
     slaRuleIds: [] as string[],
   });
 
+  const [priorityMode, setPriorityMode] = useState<'SAME_FOR_ALL' | 'PER_PRIORITY'>('SAME_FOR_ALL');
+  const [selectedPriority, setSelectedPriority] = useState<string>('');
+  const [priorityConfigs, setPriorityConfigs] = useState<PriorityConfig[]>([]);
+  const [validationResults, setValidationResults] = useState<ValidationResult[]>([]);
+  const [isValidating, setIsValidating] = useState(false);
+
   const [levels, setLevels] = useState<EscalationLevel[]>([
     {
       level: 1,
@@ -62,6 +85,7 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
   const [projects, setProjects] = useState<any[]>([]);
   const [slaRules, setSlaRules] = useState<any[]>([]);
   const [allSlaRules, setAllSlaRules] = useState<any[]>([]); // Store all SLA rules
+  const [priorities, setPriorities] = useState<any[]>([]);
   const [roles, setRoles] = useState<any[]>([]);
   const [allRoles, setAllRoles] = useState<any[]>([]); // Store all roles for filtering
 
@@ -70,6 +94,7 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
       fetchProjects();
       fetchSLARules();
       fetchRoles();
+      fetchPriorities();
     }
   }, [isOpen]);
 
@@ -186,7 +211,19 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
       console.log('  📋 Setting form data:', newFormData);
       setFormData(newFormData);
       
-      if (initialData.levels) {
+      // Load priority mode and configs
+      if (initialData.priorityMode) {
+        setPriorityMode(initialData.priorityMode);
+        console.log('  ✅ Priority mode:', initialData.priorityMode);
+      }
+      
+      if (initialData.priorityConfigs && Array.isArray(initialData.priorityConfigs)) {
+        setPriorityConfigs(initialData.priorityConfigs);
+        console.log('  ✅ Priority configs:', initialData.priorityConfigs.length);
+        if (initialData.priorityConfigs.length > 0) {
+          setSelectedPriority(initialData.priorityConfigs[0].priorityCode);
+        }
+      } else if (initialData.levels) {
         console.log('  📊 Setting levels:', initialData.levels.length, 'levels');
         setLevels(initialData.levels);
       }
@@ -264,6 +301,29 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
     }
   };
 
+  const fetchPriorities = async () => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`${API_CONFIG.API_URL}/priorities`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && Array.isArray(data.data)) {
+          setPriorities(data.data);
+          console.log('✅ Loaded priorities:', data.data.length);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching priorities:', error);
+      setPriorities([]);
+    }
+  };
+
   const fetchRoles = async () => {
     try {
       const token = localStorage.getItem('authToken');
@@ -338,30 +398,53 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
     }
   };
 
+  const getCurrentLevels = (): EscalationLevel[] => {
+    if (priorityMode === 'PER_PRIORITY' && selectedPriority) {
+      const config = priorityConfigs.find(c => c.priorityCode === selectedPriority);
+      return config ? config.levels : [];
+    }
+    return levels;
+  };
+
+  const setCurrentLevels = (newLevels: EscalationLevel[]) => {
+    if (priorityMode === 'PER_PRIORITY' && selectedPriority) {
+      setPriorityConfigs(priorityConfigs.map(config =>
+        config.priorityCode === selectedPriority
+          ? { ...config, levels: newLevels }
+          : config
+      ));
+    } else {
+      setLevels(newLevels);
+    }
+  };
+
   const handleAddLevel = () => {
+    const currentLevels = getCurrentLevels();
     const newLevel: EscalationLevel = {
-      level: levels.length + 1,
+      level: currentLevels.length + 1,
       escalationMode: 'manual',
       escalateAfter: { value: 60, unit: 'minutes' },
       escalateTo: { type: 'role', targetId: '', targetName: '' },
       notifyMethod: ['email'],
     };
-    setLevels([...levels, newLevel]);
+    setCurrentLevels([...currentLevels, newLevel]);
   };
 
   const handleRemoveLevel = (index: number) => {
-    if (levels.length > 1) {
-      const updatedLevels = levels.filter((_, i) => i !== index);
+    const currentLevels = getCurrentLevels();
+    if (currentLevels.length > 1) {
+      const updatedLevels = currentLevels.filter((_, i) => i !== index);
       // Renumber levels
       updatedLevels.forEach((level, i) => {
         level.level = i + 1;
       });
-      setLevels(updatedLevels);
+      setCurrentLevels(updatedLevels);
     }
   };
 
   const handleLevelChange = (index: number, field: string, value: any) => {
-    const updatedLevels = [...levels];
+    const currentLevels = getCurrentLevels();
+    const updatedLevels = [...currentLevels];
     if (field.includes('.')) {
       const [parent, child] = field.split('.');
       updatedLevels[index] = {
@@ -377,13 +460,14 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
         [field]: value,
       };
     }
-    setLevels(updatedLevels);
+    setCurrentLevels(updatedLevels);
   };
 
   const handleRoleChange = (index: number, roleId: string) => {
     const selectedRole = roles.find(r => r._id === roleId);
     if (selectedRole) {
-      const updatedLevels = [...levels];
+      const currentLevels = getCurrentLevels();
+      const updatedLevels = [...currentLevels];
       updatedLevels[index] = {
         ...updatedLevels[index],
         escalateTo: {
@@ -392,12 +476,13 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
           targetName: selectedRole.name,
         },
       };
-      setLevels(updatedLevels);
+      setCurrentLevels(updatedLevels);
     }
   };
 
   const handleNotifyMethodToggle = (index: number, method: 'email' | 'sms' | 'push') => {
-    const updatedLevels = [...levels];
+    const currentLevels = getCurrentLevels();
+    const updatedLevels = [...currentLevels];
     const currentMethods = updatedLevels[index].notifyMethod;
     
     if (currentMethods.includes(method)) {
@@ -406,7 +491,63 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
       updatedLevels[index].notifyMethod = [...currentMethods, method];
     }
     
-    setLevels(updatedLevels);
+    setCurrentLevels(updatedLevels);
+  };
+
+  const handlePriorityModeChange = (mode: 'SAME_FOR_ALL' | 'PER_PRIORITY') => {
+    setPriorityMode(mode);
+    if (mode === 'PER_PRIORITY' && priorities.length > 0) {
+      // Initialize priority configs with current levels
+      const configs = priorities.map(p => ({
+        priorityCode: p.code,
+        levels: JSON.parse(JSON.stringify(levels)), // Deep copy
+      }));
+      setPriorityConfigs(configs);
+      setSelectedPriority(priorities[0].code);
+    } else {
+      setPriorityConfigs([]);
+      setSelectedPriority('');
+    }
+  };
+
+  const validateEscalationMatrix = async () => {
+    if (!formData.projectId) {
+      alert('Please select a project first');
+      return;
+    }
+
+    setIsValidating(true);
+    try {
+      const token = localStorage.getItem('authToken');
+      const payload = {
+        projectId: formData.projectId,
+        priorityMode,
+        levels: priorityMode === 'SAME_FOR_ALL' ? levels : undefined,
+        priorityConfigs: priorityMode === 'PER_PRIORITY' ? priorityConfigs : undefined,
+      };
+
+      const response = await fetch(`${API_CONFIG.API_URL}/escalation-matrix/validate`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.data.validations) {
+          setValidationResults(data.data.validations);
+        }
+      }
+    } catch (error) {
+      console.error('Error validating matrix:', error);
+      alert('Failed to validate escalation matrix');
+    } finally {
+      setIsValidating(false);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -428,25 +569,44 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
       return;
     }
 
-    if (levels.length === 0) {
-      alert('Please add at least one escalation level');
-      return;
-    }
-
-    for (let i = 0; i < levels.length; i++) {
-      if (!levels[i].escalateTo.targetName.trim()) {
-        alert(`Please enter escalate to target for Level ${i + 1}`);
+    // Validate levels based on mode
+    const levelsToValidate = priorityMode === 'SAME_FOR_ALL' ? [{ levels }] : priorityConfigs;
+    
+    for (const config of levelsToValidate) {
+      const levelsArray = priorityMode === 'SAME_FOR_ALL' ? config.levels : config.levels;
+      const priorityLabel = priorityMode === 'PER_PRIORITY' && 'priorityCode' in config ? ` for priority ${config.priorityCode}` : '';
+      if (levelsArray.length === 0) {
+        alert(`Please add at least one escalation level${priorityLabel}`);
         return;
       }
-      if (levels[i].notifyMethod.length === 0) {
-        alert(`Please select at least one notification method for Level ${i + 1}`);
+
+      for (let i = 0; i < levelsArray.length; i++) {
+        const levelLabel = priorityMode === 'PER_PRIORITY' && 'priorityCode' in config ? ` (${config.priorityCode})` : '';
+        if (!levelsArray[i].escalateTo.targetName.trim()) {
+          alert(`Please enter escalate to target for Level ${i + 1}${levelLabel}`);
+          return;
+        }
+        if (levelsArray[i].notifyMethod.length === 0) {
+          alert(`Please select at least one notification method for Level ${i + 1}${levelLabel}`);
+          return;
+        }
+      }
+    }
+
+    // Check validation results
+    if (validationResults.length > 0) {
+      const hasErrors = validationResults.some(v => !v.valid);
+      if (hasErrors) {
+        alert('Please fix validation errors before saving');
         return;
       }
     }
 
     const policyData = {
       ...formData,
-      levels,
+      priorityMode,
+      levels: priorityMode === 'SAME_FOR_ALL' ? levels : undefined,
+      priorityConfigs: priorityMode === 'PER_PRIORITY' ? priorityConfigs : undefined,
     };
 
     onSave(policyData);
@@ -696,11 +856,157 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
               </div>
             </div>
 
+            {/* Priority Mode Selection */}
+            <div style={{ marginBottom: '24px' }}>
+              <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: 600 }}>
+                Priority Configuration
+              </h3>
+              <p style={{ margin: '0 0 12px 0', fontSize: '13px', color: '#6b7280' }}>
+                Choose whether escalation levels are the same for all priorities or different per priority
+              </p>
+              <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: '12px 16px',
+                    border: priorityMode === 'SAME_FOR_ALL' ? '2px solid #3b82f6' : '1px solid #d1d5db',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    backgroundColor: priorityMode === 'SAME_FOR_ALL' ? '#eff6ff' : 'white',
+                    flex: 1,
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="priorityMode"
+                    value="SAME_FOR_ALL"
+                    checked={priorityMode === 'SAME_FOR_ALL'}
+                    onChange={(e) => handlePriorityModeChange('SAME_FOR_ALL')}
+                    style={{ marginRight: '10px', width: '18px', height: '18px' }}
+                  />
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: '14px', color: '#374151' }}>Same for All Priorities</div>
+                    <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>Use one set of escalation levels for all ticket priorities</div>
+                  </div>
+                </label>
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: '12px 16px',
+                    border: priorityMode === 'PER_PRIORITY' ? '2px solid #3b82f6' : '1px solid #d1d5db',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    backgroundColor: priorityMode === 'PER_PRIORITY' ? '#eff6ff' : 'white',
+                    flex: 1,
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="priorityMode"
+                    value="PER_PRIORITY"
+                    checked={priorityMode === 'PER_PRIORITY'}
+                    onChange={(e) => handlePriorityModeChange('PER_PRIORITY')}
+                    style={{ marginRight: '10px', width: '18px', height: '18px' }}
+                  />
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: '14px', color: '#374151' }}>Per Priority</div>
+                    <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>Configure different escalation levels for each priority</div>
+                  </div>
+                </label>
+              </div>
+
+              {/* Priority Tabs */}
+              {priorityMode === 'PER_PRIORITY' && priorities.length > 0 && (
+                <div style={{ marginTop: '16px' }}>
+                  <div style={{ display: 'flex', gap: '8px', borderBottom: '2px solid #e5e7eb', marginBottom: '16px', overflowX: 'auto' }}>
+                    {priorities.map((priority) => (
+                      <button
+                        key={priority.code}
+                        type="button"
+                        onClick={() => setSelectedPriority(priority.code)}
+                        style={{
+                          padding: '10px 16px',
+                          border: 'none',
+                          borderBottom: selectedPriority === priority.code ? '3px solid #3b82f6' : '3px solid transparent',
+                          backgroundColor: 'transparent',
+                          cursor: 'pointer',
+                          fontWeight: selectedPriority === priority.code ? 600 : 400,
+                          color: selectedPriority === priority.code ? '#3b82f6' : '#6b7280',
+                          fontSize: '14px',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {priority.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Validation Button and Results */}
+              {formData.projectId && (
+                <div style={{ marginTop: '16px' }}>
+                  <button
+                    type="button"
+                    onClick={validateEscalationMatrix}
+                    disabled={isValidating}
+                    style={{
+                      padding: '8px 16px',
+                      backgroundColor: '#10b981',
+                      border: 'none',
+                      borderRadius: '6px',
+                      color: 'white',
+                      fontSize: '13px',
+                      fontWeight: 500,
+                      cursor: isValidating ? 'wait' : 'pointer',
+                      opacity: isValidating ? 0.6 : 1,
+                    }}
+                  >
+                    {isValidating ? 'Validating...' : 'Validate Configuration'}
+                  </button>
+                  
+                  {validationResults.length > 0 && (
+                    <div style={{ marginTop: '12px', padding: '12px', backgroundColor: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                      <h4 style={{ margin: '0 0 8px 0', fontSize: '13px', fontWeight: 600, color: '#374151' }}>Validation Results:</h4>
+                      {validationResults.map((result) => (
+                        <div
+                          key={result.priorityCode}
+                          style={{
+                            padding: '8px',
+                            marginBottom: '6px',
+                            backgroundColor: result.valid ? '#d1fae5' : '#fee2e2',
+                            border: `1px solid ${result.valid ? '#10b981' : '#dc2626'}`,
+                            borderRadius: '4px',
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '13px', fontWeight: 600, color: result.valid ? '#065f46' : '#991b1b' }}>
+                              {result.valid ? '✓' : '✗'} {result.priorityCode}
+                            </span>
+                            <span style={{ fontSize: '12px', color: result.valid ? '#065f46' : '#991b1b' }}>
+                              {result.totalHours.toFixed(1)}h / {result.priorityHours.toFixed(1)}h
+                            </span>
+                          </div>
+                          {!result.valid && result.reason && (
+                            <div style={{ fontSize: '12px', color: '#991b1b', marginTop: '4px' }}>
+                              {result.reason}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* Escalation Levels */}
             <div style={{ marginBottom: '24px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                 <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600 }}>
-                  Escalation Levels
+                  Escalation Levels {priorityMode === 'PER_PRIORITY' && selectedPriority ? `(${selectedPriority})` : ''}
                 </h3>
                 <button
                   type="button"
@@ -720,7 +1026,7 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
                 </button>
               </div>
 
-              {levels.map((level, index) => (
+              {getCurrentLevels().map((level, index) => (
                 <div
                   key={index}
                   style={{
@@ -756,7 +1062,7 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
                       </div>
                       Level {level.level}
                     </div>
-                    {levels.length > 1 && (
+                    {getCurrentLevels().length > 1 && (
                       <button
                         type="button"
                         onClick={() => handleRemoveLevel(index)}
@@ -873,6 +1179,68 @@ export const AddEscalationMatrixModal: React.FC<AddEscalationMatrixModalProps> =
                       </div>
                     </div>
 
+                    {/* Response Time (Optional for SLA tracking) */}
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500, color: '#374151' }}>
+                        Response Time (Optional)
+                        <span style={{ marginLeft: '4px', fontSize: '11px', color: '#6b7280', fontWeight: 400 }}>
+                          (for SLA tracking)
+                        </span>
+                      </label>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <input
+                          type="number"
+                          min="0"
+                          value={level.responseTime?.value || ''}
+                          onChange={(e) => {
+                            const val = e.target.value ? parseInt(e.target.value) : undefined;
+                            if (val !== undefined) {
+                              handleLevelChange(index, 'responseTime', {
+                                value: val,
+                                unit: level.responseTime?.unit || 'minutes',
+                              });
+                            } else {
+                              const currentLevels = getCurrentLevels();
+                              const updatedLevels = [...currentLevels];
+                              delete updatedLevels[index].responseTime;
+                              setCurrentLevels(updatedLevels);
+                            }
+                          }}
+                          placeholder="Optional"
+                          style={{
+                            flex: 1,
+                            padding: '8px 10px',
+                            border: '1px solid #d1d5db',
+                            borderRadius: '6px',
+                            fontSize: '13px',
+                          }}
+                        />
+                        <select
+                          value={level.responseTime?.unit || 'minutes'}
+                          onChange={(e) => {
+                            if (level.responseTime) {
+                              handleLevelChange(index, 'responseTime.unit', e.target.value);
+                            }
+                          }}
+                          disabled={!level.responseTime?.value}
+                          style={{
+                            width: '100px',
+                            padding: '8px 10px',
+                            border: '1px solid #d1d5db',
+                            borderRadius: '6px',
+                            fontSize: '13px',
+                            opacity: !level.responseTime?.value ? 0.5 : 1,
+                          }}
+                        >
+                          <option value="minutes">Minutes</option>
+                          <option value="hours">Hours</option>
+                          <option value="days">Days</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                     {/* Escalate To Type */}
                     <div>
                       <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500, color: '#374151' }}>

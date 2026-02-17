@@ -54,6 +54,10 @@ interface Agent {
     isAgent?: boolean;
   };
   projects?: any[];
+  centers?: {
+    _id: string;
+    centerName: string;
+  }[];
 }
 
 interface Project {
@@ -153,6 +157,7 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
         viewMode: viewMode, // Always send viewMode to backend
         page: page,
         limit: pageSize,
+        forAssignment: 'true', // HIERARCHY FILTER: Only show tickets from self + subordinates
       };
       
       if (viewMode === 'single' && currentProjectId) {
@@ -429,11 +434,17 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
                 }}
               >
                 <option value="">-- Choose a counselor --</option>
-                {agents && agents.length > 0 && agents.map(agent => (
-                  <option key={agent._id} value={agent._id}>
-                    {agent.firstName} {agent.lastName} {agent.role?.name ? `(${agent.role.name})` : ''}
-                  </option>
-                ))}
+                {agents && agents.length > 0 && agents.map(agent => {
+                  const centerNames = agent.centers?.map(c => c.centerName).join(', ');
+                  const displayText = centerNames 
+                    ? `${agent.firstName} ${agent.lastName} (${agent.role?.name || ''}) - ${centerNames}`
+                    : `${agent.firstName} ${agent.lastName} ${agent.role?.name ? `(${agent.role.name})` : ''}`;
+                  return (
+                    <option key={agent._id} value={agent._id}>
+                      {displayText}
+                    </option>
+                  );
+                })}
               </select>
             </div>
 
@@ -537,11 +548,17 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({ wrapWithLayout = tr
                 }}
               >
                 <option value="all">All Counselors</option>
-                {agents && agents.length > 0 && agents.map(agent => (
-                  <option key={agent._id} value={agent._id}>
-                    {agent.firstName} {agent.lastName}
-                  </option>
-                ))}
+                {agents && agents.length > 0 && agents.map(agent => {
+                  const centerNames = agent.centers?.map(c => c.centerName).join(', ');
+                  const displayText = centerNames 
+                    ? `${agent.firstName} ${agent.lastName} - ${centerNames}`
+                    : `${agent.firstName} ${agent.lastName}`;
+                  return (
+                    <option key={agent._id} value={agent._id}>
+                      {displayText}
+                    </option>
+                  );
+                })}
               </select>
             </div>
           </div>

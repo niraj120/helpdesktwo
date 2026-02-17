@@ -5,6 +5,7 @@ import { useAdminProjects } from '../hooks/useAdminProjects';
 
 interface KBViewerPageProps {
   wrapWithLayout?: boolean;
+  projectId?: string; // Optional: When provided (e.g., from portal route), use directly without dropdown
 }
 
 /**
@@ -12,8 +13,11 @@ interface KBViewerPageProps {
  * 
  * For Super Admin: Shows project dropdown to select which project's KB to view
  * Uses useAdminProjects hook which fetches ALL projects for Super Admin.
+ * 
+ * For Portal Access: When projectId prop is provided, directly shows that project's KB
+ * without requiring project selection.
  */
-const KBViewerPage: React.FC<KBViewerPageProps> = ({ wrapWithLayout = true }) => {
+const KBViewerPage: React.FC<KBViewerPageProps> = ({ wrapWithLayout = true, projectId: propProjectId }) => {
   const {
     projects,
     selectedProjectId,
@@ -22,6 +26,10 @@ const KBViewerPage: React.FC<KBViewerPageProps> = ({ wrapWithLayout = true }) =>
     isLoading,
     isSuperAdmin
   } = useAdminProjects();
+  
+  // Use prop projectId if provided (portal access), otherwise use selected from dropdown
+  const effectiveProjectId = propProjectId || selectedProjectId;
+  const isPortalAccess = !!propProjectId;
 
   // Get permissions from localStorage
   const permissions = JSON.parse(localStorage.getItem('permissions') || '[]');
@@ -42,8 +50,8 @@ const KBViewerPage: React.FC<KBViewerPageProps> = ({ wrapWithLayout = true }) =>
 
   const content = (
     <div style={{ padding: '20px' }}>
-      {/* Project Selector - Always show for Super Admin */}
-      {isSuperAdmin && projects.length > 0 && (
+      {/* Project Selector - Show for Super Admin only when NOT accessed via portal (i.e., no propProjectId) */}
+      {!isPortalAccess && isSuperAdmin && projects.length > 0 && (
         <div style={{
           backgroundColor: '#f8fafc',
           padding: '16px 20px',
@@ -84,9 +92,9 @@ const KBViewerPage: React.FC<KBViewerPageProps> = ({ wrapWithLayout = true }) =>
         </div>
       )}
 
-      {selectedProjectId ? (
+      {effectiveProjectId ? (
         <KnowledgeBaseViewer 
-          projectId={selectedProjectId} 
+          projectId={effectiveProjectId} 
           showControls={hasManagePermission} 
         />
       ) : (

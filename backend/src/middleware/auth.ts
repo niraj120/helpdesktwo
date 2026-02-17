@@ -1,7 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import * as jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
 import { User } from '../models/User';
 import { config } from '../config';
+import { extractPermissionCodes } from '../utils/permissionUtils';
 
 export interface ProjectContext {
   viewMode: 'single' | 'unified';
@@ -68,10 +70,20 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
       
       // Attach full role with populated permissions to req.user
       const role = user.role as any;
+      
+      // ✅ USE CENTRALIZED UTILITY TO EXTRACT PERMISSION CODES
+      const permissionCodes = await extractPermissionCodes(
+        role?.permissions,
+        `Auth Middleware [${decoded.email}]`
+      );
+      
       req.user = {
         userId: decoded.userId,
         email: decoded.email,
-        role: role, // Full role object with permissions populated
+        role: {
+          ...role?.toObject?.() || role || {},
+          permissions: permissionCodes // ✅ Attach permission codes from utility
+        },
         firstName: decoded.firstName,
         lastName: decoded.lastName,
         tokenVersion: decoded.tokenVersion,

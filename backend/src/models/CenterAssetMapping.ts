@@ -17,13 +17,16 @@ export interface ICenterAssetMapping extends Document {
   assetNotUsed: number;
   workingAsset: number;
   notWorkingAsset: number; // Auto-calculated: assetUsed - workingAsset
+  remark?: string; // User remark/notes for the asset
   photos: IAssetPhoto[];
   lastUpdatedBy: mongoose.Types.ObjectId;
   // Audit tracking fields
-  lastAuditDate?: Date;
-  nextAuditDate?: Date;
-  auditFrequencyMonths?: number;
-  auditSubmitted?: boolean;
+  lastAuditDate?: Date; // Admin-configured start date
+  nextAuditDate?: Date; // When next audit is due
+  auditFrequencyMonths?: number; // Frequency in months
+  auditSubmitted?: boolean; // Whether current audit cycle is submitted
+  lastAuditSubmittedAt?: Date; // When user last clicked Submit Audit
+  lastAuditSubmittedBy?: mongoose.Types.ObjectId; // Who submitted the audit
   createdAt: Date;
   updatedAt: Date;
 }
@@ -101,6 +104,12 @@ const CenterAssetMappingSchema = new Schema<ICenterAssetMapping>(
       default: 0,
       min: 0
     },
+    remark: {
+      type: String,
+      required: false,
+      default: '',
+      maxlength: 5000 // Allow up to 5000 characters
+    },
     photos: [AssetPhotoSchema],
     lastUpdatedBy: {
       type: Schema.Types.ObjectId,
@@ -124,6 +133,15 @@ const CenterAssetMappingSchema = new Schema<ICenterAssetMapping>(
     auditSubmitted: {
       type: Boolean,
       default: false
+    },
+    lastAuditSubmittedAt: {
+      type: Date,
+      required: false
+    },
+    lastAuditSubmittedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: false
     }
   },
   {

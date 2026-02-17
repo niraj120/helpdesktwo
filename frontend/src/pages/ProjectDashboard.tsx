@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from '../components/DashboardLayout';
+import ModuleHeader from '../components/ModuleHeader';
+import ViewModeSelector from '../components/ViewModeSelector';
 import { API_CONFIG } from '../config/constants';
+
+type ViewMode = 'self' | 'team' | 'hierarchy' | 'all';
 
 interface ProjectDashboardStats {
   totalTickets: number;
@@ -20,6 +24,7 @@ interface ProjectDashboardProps {
 
 const ProjectDashboard = ({ wrapWithLayout = true }: ProjectDashboardProps) => {
   const { t } = useTranslation();
+  const [viewMode, setViewMode] = useState<ViewMode>('self');
   const [stats, setStats] = useState<ProjectDashboardStats>({
     totalTickets: 0,
     highPriority: 0,
@@ -32,10 +37,15 @@ const ProjectDashboard = ({ wrapWithLayout = true }: ProjectDashboardProps) => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchProjectDashboardStats();
-  }, []);
+    fetchProjectDashboardStats(viewMode);
+  }, [viewMode]); // Re-fetch when view mode changes
 
-  const fetchProjectDashboardStats = async () => {
+  const handleViewModeChange = (newMode: ViewMode) => {
+    console.log('📊 ProjectDashboard: Switching view mode from', viewMode, 'to', newMode);
+    setViewMode(newMode);
+  };
+
+  const fetchProjectDashboardStats = async (currentViewMode: ViewMode) => {
     try {
       const token = localStorage.getItem('authToken');
       
@@ -61,8 +71,10 @@ const ProjectDashboard = ({ wrapWithLayout = true }: ProjectDashboardProps) => {
         return;
       }
 
+      console.log('📊 ProjectDashboard: Fetching stats with viewMode:', currentViewMode, 'projectId:', projectId);
+
       const response = await fetch(
-        `${API_CONFIG.API_URL}/tickets/project-dashboard-stats?projectId=${projectId}`,
+        `${API_CONFIG.API_URL}/tickets/project-dashboard-stats?projectId=${projectId}&viewMode=${currentViewMode}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -157,26 +169,26 @@ const ProjectDashboard = ({ wrapWithLayout = true }: ProjectDashboardProps) => {
 
   const dashboardContent = (
     <div style={{ padding: '20px' }}>
-      {/* Header */}
-      <div style={{ marginBottom: '32px' }}>
-        <h1 style={{
-          fontSize: '28px',
-          fontWeight: '700',
-          marginBottom: '8px',
-          marginTop: '0',
-          color: '#111827',
-          lineHeight: '1.2'
+      {/* Header with View Mode Selector */}
+      <div style={{ position: 'relative' }}>
+        <ModuleHeader
+          title="Dashboard"
+          subtitle={`Overview of ${viewMode === 'self' ? 'your' : viewMode === 'team' ? "your team's" : viewMode === 'hierarchy' ? "your hierarchy's" : 'all'} queries`}
+        />
+        
+        {/* View Mode Selector - positioned in header area */}
+        <div style={{ 
+          position: 'absolute', 
+          top: '32px', 
+          right: '40px',
+          zIndex: 10
         }}>
-          Project Dashboard
-        </h1>
-        <p style={{ 
-          fontSize: '14px', 
-          color: '#6B7280',
-          margin: '0',
-          lineHeight: '1.5'
-        }}>
-          Overview of Queries
-        </p>
+          <ViewModeSelector
+            value={viewMode}
+            onChange={handleViewModeChange}
+            disabled={loading}
+          />
+        </div>
       </div>
 
       {/* Stats Cards Grid */}

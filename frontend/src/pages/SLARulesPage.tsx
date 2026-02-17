@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import ModuleHeader from '../components/ModuleHeader';
 import { API_CONFIG } from '../config/constants';
+import EscalationMatrixContent from '../components/SLA/EscalationMatrixContent';
+import WorkingCalendarContent from '../components/SLA/WorkingCalendarContent';
 
 interface Priority {
   _id?: string;
@@ -39,8 +41,20 @@ interface Priority {
 // Keep SLARule alias for backward compatibility
 type SLARule = Priority;
 
+type TabType = 'priority' | 'escalation' | 'working';
+
 const SLARulesPage: React.FC = () => {
-  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  
+  // Determine initial tab from URL
+  const getInitialTab = (): TabType => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam === 'escalation') return 'escalation';
+    if (tabParam === 'working') return 'working';
+    return 'priority';
+  };
+  
+  const [activeTab, setActiveTab] = useState<TabType>(getInitialTab);
   const [priorities, setPriorities] = useState<Priority[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -65,6 +79,16 @@ const SLARulesPage: React.FC = () => {
     fetchPriorities();
     fetchProjects();
   }, []);
+
+  // Sync URL with tab changes (smooth transition - no navigation)
+  const handleTabChange = (tab: TabType) => {
+    setActiveTab(tab);
+    if (tab === 'priority') {
+      setSearchParams({});
+    } else {
+      setSearchParams({ tab });
+    }
+  };
 
   const fetchProjects = async () => {
     try {
@@ -326,16 +350,19 @@ const SLARulesPage: React.FC = () => {
           borderBottom: '2px solid #e5e7eb'
         }}>
           <button
+            onClick={() => handleTabChange('priority')}
             className="btn btn-text"
             style={{
-              borderBottom: '3px solid #7c3aed',
-              color: '#7c3aed',
+              borderBottom: activeTab === 'priority' ? '3px solid #7c3aed' : '3px solid transparent',
+              borderTop: 'none',
+              borderLeft: 'none',
+              borderRight: 'none',
+              color: activeTab === 'priority' ? '#7c3aed' : '#6b7280',
               marginBottom: '-2px',
               textTransform: 'none',
               borderRadius: 0,
               padding: '12px 24px',
               background: 'none',
-              border: 'none',
               fontSize: '14px',
               fontWeight: 500,
               cursor: 'pointer',
@@ -344,17 +371,19 @@ const SLARulesPage: React.FC = () => {
             Priority
           </button>
           <button
-            onClick={() => navigate('/escalation-matrix')}
+            onClick={() => handleTabChange('escalation')}
             className="btn btn-text"
             style={{
-              borderBottom: '3px solid transparent',
-              color: '#6b7280',
+              borderBottom: activeTab === 'escalation' ? '3px solid #7c3aed' : '3px solid transparent',
+              borderTop: 'none',
+              borderLeft: 'none',
+              borderRight: 'none',
+              color: activeTab === 'escalation' ? '#7c3aed' : '#6b7280',
               marginBottom: '-2px',
               textTransform: 'none',
               borderRadius: 0,
               padding: '12px 24px',
               background: 'none',
-              border: 'none',
               fontSize: '14px',
               fontWeight: 500,
               cursor: 'pointer',
@@ -362,10 +391,34 @@ const SLARulesPage: React.FC = () => {
           >
             Escalation Matrix
           </button>
+          <button
+            onClick={() => handleTabChange('working')}
+            className="btn btn-text"
+            style={{
+              borderBottom: activeTab === 'working' ? '3px solid #7c3aed' : '3px solid transparent',
+              borderTop: 'none',
+              borderLeft: 'none',
+              borderRight: 'none',
+              color: activeTab === 'working' ? '#7c3aed' : '#6b7280',
+              marginBottom: '-2px',
+              textTransform: 'none',
+              borderRadius: 0,
+              padding: '12px 24px',
+              background: 'none',
+              fontSize: '14px',
+              fontWeight: 500,
+              cursor: 'pointer',
+            }}
+          >
+            Working Calendar
+          </button>
         </div>
 
-        {/* Description and Action Button */}
-        <div style={{
+        {/* Priority Tab Content */}
+        {activeTab === 'priority' && (
+          <>
+            {/* Description and Action Button */}
+            <div style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
@@ -924,6 +977,18 @@ const SLARulesPage: React.FC = () => {
               </form>
             </div>
           </div>
+        )}
+          </>
+        )}
+
+        {/* Escalation Matrix Tab Content */}
+        {activeTab === 'escalation' && (
+          <EscalationMatrixContent />
+        )}
+
+        {/* Working Calendar Tab Content */}
+        {activeTab === 'working' && (
+          <WorkingCalendarContent />
         )}
       </div>
     </DashboardLayout>

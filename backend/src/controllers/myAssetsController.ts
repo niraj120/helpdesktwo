@@ -93,14 +93,26 @@ export const getMyAssets = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Fetch asset mappings - the system stores mappings at PROJECT level
-    // The projectId field in CenterAssetMapping contains the actual PROJECT ID
+    // Fetch asset mappings - prioritize centerId for new structure, fall back to projectId for legacy
+    // New structure: Each center has its own mapping with centerId set
+    // Legacy structure: Mappings are at project level (centerId is null)
     const query = {
-      projectId: { $in: projectIds }
+      $or: [
+        { centerId: { $in: centerIds } },  // New: per-center mappings
+        { 
+          projectId: { $in: projectIds },
+          centerId: { $exists: false }     // Legacy: project-level mappings
+        },
+        { 
+          projectId: { $in: projectIds },
+          centerId: null                   // Legacy: project-level mappings with null centerId
+        }
+      ]
     };
     
     console.log('Query for asset mappings:', JSON.stringify(query, null, 2));
-    console.log('Looking for mappings with projectIds:', projectIds.map(id => id.toString()));
+    console.log('Looking for mappings with centerIds:', centerIds.map(id => id.toString()));
+    console.log('Or legacy mappings with projectIds:', projectIds.map(id => id.toString()));
     
     // Don't populate projectId - in old structure it contains center ID which will fail to populate from Project collection
     const mappings = await CenterAssetMapping.find(query)
@@ -116,6 +128,14 @@ export const getMyAssets = async (req: AuthRequest, res: Response) => {
         path: 'lastUpdatedBy',
         select: 'firstName lastName email',
       })
+      .populate({
+        path: 'lastAuditSubmittedBy',
+        select: 'firstName lastName email',
+      })
+      .populate({
+        path: 'centerId',
+        select: 'centerName',
+      })
       .sort({ createdAt: -1 });
 
     console.log('📊 Mappings found:', mappings.length);
@@ -130,7 +150,7 @@ export const getMyAssets = async (req: AuthRequest, res: Response) => {
     }
 
     // For project-level mappings, all centers in the same project should see the same assets
-    // We'll replicate mappings for each center in the project
+    // For center-level mappings (new), show only the specific center's data
     const formattedMappings: any[] = [];
 
     // Map center IDs to their names
@@ -141,22 +161,21 @@ export const getMyAssets = async (req: AuthRequest, res: Response) => {
 
     console.log('Center map for user:', centerMap);
 
-    // For each mapping (which is at project level), create entries for ALL user's centers in that project
-    mappings.forEach(mapping => {
-      // Find which of user's centers belong to this mapping's project
-      const matchingCenters = centers.filter(c => c.projectId?.toString() === String(mapping.projectId));
+    for (const mapping of mappings) {
+      // Check if this is a center-level mapping (new structure)
+      const mappingCenterId = mapping.centerId;
       
-      console.log(`Mapping ${mapping._id} (project: ${mapping.projectId}) matches ${matchingCenters.length} user centers`);
-
-      // Create a formatted entry for EACH matching center
-      matchingCenters.forEach(center => {
-        // Check if audit date has arrived and reset auditSubmitted
+      if (mappingCenterId) {
+        // NEW: Center-specific mapping - just add it with its center info
+        const centerDoc = (mapping as any).centerId;
+        const centerName = typeof centerDoc === 'object' ? centerDoc.centerName : centerMap[mappingCenterId.toString()];
+        
+        // Check audit status
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         
         let canEdit = false;
         
-        // Check if we have audit configuration
         if (mapping.lastAuditDate && mapping.auditFrequencyMonths) {
           const lastAudit = new Date(mapping.lastAuditDate);
           lastAudit.setHours(0, 0, 0, 0);
@@ -166,30 +185,66 @@ export const getMyAssets = async (req: AuthRequest, res: Response) => {
             nextAudit.setHours(0, 0, 0, 0);
           }
           
-          // Allow editing if:
-          // 1. Today is the start date (lastAuditDate) - for initial audit
-          // 2. Today >= nextAuditDate - for subsequent audits
-          const isStartDate = today.getTime() === lastAudit.getTime();
           const isAuditDue = nextAudit && today >= nextAudit;
+          const isInitialAudit = !nextAudit && today >= lastAudit;
           
-          // If audit date has arrived and audit was previously submitted, reset it
-          if (isAuditDue && mapping.auditSubmitted) {
+          if ((isAuditDue || isInitialAudit) && mapping.auditSubmitted) {
             mapping.auditSubmitted = false;
-            mapping.save(); // Reset for next audit cycle
+            await mapping.save();
+            console.log(`✅ Reset auditSubmitted for mapping ${mapping._id} (new audit cycle started)`);
           }
           
-          // Can edit if it's the start date OR audit is due, AND not yet submitted
-          canEdit = (isStartDate || !!isAuditDue) && !mapping.auditSubmitted;
+          canEdit = (isAuditDue || isInitialAudit) && !mapping.auditSubmitted;
         }
         
         formattedMappings.push({
           ...mapping.toObject(),
-          centerName: center.centerName,
-          centerId: center._id,
+          centerName: centerName || 'Unknown Center',
+          centerId: mappingCenterId,
           canEdit,
         });
-      });
-    });
+      } else {
+        // LEGACY: Project-level mapping - replicate for each user center in that project
+        const matchingCenters = centers.filter(c => c.projectId?.toString() === String(mapping.projectId));
+        
+        console.log(`Legacy mapping ${mapping._id} (project: ${mapping.projectId}) matches ${matchingCenters.length} user centers`);
+
+        for (const center of matchingCenters) {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          
+          let canEdit = false;
+          
+          if (mapping.lastAuditDate && mapping.auditFrequencyMonths) {
+            const lastAudit = new Date(mapping.lastAuditDate);
+            lastAudit.setHours(0, 0, 0, 0);
+            
+            const nextAudit = mapping.nextAuditDate ? new Date(mapping.nextAuditDate) : null;
+            if (nextAudit) {
+              nextAudit.setHours(0, 0, 0, 0);
+            }
+            
+            const isAuditDue = nextAudit && today >= nextAudit;
+            const isInitialAudit = !nextAudit && today >= lastAudit;
+            
+            if ((isAuditDue || isInitialAudit) && mapping.auditSubmitted) {
+              mapping.auditSubmitted = false;
+              await mapping.save();
+              console.log(`✅ Reset auditSubmitted for mapping ${mapping._id} (new audit cycle started)`);
+            }
+            
+            canEdit = (isAuditDue || isInitialAudit) && !mapping.auditSubmitted;
+          }
+          
+          formattedMappings.push({
+            ...mapping.toObject(),
+            centerName: center.centerName,
+            centerId: center._id,
+            canEdit,
+          });
+        }
+      }
+    }
 
     // TEMPORARILY DISABLED: Filter out orphaned assets with Unknown Center (deleted center/project references)
     // const validMappings = formattedMappings.filter(m => m.centerName !== 'Unknown Center');
@@ -222,7 +277,7 @@ export const getMyAssets = async (req: AuthRequest, res: Response) => {
 export const updateMyAssetCounts = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { workingAsset, notWorkingAsset, remarks } = req.body;
+    const { workingAsset, notWorkingAsset, remarks, centerId: requestCenterId } = req.body;
     const userId = req.user?.userId;
 
     if (!userId) {
@@ -232,8 +287,8 @@ export const updateMyAssetCounts = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Find the mapping
-    const mapping = await CenterAssetMapping.findById(id)
+    // Find the original mapping
+    let mapping = await CenterAssetMapping.findById(id)
       .populate('projectId')
       .populate('assetId');
 
@@ -275,6 +330,33 @@ export const updateMyAssetCounts = async (req: AuthRequest, res: Response) => {
       });
     }
 
+    // Check if this is a legacy project-level mapping (no centerId)
+    // If so, create a center-specific copy for this user's center
+    const targetCenterId = requestCenterId || centerIds[0];
+    
+    if (!mapping.centerId && targetCenterId) {
+      console.log(`🔀 Legacy project-level mapping detected. Creating center-specific copy for center ${targetCenterId}`);
+      
+      // Check if a center-specific mapping already exists
+      let centerMapping = await CenterAssetMapping.findOne({
+        centerId: targetCenterId,
+        assetId: mapping.assetId,
+      });
+      
+      if (!centerMapping) {
+        // Create new center-specific mapping by cloning the project-level one
+        const mappingObj = mapping.toObject();
+        delete (mappingObj as any)._id;
+        (mappingObj as any).centerId = new mongoose.Types.ObjectId(targetCenterId);
+        
+        centerMapping = await CenterAssetMapping.create(mappingObj);
+        console.log(`✅ Created new center-specific mapping: ${centerMapping._id}`);
+      }
+      
+      // Use the center-specific mapping from now on
+      mapping = centerMapping;
+    }
+
     console.log('🔍 [UPDATE] Request body:', req.body);
     console.log('🔍 [UPDATE] workingAsset:', workingAsset);
     console.log('🔍 [UPDATE] notWorkingAsset:', notWorkingAsset);
@@ -307,17 +389,24 @@ export const updateMyAssetCounts = async (req: AuthRequest, res: Response) => {
       changeType = 'not_working_asset';
     }
     
-    mapping.lastUpdatedBy = userId as any;
-    console.log('💾 [SAVE] Before save - workingAsset:', mapping.workingAsset, 'notWorkingAsset:', mapping.notWorkingAsset);
+    // Update remark if provided
+    if (remarks !== undefined) {
+      (mapping as any).remark = remarks;
+    }
+    
+    // NOTE: Do NOT update lastUpdatedBy here - this is Edit → Save, not Audit Submit
+    // lastUpdatedBy and updatedAt will still be updated by Mongoose timestamps
+    // but "Last Updated" column in UI will show lastAuditSubmittedAt (only updated on Submit)
+    
+    console.log('💾 [SAVE] Before save - workingAsset:', mapping.workingAsset, 'notWorkingAsset:', mapping.notWorkingAsset, 'remark:', (mapping as any).remark);
     await mapping.save();
     console.log('✅ [SAVE] After save - workingAsset:', mapping.workingAsset, 'notWorkingAsset:', mapping.notWorkingAsset);
 
-    // Create audit log entry
-    const centerIdFromUser = centerIds[0]; // Use first center if multiple
+    // Create audit log entry - use targetCenterId for center-specific tracking
     await AssetAuditLog.create({
       centerAssetMappingId: mapping._id,
       userId: userId,
-      centerId: centerIdFromUser,
+      centerId: targetCenterId,
       assetId: mapping.assetId,
       changeType,
       previousValues,
@@ -329,8 +418,8 @@ export const updateMyAssetCounts = async (req: AuthRequest, res: Response) => {
       remarks,
     });
 
-    // Fetch updated mapping with populated fields
-    const updatedMapping = await CenterAssetMapping.findById(id)
+    // Fetch updated mapping with populated fields (use mapping._id as it may be a new center-specific copy)
+    const updatedMapping = await CenterAssetMapping.findById(mapping._id)
       .populate({
         path: 'projectId',
         select: 'name projectName',
@@ -455,6 +544,7 @@ export const getAssetAuditLogs = async (req: AuthRequest, res: Response) => {
 export const submitAudit = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
+    const { centerId } = req.body; // Extract centerId for center-specific submissions
     const userId = req.user?.userId;
 
     if (!userId) {
@@ -465,7 +555,7 @@ export const submitAudit = async (req: AuthRequest, res: Response) => {
     }
 
     // Find the asset mapping
-    const mapping = await CenterAssetMapping.findById(id);
+    let mapping = await CenterAssetMapping.findById(id);
     
     if (!mapping) {
       return res.status(404).json({
@@ -495,29 +585,94 @@ export const submitAudit = async (req: AuthRequest, res: Response) => {
       });
     }
 
+    // Determine target centerId - use provided centerId or mapping's existing centerId
+    const targetCenterId = centerId || mapping.centerId;
+
+    // Handle legacy mappings: If this mapping has no centerId but a centerId was provided,
+    // we need to create a center-specific copy for this center
+    if (!mapping.centerId && targetCenterId) {
+      console.log('📋 submitAudit: Legacy mapping detected, creating center-specific copy for centerId:', targetCenterId);
+      
+      // Check if a center-specific mapping already exists
+      const existingCenterMapping = await CenterAssetMapping.findOne({
+        centerId: targetCenterId,
+        assetId: mapping.assetId,
+      });
+
+      if (existingCenterMapping) {
+        // Use the existing center-specific mapping
+        mapping = existingCenterMapping;
+        console.log('📋 submitAudit: Using existing center-specific mapping:', mapping._id);
+      } else {
+        // Create a new center-specific mapping as a copy
+        const newMapping = new CenterAssetMapping({
+          centerId: targetCenterId,
+          projectId: mapping.projectId,
+          assetId: mapping.assetId,
+          totalAssigned: mapping.totalAssigned,
+          workingAsset: mapping.workingAsset,
+          notWorkingAsset: mapping.notWorkingAsset,
+          remark: mapping.remark,
+          auditFrequencyMonths: mapping.auditFrequencyMonths,
+          lastUpdatedBy: userId,
+          // Don't copy lastAuditDate or nextAuditDate yet - will set them below on submission
+        });
+        
+        await newMapping.save();
+        mapping = newMapping;
+        console.log('📋 submitAudit: Created new center-specific mapping:', mapping._id);
+      }
+    }
+
     // Mark audit as submitted
     mapping.auditSubmitted = true;
     
-    // Calculate next audit date based on frequency
+    // Update lastAuditDate to today (when audit was submitted)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    mapping.lastAuditDate = today;
+    
+    // Set lastAuditSubmittedAt and lastAuditSubmittedBy (for "Last Updated" column)
+    (mapping as any).lastAuditSubmittedAt = new Date(); // Full timestamp with time
+    (mapping as any).lastAuditSubmittedBy = userId;
+    
+    // Calculate next audit date based on frequency from TODAY
     if (mapping.auditFrequencyMonths && mapping.auditFrequencyMonths > 0) {
-      // Use existing lastAuditDate or set to now
-      const baseDate = mapping.lastAuditDate || new Date();
-      const nextDate = new Date(baseDate);
+      const nextDate = new Date(today);
       nextDate.setMonth(nextDate.getMonth() + mapping.auditFrequencyMonths);
       
       // Set the next audit date at start of day for consistency
       nextDate.setHours(0, 0, 0, 0);
       
       mapping.nextAuditDate = nextDate;
-      if (!mapping.lastAuditDate) {
-        mapping.lastAuditDate = new Date();
-      }
       
-      console.log('✅ Audit submitted. Next audit date:', nextDate);
+      console.log('✅ Audit submitted. lastAuditDate:', today, 'Next audit date:', nextDate);
     }
     
     mapping.lastUpdatedBy = userId as any;
     await mapping.save();
+
+    // Create audit log for the submission
+    try {
+      await AssetAuditLog.create({
+        centerAssetMappingId: mapping._id,
+        userId: userId,
+        centerId: targetCenterId,
+        assetId: mapping.assetId,
+        changeType: 'audit_submitted',
+        previousValues: { auditSubmitted: false },
+        newValues: { 
+          auditSubmitted: true,
+          lastAuditDate: today,
+          nextAuditDate: mapping.nextAuditDate,
+        },
+        changedAt: new Date(),
+        remarks: 'Audit submitted',
+      });
+    } catch (logError) {
+      console.error('Failed to create audit log:', logError);
+      // Don't fail the request if audit log fails
+    }
 
     return res.status(200).json({
       success: true,

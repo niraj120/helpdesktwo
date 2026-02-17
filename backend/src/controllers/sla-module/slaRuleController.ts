@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import SLARule from '../../models/sla-module/SLARule';
 import { logActivity } from '../../utils/logger';
 
@@ -8,8 +9,13 @@ export const getAllSLARules = async (req: Request, res: Response): Promise<void>
     const { projectId, priority, isActive } = req.query;
     const filter: any = {};
 
-    if (projectId) {
-      filter.projectIds = { $in: [projectId] }; // Query array field correctly
+    if (projectId && typeof projectId === 'string') {
+      // Convert to ObjectId for proper matching with the projectIds array
+      if (mongoose.Types.ObjectId.isValid(projectId)) {
+        filter.projectIds = { $in: [new mongoose.Types.ObjectId(projectId)] };
+      } else {
+        filter.projectIds = { $in: [projectId] };
+      }
     }
     if (priority) {
       filter.priority = priority;

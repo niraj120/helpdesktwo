@@ -518,12 +518,13 @@ const projectSchema = new Schema<IProject>({
           pattern: { type: String },
         },
         isParentMobile: { type: Boolean, default: false },
+        requireOtpVerification: { type: Boolean, default: false }, // For phone/email OTP verification
         order: { type: Number },
       }],
       ticketFields: [{
         id: { type: String },
         fieldName: { type: String },
-        fieldType: { type: String, enum: ['text', 'textarea', 'dropdown', 'number', 'date', 'file', 'category', 'category-select'] },
+        fieldType: { type: String, enum: ['text', 'textarea', 'dropdown', 'number', 'date', 'file', 'category', 'category-select', 'phone', 'email', 'hierarchy-level-1', 'hierarchy-level-2', 'hierarchy-level-3', 'hierarchy-level-4'] },
         required: { type: Boolean, default: false },
         placeholder: { type: String },
         options: [{ type: String }],
@@ -533,6 +534,8 @@ const projectSchema = new Schema<IProject>({
         isFixed: { type: Boolean, default: false },
         isEnabled: { type: Boolean, default: true },
         order: { type: Number },
+        hierarchyLevel: { type: Number }, // For hierarchy level fields (1-4)
+        requireOtpVerification: { type: Boolean, default: false }, // For phone/email OTP verification
       }],
       allowAgentToMarkResolved: { type: Boolean, default: true },
       allowAgentToEscalate: { type: Boolean, default: true },

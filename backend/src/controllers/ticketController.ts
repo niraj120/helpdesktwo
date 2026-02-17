@@ -8,6 +8,11 @@ import { Center } from '../models/Center';
 import { Category } from '../models/Category';
 import SLATracking from '../models/sla-module/SLATracking';
 import EscalationPolicy from '../models/sla-module/EscalationPolicy';
+import { UserReportingHierarchy } from '../models/UserReportingHierarchy';
+import { UserDashboardConfig } from '../models/UserDashboardConfig';
+import { Priority } from '../models/master-data/Priority';
+import { WorkingCalendar } from '../models/WorkingCalendar';
+import { EscalationMatrix } from '../models/escalation-matrix';
 import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
@@ -17,6 +22,9 @@ import { sendTicketCreatedEmail, sendStudentWelcomeEmail } from '../utils/emailS
 import { logActivity } from '../utils/logger';
 import { config } from '../config';
 import { initializeSLATracking } from '../services/slaHelperService';
+import { autoAssignMatrixToTicket } from '../services/escalationMatrixService';
+import * as slaService from '../services/slaService';
+import { toObjectId, toObjectIdArray, ensureObjectId } from '../utils/objectIdUtils';
 
 // Helper: Convert status code to name for emails/display
 const getStatusName = (statusCode: number): string => {
@@ -472,6 +480,12 @@ export const submitTicket = async (req: Request, res: Response) => {
     
     // Create ticket (using actual student user ID)
     console.time('⏱️ Ticket save');
+    
+    // IMPORTANT: Always convert projectId to ObjectId to prevent String/ObjectId mismatch issues
+    const projectObjectIdForMetadata = typeof projectId === 'string' 
+      ? new mongoose.Types.ObjectId(projectId) 
+      : projectId;
+    
     const ticket = new Ticket({
       ticketNumber,
       title: ticketData.Subject || 'New Ticket',
@@ -489,7 +503,7 @@ export const submitTicket = async (req: Request, res: Response) => {
         studentName: ticketData.Name,
         studentEmail: ticketData.Email,
         studentPhone: ticketData.Phone,
-        projectId,
+        projectId: projectObjectIdForMetadata, // Always use ObjectId
         centerId: 'online', // Online tickets have center marked as 'online'
         submissionType: 'online',
         autoAssigned: !!assignedAgent,
@@ -503,6 +517,85 @@ export const submitTicket = async (req: Request, res: Response) => {
     
     console.log(`✅ Ticket created successfully: ${ticket._id} | Created by: ${studentUserId}${assignedAgent ? ` | Assigned to: ${assignedAgent}` : ' | Unassigned'}`);
     
+    // Initialize priority-level SLA tracking (non-blocking)
+    (async () => {
+      try {
+        // Get working calendar for the project
+        const calendar = await slaService.getDefaultWorkingCalendar(projectId);
+        
+        // Get priority details - first try Priority model, fallback to SLARule
+        let priority = await Priority.findOne({ 
+          code: ticketPriority.toUpperCase(),
+          projectId: projectId 
+        });
+        
+        // Fallback: If no Priority record exists, try to get resolution time from SLARule
+        if (!priority) {
+          const SLARule = (await import('../models/sla-module/SLARule')).default;
+          const slaRule = await SLARule.findOne({
+            projectIds: { $in: [new mongoose.Types.ObjectId(projectId)] },
+            priority: ticketPriority.toUpperCase(),
+            isActive: true
+          });
+          
+          if (slaRule) {
+            // Create a virtual priority object from SLA rule
+            priority = {
+              code: ticketPriority.toUpperCase(),
+              resolutionTime: slaRule.resolutionTime,
+              responseTime: slaRule.responseTime || { value: 1, unit: 'hours' }
+            } as any;
+            console.log(`📋 Using SLARule for priority ${ticketPriority}: ${JSON.stringify(slaRule.resolutionTime)}`);
+          }
+        }
+        
+        if (priority && calendar) {
+          // Calculate ticket-level SLA
+          const ticketSLADueDate = await slaService.calculateTicketLevelSLA(
+            ticket.createdAt,
+            priority.code,
+            project._id as mongoose.Types.ObjectId,
+            calendar._id as mongoose.Types.ObjectId
+          );
+          
+          if (ticketSLADueDate) {
+            ticket.ticketLevelSLA = {
+              dueAt: ticketSLADueDate,
+              pausedDuration: 0,
+            };
+            
+            // If ticket has escalation matrix, initialize role-level SLA
+            if (ticket.escalationMatrixId) {
+              const matrix = await EscalationMatrix.findById(ticket.escalationMatrixId);
+              if (matrix && ticket.currentEscalationLevelNumber) {
+                const roleSLADueDate = await slaService.calculateRoleLevelSLA(
+                  ticket.createdAt,
+                  matrix,
+                  ticket.currentEscalationLevelNumber,
+                  priority.code,
+                  calendar._id as mongoose.Types.ObjectId
+                );
+                
+                if (roleSLADueDate) {
+                  ticket.roleLevelSLA = {
+                    startedAt: ticket.createdAt,
+                    dueAt: roleSLADueDate,
+                    pausedDuration: 0,
+                  };
+                }
+              }
+            }
+            
+            ticket.workingCalendarId = calendar._id as any;
+            await ticket.save();
+            console.log(`✅ Priority-level SLA tracking initialized for ticket ${ticket.ticketNumber}`);
+          }
+        }
+      } catch (error) {
+        console.error('❌ Failed to initialize priority-level SLA tracking:', error);
+      }
+    })();
+    
     // Initialize SLA tracking for the new ticket (non-blocking)
     (async () => {
       try {
@@ -515,6 +608,20 @@ export const submitTicket = async (req: Request, res: Response) => {
         console.log(`✅ SLA tracking initialized for ticket ${ticket.ticketNumber}`);
       } catch (error) {
         console.error('❌ Failed to initialize SLA tracking:', error);
+      }
+    })();
+    
+    // Auto-assign escalation matrix based on project and priority (non-blocking)
+    (async () => {
+      try {
+        const result = await autoAssignMatrixToTicket(ticket._id, projectId, ticketPriority);
+        if (result.success) {
+          console.log(`✅ Escalation matrix auto-assigned for ticket ${ticket.ticketNumber}`);
+        } else {
+          console.log(`ℹ️ No escalation matrix for ticket ${ticket.ticketNumber}: ${result.message}`);
+        }
+      } catch (error) {
+        console.error('❌ Failed to auto-assign escalation matrix:', error);
       }
     })();
     
@@ -662,9 +769,12 @@ export const getMyTickets = async (req: Request, res: Response) => {
     
     // Check if user is a student based on role code
     const isStudent = role?.code === 'STUDENT';
-    // Agent roles: L1, L2, L3, PM, AGENT, or has isAgent flag
-    const agentRoleCodes = ['L1', 'L2', 'L3', 'PM', 'AGENT ', 'COUNSELOR_L1'];
-    const isAgent = role?.isAgent === true || agentRoleCodes.includes(role?.code);
+    // Agent roles: L1, L2, L3, PM, AGENT, or has isAgent flag, or has agent-like permissions
+    const agentRoleCodes = ['L1', 'L2', 'L3', 'PM', 'AGENT ', 'COUNSELOR_L1', 'COUNSELOR', 'DISTRICT_NODAL_OFFICER', 'DNO', 'HUB_COORDINATOR', 'HC'];
+    // Detect as agent if role has isAgent flag, role code is in the list, or user has agent-like permissions
+    const agentPermissions = ['TICKET_ASSIGN', 'TICKET_ESCALATE', 'TICKET_RESPOND', 'TICKET_CLOSE'];
+    const hasAgentPermission = agentPermissions.some(perm => permissionCodes.includes(perm));
+    const isAgent = role?.isAgent === true || agentRoleCodes.includes(role?.code) || hasAgentPermission;
 
     console.log(`🔍 [MY_TICKETS] User: ${user.email}`);
     console.log(`🔍 [MY_TICKETS] Role: ${role?.name} (${role?.code})`);
@@ -683,26 +793,18 @@ export const getMyTickets = async (req: Request, res: Response) => {
         data: [],
         message: 'Super Admin has no assigned tickets. Use View Tickets to see all tickets.'
       });
-    } else if (hasViewOwn) {
-      // For TICKET_VIEW_OWN: Students see tickets created by them, Agents see tickets assigned to them
-      if (isStudent) {
-        query['metadata.studentEmail'] = user.email;
-        console.log(`🔍 [QUERY] TICKET_VIEW_OWN + Student - filter by metadata.studentEmail: ${user.email}`);
-      } else if (isAgent) {
-        // Agents see tickets assigned to them (not tickets they created and escalated away)
-        query.assignedTo = userObjectId;
-        console.log(`🔍 [QUERY] TICKET_VIEW_OWN + Agent - filter by assignedTo: ${userId}`);
-        console.log(`🔍 [QUERY] Using ObjectId for assignedTo:`, userObjectId);
-        // Note: Center filtering will be applied later based on project settings
-      } else {
-        // Fallback: check by studentEmail
-        query['metadata.studentEmail'] = user.email;
-        console.log(`🔍 [QUERY] TICKET_VIEW_OWN + Unknown role - filter by metadata.studentEmail: ${user.email}`);
-      }
-    } else {
-      // No specific permissions: show only tickets created by this student (by studentEmail)
+    } else if (isStudent) {
+      // Students always see tickets by their email (tickets they created)
       query['metadata.studentEmail'] = user.email;
-      console.log(`🔍 [QUERY] No VIEW permissions - filter by metadata.studentEmail: ${user.email}`);
+      console.log(`🔍 [QUERY] Student - filter by metadata.studentEmail: ${user.email}`);
+    } else if (hasViewOwn) {
+      // Everyone else with VIEW_OWN_TICKET permission sees tickets assigned to them
+      query.assignedTo = userObjectId;
+      console.log(`🔍 [QUERY] TICKET_VIEW_OWN - filter by assignedTo: ${userId}`);
+    } else {
+      // No specific permissions but not a student: show tickets assigned to them
+      query.assignedTo = userObjectId;
+      console.log(`🔍 [QUERY] Non-Student fallback - filter by assignedTo: ${userId}`);
     }
 
     console.log(`🔍 [TICKET QUERY] Final query (before project filter):`, JSON.stringify(query));
@@ -1015,6 +1117,9 @@ export const getAllTickets = async (req: Request, res: Response) => {
     const priorityFilter = req.query.priority ? (req.query.priority as string).split(',') : null;
     const searchQuery = req.query.search as string;
     const projectIdsFilter = req.query.projectIds ? (req.query.projectIds as string).split(',') : null;
+    
+    // NEW: Hierarchy-based filtering for "Assign Queries" page
+    const forAssignment = req.query.forAssignment === 'true';
 
     // Get user with their role and permissions
     const user = await User.findById(userId).populate({
@@ -1043,14 +1148,61 @@ export const getAllTickets = async (req: Request, res: Response) => {
     console.log(`🔍 [VIEW_TICKETS] User: ${user.email}`);
     console.log(`🔍 [VIEW_TICKETS] Role: ${role?.name} (${role?.code})`);
     console.log(`🔍 [VIEW_TICKETS] isSuperAdmin: ${isSuperAdmin}, hasViewAll: ${hasViewAll}, isAgent: ${isAgent}, hasViewOwn: ${hasViewOwn}`);
+    console.log(`🔍 [VIEW_TICKETS] forAssignment: ${forAssignment}`);
 
     let query: any = {};
     
+    // ============ HIERARCHY-BASED FILTERING FOR ASSIGN QUERIES ============
+    // When forAssignment=true, filter to only show tickets assigned to:
+    // 1. The current user (self)
+    // 2. All users who report to the current user (subordinates)
+    // Uses the 'reportingManager' field on User documents (NOT the userreportinghierarchies collection)
+    if (forAssignment && !isSuperAdmin) {
+      try {
+        // Get all users who have current user as their reportingManager (direct + recursive)
+        const getAllReporteesRecursive = async (managerId: mongoose.Types.ObjectId, visited = new Set<string>()): Promise<mongoose.Types.ObjectId[]> => {
+          const managerIdStr = managerId.toString();
+          if (visited.has(managerIdStr)) return []; // Prevent infinite loops
+          visited.add(managerIdStr);
+          
+          // Find all users who report to this manager
+          const directReportees = await User.find({ reportingManager: managerId }).select('_id').lean();
+          const reporteeIds = directReportees.map((r: any) => r._id as mongoose.Types.ObjectId);
+          
+          // Recursively get reportees of reportees
+          const allReportees: mongoose.Types.ObjectId[] = [...reporteeIds];
+          for (const reporteeId of reporteeIds) {
+            const subReportees = await getAllReporteesRecursive(reporteeId, visited);
+            allReportees.push(...subReportees);
+          }
+          
+          return allReportees;
+        };
+        
+        const currentUserObjectId = new mongoose.Types.ObjectId(userId);
+        const allReporteeIds = await getAllReporteesRecursive(currentUserObjectId);
+        
+        // Build list: current user (FIRST) + all reportees
+        const assignableObjectIds = [currentUserObjectId, ...allReporteeIds];
+        
+        console.log(`📊 [ASSIGN QUERIES] Hierarchy-based filtering (using User.reportingManager):`);
+        console.log(`   - Current user (SELF): ${userId}`);
+        console.log(`   - Reportee count: ${allReporteeIds.length}`);
+        console.log(`   - Total assignable users: ${assignableObjectIds.length}`);
+        
+        // Filter tickets assigned to these users (self + subordinates)
+        query.assignedTo = { $in: assignableObjectIds };
+        
+      } catch (hierarchyError) {
+        console.log('⚠️ Hierarchy fetch failed, showing only user\'s own tickets:', hierarchyError);
+        // Fallback: show only tickets assigned to current user
+        query.assignedTo = new mongoose.Types.ObjectId(userId);
+      }
+    }
+    
     // Get user's role projects (projects assigned to their role)
     const Role = await mongoose.model('Role').findById(role?._id);
-    const roleProjectIds = ((Role as any)?.projects || []).map((p: any) => 
-      typeof p === 'string' ? new mongoose.Types.ObjectId(p) : new mongoose.Types.ObjectId(p._id || p)
-    );
+    const roleProjectIds = toObjectIdArray((Role as any)?.projects || []);
 
     // SIMPLIFIED LOGIC FOR ASSIGN QUERIES PAGE:
     // 1. Super Admin: Show ALL tickets (no filters)
@@ -1069,24 +1221,26 @@ export const getAllTickets = async (req: Request, res: Response) => {
       // Super Admin: No filters - show ALL tickets
       console.log(`✅ [ASSIGN QUERIES] Super Admin - showing ALL tickets (no filters)`);
     } else if (projectContext?.viewMode === 'single' && projectContext.currentProjectId) {
-      // Single Project Mode: Show ALL tickets from selected project (try both string and ObjectId)
-      query['metadata.projectId'] = {
+      // Single Project Mode: Show ALL tickets from selected project
+      // Database has mixed types (string and ObjectId), so query for BOTH
+      const projectIdStr = projectContext.currentProjectId.toString();
+      query['metadata.projectId'] = { 
         $in: [
-          projectContext.currentProjectId,
-          new mongoose.Types.ObjectId(projectContext.currentProjectId)
-        ]
+          projectIdStr,
+          new mongoose.Types.ObjectId(projectIdStr)
+        ] 
       };
-      console.log(`✅ [ASSIGN QUERIES] Single Project Mode - filtering by projectId`);
-      console.log(`   Query filter:`, JSON.stringify(query['metadata.projectId'], null, 2));
+      console.log(`✅ [ASSIGN QUERIES] Single Project Mode - filtering by projectId (both string and ObjectId)`);
+      console.log(`   Query filter:`, query['metadata.projectId']);
     } else if (projectContext?.viewMode === 'unified' || !projectContext?.currentProjectId) {
       // Unified/All Projects Mode: Show ALL tickets from user's role projects
       if (roleProjectIds.length > 0) {
-        // Include both string and ObjectId versions of project IDs
-        const allProjectIdFormats = roleProjectIds.flatMap((id: any) => [
-          id.toString(),
-          id
-        ]);
-        query['metadata.projectId'] = { $in: allProjectIdFormats };
+        // Query for both string and ObjectId versions of each project ID
+        const projectIdsWithBothTypes = roleProjectIds.flatMap((id: any) => {
+          const idStr = id.toString();
+          return [idStr, new mongoose.Types.ObjectId(idStr)];
+        });
+        query['metadata.projectId'] = { $in: projectIdsWithBothTypes };
         console.log(`✅ [ASSIGN QUERIES] Unified Mode - showing ALL tickets from ${roleProjectIds.length} project(s)`);
       } else {
         // User has no projects assigned - return empty
@@ -1237,6 +1391,29 @@ export const getAllTickets = async (req: Request, res: Response) => {
       } else if (isSuperAdmin) {
         console.log(`✅ [VIEW_TICKETS] Super Admin with no/empty projectId - showing ALL projects`);
       }
+    }
+
+    // ============================================
+    // RBAC: TICKET_VIEW_OWN vs TICKET_VIEW_ALL
+    // ============================================
+    // If user has ONLY TICKET_VIEW_OWN (not TICKET_VIEW_ALL), filter by assignedTo
+    if (hasViewOwn && !hasViewAll && !isSuperAdmin) {
+      if (isAgent) {
+        // Agents with VIEW_OWN see only tickets assigned to them
+        query.assignedTo = new mongoose.Types.ObjectId(userId);
+        console.log(`🔒 [RBAC] TICKET_VIEW_OWN applied - filtering by assignedTo: ${userId}`);
+      } else {
+        // Students with VIEW_OWN see only tickets created by them
+        query['metadata.studentEmail'] = user.email;
+        console.log(`🔒 [RBAC] TICKET_VIEW_OWN applied - filtering by studentEmail: ${user.email}`);
+      }
+    } else if (!hasViewOwn && !hasViewAll && !isSuperAdmin) {
+      // User has no viewing permissions - return empty
+      console.log(`❌ [RBAC] User has no TICKET_VIEW_OWN or TICKET_VIEW_ALL permission`);
+      return res.status(200).json({
+        success: true,
+        data: { tickets: [], pagination: { total: 0, page, limit, pages: 0 } },
+      });
     }
 
     console.log(`🔍 [FINAL QUERY] Query object:`, JSON.stringify(query, null, 2));
@@ -1621,6 +1798,7 @@ export const getTicketById = async (req: Request, res: Response) => {
     const ticket = await Ticket.findById(id)
       .populate('category', 'name')
       .populate('assignedTo', 'firstName lastName email')
+      .populate('escalationMatrixId', 'name') // Populate escalation matrix name
       .populate({
         path: 'threads.createdBy',
         select: 'firstName lastName email role',
@@ -1675,6 +1853,11 @@ export const getTicketById = async (req: Request, res: Response) => {
     const ticketData = ticket.toObject();
     if (isStudent) {
       ticketData.internalNotes = []; // Hide internal notes from students
+    }
+
+    // Add escalation matrix name if available
+    if (ticketData.escalationMatrixId && typeof ticketData.escalationMatrixId === 'object') {
+      (ticketData as any).escalationMatrixName = (ticketData.escalationMatrixId as any).name;
     }
 
     console.log('🔍 [getTicketById] Fetching SLA tracking for ticket:', ticket._id);
@@ -2254,6 +2437,98 @@ export const updateTicketCategory = async (req: Request, res: Response) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to update category',
+    });
+  }
+};
+
+/**
+ * Update ticket category hierarchy (for multi-level category systems)
+ */
+export const updateTicketCategoryHierarchy = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { categoryHierarchy } = req.body;
+    const userId = (req as any).user?.userId;
+    const user = (req as any).user;
+
+    if (!categoryHierarchy) {
+      return res.status(400).json({
+        success: false,
+        message: 'Category hierarchy is required',
+      });
+    }
+
+    const ticket = await Ticket.findById(id);
+    if (!ticket) {
+      return res.status(404).json({
+        success: false,
+        message: 'Ticket not found',
+      });
+    }
+
+    // Authorization check
+    if (!await canModifyTicket(userId, ticket, user)) {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not authorized to modify this ticket',
+      });
+    }
+
+    const oldHierarchy = ticket.categoryHierarchy?.displayPath || 'None';
+    
+    // Update category hierarchy
+    ticket.categoryHierarchy = {
+      level1: categoryHierarchy.level1,
+      level2: categoryHierarchy.level2,
+      level3: categoryHierarchy.level3,
+      level4: categoryHierarchy.level4,
+      displayPath: categoryHierarchy.displayPath,
+    };
+    
+    // Also update the legacy category field with level1 for backward compatibility
+    if (categoryHierarchy.level1) {
+      ticket.category = categoryHierarchy.level1;
+    }
+    
+    ticket.updatedAt = new Date();
+    
+    // Track change in history
+    await trackChange(ticket, 'categoryHierarchy', oldHierarchy, categoryHierarchy.displayPath || 'Updated', userId);
+    
+    await ticket.save();
+    
+    // Log activity
+    if (user) {
+      try {
+        const projectData = await Project.findById(ticket.metadata?.projectId);
+        await logActivity({
+          userId: user.userId,
+          userName: user.name || `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+          userEmail: user.email,
+          action: 'update',
+          entity: 'ticket',
+          entityId: ticket._id.toString(),
+          entityName: ticket.subject,
+          projectId: ticket.metadata?.projectId,
+          projectName: projectData?.name,
+          changes: [{ field: 'categoryHierarchy', oldValue: oldHierarchy, newValue: categoryHierarchy.displayPath }],
+          description: `Ticket ${ticket.ticketNumber} category hierarchy changed from "${oldHierarchy}" to "${categoryHierarchy.displayPath || 'Updated'}"`,
+          req
+        });
+      } catch (logError) {
+        console.error('Failed to log activity:', logError);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: ticket,
+    });
+  } catch (error) {
+    console.error('Update category hierarchy error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update category hierarchy',
     });
   }
 };
@@ -2849,7 +3124,7 @@ export const bulkUpdateByTags = async (req: Request, res: Response) => {
 export const getDashboardStats = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.userId;
-    const { projectId } = req.query; // Get projectId from query params
+    const { projectId, viewMode } = req.query; // Get projectId and viewMode from query params
     
     // Populate user with role, and populate role.permissions to get permission codes
     const user = await User.findById(userId)
@@ -2883,6 +3158,68 @@ export const getDashboardStats = async (req: Request, res: Response) => {
 
     console.log(`📊 [DASHBOARD] User: ${user.email}, Role: ${roleCode}, IsSuperAdmin: ${isSuperAdmin}`);
     console.log(`📊 [DASHBOARD] Permission codes:`, permissionCodes);
+
+    // ===== HIERARCHICAL DASHBOARD ENHANCEMENT =====
+    // Determine which view mode to use and which users' tickets to show
+    let appliedViewMode: string = 'self'; // Default to self
+    let targetUserIds: mongoose.Types.ObjectId[] = [new mongoose.Types.ObjectId(userId)];
+    let teamMembers: any[] = []; // For team breakdown
+
+    // Check hierarchical dashboard permissions
+    const hasDashboardViewAll = permissionCodes.includes('DASHBOARD_VIEW_ALL');
+    const hasDashboardViewHierarchy = permissionCodes.includes('DASHBOARD_VIEW_HIERARCHY');
+    const hasDashboardViewTeam = permissionCodes.includes('DASHBOARD_VIEW_TEAM');
+    const hasDashboardViewOWN = permissionCodes.includes('DASHBOARD_VIEW_OWN');
+    const hasDashboardViewTeamBreakdown = permissionCodes.includes('DASHBOARD_VIEW_TEAM_BREAKDOWN');
+
+    // Fetch user's dashboard config for default view mode
+    const dashboardConfig = await UserDashboardConfig.findOne({ userId });
+    const defaultViewMode = dashboardConfig?.defaultViewMode || 'self';
+    
+    // Use provided viewMode from query, or fall back to user's config, or default to 'self'
+    let requestedViewMode = (viewMode as string) || defaultViewMode;
+    console.log(`📊 [DASHBOARD] Requested view mode: ${requestedViewMode}, Default: ${defaultViewMode}`);
+
+    // Validate and apply view mode based on permissions
+    if (requestedViewMode === 'all' && (hasDashboardViewAll || isSuperAdmin)) {
+      appliedViewMode = 'all';
+      targetUserIds = []; // No user filter means show all tickets
+      console.log(`📊 [DASHBOARD] View mode: ALL (no user filter)`);
+    } else if (requestedViewMode === 'hierarchy' && (hasDashboardViewHierarchy || isSuperAdmin)) {
+      appliedViewMode = 'hierarchy';
+      // Get all reportees recursively (multi-level)
+      const maxDepth = dashboardConfig?.maxHierarchyDepth || 10;
+      const reportees = await UserReportingHierarchy.getAllReporteesRecursive(
+        userId,
+        projectId as string | undefined,
+        maxDepth
+      );
+      targetUserIds = [
+        new mongoose.Types.ObjectId(userId),
+        ...reportees.map((r: any) => new mongoose.Types.ObjectId(r.userId))
+      ];
+      teamMembers = reportees;
+      console.log(`📊 [DASHBOARD] View mode: HIERARCHY (${reportees.length} reportees across ${maxDepth} levels)`);
+    } else if (requestedViewMode === 'team' && (hasDashboardViewTeam || isSuperAdmin)) {
+      appliedViewMode = 'team';
+      // Get only direct reportees (level 1)
+      const reportees = await UserReportingHierarchy.getDirectReportees(
+        userId,
+        projectId as string | undefined
+      );
+      targetUserIds = [
+        new mongoose.Types.ObjectId(userId),
+        ...reportees.map((r: any) => new mongoose.Types.ObjectId(r.userId))
+      ];
+      teamMembers = reportees;
+      console.log(`📊 [DASHBOARD] View mode: TEAM (${reportees.length} direct reportees)`);
+    } else {
+      // Default to 'self' - show only user's own tickets
+      appliedViewMode = 'self';
+      targetUserIds = [new mongoose.Types.ObjectId(userId)];
+      console.log(`📊 [DASHBOARD] View mode: SELF (user's own tickets only)`);
+    }
+    // ===== END HIERARCHICAL ENHANCEMENT =====
 
     // Build query based on user permissions (not role)
     let query: any = {};
@@ -2936,6 +3273,16 @@ export const getDashboardStats = async (req: Request, res: Response) => {
       // Users with TICKET_VIEW_ALL see all tickets in the filtered projects
       // (project filter already applied above)
       
+      // Apply hierarchical filtering for team/hierarchy views (even with TICKET_VIEW_ALL)
+      if (appliedViewMode !== 'all' && targetUserIds.length > 0) {
+        const userFilter = { assignedTo: { $in: targetUserIds } };
+        if (query['metadata.projectId']) {
+          query = { $and: [{ 'metadata.projectId': query['metadata.projectId'] }, userFilter] };
+        } else {
+          query = userFilter;
+        }
+      }
+      
       // Add center filtering for TICKET_VIEW_ALL users with centers
       const userCenterIds = (user.centers || []).map((c: any) => {
         const centerId = typeof c === 'string' ? c : c._id?.toString() || c.toString();
@@ -2952,7 +3299,9 @@ export const getDashboardStats = async (req: Request, res: Response) => {
           ]
         };
         
-        if (query['metadata.projectId']) {
+        if (query.$and) {
+          query.$and.push(centerFilter);
+        } else if (query['metadata.projectId']) {
           query = { $and: [{ 'metadata.projectId': query['metadata.projectId'] }, centerFilter] };
         } else {
           query = centerFilter;
@@ -2962,26 +3311,24 @@ export const getDashboardStats = async (req: Request, res: Response) => {
       // Users with TICKET_VIEW_OWN see tickets assigned to them within the filtered projects
       const projectFilter = query['metadata.projectId'] ? { 'metadata.projectId': query['metadata.projectId'] } : {};
       
+      // Apply hierarchical filtering: if viewMode is team/hierarchy, include team member tickets
+      const userFilter = appliedViewMode === 'self' 
+        ? { $or: [{ assignedTo: userId }, { 'metadata.studentEmail': user.email }] }
+        : targetUserIds.length > 0
+          ? { assignedTo: { $in: targetUserIds } }
+          : {};
+      
       query = {
         $and: [
           projectFilter,
-          {
-            $or: [
-              { assignedTo: userId },
-              { 'metadata.studentEmail': user.email }
-            ]
-          }
+          userFilter
         ].filter(f => Object.keys(f).length > 0)
       };
       
-      // If $and is empty, just use the OR condition
+      // If $and is empty, just use the user filter
       if (query.$and && query.$and.length === 0) {
-        query = {
-          $or: [
-            { assignedTo: userId },
-            { 'metadata.studentEmail': user.email }
-          ]
-        };
+        query = userFilter;
+
       }
 
       // Add center filtering for VIEW_OWN users with centers
@@ -3011,6 +3358,14 @@ export const getDashboardStats = async (req: Request, res: Response) => {
     }
 
     console.log(`📊 [DASHBOARD] Final query:`, JSON.stringify(query));
+
+    // ===== SLA FIELD SELECTION BASED ON VIEW MODE =====
+    // For 'self' view (My Ticket Dashboard): Use role-level SLA (resets on escalation)
+    // For 'team'/'hierarchy' views: Use ticket-level SLA (overall from creation)
+    const useRoleLevelSLA = appliedViewMode === 'self';
+    const slaBreachedField = useRoleLevelSLA ? 'roleLevelSLA.breachedAt' : 'ticketLevelSLA.breachedAt';
+    console.log(`📊 [DASHBOARD] Using ${useRoleLevelSLA ? 'ROLE-LEVEL' : 'TICKET-LEVEL'} SLA for viewMode: ${appliedViewMode}`);
+    // ===== END SLA FIELD SELECTION =====
 
     // Optimized: Single aggregation instead of 11 sequential countDocuments calls
     // This reduces database round-trips from 12 to 2 (aggregation + recent activity)
@@ -3042,23 +3397,35 @@ export const getDashboardStats = async (req: Request, res: Response) => {
               }
             ],
             
-            // SLA stats for closed/resolved tickets
+            // SLA stats for closed/resolved tickets - use appropriate SLA field
             closedSLA: [
               { $match: { status: { $in: [4, 5] } } },
               {
                 $group: {
-                  _id: { $ifNull: ['$slaBreached', false] },
+                  _id: {
+                    $cond: {
+                      if: { $ifNull: [useRoleLevelSLA ? '$roleLevelSLA.breachedAt' : '$ticketLevelSLA.breachedAt', null] },
+                      then: true,
+                      else: false
+                    }
+                  },
                   count: { $sum: 1 }
                 }
               }
             ],
             
-            // SLA stats for pending tickets
+            // SLA stats for pending tickets - use appropriate SLA field
             pendingSLA: [
               { $match: { status: { $in: [1, 2, 3] } } },
               {
                 $group: {
-                  _id: { $ifNull: ['$slaBreached', false] },
+                  _id: {
+                    $cond: {
+                      if: { $ifNull: [useRoleLevelSLA ? '$roleLevelSLA.breachedAt' : '$ticketLevelSLA.breachedAt', null] },
+                      then: true,
+                      else: false
+                    }
+                  },
                   count: { $sum: 1 }
                 }
               }
@@ -3108,8 +3475,62 @@ export const getDashboardStats = async (req: Request, res: Response) => {
       updatedAt: ticket.updatedAt,
     }));
 
+    // ===== TEAM BREAKDOWN (if permission exists and viewing team/hierarchy) =====
+    let teamBreakdown: any[] | undefined = undefined;
+    if (hasDashboardViewTeamBreakdown && (appliedViewMode === 'team' || appliedViewMode === 'hierarchy')) {
+      // Fetch individual stats for each team member
+      const breakdownPromises = [
+        // Include the supervisor's own stats
+        { userId, name: user.fullName || user.email, email: user.email },
+        // Include reportees
+        ...teamMembers.map(m => ({ userId: m.userId, name: m.fullName || m.name || m.email, email: m.email }))
+      ].map(async (member) => {
+        const memberQuery = { ...query, assignedTo: new mongoose.Types.ObjectId(member.userId) };
+        const memberStats = await Ticket.aggregate([
+          { $match: memberQuery },
+          {
+            $facet: {
+              total: [{ $count: 'count' }],
+              statusCounts: [{ $group: { _id: '$status', count: { $sum: 1 } } }],
+              priorityCounts: [{ $group: { _id: '$priority', count: { $sum: 1 } } }]
+            }
+          }
+        ]);
+
+        const memberStatsData = memberStats[0];
+        const total = memberStatsData.total[0]?.count || 0;
+        const statusMap = new Map<number, number>(memberStatsData.statusCounts.map((s: any) => [s._id, s.count]));
+        const pending = (statusMap.get(1) || 0) + (statusMap.get(2) || 0) + (statusMap.get(3) || 0);
+        const resolved = statusMap.get(4) || 0;
+        const closed = statusMap.get(5) || 0;
+        const priorityMap = new Map<number, number>(memberStatsData.priorityCounts.map((p: any) => [p._id, p.count]));
+        const highPriority = priorityMap.get(3) || 0;
+        const mediumPriority = priorityMap.get(2) || 0;
+        const lowPriority = priorityMap.get(1) || 0;
+
+        return {
+          userId: member.userId,
+          name: member.name,
+          email: member.email,
+          stats: {
+            total,
+            pending,
+            resolved,
+            closed,
+            highPriority,
+            mediumPriority,
+            lowPriority
+          }
+        };
+      });
+
+      teamBreakdown = await Promise.all(breakdownPromises);
+    }
+    // ===== END TEAM BREAKDOWN =====
+
     return res.status(200).json({
       success: true,
+      viewMode: appliedViewMode, // Return which view mode was applied
       total,
       pending,
       resolved,
@@ -3122,6 +3543,7 @@ export const getDashboardStats = async (req: Request, res: Response) => {
       pendingWithinSLA,
       pendingOutsideSLA,
       recentActivity: formattedActivity,
+      teamBreakdown, // Include team breakdown if applicable
     });
   } catch (error) {
     console.error('Dashboard stats error:', error);
@@ -3139,7 +3561,10 @@ export const getDashboardStats = async (req: Request, res: Response) => {
 export const getProjectDashboardStats = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.userId;
-    const { projectId, centerId } = req.query;
+    const { projectId, centerId, viewMode } = req.query;
+    
+    // viewMode: 'self' (own tickets), 'team' (direct reports), 'hierarchy' (all levels), 'all' (everything)
+    const effectiveViewMode = (viewMode as string) || 'self';
 
     if (!projectId) {
       return res.status(400).json({
@@ -3198,6 +3623,7 @@ export const getProjectDashboardStats = async (req: Request, res: Response) => {
       isAgent,
       projectId,
       centerId,
+      viewMode: effectiveViewMode,
       permissionCount: userPermissions.length
     });
 
@@ -3224,60 +3650,59 @@ export const getProjectDashboardStats = async (req: Request, res: Response) => {
       console.log('🏢 Filtering dashboard stats by center:', centerId);
     }
     
-    const hasViewAllTickets = await checkPermission('TICKET_VIEW_ALL');
+    // ✅ DASHBOARD USES DASHBOARD_VIEW_HIERARCHY PERMISSION (NOT TICKET_VIEW_ALL)
+    // This ensures: 
+    // - My Queries shows only assigned tickets (uses assignedTo filter)
+    // - Ticket Lists uses TICKET_VIEW_ALL (for assignment/viewing all)
+    // - Dashboard uses DASHBOARD_VIEW_HIERARCHY (for hierarchy view)
+    const hasDashboardHierarchyPermission = await checkPermission('DASHBOARD_VIEW_HIERARCHY');
     
-    console.log('🔑 Permission Check Result:', { hasViewAllTickets, isAgent });
+    console.log('🔑 Dashboard Permission Check:', { 
+      hasDashboardHierarchyPermission, 
+      isAgent, 
+      userId,
+      userEmail: user.email 
+    });
     
     // Check if user is a student (students create tickets, not get assigned)
     const isStudent = userRole?.code === 'STUDENT';
     
-    // For dashboard stats, agents should see their assigned tickets even if they have TICKET_VIEW_ALL
-    // This is different from ticket lists where TICKET_VIEW_ALL means see all tickets
-    if (isAgent || await checkPermission('TICKET_VIEW_OWN')) {
-      // Agents/Staff see only their assigned tickets within the project for dashboard stats
-      const userObjectId = new mongoose.Types.ObjectId(userId);
-      query.assignedTo = userObjectId;
-      console.log('✅ Agent/Staff user - showing assigned tickets only for dashboard');
-      console.log('Query filter:', JSON.stringify(query, null, 2));
-    } else if (isStudent) {
+    if (isStudent) {
       // Students see only tickets they created (not assigned)
       query['metadata.studentEmail'] = user.email;
       console.log('✅ Student user - showing tickets created by:', user.email);
       console.log('Query filter:', JSON.stringify(query, null, 2));
-    } else if (hasViewAllTickets) {
-      // Non-agent users with TICKET_VIEW_ALL see all tickets for the project
-      console.log('✅ User has TICKET_VIEW_ALL (non-agent) - showing all project tickets');
+    } else if (effectiveViewMode === 'self') {
+      // Self mode: show only own assigned tickets, regardless of permissions
+      query.assignedTo = new mongoose.Types.ObjectId(userId);
+      console.log('✅ viewMode=self - showing only own assigned tickets');
+    } else if (effectiveViewMode === 'hierarchy' && hasDashboardHierarchyPermission) {
+      // Hierarchy mode: show own tickets + reportee tickets (only if user has permission)
+      console.log('✅ viewMode=hierarchy with DASHBOARD_VIEW_HIERARCHY - fetching self + reportee tickets');
       
-      // Add center filtering for TICKET_VIEW_ALL users with centers (if centerId not provided)
-      if (!centerId) {
-        const userCenterIds = (user.centers || []).map((c: any) => {
-          const cId = typeof c === 'string' ? c : c._id?.toString() || c.toString();
-          return new mongoose.Types.ObjectId(cId);
-        });
+      try {
+        const { UserReportingHierarchy } = require('../models/UserReportingHierarchy');
+        const allReportees = await UserReportingHierarchy.getAllReporteesRecursive(userId);
+        const reporteeIds = allReportees.map((r: any) => new mongoose.Types.ObjectId(r._id));
         
-        if (userCenterIds.length > 0) {
-          const centerFilter = {
-            $or: [
-              { 'metadata.centerId': 'online' },
-              { 'metadata.centerId': { $in: userCenterIds } },
-              { 'metadata.centerId': { $exists: false } },
-              { 'metadata.centerId': null }
-            ]
-          };
-          
-          if (query.$and) {
-            query.$and.push(centerFilter);
-          } else {
-            query = { $and: [query, centerFilter] };
-          }
-          
-          console.log('🏢 User has centers - filtering by:', userCenterIds.map(id => id.toString()));
-        }
+        console.log('📊 Found reportees:', reporteeIds.length);
+        console.log('📊 Reportee IDs:', reporteeIds.map((id: any) => id.toString()));
+        
+        // Include self + all reportees (hierarchy = self + below)
+        const allUserIds = [new mongoose.Types.ObjectId(userId), ...reporteeIds];
+        query.assignedTo = { $in: allUserIds };
+        console.log('✅ Dashboard showing tickets assigned to self + reportees (total:', allUserIds.length, 'users)');
+      } catch (error) {
+        console.error('❌ Error fetching reportees:', error);
+        // Fallback to own tickets on error
+        query.assignedTo = new mongoose.Types.ObjectId(userId);
+        console.log('⚠️ Error fetching reportees - fallback to own tickets');
       }
     } else {
-      // No ticket view permissions - show only tickets created by this user
-      query['metadata.studentEmail'] = user.email;
-      console.log('⚠️ User has no ticket view permissions - showing only created tickets');
+      // Other modes or no hierarchy permission - show only own assigned tickets
+      query.assignedTo = new mongoose.Types.ObjectId(userId);
+      console.log('✅ Dashboard showing only own assigned tickets (viewMode:', effectiveViewMode, ')');
+      console.log('Query filter:', JSON.stringify(query, null, 2));
     }
 
     // Get SLARule model for SLA calculations (SLA Rules contain priority settings)
@@ -3641,6 +4066,7 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
       Description,  // Alternative field name for description
       category,
       Category,     // Alternative field name for category
+      categoryHierarchy, // Hierarchical category data (JSON string with level1, level2, level3, level4)
       priority,
       projectId,
       centerId,     // Center ID for offline ticket
@@ -3659,13 +4085,15 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
     console.log('  description:', description);
     console.log('  category:', category);
     console.log('  Category:', Category);
+    console.log('  categoryHierarchy:', categoryHierarchy);
     console.log('  projectId:', projectId);
 
     // Validate required fields (handle both capitalized and lowercase field names)
     const hasDescription = Description || description;
-    const categoryId = Category || category;
+    // Category can come from either direct field OR from categoryHierarchy
+    const hasCategoryData = Category || category || categoryHierarchy;
     
-    if (!studentId || !hasDescription || !categoryId || !projectId) {
+    if (!studentId || !hasDescription || !hasCategoryData || !projectId) {
       console.log('❌ Validation failed - missing fields');
       console.log('  studentId present:', !!studentId);
       console.log('  Subject present:', !!Subject);
@@ -3674,6 +4102,7 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
       console.log('  description present:', !!description);
       console.log('  category present:', !!category);
       console.log('  Category present:', !!Category);
+      console.log('  categoryHierarchy present:', !!categoryHierarchy);
       console.log('  projectId present:', !!projectId);
       return res.status(400).json({
         success: false,
@@ -3823,60 +4252,131 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
     const ticketSubject = Subject || Title || subject || description?.substring(0, 100) || 'No subject provided';
     const ticketDescription = Description || description || 'No description provided';
 
-    // Fetch category to get default priority (same logic as submitTicket)
-    // IMPORTANT: Always use category's defaultPriority, ignore frontend-provided priority
-    console.time('⏱️ Category lookup (offline)');
+    // Parse categoryHierarchy and determine final category ID
+    // With hierarchical categories, the deepest selected level is used as the ticket's category
+    console.time('⏱️ Category & Priority lookup (offline)');
     let ticketPriority = 'medium'; // Default fallback
+    let finalCategoryId: string | null = null;
+    let parsedHierarchy: { level1?: string; level2?: string; level3?: string; level4?: string; displayPath?: string } = {};
     
     try {
       // Use mongoose.models to ensure the model is available
       const CategoryModel = mongoose.models.Category || Category;
       
-      let category;
-      // Check if categoryId is an ObjectId (24 hex chars) or a name string
-      if (mongoose.Types.ObjectId.isValid(categoryId) && categoryId.length === 24) {
-        // Search by ObjectId
-        category = await CategoryModel.findOne({ 
-          _id: categoryId, 
-          projectId: new mongoose.Types.ObjectId(projectId),
-          isActive: true 
-        });
-        console.log(`🔍 Looking up category by ID: ${categoryId} [OFFLINE]`);
-      } else {
-        // Search by name
-        category = await CategoryModel.findOne({ 
-          name: categoryId, 
-          projectId: new mongoose.Types.ObjectId(projectId),
-          isActive: true 
-        });
-        console.log(`🔍 Looking up category by name: ${categoryId} [OFFLINE]`);
+      // Parse categoryHierarchy if provided (JSON string from frontend)
+      if (categoryHierarchy) {
+        try {
+          parsedHierarchy = typeof categoryHierarchy === 'string' 
+            ? JSON.parse(categoryHierarchy) 
+            : categoryHierarchy;
+          console.log('📋 Parsed categoryHierarchy:', parsedHierarchy);
+        } catch (parseError) {
+          console.error('Error parsing categoryHierarchy:', parseError);
+        }
       }
       
-      console.log(`🔍 Category found:`, category ? {
-        _id: category._id,
-        name: category.name,
-        defaultPriority: category.defaultPriority
-      } : 'NOT FOUND');
+      // Determine final category ID: use deepest level from hierarchy OR fallback to category field
+      finalCategoryId = parsedHierarchy.level4 || parsedHierarchy.level3 || parsedHierarchy.level2 || parsedHierarchy.level1 || category || Category;
       
-      if (category && category.defaultPriority) {
-        ticketPriority = category.defaultPriority.toLowerCase();
-        console.log(`✅ Using category default priority: ${ticketPriority} (from category: ${category.name}) [OFFLINE]`);
-      } else if (category) {
-        console.log(`⚠️ Category found but defaultPriority is not set: ${category.name} [OFFLINE]`);
+      if (!finalCategoryId) {
+        console.log('⚠️ No category ID found from hierarchy or direct field');
       } else {
-        console.log(`⚠️ Category not found: ${categoryId}, using fallback: ${ticketPriority} [OFFLINE]`);
+        console.log(`📌 Final category ID: ${finalCategoryId}`);
+      }
+      
+      // Look up priority from hierarchy levels (deepest with priority wins)
+      // Also collect category names to build displayPath
+      // Check levels in order: level1 -> level2 -> level3 -> level4 for names, but deepest priority wins
+      const hierarchyLevelsForPriority = [
+        parsedHierarchy.level4,
+        parsedHierarchy.level3,
+        parsedHierarchy.level2,
+        parsedHierarchy.level1
+      ].filter(Boolean);
+      
+      const hierarchyLevelsForNames = [
+        parsedHierarchy.level1,
+        parsedHierarchy.level2,
+        parsedHierarchy.level3,
+        parsedHierarchy.level4
+      ].filter(Boolean);
+      
+      console.log(`🔍 Checking ${hierarchyLevelsForPriority.length} hierarchy levels for priority`);
+      
+      let priorityFound = false;
+      const categoryNames: string[] = [];
+      
+      // First, collect all category names in order (level1 -> level4)
+      for (const levelId of hierarchyLevelsForNames) {
+        if (!levelId || !mongoose.Types.ObjectId.isValid(levelId)) continue;
+        
+        const levelCategory = await CategoryModel.findOne({
+          _id: levelId,
+          projectId: new mongoose.Types.ObjectId(projectId),
+          isActive: true
+        });
+        
+        if (levelCategory) {
+          categoryNames.push(levelCategory.name);
+        }
+      }
+      
+      // Build displayPath from category names
+      if (categoryNames.length > 0) {
+        parsedHierarchy.displayPath = categoryNames.join(' > ');
+        console.log(`📝 Built displayPath: ${parsedHierarchy.displayPath}`);
+      }
+      
+      // Now check for priority (deepest with priority wins)
+      for (const levelId of hierarchyLevelsForPriority) {
+        if (!levelId || !mongoose.Types.ObjectId.isValid(levelId)) continue;
+        
+        const levelCategory = await CategoryModel.findOne({
+          _id: levelId,
+          projectId: new mongoose.Types.ObjectId(projectId),
+          isActive: true
+        });
+        
+        if (levelCategory) {
+          console.log(`  Level ${levelId}: ${levelCategory.name}, defaultPriority: ${levelCategory.defaultPriority || 'not set'}`);
+          
+          if (levelCategory.defaultPriority && !priorityFound) {
+            ticketPriority = levelCategory.defaultPriority.toLowerCase();
+            priorityFound = true;
+            console.log(`  ✅ Found priority '${ticketPriority}' from level: ${levelCategory.name}`);
+          }
+        }
+      }
+      
+      // Fallback: If no priority found in hierarchy, try the direct category field
+      if (!priorityFound && finalCategoryId && mongoose.Types.ObjectId.isValid(finalCategoryId)) {
+        const directCategory = await CategoryModel.findOne({
+          _id: finalCategoryId,
+          projectId: new mongoose.Types.ObjectId(projectId),
+          isActive: true
+        });
+        
+        if (directCategory && directCategory.defaultPriority) {
+          ticketPriority = directCategory.defaultPriority.toLowerCase();
+          console.log(`✅ Using priority from direct category: ${ticketPriority} (${directCategory.name})`);
+        }
+      }
+      
+      if (!priorityFound) {
+        console.log(`⚠️ No priority found in hierarchy, using fallback: ${ticketPriority}`);
       }
     } catch (error) {
-      console.error('Error fetching category for offline ticket:', error);
+      console.error('Error fetching category/priority for offline ticket:', error);
     }
-    console.timeEnd('⏱️ Category lookup (offline)');
+    console.timeEnd('⏱️ Category & Priority lookup (offline)');
 
-    // Create ticket (priority defaults to 'medium' if not provided - agent will set it later based on SLA)
+    // Create ticket (priority is now dynamic based on hierarchy level defaultPriority)
     const ticket = await Ticket.create({
       ticketNumber,
       subject: ticketSubject,
       description: ticketDescription,
-      category: categoryId,
+      category: finalCategoryId,
+      categoryHierarchy: Object.keys(parsedHierarchy).length > 0 ? parsedHierarchy : undefined, // Store hierarchy at root level for display
       priority: ticketPriority, // Now dynamic based on category defaultPriority
       status: ticketStatus,
       createdBy: new mongoose.Types.ObjectId(studentId), // Ticket owned by student
@@ -3894,6 +4394,7 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
         createdByAgent: agent.userId,
         createdByAgentEmail: agent.email,
         resolvedAtCreation: resolvedAtCreation === 'true',
+        categoryHierarchy: parsedHierarchy, // Store full hierarchy for reference
       },
       threads: [],
       escalationHistory: [],
@@ -3955,7 +4456,86 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
 
     console.log(`✅ Offline ticket created: ${ticket._id} | ${ticketNumber} | Agent: ${agent.email} | Student: ${student.email}`);
     
-    // Initialize SLA tracking for the new ticket (non-blocking)
+    // Initialize priority-level SLA tracking (non-blocking) - sets embedded ticketLevelSLA and roleLevelSLA
+    (async () => {
+      try {
+        // Get working calendar for the project
+        const calendar = await slaService.getDefaultWorkingCalendar(projectId);
+        
+        // Get priority details - first try Priority model, fallback to SLARule
+        let priority = await Priority.findOne({ 
+          code: ticketPriority.toUpperCase(),
+          projectId: projectId 
+        });
+        
+        // Fallback: If no Priority record exists, try to get resolution time from SLARule
+        if (!priority) {
+          const SLARule = (await import('../models/sla-module/SLARule')).default;
+          const slaRule = await SLARule.findOne({
+            projectIds: { $in: [new mongoose.Types.ObjectId(projectId)] },
+            priority: ticketPriority.toUpperCase(),
+            isActive: true
+          });
+          
+          if (slaRule) {
+            // Create a virtual priority object from SLA rule
+            priority = {
+              code: ticketPriority.toUpperCase(),
+              resolutionTime: slaRule.resolutionTime,
+              responseTime: slaRule.responseTime || { value: 1, unit: 'hours' }
+            } as any;
+            console.log(`📋 Using SLARule for priority ${ticketPriority}: ${JSON.stringify(slaRule.resolutionTime)}`);
+          }
+        }
+        
+        if (priority && calendar) {
+          // Calculate ticket-level SLA
+          const ticketSLADueDate = await slaService.calculateTicketLevelSLA(
+            ticket.createdAt,
+            priority.code,
+            project._id as mongoose.Types.ObjectId,
+            calendar._id as mongoose.Types.ObjectId
+          );
+          
+          if (ticketSLADueDate) {
+            ticket.ticketLevelSLA = {
+              dueAt: ticketSLADueDate,
+              pausedDuration: 0,
+            };
+            
+            // If ticket has escalation matrix, initialize role-level SLA
+            if (ticket.escalationMatrixId) {
+              const matrix = await EscalationMatrix.findById(ticket.escalationMatrixId);
+              if (matrix && ticket.currentEscalationLevelNumber) {
+                const roleSLADueDate = await slaService.calculateRoleLevelSLA(
+                  ticket.createdAt,
+                  matrix,
+                  ticket.currentEscalationLevelNumber,
+                  priority.code,
+                  calendar._id as mongoose.Types.ObjectId
+                );
+                
+                if (roleSLADueDate) {
+                  ticket.roleLevelSLA = {
+                    startedAt: ticket.createdAt,
+                    dueAt: roleSLADueDate,
+                    pausedDuration: 0,
+                  };
+                }
+              }
+            }
+            
+            ticket.workingCalendarId = calendar._id as any;
+            await ticket.save();
+            console.log(`✅ Priority-level SLA tracking initialized for offline ticket ${ticket.ticketNumber}`);
+          }
+        }
+      } catch (error) {
+        console.error('❌ Failed to initialize priority-level SLA tracking for offline ticket:', error);
+      }
+    })();
+    
+    // Initialize SLA tracking for the new ticket (non-blocking) - legacy SLATracking model
     (async () => {
       try {
         await initializeSLATracking(
@@ -3969,6 +4549,29 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
         console.error('❌ Failed to initialize SLA tracking for offline ticket:', error);
       }
     })();
+    
+    // Auto-assign escalation matrix based on project and priority (BLOCKING - needed for SLA timer)
+    let escalationMatrixAssigned = false;
+    try {
+      const result = await autoAssignMatrixToTicket(ticket._id, projectId, ticketPriority);
+      if (result.success) {
+        console.log(`✅ Escalation matrix auto-assigned for offline ticket ${ticketNumber}`);
+        escalationMatrixAssigned = true;
+        // Refresh ticket to get updated escalation matrix fields
+        const updatedTicket = await Ticket.findById(ticket._id);
+        if (updatedTicket) {
+          // Copy escalation matrix fields to our ticket object for response
+          (ticket as any).escalationMatrixId = updatedTicket.escalationMatrixId;
+          (ticket as any).currentEscalationLevelId = updatedTicket.currentEscalationLevelId;
+          (ticket as any).currentEscalationLevelNumber = updatedTicket.currentEscalationLevelNumber;
+          (ticket as any).roleLevelSLA = updatedTicket.roleLevelSLA;
+        }
+      } else {
+        console.log(`ℹ️ No escalation matrix for offline ticket ${ticketNumber}: ${result.message}`);
+      }
+    } catch (error) {
+      console.error('❌ Failed to auto-assign escalation matrix for offline ticket:', error);
+    }
     
     // Log activity
     try {
@@ -4059,6 +4662,9 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
         _id: ticket._id,
         ticketNumber: ticket.ticketNumber,
         status: ticket.status,
+        escalationMatrixId: (ticket as any).escalationMatrixId,
+        currentEscalationLevelNumber: (ticket as any).currentEscalationLevelNumber,
+        roleLevelSLA: (ticket as any).roleLevelSLA,
       },
     });
 
@@ -4074,12 +4680,15 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
 
 /**
  * Get assignable agents for ticket assignment
- * Returns users with isAgent=true roles from the same project(s) as the current user
+ * Returns users based on hierarchy:
+ * - The current user themselves (so they can self-assign)
+ * - All reportees under the current user (from UserReportingHierarchy)
+ * Falls back to project-based filtering if no hierarchy is configured
  */
 export const getAssignableAgents = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.userId;
-    const { projectId } = req.query; // Get optional projectId from query params
+    const { projectId, useHierarchy } = req.query; // useHierarchy defaults to true
     
     // Get current user with their role (which contains projects)
     const currentUser = await User.findById(userId).populate('role');
@@ -4104,6 +4713,92 @@ export const getAssignableAgents = async (req: Request, res: Response) => {
     
     // Check if user is Super Admin - they can see all agents
     const isSuperAdmin = (userRole as any).code === 'SUPER_ADMIN';
+    
+    console.log('🔍 Fetching assignable agents for user:', {
+      userId,
+      email: currentUser.email,
+      role: userRole?.name,
+      roleCode: userRole?.code,
+      isSuperAdmin,
+      projectId,
+      useHierarchy: useHierarchy !== 'false' // Default to true
+    });
+    
+    // ============ HIERARCHY-BASED FILTERING ============
+    // If hierarchy mode is enabled (default), use reporting hierarchy from User.reportingManager
+    if (useHierarchy !== 'false' && !isSuperAdmin) {
+      try {
+        // Get all users who have current user as their reportingManager (direct + recursive)
+        const getAllReporteesRecursive = async (managerId: mongoose.Types.ObjectId, visited = new Set<string>()): Promise<mongoose.Types.ObjectId[]> => {
+          const managerIdStr = managerId.toString();
+          if (visited.has(managerIdStr)) return []; // Prevent infinite loops
+          visited.add(managerIdStr);
+          
+          // Find all users who report to this manager
+          const directReportees = await User.find({ reportingManager: managerId }).select('_id').lean();
+          const reporteeIds = directReportees.map((r: any) => r._id as mongoose.Types.ObjectId);
+          
+          // Recursively get reportees of reportees
+          const allReportees: mongoose.Types.ObjectId[] = [...reporteeIds];
+          for (const reporteeId of reporteeIds) {
+            const subReportees = await getAllReporteesRecursive(reporteeId, visited);
+            allReportees.push(...subReportees);
+          }
+          
+          return allReportees;
+        };
+        
+        const currentUserObjectId = new mongoose.Types.ObjectId(userId);
+        const allReporteeIds = await getAllReporteesRecursive(currentUserObjectId);
+        
+        console.log('📊 Hierarchy found (using User.reportingManager) - reportees:', allReporteeIds.length);
+        
+        // Build list: current user + all reportees
+        const assignableUserIds = [currentUserObjectId, ...allReporteeIds];
+        
+        // Fetch user details for these IDs
+        let assignableQuery: any = {
+          _id: { $in: assignableUserIds },
+          isActive: true
+        };
+        
+        // If projectId is provided, ensure users have access to that project via their role
+        if (projectId) {
+          const projectObjectId = new mongoose.Types.ObjectId(projectId as string);
+          const rolesInProject = await Role.find({
+            projects: projectObjectId,
+            isActive: true
+          }).select('_id');
+          const roleIdsInProject = rolesInProject.map(r => r._id);
+          assignableQuery.role = { $in: roleIdsInProject };
+          console.log('🎯 Filtering by project:', projectId, '- roles found:', roleIdsInProject.length);
+        }
+        
+        const agents = await User.find(assignableQuery)
+          .populate('role', 'name isAgent code')
+          .populate('centers', 'centerName')
+          .select('_id firstName lastName email role centers')
+          .sort({ firstName: 1, lastName: 1 });
+        
+        console.log('✅ Found assignable agents (hierarchy mode):', {
+          count: agents.length,
+          agents: agents.map(a => `${a.firstName} ${a.lastName} (${(a.role as any)?.name}) - Centers: ${(a as any).centers?.map((c: any) => c.centerName).join(', ') || 'None'}`)
+        });
+        
+        return res.status(200).json({
+          success: true,
+          data: agents,
+          mode: 'hierarchy'
+        });
+        
+      } catch (hierarchyError) {
+        console.log('⚠️ Hierarchy fetch failed, falling back to project-based:', hierarchyError);
+        // Fall through to project-based filtering
+      }
+    }
+    
+    // ============ FALLBACK: PROJECT-BASED FILTERING ============
+    // For Super Admin or when hierarchy is disabled/fails
     
     const userProjectIds = (userRole?.projects || []).map((p: any) => 
       typeof p === 'string' ? p : p._id?.toString() || p.toString()
@@ -4147,15 +4842,8 @@ export const getAssignableAgents = async (req: Request, res: Response) => {
       typeof c === 'string' ? c : c._id?.toString() || c.toString()
     );
     
-    console.log('🔍 Fetching assignable agents for user:', {
-      userId,
-      email: currentUser.email,
-      role: userRole?.name,
-      roleCode: userRole?.code,
-      isSuperAdmin,
-      allUserProjectIds: userProjectIds,
-      targetProjectIds: targetProjectIds,
-      requestedProjectId: projectId,
+    console.log('🔍 Project-based agent filtering:', {
+      targetProjectIds,
       centers: userCenterIds
     });
     
@@ -4209,17 +4897,19 @@ export const getAssignableAgents = async (req: Request, res: Response) => {
     // 3. Share at least one center with the current user (if user has centers)
     const agents = await User.find(agentQuery)
     .populate('role', 'name isAgent code')
-    .select('_id firstName lastName email role')
+    .populate('centers', 'centerName')
+    .select('_id firstName lastName email role centers')
     .sort({ firstName: 1, lastName: 1 });
     
-    console.log('✅ Found assignable agents:', {
+    console.log('✅ Found assignable agents (project mode):', {
       count: agents.length,
-      agents: agents.map(a => `${a.firstName} ${a.lastName} (${(a.role as any)?.name})`)
+      agents: agents.map(a => `${a.firstName} ${a.lastName} (${(a.role as any)?.name}) - Centers: ${(a as any).centers?.map((c: any) => c.centerName).join(', ') || 'None'}`)
     });
     
     return res.status(200).json({
       success: true,
       data: agents,
+      mode: 'project'
     });
     
   } catch (error: any) {
@@ -4227,6 +4917,227 @@ export const getAssignableAgents = async (req: Request, res: Response) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to fetch assignable agents',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get SLA status for a ticket
+ * GET /api/tickets/:id/sla-status
+ */
+export const getSLAStatus = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    
+    const ticket = await Ticket.findById(id)
+      .populate('metadata.projectId')
+      .populate('workingCalendarId');
+    
+    if (!ticket) {
+      return res.status(404).json({
+        success: false,
+        message: 'Ticket not found',
+      });
+    }
+    
+    const now = new Date();
+    const result: any = {
+      ticketId: ticket._id,
+      ticketNumber: ticket.ticketNumber,
+      status: ticket.status,
+      priority: ticket.priority,
+      ticketLevelSLA: null,
+      roleLevelSLA: null,
+    };
+    
+    // Calculate ticket-level SLA remaining time
+    if (ticket.ticketLevelSLA?.dueAt) {
+      const calendar = ticket.workingCalendarId as any;
+      const remainingMinutes = await slaService.calculateRemainingTime(
+        ticket.ticketLevelSLA.dueAt,
+        ticket.ticketLevelSLA.pausedAt,
+        ticket.ticketLevelSLA.pausedDuration || 0,
+        calendar
+      );
+      
+      result.ticketLevelSLA = {
+        startedAt: ticket.createdAt,
+        dueAt: ticket.ticketLevelSLA.dueAt,
+        breachedAt: ticket.ticketLevelSLA.breachedAt,
+        isPaused: !!ticket.ticketLevelSLA.pausedAt,
+        pausedAt: ticket.ticketLevelSLA.pausedAt,
+        pausedDuration: ticket.ticketLevelSLA.pausedDuration,
+        remainingMinutes: remainingMinutes,
+        isBreached: remainingMinutes < 0,
+        breachInMinutes: remainingMinutes < 0 ? Math.abs(remainingMinutes) : 0,
+      };
+    }
+    
+    // Calculate role-level SLA remaining time
+    if (ticket.roleLevelSLA?.dueAt) {
+      const calendar = ticket.workingCalendarId as any;
+      const roleRemainingMinutes = await slaService.calculateRemainingTime(
+        ticket.roleLevelSLA.dueAt,
+        ticket.roleLevelSLA.pausedAt,
+        ticket.roleLevelSLA.pausedDuration || 0,
+        calendar
+      );
+      
+      result.roleLevelSLA = {
+        startedAt: ticket.roleLevelSLA.startedAt,
+        dueAt: ticket.roleLevelSLA.dueAt,
+        breachedAt: ticket.roleLevelSLA.breachedAt,
+        isPaused: !!ticket.roleLevelSLA.pausedAt,
+        pausedAt: ticket.roleLevelSLA.pausedAt,
+        pausedDuration: ticket.roleLevelSLA.pausedDuration,
+        remainingMinutes: roleRemainingMinutes,
+        isBreached: roleRemainingMinutes < 0,
+        breachInMinutes: roleRemainingMinutes < 0 ? Math.abs(roleRemainingMinutes) : 0,
+      };
+    }
+    
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error: any) {
+    console.error('Get SLA status error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to get SLA status',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Pause SLA for a ticket
+ * POST /api/tickets/:id/pause-sla
+ */
+export const pauseSLA = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = (req as any).user?.userId;
+    const userName = (req as any).user?.userName || (req as any).user?.name || 'Unknown';
+    const userEmail = (req as any).user?.email || 'unknown@email.com';
+    
+    const ticket = await Ticket.findById(id);
+    
+    if (!ticket) {
+      return res.status(404).json({
+        success: false,
+        message: 'Ticket not found',
+      });
+    }
+    
+    const now = new Date();
+    
+    // Pause ticket-level SLA
+    if (ticket.ticketLevelSLA && !ticket.ticketLevelSLA.pausedAt) {
+      ticket.ticketLevelSLA.pausedAt = now;
+    }
+    
+    // Pause role-level SLA
+    if (ticket.roleLevelSLA && !ticket.roleLevelSLA.pausedAt) {
+      ticket.roleLevelSLA.pausedAt = now;
+    }
+    
+    await ticket.save();
+    
+    // Log activity
+    await logActivity({
+      action: 'update',
+      entity: 'Ticket',
+      entityId: ticket._id.toString(),
+      userId,
+      userName,
+      userEmail,
+      description: `SLA paused for ticket ${ticket.ticketNumber}`,
+    });
+    
+    return res.status(200).json({
+      success: true,
+      message: 'SLA paused successfully',
+      data: {
+        ticketLevelSLA: ticket.ticketLevelSLA,
+        roleLevelSLA: ticket.roleLevelSLA,
+      },
+    });
+  } catch (error: any) {
+    console.error('Pause SLA error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to pause SLA',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Resume SLA for a ticket
+ * POST /api/tickets/:id/resume-sla
+ */
+export const resumeSLA = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = (req as any).user?.userId;
+    const userName = (req as any).user?.userName || (req as any).user?.name || 'Unknown';
+    const userEmail = (req as any).user?.email || 'unknown@email.com';
+    
+    const ticket = await Ticket.findById(id);
+    
+    if (!ticket) {
+      return res.status(404).json({
+        success: false,
+        message: 'Ticket not found',
+      });
+    }
+    
+    const now = new Date();
+    
+    // Resume ticket-level SLA
+    if (ticket.ticketLevelSLA?.pausedAt) {
+      const pausedDuration = now.getTime() - ticket.ticketLevelSLA.pausedAt.getTime();
+      ticket.ticketLevelSLA.pausedDuration = 
+        (ticket.ticketLevelSLA.pausedDuration || 0) + pausedDuration;
+      ticket.ticketLevelSLA.pausedAt = undefined;
+    }
+    
+    // Resume role-level SLA
+    if (ticket.roleLevelSLA?.pausedAt) {
+      const pausedDuration = now.getTime() - ticket.roleLevelSLA.pausedAt.getTime();
+      ticket.roleLevelSLA.pausedDuration = 
+        (ticket.roleLevelSLA.pausedDuration || 0) + pausedDuration;
+      ticket.roleLevelSLA.pausedAt = undefined;
+    }
+    
+    await ticket.save();
+    
+    // Log activity
+    await logActivity({
+      action: 'update',
+      entity: 'Ticket',
+      entityId: ticket._id.toString(),
+      userId,
+      userName,
+      userEmail,
+      description: `SLA resumed for ticket ${ticket.ticketNumber}`,
+    });
+    
+    return res.status(200).json({
+      success: true,
+      message: 'SLA resumed successfully',
+      data: {
+        ticketLevelSLA: ticket.ticketLevelSLA,
+        roleLevelSLA: ticket.roleLevelSLA,
+      },
+    });
+  } catch (error: any) {
+    console.error('Resume SLA error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to resume SLA',
       error: error.message,
     });
   }

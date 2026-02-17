@@ -48,6 +48,13 @@ export interface IEscalationRecord {
   escalatedBy: mongoose.Types.ObjectId;
   reason: string;
   escalatedAt: Date;
+  // Level tracking for proper de-escalation
+  fromLevelNumber?: number;
+  toLevelNumber?: number;
+  fromLevelName?: string;
+  toLevelName?: string;
+  // Store the assignee at each level for proper re-assignment during de-escalation
+  previousAssignee?: mongoose.Types.ObjectId; // Who was handling before this escalation
 }
 
 export interface IChangeHistory {
@@ -57,7 +64,22 @@ export interface IChangeHistory {
   newValue: string; // New value
   changedBy: mongoose.Types.ObjectId; // User who made the change
   changedAt: Date;
-  changeType: 'update' | 'add' | 'remove'; // Type of change
+  changeType: 'update' | 'add' | 'remove' | 'reassigned'; // Type of change
+  // Reassignment-specific fields (only populated when changeType === 'reassigned')
+  reassignmentReason?: string; // Reason for reassignment
+  reassignmentCategory?: string; // Category from predefined list
+  reassignmentMode?: 'sequential' | 'flexible'; // Which mode was used
+}
+
+/**
+ * Interface for hierarchical category storage
+ */
+export interface ICategoryHierarchy {
+  level1?: mongoose.Types.ObjectId; // Required (Level 1 category)
+  level2?: mongoose.Types.ObjectId; // Optional (Level 2 category)
+  level3?: mongoose.Types.ObjectId; // Optional (Level 3 category)
+  level4?: mongoose.Types.ObjectId; // Optional (Level 4 category)
+  displayPath?: string; // Cached display path for quick rendering
 }
 
 export interface ITicket extends Document {
@@ -66,7 +88,8 @@ export interface ITicket extends Document {
   description: string;
   status: number; // Changed to number: 1=open, 2=in-progress, 3=on-hold, 4=resolved, 5=closed
   priority: string; // Priority code from Priority master data (e.g., LOW, MEDIUM, HIGH, CRITICAL)
-  category?: string;
+  category?: string; // Legacy field - kept for backward compatibility
+  categoryHierarchy?: ICategoryHierarchy; // New hierarchical category storage
   createdBy: mongoose.Types.ObjectId;
   assignedTo?: mongoose.Types.ObjectId;
   project?: mongoose.Types.ObjectId; // Added for project reference
@@ -87,6 +110,25 @@ export interface ITicket extends Document {
   closedAt?: Date; // Timestamp when status changed to Closed (5)
   resolutionTime?: string; // Calculated field for reporting (e.g., "2d 5h")
   slaStatus?: string; // Calculated field for reporting (e.g., "Within SLA", "Outside SLA")
+  // Escalation Matrix fields
+  escalationMatrixId?: mongoose.Types.ObjectId; // Applied escalation matrix
+  currentEscalationLevelId?: mongoose.Types.ObjectId; // Current escalation level in the matrix
+  currentEscalationLevelNumber?: number; // Current level number for quick reference
+  // SLA Tracking fields
+  workingCalendarId?: mongoose.Types.ObjectId; // Working calendar for SLA calculations
+  ticketLevelSLA?: {
+    dueAt: Date; // When ticket-level SLA expires (calculated from created time + priority resolution time)
+    breachedAt?: Date; // When ticket-level SLA was breached (if applicable)
+    pausedAt?: Date; // When SLA was paused (e.g., status changed to on-hold)
+    pausedDuration?: number; // Total time paused in minutes
+  };
+  roleLevelSLA?: {
+    startedAt: Date; // When current role-level SLA started (ticket creation or escalation)
+    dueAt: Date; // When current role-level SLA expires
+    breachedAt?: Date; // When current role-level SLA was breached (if applicable)
+    pausedAt?: Date; // When SLA was paused
+    pausedDuration?: number; // Total time paused in minutes
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -136,6 +178,13 @@ const EscalationRecordSchema = new Schema({
   escalatedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   reason: { type: String, required: true },
   escalatedAt: { type: Date, default: Date.now },
+  // Level tracking for proper de-escalation
+  fromLevelNumber: { type: Number },
+  toLevelNumber: { type: Number },
+  fromLevelName: { type: String },
+  toLevelName: { type: String },
+  // Store the previous assignee for re-assignment during de-escalation
+  previousAssignee: { type: Schema.Types.ObjectId, ref: 'User' },
 });
 
 const ChangeHistorySchema = new Schema({
@@ -144,7 +193,11 @@ const ChangeHistorySchema = new Schema({
   newValue: { type: String, required: true },
   changedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   changedAt: { type: Date, default: Date.now },
-  changeType: { type: String, enum: ['update', 'add', 'remove'], default: 'update' },
+  changeType: { type: String, enum: ['update', 'add', 'remove', 'reassigned'], default: 'update' },
+  // Reassignment-specific fields
+  reassignmentReason: { type: String }, // Only populated when changeType === 'reassigned'
+  reassignmentCategory: { type: String }, // Category from predefined list
+  reassignmentMode: { type: String, enum: ['sequential', 'flexible'] }, // Which mode was used
 });
 
 const TicketSchema: Schema = new Schema(
@@ -184,6 +237,33 @@ const TicketSchema: Schema = new Schema(
       ref: 'Category',
       trim: true,
       index: true,
+    },
+    // Hierarchical category storage
+    categoryHierarchy: {
+      level1: {
+        type: Schema.Types.ObjectId,
+        ref: 'Category',
+        index: true,
+      },
+      level2: {
+        type: Schema.Types.ObjectId,
+        ref: 'Category',
+        index: true,
+      },
+      level3: {
+        type: Schema.Types.ObjectId,
+        ref: 'Category',
+        index: true,
+      },
+      level4: {
+        type: Schema.Types.ObjectId,
+        ref: 'Category',
+        index: true,
+      },
+      displayPath: {
+        type: String,
+        trim: true,
+      },
     },
     createdBy: {
       type: Schema.Types.ObjectId,
@@ -248,6 +328,40 @@ const TicketSchema: Schema = new Schema(
     closedAt: {
       type: Date,
       index: true,
+    },
+    // Escalation Matrix fields
+    escalationMatrixId: {
+      type: Schema.Types.ObjectId,
+      ref: 'EscalationMatrix',
+      index: true,
+    },
+    currentEscalationLevelId: {
+      type: Schema.Types.ObjectId,
+      // This is the _id of the level subdocument within the EscalationMatrix
+    },
+    currentEscalationLevelNumber: {
+      type: Number,
+      default: 0,
+      index: true,
+    },
+    // SLA Tracking fields
+    workingCalendarId: {
+      type: Schema.Types.ObjectId,
+      ref: 'WorkingCalendar',
+      index: true,
+    },
+    ticketLevelSLA: {
+      dueAt: { type: Date },
+      breachedAt: { type: Date },
+      pausedAt: { type: Date },
+      pausedDuration: { type: Number, default: 0 },
+    },
+    roleLevelSLA: {
+      startedAt: { type: Date },
+      dueAt: { type: Date },
+      breachedAt: { type: Date },
+      pausedAt: { type: Date },
+      pausedDuration: { type: Number, default: 0 },
     },
   },
   {

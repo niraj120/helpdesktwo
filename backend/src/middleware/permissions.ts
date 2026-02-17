@@ -3,9 +3,21 @@ import { AuthRequest } from './auth';
 import { Permission } from '../models/Permission';
 
 /**
+ * Check if user is a Super Admin
+ */
+const isSuperAdmin = (req: AuthRequest): boolean => {
+  const role = req.user?.role;
+  if (!role) return false;
+  return role.code === 'SUPER_ADMIN' || 
+         role.name === 'Super Admin' || 
+         (typeof role === 'string' && role === 'Super Admin');
+};
+
+/**
  * Middleware factory to require a specific permission code.
  * It checks if the current user's role (from JWT payload) contains that permission.
  * Now supports both permission codes (strings) and permission IDs (ObjectIds) for backward compatibility.
+ * Super Admin users bypass all permission checks.
  */
 export const requirePermission = (code: string) => async (
   req: AuthRequest,
@@ -13,6 +25,12 @@ export const requirePermission = (code: string) => async (
   next: NextFunction
 ) => {
   try {
+    // Super Admin bypass - has all permissions
+    if (isSuperAdmin(req)) {
+      next();
+      return;
+    }
+
     const rolePerms = req.user?.role?.permissions || [];
     
     // Check if permissions are stored as codes (new optimized format)
@@ -66,13 +84,24 @@ export const requirePermission = (code: string) => async (
  * - checkPermission('PERMISSION_CODE') - direct permission code
  * - checkPermission(['CODE1', 'CODE2']) - array of codes (OR logic - user needs ANY one)
  * - checkPermission('resource', 'action') - constructs "resource.action"
+ * Super Admin users bypass all permission checks.
  */
 export const checkPermission = (resourceOrCode: string | string[], action?: string): RequestHandler => {
   // Handle array of permission codes (OR logic)
   if (Array.isArray(resourceOrCode)) {
     return async (req: AuthRequest, res: Response, next: NextFunction) => {
       try {
+        // Super Admin bypass - has all permissions
+        if (isSuperAdmin(req)) {
+          next();
+          return;
+        }
+
         const rolePerms = req.user?.role?.permissions || [];
+        
+        // DEBUG: Log what we're checking
+        console.log(`🔍 [PERMISSION CHECK] User: ${req.user?.email}, Required: ${resourceOrCode.join(' OR ')}`);
+        console.log(`🔍 [PERMISSION CHECK] Role permissions (${rolePerms.length}):`, rolePerms.slice(0, 5), '...');
         
         // Check if user has ANY of the required permissions
         const hasAnyPermission = resourceOrCode.some(code => {
@@ -84,6 +113,8 @@ export const checkPermission = (resourceOrCode: string | string[], action?: stri
           });
         });
 
+        console.log(`🔍 [PERMISSION CHECK] Has any permission: ${hasAnyPermission}`);
+        
         if (hasAnyPermission) {
           next();
           return;

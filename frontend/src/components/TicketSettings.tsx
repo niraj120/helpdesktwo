@@ -3,6 +3,7 @@ import { MdSave, MdInfo, MdAdd, MdEdit, MdDelete, MdDragIndicator } from 'react-
 import DashboardLayout from './DashboardLayout';
 import { useParams } from 'react-router-dom';
 import { API_CONFIG } from '../config/constants';
+import HierarchyConfigManager from './HierarchyConfigManager';
 
 interface TicketStatus {
   _id?: string;
@@ -79,12 +80,6 @@ const TicketSettings: React.FC = () => {
   const [editingStatus, setEditingStatus] = useState<TicketStatus | null>(null);
   const [showStatusModal, setShowStatusModal] = useState(false);
 
-  // Categories State - fetched from Category master
-  const [categories, setCategories] = useState<TicketCategory[]>([]);
-  const [loadingCategories, setLoadingCategories] = useState(false);
-  const [editingCategory, setEditingCategory] = useState<TicketCategory | null>(null);
-  const [showCategoryModal, setShowCategoryModal] = useState(false);
-
   // Priority options for ticket types - fetched from Priority master
   interface Priority {
     _id: string;
@@ -105,7 +100,6 @@ const TicketSettings: React.FC = () => {
     if (projectId) {
       loadStatuses();
       loadPriorities();
-      loadCategories();
       loadFormFields();
     }
   }, [projectId]);
@@ -177,37 +171,6 @@ const TicketSettings: React.FC = () => {
       console.error('❌ Error loading priorities from SLA rules:', error);
     } finally {
       setLoadingPriorities(false);
-    }
-  };
-
-  const loadCategories = async () => {
-    if (!projectId) return;
-    setLoadingCategories(true);
-    try {
-      const token = localStorage.getItem('authToken');
-      const response = await fetch(`${API_CONFIG.API_URL}/categories/project/${projectId}?includeInactive=true`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-        credentials: 'include',
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log('✅ Category API Response:', data);
-        if (data.success && data.data) {
-          console.log('✅ Setting categories:', data.data.length, 'items');
-          setCategories(data.data);
-        } else {
-          console.error('❌ Category API returned success=false or no data:', data);
-        }
-      } else {
-        console.error('❌ Category API response not OK:', response.status, response.statusText);
-      }
-    } catch (error) {
-      console.error('❌ Error loading categories:', error);
-    } finally {
-      setLoadingCategories(false);
     }
   };
 
@@ -318,7 +281,7 @@ const TicketSettings: React.FC = () => {
   const tabs = [
     { id: 'numbering', label: 'Ticket Numbering', labelMr: 'तिकीट क्रमांकन' },
     { id: 'statuses', label: 'Ticket Statuses', labelMr: 'तिकीट स्टेटस' },
-    { id: 'categories', label: 'Ticket Categories', labelMr: 'तिकीट श्रेणी' },
+    { id: 'categories', label: 'Categories', labelMr: 'श्रेणी' },
     { id: 'formFields', label: 'Form Fields', labelMr: 'फॉर्म फील्ड' },
   ];
 
@@ -437,120 +400,6 @@ const TicketSettings: React.FC = () => {
     } catch (error) {
       console.error('Error deleting status:', error);
       alert('Failed to delete status');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Category CRUD operations
-  const handleAddCategory = () => {
-    setEditingCategory({ 
-      _id: '', 
-      name: '', 
-      code: '', 
-      description: '', 
-      color: '#3b82f6',
-      icon: '',
-      defaultPriority: '',
-      order: categories.length,
-      isActive: true
-    });
-    setShowCategoryModal(true);
-  };
-
-  const handleEditCategory = (category: TicketCategory) => {
-    setEditingCategory({ ...category });
-    setShowCategoryModal(true);
-  };
-
-  // Helper function to generate code from name
-  const generateCodeFromName = (name: string): string => {
-    return name
-      .toUpperCase()
-      .trim()
-      .replace(/[^A-Z0-9\s]/g, '') // Remove special characters
-      .replace(/\s+/g, '_'); // Replace spaces with underscores
-  };
-
-  const handleSaveCategory = async () => {
-    if (!editingCategory || !projectId) return;
-
-    // Validate required fields
-    if (!editingCategory.name) {
-      alert('Name is required');
-      return;
-    }
-
-    // Auto-generate code from name if not provided or if it's a new category
-    const isNew = !editingCategory._id || editingCategory._id === '';
-    const code = isNew ? generateCodeFromName(editingCategory.name) : editingCategory.code;
-
-    setLoading(true);
-    try {
-      const token = localStorage.getItem('authToken');
-      
-      const url = isNew 
-        ? `${API_CONFIG.API_URL}/categories/project/${projectId}`
-        : `${API_CONFIG.API_URL}/categories/${editingCategory._id}`;
-      
-      const response = await fetch(url, {
-        method: isNew ? 'POST' : 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          name: editingCategory.name,
-          code: code,
-          description: editingCategory.description,
-          color: editingCategory.color,
-          icon: editingCategory.icon,
-          defaultPriority: editingCategory.defaultPriority,
-          order: editingCategory.order,
-          isActive: editingCategory.isActive,
-        }),
-      });
-
-      if (response.ok) {
-        await loadCategories(); // Reload from API
-        setShowCategoryModal(false);
-        setEditingCategory(null);
-      } else {
-        const errorData = await response.json();
-        alert(errorData.message || 'Failed to save category');
-      }
-    } catch (error) {
-      console.error('Error saving category:', error);
-      alert('Failed to save category');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDeleteCategory = async (categoryId: string) => {
-    if (!confirm('Are you sure you want to delete this category?')) return;
-    
-    setLoading(true);
-    try {
-      const token = localStorage.getItem('authToken');
-      const response = await fetch(`${API_CONFIG.API_URL}/categories/${categoryId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-        credentials: 'include',
-      });
-
-      if (response.ok) {
-        await loadCategories();
-      } else {
-        const errorData = await response.json();
-        alert(errorData.message || 'Failed to delete category');
-      }
-    } catch (error) {
-      console.error('Error deleting category:', error);
-      alert('Failed to delete category');
     } finally {
       setLoading(false);
     }
@@ -1028,287 +877,46 @@ const TicketSettings: React.FC = () => {
             </div>
           )}
 
-          {/* Ticket Categories Tab */}
-          {activeTab === 'categories' && (
+          {/* Categories Tab - Hierarchical Category Management */}
+          {activeTab === 'categories' && projectId && (
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                <h2 style={{ fontSize: '20px', fontWeight: '600' }}>
-                  Ticket Categories
+              <div style={{ marginBottom: '24px' }}>
+                <h2 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '8px' }}>
+                  Categories Configuration
                 </h2>
-                <button
-                  onClick={handleAddCategory}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    padding: '10px 16px',
-                    background: 'var(--primary-main)',
-                    border: 'none',
-                    borderRadius: '8px',
-                    color: 'white',
-                    fontSize: '14px',
-                    fontWeight: '500',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <MdAdd /> Add Category
-                </button>
               </div>
 
-              {loadingCategories ? (
-                <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
-                  Loading categories...
+              <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+                Configure hierarchical category levels (1-4 levels) and manage category items in a tree structure.
+              </p>
+              <div style={{ 
+                padding: '12px 16px', 
+                backgroundColor: '#eff6ff', 
+                border: '1px solid #3b82f6', 
+                borderRadius: '8px',
+                fontSize: '13px',
+                color: '#1e40af',
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '8px',
+                marginBottom: '16px'
+              }}>
+                <MdInfo size={18} style={{ marginTop: '2px', flexShrink: 0 }} />
+                <div>
+                  <strong>How it works:</strong>
+                  <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                    <li>Set the number of levels (1-4) for your category hierarchy</li>
+                    <li>Give custom names to each level (e.g., Course, Category, Subcategory, Topic)</li>
+                    <li>Add category items at each level - child items appear when their parent is selected</li>
+                    <li>Level 1 is always mandatory, other levels can be optional</li>
+                    <li>Set priority mapping: select which category level determines ticket priority</li>
+                  </ul>
                 </div>
-              ) : categories.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
-                  No categories configured yet. Click "Add Category" to create one.
-                </div>
-              ) : (
-                <div style={{ display: 'grid', gap: '12px' }}>
-                  {categories.map((category) => (
-                    <div
-                      key={category._id || category.code}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '16px',
-                        padding: '20px',
-                        border: '1px solid #d1d5db',
-                        borderRadius: '8px',
-                        background: 'white',
-                        opacity: category.isActive === false ? 0.6 : 1,
-                      }}
-                    >
-                      {category.color && (
-                        <div style={{
-                          width: '16px',
-                          height: '16px',
-                          borderRadius: '50%',
-                          background: category.color,
-                          flexShrink: 0,
-                        }} />
-                      )}
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: '600', fontSize: '16px', marginBottom: '4px' }}>
-                          {category.name}
-                          {category.isActive === false && (
-                            <span style={{ marginLeft: '8px', fontSize: '12px', color: '#6b7280' }}>(Inactive)</span>
-                          )}
-                        </div>
-                        <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                          {category.description || 'No description'}
-                        </div>
-                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                          Code: {category.code}
-                          {category.defaultPriority && ` • Default Priority: ${category.defaultPriority}`}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => handleEditCategory(category)}
-                        style={{
-                          padding: '8px 12px',
-                          background: 'transparent',
-                          border: '1px solid #d1d5db',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                        }}
-                      >
-                        <MdEdit /> Edit
-                      </button>
-                      <button
-                        onClick={() => handleDeleteCategory(category._id!)}
-                        style={{
-                          padding: '8px 12px',
-                          background: 'transparent',
-                          border: '1px solid #ef4444',
-                          borderRadius: '6px',
-                          color: '#ef4444',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                        }}
-                      >
-                        <MdDelete /> Delete
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Category Modal */}
-              {showCategoryModal && editingCategory && (
-                <div style={{
-                  position: 'fixed',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  background: 'rgba(0,0,0,0.5)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  zIndex: 1000,
-                }}>
-                  <div style={{
-                    background: 'white',
-                    borderRadius: '12px',
-                    padding: '24px',
-                    width: '500px',
-                    maxWidth: '90%',
-                    maxHeight: '90vh',
-                    overflowY: 'auto',
-                  }}>
-                    <h3 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '20px' }}>
-                      {editingCategory._id ? 'Edit Category' : 'Add Category'}
-                    </h3>
-
-                    <div style={{ display: 'grid', gap: '16px' }}>
-                      <div>
-                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Name *</label>
-                        <input
-                          type="text"
-                          value={editingCategory.name}
-                          onChange={(e) => setEditingCategory({ ...editingCategory, name: e.target.value })}
-                          style={{
-                            width: '100%',
-                            padding: '10px 12px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '8px',
-                            outline: 'none',
-                          }}
-                        />
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Color</label>
-                        <input
-                          type="color"
-                          value={editingCategory.color || '#3b82f6'}
-                          onChange={(e) => setEditingCategory({ ...editingCategory, color: e.target.value })}
-                          style={{
-                            width: '100%',
-                            height: '40px',
-                            padding: '4px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '8px',
-                            cursor: 'pointer',
-                          }}
-                        />
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Icon (optional)</label>
-                        <input
-                          type="text"
-                          value={editingCategory.icon || ''}
-                          onChange={(e) => setEditingCategory({ ...editingCategory, icon: e.target.value })}
-                          placeholder="e.g., MdBugReport, MdHelp, MdQuestionAnswer"
-                          style={{
-                            width: '100%',
-                            padding: '10px 12px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '8px',
-                            outline: 'none',
-                          }}
-                        />
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Description</label>
-                        <textarea
-                          value={editingCategory.description || ''}
-                          onChange={(e) => setEditingCategory({ ...editingCategory, description: e.target.value })}
-                          rows={3}
-                          style={{
-                            width: '100%',
-                            padding: '10px 12px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '8px',
-                            fontFamily: 'inherit',
-                            outline: 'none',
-                          }}
-                        />
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Default Priority</label>
-                        <select
-                          value={editingCategory.defaultPriority || ''}
-                          onChange={(e) => setEditingCategory({ ...editingCategory, defaultPriority: e.target.value })}
-                          disabled={loadingPriorities}
-                          style={{
-                            width: '100%',
-                            padding: '10px 12px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '8px',
-                            outline: 'none',
-                            backgroundColor: 'white',
-                          }}
-                        >
-                          <option value="">No default</option>
-                          {loadingPriorities ? (
-                            <option disabled>Loading priorities...</option>
-                          ) : priorities.length > 0 ? (
-                            priorities.map(p => (
-                              <option key={p._id} value={p.code}>{p.name}</option>
-                            ))
-                          ) : (
-                            <option disabled>No priorities found for this project</option>
-                          )}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '500' }}>
-                          <input
-                            type="checkbox"
-                            checked={editingCategory.isActive !== false}
-                            onChange={(e) => setEditingCategory({ ...editingCategory, isActive: e.target.checked })}
-                          />
-                          Active
-                        </label>
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '12px', marginTop: '24px', justifyContent: 'flex-end' }}>
-                      <button
-                        onClick={() => {
-                          setShowCategoryModal(false);
-                          setEditingCategory(null);
-                        }}
-                        style={{
-                          padding: '10px 20px',
-                          background: 'transparent',
-                          border: '1px solid #d1d5db',
-                          borderRadius: '8px',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={handleSaveCategory}
-                        disabled={loading}
-                        style={{
-                          padding: '10px 20px',
-                          background: 'var(--primary-main)',
-                          border: 'none',
-                          borderRadius: '8px',
-                          color: 'white',
-                          cursor: loading ? 'not-allowed' : 'pointer',
-                          opacity: loading ? 0.7 : 1,
-                        }}
-                      >
-                        {loading ? 'Saving...' : 'Save'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
+              </div>
+              <HierarchyConfigManager 
+                projectId={projectId} 
+                onSave={() => setSaved(true)}
+              />
             </div>
           )}
 
@@ -1836,67 +1444,26 @@ const TicketSettings: React.FC = () => {
                       color: 'var(--text-secondary)',
                       marginBottom: '12px'
                     }}>
-                      Configured Categories
+                      Hierarchical Categories
                     </h4>
-                    <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
-                      <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
-                        <thead style={{ background: '#f9fafb', position: 'sticky', top: 0 }}>
-                          <tr>
-                            <th style={{ padding: '8px', textAlign: 'left', fontWeight: '600' }}>#</th>
-                            <th style={{ padding: '8px', textAlign: 'left', fontWeight: '600' }}>Name</th>
-                            <th style={{ padding: '8px', textAlign: 'left', fontWeight: '600' }}>Priority</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {categories.map((category, index) => (
-                            <tr key={category._id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                              <td style={{ padding: '8px' }}>{index + 1}</td>
-                              <td style={{ padding: '8px' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  {category.color && (
-                                    <span style={{
-                                      width: '10px',
-                                      height: '10px',
-                                      borderRadius: '50%',
-                                      background: category.color,
-                                      display: 'inline-block'
-                                    }}></span>
-                                  )}
-                                  <div>
-                                    <div style={{ fontWeight: '500' }}>{category.name}</div>
-                                    <div style={{ fontSize: '11px', color: '#6b7280' }}>{category.description || ''}</div>
-                                  </div>
-                                </div>
-                              </td>
-                              <td style={{ padding: '8px' }}>
-                                {(() => {
-                                  const priority = priorities.find(p => p.code === category.defaultPriority);
-                                  const bgColor = priority?.color ? `${priority.color}20` : '#dbeafe';
-                                  const textColor = priority?.color || '#1e40af';
-                                  return (
-                                    <span style={{
-                                      display: 'inline-block',
-                                      padding: '2px 8px',
-                                      borderRadius: '4px',
-                                      fontSize: '11px',
-                                      fontWeight: '500',
-                                      background: bgColor,
-                                      color: textColor
-                                    }}>
-                                      {priority?.name || category.defaultPriority || 'Not set'}
-                                    </span>
-                                  );
-                                })()}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                      {categories.length === 0 && (
-                        <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-tertiary)' }}>
-                          No categories configured yet
-                        </div>
-                      )}
+                    <div style={{ 
+                      padding: '16px', 
+                      background: '#f0f9ff', 
+                      borderRadius: '8px',
+                      border: '1px solid #bae6fd'
+                    }}>
+                      <p style={{ fontSize: '13px', color: '#0369a1', margin: 0 }}>
+                        Categories are now managed with a hierarchical structure supporting up to 4 levels. 
+                        Configure the hierarchy and add categories in the main panel.
+                      </p>
+                      <div style={{ marginTop: '12px', fontSize: '12px', color: '#0c4a6e' }}>
+                        <strong>Features:</strong>
+                        <ul style={{ margin: '8px 0 0 16px', padding: 0 }}>
+                          <li>Configurable hierarchy depth (1-4 levels)</li>
+                          <li>Priority assignment from any level</li>
+                          <li>Parent-child category relationships</li>
+                        </ul>
+                      </div>
                     </div>
                   </div>
                 )}

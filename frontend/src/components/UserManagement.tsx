@@ -68,7 +68,8 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
   const { viewMode, currentProjectId, userProjects } = useProjectContext();
   
   // State management
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<User[]>([]); // Filtered users for table display
+  const [reportingManagersList, setReportingManagersList] = useState<User[]>([]); // Users for reporting manager dropdown (filtered by project)
   const [roles, setRoles] = useState<Role[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [centers, setCenters] = useState<Center[]>([]);
@@ -131,6 +132,23 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
     return [];
   }, [formData.primaryProject, centers]);
   
+  // Filtered reporting managers - simple exclusion of self and students
+  const filteredReportingManagers = useMemo(() => {
+    return reportingManagersList.filter(u => {
+      // Cannot be self (when editing)
+      if (editingUser && u._id === editingUser._id) return false;
+      
+      // Exclude students - they cannot be reporting managers
+      const roleName = u.role?.name?.toLowerCase() || '';
+      const roleCode = u.role?.code?.toLowerCase() || '';
+      if (roleName.includes('student') || roleCode.includes('student')) {
+        return false;
+      }
+      
+      return true;
+    });
+  }, [reportingManagersList, editingUser]);
+  
   // HRMS data for bulk selection
   const [hrmsEmployees, setHrmsEmployees] = useState<HRMSEmployee[]>([]);
   const [hrmsEmployeeCodes, setHrmsEmployeeCodes] = useState(''); // For initial employee code input
@@ -145,6 +163,13 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
   // Ref to prevent duplicate API calls from React.StrictMode
   const hasFetchedInitialData = useRef(false);
 
+  // Watch for primary project changes and fetch reporting managers
+  useEffect(() => {
+    if (showUserModal && formData.primaryProject) {
+      fetchReportingManagers(formData.primaryProject);
+    }
+  }, [formData.primaryProject, showUserModal]);
+  
   // Generate a secure random password
   const generateSecurePassword = (): string => {
     const length = 12;
@@ -238,6 +263,48 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
       alert(`Failed to fetch users: ${error.message}`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Fetch reporting managers based on project selection
+  const fetchReportingManagers = async (projectId: string) => {
+    if (!projectId) {
+      setReportingManagersList([]);
+      return;
+    }
+    
+    try {
+      const token = localStorage.getItem('authToken');
+      const params = new URLSearchParams();
+      params.append('project', projectId); // Filter by project
+      params.append('isActive', 'true'); // Only active users
+      params.append('page', '1');
+      params.append('limit', '1000'); // Reasonable limit for project users
+      
+      const url = `${API_CONFIG.API_URL}/users?${params}`;
+      
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        setReportingManagersList(data.data);
+        console.log('📋 [USER MGMT] Fetched reporting managers for project:', projectId, '- Count:', data.data.length);
+      } else {
+        throw new Error(data.error || 'Failed to fetch reporting managers');
+      }
+    } catch (error: any) {
+      console.error('Error fetching reporting managers:', error);
+      setReportingManagersList([]);
     }
   };
 
@@ -491,6 +558,12 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
       projects: projectContext?.projectId ? [projectContext.projectId] : [],
       centers: [],
     });
+    
+    // Fetch reporting managers for the default project (if any)
+    if (projectContext?.projectId) {
+      fetchReportingManagers(projectContext.projectId);
+    }
+    
     setShowUserModal(true);
   };
 
@@ -537,6 +610,11 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
       } catch (error) {
         console.error('Error fetching centers for edit:', error);
       }
+    }
+    
+    // Fetch reporting managers for the primary project
+    if (primaryProjectId) {
+      fetchReportingManagers(primaryProjectId);
     }
     
     setShowUserModal(true);
@@ -2314,17 +2392,62 @@ const UserManagement: React.FC<UserManagementProps> = ({ wrapWithLayout = true }
                 <div style={{ marginTop: '16px' }}>
                   <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '6px' }}>
                     {getText('Reporting Manager', 'रिपोर्टिंग मॅनेजर', 'रिपोर्टिंग मॅनेजर')}
+                    {filteredReportingManagers.length > 0 && (
+                      <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: 'normal', marginLeft: '8px' }}>
+                        ({filteredReportingManagers.length} {getText('available', 'उपलब्ध', 'उपलब्ध')})
+                      </span>
+                    )}
                   </label>
-                  <select value={formData.reportingManager} onChange={(e) => setFormData({ ...formData, reportingManager: e.target.value })} style={{ width: '100%', padding: '12px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}>
-                    <option value="">{getText('Select Reporting Manager', 'रिपोर्टिंग मॅनेजर निवडा', 'रिपोर्टिंग मॅनेजर निवडा')}</option>
-                    {users
-                      .filter(u => u.isActive && (!editingUser || u._id !== editingUser._id))
-                      .map(user => (
+                  <select 
+                    value={formData.reportingManager} 
+                    onChange={(e) => setFormData({ ...formData, reportingManager: e.target.value })} 
+                    disabled={!formData.primaryProject && (!editingUser || !editingUser.projects || editingUser.projects.length === 0)}
+                    style={{ 
+                      width: '100%', 
+                      padding: '12px', 
+                      border: '1px solid #d1d5db', 
+                      borderRadius: '6px', 
+                      fontSize: '14px', 
+                      outline: 'none', 
+                      boxSizing: 'border-box',
+                      backgroundColor: (!formData.primaryProject && (!editingUser || !editingUser.projects || editingUser.projects.length === 0)) ? '#f3f4f6' : 'white',
+                      cursor: (!formData.primaryProject && (!editingUser || !editingUser.projects || editingUser.projects.length === 0)) ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    <option value="">
+                      {getText('Select Reporting Manager (Optional)', 'रिपोर्टिंग मॅनेजर निवडा (वैकल्पिक)', 'रिपोर्टिंग मॅनेजर निवडा (वैकल्पिक)')}
+                    </option>
+                    {filteredReportingManagers.map(user => {
+                      // Determine display format based on center mapping
+                      const roleName = user.role?.name || 'No Role';
+                      const hasCenter = user.centers && Array.isArray(user.centers) && user.centers.length > 0;
+                      
+                      let displayText = `${user.firstName} ${user.lastName} - ${roleName}`;
+                      
+                      if (hasCenter && user.centers) {
+                        // Get center names (show first center, indicate if more exist)
+                        const firstCenter = user.centers![0];
+                        const centerName = typeof firstCenter === 'string' ? firstCenter : firstCenter?.centerName || 'Center';
+                        const additionalCount = user.centers!.length - 1;
+                        
+                        displayText += ` - ${centerName}`;
+                        if (additionalCount > 0) {
+                          displayText += ` (+${additionalCount})`;
+                        }
+                      }
+                      
+                      return (
                         <option key={user._id} value={user._id}>
-                          {user.firstName} {user.lastName} ({user.email})
+                          {displayText}
                         </option>
-                      ))}
+                      );
+                    })}
                   </select>
+                  {!formData.primaryProject && !editingUser && (
+                    <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
+                      ℹ️ {getText('Please select Primary Project above to see available managers', 'उपलब्ध प्रबंधकों को देखने के लिए कृपया ऊपर प्राथमिक प्रोजेक्ट चुनें', 'उपलब्ध व्यवस्थापक पाहण्यासाठी कृपया वरील प्राथमिक प्रकल्प निवडा')}
+                    </p>
+                  )}
                 </div>
 
 

@@ -27,6 +27,7 @@ interface AssetMapping {
   totalAssigned: number;
   workingAsset: number;
   notWorkingAsset: number;
+  remark?: string;
   assetUsed: number;
   assetNotUsed: number;
   lastAuditDate?: Date;
@@ -34,6 +35,13 @@ interface AssetMapping {
   auditSubmitted?: boolean;
   canEdit?: boolean;
   lastUpdatedBy?: {
+    _id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+  };
+  lastAuditSubmittedAt?: string;
+  lastAuditSubmittedBy?: {
     _id: string;
     firstName: string;
     lastName: string;
@@ -69,10 +77,12 @@ const MyAssetsView: React.FC = () => {
   const [assets, setAssets] = useState<AssetMapping[]>([]);
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editValues, setEditValues] = useState<{ workingAsset: number; notWorkingAsset: number }>({
+  const [editValues, setEditValues] = useState<{ workingAsset: number; notWorkingAsset: number; remark: string }>({
     workingAsset: 0,
     notWorkingAsset: 0,
+    remark: '',
   });
+  const [expandedRemarkId, setExpandedRemarkId] = useState<string | null>(null);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -148,18 +158,20 @@ const MyAssetsView: React.FC = () => {
     setEditValues({
       workingAsset: asset.workingAsset,
       notWorkingAsset: asset.notWorkingAsset,
+      remark: asset.remark || '',
     });
   };
 
   const cancelEdit = () => {
     setEditingId(null);
-    setEditValues({ workingAsset: 0, notWorkingAsset: 0 });
+    setEditValues({ workingAsset: 0, notWorkingAsset: 0, remark: '' });
   };
 
   const handleWorkingChange = (value: number, totalAssigned: number) => {
     const newWorking = Math.max(0, Math.min(value, totalAssigned));
     const newNotWorking = totalAssigned - newWorking;
     setEditValues({
+      ...editValues,
       workingAsset: newWorking,
       notWorkingAsset: newNotWorking,
     });
@@ -169,6 +181,7 @@ const MyAssetsView: React.FC = () => {
     const newNotWorking = Math.max(0, Math.min(value, totalAssigned));
     const newWorking = totalAssigned - newNotWorking;
     setEditValues({
+      ...editValues,
       workingAsset: newWorking,
       notWorkingAsset: newNotWorking,
     });
@@ -185,7 +198,10 @@ const MyAssetsView: React.FC = () => {
           'Content-Type': 'application/json',
         },
         credentials: 'include',
-        body: JSON.stringify({ workingAsset: editValues.workingAsset }),
+        body: JSON.stringify({ 
+          workingAsset: editValues.workingAsset,
+          remarks: editValues.remark,
+        }),
       });
 
       const data = await response.json();
@@ -421,6 +437,9 @@ const MyAssetsView: React.FC = () => {
                       <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">
                         Not Working
                       </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 min-w-[200px]">
+                        Remark
+                      </th>
                       <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                         Last Audit
                       </th>
@@ -498,6 +517,54 @@ const MyAssetsView: React.FC = () => {
                                 </span>
                               )}
                             </td>
+                            {/* Remark Column */}
+                            <td className="px-4 py-3 text-sm text-gray-700 min-w-[200px] max-w-[300px]">
+                              {isEditing ? (
+                                <textarea
+                                  value={editValues.remark}
+                                  onChange={(e) =>
+                                    setEditValues((prev) => ({ ...prev, remark: e.target.value }))
+                                  }
+                                  placeholder="Add remark..."
+                                  rows={2}
+                                  className="w-full rounded border border-gray-300 px-2 py-1 text-sm resize-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
+                                />
+                              ) : asset.remark ? (
+                                <div className="relative group">
+                                  {asset.remark.length > 50 ? (
+                                    <>
+                                      {expandedRemarkId === asset._id ? (
+                                        <div className="bg-gray-50 rounded-lg p-2 border border-gray-200">
+                                          <p className="whitespace-pre-wrap break-words text-sm">{asset.remark}</p>
+                                          <button
+                                            onClick={() => setExpandedRemarkId(null)}
+                                            className="mt-2 text-xs text-blue-600 hover:text-blue-800 font-medium"
+                                          >
+                                            Show less
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <div className="flex items-start gap-1">
+                                          <span className="line-clamp-2 break-words">
+                                            {asset.remark.substring(0, 50)}...
+                                          </span>
+                                          <button
+                                            onClick={() => setExpandedRemarkId(asset._id)}
+                                            className="flex-shrink-0 text-xs text-blue-600 hover:text-blue-800 font-medium whitespace-nowrap"
+                                          >
+                                            More
+                                          </button>
+                                        </div>
+                                      )}
+                                    </>
+                                  ) : (
+                                    <span className="break-words">{asset.remark}</span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-gray-400 italic">-</span>
+                              )}
+                            </td>
                             <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-500">
                               {formatDate(asset.lastAuditDate)}
                             </td>
@@ -520,8 +587,8 @@ const MyAssetsView: React.FC = () => {
                               )}
                             </td>
                             <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-500">
-                              {asset.lastUpdatedBy
-                                ? `${asset.lastUpdatedBy.firstName} ${asset.lastUpdatedBy.lastName}`
+                              {(asset.lastAuditSubmittedBy || asset.lastUpdatedBy)
+                                ? `${(asset.lastAuditSubmittedBy || asset.lastUpdatedBy)!.firstName} ${(asset.lastAuditSubmittedBy || asset.lastUpdatedBy)!.lastName}`
                                 : '-'}
                             </td>
                             <td className="whitespace-nowrap px-4 py-3 text-center">

@@ -9,6 +9,7 @@ import {
   BookOpenIcon,
 } from '@heroicons/react/24/outline';
 import { API_CONFIG } from '../config/constants';
+import HierarchyCategorySelector, { CategoryHierarchyValue, useHierarchyConfig } from '../components/HierarchyCategorySelector';
 
 interface ProjectBranding {
   projectId: string;
@@ -52,6 +53,10 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [categories, setCategories] = useState<string[]>([]);
+  const [categoryHierarchy, setCategoryHierarchy] = useState<CategoryHierarchyValue>({});
+  
+  // Fetch hierarchy config to determine if multi-level categories are enabled
+  const { config: hierarchyConfig } = useHierarchyConfig(branding?.projectId || '');
 
   useEffect(() => {
     fetchData();
@@ -189,6 +194,13 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
       const submitData = new FormData();
       submitData.append('projectId', branding?.projectId || '');
       submitData.append('formData', JSON.stringify(formData));
+      
+      // Add hierarchical category data if configured
+      if (hierarchyConfig && hierarchyConfig.levelCount > 1 && categoryHierarchy && categoryHierarchy.level1) {
+        submitData.append('categoryHierarchy', JSON.stringify(categoryHierarchy));
+        // Also set the primary category from level1 for backward compatibility
+        submitData.append('category', categoryHierarchy.level1);
+      }
 
       // Add file attachments with their field names
       Object.entries(fieldFiles).forEach(([fieldName, files]) => {
@@ -255,6 +267,23 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
         );
       
       case 'dropdown':
+        // Use hierarchical category selector if this is the Category field and multi-level hierarchy is configured
+        if (field.fieldName.toLowerCase() === 'category' && hierarchyConfig && hierarchyConfig.levelCount > 1 && branding?.projectId) {
+          return (
+            <HierarchyCategorySelector
+              projectId={branding.projectId}
+              value={categoryHierarchy}
+              onChange={(newValue) => {
+                setCategoryHierarchy(newValue);
+                // Store the display path as the field value for form submission
+                handleInputChange(field.fieldName, newValue);
+              }}
+              mode="online"
+              showValidation={false}
+            />
+          );
+        }
+        // Fall back to standard dropdown
         return (
           <select
             value={value}

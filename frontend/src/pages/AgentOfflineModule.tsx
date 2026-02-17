@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { API_CONFIG } from '../config/constants';
 import ModuleHeader from '../components/ModuleHeader';
+import HierarchyCategorySelector, { CategoryHierarchyValue, useHierarchyConfig } from '../components/HierarchyCategorySelector';
 import {
   UserPlusIcon,
   TicketIcon,
@@ -70,6 +71,7 @@ interface RegistrationField {
     pattern?: string;
   };
   isParentMobile?: boolean;
+  requireOtpVerification?: boolean;
   order: number;
 }
 
@@ -90,6 +92,7 @@ interface TicketField {
   allowedFileTypes?: string[];
   isFixed?: boolean;
   isEnabled?: boolean;
+  requireOtpVerification?: boolean;
   order: number;
 }
 
@@ -145,6 +148,27 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
   const [creatingTicket, setCreatingTicket] = useState(false);
   const [ticketSuccess, setTicketSuccess] = useState(false);
   const [createdTicketNumber, setCreatedTicketNumber] = useState('');
+  const [categoryHierarchy, setCategoryHierarchy] = useState<CategoryHierarchyValue>({});
+  
+  // OTP Verification States
+  const [otpModal, setOtpModal] = useState<{
+    isOpen: boolean;
+    fieldId: string;
+    fieldName: string;
+    fieldType: 'phone' | 'email';
+    value: string;
+    formType: 'registration' | 'ticket';
+  } | null>(null);
+  const [otpValue, setOtpValue] = useState('');
+  const [otpKey, setOtpKey] = useState(''); // OTP key from server for verification
+  const [otpSending, setOtpSending] = useState(false);
+  const [otpVerifying, setOtpVerifying] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpError, setOtpError] = useState('');
+  const [verifiedFields, setVerifiedFields] = useState<Record<string, boolean>>({}); // fieldId -> verified status
+  
+  // Fetch hierarchy config to determine if multi-level categories are enabled
+  const { config: hierarchyConfig } = useHierarchyConfig(projectId);
 
   useEffect(() => {
     if (projectId) {
@@ -255,7 +279,7 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
     try {
       const token = localStorage.getItem('authToken');
       const response = await axios.get(
-        `${API_CONFIG.API_URL}/users/search?email=${searchEmail}&projectId=${projectId}`,
+        `${API_CONFIG.API_URL}/users/search?email=${searchEmail}&projectId=${projectId}&studentOnly=true`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
@@ -300,8 +324,126 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
     }
   };
 
+  // OTP Functions
+  const openOtpModal = (fieldId: string, fieldName: string, fieldType: 'phone' | 'email', value: string, formType: 'registration' | 'ticket') => {
+    setOtpModal({ isOpen: true, fieldId, fieldName, fieldType, value, formType });
+    setOtpValue('');
+    setOtpSent(false);
+    setOtpError('');
+  };
+
+  const closeOtpModal = () => {
+    setOtpModal(null);
+    setOtpValue('');
+    setOtpKey('');
+    setOtpSent(false);
+    setOtpError('');
+  };
+
+  const handleSendOtp = async () => {
+    if (!otpModal) return;
+    
+    setOtpSending(true);
+    setOtpError('');
+    
+    try {
+      const token = localStorage.getItem('authToken');
+      const endpoint = otpModal.fieldType === 'phone' 
+        ? `${API_CONFIG.API_URL}/otp/send-phone`
+        : `${API_CONFIG.API_URL}/otp/send-email`;
+      
+      const payload = otpModal.fieldType === 'phone'
+        ? { phone: otpModal.value, projectId }
+        : { email: otpModal.value, projectId };
+      
+      const response = await axios.post(
+        endpoint,
+        payload,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      if (response.data.success && response.data.otpKey) {
+        setOtpKey(response.data.otpKey);
+        setOtpSent(true);
+      } else {
+        setOtpError(response.data.message || 'Failed to send OTP');
+      }
+    } catch (error: any) {
+      console.error('Error sending OTP:', error);
+      setOtpError(error.response?.data?.message || 'Failed to send OTP. Please try again.');
+    } finally {
+      setOtpSending(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!otpModal || !otpValue || !otpKey) return;
+    
+    setOtpVerifying(true);
+    setOtpError('');
+    
+    try {
+      const token = localStorage.getItem('authToken');
+      
+      const response = await axios.post(
+        `${API_CONFIG.API_URL}/otp/verify`,
+        {
+          otpKey,
+          otp: otpValue,
+          type: otpModal.fieldType,
+          value: otpModal.value
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      if (response.data.success && response.data.verified) {
+        // Mark this field as verified
+        setVerifiedFields(prev => ({
+          ...prev,
+          [otpModal.fieldId]: true
+        }));
+        closeOtpModal();
+      } else {
+        setOtpError(response.data.message || 'Invalid OTP. Please try again.');
+      }
+    } catch (error: any) {
+      console.error('Error verifying OTP:', error);
+      setOtpError(error.response?.data?.message || 'Invalid OTP. Please try again.');
+    } finally {
+      setOtpVerifying(false);
+    }
+  };
+
+  // Check if all required OTP verifications are complete
+  const checkOtpVerificationsComplete = (formType: 'registration' | 'ticket'): { complete: boolean; missingFields: string[] } => {
+    const fields = formType === 'registration' 
+      ? offlineSettings?.registrationFields || []
+      : offlineSettings?.ticketFields || [];
+    
+    const missingFields: string[] = [];
+    
+    fields.forEach(field => {
+      if (field.requireOtpVerification && (field.fieldType === 'phone' || field.fieldType === 'email')) {
+        const value = formType === 'registration' ? userForm[field.fieldName] : ticketForm[field.fieldName];
+        if (value && !verifiedFields[field.id]) {
+          missingFields.push(field.fieldName);
+        }
+      }
+    });
+    
+    return { complete: missingFields.length === 0, missingFields };
+  };
+
   const handleRegisterUser = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Check OTP verifications before proceeding
+    const otpCheck = checkOtpVerificationsComplete('registration');
+    if (!otpCheck.complete) {
+      alert(`Please verify OTP for: ${otpCheck.missingFields.join(', ')}`);
+      return;
+    }
+    
     setRegistering(true);
     setRegisterSuccess(false);
 
@@ -344,7 +486,7 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
     try {
       const token = localStorage.getItem('authToken');
       const response = await axios.get(
-        `${API_CONFIG.API_URL}/users/search?email=${ticketForm.userEmail}&projectId=${projectId}`,
+        `${API_CONFIG.API_URL}/users/search?email=${ticketForm.userEmail}&projectId=${projectId}&studentOnly=true`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
@@ -390,6 +532,13 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
       return;
     }
 
+    // Check OTP verifications before proceeding
+    const otpCheck = checkOtpVerificationsComplete('ticket');
+    if (!otpCheck.complete) {
+      alert(`Please verify OTP for: ${otpCheck.missingFields.join(', ')}`);
+      return;
+    }
+
     setCreatingTicket(true);
     setTicketSuccess(false);
 
@@ -412,6 +561,15 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
       formData.append('projectId', projectId);
       formData.append('centerId', selectedCenter);
       formData.append('submissionType', 'offline');
+      
+      // Add hierarchical category data if configured
+      if (hierarchyConfig && hierarchyConfig.levelCount > 1 && categoryHierarchy) {
+        formData.append('categoryHierarchy', JSON.stringify(categoryHierarchy));
+        // Also set the primary category from level1 for backward compatibility
+        if (categoryHierarchy.level1) {
+          formData.append('category', categoryHierarchy.level1);
+        }
+      }
       
       if (ticketForm.markAsResolved) {
         formData.append('status', 'resolved');
@@ -464,9 +622,11 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
     }
   };
 
-  const renderDynamicField = (field: RegistrationField | TicketField, value: any, onChange: (value: any) => void) => {
+  const renderDynamicField = (field: RegistrationField | TicketField, value: any, onChange: (value: any) => void, formType: 'registration' | 'ticket') => {
     const isRequired = field.required;
     const placeholder = field.placeholder || field.fieldName;
+    const needsOtpVerification = field.requireOtpVerification && (field.fieldType === 'phone' || field.fieldType === 'email');
+    const isVerified = verifiedFields[field.id] === true;
 
     switch (field.fieldType) {
       case 'text':
@@ -474,17 +634,51 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
       case 'phone':
       case 'number':
         return (
-          <input
-            type={field.fieldType === 'email' ? 'email' : field.fieldType === 'phone' ? 'tel' : field.fieldType === 'number' ? 'number' : 'text'}
-            required={isRequired}
-            value={value || ''}
-            onChange={(e) => onChange(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder={placeholder}
-            minLength={field.validation?.minLength}
-            maxLength={field.validation?.maxLength}
-            pattern={field.validation?.pattern}
-          />
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <input
+                type={field.fieldType === 'email' ? 'email' : field.fieldType === 'phone' ? 'tel' : field.fieldType === 'number' ? 'number' : 'text'}
+                required={isRequired}
+                value={value || ''}
+                onChange={(e) => {
+                  onChange(e.target.value);
+                  // Reset verification if value changes
+                  if (needsOtpVerification && isVerified) {
+                    setVerifiedFields(prev => ({ ...prev, [field.id]: false }));
+                  }
+                }}
+                className={`flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                  needsOtpVerification && isVerified ? 'border-green-500 bg-green-50' : 'border-gray-300'
+                }`}
+                placeholder={placeholder}
+                minLength={field.validation?.minLength}
+                maxLength={field.validation?.maxLength}
+                pattern={field.validation?.pattern}
+              />
+              {needsOtpVerification && value && (
+                isVerified ? (
+                  <span className="inline-flex items-center px-3 py-2 bg-green-100 text-green-700 rounded-lg text-sm font-medium">
+                    <CheckCircleIcon className="h-5 w-5 mr-1" />
+                    Verified
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => openOtpModal(field.id, field.fieldName, field.fieldType as 'phone' | 'email', value, formType)}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium whitespace-nowrap"
+                  >
+                    Send OTP
+                  </button>
+                )
+              )}
+            </div>
+            {needsOtpVerification && !isVerified && value && (
+              <p className="text-xs text-amber-600 flex items-center">
+                <ExclamationCircleIcon className="h-4 w-4 mr-1" />
+                OTP verification required
+              </p>
+            )}
+          </div>
         );
 
       case 'textarea':
@@ -518,23 +712,6 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
           </select>
         );
 
-      case 'category':
-        return (
-          <select
-            required={isRequired}
-            value={value || ''}
-            onChange={(e) => onChange(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            <option value="">Select category</option>
-            {categories.map((category) => (
-              <option key={category._id} value={category._id}>
-                {category.name}
-              </option>
-            ))}
-          </select>
-        );
-
       case 'date':
         return (
           <input
@@ -547,17 +724,17 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
         );
 
       case 'file':
-        const ticketField = field as TicketField;
+        const ticketFieldFile = field as TicketField;
         return (
           <div>
             <input
               type="file"
-              multiple={ticketField.allowMultiple}
-              accept={ticketField.allowedFileTypes?.join(',')}
+              multiple={ticketFieldFile.allowMultiple}
+              accept={ticketFieldFile.allowedFileTypes?.join(',')}
               onChange={(e) => {
                 if (e.target.files) {
                   const filesArray = Array.from(e.target.files);
-                  const maxFiles = ticketField.maxFiles || 5;
+                  const maxFiles = ticketFieldFile.maxFiles || 5;
                   if (filesArray.length > maxFiles) {
                     alert(`Maximum ${maxFiles} files allowed`);
                     return;
@@ -589,7 +766,60 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
           </div>
         );
 
+      // Handle all hierarchy field types dynamically
       default:
+        // Check if this is a hierarchy field type (handles hierarchy-level-1, hierarchy-level-2, etc.)
+        const fieldTypeLower = field.fieldType?.toLowerCase() || '';
+        const isHierarchyField = fieldTypeLower === 'category' || 
+                                  fieldTypeLower === 'hierarchy' || 
+                                  fieldTypeLower.startsWith('hierarchy-level-');
+        
+        if (isHierarchyField) {
+          // For level 1 or single hierarchy field, render the HierarchyCategorySelector
+          const isLevel1 = fieldTypeLower === 'category' || 
+                          fieldTypeLower === 'hierarchy' || 
+                          fieldTypeLower === 'hierarchy-level-1';
+          
+          if (isLevel1) {
+            // Use hierarchical category selector if multi-level hierarchy is configured
+            if (hierarchyConfig && hierarchyConfig.levelCount > 1) {
+              return (
+                <HierarchyCategorySelector
+                  projectId={projectId}
+                  value={categoryHierarchy}
+                  onChange={(newValue) => {
+                    setCategoryHierarchy(newValue);
+                    // Also update the ticketForm with hierarchy data for submission
+                    onChange(newValue);
+                  }}
+                  mode="offline"
+                  showValidation={false}
+                />
+              );
+            }
+            // Fall back to simple dropdown for single-level category
+            return (
+              <select
+                required={isRequired}
+                value={value || ''}
+                onChange={(e) => onChange(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">Select category</option>
+                {categories.map((category) => (
+                  <option key={category._id} value={category._id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+            );
+          }
+          
+          // For levels 2, 3, 4, etc. - they are handled by HierarchyCategorySelector
+          return null;
+        }
+        
+        // Default text input for unknown field types
         return (
           <input
             type="text"
@@ -742,7 +972,8 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                     {renderDynamicField(
                       field,
                       userForm[field.fieldName],
-                      (value) => setUserForm({ ...userForm, [field.fieldName]: value })
+                      (value) => setUserForm({ ...userForm, [field.fieldName]: value }),
+                      'registration'
                     )}
                   </div>
                 ))}
@@ -925,7 +1156,23 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
             {/* Dynamic Ticket Fields */}
             <div className="space-y-6">
               {offlineSettings?.ticketFields
-                ?.filter((field) => field.isFixed ? field.isEnabled !== false : true) // Only show category if enabled
+                ?.filter((field) => {
+                  // Hide disabled fixed fields
+                  if (field.isFixed && field.isEnabled === false) return false;
+                  
+                  // Skip hierarchy level 2+ fields dynamically as they are handled by HierarchyCategorySelector
+                  const fieldType = field.fieldType?.toLowerCase() || '';
+                  if (fieldType.startsWith('hierarchy-level-')) {
+                    const levelMatch = fieldType.match(/hierarchy-level-(\d+)/);
+                    if (levelMatch) {
+                      const level = parseInt(levelMatch[1], 10);
+                      // Skip levels 2 and above - they are rendered by HierarchyCategorySelector
+                      if (level > 1) return false;
+                    }
+                  }
+                  
+                  return true;
+                })
                 .sort((a, b) => (a.order || 0) - (b.order || 0))
                 .map((field) => (
                   <div key={field.id}>
@@ -936,7 +1183,8 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                     {renderDynamicField(
                       field,
                       ticketForm[field.fieldName],
-                      (value) => setTicketForm({ ...ticketForm, [field.fieldName]: value })
+                      (value) => setTicketForm({ ...ticketForm, [field.fieldName]: value }),
+                      'ticket'
                     )}
                   </div>
                 ))}
@@ -1060,6 +1308,105 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* OTP Verification Modal */}
+      {otpModal && otpModal.isOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">
+                Verify {otpModal.fieldType === 'phone' ? 'Phone Number' : 'Email Address'}
+              </h3>
+              <button
+                onClick={closeOtpModal}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="mb-4">
+              <p className="text-sm text-gray-600">
+                {otpSent
+                  ? `OTP has been sent to ${otpModal.value}. Please enter the 6-digit code below.`
+                  : `Click "Send OTP" to receive a verification code at ${otpModal.value}`}
+              </p>
+            </div>
+
+            {otpError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
+                <p className="text-sm text-red-600">{otpError}</p>
+              </div>
+            )}
+
+            {!otpSent ? (
+              <button
+                onClick={handleSendOtp}
+                disabled={otpSending}
+                className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-md font-medium flex items-center justify-center gap-2"
+              >
+                {otpSending ? (
+                  <>
+                    <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    <span>Sending...</span>
+                  </>
+                ) : (
+                  <span>Send OTP</span>
+                )}
+              </button>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Enter OTP
+                  </label>
+                  <input
+                    type="text"
+                    value={otpValue}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+                      setOtpValue(value);
+                    }}
+                    placeholder="Enter 6-digit OTP"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-center text-lg tracking-widest"
+                    maxLength={6}
+                  />
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleSendOtp}
+                    disabled={otpSending}
+                    className="flex-1 py-2 px-4 border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:bg-gray-100 rounded-md font-medium"
+                  >
+                    Resend OTP
+                  </button>
+                  <button
+                    onClick={handleVerifyOtp}
+                    disabled={otpVerifying || otpValue.length !== 6}
+                    className="flex-1 py-2 px-4 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded-md font-medium flex items-center justify-center gap-2"
+                  >
+                    {otpVerifying ? (
+                      <>
+                        <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        <span>Verifying...</span>
+                      </>
+                    ) : (
+                      <span>Verify OTP</span>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

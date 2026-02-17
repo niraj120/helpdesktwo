@@ -351,6 +351,34 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
     const user = new User(userData);
     await user.save();
 
+    // Automatically create hierarchy mapping if reportingManager is assigned
+    if (reportingManager) {
+      try {
+        const { UserReportingHierarchy } = await import('../models/UserReportingHierarchy');
+        
+        // Check if mapping already exists (using actual DB field names)
+        const existingMapping = await UserReportingHierarchy.findOne({
+          userId: user._id,
+          reportingManager: reportingManager
+        });
+
+        if (!existingMapping) {
+          // Create the hierarchy mapping
+          await UserReportingHierarchy.create({
+            userId: user._id,
+            reportingManager: reportingManager,
+            createdAt: new Date()
+          });
+          console.log(`✅ [HIERARCHY] Auto-created: User ${user._id} reports to ${reportingManager}`);
+        } else {
+          console.log(`ℹ️ [HIERARCHY] Mapping already exists for user ${user._id}`);
+        }
+      } catch (hierError) {
+        console.error('❌ [HIERARCHY] Failed to auto-create hierarchy mapping:', hierError);
+        // Don't fail user creation if hierarchy fails
+      }
+    }
+
     // Populate role and projects before returning
     await user.populate('role', 'name code');
     await user.populate('projects', 'name code');
@@ -517,6 +545,9 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       }
     }
 
+    // Capture old reporting manager before updating (for hierarchy mapping)
+    const oldManagerId = user.reportingManager?.toString();
+
     // Update fields
     if (firstName !== undefined) user.firstName = firstName;
     if (lastName !== undefined) user.lastName = lastName;
@@ -529,6 +560,51 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
     if (reportingManager !== undefined) user.reportingManager = reportingManager;
     if (projects !== undefined) user.projects = projects;
     if (centers !== undefined) user.centers = centers;
+
+    // Handle hierarchy mapping when reportingManager changes
+    if (reportingManager !== undefined) {
+      try {
+        const { UserReportingHierarchy } = await import('../models/UserReportingHierarchy');
+        const newManagerId = reportingManager;
+
+        // If reporting manager changed
+        if (oldManagerId !== newManagerId) {
+          // Delete old mapping if exists (using actual DB field names)
+          if (oldManagerId) {
+            await UserReportingHierarchy.deleteMany({
+              userId: user._id,
+              reportingManager: oldManagerId
+            });
+            console.log(`🔄 [HIERARCHY] Deleted old mapping: User ${user._id} → ${oldManagerId}`);
+          }
+
+          // Create new mapping if new manager assigned
+          if (newManagerId) {
+            // Check if mapping already exists (using actual DB field names)
+            const existingMapping = await UserReportingHierarchy.findOne({
+              userId: user._id,
+              reportingManager: newManagerId
+            });
+
+            if (!existingMapping) {
+              await UserReportingHierarchy.create({
+                userId: user._id,
+                reportingManager: newManagerId,
+                createdAt: new Date()
+              });
+              console.log(`✅ [HIERARCHY] Auto-created: User ${user._id} reports to ${newManagerId}`);
+            } else {
+              console.log(`ℹ️ [HIERARCHY] Mapping already exists for user ${user._id}`);
+            }
+          } else {
+            console.log(`ℹ️ [HIERARCHY] Reporting manager removed, no new mapping created`);
+          }
+        }
+      } catch (hierError) {
+        console.error('❌ [HIERARCHY] Failed to update hierarchy mapping:', hierError);
+        // Don't fail user update if hierarchy fails
+      }
+    }
 
     await user.save();
 
@@ -990,7 +1066,7 @@ export const getUserPermissions = async (req: Request, res: Response): Promise<v
  */
 export const searchUserByEmail = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { email, projectId } = req.query;
+    const { email, projectId, studentOnly } = req.query;
 
     if (!email) {
       res.status(400).json({
@@ -1004,6 +1080,21 @@ export const searchUserByEmail = async (req: Request, res: Response): Promise<vo
     
     if (projectId) {
       filter.projects = projectId;
+    }
+
+    // If studentOnly is true, filter by Student role
+    if (studentOnly === 'true') {
+      const studentRole = await Role.findOne({ code: 'STUDENT' });
+      if (studentRole) {
+        filter.role = studentRole._id;
+      } else {
+        // No student role found, return no results
+        res.json({
+          success: true,
+          data: null,
+        });
+        return;
+      }
     }
 
     const user = await User.findOne(filter).select('firstName lastName email phone role');
@@ -1210,6 +1301,7 @@ export const registerStudent = async (req: Request, res: Response): Promise<void
 
 /**
  * Advanced search for students/users by name, phone, or unique ID
+ * Only returns users with STUDENT role
  */
 export const searchStudents = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -1223,7 +1315,21 @@ export const searchStudents = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    const filter: any = {};
+    // Get Student role ID to filter only student users
+    const studentRole = await Role.findOne({ code: 'STUDENT' });
+    if (!studentRole) {
+      res.json({
+        success: true,
+        data: [],
+        count: 0,
+        message: 'Student role not configured',
+      });
+      return;
+    }
+
+    const filter: any = {
+      role: studentRole._id, // Only search users with Student role
+    };
     
     if (projectId) {
       filter.projects = projectId;

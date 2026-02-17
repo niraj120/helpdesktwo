@@ -6,6 +6,7 @@ import { User } from '../models/User';
 import mongoose from 'mongoose';
 import { sendTicketEscalatedEmail } from '../utils/emailService';
 import { logError, ErrorContext, ErrorSeverity } from '../utils/errorLogger';
+import { processAutoEscalation as processMatrixAutoEscalation } from './escalationMatrixService';
 
 /**
  * Auto-Escalation Service
@@ -123,12 +124,27 @@ class AutoEscalationService {
       const duration = ((Date.now() - startTime) / 1000).toFixed(2);
 
       console.log('\n' + '='.repeat(60));
-      console.log('📊 Auto-Escalation Summary:');
+      console.log('📊 Auto-Escalation Summary (Policy-Based):');
       console.log(`   Checked: ${trackings.length}`);
       console.log(`   Escalated: ${escalated}`);
       console.log(`   Failed: ${failed}`);
       console.log(`   Duration: ${duration}s`);
       console.log('='.repeat(60) + '\n');
+      
+      // Also process Matrix-based auto-escalation
+      try {
+        console.log('🔄 Checking Matrix-based Auto-Escalation...');
+        const matrixResult = await processMatrixAutoEscalation();
+        console.log('📊 Auto-Escalation Summary (Matrix-Based):');
+        console.log(`   Processed: ${matrixResult.processed}`);
+        console.log(`   Escalated: ${matrixResult.escalated}`);
+        if (matrixResult.errors.length > 0) {
+          console.log(`   Errors: ${matrixResult.errors.length}`);
+        }
+        console.log('='.repeat(60) + '\n');
+      } catch (matrixError: any) {
+        console.error('❌ Matrix-based auto-escalation failed:', matrixError.message);
+      }
     } catch (error: any) {
       console.error('❌ Auto-escalation cycle failed:', error.message);
       console.error(error.stack);
@@ -182,11 +198,12 @@ class AutoEscalationService {
 
     // Pick the first available user (you can implement load balancing here)
     const escalatedToUser = targetUsers[0];
+    
+    // Capture the previous assignee (handler at current level) BEFORE changing
+    const previousAssigneeId = ticket.assignedTo;
+    const currentLevel = tracking.currentEscalationLevel;
 
-    // Update ticket
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
+    // Update ticket (no transaction - MongoDB doesn't support it without replica set)
     try {
       // Add to escalation history in ticket
       if (!ticket.escalationHistory) {
@@ -195,8 +212,10 @@ class AutoEscalationService {
 
       ticket.escalationHistory.push({
         escalatedTo: escalatedToUser._id,
-        escalatedBy: null, // System escalation
-        reason: `Auto-escalated to Level ${nextLevel} due to SLA breach`,
+        escalatedBy: previousAssigneeId || escalatedToUser._id, // Use PREVIOUS assignee, fallback to new if none
+        fromLevel: currentLevel,
+        toLevel: nextLevel,
+        reason: `Auto-escalated from L${currentLevel} to L${nextLevel} due to SLA breach`,
         escalatedAt: new Date(),
       });
 
@@ -206,7 +225,31 @@ class AutoEscalationService {
       }
 
       ticket.assignedTo = escalatedToUser._id;
-      await ticket.save({ session });
+      
+      // Mark current role-level SLA as breached and update for new level
+      if (ticket.roleLevelSLA) {
+        ticket.roleLevelSLA.breachedAt = new Date();
+      }
+      
+      // Calculate new role-level SLA deadline
+      if (levelConfig.escalateAfter) {
+        const now = new Date();
+        const slaHours = levelConfig.escalateAfter.unit === 'hours' ? levelConfig.escalateAfter.value : 
+                        levelConfig.escalateAfter.unit === 'minutes' ? levelConfig.escalateAfter.value / 60 :
+                        levelConfig.escalateAfter.value * 24;
+        const newRoleDueAt = new Date(now.getTime() + slaHours * 60 * 60 * 1000);
+        
+        ticket.roleLevelSLA = {
+          startedAt: now,
+          dueAt: newRoleDueAt,
+          breachedAt: undefined,
+          pausedAt: undefined,
+          pausedDuration: 0,
+        };
+        console.log(`   ↳ Role-level SLA updated: L${nextLevel} deadline = ${newRoleDueAt.toISOString()}`);
+      }
+      
+      await ticket.save();
 
       // Update SLA tracking
       tracking.currentEscalationLevel = nextLevel;
@@ -214,11 +257,12 @@ class AutoEscalationService {
 
       tracking.escalationHistory.push({
         level: nextLevel,
+        fromLevel: currentLevel,
         escalatedAt: new Date(),
         escalatedTo: escalatedToUser._id,
-        escalatedBy: null,
+        escalatedBy: previousAssigneeId || escalatedToUser._id, // Use PREVIOUS assignee
         mode: 'auto',
-        reason: `SLA breach - Auto-escalated to ${levelConfig.escalateTo.targetName}`,
+        reason: `SLA breach - Auto-escalated from L${currentLevel} to L${nextLevel}`,
       });
 
       // Update resolution deadline based on the new level's SLA time
@@ -250,9 +294,7 @@ class AutoEscalationService {
         tracking.nextEscalationDue = undefined;
       }
 
-      await tracking.save({ session });
-
-      await session.commitTransaction();
+      await tracking.save();
 
       console.log(`✅ Ticket ${ticket.ticketNumber} escalated to ${escalatedToUser.firstName} ${escalatedToUser.lastName}`);
 
@@ -264,10 +306,7 @@ class AutoEscalationService {
         nextLevel
       );
     } catch (error) {
-      await session.abortTransaction();
       throw error;
-    } finally {
-      session.endSession();
     }
   }
 

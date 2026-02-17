@@ -352,12 +352,20 @@ const RBACSetup = () => {
     const filtered: GroupedPermissions = {};
 
     // Define permission categories for each role type
+    // ALL permission prefixes must be listed here to be visible in RBAC Setup
+    const allPermissionPrefixes = [
+      'RBAC', 'USER', 'PROJECT', 'TICKET', 'KB_', 'FAQ', 'FEEDBACK', 'AUDIT', 
+      'OFFLINE', 'STUDENT', 'FIELDS', 'SLA', 'AUTOMATION', 'REPORT', 'INTEGRATION', 
+      'FORM', 'WORKFLOW', 'APPROVAL', 'MASTER_DATA', 'TICKET_CONFIG', 'DASHBOARD', 
+      'ASSET', 'MY_ASSETS', 'EMAIL', 'ESCALATION', 'TOKEN', 'DESK'
+    ];
+    
     const rolePermissionMap: Record<string, string[]> = {
-      super_admin: ['RBAC', 'USER', 'PROJECT', 'TICKET', 'KB_', 'FAQ', 'FEEDBACK', 'AUDIT', 'OFFLINE', 'STUDENT', 'FIELDS', 'SLA', 'AUTOMATION', 'REPORT', 'INTEGRATION', 'FORM', 'WORKFLOW', 'APPROVAL', 'MASTER_DATA', 'TICKET_CONFIG', 'DASHBOARD', 'ASSET', 'MY_ASSETS'],
-      manager: ['USER', 'TICKET', 'KB_', 'FAQ', 'FEEDBACK', 'AUDIT', 'OFFLINE', 'STUDENT', 'REPORT', 'ASSET', 'MY_ASSETS'],
-      agent: ['TICKET', 'KB_', 'FAQ', 'FEEDBACK', 'OFFLINE', 'STUDENT', 'MY_ASSETS'],
+      super_admin: allPermissionPrefixes,
+      manager: ['USER', 'TICKET', 'KB_', 'FAQ', 'FEEDBACK', 'AUDIT', 'OFFLINE', 'STUDENT', 'REPORT', 'ASSET', 'MY_ASSETS', 'EMAIL', 'TOKEN', 'DESK'],
+      agent: ['TICKET', 'KB_', 'FAQ', 'FEEDBACK', 'OFFLINE', 'STUDENT', 'MY_ASSETS', 'TOKEN', 'DESK'],
       student: ['TICKET', 'FAQ', 'OFFLINE', 'STUDENT'],
-      custom: ['RBAC', 'USER', 'PROJECT', 'TICKET', 'KB_', 'FAQ', 'FEEDBACK', 'AUDIT', 'OFFLINE', 'STUDENT', 'FIELDS', 'SLA', 'AUTOMATION', 'REPORT', 'INTEGRATION', 'FORM', 'WORKFLOW', 'APPROVAL', 'MASTER_DATA', 'TICKET_CONFIG', 'DASHBOARD', 'ASSET', 'MY_ASSETS'], // All
+      custom: allPermissionPrefixes, // All permissions available for custom roles
     };
 
     const allowedPrefixes = rolePermissionMap[roleType] || rolePermissionMap.custom;

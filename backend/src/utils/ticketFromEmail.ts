@@ -297,8 +297,11 @@ export async function createTicketFromEmail(
       throw new Error(`Email configuration not found: ${queueEntry.projectEmailConfigId}`);
     }
 
-    const projectId = emailConfig.projectId;
-    console.log(`      ✓ Project ID: ${projectId}`);
+    // IMPORTANT: Always ensure projectId is an ObjectId to prevent String/ObjectId mismatch
+    const projectId = emailConfig.projectId instanceof mongoose.Types.ObjectId 
+      ? emailConfig.projectId 
+      : new mongoose.Types.ObjectId(emailConfig.projectId as string);
+    console.log(`      ✓ Project ID: ${projectId} (type: ObjectId)`);
 
     // 3. Get priority - first check email headers/keywords, then use project default
     const emailPriority = extractPriorityFromEmail(parsedEmail);

@@ -16,6 +16,7 @@ interface AssetUsage {
     unit: string;
   };
   centerName?: string;
+  centerId?: string;
   totalAssigned: number;
   workingAsset: number;
   notWorkingAsset: number;
@@ -31,11 +32,20 @@ interface AssetUsage {
   auditFrequencyMonths?: number;
   auditSubmitted?: boolean;
   canEdit?: boolean;
+  remark?: string;
+  lastAuditSubmittedAt?: string;
+  lastAuditSubmittedBy?: {
+    _id: string;
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+  };
 }
 
 interface EditData {
   workingAsset: number;
   notWorkingAsset: number;
+  remark: string;
 }
 
 interface AuditLog {
@@ -69,13 +79,15 @@ const MyAssets: React.FC<MyAssetsProps> = ({ wrapWithLayout = true }) => {
   const [editData, setEditData] = useState<EditData>({
     workingAsset: 0,
     notWorkingAsset: 0,
+    remark: '',
   });
+  const [expandedRemarkId, setExpandedRemarkId] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [selectedAssetLogs, setSelectedAssetLogs] = useState<AuditLog[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
-  const [assetToSubmit, setAssetToSubmit] = useState<string | null>(null);
+  const [assetToSubmit, setAssetToSubmit] = useState<{ id: string; centerId?: string } | null>(null);
   const hasFetched = useRef(false);
 
   useEffect(() => {
@@ -115,15 +127,16 @@ const MyAssets: React.FC<MyAssetsProps> = ({ wrapWithLayout = true }) => {
     setEditData({
       workingAsset: asset.workingAsset,
       notWorkingAsset: asset.notWorkingAsset,
+      remark: asset.remark || '',
     });
   };
 
   const handleCancelEdit = () => {
     setEditingId(null);
-    setEditData({ workingAsset: 0, notWorkingAsset: 0 });
+    setEditData({ workingAsset: 0, notWorkingAsset: 0, remark: '' });
   };
 
-  const handleSave = async (assetId: string, totalAssigned: number) => {
+  const handleSave = async (assetId: string, totalAssigned: number, centerId?: string) => {
     // Validation
     if (editData.workingAsset + editData.notWorkingAsset !== totalAssigned) {
       showMessage('error', `Working + Not Working must equal Total Assigned (${totalAssigned})`);
@@ -143,6 +156,8 @@ const MyAssets: React.FC<MyAssetsProps> = ({ wrapWithLayout = true }) => {
         body: JSON.stringify({
           workingAsset: editData.workingAsset,
           notWorkingAsset: editData.notWorkingAsset,
+          remarks: editData.remark,
+          centerId, // Pass centerId for center-specific updates
         }),
       });
 
@@ -163,8 +178,8 @@ const MyAssets: React.FC<MyAssetsProps> = ({ wrapWithLayout = true }) => {
     }
   };
 
-  const handleSubmitAudit = (assetId: string) => {
-    setAssetToSubmit(assetId);
+  const handleSubmitAudit = (assetId: string, centerId?: string) => {
+    setAssetToSubmit({ id: assetId, centerId });
     setShowSubmitConfirm(true);
   };
 
@@ -174,13 +189,16 @@ const MyAssets: React.FC<MyAssetsProps> = ({ wrapWithLayout = true }) => {
     try {
       setLoading(true);
       const token = localStorage.getItem('authToken');
-      const response = await fetch(`${API_CONFIG.API_URL}/my-assets/${assetToSubmit}/submit-audit`, {
+      const response = await fetch(`${API_CONFIG.API_URL}/my-assets/${assetToSubmit.id}/submit-audit`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         credentials: 'include',
+        body: JSON.stringify({
+          centerId: assetToSubmit.centerId, // Pass centerId for center-specific submissions
+        }),
       });
 
       const data = await response.json();
@@ -296,6 +314,7 @@ const MyAssets: React.FC<MyAssetsProps> = ({ wrapWithLayout = true }) => {
                 <th className="px-6 py-3 text-center text-xs font-bold uppercase tracking-wider text-gray-900">Total Assigned</th>
                 <th className="px-6 py-3 text-center text-xs font-bold uppercase tracking-wider text-gray-900">Working</th>
                 <th className="px-6 py-3 text-center text-xs font-bold uppercase tracking-wider text-gray-900">Not Working</th>
+                <th className="px-6 py-3 text-left text-xs font-bold uppercase tracking-wider text-gray-900 min-w-[200px]">Remark</th>
                 <th className="px-6 py-3 text-center text-xs font-bold uppercase tracking-wider text-gray-900">Last Updated</th>
                 <th className="px-6 py-3 text-center text-xs font-bold uppercase tracking-wider text-gray-900">Next Audit</th>
                 <th className="px-6 py-3 text-center text-xs font-bold uppercase tracking-wider text-gray-900">Actions</th>
@@ -304,27 +323,30 @@ const MyAssets: React.FC<MyAssetsProps> = ({ wrapWithLayout = true }) => {
             <tbody className="divide-y divide-gray-200 bg-white">
               {loading && !assets.length ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-8 text-center text-sm text-gray-500">
+                  <td colSpan={9} className="px-6 py-8 text-center text-sm text-gray-500">
                     Loading assets...
                   </td>
                 </tr>
               ) : assets.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-8 text-center text-sm text-gray-500">
+                  <td colSpan={9} className="px-6 py-8 text-center text-sm text-gray-500">
                     No assets assigned yet.
                   </td>
                 </tr>
               ) : (
-                assets.map((asset) => {
+                assets.filter((asset) => asset.assetId != null).map((asset) => {
                   const isEditing = editingId === asset._id;
-                  const categoryName = getCategoryName(asset.assetId.category);
-                  const updatedBy = getUpdatedByName(asset.lastUpdatedBy);
+                  const categoryName = getCategoryName(asset.assetId?.category);
+                  // Show audit submission user if available, otherwise show last updated user
+                  const updatedBy = getUpdatedByName(asset.lastAuditSubmittedBy || asset.lastUpdatedBy);
+                  // Show audit submission date if available, otherwise show general updated date
+                  const lastUpdatedDate = asset.lastAuditSubmittedAt || asset.updatedAt;
 
                   return (
                     <tr key={asset._id} className="hover:bg-gray-50">
                       {/* Asset Name */}
                       <td className="whitespace-nowrap px-6 py-4">
-                        <div className="text-sm font-semibold text-gray-900">{asset.assetId.name}</div>
+                        <div className="text-sm font-semibold text-gray-900">{asset.assetId?.name || 'Unknown Asset'}</div>
                         <div className="text-xs text-gray-500">{categoryName}</div>
                       </td>
 
@@ -350,10 +372,11 @@ const MyAssets: React.FC<MyAssetsProps> = ({ wrapWithLayout = true }) => {
                             value={editData.workingAsset}
                             onChange={(e) => {
                               const working = parseInt(e.target.value) || 0;
-                              setEditData({ 
+                              setEditData(prev => ({ 
+                                ...prev,
                                 workingAsset: working, 
                                 notWorkingAsset: asset.totalAssigned - working 
-                              });
+                              }));
                             }}
                             className="w-20 rounded border border-gray-300 px-2 py-1 text-center text-sm focus:border-blue-500 focus:outline-none"
                           />
@@ -371,9 +394,50 @@ const MyAssets: React.FC<MyAssetsProps> = ({ wrapWithLayout = true }) => {
                         </span>
                       </td>
 
+                      {/* Remark */}
+                      <td className="px-6 py-4 text-sm text-gray-700 max-w-[300px]">
+                        {isEditing ? (
+                          <textarea
+                            value={editData.remark}
+                            onChange={(e) => setEditData(prev => ({ ...prev, remark: e.target.value }))}
+                            rows={2}
+                            placeholder="Add remark..."
+                            className="w-full rounded border border-gray-300 px-2 py-1 text-sm resize-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
+                          />
+                        ) : asset.remark ? (
+                          asset.remark.length > 50 ? (
+                            expandedRemarkId === asset._id ? (
+                              <div className="bg-gray-50 rounded-lg p-2 border border-gray-200">
+                                <p className="whitespace-pre-wrap break-words text-sm">{asset.remark}</p>
+                                <button
+                                  onClick={() => setExpandedRemarkId(null)}
+                                  className="mt-2 text-xs text-blue-600 hover:text-blue-800 font-medium"
+                                >
+                                  Show less
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-start gap-2">
+                                <span className="line-clamp-2 break-words">{asset.remark.substring(0, 50)}...</span>
+                                <button
+                                  onClick={() => setExpandedRemarkId(asset._id)}
+                                  className="flex-shrink-0 text-xs text-blue-600 hover:text-blue-800 font-medium whitespace-nowrap"
+                                >
+                                  More
+                                </button>
+                              </div>
+                            )
+                          ) : (
+                            <span className="break-words">{asset.remark}</span>
+                          )
+                        ) : (
+                          <span className="text-gray-400 italic">-</span>
+                        )}
+                      </td>
+
                       {/* Last Updated */}
                       <td className="whitespace-nowrap px-6 py-4 text-center">
-                        <div className="text-sm text-gray-900">{formatDate(asset.updatedAt)}</div>
+                        <div className="text-sm text-gray-900">{formatDate(lastUpdatedDate)}</div>
                         <div className="text-xs text-gray-500">by {updatedBy}</div>
                       </td>
 
@@ -381,6 +445,12 @@ const MyAssets: React.FC<MyAssetsProps> = ({ wrapWithLayout = true }) => {
                       <td className="whitespace-nowrap px-6 py-4 text-center">
                         {asset.nextAuditDate ? (
                           <div className="text-sm font-medium text-gray-900">{formatDate(asset.nextAuditDate)}</div>
+                        ) : asset.lastAuditDate ? (
+                          // First audit not yet submitted - show first audit date
+                          <div>
+                            <div className="text-sm font-medium text-green-600">{formatDate(asset.lastAuditDate)}</div>
+                            <div className="text-xs text-gray-500">First Audit</div>
+                          </div>
                         ) : (
                           <span className="text-sm text-gray-400">Not scheduled</span>
                         )}
@@ -404,7 +474,7 @@ const MyAssets: React.FC<MyAssetsProps> = ({ wrapWithLayout = true }) => {
                           {isEditing && (
                             <>
                               <button
-                                onClick={() => handleSave(asset._id, asset.totalAssigned)}
+                                onClick={() => handleSave(asset._id, asset.totalAssigned, asset.centerId)}
                                 disabled={loading}
                                 className="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
                               >
@@ -422,7 +492,7 @@ const MyAssets: React.FC<MyAssetsProps> = ({ wrapWithLayout = true }) => {
                           {/* Submit Button - Only show if canEdit and not submitted */}
                           {asset.canEdit && !asset.auditSubmitted && !isEditing && (
                             <button
-                              onClick={() => handleSubmitAudit(asset._id)}
+                              onClick={() => handleSubmitAudit(asset._id, asset.centerId)}
                               className="rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-purple-700 flex items-center gap-1"
                             >
                               <MdSend className="h-4 w-4" />

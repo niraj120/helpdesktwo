@@ -32,13 +32,14 @@ interface RegistrationField {
     pattern?: string;
   };
   isParentMobile?: boolean; // For phone fields to indicate parent login number
+  requireOtpVerification?: boolean; // For phone/email fields - require OTP verification
   order: number;
 }
 
 interface TicketField {
   id: string;
   fieldName: string;
-  fieldType: 'text' | 'textarea' | 'dropdown' | 'number' | 'date' | 'file' | 'category' | 'category-select';
+  fieldType: 'text' | 'textarea' | 'dropdown' | 'number' | 'date' | 'file' | 'category' | 'category-select' | 'phone' | 'email' | string;
   required: boolean;
   placeholder: string;
   options?: string[];
@@ -48,12 +49,30 @@ interface TicketField {
   isFixed?: boolean; // True for category field - cannot be removed
   isEnabled?: boolean; // For category field - can be enabled/disabled
   order: number;
+  hierarchyLevel?: number; // For hierarchy level fields
+  requireOtpVerification?: boolean; // For phone/email fields - require OTP verification
 }
 
 interface Category {
   _id: string;
   name: string;
   description?: string;
+  parentId?: string;
+  level?: number;
+}
+
+interface HierarchyLevel {
+  levelNumber: number;
+  displayName: string;
+  isRequired: boolean;
+  showInList?: boolean;
+}
+
+interface HierarchyConfig {
+  _id: string;
+  projectId: string;
+  levelCount: number;
+  levels: HierarchyLevel[];
 }
 
 interface OfflineCenter {
@@ -115,6 +134,8 @@ const OfflineModuleSettings: React.FC = () => {
   const hasFetchedCategories = useRef(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [hierarchyConfig, setHierarchyConfig] = useState<HierarchyConfig | null>(null);
+  const hasFetchedHierarchy = useRef(false);
   
   // Offline Centers state
   const [countries, setCountries] = useState<any[]>([]);
@@ -163,17 +184,37 @@ const OfflineModuleSettings: React.FC = () => {
     // Reset refs when projectId changes
     hasFetchedSettings.current = false;
     hasFetchedCategories.current = false;
+    hasFetchedHierarchy.current = false;
     
-    // Prevent duplicate calls from React.StrictMode
-    if (!hasFetchedSettings.current) {
-      hasFetchedSettings.current = true;
-      fetchSettings();
-    }
-    if (!hasFetchedCategories.current) {
-      hasFetchedCategories.current = true;
-      fetchCategories();
-    }
+    // Fetch all data when projectId changes
+    const loadData = async () => {
+      // Fetch hierarchy config first
+      if (!hasFetchedHierarchy.current) {
+        hasFetchedHierarchy.current = true;
+        await fetchHierarchyConfig();
+      }
+      // Then fetch settings (will apply hierarchy fields after)
+      if (!hasFetchedSettings.current) {
+        hasFetchedSettings.current = true;
+        await fetchSettings();
+      }
+      if (!hasFetchedCategories.current) {
+        hasFetchedCategories.current = true;
+        fetchCategories();
+      }
+    };
+    
+    loadData();
   }, [projectId]);
+
+  // Apply hierarchy fields whenever hierarchyConfig changes and settings are loaded
+  useEffect(() => {
+    console.log('🔍 useEffect triggered - hierarchyConfig:', hierarchyConfig?.levelCount, 'loading:', loading);
+    if (hierarchyConfig && hierarchyConfig.levels && hierarchyConfig.levels.length > 0 && !loading) {
+      console.log('✅ Calling updateHierarchyFields');
+      updateHierarchyFields(hierarchyConfig);
+    }
+  }, [hierarchyConfig, loading]);
 
   const fetchSettings = async () => {
     try {
@@ -260,17 +301,110 @@ const OfflineModuleSettings: React.FC = () => {
   const fetchCategories = async () => {
     try {
       const token = localStorage.getItem('authToken');
+      // Fetch all categories (including hierarchy tree) to get level information
       const response = await axios.get(
-        `${API_CONFIG.API_URL}/categories/project/${projectId}`,
+        `${API_CONFIG.API_URL}/hierarchy-config/${projectId}/tree`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
       if (response.data.success) {
-        setCategories(response.data.data);
+        // Flatten the tree to get all categories with level info
+        const flattenTree = (nodes: any[], result: Category[] = []): Category[] => {
+          for (const node of nodes) {
+            result.push({
+              _id: node._id,
+              name: node.name,
+              level: node.level,
+              parentId: node.parentId,
+            });
+            if (node.children && node.children.length > 0) {
+              flattenTree(node.children, result);
+            }
+          }
+          return result;
+        };
+        setCategories(flattenTree(response.data.data));
       }
     } catch (error) {
       console.error('Error fetching categories:', error);
+      // Fallback to old endpoint
+      try {
+        const token = localStorage.getItem('authToken');
+        const response = await axios.get(
+          `${API_CONFIG.API_URL}/categories/project/${projectId}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (response.data.success) {
+          setCategories(response.data.data);
+        }
+      } catch (err) {
+        console.error('Fallback category fetch also failed:', err);
+      }
     }
+  };
+
+  // Fetch hierarchy configuration to know how many category levels are configured
+  const fetchHierarchyConfig = async () => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await axios.get(
+        `${API_CONFIG.API_URL}/hierarchy-config/${projectId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      if (response.data.success && response.data.data) {
+        console.log('✅ Hierarchy config loaded:', response.data.data.levelCount, 'levels');
+        setHierarchyConfig(response.data.data);
+      }
+    } catch (error) {
+      console.error('Error fetching hierarchy config:', error);
+    }
+  };
+
+  // Update ticket fields based on hierarchy configuration
+  const updateHierarchyFields = (config: HierarchyConfig) => {
+    console.log('🔄 Updating hierarchy fields with config:', config.levels?.length, 'levels');
+    
+    setSettings(prevSettings => {
+      // Remove existing hierarchy/category fixed fields
+      const nonHierarchyFields = prevSettings.ticketFields.filter(
+        f => !f.isFixed || (f.fieldName !== 'Category' && !f.fieldType.startsWith('hierarchy-'))
+      );
+      
+      console.log('📋 Non-hierarchy fields:', nonHierarchyFields.map(f => f.fieldName));
+      
+      // Create fixed fields for each hierarchy level
+      const hierarchyFields: TicketField[] = config.levels
+        .sort((a, b) => a.levelNumber - b.levelNumber)
+        .map((level, index) => ({
+          id: `hierarchy-level-${level.levelNumber}`,
+          fieldName: level.displayName,
+          fieldType: `hierarchy-level-${level.levelNumber}` as any,
+          required: level.isRequired,
+          placeholder: `Select ${level.displayName.toLowerCase()}`,
+          isFixed: true,
+          isEnabled: true,
+          order: index + 1,
+          hierarchyLevel: level.levelNumber,
+        }));
+      
+      console.log('✅ Created hierarchy fields:', hierarchyFields.map(f => f.fieldName));
+      
+      // Update orders of non-hierarchy fields
+      const reorderedFields = nonHierarchyFields.map((f, idx) => ({
+        ...f,
+        order: hierarchyFields.length + idx + 1
+      }));
+      
+      const result = {
+        ...prevSettings,
+        ticketFields: [...hierarchyFields, ...reorderedFields]
+      };
+      
+      console.log('📝 Final ticket fields:', result.ticketFields.map(f => `${f.fieldName} (${f.isFixed ? 'fixed' : 'custom'})`));
+      
+      return result;
+    });
   };
 
   // Fetch countries for offline centers
@@ -1255,6 +1389,29 @@ const OfflineModuleSettings: React.FC = () => {
                       </div>
                     </div>
                   )}
+
+                  {/* OTP Verification Checkbox for Phone/Email Fields */}
+                  {(field.fieldType === 'phone' || field.fieldType === 'email') && (
+                    <div className="mt-4">
+                      <div className="flex items-start space-x-3">
+                        <input
+                          type="checkbox"
+                          id={`otp-verification-${field.id}`}
+                          checked={field.requireOtpVerification || false}
+                          onChange={(e) => updateRegistrationField(field.id, { requireOtpVerification: e.target.checked })}
+                          className="mt-1 h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
+                        />
+                        <label htmlFor={`otp-verification-${field.id}`} className="flex-1">
+                          <span className="font-medium text-gray-900">Require OTP Verification</span>
+                          <p className="text-sm text-gray-600 mt-1">
+                            {field.fieldType === 'phone' 
+                              ? 'Send OTP to this phone number and verify before proceeding'
+                              : 'Send OTP to this email address and verify before proceeding'}
+                          </p>
+                        </label>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 );
               })}
@@ -1290,7 +1447,11 @@ const OfflineModuleSettings: React.FC = () => {
                     <div className="mb-3 flex items-center justify-between">
                       <div className="flex items-center space-x-2">
                         <span className="px-2 py-1 bg-blue-600 text-white text-xs font-semibold rounded">FIXED FIELD</span>
-                        <span className="text-sm text-gray-700">Category field from category master (cannot be removed)</span>
+                        <span className="text-sm text-gray-700">
+                          {field.hierarchyLevel 
+                            ? `${field.fieldName} (Hierarchy Level ${field.hierarchyLevel}) - loaded from Category Master` 
+                            : 'Category field from category master (cannot be removed)'}
+                        </span>
                       </div>
                       <div className="flex items-center space-x-2">
                         <label htmlFor={`category-enabled-${field.id}`} className="text-sm font-medium text-gray-700">
@@ -1333,11 +1494,14 @@ const OfflineModuleSettings: React.FC = () => {
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
                       >
                         {(field.fieldType === 'category' || field.fieldType === 'category-select') && <option value={field.fieldType}>Category (Master)</option>}
+                        {field.fieldType.startsWith('hierarchy-level-') && <option value={field.fieldType}>Hierarchy Level</option>}
                         <option value="text">Text</option>
                         <option value="textarea">Textarea</option>
                         <option value="dropdown">Dropdown</option>
                         <option value="number">Number</option>
                         <option value="date">Date</option>
+                        <option value="phone">Phone</option>
+                        <option value="email">Email</option>
                         <option value="file">File Upload</option>
                       </select>
                     </div>
@@ -1401,12 +1565,22 @@ const OfflineModuleSettings: React.FC = () => {
                   </div>
 
                   {/* Category Info */}
-                  {field.fieldType === 'category' && (
+                  {(field.fieldType === 'category' || field.fieldType.startsWith('hierarchy-level-')) && (
                     <div className="mt-4 p-3 bg-blue-100 border border-blue-200 rounded-lg">
                       <p className="text-sm text-blue-900">
-                        <strong>Categories loaded from Category Master:</strong> {categories.length} categories available
-                        {categories.length > 0 && (
+                        <strong>Categories loaded from Category Master:</strong>{' '}
+                        {field.hierarchyLevel 
+                          ? `${categories.filter(c => c.level === field.hierarchyLevel).length} ${field.fieldName.toLowerCase()}(s) available`
+                          : `${categories.length} categories available`
+                        }
+                        {categories.length > 0 && !field.hierarchyLevel && (
                           <span className="ml-2">({categories.slice(0, 3).map(c => c.name).join(', ')}{categories.length > 3 && '...'})</span>
+                        )}
+                        {field.hierarchyLevel && categories.filter(c => c.level === field.hierarchyLevel).length > 0 && (
+                          <span className="ml-2">
+                            ({categories.filter(c => c.level === field.hierarchyLevel).slice(0, 3).map(c => c.name).join(', ')}
+                            {categories.filter(c => c.level === field.hierarchyLevel).length > 3 && '...'})
+                          </span>
                         )}
                       </p>
                     </div>
@@ -1480,6 +1654,29 @@ const OfflineModuleSettings: React.FC = () => {
                             </label>
                           ))}
                         </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* OTP Verification Checkbox for Phone/Email Fields */}
+                  {(field.fieldType === 'phone' || field.fieldType === 'email') && (
+                    <div className="mt-4">
+                      <div className="flex items-start space-x-3">
+                        <input
+                          type="checkbox"
+                          id={`ticket-otp-verification-${field.id}`}
+                          checked={field.requireOtpVerification || false}
+                          onChange={(e) => updateTicketField(field.id, { requireOtpVerification: e.target.checked })}
+                          className="mt-1 h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
+                        />
+                        <label htmlFor={`ticket-otp-verification-${field.id}`} className="flex-1">
+                          <span className="font-medium text-gray-900">Require OTP Verification</span>
+                          <p className="text-sm text-gray-600 mt-1">
+                            {field.fieldType === 'phone' 
+                              ? 'Send OTP to this phone number and verify before proceeding'
+                              : 'Send OTP to this email address and verify before proceeding'}
+                          </p>
+                        </label>
                       </div>
                     </div>
                   )}

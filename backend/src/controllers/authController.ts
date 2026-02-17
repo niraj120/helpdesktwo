@@ -15,6 +15,7 @@ import { AuthRequest } from '../middleware/auth';
 import { generateUserJWT, generateProjectJWT, refreshUserPermissions } from '../utils/jwtUtils';
 import { config } from '../config';
 import otpStore from '../utils/otpStore';
+import { extractPermissionCodes } from '../utils/permissionUtils';
 
 interface LoginRequest {
   email: string;
@@ -257,63 +258,18 @@ export const login = async (req: Request<{}, {}, LoginRequest>, res: Response) =
           console.log('⚠️  Role object exists but no name field, keys:', Object.keys(user.role));
         }
         
-        // CRITICAL FIX: Fetch permissions from rolepermissions junction table
-        // instead of relying on the old Role.permissions array
+        // ✅ SINGLE SOURCE OF TRUTH: Use Role.permissions array (populated above)
+        // This is the canonical source - NO junction table dependency!
         try {
-          const roleId = (user.role as any)._id;
-          console.log('🔍 Fetching permissions from RolePermissions table for role:', roleId);
-          
-          // Get permission IDs from junction table
-          const rolePermissions = await mongoose.connection.db
-            .collection('rolepermissions')
-            .find({ roleId: roleId })
-            .toArray();
-          
-          console.log('🔍 Found RolePermissions entries:', rolePermissions.length);
-          
-          if (rolePermissions.length > 0) {
-            // Get all permission details
-            const permissionIds = rolePermissions.map((rp: any) => rp.permissionId);
-            const permissionDocs = await mongoose.connection.db
-              .collection('permissions')
-              .find({ _id: { $in: permissionIds } })
-              .toArray();
-            
-            permissions = permissionDocs.map((p: any) => p.code).filter(Boolean);
-            console.log('✅ Extracted permissions from junction table:', permissions.length);
+          const rolePermissions = (user.role as any).permissions || [];
+          permissions = await extractPermissionCodes(rolePermissions, `Login [${email}]`);
+          console.log(`✅ Extracted ${permissions.length} permissions from role.permissions array`);
+          if (permissions.length > 0) {
             console.log('🔍 First 5 permissions:', permissions.slice(0, 5));
-          } else {
-            console.log('⚠️  No permissions found in junction table, falling back to old method');
-            
-            // Fallback to old method if junction table is empty
-            if ('permissions' in user.role && Array.isArray(user.role.permissions)) {
-              console.log('🔍 Raw permissions array:', user.role.permissions.length);
-              permissions = user.role.permissions
-                .map((p: any) => {
-                  if (typeof p === 'string') return p;
-                  if (p && typeof p === 'object' && 'code' in p) return p.code;
-                  const str = String(p);
-                  if (str && str.includes('_')) return str;
-                  return null;
-                })
-                .filter(Boolean);
-              console.log('✅ Extracted permissions from old array:', permissions.length);
-            }
           }
         } catch (err) {
-          console.error('❌ Error fetching permissions from junction table:', err);
-          
-          // Fallback to old method on error
-          if ('permissions' in user.role && Array.isArray(user.role.permissions)) {
-            permissions = user.role.permissions
-              .map((p: any) => {
-                if (typeof p === 'string') return p;
-                if (p && typeof p === 'object' && 'code' in p) return p.code;
-                return null;
-              })
-              .filter(Boolean);
-            console.log('⚠️  Using fallback permissions:', permissions.length);
-          }
+          console.error('❌ Error extracting permissions:', err);
+          permissions = [];
         }
       } else {
         console.log('⚠️  Role is not an object:', typeof user.role);
@@ -375,8 +331,14 @@ export const getMe = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Find user (no need to populate permissions from old array)
-    const user = await User.findById(userId).populate('role');
+    // Find user with role and permissions populated
+    // ✅ SINGLE SOURCE OF TRUTH: Role.permissions array
+    const user = await User.findById(userId).populate({
+      path: 'role',
+      populate: {
+        path: 'permissions'
+      }
+    });
 
     if (!user) {
       return res.status(404).json({
@@ -393,20 +355,12 @@ export const getMe = async (req: AuthRequest, res: Response) => {
       ? user.role as any
       : { name: 'User', code: 'USER', _id: null };
 
-    // ✅ Query RolePermissions junction table (NEW RBAC SYSTEM)
-    const rolePermissions = await mongoose.connection.db
-      .collection('rolepermissions')
-      .find({ roleId: roleData._id })
-      .toArray();
-    
-    const permissionIds = rolePermissions.map((rp: any) => rp.permissionId);
-    
-    const permissions = await mongoose.connection.db
-      .collection('permissions')
-      .find({ _id: { $in: permissionIds } })
-      .toArray();
-    
-    const permissionCodes = permissions.map((p: any) => p.code).filter(Boolean);
+    // ✅ SINGLE SOURCE OF TRUTH: Use Role.permissions array (populated above)
+    // NO junction table dependency - consistent with JWT generation
+    const permissionCodes = await extractPermissionCodes(
+      roleData?.permissions,
+      `getMe [${user.email}]`
+    );
 
     console.log(`🔑 getMe - User: ${user.email}, Permissions: ${permissionCodes.length}`);
 
@@ -426,6 +380,7 @@ export const getMe = async (req: AuthRequest, res: Response) => {
           permissions: permissionCodes // Include permission codes
         },
         projects: userRole?.projects || [], // Projects from role
+        centers: (user as any).centers || [], // Centers for offline/center-based filtering
         isActive: user.isActive
       }
     });

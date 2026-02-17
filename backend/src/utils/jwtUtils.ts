@@ -3,6 +3,7 @@ import { User } from '../models/User';
 import { IUser } from '../models/User';
 import mongoose from 'mongoose';
 import { config } from '../config';
+import { extractPermissionCodes } from './permissionUtils';
 
 /**
  * Centralized JWT Token Generation Utility
@@ -71,25 +72,11 @@ export async function generateUserJWT(
       ? populatedUser.role as any 
       : { _id: null, name: 'User', code: 'USER', permissions: [] };
 
-    // ✅ FETCH PERMISSIONS FROM ROLEPERMISSIONS JUNCTION TABLE (not from Role.permissions)
-    const rolePermissions = await mongoose.connection.db
-      .collection('rolepermissions')
-      .find({ roleId: roleData._id })
-      .toArray();
-    
-    console.log(`🔍 [JWT] Found ${rolePermissions.length} RolePermissions entries for role: ${roleData.name}`);
-    
-    // Get permission IDs and fetch full permission objects
-    const permissionIds = rolePermissions.map((rp: any) => rp.permissionId);
-    const permissions = await mongoose.connection.db
-      .collection('permissions')
-      .find({ _id: { $in: permissionIds } })
-      .toArray();
-
-    console.log(`🔍 [JWT] Fetched ${permissions.length} permissions from Permissions collection`);
-
-    // Extract permission codes from junction table (not from old Role.permissions field)
-    const permissionCodes = permissions.map((p: any) => p.code).filter(Boolean);
+    // ✅ USE CENTRALIZED UTILITY TO EXTRACT PERMISSION CODES
+    const permissionCodes = await extractPermissionCodes(
+      roleData.permissions,
+      `JWT Generation [${populatedUser.email}]`
+    );
 
     console.log(`🔑 JWT Generation for ${populatedUser.email}:`);
     console.log(`   Role: ${roleData.name} (${roleData.code})`);

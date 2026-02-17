@@ -367,16 +367,15 @@ const CenterAssetMappingAccordion: React.FC = () => {
         ? new Date(existingSelection.auditStartDate)
         : new Date();
       
-      // Calculate next audit date = start date + frequency months
-      const nextDate = new Date(startDate);
-      nextDate.setMonth(nextDate.getMonth() + frequencyMonths);
+      // DON'T pre-calculate nextAuditDate - it will be set when audit is submitted
+      // This ensures the audit is editable until submitted
       
       console.log('🔔 Setting audit schedule:', {
         centerId,
         centerName: centers.find(c => c._id === centerId)?.centerName,
         startDate: startDate.toISOString(),
         frequencyMonths,
-        nextAuditDate: nextDate.toISOString()
+        nextAuditDate: 'Will be set on audit submission'
       });
       
       return {
@@ -389,8 +388,8 @@ const CenterAssetMappingAccordion: React.FC = () => {
           assetQuantities: existingSelection?.assetQuantities || {},
           lastAuditDate: startDate.toISOString(),
           auditFrequencyMonths: frequencyMonths,
-          auditStartDate: startDate.toISOString(),
-          nextAuditDate: nextDate.toISOString()
+          auditStartDate: startDate.toISOString()
+          // nextAuditDate intentionally NOT set - will be calculated on audit submission
         }
       };
     });
@@ -406,19 +405,15 @@ const CenterAssetMappingAccordion: React.FC = () => {
       
       const start = new Date(startDate);
       
-      // Recalculate next audit date if frequency is set
-      let nextDate: Date | undefined;
-      if (existingSelection?.auditFrequencyMonths) {
-        nextDate = new Date(start);
-        nextDate.setMonth(nextDate.getMonth() + existingSelection.auditFrequencyMonths);
-      }
+      // DON'T calculate nextAuditDate here - it will be set when audit is submitted
+      // The selected startDate is when the FIRST audit is due
       
-      console.log('📅 Updating audit start date:', {
+      console.log('📅 Updating audit start date (first audit date):', {
         centerId,
         centerName: centers.find(c => c._id === centerId)?.centerName,
         startDate: start.toISOString(),
         frequencyMonths: existingSelection?.auditFrequencyMonths,
-        nextAuditDate: nextDate?.toISOString()
+        nextAuditDate: 'Will be set after audit submission'
       });
       
       return {
@@ -430,8 +425,8 @@ const CenterAssetMappingAccordion: React.FC = () => {
           selectedAssets: existingSelection?.selectedAssets || [],
           assetQuantities: existingSelection?.assetQuantities || {},
           lastAuditDate: start.toISOString(),
-          auditStartDate: start.toISOString(),
-          nextAuditDate: nextDate?.toISOString()
+          auditStartDate: start.toISOString()
+          // nextAuditDate NOT set - will be calculated after first audit submission
         }
       };
     });
@@ -563,12 +558,12 @@ const CenterAssetMappingAccordion: React.FC = () => {
             credentials: 'include',
             body: JSON.stringify({
               assetIds: [assetId],
-              projectIds: [selectedProject], // Use project ID, not center ID
+              centerIds: [centerId], // Map to center, not project
+              projectId: selectedProject, // Keep project for reference
               applyToAllCenters: false,
-              quantities: { [selectedProject]: quantity }, // Map quantity to project ID
+              quantities: { [centerId]: quantity }, // Map quantity to center ID
               lastAuditDate: selection.lastAuditDate,
               auditFrequencyMonths: selection.auditFrequencyMonths,
-              nextAuditDate: selection.nextAuditDate,
             }),
           });
 
@@ -664,12 +659,12 @@ const CenterAssetMappingAccordion: React.FC = () => {
               credentials: 'include',
               body: JSON.stringify({
                 assetIds: [assetId],
-                projectIds: [selectedProject], // Use project ID, not center ID
+                centerIds: [centerId], // Map to center, not project
+                projectId: selectedProject, // Keep project for reference
                 applyToAllCenters: false,
-                quantities: { [selectedProject]: quantity },
+                quantities: { [centerId]: quantity }, // Map quantity to center ID
                 lastAuditDate: selection.lastAuditDate,
                 auditFrequencyMonths: selection.auditFrequencyMonths,
-                nextAuditDate: selection.nextAuditDate,
               }),
             });
 

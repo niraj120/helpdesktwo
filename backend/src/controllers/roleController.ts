@@ -6,6 +6,40 @@ import multer from 'multer';
 import path from 'path';
 import { GCSService } from '../services/gcsService';
 import { cache, CACHE_KEYS, CACHE_TTL, invalidateCache } from '../utils/cache';
+import mongoose from 'mongoose';
+
+/**
+ * Sync permissions from Role.permissions array to rolepermissions junction table.
+ * This ensures the new RBAC system stays in sync when roles are created/updated.
+ */
+async function syncRolePermissionsToJunctionTable(roleId: mongoose.Types.ObjectId, permissionIds: string[]): Promise<void> {
+  const db = mongoose.connection.db;
+  if (!db) {
+    console.error('❌ [RBAC] Database connection not available for permission sync');
+    return;
+  }
+
+  try {
+    // Delete existing permissions for this role
+    await db.collection('rolepermissions').deleteMany({ roleId: roleId });
+
+    // Insert new permissions
+    if (permissionIds.length > 0) {
+      const now = new Date();
+      const docs = permissionIds.map(permId => ({
+        roleId: roleId,
+        permissionId: new mongoose.Types.ObjectId(permId),
+        createdAt: now,
+        updatedAt: now
+      }));
+      await db.collection('rolepermissions').insertMany(docs);
+    }
+
+    console.log(`✅ [RBAC] Synced ${permissionIds.length} permissions to junction table for role ${roleId}`);
+  } catch (err) {
+    console.error('❌ [RBAC] Failed to sync permissions to junction table:', err);
+  }
+}
 
 // @desc    Get all roles
 // @route   GET /api/roles
@@ -178,6 +212,11 @@ export const createRole = async (req: AuthRequest, res: Response) => {
     }
 
     const role = await Role.create(roleData);
+
+    // ✅ Sync permissions to rolepermissions junction table (NEW RBAC SYSTEM)
+    if (sanitizedPermissions.length > 0) {
+      await syncRolePermissionsToJunctionTable(role._id, sanitizedPermissions);
+    }
 
     const populatedRole = await Role.findById(role._id).populate('permissions');
     
@@ -360,6 +399,12 @@ export const updateRole = async (req: AuthRequest, res: Response) => {
     }
 
     await role.save();
+
+    // ✅ Sync permissions to rolepermissions junction table (NEW RBAC SYSTEM)
+    if (permissionsChanged) {
+      const permissionIds = role.permissions.map(p => p.toString());
+      await syncRolePermissionsToJunctionTable(role._id, permissionIds);
+    }
     
     // Invalidate tokens for all users with this role if permissions changed
     if (permissionsChanged) {

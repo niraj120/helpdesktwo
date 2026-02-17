@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import { Priority } from '../models/master-data/Priority';
 
 // Get all priorities (with optional projectId filter)
@@ -7,8 +8,13 @@ export const getAllPriorities = async (req: Request, res: Response) => {
     const { projectId } = req.query;
     const filter: any = {};
     
-    if (projectId) {
-      filter.projectId = projectId;
+    if (projectId && typeof projectId === 'string') {
+      // Convert string to ObjectId for proper MongoDB matching
+      if (mongoose.Types.ObjectId.isValid(projectId)) {
+        filter.projectId = new mongoose.Types.ObjectId(projectId);
+      } else {
+        filter.projectId = projectId;
+      }
     }
     
     const priorities = await Priority.find(filter)
@@ -41,8 +47,13 @@ export const getActivePriorities = async (req: Request, res: Response) => {
     const { projectId } = req.query;
     const filter: any = { isActive: true };
     
-    if (projectId) {
-      filter.projectId = projectId;
+    if (projectId && typeof projectId === 'string') {
+      // Convert string to ObjectId for proper MongoDB matching
+      if (mongoose.Types.ObjectId.isValid(projectId)) {
+        filter.projectId = new mongoose.Types.ObjectId(projectId);
+      } else {
+        filter.projectId = projectId;
+      }
     }
     
     const priorities = await Priority.find(filter)

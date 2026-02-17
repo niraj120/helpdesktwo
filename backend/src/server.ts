@@ -14,6 +14,7 @@ import { Server } from 'socket.io';
 
 // Import all models FIRST to ensure they're registered before controllers use them
 import './models/Category';
+import './models/HierarchyConfig';
 import './models/Ticket';
 import './models/User';
 import './models/Role';
@@ -32,6 +33,8 @@ import './models/MasterData';
 import './models/EmailLog';
 import './models/EmailConfig';
 import './models/FAQ';
+// UserReportingHierarchy model removed - using User.reportingManager field directly
+import './models/UserDashboardConfig';
 
 import { connectDB } from './config/database';
 import { errorHandler } from './middleware/errorHandler';
@@ -47,12 +50,15 @@ import roleRoutes from './routes/roleRoutes';
 import permissionRoutes from './routes/permissionRoutes';
 import masterRoutes from './routes/masterRoutes'; // Country, State, City routes (consolidated)
 import categoryRoutes from './routes/categories';
+import hierarchyConfigRoutes from './routes/hierarchyConfig';
 import statusRoutes from './routes/statuses';
 import assetCategoryRoutes from './routes/assetCategories';
 // import { ticketFieldRoutes, autoAssignmentRoutes } from './routes/ticket-module'; // TODO: Implement
 import slaRuleRoutes from './routes/sla-module/slaRuleRoutes';
 import escalationPolicyRoutes from './routes/sla-module/escalationPolicyRoutes';
+import { escalationMatrixRoutes } from './routes/escalation-matrix';
 import priorityRoutes from './routes/priorityRoutes';
+import workingCalendarRoutes from './routes/workingCalendar';
 import activityLogRoutes from './routes/activityLogs';
 import accessLogRoutes from './routes/accessLogs';
 import knowledgeBaseRoutes from './routes/knowledgeBase';
@@ -66,6 +72,7 @@ import approvalRoutes from './routes/approvals';
 import approvalMasterRoutes from './routes/approvalMasters';
 import offlineModuleRoutes from './routes/offlineModule';
 import dashboardRoutes from './routes/dashboard';
+import hierarchyRoutes from './routes/hierarchy';
 import emailConfigRoutes from './routes/emailConfig';
 import emailLogRoutes from './routes/emailLogs';
 import emailActivityRoutes from './routes/emailActivity';
@@ -85,6 +92,7 @@ import seedRoutes from './routes/seed';
 import diagnosticRoutes from './routes/diagnostic';
 import healthcheckRoutes from './routes/healthcheck';
 import cacheRoutes from './routes/cacheRoutes';
+import otpRoutes from './routes/otp';
 // import integrationRoutes from './routes/integrations'; // TODO: Implement
 import { setupSocketHandlers } from './socket/socketHandlers';
 import { initializeDatabase } from './utils/dbInit';
@@ -197,6 +205,7 @@ app.use('/api/auth/project', projectAuthRoutes); // Agent login via /api/auth/pr
 app.use('/api/project-auth', projectAuthRoutes);
 app.use('/api/student-auth', studentAuthRoutes);
 app.use('/api/auth', eulaRoutes);
+app.use('/api/otp', otpRoutes); // OTP verification for fields
 app.use('/api/users', userRoutes);
 app.use('/api/tickets', ticketRoutes);
 app.use('/api/projects', projectRoutes);
@@ -204,6 +213,7 @@ app.use('/api/roles', roleRoutes);
 app.use('/api/permissions', permissionRoutes);
 app.use('/api/master', masterRoutes); // Master data: Countries, States, Cities (all endpoints)
 app.use('/api/categories', categoryRoutes);
+app.use('/api/hierarchy-config', hierarchyConfigRoutes);
 app.use('/api/statuses', statusRoutes);
 app.use('/api/asset-categories', assetCategoryRoutes);
 
@@ -214,7 +224,9 @@ app.use('/api/asset-categories', assetCategoryRoutes);
 // SLA Module Routes
 app.use('/api/sla-rules', slaRuleRoutes);
 app.use('/api/escalation-policies', escalationPolicyRoutes);
+app.use('/api/escalation-matrix', escalationMatrixRoutes);
 app.use('/api/priorities', priorityRoutes);
+app.use('/api/working-calendars', workingCalendarRoutes);
 
 // Audit Logs Routes
 app.use('/api/activity-logs', activityLogRoutes);
@@ -222,6 +234,10 @@ app.use('/api/access-logs', accessLogRoutes);
 
 // Dashboard Routes
 app.use('/api/dashboard', dashboardRoutes);
+
+// Hierarchy Routes (User Reporting Structure for Team Dashboards)
+// Temporarily disabled - hierarchyController needs refactoring for new schema
+// app.use('/api/hierarchy', hierarchyRoutes);
 
 // Knowledge Base Routes
 // IMPORTANT: Specific KB routes MUST be registered BEFORE /api/kb to avoid /:id matching route names

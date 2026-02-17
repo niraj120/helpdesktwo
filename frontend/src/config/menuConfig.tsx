@@ -581,7 +581,7 @@ export const projectPortalMenuConfig: MenuItem[] = [
         label: 'Query Summary Report',
         labelHi: 'टिकट सारांश रिपोर्ट',
         labelMr: 'तिकीट सारांश अहवाल',
-        modulePrefix: PERMISSION_MODULES.REPORT,
+        permission: PERMISSIONS.REPORT_VIEW_QUERY,
         isProjectRoute: true,
       },
       {
@@ -590,7 +590,7 @@ export const projectPortalMenuConfig: MenuItem[] = [
         label: 'Total Asset Report',
         labelHi: 'कुल संपत्ति रिपोर्ट',
         labelMr: 'एकूण मालमत्ता अहवाल',
-        modulePrefix: PERMISSION_MODULES.REPORT,
+        permission: PERMISSIONS.REPORT_VIEW_ASSET,
         isProjectRoute: true,
       },
       {
@@ -599,7 +599,7 @@ export const projectPortalMenuConfig: MenuItem[] = [
         label: 'Manpower Report',
         labelHi: 'जनशक्ति रिपोर्ट',
         labelMr: 'मनुष्यबळ अहवाल',
-        modulePrefix: PERMISSION_MODULES.REPORT,
+        permission: PERMISSIONS.REPORT_VIEW_EMPLOYEE,
         isProjectRoute: true,
       },
     ],

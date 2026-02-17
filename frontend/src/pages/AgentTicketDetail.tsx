@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import DashboardLayout from '../components/DashboardLayout';
+import EscalationMatrixCard from '../components/EscalationMatrixCard';
+import HierarchyCategorySelector, { CategoryHierarchyValue, useHierarchyConfig, CategoryHierarchyDisplay } from '../components/HierarchyCategorySelector';
 import { API_CONFIG } from '../config/constants';
 import {
   ArrowLeftIcon,
@@ -63,6 +65,14 @@ interface Ticket {
   status: string;
   priority: string;
   category: string;
+  categoryHierarchy?: {
+    level1?: string;
+    level2?: string;
+    level3?: string;
+    level4?: string;
+    displayPath?: string;
+  };
+  projectId?: string | { _id: string; name?: string }; // Project this ticket belongs to
   createdAt: string;
   updatedAt: string;
   resolvedAt?: string;
@@ -96,6 +106,10 @@ interface Ticket {
   escalationHistory?: EscalationRecord[];
   changeHistory?: ChangeHistory[];
   slaTracking?: SLATrackingData; // SLA tracking data from backend
+  // Escalation Matrix fields
+  escalationMatrixId?: string;
+  escalationMatrixName?: string;
+  currentEscalationLevelNumber?: number;
 }
 
 interface Thread {
@@ -215,14 +229,6 @@ interface Category {
   name: string;
 }
 
-interface EscalationContact {
-  _id: string;
-  name: string;
-  email: string;
-  role: string;
-  priority: string;
-}
-
 interface ProjectConfiguration {
   ticketSubmissionSettings: {
     onlineFormFields: Array<{
@@ -296,19 +302,15 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
   const [isEditingCategory, setIsEditingCategory] = useState(false);
   const [isEditingPriority, setIsEditingPriority] = useState(false);
   const [isAddingTag, setIsAddingTag] = useState(false);
-  const [isEscalating, setIsEscalating] = useState(false);
 
   const [newStatus, setNewStatus] = useState<string | number>('');
   const [newCategory, setNewCategory] = useState('');
   const [newPriority, setNewPriority] = useState('');
   const [newTag, setNewTag] = useState('');
-  const [escalationReason, setEscalationReason] = useState('');
-  const [selectedEscalationContact, setSelectedEscalationContact] = useState('');
 
   // Master data
   const [categories, setCategories] = useState<Category[]>([]);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
-  const [escalationContacts, setEscalationContacts] = useState<EscalationContact[]>([]);
   const [projectConfig, setProjectConfig] = useState<ProjectConfiguration | null>(null);
   const [statusOptions, setStatusOptions] = useState<any[]>([]);
   const [priorityOptions, setPriorityOptions] = useState<string[]>([]);
@@ -318,6 +320,21 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
   // Task 6.4: State for escalation policies (for level-based SLA timing) and user role
   const [escalationPolicies, setEscalationPolicies] = useState<EscalationPolicy[]>([]);
   const [userRole, setUserRole] = useState<{ _id: string; name: string; code?: string } | null>(null);
+
+  // Escalation Matrix and Working Calendar for SLA calculations
+  const [escalationMatrix, setEscalationMatrix] = useState<any>(null);
+  const [workingCalendar, setWorkingCalendar] = useState<any>(null);
+  
+  // Category hierarchy state
+  const [categoryHierarchy, setCategoryHierarchy] = useState<CategoryHierarchyValue>({});
+  
+  // Compute projectId from ticket for hierarchy config
+  const ticketProjectId = ticket?.projectId 
+    ? (typeof ticket.projectId === 'object' ? (ticket.projectId as any)._id : ticket.projectId)
+    : (ticket?.metadata?.projectId || '');
+  
+  // Fetch hierarchy config to determine if multi-level categories are enabled
+  const { config: hierarchyConfig } = useHierarchyConfig(ticketProjectId);
 
   // Task 6.5: Email communications state
   const [emailCommunications, setEmailCommunications] = useState<EmailCommunication[]>([]);
@@ -416,11 +433,155 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
     };
   };
 
+  // Helper to extract projectId from ticket (can be in projectId or metadata.projectId)
+  const getTicketProjectId = (t: Ticket | null): string | undefined => {
+    if (!t) return undefined;
+    if (t.projectId) {
+      return typeof t.projectId === 'object' ? (t.projectId as any)._id : t.projectId;
+    }
+    if (t.metadata?.projectId) {
+      return t.metadata.projectId;
+    }
+    return undefined;
+  };
+
   useEffect(() => {
     fetchTicketDetails();
-    fetchMasterData();
     fetchUserPermissions();
   }, [ticketId]);
+
+  // Auto-escalation detection: Poll ticket status to detect if it was escalated away
+  useEffect(() => {
+    if (!ticket || !ticketId) return;
+
+    // Get current user ID from localStorage
+    const userStr = localStorage.getItem('user');
+    const currentUserId = userStr ? JSON.parse(userStr)?._id : null;
+    
+    // Get ticket's current assignedTo ID
+    const getAssignedToId = (t: Ticket | null) => {
+      if (!t?.assignedTo) return null;
+      return typeof t.assignedTo === 'object' ? (t.assignedTo as any)._id : t.assignedTo;
+    };
+    
+    const initialAssignedTo = getAssignedToId(ticket);
+    
+    // Only poll if the ticket is currently assigned to the logged-in user
+    if (initialAssignedTo !== currentUserId) return;
+    
+    const pollInterval = setInterval(async () => {
+      try {
+        const token = localStorage.getItem('authToken');
+        if (!token) return;
+        
+        const response = await axios.get(
+          `${API_CONFIG.API_URL}/tickets/${ticketId}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        
+        if (response.data.success && response.data.data) {
+          const updatedTicket = response.data.data;
+          const newAssignedTo = getAssignedToId(updatedTicket);
+          const newLevel = updatedTicket.currentEscalationLevelNumber;
+          const oldLevel = ticket.currentEscalationLevelNumber;
+          
+          // Check if ticket was escalated (assigned to different user or level changed)
+          if (newAssignedTo && newAssignedTo !== currentUserId) {
+            clearInterval(pollInterval);
+            
+            // Show notification
+            const levelChange = newLevel && oldLevel && newLevel !== oldLevel
+              ? ` from Level ${oldLevel} to Level ${newLevel}`
+              : '';
+            
+            alert(`This ticket has been escalated${levelChange} and is no longer assigned to you. Redirecting to ticket list...`);
+            
+            // Redirect to ticket listing
+            navigate(`/${customUrlPath}/portal/queries`);
+          }
+        }
+      } catch (error) {
+        // Silently fail - don't interrupt user workflow for polling errors
+        console.debug('Auto-escalation poll error:', error);
+      }
+    }, 30000); // Poll every 30 seconds
+    
+    return () => clearInterval(pollInterval);
+  }, [ticket?._id, ticketId, customUrlPath, navigate]);
+
+  // Fetch master data when ticket is loaded (use ticket's projectId)
+  useEffect(() => {
+    console.log('🔄 useEffect[ticket] running, ticket:', ticket?._id, 'metadata:', ticket?.metadata);
+    const projectId = getTicketProjectId(ticket);
+    console.log('🔍 getTicketProjectId returned:', projectId);
+    if (projectId) {
+      console.log('📋 Ticket loaded, fetching master data with projectId:', projectId);
+      fetchMasterData(projectId);
+    } else {
+      console.warn('⚠️ No projectId found, skipping master data fetch');
+    }
+  }, [ticket]);
+
+  // Fetch escalation matrix when ticket has escalationMatrixId
+  useEffect(() => {
+    const fetchEscalationMatrix = async () => {
+      if (!ticket?.escalationMatrixId) return;
+      
+      // Extract _id if escalationMatrixId is an object
+      const matrixId = typeof ticket.escalationMatrixId === 'object' 
+        ? (ticket.escalationMatrixId as any)._id 
+        : ticket.escalationMatrixId;
+      
+      if (!matrixId) {
+        console.warn('⚠️ No valid escalation matrix ID found');
+        return;
+      }
+      
+      try {
+        const token = localStorage.getItem('authToken');
+        const response = await axios.get(
+          `${API_CONFIG.API_URL}/escalation-matrix/${matrixId}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        
+        if (response.data.success && response.data.data) {
+          console.log('📋 Escalation Matrix loaded:', response.data.data);
+          setEscalationMatrix(response.data.data);
+        }
+      } catch (error) {
+        console.error('❌ Error fetching escalation matrix:', error);
+      }
+    };
+
+    fetchEscalationMatrix();
+  }, [ticket?.escalationMatrixId]);
+
+  // Fetch working calendar for the project
+  useEffect(() => {
+    const fetchWorkingCalendar = async () => {
+      const projectId = getTicketProjectId(ticket);
+      if (!projectId) return;
+      
+      try {
+        const token = localStorage.getItem('authToken');
+        const response = await axios.get(
+          `${API_CONFIG.API_URL}/working-calendars?projectId=${projectId}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        
+        if (response.data.success && response.data.data?.length > 0) {
+          // Find the default calendar or use the first one
+          const calendar = response.data.data.find((c: any) => c.isDefault) || response.data.data[0];
+          console.log('📅 Working Calendar loaded:', calendar);
+          setWorkingCalendar(calendar);
+        }
+      } catch (error) {
+        console.error('❌ Error fetching working calendar:', error);
+      }
+    };
+
+    fetchWorkingCalendar();
+  }, [ticket]);
 
   // Task 6.5: Fetch email communications when ticket loads or changes
   useEffect(() => {
@@ -514,29 +675,37 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
   };
 
   // PERFORMANCE: Consolidated master data fetch using Promise.all for parallel requests
-  const fetchMasterData = async () => {
+  const fetchMasterData = async (projectIdOverride?: string) => {
     try {
       const token = localStorage.getItem('authToken');
       const projectContext = JSON.parse(localStorage.getItem('projectContext') || '{}');
       const headers = { Authorization: `Bearer ${token}` };
+      
+      // Use override projectId (from ticket) or fallback to context
+      const projectId = projectIdOverride || projectContext.projectId;
 
-      if (!projectContext.projectId) {
+      if (!projectId) {
         console.warn('⚠️ No projectId available, skipping master data fetch');
         return;
       }
+      
+      console.log('📋 Fetching master data for projectId:', projectId);
 
       // PERFORMANCE: Fetch all data in parallel using Promise.all
       const [ticketConfigRes, tagsRes, escalationRes] = await Promise.all([
         // Ticket settings (statuses, priorities, categories, SLA rules)
         axios.get(
-          `${API_CONFIG.API_URL}/projects/${projectContext.projectId}/ticket-settings`,
+          `${API_CONFIG.API_URL}/projects/${projectId}/ticket-settings`,
           { headers }
         ),
-        // Available tags
-        axios.get(`${API_CONFIG.API_URL}/tickets/tags`, { headers }),
+        // Available tags (non-critical, catch errors)
+        axios.get(`${API_CONFIG.API_URL}/tickets/tags`, { headers }).catch(err => {
+          console.warn('⚠️ Error fetching tags (non-critical):', err.message);
+          return { data: { data: [] } };
+        }),
         // Escalation policies
         axios.get(
-          `${API_CONFIG.API_URL}/escalation-policies?projectId=${projectContext.projectId}&isActive=true`,
+          `${API_CONFIG.API_URL}/escalation-policies?projectId=${projectId}&isActive=true`,
           { headers }
         ).catch(err => {
           console.error('❌ Error fetching escalation policies:', err);
@@ -547,60 +716,55 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
       // Process ticket configuration
       if (ticketConfigRes.data.success && ticketConfigRes.data.data) {
         const ticketConfig = ticketConfigRes.data.data;
+        console.log('📋 Ticket Config received:', {
+          statuses: ticketConfig.allowedStatuses?.length,
+          categories: ticketConfig.categories?.length,
+          priorities: ticketConfig.allowedPriorities?.length,
+          slaRules: ticketConfig.slaRules?.length
+        });
         
         if (ticketConfig.allowedStatuses?.length > 0) {
+          console.log('✅ Setting status options:', ticketConfig.allowedStatuses);
           setStatusOptions(ticketConfig.allowedStatuses);
+        } else {
+          console.warn('⚠️ No statuses received from API');
         }
         
         if (ticketConfig.categories?.length > 0) {
           // Categories can be either objects {_id, name} or strings
-          setCategories(ticketConfig.categories.map((cat: any) => 
+          const mappedCats = ticketConfig.categories.map((cat: any) => 
             typeof cat === 'string' ? { _id: cat, name: cat } : cat
-          ));
+          );
+          console.log('✅ Setting categories:', mappedCats);
+          setCategories(mappedCats);
+        } else {
+          console.warn('⚠️ No categories received from API');
         }
         
         if (ticketConfig.allowedPriorities?.length > 0) {
+          console.log('✅ Setting priority options:', ticketConfig.allowedPriorities);
           setPriorityOptions(ticketConfig.allowedPriorities);
+        } else {
+          console.warn('⚠️ No priorities received from API');
         }
         
         if (ticketConfig.slaRules?.length > 0) {
+          console.log('✅ Setting SLA rules:', ticketConfig.slaRules);
           setSlaRules(ticketConfig.slaRules);
         }
+      } else {
+        console.error('❌ Ticket config response failed:', ticketConfigRes.data);
       }
 
       // Process tags
       setAvailableTags(tagsRes.data.data || []);
 
-      // Process escalation contacts
+      // Process escalation policies for SLA level calculation
       const policies = escalationRes.data.data || [];
       
       // Task 6.4: Store raw escalation policies for SLA level calculation
       setEscalationPolicies(policies);
       console.log('📋 Raw Escalation Policies:', policies);
-      
-      const contacts = policies.flatMap((policy: any) => {
-        return (policy.levels || []).flatMap((level: any) => {
-          if (level.users && level.users.length > 0) {
-            return level.users.map((user: any) => ({
-              _id: `${policy._id}-L${level.level}-${user._id}`,
-              name: `${user.firstName} ${user.lastName}`,
-              email: user.email,
-              role: user.role?.name || level.escalateTo?.targetName || 'N/A',
-              priority: policy.name || '',
-              userId: user._id,
-            }));
-          } else {
-            return [{
-              _id: `${policy._id}-L${level.level}`,
-              name: level.escalateTo?.targetName || `Level ${level.level}`,
-              email: level.escalateTo?.targetId || '',
-              role: level.escalateTo?.type || 'role',
-              priority: policy.name || '',
-            }];
-          }
-        });
-      });
-      setEscalationContacts(contacts);
 
     } catch (error) {
       console.error('❌ Error fetching master data:', error);
@@ -815,6 +979,33 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
     }
   };
 
+  const handleUpdateCategoryHierarchy = async (hierarchyValue: CategoryHierarchyValue) => {
+    if (!hierarchyValue || !ticket) return;
+
+    console.log('🔄 Updating category hierarchy to:', hierarchyValue);
+
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await axios.patch(
+        `${API_CONFIG.API_URL}/tickets/${ticket._id}/category-hierarchy`,
+        { categoryHierarchy: hierarchyValue },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      
+      console.log('✅ Category hierarchy update response:', response.data);
+      
+      // Refresh ticket details to get updated data
+      await fetchTicketDetails();
+      
+      console.log('🔄 Ticket refreshed with new category hierarchy');
+    } catch (error) {
+      console.error('❌ Error updating category hierarchy:', error);
+      alert('Failed to update category hierarchy');
+    }
+  };
+
   const handleUpdatePriority = async (priorityOverride?: string) => {
     const priorityToUpdate = priorityOverride || newPriority;
     if (!priorityToUpdate || !ticket) return;
@@ -884,33 +1075,6 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
     } catch (error) {
       console.error('Error removing tag:', error);
       alert('Failed to remove tag');
-    }
-  };
-
-  const handleEscalate = async () => {
-    if (!selectedEscalationContact || !escalationReason || !ticket) return;
-
-    try {
-      const token = localStorage.getItem('authToken');
-      await axios.post(
-        `${API_CONFIG.API_URL}/tickets/${ticket._id}/escalate`,
-        {
-          escalateTo: selectedEscalationContact,
-          reason: escalationReason,
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-      setIsEscalating(false);
-      setEscalationReason('');
-      setSelectedEscalationContact('');
-      alert('Query escalated successfully');
-      // Navigate to ticket list with timestamp to force refresh
-      navigate(`/${customUrlPath}/portal/tickets/my-tickets?refresh=${Date.now()}`);
-    } catch (error) {
-      console.error('Error escalating ticket:', error);
-      alert('Failed to escalate query');
     }
   };
 
@@ -2168,105 +2332,263 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                   </select>
                 </div>
 
-                {/* Resolution Time Countdown */}
+                {/* Priority Resolution Timer - Shows overall priority-level resolution time */}
                 {(() => {
-                  console.log('🎯 Full Ticket Object:', ticket);
-                  console.log('🎯 SLA Tracking Data:', ticket.slaTracking);
-                  console.log('🎯 SLA Tracking Type:', typeof ticket.slaTracking);
-                  console.log('🎯 Resolution Deadline Value:', ticket.slaTracking?.resolutionDeadline);
-                  console.log('🎯 Resolution Deadline Type:', typeof ticket.slaTracking?.resolutionDeadline);
-                  console.log('🎯 Ticket Status:', ticket.status);
+                  // Check if ticket is resolved or closed
+                  const statusLower = String(ticket.status).toLowerCase();
+                  const isResolved = String(ticket.status) === '4' || statusLower === 'resolved';
+                  const isClosed = String(ticket.status) === '5' || statusLower === 'closed' || statusLower === 'close';
+                  const isComplete = isResolved || isClosed;
+
+                  // Get priority resolution time from SLA rules
+                  // Match by: 1) rule.priority field, 2) rule.name field (fallback)
+                  // Priority can be either a string "MEDIUM" or object { name: "MEDIUM" }
+                  const ticketPriorityUpper = ticket.priority.toUpperCase();
+                  const matchingSlaRule = slaRules.find((rule: any) => {
+                    // Try matching by priority field first
+                    const rulePriority = typeof rule.priority === 'string' 
+                      ? rule.priority.toUpperCase() 
+                      : rule.priority?.name?.toUpperCase();
+                    if (rulePriority && rulePriority === ticketPriorityUpper) {
+                      return true;
+                    }
+                    // Fallback: match by rule name (e.g., rule.name = "Normal" matches ticket.priority = "NORMAL")
+                    if (rule.name && rule.name.toUpperCase() === ticketPriorityUpper) {
+                      return true;
+                    }
+                    return false;
+                  });
+
+                  console.log('🎯 Priority SLA Debug:', {
+                    ticketPriority: ticket.priority,
+                    slaRulesCount: slaRules.length,
+                    slaRuleNames: slaRules.map((r: any) => ({ name: r.name, priority: r.priority })),
+                    matchingSlaRule: matchingSlaRule ? { name: matchingSlaRule.name, priority: matchingSlaRule.priority, resolutionTime: matchingSlaRule.resolutionTime } : null
+                  });
+
+                  if (!matchingSlaRule?.resolutionTime) {
+                    return null; // No SLA rule found for this priority
+                  }
+
+                  // Use roleLevelSLA.startedAt (adjusted for working hours) if available, otherwise createdAt
+                  const slaStartedAt = (ticket as any).roleLevelSLA?.startedAt 
+                    ? new Date((ticket as any).roleLevelSLA.startedAt)
+                    : new Date(ticket.createdAt);
+                  const { value, unit } = matchingSlaRule.resolutionTime;
                   
+                  // Convert resolution time to milliseconds
+                  let resolutionMs = 0;
+                  switch (unit?.toLowerCase()) {
+                    case 'minutes':
+                      resolutionMs = value * 60 * 1000;
+                      break;
+                    case 'hours':
+                      resolutionMs = value * 60 * 60 * 1000;
+                      break;
+                    case 'days':
+                      resolutionMs = value * 24 * 60 * 60 * 1000;
+                      break;
+                    default:
+                      resolutionMs = value * 60 * 60 * 1000; // default to hours
+                  }
+
+                  const priorityDeadline = new Date(slaStartedAt.getTime() + resolutionMs);
+                  // Extract priority name from string or object
+                  const priorityName = typeof matchingSlaRule.priority === 'string' 
+                    ? matchingSlaRule.priority 
+                    : (matchingSlaRule.priority?.name || ticket.priority);
+                  
+                  // Format the total resolution time for display
+                  const totalResolutionDisplay = unit?.toLowerCase() === 'days' 
+                    ? `${value}d` 
+                    : unit?.toLowerCase() === 'minutes' 
+                      ? `${value}m` 
+                      : `${value}h`;
+
+                  let displayText = '';
+                  let isBreached = false;
+                  let bgColor = '';
+                  let textColor = '';
+                  let borderColor = '';
+                  let iconColor = '';
+                  let waitingForWorkingHours = false;
+
+                  if (isComplete) {
+                    // Ticket is resolved - show time taken vs allowed
+                    const completedAt = new Date(ticket.resolvedAt || ticket.closedAt || ticket.updatedAt);
+                    const timeTakenMs = completedAt.getTime() - slaStartedAt.getTime();
+                    isBreached = timeTakenMs > resolutionMs;
+                    
+                    const totalHours = Math.floor(timeTakenMs / (1000 * 60 * 60));
+                    const minutes = Math.floor((timeTakenMs % (1000 * 60 * 60)) / (1000 * 60));
+                    
+                    displayText = isBreached 
+                      ? `Resolved in ${totalHours}h ${minutes}m (exceeded ${totalResolutionDisplay})`
+                      : `Resolved in ${totalHours}h ${minutes}m (within ${totalResolutionDisplay})`;
+                    
+                    bgColor = isBreached ? 'bg-red-50' : 'bg-green-50';
+                    borderColor = isBreached ? 'border-red-300' : 'border-green-300';
+                    textColor = isBreached ? 'text-red-600' : 'text-green-600';
+                    iconColor = isBreached ? 'text-red-500' : 'text-green-500';
+                  } else {
+                    // Ticket is open - check if SLA has started (working hours)
+                    const now = new Date();
+                    const slaNotStartedYet = now < slaStartedAt;
+                    
+                    if (slaNotStartedYet) {
+                      // SLA hasn't started yet - show "Starts in X" with blue styling
+                      const startsInMs = slaStartedAt.getTime() - now.getTime();
+                      const totalHours = Math.floor(startsInMs / (1000 * 60 * 60));
+                      const minutes = Math.floor((startsInMs % (1000 * 60 * 60)) / (1000 * 60));
+                      
+                      displayText = totalHours > 0 
+                        ? `Starts in ${totalHours}h ${minutes}m`
+                        : `Starts in ${minutes}m`;
+                      
+                      bgColor = 'bg-blue-50';
+                      borderColor = 'border-blue-300';
+                      textColor = 'text-blue-600';
+                      iconColor = 'text-blue-500';
+                      waitingForWorkingHours = true;
+                    } else {
+                      // SLA is running - show remaining time
+                      const diffMs = priorityDeadline.getTime() - now.getTime();
+                      isBreached = diffMs < 0;
+                      
+                      const absDiffMs = Math.abs(diffMs);
+                      const totalHours = Math.floor(absDiffMs / (1000 * 60 * 60));
+                      const minutes = Math.floor((absDiffMs % (1000 * 60 * 60)) / (1000 * 60));
+                      
+                      displayText = isBreached 
+                        ? `Overdue by ${totalHours}h ${minutes}m`
+                        : `${totalHours}h ${minutes}m remaining`;
+                      
+                      bgColor = isBreached ? 'bg-red-50' : 'bg-purple-50';
+                      borderColor = isBreached ? 'border-red-300' : 'border-purple-300';
+                      textColor = isBreached ? 'text-red-600' : 'text-purple-600';
+                      iconColor = isBreached ? 'text-red-500' : 'text-purple-500';
+                    }
+                  }
+
+                  return (
+                    <div className={`p-3 rounded-lg border ${bgColor} ${borderColor}`}>
+                      <div className="flex items-center space-x-2">
+                        <div className={`flex-shrink-0 ${iconColor}`}>
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-xs font-medium text-gray-700">{priorityName} Priority SLA ({totalResolutionDisplay})</p>
+                          <p className={`text-lg font-bold ${textColor}`}>
+                            {displayText}
+                          </p>
+                          {waitingForWorkingHours && (
+                            <p className="text-xs text-blue-500 mt-1">
+                              <span className="inline-block w-2 h-2 bg-blue-400 rounded-full mr-1"></span>
+                              Waiting for working hours
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Escalation Level Countdown - Uses fetched escalation matrix */}
+                {(() => {
                   // Check if ticket is resolved or closed (handle both numeric and string values)
                   const statusLower = String(ticket.status).toLowerCase();
                   const isResolved = String(ticket.status) === '4' || statusLower === 'resolved';
                   const isClosed = String(ticket.status) === '5' || statusLower === 'closed' || statusLower === 'close';
                   const isComplete = isResolved || isClosed;
                   
-                  // Get escalation info from ticket's SLA tracking data
-                  const slaTracking = ticket.slaTracking;
-                  const currentLevel = slaTracking?.currentEscalationLevel || 0;
-                  const escalationPolicy = slaTracking?.escalationPolicy;
+                  // Use escalation matrix from state (fetched via ticket.escalationMatrixId)
+                  if (!escalationMatrix || !escalationMatrix.levels || escalationMatrix.levels.length === 0) {
+                    console.log('⚠️ No escalation matrix available for timer');
+                    return null;
+                  }
+
+                  console.log('📋 Using Escalation Matrix:', escalationMatrix.name);
+                  console.log('📋 Escalation Matrix Levels:', escalationMatrix.levels);
                   
-                  // Determine the current level's name for display
-                  let timeLabel = 'Resolution Time';
-                  let currentLevelConfig = null;
+                  // Get current escalation level (0-based index, default to first level)
+                  const currentLevelIndex = ticket.currentEscalationLevelNumber 
+                    ? ticket.currentEscalationLevelNumber - 1 
+                    : 0;
                   
-                  if (escalationPolicy?.levels && currentLevel >= 0) {
-                    // Level 0 means first level (L1), Level 1 means second level (L2), etc.
-                    const levelIndex = currentLevel;
-                    currentLevelConfig = escalationPolicy.levels.find(l => l.level === levelIndex + 1);
-                    if (currentLevelConfig) {
-                      timeLabel = `${currentLevelConfig.escalateTo?.targetName || `Level ${levelIndex + 1}`} SLA`;
-                    } else if (currentLevel > 0) {
-                      // Already escalated but no matching level found
-                      timeLabel = `Level ${currentLevel + 1} SLA`;
-                    }
+                  // Get the current level configuration
+                  const currentLevelConfig = escalationMatrix.levels[currentLevelIndex] || escalationMatrix.levels[0];
+                  
+                  // Determine the level label
+                  const timeLabel = currentLevelConfig.levelName 
+                    || `Level ${currentLevelConfig.levelNumber || currentLevelIndex + 1} SLA`;
+                  
+                  // Calculate SLA time for current level
+                  let levelSlaMs = 0;
+                  const slaHours = currentLevelConfig.slaHours || 0;
+                  const slaUnit = currentLevelConfig.slaUnit?.toLowerCase() || 'hrs';
+                  
+                  switch (slaUnit) {
+                    case 'mins':
+                    case 'min':
+                    case 'minutes':
+                      levelSlaMs = slaHours * 60 * 1000;
+                      break;
+                    case 'hrs':
+                    case 'hr':
+                    case 'hours':
+                      levelSlaMs = slaHours * 60 * 60 * 1000;
+                      break;
+                    case 'days':
+                    case 'day':
+                      levelSlaMs = slaHours * 24 * 60 * 60 * 1000;
+                      break;
+                    default:
+                      levelSlaMs = slaHours * 60 * 60 * 1000; // default to hours
                   }
                   
-                  console.log('🎯 Current Escalation Level:', currentLevel);
-                  console.log('🎯 Current Level Config:', currentLevelConfig);
-                  
-                  let resolutionDeadline: Date;
-                  const createdAt = new Date(ticket.createdAt);
-                  
-                  // Use SLA tracking resolution deadline if available
-                  if (slaTracking?.resolutionDeadline) {
-                    resolutionDeadline = new Date(slaTracking.resolutionDeadline);
-                    console.log('🎯 Using SLA Tracking Deadline:', resolutionDeadline);
-                  } else {
-                    // Fallback: Calculate from escalation policy or SLA rules
-                    let resolutionMs = 0;
-                    
-                    // Try to get from escalation policy
-                    if (currentLevelConfig?.escalateAfter) {
-                      const { value, unit } = currentLevelConfig.escalateAfter;
-                      switch (unit?.toLowerCase()) {
+                  // Calculate deadline from ticket creation
+                  // For levels > 1, need to add previous levels' time
+                  let totalPreviousLevelsMs = 0;
+                  for (let i = 0; i < currentLevelIndex; i++) {
+                    const prevLevel = escalationMatrix.levels[i];
+                    if (prevLevel) {
+                      const prevHours = prevLevel.slaHours || 0;
+                      const prevUnit = prevLevel.slaUnit?.toLowerCase() || 'hrs';
+                      switch (prevUnit) {
+                        case 'mins':
+                        case 'min':
                         case 'minutes':
-                          resolutionMs = value * 60 * 1000;
-                          break;
-                        case 'hours':
-                          resolutionMs = value * 60 * 60 * 1000;
+                          totalPreviousLevelsMs += prevHours * 60 * 1000;
                           break;
                         case 'days':
-                          resolutionMs = value * 24 * 60 * 60 * 1000;
+                        case 'day':
+                          totalPreviousLevelsMs += prevHours * 24 * 60 * 60 * 1000;
                           break;
-                        default:
-                          resolutionMs = value * 60 * 60 * 1000;
-                      }
-                    } else {
-                      // Fallback to SLA rules or defaults
-                      const matchingSlaRule = slaRules.find(
-                        (rule: any) => rule.priority?.name?.toUpperCase() === ticket.priority.toUpperCase()
-                      );
-                      
-                      if (matchingSlaRule?.resolutionTime) {
-                        const { value, unit } = matchingSlaRule.resolutionTime;
-                        switch (unit?.toLowerCase()) {
-                          case 'minutes':
-                            resolutionMs = value * 60 * 1000;
-                            break;
-                          case 'hours':
-                            resolutionMs = value * 60 * 60 * 1000;
-                            break;
-                          case 'days':
-                            resolutionMs = value * 24 * 60 * 60 * 1000;
-                            break;
-                          default:
-                            resolutionMs = value * 60 * 60 * 1000;
-                        }
-                      } else {
-                        // Default resolution times
-                        const defaultHours: { [key: string]: number } = {
-                          'CRITICAL': 2, 'HIGH': 8, 'MEDIUM': 24, 'LOW': 48
-                        };
-                        resolutionMs = (defaultHours[ticket.priority.toUpperCase()] || 24) * 60 * 60 * 1000;
+                        default: // hours
+                          totalPreviousLevelsMs += prevHours * 60 * 60 * 1000;
                       }
                     }
-                    
-                    resolutionDeadline = new Date(createdAt.getTime() + resolutionMs);
-                    console.log('🎯 Calculated Resolution Deadline:', resolutionDeadline);
                   }
+                  
+                  // Use roleLevelSLA.startedAt if available (respects working calendar)
+                  // Otherwise fall back to ticket.createdAt + previous levels time
+                  const createdAt = new Date(ticket.createdAt);
+                  const slaStartTime = (ticket as any).roleLevelSLA?.startedAt 
+                    ? new Date((ticket as any).roleLevelSLA.startedAt) 
+                    : new Date(createdAt.getTime() + totalPreviousLevelsMs);
+                  const levelStartTime = slaStartTime;
+                  const levelDeadline = new Date(levelStartTime.getTime() + levelSlaMs);
+                  
+                  // Check if SLA hasn't started yet (outside working hours)
+                  const now = new Date();
+                  const slaNotStartedYet = now < slaStartTime;
+                  
+                  // Format SLA time for display
+                  const slaDisplay = slaUnit.startsWith('min') ? `${slaHours}m` 
+                    : slaUnit.startsWith('day') ? `${slaHours}d` 
+                    : `${slaHours}h`;
                   
                   let displayText = '';
                   let isBreached = false;
@@ -2278,29 +2600,34 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                   if (isComplete) {
                     // Ticket is resolved or closed - show time taken
                     const completedAt = new Date(ticket.resolvedAt || ticket.closedAt || ticket.updatedAt);
-                    const timeTakenMs = completedAt.getTime() - createdAt.getTime();
-                    const totalHours = Math.floor(timeTakenMs / (1000 * 60 * 60));
-                    const minutes = Math.floor((timeTakenMs % (1000 * 60 * 60)) / (1000 * 60));
+                    const timeTakenMs = completedAt.getTime() - levelStartTime.getTime();
+                    const totalHours = Math.floor(Math.abs(timeTakenMs) / (1000 * 60 * 60));
+                    const minutes = Math.floor((Math.abs(timeTakenMs) % (1000 * 60 * 60)) / (1000 * 60));
                     
-                    // Check if it was resolved within SLA
-                    const resolutionMs = resolutionDeadline.getTime() - createdAt.getTime();
-                    isBreached = timeTakenMs > resolutionMs;
-                    
+                    isBreached = timeTakenMs > levelSlaMs;
                     displayText = `Resolved in ${totalHours}h ${minutes}m`;
                     
-                    if (isBreached) {
-                      bgColor = 'bg-red-50';
-                      borderColor = 'border-red-300';
-                      textColor = 'text-red-600';
-                    } else {
-                      bgColor = 'bg-green-50';
-                      borderColor = 'border-green-300';
-                      textColor = 'text-green-600';
-                    }
+                    bgColor = isBreached ? 'bg-red-50' : 'bg-green-50';
+                    borderColor = isBreached ? 'border-red-300' : 'border-green-300';
+                    textColor = isBreached ? 'text-red-600' : 'text-green-600';
+                  } else if (slaNotStartedYet) {
+                    // SLA hasn't started yet (outside working hours)
+                    const startsInMs = slaStartTime.getTime() - now.getTime();
+                    const startsInMinutes = Math.ceil(startsInMs / (1000 * 60));
+                    const startsInHours = Math.floor(startsInMinutes / 60);
+                    const startsInMins = startsInMinutes % 60;
+                    
+                    displayText = startsInHours > 0 
+                      ? `Starts in ${startsInHours}h ${startsInMins}m`
+                      : `Starts in ${startsInMins}m`;
+                    
+                    bgColor = 'bg-blue-50';
+                    borderColor = 'border-blue-300';
+                    textColor = 'text-blue-600';
+                    nextEscalationInfo = 'Waiting for working hours';
                   } else {
-                    // Ticket is still open - show remaining time
-                    const now = new Date();
-                    const diffMs = resolutionDeadline.getTime() - now.getTime();
+                    // Ticket is still open and SLA has started - show remaining time for this level
+                    const diffMs = levelDeadline.getTime() - now.getTime();
                     isBreached = diffMs < 0;
                     
                     const absDiffMs = Math.abs(diffMs);
@@ -2315,26 +2642,18 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                     borderColor = isBreached ? 'border-red-300' : 'border-blue-300';
                     textColor = isBreached ? 'text-red-600' : 'text-blue-600';
                     
-                    // Show next escalation info if available
-                    if (slaTracking?.nextEscalationDue && !isBreached) {
-                      const nextEscDate = new Date(slaTracking.nextEscalationDue);
-                      const nextDiff = nextEscDate.getTime() - now.getTime();
-                      if (nextDiff > 0) {
-                        const nextHours = Math.floor(nextDiff / (1000 * 60 * 60));
-                        const nextMins = Math.floor((nextDiff % (1000 * 60 * 60)) / (1000 * 60));
-                        nextEscalationInfo = `Auto-escalates in ${nextHours}h ${nextMins}m`;
-                      }
+                    // Show auto-escalation info if not on last level
+                    if (!isBreached && currentLevelIndex < escalationMatrix.levels.length - 1) {
+                      nextEscalationInfo = `Auto-escalates in ${totalHours}h ${minutes}m`;
                     }
                   }
-                  
-                  console.log('🎯 Display Text:', displayText);
                   
                   return (
                     <div className={`p-3 rounded-lg border ${bgColor} ${borderColor}`}>
                       <div className="flex items-center space-x-2">
                         <ClockIcon className={`h-5 w-5 ${textColor}`} />
                         <div className="flex-1">
-                          <p className="text-xs font-medium text-gray-700">{timeLabel}</p>
+                          <p className="text-xs font-medium text-gray-700">{timeLabel} ({slaDisplay})</p>
                           <p className={`text-lg font-bold ${textColor}`}>
                             {displayText}
                           </p>
@@ -2343,9 +2662,9 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                               ⬆️ {nextEscalationInfo}
                             </p>
                           )}
-                          {currentLevel > 0 && (
+                          {currentLevelIndex > 0 && (
                             <p className="text-xs text-gray-500 mt-1">
-                              Escalated {currentLevel} time{currentLevel > 1 ? 's' : ''}
+                              Escalated {currentLevelIndex} time{currentLevelIndex > 1 ? 's' : ''}
                             </p>
                           )}
                         </div>
@@ -2357,22 +2676,46 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                 {/* Category */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
-                  <select
-                    value={typeof ticket.category === 'object' && ticket.category !== null ? (ticket.category as any)._id : String(ticket.category || '')}
-                    onChange={(e) => {
-                      const newCategoryId = e.target.value;
-                      setNewCategory(newCategoryId);
-                      // Call update directly with the new value
-                      handleUpdateCategory(newCategoryId);
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    {categories.map((cat) => (
-                      <option key={cat._id} value={cat._id}>
-                        {cat.name}
-                      </option>
-                    ))}
-                  </select>
+                  {/* Use hierarchical category selector if multi-level hierarchy is configured */}
+                  {hierarchyConfig && hierarchyConfig.levelCount > 1 && ticketProjectId ? (
+                    <div>
+                      {/* Display current hierarchy if set */}
+                      {ticket.categoryHierarchy?.displayPath && (
+                        <div className="mb-2 p-2 bg-gray-50 rounded-lg text-sm">
+                          <span className="text-gray-500">Current: </span>
+                          <span>{ticket.categoryHierarchy.displayPath}</span>
+                        </div>
+                      )}
+                      <HierarchyCategorySelector
+                        projectId={ticketProjectId}
+                        value={categoryHierarchy.level1 ? categoryHierarchy : (ticket.categoryHierarchy || {})}
+                        onChange={(newValue) => {
+                          setCategoryHierarchy(newValue);
+                          // Update ticket with new hierarchy
+                          handleUpdateCategoryHierarchy(newValue);
+                        }}
+                        mode="display"
+                        showValidation={false}
+                      />
+                    </div>
+                  ) : (
+                    <select
+                      value={typeof ticket.category === 'object' && ticket.category !== null ? (ticket.category as any)._id : String(ticket.category || '')}
+                      onChange={(e) => {
+                        const newCategoryId = e.target.value;
+                        setNewCategory(newCategoryId);
+                        // Call update directly with the new value
+                        handleUpdateCategory(newCategoryId);
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      {categories.map((cat) => (
+                        <option key={cat._id} value={cat._id}>
+                          {cat.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 {/* Assigned To */}
@@ -2476,89 +2819,16 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
               </div>
             </div>
 
-            {/* Escalate Card - Only shown if user has TICKET_ESCALATE permission */}
-            {permissions.includes('TICKET_ESCALATE') && (
-            <div className="bg-white rounded-xl shadow-sm p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Escalate Query</h3>
-
-              {isEscalating ? (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Escalate To ({escalationContacts.length} contacts available)
-                    </label>
-                    <select
-                      value={selectedEscalationContact}
-                      onChange={(e) => {
-                        console.log('🔍 Dropdown changed to:', e.target.value);
-                        setSelectedEscalationContact(e.target.value);
-                      }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    >
-                      <option value="">Select contact ({escalationContacts.length} available)</option>
-                      {escalationContacts.length === 0 && (
-                        <option value="" disabled>No contacts available</option>
-                      )}
-                      {escalationContacts.map((contact) => {
-                        console.log('🔍 Rendering option:', contact.name, contact.role);
-                        return (
-                          <option key={contact._id} value={contact._id}>
-                            {contact.name} - {contact.role}
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Reason for Escalation
-                    </label>
-                    <textarea
-                      value={escalationReason}
-                      onChange={(e) => setEscalationReason(e.target.value)}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Explain why this query needs escalation..."
-                    />
-                  </div>
-
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={handleEscalate}
-                      disabled={!selectedEscalationContact || !escalationReason}
-                      className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <ExclamationTriangleIcon className="h-5 w-5" />
-                      <span>Escalate</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        setIsEscalating(false);
-                        setEscalationReason('');
-                        setSelectedEscalationContact('');
-                      }}
-                      className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  onClick={() => {
-                    console.log('🚀 Escalate button clicked!');
-                    console.log('📋 Current escalationContacts:', escalationContacts);
-                    console.log('📋 Number of contacts:', escalationContacts.length);
-                    setIsEscalating(true);
-                  }}
-                  className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100"
-                >
-                  <ArrowUpIcon className="h-5 w-5" />
-                  <span>Escalate This Query</span>
-                </button>
-              )}
-            </div>
+            {/* Escalate Card - Using Matrix-Based Escalation */}
+            {ticket && (
+              <EscalationMatrixCard
+                ticketId={ticket._id}
+                currentLevelNumber={ticket.currentEscalationLevelNumber || ticket.slaTracking?.currentEscalationLevel}
+                matrixName={ticket.escalationMatrixName}
+                onEscalationComplete={fetchTicketDetails}
+                permissions={permissions}
+                projectSlug={customUrlPath}
+              />
             )}
 
             {/* Quick Actions */}

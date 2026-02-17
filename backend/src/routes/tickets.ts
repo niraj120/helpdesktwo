@@ -11,6 +11,7 @@ import {
   getAgentAssignedTickets,
   updateTicketStatus,
   updateTicketCategory,
+  updateTicketCategoryHierarchy,
   updateTicketPriority,
   addTicketTag,
   removeTicketTag,
@@ -23,6 +24,9 @@ import {
   getProjectDashboardStats,
   createOfflineTicket,
   getAssignableAgents,
+  getSLAStatus,
+  pauseSLA,
+  resumeSLA,
 } from '../controllers/ticketController';
 import { authMiddleware } from '../middleware/auth';
 import { checkPermission } from '../middleware/permissions';
@@ -58,6 +62,13 @@ import { exportTickets } from '../controllers/ticketExportController';
 // Merge controller
 import { mergeTickets } from '../controllers/ticketMergeController';
 
+// Escalation Matrix controller
+import {
+  getAllowedEscalations,
+  escalateTicketWithMatrix,
+  assignMatrixToTicket
+} from '../controllers/escalation-matrix/escalationMatrixController';
+
 const router = Router();
 
 // @desc    Submit ticket from student portal
@@ -84,7 +95,7 @@ router.get('/agent/assigned', authMiddleware, checkPermission(['TICKET_VIEW_ALL'
 // @desc    Get dashboard statistics
 // @route   GET /api/tickets/dashboard-stats
 // @access  Private
-router.get('/dashboard-stats', authMiddleware, checkPermission(['TICKET_VIEW_ALL', 'DASHBOARD_VIEW']), getDashboardStats);
+router.get('/dashboard-stats', authMiddleware, checkPermission(['TICKET_VIEW_ALL', 'TICKET_VIEW_OWN', 'DASHBOARD_VIEW']), getDashboardStats);
 
 // @desc    Get project-specific dashboard statistics
 // @route   GET /api/tickets/project-dashboard-stats
@@ -106,11 +117,12 @@ router.get('/assignable-agents', authMiddleware, checkPermission('TICKET_ASSIGN'
 // @access  Private (Agent)
 router.post('/bulk-update', authMiddleware, checkPermission('TICKET_BULK_UPDATE'), bulkUpdateByTags);
 
-// @desc    Get all tickets (for View Tickets page)
+// @desc    Get all tickets (for View Tickets page and Reports)
 // @route   GET /api/tickets
-// @access  Private - TICKET_VIEW_ALL permission required
+// @access  Private - TICKET_VIEW_ALL or TICKET_VIEW_OWN permission required
 // Supports unified and single project views via attachProjectContext middleware
-router.get('/', authMiddleware, attachProjectContext, checkPermission('TICKET_VIEW_ALL'), getAllTickets);
+// Controller handles filtering: VIEW_ALL sees all tickets, VIEW_OWN sees only assigned tickets
+router.get('/', authMiddleware, attachProjectContext, checkPermission(['TICKET_VIEW_ALL', 'TICKET_VIEW_OWN']), getAllTickets);
 
 // @desc    Create new ticket
 // @route   POST /api/tickets
@@ -162,6 +174,11 @@ router.patch('/:id/status', authMiddleware, checkPermission('TICKET_CHANGE_STATU
 // @access  Private (Agent)
 router.patch('/:id/category', authMiddleware, checkPermission('TICKET_EDIT'), updateTicketCategory);
 
+// @desc    Update ticket category hierarchy
+// @route   PATCH /api/tickets/:id/category-hierarchy
+// @access  Private (Agent)
+router.patch('/:id/category-hierarchy', authMiddleware, checkPermission('TICKET_EDIT'), updateTicketCategoryHierarchy);
+
 // @desc    Update ticket priority
 // @route   PATCH /api/tickets/:id/priority
 // @access  Private (Agent)
@@ -186,6 +203,21 @@ router.post('/:id/notes', authMiddleware, checkPermission('TICKET_ADD_COMMENT'),
 // @route   POST /api/tickets/:id/escalate
 // @access  Private (Agent with TICKET_ESCALATE permission)
 router.post('/:id/escalate', authMiddleware, checkPermission('TICKET_ESCALATE'), escalateTicket);
+
+// @desc    Get allowed escalation levels for a ticket (based on Escalation Matrix)
+// @route   GET /api/tickets/:id/allowed-escalations
+// @access  Private (Agent with TICKET_ESCALATE permission)
+router.get('/:id/allowed-escalations', authMiddleware, checkPermission('TICKET_ESCALATE'), getAllowedEscalations);
+
+// @desc    Escalate ticket using Escalation Matrix rules (with backend validation)
+// @route   POST /api/tickets/:id/matrix-escalate
+// @access  Private (Agent with TICKET_ESCALATE permission)
+router.post('/:id/matrix-escalate', authMiddleware, checkPermission('TICKET_ESCALATE'), escalateTicketWithMatrix);
+
+// @desc    Assign escalation matrix to a ticket
+// @route   POST /api/tickets/:id/assign-matrix
+// @access  Private (Admin with TICKET_MANAGE permission)
+router.post('/:id/assign-matrix', authMiddleware, checkPermission('TICKET_MANAGE'), assignMatrixToTicket);
 
 // @desc    Assign ticket to agent
 // @route   PUT /api/tickets/:id/assign
@@ -255,5 +287,20 @@ router.delete('/:id/comments/:commentId', authMiddleware, checkPermission('TICKE
 // @route   POST /api/tickets/:id/merge
 // @access  Private (TICKET_MERGE permission)
 router.post('/:id/merge', authMiddleware, checkPermission('TICKET_MERGE'), mergeTickets);
+
+// @desc    Get SLA status for ticket
+// @route   GET /api/tickets/:id/sla-status
+// @access  Private (TICKET_VIEW_ALL or TICKET_VIEW_OWN permission)
+router.get('/:id/sla-status', authMiddleware, checkPermission(['TICKET_VIEW_ALL', 'TICKET_VIEW_OWN']), getSLAStatus);
+
+// @desc    Pause SLA for ticket
+// @route   POST /api/tickets/:id/pause-sla
+// @access  Private (TICKET_CHANGE_STATUS permission)
+router.post('/:id/pause-sla', authMiddleware, checkPermission('TICKET_CHANGE_STATUS'), pauseSLA);
+
+// @desc    Resume SLA for ticket
+// @route   POST /api/tickets/:id/resume-sla
+// @access  Private (TICKET_CHANGE_STATUS permission)
+router.post('/:id/resume-sla', authMiddleware, checkPermission('TICKET_CHANGE_STATUS'), resumeSLA);
 
 export default router;

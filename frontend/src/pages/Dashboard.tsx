@@ -1,12 +1,43 @@
 import { useEffect, useState } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
 import ModuleHeader from '../components/ModuleHeader';
+import ViewModeSelector from '../components/ViewModeSelector';
+import TeamBreakdown from '../components/TeamBreakdown';
 import { API_CONFIG } from '../config/constants';
+import { usePermissions } from '../hooks/usePermissions';
+import { PERMISSIONS } from '../constants/permissions';
+
+type ViewMode = 'self' | 'team' | 'hierarchy' | 'all';
+
+interface TeamMemberStats {
+  userId: string;
+  name: string;
+  email: string;
+  stats: {
+    total: number;
+    pending: number;
+    resolved: number;
+    closed: number;
+    highPriority: number;
+    mediumPriority: number;
+    lowPriority: number;
+  };
+}
 
 interface TicketStats {
   total: number;
   pending: number;
   resolved: number;
+  closed?: number;
+  highPriority?: number;
+  mediumPriority?: number;
+  lowPriority?: number;
+  withinSLA?: number;
+  outsideSLA?: number;
+  pendingWithinSLA?: number;
+  pendingOutsideSLA?: number;
+  viewMode?: ViewMode;
+  teamBreakdown?: TeamMemberStats[];
   recentActivity: Array<{
     ticketId: string;
     title: string;
@@ -16,6 +47,7 @@ interface TicketStats {
 }
 
 const Dashboard = () => {
+  const { hasPermission } = usePermissions();
   const [userData, setUserData] = useState({
     email: '',
     role: '',
@@ -23,11 +55,17 @@ const Dashboard = () => {
     lastName: ''
   });
 
+  const [viewMode, setViewMode] = useState<ViewMode>('self');
   const [ticketStats, setTicketStats] = useState<TicketStats>({
     total: 0,
     pending: 0,
     resolved: 0,
-    recentActivity: []
+    closed: 0,
+    highPriority: 0,
+    mediumPriority: 0,
+    lowPriority: 0,
+    recentActivity: [],
+    teamBreakdown: []
   });
 
   const [loading, setLoading] = useState(true);
@@ -42,13 +80,36 @@ const Dashboard = () => {
     setUserData({ email, role, firstName, lastName });
 
     // Fetch ticket statistics
-    fetchTicketStats();
-  }, []);
+    fetchTicketStats(viewMode);
+  }, [viewMode]); // Re-fetch when view mode changes
 
-  const fetchTicketStats = async () => {
+  const fetchTicketStats = async (currentViewMode: ViewMode) => {
     try {
+      setLoading(true);
       const token = localStorage.getItem('authToken');
-      const response = await fetch(`${API_CONFIG.API_URL}/tickets/dashboard-stats`, {
+      
+      // Get projectId from projectContext (if in project portal mode)
+      let projectId = '';
+      const projectContextStr = localStorage.getItem('projectContext');
+      if (projectContextStr) {
+        try {
+          const projectContext = JSON.parse(projectContextStr);
+          projectId = projectContext.projectId || '';
+        } catch (e) {
+          console.error('Error parsing projectContext:', e);
+        }
+      }
+      
+      // Build URL with projectId and viewMode parameters
+      const params = new URLSearchParams();
+      if (projectId) params.append('projectId', projectId);
+      params.append('viewMode', currentViewMode);
+      
+      const url = `${API_CONFIG.API_URL}/tickets/dashboard-stats?${params.toString()}`;
+      
+      console.log('📊 Dashboard: Fetching stats with viewMode:', currentViewMode, 'projectId:', projectId || 'none');
+      
+      const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -56,7 +117,17 @@ const Dashboard = () => {
 
       if (response.ok) {
         const data = await response.json();
-        setTicketStats(data);
+        console.log('📊 Dashboard: Received data:', data);
+        setTicketStats({
+          ...data,
+          closed: data.closed || 0,
+          highPriority: data.highPriority || 0,
+          mediumPriority: data.mediumPriority || 0,
+          lowPriority: data.lowPriority || 0,
+          teamBreakdown: data.teamBreakdown || []
+        });
+      } else {
+        console.error('Failed to fetch dashboard stats:', response.status);
       }
     } catch (error) {
       console.error('Error fetching ticket stats:', error);
@@ -65,13 +136,27 @@ const Dashboard = () => {
     }
   };
 
+  const handleViewModeChange = (newMode: ViewMode) => {
+    console.log('📊 Dashboard: Switching view mode from', viewMode, 'to', newMode);
+    setViewMode(newMode);
+  };
+
   return (
     <DashboardLayout>
       <div style={{ padding: '20px' }}>
-        <ModuleHeader
-          title="Dashboard"
-          subtitle="Overview of your work"
-        />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <ModuleHeader
+            title="Dashboard"
+            subtitle={`Overview of ${viewMode === 'self' ? 'your' : viewMode === 'team' ? 'your team\'s' : viewMode === 'hierarchy' ? 'your hierarchy\'s' : 'all'} work`}
+          />
+          
+          {/* View Mode Selector */}
+          <ViewModeSelector
+            value={viewMode}
+            onChange={handleViewModeChange}
+            disabled={loading}
+          />
+        </div>
 
         {/* Stats Cards */}
         <div style={{
@@ -115,7 +200,35 @@ const Dashboard = () => {
               {loading ? '-' : ticketStats.resolved}
             </p>
           </div>
+
+          <div style={{
+            background: 'white',
+            borderRadius: '8px',
+            padding: '20px',
+            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)'
+          }}>
+            <p style={{ fontSize: '14px', color: '#6b7280', marginBottom: '8px' }}>Closed</p>
+            <p style={{ fontSize: '32px', fontWeight: 'bold', color: '#6b7280' }}>
+              {loading ? '-' : ticketStats.closed}
+            </p>
+          </div>
         </div>
+
+        {/* Team Breakdown - Show only if permission exists and data available */}
+        {hasPermission(PERMISSIONS.DASHBOARD_VIEW_TEAM_BREAKDOWN) && 
+         ticketStats.teamBreakdown && 
+         ticketStats.teamBreakdown.length > 0 && (
+          <div style={{ marginBottom: '24px' }}>
+            <TeamBreakdown
+              teamMembers={ticketStats.teamBreakdown}
+              loading={loading}
+              onMemberClick={(userId) => {
+                console.log('Team member clicked:', userId);
+                // TODO: Navigate to tickets filtered by user
+              }}
+            />
+          </div>
+        )}
 
         {/* Recent Activity */}
         <div style={{
