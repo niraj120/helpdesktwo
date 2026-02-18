@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import EmailConfig from '../models/EmailConfig';
+import ProjectEmailConfig from '../models/ProjectEmailConfig';
 import EmailLog from '../models/EmailLog';
 import { Project } from '../models/Project';
 import { decrypt, isEncrypted } from './encryption';
@@ -56,25 +57,56 @@ const logEmail = async (params: {
 // Supports direct emailConfigId lookup or fallback to projectId
 const getEmailTransporter = async (configIdOrProjectId?: string) => {
   try {
-    let emailConfig = null;
+    let emailConfig: any = null;
+    let isProjectEmailConfig = false;
     
     // Check if the provided ID is a valid ObjectId (could be emailConfigId or projectId)
     if (configIdOrProjectId) {
-      // Try to find by direct _id first (emailConfigId)
-      emailConfig = await EmailConfig.findById(configIdOrProjectId).exec();
+      // First try ProjectEmailConfig (newer model for ticket emails)
+      emailConfig = await ProjectEmailConfig.findById(configIdOrProjectId).exec();
+      if (emailConfig) {
+        isProjectEmailConfig = true;
+        console.log(`📧 Found ProjectEmailConfig: ${emailConfig.emailAddress}`);
+      }
       
-      // If not found, try by projectId
+      // If not found, try legacy EmailConfig by direct _id
+      if (!emailConfig) {
+        emailConfig = await EmailConfig.findById(configIdOrProjectId).exec();
+      }
+      
+      // If still not found, try by projectId in ProjectEmailConfig
+      if (!emailConfig) {
+        emailConfig = await ProjectEmailConfig.findOne({ projectId: configIdOrProjectId, isEnabled: true }).exec();
+        if (emailConfig) {
+          isProjectEmailConfig = true;
+          console.log(`📧 Found ProjectEmailConfig by projectId: ${emailConfig.emailAddress}`);
+        }
+      }
+      
+      // Try by projectId in EmailConfig
       if (!emailConfig) {
         emailConfig = await EmailConfig.findOne({ projectId: configIdOrProjectId, enabled: true }).exec();
       }
     }
     
-    // Final fallback: any enabled config
+    // Final fallback: any enabled config (prefer ProjectEmailConfig)
     if (!emailConfig) {
-      emailConfig = await EmailConfig.findOne({ enabled: true }).exec();
+      emailConfig = await ProjectEmailConfig.findOne({ isEnabled: true }).exec();
+      if (emailConfig) {
+        isProjectEmailConfig = true;
+      } else {
+        emailConfig = await EmailConfig.findOne({ enabled: true }).exec();
+      }
     }
 
-    if (!emailConfig || !emailConfig.smtpHost || !emailConfig.smtpUser || !emailConfig.smtpPassword) {
+    // Handle field name differences between ProjectEmailConfig and EmailConfig
+    const smtpHost = isProjectEmailConfig ? emailConfig?.smtpHost : emailConfig?.smtpHost;
+    const smtpUser = isProjectEmailConfig ? emailConfig?.smtpUsername : emailConfig?.smtpUser;
+    const smtpPasswordField = isProjectEmailConfig ? emailConfig?.smtpPassword : emailConfig?.smtpPassword;
+    const smtpPort = emailConfig?.smtpPort;
+    const smtpSecure = emailConfig?.smtpSecure;
+
+    if (!emailConfig || !smtpHost || !smtpUser || !smtpPasswordField) {
       console.log('⚠️  Email configuration not found or incomplete, using simulation mode');
       return null;
     }
@@ -103,9 +135,19 @@ const getEmailTransporter = async (configIdOrProjectId?: string) => {
       console.log('✅ Connection restored successfully');
     }
 
-    // Decrypt SMTP password if it's encrypted
-    let smtpPassword = emailConfig.smtpPassword;
-    if (isEncrypted(smtpPassword)) {
+    // Decrypt SMTP password - use model method for ProjectEmailConfig, or manual decrypt for EmailConfig
+    let smtpPassword = smtpPasswordField;
+    if (isProjectEmailConfig && emailConfig.getDecryptedSmtpPassword) {
+      // ProjectEmailConfig has its own decrypt method
+      try {
+        smtpPassword = emailConfig.getDecryptedSmtpPassword();
+        console.log(`🔓 Used ProjectEmailConfig.getDecryptedSmtpPassword()`);
+      } catch (error) {
+        console.error('Failed to decrypt SMTP password using model method:', error);
+        return null;
+      }
+    } else if (isEncrypted(smtpPassword)) {
+      // EmailConfig uses encryption.ts decrypt
       try {
         smtpPassword = decrypt(smtpPassword);
       } catch (error) {
@@ -128,11 +170,11 @@ const getEmailTransporter = async (configIdOrProjectId?: string) => {
     }
 
     return nodemailer.createTransport({
-      host: emailConfig.smtpHost,
-      port: emailConfig.smtpPort || 587,
-      secure: emailConfig.smtpSecure || false,
+      host: smtpHost,
+      port: smtpPort || 587,
+      secure: smtpSecure || false,
       auth: {
-        user: emailConfig.smtpUser,
+        user: smtpUser,
         pass: smtpPassword,
       },
     });
@@ -1528,31 +1570,48 @@ export const sendTicketReplyEmail = async (params: {
     console.log(`📦 Project ID: ${params.projectId || 'not provided'}`);
     console.log(`📧 Email Config ID: ${params.emailConfigId || 'not provided'}`);
 
-    // Priority: 1. Use specific emailConfigId (same config that received the original email)
-    //          2. Fallback to any enabled config for the project
-    //          3. Fallback to any enabled config
+    // Priority: 1. Use specific emailConfigId from ProjectEmailConfig (same config that received the original email)
+    //          2. Fallback to ProjectEmailConfig for the project
+    //          3. Fallback to EmailConfig for the project
+    //          4. Fallback to any enabled config
     if (params.emailConfigId) {
-      emailConfig = await EmailConfig.findById(params.emailConfigId);
+      // First try ProjectEmailConfig (ticket email configs)
+      emailConfig = await ProjectEmailConfig.findById(params.emailConfigId);
       if (emailConfig) {
-        console.log(`   ✅ Using specific email config: ${emailConfig.fromEmail || emailConfig.smtpUser}`);
+        console.log(`   ✅ Using ProjectEmailConfig: ${emailConfig.emailAddress || emailConfig.smtpUsername}`);
       } else {
-        console.log(`   ⚠️ Email config ${params.emailConfigId} not found, trying project fallback`);
+        // Fallback to legacy EmailConfig
+        emailConfig = await EmailConfig.findById(params.emailConfigId);
+        if (emailConfig) {
+          console.log(`   ✅ Using EmailConfig: ${emailConfig.fromEmail || emailConfig.smtpUser}`);
+        } else {
+          console.log(`   ⚠️ Email config ${params.emailConfigId} not found in either collection, trying project fallback`);
+        }
       }
     }
     
-    // Fallback: Use project's email config
+    // Fallback: Use project's email config from ProjectEmailConfig
     if (!emailConfig && params.projectId) {
-      emailConfig = await EmailConfig.findOne({ projectId: params.projectId, enabled: true });
+      emailConfig = await ProjectEmailConfig.findOne({ projectId: params.projectId, isEnabled: true });
       if (emailConfig) {
-        console.log(`   ℹ️ Using project email config: ${emailConfig.fromEmail || emailConfig.smtpUser}`);
+        console.log(`   ℹ️ Using project's ProjectEmailConfig: ${emailConfig.emailAddress || emailConfig.smtpUsername}`);
+      } else {
+        // Try legacy EmailConfig
+        emailConfig = await EmailConfig.findOne({ projectId: params.projectId, enabled: true });
+        if (emailConfig) {
+          console.log(`   ℹ️ Using project's EmailConfig: ${emailConfig.fromEmail || emailConfig.smtpUser}`);
+        }
       }
     }
     
     // Final fallback: Use any enabled config
     if (!emailConfig) {
-      emailConfig = await EmailConfig.findOne({ enabled: true });
+      emailConfig = await ProjectEmailConfig.findOne({ isEnabled: true });
+      if (!emailConfig) {
+        emailConfig = await EmailConfig.findOne({ enabled: true });
+      }
       if (emailConfig) {
-        console.log(`   ⚠️ Using fallback email config: ${emailConfig.fromEmail || emailConfig.smtpUser}`);
+        console.log(`   ⚠️ Using fallback email config: ${(emailConfig as any).emailAddress || (emailConfig as any).fromEmail || (emailConfig as any).smtpUser || (emailConfig as any).smtpUsername}`);
       }
     }
     
@@ -1567,9 +1626,10 @@ export const sendTicketReplyEmail = async (params: {
 
     // Generate Message-ID for this reply
     const replyMessageId = `<ticket-${params.ticketNumber}-reply-${Date.now()}@sac-helpdesk.com>`;
-    const fromEmail = emailConfig?.fromEmail || emailConfig?.smtpUser || params.agentEmail || 'support@sac-helpdesk.com';
+    // Handle both ProjectEmailConfig (emailAddress, smtpUsername) and EmailConfig (fromEmail, smtpUser) field names
+    const fromEmail = (emailConfig as any)?.emailAddress || (emailConfig as any)?.fromEmail || (emailConfig as any)?.smtpUsername || (emailConfig as any)?.smtpUser || params.agentEmail || 'support@sac-helpdesk.com';
     // Use only email config's fromName - don't show agent name to customer
-    const fromName = emailConfig?.fromName || 'Support';
+    const fromName = (emailConfig as any)?.fromName || 'Support';
 
     console.log(`📧 [EMAIL SERVICE] From email resolved to: ${fromEmail} (name: ${fromName})`);
     console.log(`   EmailConfig found: ${!!emailConfig}`);
