@@ -3,7 +3,7 @@ import { User } from '../models/User';
 import { Project } from '../models/Project';
 import ProjectEmailConfig from '../models/ProjectEmailConfig';
 import { Category } from '../models/Category';
-import { Priority } from '../models/master-data/Priority';
+import SLARule from '../models/sla-module/SLARule';
 import { ParsedEmailData } from './emailParser';
 import { autoAssignTicket } from './ticketAutoAssignment';
 import { sendTicketCreatedEmail, sendAgentNewReplyNotification } from './emailService';
@@ -148,36 +148,40 @@ function extractPriorityFromEmail(parsedEmail: ParsedEmailData): string | null {
 }
 
 /**
- * Get project's default priority
- * Returns the priority marked as isDefault, or first active priority, or 'MEDIUM' fallback
+ * Get project's default priority from SLA Rules
+ * Returns the first active SLA rule's name for the project, or 'Normal' fallback
  */
 async function getProjectDefaultPriority(projectId: mongoose.Types.ObjectId): Promise<string> {
-  // Try to find default priority for the project
-  let defaultPriority = await Priority.findOne({
-    projectId: projectId,
-    isDefault: true,
-    isActive: true
-  });
+  console.log(`      🔍 Looking for SLA rule with projectIds containing: ${projectId}`);
   
-  if (defaultPriority) {
-    console.log(`      ✓ Using project's default priority: ${defaultPriority.code}`);
-    return defaultPriority.code;
+  // Find first active SLA rule for the project (sorted by name for consistency)
+  // Use $in operator since projectIds is an array
+  const slaRule = await SLARule.findOne({
+    projectIds: { $in: [projectId] },
+    isActive: true
+  }).sort({ name: 1 });
+  
+  if (slaRule) {
+    // Use the SLA rule name as priority (e.g., "Normal", "High", etc.)
+    const priorityName = slaRule.name.toUpperCase();
+    console.log(`      ✓ Using SLA rule priority: ${priorityName}`);
+    return priorityName;
   }
   
-  // Fallback: Find first active priority for the project
-  defaultPriority = await Priority.findOne({
-    projectId: projectId,
+  // Fallback: Find any active SLA rule (global)
+  const globalSlaRule = await SLARule.findOne({
     isActive: true
-  }).sort({ order: 1 });
+  }).sort({ name: 1 });
   
-  if (defaultPriority) {
-    console.log(`      ✓ Using first active priority: ${defaultPriority.code}`);
-    return defaultPriority.code;
+  if (globalSlaRule) {
+    const priorityName = globalSlaRule.name.toUpperCase();
+    console.log(`      ✓ Using global SLA rule priority: ${priorityName}`);
+    return priorityName;
   }
   
   // Final fallback
-  console.log(`      ⚠️ No priority found for project, using MEDIUM fallback`);
-  return 'MEDIUM';
+  console.log(`      ⚠️ No SLA rule found, using NORMAL fallback`);
+  return 'NORMAL';
 }
 
 /**
