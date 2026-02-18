@@ -229,7 +229,7 @@ AddProjectForm contained 12 hardcoded `http://localhost:3003` URLs that work in 
 
 ### Error on Production
 ```
-GET https://helpdesk.hubblehox.ai:3001/ net::ERR_CONNECTION_TIMED_OUT
+GET https://helpdesk.hubblehox.ai/ net::ERR_CONNECTION_TIMED_OUT
 client.ts:344
 ```
 
