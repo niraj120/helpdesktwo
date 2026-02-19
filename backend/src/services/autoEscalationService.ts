@@ -81,12 +81,12 @@ class AutoEscalationService {
         .populate('escalationPolicyId')
         .limit(100); // Process in batches
 
-      if (trackings.length === 0) {
-        console.log('ℹ️  No tickets due for auto-escalation');
-        return;
+      // Process policy-based auto-escalation if any trackings found
+      if (trackings.length > 0) {
+        console.log(`📋 Found ${trackings.length} ticket(s) due for policy-based auto-escalation`);
+      } else {
+        console.log('ℹ️  No policy-based tickets due for auto-escalation');
       }
-
-      console.log(`📋 Found ${trackings.length} ticket(s) due for auto-escalation`);
 
       let escalated = 0;
       let failed = 0;
