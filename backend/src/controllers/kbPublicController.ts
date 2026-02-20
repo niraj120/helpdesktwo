@@ -1,33 +1,73 @@
-import { Request, Response } from 'express';
-import KBArticle from '../models/KBArticle';
-import KBLevel from '../models/KBLevel';
-import KBArticleLevelMapping from '../models/KBArticleLevelMapping';
-import KBTable from '../models/KBTable';
-import mongoose from 'mongoose';
+import { Request, Response } from "express";
+import KBArticle from "../models/KBArticle";
+import KBLevel from "../models/KBLevel";
+import KBArticleLevelMapping from "../models/KBArticleLevelMapping";
+import KBTable from "../models/KBTable";
+import mongoose from "mongoose";
+
+/**
+ * Build visibility filter for KB articles based on user authentication and role
+ */
+function buildVisibilityFilter(req: Request): any {
+  const user = (req as any).user;
+
+  if (!user) {
+    // Unauthenticated user - can only see 'all' and 'public' articles
+    return {
+      $or: [
+        { visibility: { $exists: false } }, // Legacy articles without visibility field
+        { visibility: "all" },
+        { visibility: "public" },
+      ],
+    };
+  }
+
+  const userRoleId = user.roleId?.toString();
+
+  // Authenticated user - can see 'all', 'internal', and role-based articles
+  const visibilityConditions: any[] = [
+    { visibility: { $exists: false } }, // Legacy articles without visibility field
+    { visibility: "all" },
+    { visibility: "internal" },
+  ];
+
+  // Add role-based filter if user has a role
+  if (userRoleId) {
+    visibilityConditions.push({
+      visibility: "role_based",
+      visibleToRoles: new mongoose.Types.ObjectId(userRoleId),
+    });
+  }
+
+  return { $or: visibilityConditions };
+}
 
 /**
  * Get all public KB articles organized by levels
  */
-export const getPublicArticles = async (req: Request, res: Response): Promise<void> => {
+export const getPublicArticles = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { projectId, levelId, search } = req.query;
 
     // For super admin with 'all', skip project filter validation
-    const isAllProjects = projectId === 'all';
+    const isAllProjects = projectId === "all";
 
     if (!projectId) {
       res.status(400).json({
         success: false,
-        message: 'Project ID is required',
+        message: "Project ID is required",
       });
       return;
     }
 
     // Get all active levels for the project (or all projects for super admin)
     const levelsQuery: any = {
-      status: 'active',
+      status: "active",
     };
-    
+
     // Only filter by project if not 'all'
     if (!isAllProjects) {
       levelsQuery.projectIds = projectId;
@@ -37,10 +77,12 @@ export const getPublicArticles = async (req: Request, res: Response): Promise<vo
       levelsQuery._id = levelId;
     }
 
-    const levels = await KBLevel.find(levelsQuery).sort({ levelOrder: 1 }).lean();
+    const levels = await KBLevel.find(levelsQuery)
+      .sort({ levelOrder: 1 })
+      .lean();
 
     // OPTIMIZED: Batch fetch all data upfront instead of N+1 queries per level
-    const levelIds = levels.map(l => l._id);
+    const levelIds = levels.map((l) => l._id);
 
     // Batch fetch all mappings for all levels in one query
     const allMappings = await KBArticleLevelMapping.find({
@@ -48,19 +90,19 @@ export const getPublicArticles = async (req: Request, res: Response): Promise<vo
     }).lean();
 
     // Get all unique article IDs
-    const allArticleIds = [...new Set(allMappings.map(m => m.articleId.toString()))];
+    const allArticleIds = [
+      ...new Set(allMappings.map((m) => m.articleId.toString())),
+    ];
 
     // Build article filter for batch fetch
     // Note: Most articles don't have publishType field, so we treat missing/null as "immediate" (published)
-    const articleFilter: any = {
-      _id: { $in: allArticleIds },
-      status: 'active',
+    const publishTypeFilter = {
       $or: [
         { publishType: { $exists: false } }, // No publishType = immediately published
         { publishType: null }, // Null publishType = immediately published
-        { publishType: 'immediate' },
+        { publishType: "immediate" },
         {
-          publishType: 'scheduled',
+          publishType: "scheduled",
           scheduledPublishDate: { $lte: new Date() },
           $or: [
             { scheduledUnpublishDate: { $gte: new Date() } },
@@ -70,7 +112,16 @@ export const getPublicArticles = async (req: Request, res: Response): Promise<vo
         },
       ],
     };
-    
+
+    // Build visibility filter based on user authentication and role
+    const visibilityFilter = buildVisibilityFilter(req);
+
+    const articleFilter: any = {
+      _id: { $in: allArticleIds },
+      status: "active",
+      $and: [publishTypeFilter, visibilityFilter],
+    };
+
     if (!isAllProjects) {
       articleFilter.projectIds = projectId;
     }
@@ -81,28 +132,30 @@ export const getPublicArticles = async (req: Request, res: Response): Promise<vo
 
     // Batch fetch all articles (exclude htmlContent in list for performance)
     const allArticles = await KBArticle.find(articleFilter)
-      .select('documentName documentType pdfUrl externalUrl description showNewTag isFeatured author publishedAt viewsCount tags displayOrder')
+      .select(
+        "documentName documentType pdfUrl externalUrl description showNewTag isFeatured author publishedAt viewsCount tags displayOrder",
+      )
       .sort({ isFeatured: -1, displayOrder: 1, publishedAt: -1 })
       .lean();
 
     // Batch fetch all tables for all levels
     const tablesQuery: any = {
       levelIds: { $in: levelIds },
-      status: 'active',
+      status: "active",
     };
     if (!isAllProjects) {
       tablesQuery.projectId = projectId;
     }
-    
+
     const allTables = await KBTable.find(tablesQuery)
-      .select('tableName description status levelIds displayStyle dataSource')
+      .select("tableName description status levelIds displayStyle dataSource")
       .sort({ tableName: 1 })
       .lean();
 
     // Create lookup maps for O(1) access
-    const articleMap = new Map(allArticles.map(a => [a._id.toString(), a]));
+    const articleMap = new Map(allArticles.map((a) => [a._id.toString(), a]));
     const mappingsByLevel = new Map<string, string[]>();
-    allMappings.forEach(m => {
+    allMappings.forEach((m) => {
       const levelId = m.levelId.toString();
       if (!mappingsByLevel.has(levelId)) {
         mappingsByLevel.set(levelId, []);
@@ -111,13 +164,13 @@ export const getPublicArticles = async (req: Request, res: Response): Promise<vo
     });
 
     // Map levels with their articles and tables (no additional queries)
-    const levelsWithArticles = levels.map(level => {
+    const levelsWithArticles = levels.map((level) => {
       const levelIdStr = level._id.toString();
       const articleIdsForLevel = mappingsByLevel.get(levelIdStr) || [];
-      
+
       // Get articles for this level from the map
       const articles = articleIdsForLevel
-        .map(id => articleMap.get(id))
+        .map((id) => articleMap.get(id))
         .filter(Boolean)
         .sort((a: any, b: any) => {
           // Featured articles first
@@ -129,8 +182,8 @@ export const getPublicArticles = async (req: Request, res: Response): Promise<vo
         });
 
       // Get tables that include this level
-      const tables = allTables.filter(t => 
-        t.levelIds?.some((lid: any) => lid.toString() === levelIdStr)
+      const tables = allTables.filter((t) =>
+        t.levelIds?.some((lid: any) => lid.toString() === levelIdStr),
       );
 
       return {
@@ -157,8 +210,8 @@ export const getPublicArticles = async (req: Request, res: Response): Promise<vo
           tableName: table.tableName,
           description: table.description,
           status: table.status,
-          displayStyle: table.displayStyle || 'table',
-          dataSource: table.dataSource || 'manual',
+          displayStyle: table.displayStyle || "table",
+          dataSource: table.dataSource || "manual",
         })),
       };
     });
@@ -170,10 +223,10 @@ export const getPublicArticles = async (req: Request, res: Response): Promise<vo
       },
     });
   } catch (error: any) {
-    console.error('Get public KB articles error:', error);
+    console.error("Get public KB articles error:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch knowledge base articles',
+      message: "Failed to fetch knowledge base articles",
       error: error.message,
     });
   }
@@ -182,7 +235,10 @@ export const getPublicArticles = async (req: Request, res: Response): Promise<vo
 /**
  * Get single public article with view increment
  */
-export const getPublicArticleById = async (req: Request, res: Response): Promise<void> => {
+export const getPublicArticleById = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { id } = req.params;
     const { projectId } = req.query;
@@ -190,7 +246,7 @@ export const getPublicArticleById = async (req: Request, res: Response): Promise
     if (!mongoose.Types.ObjectId.isValid(id)) {
       res.status(400).json({
         success: false,
-        message: 'Invalid article ID',
+        message: "Invalid article ID",
       });
       return;
     }
@@ -198,21 +254,27 @@ export const getPublicArticleById = async (req: Request, res: Response): Promise
     if (!projectId) {
       res.status(400).json({
         success: false,
-        message: 'Project ID is required',
+        message: "Project ID is required",
       });
       return;
     }
 
-    const article = await KBArticle.findOne({
+    // Build visibility filter based on user authentication and role
+    const visibilityFilter = buildVisibilityFilter(req);
+    
+    const articleQuery: any = {
       _id: id,
-      status: 'active',
+      status: "active",
       projectIds: projectId,
-    }).select('-createdBy -updatedBy');
+      ...visibilityFilter,
+    };
+    
+    const article = await KBArticle.findOne(articleQuery).select("-createdBy -updatedBy");
 
     if (!article) {
       res.status(404).json({
         success: false,
-        message: 'Article not found or not available',
+        message: "Article not found or not available",
       });
       return;
     }
@@ -224,16 +286,17 @@ export const getPublicArticleById = async (req: Request, res: Response): Promise
     // If publishType is missing/null, treat as immediately published (default)
     const isPublished =
       !articleData.publishType ||
-      articleData.publishType === 'immediate' ||
-      (articleData.publishType === 'scheduled' &&
+      articleData.publishType === "immediate" ||
+      (articleData.publishType === "scheduled" &&
         articleData.scheduledPublishDate &&
         articleData.scheduledPublishDate <= new Date() &&
-        (!articleData.scheduledUnpublishDate || articleData.scheduledUnpublishDate >= new Date()));
+        (!articleData.scheduledUnpublishDate ||
+          articleData.scheduledUnpublishDate >= new Date()));
 
     if (!isPublished) {
       res.status(404).json({
         success: false,
-        message: 'Article is not yet published',
+        message: "Article is not yet published",
       });
       return;
     }
@@ -241,7 +304,7 @@ export const getPublicArticleById = async (req: Request, res: Response): Promise
     // Get level mappings
     const mappings = await KBArticleLevelMapping.find({
       articleId: id,
-    }).populate('levelId', 'levelName levelOrder');
+    }).populate("levelId", "levelName levelOrder");
 
     // Increment view count
     article.viewsCount += 1;
@@ -253,13 +316,13 @@ export const getPublicArticleById = async (req: Request, res: Response): Promise
       articleId: { $ne: id },
     })
       .limit(5)
-      .distinct('articleId');
+      .distinct("articleId");
 
     const relatedArticles = await KBArticle.find({
       _id: { $in: relatedArticleIds },
-      status: 'active',
+      status: "active",
     })
-      .select('documentName documentType isFeatured')
+      .select("documentName documentType isFeatured")
       .limit(5)
       .lean();
 
@@ -282,10 +345,10 @@ export const getPublicArticleById = async (req: Request, res: Response): Promise
       },
     });
   } catch (error: any) {
-    console.error('Get public article by ID error:', error);
+    console.error("Get public article by ID error:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch article',
+      message: "Failed to fetch article",
       error: error.message,
     });
   }
@@ -294,25 +357,28 @@ export const getPublicArticleById = async (req: Request, res: Response): Promise
 /**
  * Search public articles
  */
-export const searchPublicArticles = async (req: Request, res: Response): Promise<void> => {
+export const searchPublicArticles = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { q, projectId } = req.query;
 
     if (!q || !projectId) {
       res.status(400).json({
         success: false,
-        message: 'Search query and project ID are required',
+        message: "Search query and project ID are required",
       });
       return;
     }
 
     const searchTerm = q as string;
-    const searchRegex = new RegExp(searchTerm, 'i'); // Case-insensitive search
-    const isAllProjects = projectId === 'all';
+    const searchRegex = new RegExp(searchTerm, "i"); // Case-insensitive search
+    const isAllProjects = projectId === "all";
 
     // Search across multiple fields including HTML content
     const filter: any = {
-      status: 'active',
+      status: "active",
       $or: [
         { documentName: searchRegex },
         { description: searchRegex },
@@ -321,7 +387,7 @@ export const searchPublicArticles = async (req: Request, res: Response): Promise
         { tags: searchRegex },
       ],
     };
-    
+
     // Only filter by project if not 'all'
     if (!isAllProjects) {
       filter.projectIds = projectId;
@@ -329,28 +395,33 @@ export const searchPublicArticles = async (req: Request, res: Response): Promise
 
     // Published articles only
     // Note: Most articles don't have publishType field, so we treat missing/null as "immediate" (published)
-    filter.$and = [
-      {
-        $or: [
-          { publishType: { $exists: false } },
-          { publishType: null },
-          { publishType: 'immediate' },
-          {
-            publishType: 'scheduled',
-            scheduledPublishDate: { $lte: new Date() },
-            $or: [
-              { scheduledUnpublishDate: { $gte: new Date() } },
-              { scheduledUnpublishDate: null },
-              { scheduledUnpublishDate: { $exists: false } },
-            ],
-          },
-        ],
-      },
-    ];
+    const publishTypeFilter = {
+      $or: [
+        { publishType: { $exists: false } },
+        { publishType: null },
+        { publishType: "immediate" },
+        {
+          publishType: "scheduled",
+          scheduledPublishDate: { $lte: new Date() },
+          $or: [
+            { scheduledUnpublishDate: { $gte: new Date() } },
+            { scheduledUnpublishDate: null },
+            { scheduledUnpublishDate: { $exists: false } },
+          ],
+        },
+      ],
+    };
+    
+    // Build visibility filter based on user authentication and role
+    const visibilityFilter = buildVisibilityFilter(req);
+    
+    filter.$and = [publishTypeFilter, visibilityFilter];
 
     const articles = await KBArticle.find(filter)
-      .select('documentName documentType pdfUrl externalUrl htmlContent description showNewTag isFeatured author publishedAt viewsCount tags')
-      .populate('levels', 'levelName levelOrder levelIcon')
+      .select(
+        "documentName documentType pdfUrl externalUrl htmlContent description showNewTag isFeatured author publishedAt viewsCount tags",
+      )
+      .populate("levels", "levelName levelOrder levelIcon")
       .sort({ isFeatured: -1, publishedAt: -1 })
       .limit(50)
       .lean();
@@ -360,10 +431,10 @@ export const searchPublicArticles = async (req: Request, res: Response): Promise
       data: articles,
     });
   } catch (error: any) {
-    console.error('Search public articles error:', error);
+    console.error("Search public articles error:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to search articles',
+      message: "Failed to search articles",
       error: error.message,
     });
   }

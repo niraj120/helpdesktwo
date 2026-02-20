@@ -1,13 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import ReactQuill from 'react-quill';
-import 'react-quill/dist/quill.snow.css';
-import { X, Upload, Calendar } from 'lucide-react';
-import { API_CONFIG } from '../../config/constants';
+import React, { useState, useEffect } from "react";
+import axios from "axios";
+import ReactQuill from "react-quill";
+import "react-quill/dist/quill.snow.css";
+import { X, Upload, Calendar, Eye, Users } from "lucide-react";
+import { API_CONFIG } from "../../config/constants";
 
 interface KBLevel {
   _id: string;
   levelName: string;
+}
+
+interface Role {
+  _id: string;
+  name: string;
+  code?: string;
 }
 
 interface KBArticleFormProps {
@@ -22,68 +28,86 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
   onClose,
 }) => {
   const [levels, setLevels] = useState<KBLevel[]>([]);
-  
+  const [roles, setRoles] = useState<Role[]>([]);
+
   // Initialize formData directly from article prop
   const [formData, setFormData] = useState(() => {
     if (article) {
-      console.log('🎯 Initializing form with article:', article);
+      console.log("🎯 Initializing form with article:", article);
       return {
-        documentName: article.documentName || '',
-        documentType: article.documentType || 'both',
-        description: article.description || '',
-        externalUrl: article.externalUrl || '',
-        htmlContent: article.htmlContent || '',
+        documentName: article.documentName || "",
+        documentType: article.documentType || "both",
+        description: article.description || "",
+        externalUrl: article.externalUrl || "",
+        htmlContent: article.htmlContent || "",
         publishedDate: article.publishedDate
           ? new Date(article.publishedDate).toISOString().slice(0, 16)
-          : '',
+          : "",
         levelIds: article.levels?.map((l: any) => l._id) || [],
         tags: article.tags || [],
-        author: article.author || '',
-        status: article.status || 'active',
+        author: article.author || "",
+        status: article.status || "active",
         isFeatured: article.isFeatured || false,
-        showNewTag: article.showNewTag !== undefined ? article.showNewTag : true,
+        showNewTag:
+          article.showNewTag !== undefined ? article.showNewTag : true,
         displayOrder: article.displayOrder || 0,
+        visibility: article.visibility || "all",
+        visibleToRoles: article.visibleToRoles || [],
       };
     }
-    console.log('🎯 Initializing form for new article');
+    console.log("🎯 Initializing form for new article");
     return {
-      documentName: '',
-      documentType: 'both' as 'pdf' | 'html' | 'both' | 'link',
-      description: '',
-      externalUrl: '',
-      htmlContent: '',
-      publishedDate: '',
+      documentName: "",
+      documentType: "both" as "pdf" | "html" | "both" | "link",
+      description: "",
+      externalUrl: "",
+      htmlContent: "",
+      publishedDate: "",
       levelIds: [] as string[],
       tags: [] as string[],
-      author: '',
-      status: 'active' as 'active' | 'inactive',
+      author: "",
+      status: "active" as "active" | "inactive",
       isFeatured: false,
       showNewTag: true,
       displayOrder: 0,
+      visibility: "all" as "all" | "internal" | "public" | "role_based",
+      visibleToRoles: [] as string[],
     };
   });
-  
+
   const [pdfFile, setPdfFile] = useState<File | null>(null);
-  const [tagInput, setTagInput] = useState('');
+  const [tagInput, setTagInput] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     fetchLevels();
+    fetchRoles();
   }, [projectId]);
 
   const fetchLevels = async () => {
     try {
-      const token = localStorage.getItem('authToken');
-      const response = await axios.get(
-        `${API_CONFIG.API_URL}/kb/levels`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-          params: { projectId, status: 'active' },
-        }
-      );
+      const token = localStorage.getItem("authToken");
+      const response = await axios.get(`${API_CONFIG.API_URL}/kb/levels`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { projectId, status: "active" },
+      });
       setLevels(response.data.data || []);
     } catch (error) {
-      console.error('Failed to fetch levels:', error);
+      console.error("Failed to fetch levels:", error);
+    }
+  };
+
+  const fetchRoles = async () => {
+    try {
+      const token = localStorage.getItem("authToken");
+      const response = await axios.get(`${API_CONFIG.API_URL}/roles`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { projectId },
+      });
+      const rolesData = response.data.data || response.data || [];
+      setRoles(rolesData);
+    } catch (error) {
+      console.error("Failed to fetch roles:", error);
     }
   };
 
@@ -92,45 +116,50 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
     setLoading(true);
 
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const formDataToSend = new FormData();
 
       // Append all fields
-      formDataToSend.append('documentName', formData.documentName);
-      formDataToSend.append('documentType', formData.documentType);
-      formDataToSend.append('projectIds', JSON.stringify([projectId]));
-      formDataToSend.append('levelIds', JSON.stringify(formData.levelIds));
-      formDataToSend.append('status', formData.status);
-      formDataToSend.append('isFeatured', formData.isFeatured.toString());
-      formDataToSend.append('showNewTag', formData.showNewTag.toString());
-      formDataToSend.append('displayOrder', formData.displayOrder.toString());
+      formDataToSend.append("documentName", formData.documentName);
+      formDataToSend.append("documentType", formData.documentType);
+      formDataToSend.append("projectIds", JSON.stringify([projectId]));
+      formDataToSend.append("levelIds", JSON.stringify(formData.levelIds));
+      formDataToSend.append("status", formData.status);
+      formDataToSend.append("isFeatured", formData.isFeatured.toString());
+      formDataToSend.append("showNewTag", formData.showNewTag.toString());
+      formDataToSend.append("displayOrder", formData.displayOrder.toString());
+      formDataToSend.append("visibility", formData.visibility);
+      formDataToSend.append(
+        "visibleToRoles",
+        JSON.stringify(formData.visibleToRoles),
+      );
 
       if (formData.description) {
-        formDataToSend.append('description', formData.description);
+        formDataToSend.append("description", formData.description);
       }
 
       if (formData.publishedDate) {
-        formDataToSend.append('publishedDate', formData.publishedDate);
+        formDataToSend.append("publishedDate", formData.publishedDate);
       }
 
       if (formData.externalUrl) {
-        formDataToSend.append('externalUrl', formData.externalUrl);
+        formDataToSend.append("externalUrl", formData.externalUrl);
       }
 
       if (formData.htmlContent) {
-        formDataToSend.append('htmlContent', formData.htmlContent);
+        formDataToSend.append("htmlContent", formData.htmlContent);
       }
 
       if (formData.tags.length > 0) {
-        formDataToSend.append('tags', JSON.stringify(formData.tags));
+        formDataToSend.append("tags", JSON.stringify(formData.tags));
       }
 
       if (formData.author) {
-        formDataToSend.append('author', formData.author);
+        formDataToSend.append("author", formData.author);
       }
 
       if (pdfFile) {
-        formDataToSend.append('pdf', pdfFile);
+        formDataToSend.append("pdf", pdfFile);
       }
 
       if (article) {
@@ -141,29 +170,25 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
           {
             headers: {
               Authorization: `Bearer ${token}`,
-              'Content-Type': 'multipart/form-data',
+              "Content-Type": "multipart/form-data",
             },
-          }
+          },
         );
       } else {
         // Create new article
-        await axios.post(
-          `${API_CONFIG.API_URL}/kb/articles`,
-          formDataToSend,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'Content-Type': 'multipart/form-data',
-            },
-          }
-        );
+        await axios.post(`${API_CONFIG.API_URL}/kb/articles`, formDataToSend, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "multipart/form-data",
+          },
+        });
       }
 
-      alert('Article saved successfully!');
+      alert("Article saved successfully!");
       onClose();
     } catch (error: any) {
-      console.error('Failed to save article:', error);
-      alert(error.response?.data?.message || 'Failed to save article');
+      console.error("Failed to save article:", error);
+      alert(error.response?.data?.message || "Failed to save article");
     } finally {
       setLoading(false);
     }
@@ -175,7 +200,7 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
         ...formData,
         tags: [...formData.tags, tagInput.trim()],
       });
-      setTagInput('');
+      setTagInput("");
     }
   };
 
@@ -190,15 +215,20 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
     toolbar: [
       [{ header: [1, 2, 3, 4, 5, 6, false] }],
       [{ font: [] }],
-      [{ size: ['small', false, 'large', 'huge'] }],
-      ['bold', 'italic', 'underline', 'strike'],
+      [{ size: ["small", false, "large", "huge"] }],
+      ["bold", "italic", "underline", "strike"],
       [{ color: [] }, { background: [] }],
-      [{ script: 'sub' }, { script: 'super' }],
-      [{ list: 'ordered' }, { list: 'bullet' }, { indent: '-1' }, { indent: '+1' }],
+      [{ script: "sub" }, { script: "super" }],
+      [
+        { list: "ordered" },
+        { list: "bullet" },
+        { indent: "-1" },
+        { indent: "+1" },
+      ],
       [{ align: [] }],
-      ['blockquote', 'code-block'],
-      ['link', 'image', 'video'],
-      ['clean'],
+      ["blockquote", "code-block"],
+      ["link", "image", "video"],
+      ["clean"],
     ],
     clipboard: {
       matchVisual: false, // Preserve formatting when pasting
@@ -206,30 +236,38 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
   };
 
   const quillFormats = [
-    'header', 'font', 'size',
-    'bold', 'italic', 'underline', 'strike',
-    'color', 'background',
-    'script',
-    'list', 'bullet', 'indent',
-    'align',
-    'blockquote', 'code-block',
-    'link', 'image', 'video'
+    "header",
+    "font",
+    "size",
+    "bold",
+    "italic",
+    "underline",
+    "strike",
+    "color",
+    "background",
+    "script",
+    "list",
+    "bullet",
+    "indent",
+    "align",
+    "blockquote",
+    "code-block",
+    "link",
+    "image",
+    "video",
   ];
 
   const [showHtmlSource, setShowHtmlSource] = useState(false);
-  const [htmlSource, setHtmlSource] = useState('');
+  const [htmlSource, setHtmlSource] = useState("");
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
       <div className="bg-white rounded-lg p-6 w-full max-w-4xl my-8 max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-2xl font-bold">
-            {article ? 'Edit Article' : 'Create New Article'}
+            {article ? "Edit Article" : "Create New Article"}
           </h2>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-gray-200 rounded"
-          >
+          <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded">
             <X size={24} />
           </button>
         </div>
@@ -282,18 +320,24 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
               onChange={(e) =>
                 setFormData({
                   ...formData,
-                  documentType: e.target.value as 'pdf' | 'html' | 'both' | 'link',
+                  documentType: e.target.value as
+                    | "pdf"
+                    | "html"
+                    | "both"
+                    | "link",
                 })
               }
               className="w-full border rounded px-3 py-2"
             >
               <option value="pdf">PDF Only</option>
               <option value="html">HTML Only</option>
-              <option value="both">Both PDF and HTML</option>              <option value="link">External Link</option>            </select>
+              <option value="both">Both PDF and HTML</option>{" "}
+              <option value="link">External Link</option>{" "}
+            </select>
           </div>
 
           {/* External URL - Only for link type */}
-          {formData.documentType === 'link' && (
+          {formData.documentType === "link" && (
             <div className="mb-4">
               <label className="block text-sm font-medium mb-1">
                 External URL *
@@ -315,10 +359,11 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
           )}
 
           {/* PDF Upload */}
-          {(formData.documentType === 'pdf' || formData.documentType === 'both') && (
+          {(formData.documentType === "pdf" ||
+            formData.documentType === "both") && (
             <div className="mb-4">
               <label className="block text-sm font-medium mb-1">
-                Upload PDF {formData.documentType === 'pdf' ? '*' : ''}
+                Upload PDF {formData.documentType === "pdf" ? "*" : ""}
               </label>
               <div className="flex items-center gap-2">
                 <input
@@ -349,11 +394,12 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
           )}
 
           {/* HTML Content */}
-          {(formData.documentType === 'html' || formData.documentType === 'both') && (
+          {(formData.documentType === "html" ||
+            formData.documentType === "both") && (
             <div className="mb-4">
               <div className="flex justify-between items-center mb-2">
                 <label className="block text-sm font-medium">
-                  HTML Content {formData.documentType === 'html' ? '*' : ''}
+                  HTML Content {formData.documentType === "html" ? "*" : ""}
                 </label>
                 <button
                   type="button"
@@ -371,23 +417,48 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
                 >
                   {showHtmlSource ? (
                     <>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                        />
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                        />
                       </svg>
                       Visual Editor
                     </>
                   ) : (
                     <>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"
+                        />
                       </svg>
                       HTML Source
                     </>
                   )}
                 </button>
               </div>
-              
+
               {showHtmlSource ? (
                 <div>
                   <textarea
@@ -397,7 +468,8 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
                     placeholder="Paste your HTML code here..."
                   />
                   <p className="text-xs text-gray-500 mt-1">
-                    💡 Tip: Paste HTML code directly. Switch to Visual Editor to see the result.
+                    💡 Tip: Paste HTML code directly. Switch to Visual Editor to
+                    see the result.
                   </p>
                 </div>
               ) : (
@@ -411,10 +483,11 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
                     modules={quillModules}
                     formats={quillFormats}
                     className="bg-white"
-                    style={{ height: '400px', marginBottom: '50px' }}
+                    style={{ height: "400px", marginBottom: "50px" }}
                   />
                   <p className="text-xs text-gray-500 mt-1">
-                    💡 Tip: Use the toolbar for formatting, or switch to HTML Source to paste raw HTML code.
+                    💡 Tip: Use the toolbar for formatting, or switch to HTML
+                    Source to paste raw HTML code.
                   </p>
                 </>
               )}
@@ -433,7 +506,10 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
                 </p>
               ) : (
                 levels.map((level) => (
-                  <label key={level._id} className="flex items-center gap-2 mb-2">
+                  <label
+                    key={level._id}
+                    className="flex items-center gap-2 mb-2"
+                  >
                     <input
                       type="checkbox"
                       checked={formData.levelIds.includes(level._id)}
@@ -447,7 +523,7 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
                           setFormData({
                             ...formData,
                             levelIds: formData.levelIds.filter(
-                              (id: string) => id !== level._id
+                              (id: string) => id !== level._id,
                             ),
                           });
                         }
@@ -490,7 +566,9 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
                 type="text"
                 value={tagInput}
                 onChange={(e) => setTagInput(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTag())}
+                onKeyPress={(e) =>
+                  e.key === "Enter" && (e.preventDefault(), handleAddTag())
+                }
                 className="flex-1 border rounded px-3 py-2"
                 placeholder="Add tag and press Enter"
               />
@@ -543,7 +621,7 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
                 onChange={(e) =>
                   setFormData({
                     ...formData,
-                    status: e.target.value as 'active' | 'inactive',
+                    status: e.target.value as "active" | "inactive",
                   })
                 }
                 className="w-full border rounded px-3 py-2"
@@ -566,7 +644,9 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
               </label>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Show "New" Tag</label>
+              <label className="block text-sm font-medium mb-1">
+                Show "New" Tag
+              </label>
               <label className="flex items-center gap-2 mt-2">
                 <input
                   type="checkbox"
@@ -602,6 +682,115 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
             />
           </div>
 
+          {/* Visibility Settings */}
+          <div className="mb-6 p-4 border rounded-lg bg-gray-50">
+            <div className="flex items-center gap-2 mb-3">
+              <Eye className="w-5 h-5 text-gray-600" />
+              <h3 className="font-medium">Visibility Settings</h3>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-1">
+                Who can view this article?
+              </label>
+              <select
+                value={formData.visibility}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    visibility: e.target.value as
+                      | "all"
+                      | "internal"
+                      | "public"
+                      | "role_based",
+                    visibleToRoles:
+                      e.target.value !== "role_based"
+                        ? []
+                        : formData.visibleToRoles,
+                  })
+                }
+                className="w-full border rounded px-3 py-2"
+              >
+                <option value="all">All Users (Everyone)</option>
+                <option value="public">
+                  Public Only (End Users / Students)
+                </option>
+                <option value="internal">Internal Only (Agents)</option>
+                <option value="role_based">
+                  Role-Based (Select specific roles)
+                </option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                {formData.visibility === "all" &&
+                  "This article will be visible to everyone."}
+                {formData.visibility === "public" &&
+                  "This article will only be visible to end users (students) on the public portal."}
+                {formData.visibility === "internal" &&
+                  "This article will only be visible to internal agents for ticket resolution."}
+                {formData.visibility === "role_based" &&
+                  "Select which roles can view this article below."}
+              </p>
+            </div>
+
+            {formData.visibility === "role_based" && (
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  <Users className="w-4 h-4 inline mr-1" />
+                  Select Roles
+                </label>
+                <div className="max-h-40 overflow-y-auto border rounded p-2 bg-white">
+                  {roles.length === 0 ? (
+                    <p className="text-sm text-gray-500 p-2">
+                      No roles found for this project
+                    </p>
+                  ) : (
+                    roles.map((role) => (
+                      <label
+                        key={role._id}
+                        className="flex items-center gap-2 p-2 hover:bg-gray-50 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={formData.visibleToRoles.includes(role._id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setFormData({
+                                ...formData,
+                                visibleToRoles: [
+                                  ...formData.visibleToRoles,
+                                  role._id,
+                                ],
+                              });
+                            } else {
+                              setFormData({
+                                ...formData,
+                                visibleToRoles: formData.visibleToRoles.filter(
+                                  (id: string) => id !== role._id,
+                                ),
+                              });
+                            }
+                          }}
+                          className="rounded"
+                        />
+                        <span className="text-sm">{role.name}</span>
+                        {role.code && (
+                          <span className="text-xs text-gray-400">
+                            ({role.code})
+                          </span>
+                        )}
+                      </label>
+                    ))
+                  )}
+                </div>
+                {formData.visibleToRoles.length > 0 && (
+                  <p className="text-xs text-blue-600 mt-1">
+                    {formData.visibleToRoles.length} role(s) selected
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Submit Buttons */}
           <div className="flex justify-end gap-2">
             <button
@@ -617,7 +806,7 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
               className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
               disabled={loading}
             >
-              {loading ? 'Saving...' : article ? 'Update' : 'Create'}
+              {loading ? "Saving..." : article ? "Update" : "Create"}
             </button>
           </div>
         </form>

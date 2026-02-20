@@ -1,63 +1,68 @@
-import { Response } from 'express';
-import { KnowledgeBaseArticle } from '../models/KnowledgeBaseArticle';
-import { AuthRequest } from '../middleware/auth';
+import { Response } from "express";
+import { KnowledgeBaseArticle } from "../models/KnowledgeBaseArticle";
+import { AuthRequest } from "../middleware/auth";
 
 // @desc    Get all KB articles for a project
 // @route   GET /api/kb/project/:projectId
 // @access  Public (for student portal) / Private (for admin)
 // OPTIMIZED: Added pagination and field projection
 export const getArticlesByProject = async (req: AuthRequest, res: Response) => {
-  console.log('🔍 [KB Controller] getArticlesByProject called');
-  
+  console.log("🔍 [KB Controller] getArticlesByProject called");
+
   try {
     const { projectId } = req.params;
-    const { category, search, status = 'published', page, limit, includeContent = 'false' } = req.query;
+    const {
+      category,
+      search,
+      status = "published",
+      page,
+      limit,
+      includeContent = "false",
+    } = req.query;
 
-    const query: any = { 
+    const query: any = {
       projectId,
-      isActive: true
+      isActive: true,
     };
 
     // If user is authenticated, they can see all statuses
     if (req.user) {
       // Only filter by status if it's not "all"
-      if (status && status !== 'all') {
+      if (status && status !== "all") {
         query.status = status;
       }
       // If status is "all" or not provided, don't filter by status (show all)
     } else {
       // Public access only sees published articles
-      query.status = 'published';
+      query.status = "published";
     }
 
     if (category) query.category = category;
-    
+
     if (search) {
       query.$text = { $search: search as string };
     }
 
     // Field projection - exclude large content field in list view unless explicitly requested
-    const selectFields = includeContent === 'true' 
-      ? '-__v'
-      : '-content -__v'; // Exclude content for list view (performance optimization)
+    const selectFields = includeContent === "true" ? "-__v" : "-content -__v"; // Exclude content for list view (performance optimization)
 
     // Check if pagination is requested
     const isPaginated = page !== undefined || limit !== undefined;
-    
+
     if (isPaginated) {
       const pageNum = parseInt(page as string) || 1;
       const limitNum = Math.min(parseInt(limit as string) || 20, 100); // Max 100
       const skip = (pageNum - 1) * limitNum;
-      
+
       const [articles, total] = await Promise.all([
         KnowledgeBaseArticle.find(query)
           .select(selectFields)
-          .populate('author', 'name email')
+          .populate("author", "name email")
           .sort({ displayOrder: 1, publishedAt: -1, createdAt: -1 })
           .skip(skip)
           .limit(limitNum)
           .lean(),
-        KnowledgeBaseArticle.countDocuments(query)
+        KnowledgeBaseArticle.countDocuments(query),
       ]);
 
       return res.json({
@@ -68,15 +73,15 @@ export const getArticlesByProject = async (req: AuthRequest, res: Response) => {
           total,
           page: pageNum,
           limit: limitNum,
-          totalPages: Math.ceil(total / limitNum)
-        }
+          totalPages: Math.ceil(total / limitNum),
+        },
       });
     }
 
     // Non-paginated (backward compatibility) - add safety limit
     const articles = await KnowledgeBaseArticle.find(query)
       .select(selectFields)
-      .populate('author', 'name email')
+      .populate("author", "name email")
       .sort({ displayOrder: 1, publishedAt: -1, createdAt: -1 })
       .limit(100)
       .lean();
@@ -84,12 +89,12 @@ export const getArticlesByProject = async (req: AuthRequest, res: Response) => {
     return res.json({
       success: true,
       data: articles,
-      count: articles.length
+      count: articles.length,
     });
   } catch (error: any) {
     return res.status(500).json({
       success: false,
-      error: error.message || 'Failed to fetch articles'
+      error: error.message || "Failed to fetch articles",
     });
   }
 };
@@ -101,13 +106,15 @@ export const getArticleById = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
-    const article = await KnowledgeBaseArticle.findById(id)
-      .populate('author', 'name email');
+    const article = await KnowledgeBaseArticle.findById(id).populate(
+      "author",
+      "name email",
+    );
 
     if (!article) {
       res.status(404).json({
         success: false,
-        error: 'Article not found'
+        error: "Article not found",
       });
       return;
     }
@@ -118,12 +125,12 @@ export const getArticleById = async (req: AuthRequest, res: Response) => {
 
     res.json({
       success: true,
-      data: article
+      data: article,
     });
   } catch (error: any) {
     res.status(500).json({
       success: false,
-      error: error.message || 'Failed to fetch article'
+      error: error.message || "Failed to fetch article",
     });
   }
 };
@@ -133,66 +140,70 @@ export const getArticleById = async (req: AuthRequest, res: Response) => {
 // @access  Private (SuperAdmin only)
 export const createArticle = async (req: AuthRequest, res: Response) => {
   try {
-    const { 
-      projectId, 
-      title, 
-      content, 
+    const {
+      projectId,
+      title,
+      content,
       category, // Keep for backward compatibility
-      categoryId, 
+      categoryId,
       subcategoryId,
       contentType,
       pdfUrl,
       pdfFileName,
-      tags, 
-      status, 
-      displayOrder 
+      tags,
+      status,
+      displayOrder,
+      visibility,
+      visibleToRoles,
     } = req.body;
 
     // Validate required fields based on content type
-    if (contentType === 'pdf' && !pdfUrl) {
+    if (contentType === "pdf" && !pdfUrl) {
       return res.status(400).json({
         success: false,
-        error: 'PDF URL is required for PDF content type'
+        error: "PDF URL is required for PDF content type",
       });
     }
 
-    if (contentType === 'html' && !content) {
+    if (contentType === "html" && !content) {
       return res.status(400).json({
         success: false,
-        error: 'Content is required for HTML content type'
+        error: "Content is required for HTML content type",
       });
     }
 
     const article = await KnowledgeBaseArticle.create({
       projectId,
       title,
-      content: contentType === 'html' ? content : undefined,
+      content: contentType === "html" ? content : undefined,
       category, // Keep for backward compatibility
       categoryId,
       subcategoryId,
-      contentType: contentType || 'html',
+      contentType: contentType || "html",
       pdfUrl,
       pdfFileName,
       tags,
       status,
       displayOrder: displayOrder || 0,
+      visibility: visibility || "all",
+      visibleToRoles: visibleToRoles || [],
       author: req.user!.userId,
-      publishedAt: status === 'published' ? new Date() : undefined
+      publishedAt: status === "published" ? new Date() : undefined,
     });
 
     const populatedArticle = await KnowledgeBaseArticle.findById(article._id)
-      .populate('author', 'name email')
-      .populate('categoryId', 'name')
-      .populate('subcategoryId', 'name');
+      .populate("author", "name email")
+      .populate("categoryId", "name")
+      .populate("subcategoryId", "name");
 
     return res.status(201).json({
       success: true,
-      data: populatedArticle
+      data: populatedArticle,
     });
   } catch (error: any) {
     return res.status(500).json({
       success: false,
-      error: error.message || 'Failed to create article'
+      error: error.message || "Failed to create article",
     });
   }
 };
@@ -203,19 +214,21 @@ export const createArticle = async (req: AuthRequest, res: Response) => {
 export const updateArticle = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { 
-      title, 
-      content, 
-      category, 
-      categoryId, 
+    const {
+      title,
+      content,
+      category,
+      categoryId,
       subcategoryId,
       contentType,
       pdfUrl,
       pdfFileName,
-      tags, 
-      status, 
-      displayOrder, 
-      isActive 
+      tags,
+      status,
+      displayOrder,
+      isActive,
+      visibility,
+      visibleToRoles,
     } = req.body;
 
     const article = await KnowledgeBaseArticle.findById(id);
@@ -223,7 +236,7 @@ export const updateArticle = async (req: AuthRequest, res: Response) => {
     if (!article) {
       res.status(404).json({
         success: false,
-        error: 'Article not found'
+        error: "Article not found",
       });
       return;
     }
@@ -240,11 +253,13 @@ export const updateArticle = async (req: AuthRequest, res: Response) => {
     if (tags !== undefined) article.tags = tags;
     if (displayOrder !== undefined) article.displayOrder = displayOrder;
     if (isActive !== undefined) article.isActive = isActive;
-    
+    if (visibility !== undefined) article.visibility = visibility;
+    if (visibleToRoles !== undefined) article.visibleToRoles = visibleToRoles;
+
     // Handle status change
     if (status !== undefined && status !== article.status) {
       article.status = status;
-      if (status === 'published' && !article.publishedAt) {
+      if (status === "published" && !article.publishedAt) {
         article.publishedAt = new Date();
       }
     }
@@ -252,18 +267,18 @@ export const updateArticle = async (req: AuthRequest, res: Response) => {
     await article.save();
 
     const updatedArticle = await KnowledgeBaseArticle.findById(id)
-      .populate('author', 'name email')
-      .populate('categoryId', 'name')
-      .populate('subcategoryId', 'name');
+      .populate("author", "name email")
+      .populate("categoryId", "name")
+      .populate("subcategoryId", "name");
 
     res.json({
       success: true,
-      data: updatedArticle
+      data: updatedArticle,
     });
   } catch (error: any) {
     res.status(500).json({
       success: false,
-      error: error.message || 'Failed to update article'
+      error: error.message || "Failed to update article",
     });
   }
 };
@@ -280,7 +295,7 @@ export const deleteArticle = async (req: AuthRequest, res: Response) => {
     if (!article) {
       res.status(404).json({
         success: false,
-        error: 'Article not found'
+        error: "Article not found",
       });
       return;
     }
@@ -289,12 +304,12 @@ export const deleteArticle = async (req: AuthRequest, res: Response) => {
 
     res.json({
       success: true,
-      message: 'Article deleted successfully'
+      message: "Article deleted successfully",
     });
   } catch (error: any) {
     res.status(500).json({
       success: false,
-      error: error.message || 'Failed to delete article'
+      error: error.message || "Failed to delete article",
     });
   }
 };
@@ -312,7 +327,7 @@ export const articleFeedback = async (req: AuthRequest, res: Response) => {
     if (!article) {
       res.status(404).json({
         success: false,
-        error: 'Article not found'
+        error: "Article not found",
       });
       return;
     }
@@ -329,13 +344,13 @@ export const articleFeedback = async (req: AuthRequest, res: Response) => {
       success: true,
       data: {
         helpfulCount: article.helpfulCount,
-        notHelpfulCount: article.notHelpfulCount
-      }
+        notHelpfulCount: article.notHelpfulCount,
+      },
     });
   } catch (error: any) {
     res.status(500).json({
       success: false,
-      error: error.message || 'Failed to submit feedback'
+      error: error.message || "Failed to submit feedback",
     });
   }
 };
@@ -347,21 +362,21 @@ export const getCategories = async (req: AuthRequest, res: Response) => {
   try {
     const { projectId } = req.params;
 
-    const categories = await KnowledgeBaseArticle.distinct('category', {
+    const categories = await KnowledgeBaseArticle.distinct("category", {
       projectId,
-      status: 'published',
+      status: "published",
       isActive: true,
-      category: { $exists: true, $ne: '' }
+      category: { $exists: true, $ne: "" },
     });
 
     res.json({
       success: true,
-      data: categories
+      data: categories,
     });
   } catch (error: any) {
     res.status(500).json({
       success: false,
-      error: error.message || 'Failed to fetch categories'
+      error: error.message || "Failed to fetch categories",
     });
   }
 };

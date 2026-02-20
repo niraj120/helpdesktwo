@@ -13,6 +13,9 @@ export interface IKnowledgeBaseArticle extends Document {
   tags?: string[];
   author: mongoose.Types.ObjectId;
   status: 'draft' | 'published' | 'archived';
+  // Visibility - Role-based access control
+  visibility: 'all' | 'internal' | 'public' | 'role_based';
+  visibleToRoles: mongoose.Types.ObjectId[];
   viewCount: number;
   helpfulCount: number;
   notHelpfulCount: number;
@@ -82,6 +85,16 @@ const KnowledgeBaseArticleSchema = new Schema<IKnowledgeBaseArticle>({
     enum: ['draft', 'published', 'archived'],
     default: 'draft'
   },
+  // Visibility - Role-based access control
+  visibility: {
+    type: String,
+    enum: ['all', 'internal', 'public', 'role_based'],
+    default: 'all'
+  },
+  visibleToRoles: [{
+    type: Schema.Types.ObjectId,
+    ref: 'Role'
+  }],
   viewCount: {
     type: Number,
     default: 0

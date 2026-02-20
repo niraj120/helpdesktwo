@@ -1,15 +1,18 @@
-import { Request, Response } from 'express';
-import KBArticle from '../models/KBArticle';
-import KBArticleLevelMapping from '../models/KBArticleLevelMapping';
-import KBLevel from '../models/KBLevel';
-import GCSService from '../services/gcsService';
-import mongoose from 'mongoose';
-import DOMPurify from 'isomorphic-dompurify';
+import { Request, Response } from "express";
+import KBArticle from "../models/KBArticle";
+import KBArticleLevelMapping from "../models/KBArticleLevelMapping";
+import KBLevel from "../models/KBLevel";
+import GCSService from "../services/gcsService";
+import mongoose from "mongoose";
+import DOMPurify from "isomorphic-dompurify";
 
 /**
  * Create a new KB Article
  */
-export const createArticle = async (req: Request, res: Response): Promise<void> => {
+export const createArticle = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const {
       documentName,
@@ -26,20 +29,36 @@ export const createArticle = async (req: Request, res: Response): Promise<void> 
       isFeatured,
       showNewTag,
       displayOrder,
+      visibility: rawVisibility,
+      visibleToRoles: rawVisibleToRoles,
     } = req.body;
     const userId = (req as any).user.userId;
     const file = req.file;
 
     // Parse JSON strings from FormData
-    const projectIds = typeof rawProjectIds === 'string' ? JSON.parse(rawProjectIds) : rawProjectIds;
-    const levelIds = typeof rawLevelIds === 'string' ? JSON.parse(rawLevelIds) : rawLevelIds;
-    const tags = typeof rawTags === 'string' ? JSON.parse(rawTags) : rawTags;
+    const projectIds =
+      typeof rawProjectIds === "string"
+        ? JSON.parse(rawProjectIds)
+        : rawProjectIds;
+    const levelIds =
+      typeof rawLevelIds === "string" ? JSON.parse(rawLevelIds) : rawLevelIds;
+    const tags = typeof rawTags === "string" ? JSON.parse(rawTags) : rawTags;
+    const visibility = rawVisibility || "all";
+    const visibleToRoles =
+      typeof rawVisibleToRoles === "string"
+        ? JSON.parse(rawVisibleToRoles)
+        : rawVisibleToRoles || [];
 
     // Validation
-    if (!documentName || !documentType || !projectIds || projectIds.length === 0) {
+    if (
+      !documentName ||
+      !documentType ||
+      !projectIds ||
+      projectIds.length === 0
+    ) {
       res.status(400).json({
         success: false,
-        message: 'Document name, type, and at least one project are required',
+        message: "Document name, type, and at least one project are required",
       });
       return;
     }
@@ -47,15 +66,17 @@ export const createArticle = async (req: Request, res: Response): Promise<void> 
     if (!levelIds || levelIds.length === 0) {
       res.status(400).json({
         success: false,
-        message: 'At least one level mapping is required',
+        message: "At least one level mapping is required",
       });
       return;
     }
 
     // Handle PDF upload
     let pdfUrl, pdfFilename, pdfSize;
-    if ((documentType === 'pdf' || documentType === 'both') && file) {
-      const projectCode = Array.isArray(projectIds) ? projectIds[0] : projectIds;
+    if ((documentType === "pdf" || documentType === "both") && file) {
+      const projectCode = Array.isArray(projectIds)
+        ? projectIds[0]
+        : projectIds;
       const uploadResult = await GCSService.uploadPDF(file, projectCode);
       pdfUrl = uploadResult.url;
       pdfFilename = uploadResult.filename;
@@ -63,7 +84,9 @@ export const createArticle = async (req: Request, res: Response): Promise<void> 
     }
 
     // Sanitize HTML content
-    const sanitizedHtml = htmlContent ? DOMPurify.sanitize(htmlContent) : undefined;
+    const sanitizedHtml = htmlContent
+      ? DOMPurify.sanitize(htmlContent)
+      : undefined;
 
     // Create article
     const newArticle = new KBArticle({
@@ -79,10 +102,12 @@ export const createArticle = async (req: Request, res: Response): Promise<void> 
       publishedDate: publishedDate ? new Date(publishedDate) : new Date(),
       tags: tags || [],
       author: author || (req as any).user.name,
-      status: status || 'active',
+      status: status || "active",
       isFeatured: isFeatured || false,
       showNewTag: showNewTag !== undefined ? showNewTag : true,
       displayOrder: displayOrder || 0,
+      visibility: visibility,
+      visibleToRoles: visibleToRoles,
       createdBy: userId,
       publishedAt: new Date(),
     });
@@ -94,21 +119,21 @@ export const createArticle = async (req: Request, res: Response): Promise<void> 
       new KBArticleLevelMapping({
         articleId: newArticle._id,
         levelId: levelId,
-      }).save()
+      }).save(),
     );
 
     await Promise.all(mappingPromises);
 
     res.status(201).json({
       success: true,
-      message: 'KB Article created successfully',
+      message: "KB Article created successfully",
       data: newArticle,
     });
   } catch (error: any) {
-    console.error('Create KB Article error:', error);
+    console.error("Create KB Article error:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to create KB Article',
+      message: "Failed to create KB Article",
       error: error.message,
     });
   }
@@ -117,19 +142,29 @@ export const createArticle = async (req: Request, res: Response): Promise<void> 
 /**
  * Get all KB Articles (Admin)
  */
-export const getArticles = async (req: Request, res: Response): Promise<void> => {
+export const getArticles = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
-    const { projectId, levelId, status, page = 1, limit = 20, search } = req.query;
+    const {
+      projectId,
+      levelId,
+      status,
+      page = 1,
+      limit = 20,
+      search,
+    } = req.query;
 
     const filter: any = {};
 
     // Only add project filter if projectId is provided and not 'all' (super admin view)
-    if (projectId && projectId !== 'all') {
+    if (projectId && projectId !== "all") {
       filter.projectIds = projectId;
     }
 
     if (status) {
-      const validStatuses = ['active', 'draft', 'archived'];
+      const validStatuses = ["active", "draft", "archived"];
       if (validStatuses.includes(status as string)) {
         filter.status = status;
       }
@@ -137,12 +172,14 @@ export const getArticles = async (req: Request, res: Response): Promise<void> =>
 
     if (search) {
       // Sanitize search to prevent injection
-      const sanitizedSearch = String(search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').trim();
+      const sanitizedSearch = String(search)
+        .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+        .trim();
       if (sanitizedSearch) {
         filter.$or = [
-          { title: { $regex: sanitizedSearch, $options: 'i' } },
-          { excerpt: { $regex: sanitizedSearch, $options: 'i' } },
-          { tags: { $regex: sanitizedSearch, $options: 'i' } },
+          { title: { $regex: sanitizedSearch, $options: "i" } },
+          { excerpt: { $regex: sanitizedSearch, $options: "i" } },
+          { tags: { $regex: sanitizedSearch, $options: "i" } },
         ];
       }
     }
@@ -150,7 +187,7 @@ export const getArticles = async (req: Request, res: Response): Promise<void> =>
     // ============================================
     // ADDITIONAL FILTERS (date range, tags, author, featured)
     // ============================================
-    
+
     // Date range filter (publishedAt)
     if (req.query.publishedAfter || req.query.publishedBefore) {
       filter.publishedAt = {};
@@ -165,38 +202,50 @@ export const getArticles = async (req: Request, res: Response): Promise<void> =>
           filter.publishedAt.$lte = beforeDate;
         }
       }
-      if (Object.keys(filter.publishedAt).length === 0) delete filter.publishedAt;
+      if (Object.keys(filter.publishedAt).length === 0)
+        delete filter.publishedAt;
     }
-    
+
     // Tags filter
     if (req.query.tags) {
-      const tagList = String(req.query.tags).split(',').map(t => t.trim()).filter(Boolean);
+      const tagList = String(req.query.tags)
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean);
       if (tagList.length > 0) {
         filter.tags = { $in: tagList };
       }
     }
-    
+
     // Author filter
     if (req.query.author) {
       filter.createdBy = req.query.author;
     }
-    
+
     // Featured filter
-    if (req.query.isFeatured === 'true') {
+    if (req.query.isFeatured === "true") {
       filter.isFeatured = true;
-    } else if (req.query.isFeatured === 'false') {
+    } else if (req.query.isFeatured === "false") {
       filter.isFeatured = false;
     }
 
     // ============================================
     // SORTING
     // ============================================
-    const allowedSortFields = ['createdAt', 'publishedAt', 'viewCount', 'title', 'displayOrder'];
-    const sortBy = allowedSortFields.includes(req.query.sortBy as string) ? req.query.sortBy as string : 'createdAt';
-    const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
+    const allowedSortFields = [
+      "createdAt",
+      "publishedAt",
+      "viewCount",
+      "title",
+      "displayOrder",
+    ];
+    const sortBy = allowedSortFields.includes(req.query.sortBy as string)
+      ? (req.query.sortBy as string)
+      : "createdAt";
+    const sortOrder = req.query.sortOrder === "asc" ? 1 : -1;
     // Maintain featured priority unless explicitly sorting by another field
-    const sortObj: Record<string, 1 | -1> = req.query.sortBy 
-      ? { [sortBy]: sortOrder as 1 | -1 } 
+    const sortObj: Record<string, 1 | -1> = req.query.sortBy
+      ? { [sortBy]: sortOrder as 1 | -1 }
       : { isFeatured: -1, displayOrder: 1, createdAt: -1 };
 
     // Enforce max limit
@@ -205,9 +254,9 @@ export const getArticles = async (req: Request, res: Response): Promise<void> =>
 
     // OPTIMIZED: Exclude heavy content field from list view, use excerpt instead
     let query = KBArticle.find(filter)
-      .select('-content -htmlContent -revisionHistory')
-      .populate('createdBy', 'firstName lastName email')
-      .populate('updatedBy', 'firstName lastName email')
+      .select("-content -htmlContent -revisionHistory")
+      .populate("createdBy", "firstName lastName email")
+      .populate("updatedBy", "firstName lastName email")
       .sort(sortObj)
       .skip(skip)
       .limit(effectiveLimit);
@@ -216,11 +265,11 @@ export const getArticles = async (req: Request, res: Response): Promise<void> =>
 
     // Optimized: Batch fetch all level mappings instead of N+1 queries
     // This reduces database calls from N+1 to just 2
-    const articleIds = articles.map(a => a._id);
+    const articleIds = articles.map((a) => a._id);
     const allMappings = await KBArticleLevelMapping.find({
       articleId: { $in: articleIds },
     })
-      .populate('levelId', 'levelName')
+      .populate("levelId", "levelName")
       .lean();
 
     // Group mappings by article ID
@@ -243,7 +292,7 @@ export const getArticles = async (req: Request, res: Response): Promise<void> =>
     let filteredArticles = articlesWithLevels;
     if (levelId) {
       filteredArticles = articlesWithLevels.filter((article) =>
-        article.levels.some((level: any) => level._id.toString() === levelId)
+        article.levels.some((level: any) => level._id.toString() === levelId),
       );
     }
 
@@ -262,10 +311,10 @@ export const getArticles = async (req: Request, res: Response): Promise<void> =>
       },
     });
   } catch (error: any) {
-    console.error('Get KB Articles error:', error);
+    console.error("Get KB Articles error:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch KB Articles',
+      message: "Failed to fetch KB Articles",
       error: error.message,
     });
   }
@@ -274,26 +323,29 @@ export const getArticles = async (req: Request, res: Response): Promise<void> =>
 /**
  * Get single KB Article by ID
  */
-export const getArticleById = async (req: Request, res: Response): Promise<void> => {
+export const getArticleById = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       res.status(400).json({
         success: false,
-        message: 'Invalid article ID',
+        message: "Invalid article ID",
       });
       return;
     }
 
     const article = await KBArticle.findById(id)
-      .populate('createdBy', 'name email')
-      .populate('updatedBy', 'name email');
+      .populate("createdBy", "name email")
+      .populate("updatedBy", "name email");
 
     if (!article) {
       res.status(404).json({
         success: false,
-        message: 'KB Article not found',
+        message: "KB Article not found",
       });
       return;
     }
@@ -301,7 +353,7 @@ export const getArticleById = async (req: Request, res: Response): Promise<void>
     // Get level mappings
     const mappings = await KBArticleLevelMapping.find({
       articleId: id,
-    }).populate('levelId', 'levelName levelOrder');
+    }).populate("levelId", "levelName levelOrder");
 
     // Increment view count
     article.viewsCount += 1;
@@ -315,10 +367,10 @@ export const getArticleById = async (req: Request, res: Response): Promise<void>
       },
     });
   } catch (error: any) {
-    console.error('Get KB Article by ID error:', error);
+    console.error("Get KB Article by ID error:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch KB Article',
+      message: "Failed to fetch KB Article",
       error: error.message,
     });
   }
@@ -327,7 +379,10 @@ export const getArticleById = async (req: Request, res: Response): Promise<void>
 /**
  * Update KB Article
  */
-export const updateArticle = async (req: Request, res: Response): Promise<void> => {
+export const updateArticle = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { id } = req.params;
     const {
@@ -345,19 +400,33 @@ export const updateArticle = async (req: Request, res: Response): Promise<void> 
       isFeatured,
       showNewTag,
       displayOrder,
+      visibility: rawVisibility,
+      visibleToRoles: rawVisibleToRoles,
     } = req.body;
     const userId = (req as any).user.userId;
     const file = req.file;
 
     // Parse JSON strings from FormData
-    const projectIds = rawProjectIds && typeof rawProjectIds === 'string' ? JSON.parse(rawProjectIds) : rawProjectIds;
-    const levelIds = rawLevelIds && typeof rawLevelIds === 'string' ? JSON.parse(rawLevelIds) : rawLevelIds;
-    const tags = rawTags && typeof rawTags === 'string' ? JSON.parse(rawTags) : rawTags;
+    const projectIds =
+      rawProjectIds && typeof rawProjectIds === "string"
+        ? JSON.parse(rawProjectIds)
+        : rawProjectIds;
+    const levelIds =
+      rawLevelIds && typeof rawLevelIds === "string"
+        ? JSON.parse(rawLevelIds)
+        : rawLevelIds;
+    const tags =
+      rawTags && typeof rawTags === "string" ? JSON.parse(rawTags) : rawTags;
+    const visibility = rawVisibility;
+    const visibleToRoles =
+      typeof rawVisibleToRoles === "string"
+        ? JSON.parse(rawVisibleToRoles)
+        : rawVisibleToRoles;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       res.status(400).json({
         success: false,
-        message: 'Invalid article ID',
+        message: "Invalid article ID",
       });
       return;
     }
@@ -367,25 +436,31 @@ export const updateArticle = async (req: Request, res: Response): Promise<void> 
     if (!article) {
       res.status(404).json({
         success: false,
-        message: 'KB Article not found',
+        message: "KB Article not found",
       });
       return;
     }
 
     // Update basic fields first
     if (documentName) article.documentName = documentName;
-    if (projectIds) article.projectIds = Array.isArray(projectIds) ? projectIds : [projectIds];
+    if (projectIds)
+      article.projectIds = Array.isArray(projectIds)
+        ? projectIds
+        : [projectIds];
     if (description !== undefined) article.description = description;
 
     // Determine which content type to keep based on documentType
     const targetDocType = documentType || article.documentType;
-    
+
     // Handle PDF upload (if new file uploaded)
     if (file) {
       // Delete old PDF if exists (ignore errors if already deleted)
       if (article.pdfFilename) {
         await GCSService.deletePDF(article.pdfFilename).catch((err) =>
-          console.log('ℹ️  Old PDF already deleted or not found:', article.pdfFilename)
+          console.log(
+            "ℹ️  Old PDF already deleted or not found:",
+            article.pdfFilename,
+          ),
         );
       }
 
@@ -395,20 +470,25 @@ export const updateArticle = async (req: Request, res: Response): Promise<void> 
       article.pdfUrl = uploadResult.url;
       article.pdfFilename = uploadResult.filename;
       article.pdfSize = uploadResult.size;
-      console.log('✅ New PDF uploaded');
+      console.log("✅ New PDF uploaded");
     }
 
     // Clear fields based on documentType
-    if (targetDocType === 'pdf') {
+    if (targetDocType === "pdf") {
       // PDF only - clear external URL and HTML
       article.externalUrl = undefined;
       article.htmlContent = undefined;
-      console.log('📄 Document type: PDF - cleared externalUrl and htmlContent');
-    } else if (targetDocType === 'link') {
+      console.log(
+        "📄 Document type: PDF - cleared externalUrl and htmlContent",
+      );
+    } else if (targetDocType === "link") {
       // External link only - clear PDF and HTML
       if (article.pdfFilename) {
         await GCSService.deletePDF(article.pdfFilename).catch((err) =>
-          console.log('ℹ️  PDF already deleted or not found:', article.pdfFilename)
+          console.log(
+            "ℹ️  PDF already deleted or not found:",
+            article.pdfFilename,
+          ),
         );
       }
       article.pdfUrl = undefined;
@@ -416,12 +496,17 @@ export const updateArticle = async (req: Request, res: Response): Promise<void> 
       article.pdfSize = undefined;
       article.htmlContent = undefined;
       if (externalUrl !== undefined) article.externalUrl = externalUrl;
-      console.log('🔗 Document type: Link - cleared PDF and HTML, kept externalUrl');
-    } else if (targetDocType === 'html') {
+      console.log(
+        "🔗 Document type: Link - cleared PDF and HTML, kept externalUrl",
+      );
+    } else if (targetDocType === "html") {
       // HTML only - clear PDF and external URL, but keep existing HTML if not provided
       if (article.pdfFilename) {
         await GCSService.deletePDF(article.pdfFilename).catch((err) =>
-          console.log('ℹ️  PDF already deleted or not found:', article.pdfFilename)
+          console.log(
+            "ℹ️  PDF already deleted or not found:",
+            article.pdfFilename,
+          ),
         );
       }
       article.pdfUrl = undefined;
@@ -432,21 +517,28 @@ export const updateArticle = async (req: Request, res: Response): Promise<void> 
       if (htmlContent !== undefined) {
         article.htmlContent = DOMPurify.sanitize(htmlContent);
       }
-      console.log('📝 Document type: HTML - cleared PDF and externalUrl, kept htmlContent');
-    } else if (targetDocType === 'both') {
+      console.log(
+        "📝 Document type: HTML - cleared PDF and externalUrl, kept htmlContent",
+      );
+    } else if (targetDocType === "both") {
       // Both PDF and HTML - clear only external URL
       article.externalUrl = undefined;
       // Only update htmlContent if provided, otherwise keep existing
       if (htmlContent !== undefined) {
         article.htmlContent = DOMPurify.sanitize(htmlContent);
       }
-      console.log('📄📝 Document type: Both - cleared externalUrl, kept PDF and HTML');
+      console.log(
+        "📄📝 Document type: Both - cleared externalUrl, kept PDF and HTML",
+      );
     }
 
     // Update document type if provided
     if (documentType) article.documentType = documentType;
-    if (publishedDate !== undefined) article.publishedDate = publishedDate ? new Date(publishedDate) : undefined;
-    
+    if (publishedDate !== undefined)
+      article.publishedDate = publishedDate
+        ? new Date(publishedDate)
+        : undefined;
+
     // Update other fields
     if (tags) article.tags = tags;
     if (author !== undefined) article.author = author;
@@ -454,6 +546,9 @@ export const updateArticle = async (req: Request, res: Response): Promise<void> 
     if (isFeatured !== undefined) article.isFeatured = isFeatured;
     if (showNewTag !== undefined) article.showNewTag = showNewTag;
     if (displayOrder !== undefined) article.displayOrder = displayOrder;
+    // Update visibility fields
+    if (visibility !== undefined) article.visibility = visibility;
+    if (visibleToRoles !== undefined) article.visibleToRoles = visibleToRoles;
     article.updatedBy = userId;
 
     await article.save();
@@ -468,7 +563,7 @@ export const updateArticle = async (req: Request, res: Response): Promise<void> 
         new KBArticleLevelMapping({
           articleId: id,
           levelId: levelId,
-        }).save()
+        }).save(),
       );
 
       await Promise.all(mappingPromises);
@@ -476,14 +571,14 @@ export const updateArticle = async (req: Request, res: Response): Promise<void> 
 
     res.status(200).json({
       success: true,
-      message: 'KB Article updated successfully',
+      message: "KB Article updated successfully",
       data: article,
     });
   } catch (error: any) {
-    console.error('Update KB Article error:', error);
+    console.error("Update KB Article error:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to update KB Article',
+      message: "Failed to update KB Article",
       error: error.message,
     });
   }
@@ -492,14 +587,17 @@ export const updateArticle = async (req: Request, res: Response): Promise<void> 
 /**
  * Delete KB Article
  */
-export const deleteArticle = async (req: Request, res: Response): Promise<void> => {
+export const deleteArticle = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       res.status(400).json({
         success: false,
-        message: 'Invalid article ID',
+        message: "Invalid article ID",
       });
       return;
     }
@@ -509,7 +607,7 @@ export const deleteArticle = async (req: Request, res: Response): Promise<void> 
     if (!article) {
       res.status(404).json({
         success: false,
-        message: 'KB Article not found',
+        message: "KB Article not found",
       });
       return;
     }
@@ -517,7 +615,7 @@ export const deleteArticle = async (req: Request, res: Response): Promise<void> 
     // Delete PDF from GCS if exists
     if (article.pdfFilename) {
       await GCSService.deletePDF(article.pdfFilename).catch((err) =>
-        console.error('Failed to delete PDF:', err)
+        console.error("Failed to delete PDF:", err),
       );
     }
 
@@ -529,13 +627,13 @@ export const deleteArticle = async (req: Request, res: Response): Promise<void> 
 
     res.status(200).json({
       success: true,
-      message: 'KB Article and associated PDF deleted successfully',
+      message: "KB Article and associated PDF deleted successfully",
     });
   } catch (error: any) {
-    console.error('Delete KB Article error:', error);
+    console.error("Delete KB Article error:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to delete KB Article',
+      message: "Failed to delete KB Article",
       error: error.message,
     });
   }
@@ -544,21 +642,24 @@ export const deleteArticle = async (req: Request, res: Response): Promise<void> 
 /**
  * Search KB Articles
  */
-export const searchArticles = async (req: Request, res: Response): Promise<void> => {
+export const searchArticles = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { q, projectId } = req.query;
 
     if (!q) {
       res.status(400).json({
         success: false,
-        message: 'Search query is required',
+        message: "Search query is required",
       });
       return;
     }
 
     const filter: any = {
       $text: { $search: q as string },
-      status: 'active',
+      status: "active",
     };
 
     if (projectId) {
@@ -567,9 +668,9 @@ export const searchArticles = async (req: Request, res: Response): Promise<void>
 
     // Only show published articles
     filter.$or = [
-      { publishType: 'immediate' },
+      { publishType: "immediate" },
       {
-        publishType: 'scheduled',
+        publishType: "scheduled",
         scheduledPublishDate: { $lte: new Date() },
         $or: [
           { scheduledUnpublishDate: { $gte: new Date() } },
@@ -578,17 +679,19 @@ export const searchArticles = async (req: Request, res: Response): Promise<void>
       },
     ];
 
-    const articles = await KBArticle.find(filter, { score: { $meta: 'textScore' } })
-      .sort({ score: { $meta: 'textScore' } })
+    const articles = await KBArticle.find(filter, {
+      score: { $meta: "textScore" },
+    })
+      .sort({ score: { $meta: "textScore" } })
       .limit(20)
       .lean();
 
     // Optimized: Batch fetch all level mappings instead of N+1 queries
-    const articleIds = articles.map(a => a._id);
+    const articleIds = articles.map((a) => a._id);
     const allMappings = await KBArticleLevelMapping.find({
       articleId: { $in: articleIds },
     })
-      .populate('levelId', 'levelName')
+      .populate("levelId", "levelName")
       .lean();
 
     // Group mappings by article ID
@@ -607,9 +710,8 @@ export const searchArticles = async (req: Request, res: Response): Promise<void>
     const articlesWithLevels = articles.map((article) => {
       // Create excerpt
       const excerpt =
-        article.htmlContent
-          ?.replace(/<[^>]*>/g, '')
-          .substring(0, 200) + '...' || '';
+        article.htmlContent?.replace(/<[^>]*>/g, "").substring(0, 200) +
+          "..." || "";
 
       return {
         id: article._id,
@@ -625,10 +727,10 @@ export const searchArticles = async (req: Request, res: Response): Promise<void>
       data: articlesWithLevels,
     });
   } catch (error: any) {
-    console.error('Search KB Articles error:', error);
+    console.error("Search KB Articles error:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to search KB Articles',
+      message: "Failed to search KB Articles",
       error: error.message,
     });
   }
@@ -637,7 +739,10 @@ export const searchArticles = async (req: Request, res: Response): Promise<void>
 /**
  * Upload image for rich text editor
  */
-export const uploadEditorImage = async (req: Request, res: Response): Promise<void> => {
+export const uploadEditorImage = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const file = req.file;
     const { projectCode } = req.body;
@@ -645,26 +750,29 @@ export const uploadEditorImage = async (req: Request, res: Response): Promise<vo
     if (!file) {
       res.status(400).json({
         success: false,
-        message: 'No image file provided',
+        message: "No image file provided",
       });
       return;
     }
 
     // Use projectCode if provided, otherwise default to 'shared'
-    const imageUrl = await GCSService.uploadEditorImage(file, projectCode || 'shared');
+    const imageUrl = await GCSService.uploadEditorImage(
+      file,
+      projectCode || "shared",
+    );
 
     res.status(200).json({
       success: true,
-      message: 'Image uploaded successfully',
+      message: "Image uploaded successfully",
       data: {
         url: imageUrl,
       },
     });
   } catch (error: any) {
-    console.error('Upload editor image error:', error);
+    console.error("Upload editor image error:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to upload image',
+      message: "Failed to upload image",
       error: error.message,
     });
   }

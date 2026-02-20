@@ -19,6 +19,10 @@ export interface IKBArticle extends Document {
   // Publishing
   publishedDate?: Date;
   
+  // Visibility - Role-based access control
+  visibility: 'all' | 'internal' | 'public' | 'role_based';
+  visibleToRoles: mongoose.Types.ObjectId[];
+  
   // Metadata
   description?: string;
   tags: string[];
@@ -88,6 +92,19 @@ const KBArticleSchema = new Schema<IKBArticle>(
     publishedDate: {
       type: Date,
     },
+    
+    // Visibility - Role-based access control
+    visibility: {
+      type: String,
+      enum: ['all', 'internal', 'public', 'role_based'],
+      default: 'all',
+    },
+    visibleToRoles: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: 'Role',
+      },
+    ],
     
     // Metadata
     description: {
