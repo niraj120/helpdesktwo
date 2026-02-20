@@ -1,12 +1,12 @@
-import * as cron from 'node-cron';
-import SLATracking from '../models/sla-module/SLATracking';
-import EscalationPolicy from '../models/sla-module/EscalationPolicy';
-import { Ticket } from '../models/Ticket';
-import { User } from '../models/User';
-import mongoose from 'mongoose';
-import { sendTicketEscalatedEmail } from '../utils/emailService';
-import { logError, ErrorContext, ErrorSeverity } from '../utils/errorLogger';
-import { processAutoEscalation as processMatrixAutoEscalation } from './escalationMatrixService';
+import * as cron from "node-cron";
+import SLATracking from "../models/sla-module/SLATracking";
+import EscalationPolicy from "../models/sla-module/EscalationPolicy";
+import { Ticket } from "../models/Ticket";
+import { User } from "../models/User";
+import mongoose from "mongoose";
+import { sendTicketEscalatedEmail } from "../utils/emailService";
+import { logError, ErrorContext, ErrorSeverity } from "../utils/errorLogger";
+import { processAutoEscalation as processMatrixAutoEscalation } from "./escalationMatrixService";
 
 /**
  * Auto-Escalation Service
@@ -15,14 +15,14 @@ import { processAutoEscalation as processMatrixAutoEscalation } from './escalati
 class AutoEscalationService {
   private cronJob: cron.ScheduledTask | null = null;
   private isRunning: boolean = false;
-  private checkInterval: string = '*/5 * * * *'; // Check every 5 minutes
+  private checkInterval: string = "*/5 * * * *"; // Check every 5 minutes
 
   /**
    * Start the auto-escalation service
    */
   public start(): void {
     if (this.cronJob) {
-      console.log('⚠️  Auto-escalation service is already running');
+      console.log("⚠️  Auto-escalation service is already running");
       return;
     }
 
@@ -34,7 +34,7 @@ class AutoEscalationService {
       await this.checkAndEscalate();
     });
 
-    console.log('✅ Auto-Escalation Service started successfully');
+    console.log("✅ Auto-Escalation Service started successfully");
 
     // Run immediately on startup
     setTimeout(() => {
@@ -49,7 +49,7 @@ class AutoEscalationService {
     if (this.cronJob) {
       this.cronJob.stop();
       this.cronJob = null;
-      console.log('🛑 Auto-Escalation Service stopped');
+      console.log("🛑 Auto-Escalation Service stopped");
     }
   }
 
@@ -58,7 +58,7 @@ class AutoEscalationService {
    */
   private async checkAndEscalate(): Promise<void> {
     if (this.isRunning) {
-      console.log('⏭️  Auto-escalation check already in progress, skipping');
+      console.log("⏭️  Auto-escalation check already in progress, skipping");
       return;
     }
 
@@ -66,26 +66,30 @@ class AutoEscalationService {
     const startTime = Date.now();
 
     try {
-      console.log('\n' + '='.repeat(60));
-      console.log(`⏰ Auto-Escalation Check Started - ${new Date().toISOString()}`);
-      console.log('='.repeat(60));
+      console.log("\n" + "=".repeat(60));
+      console.log(
+        `⏰ Auto-Escalation Check Started - ${new Date().toISOString()}`,
+      );
+      console.log("=".repeat(60));
 
       // Find tickets that need auto-escalation
       const now = new Date();
       const trackings = await SLATracking.find({
         nextEscalationDue: { $lte: now },
-        resolutionStatus: { $ne: 'met' }, // Not yet resolved
+        resolutionStatus: { $ne: "met" }, // Not yet resolved
         isPaused: false, // Not paused
       })
-        .populate('ticketId')
-        .populate('escalationPolicyId')
+        .populate("ticketId")
+        .populate("escalationPolicyId")
         .limit(100); // Process in batches
 
       // Process policy-based auto-escalation if any trackings found
       if (trackings.length > 0) {
-        console.log(`📋 Found ${trackings.length} ticket(s) due for policy-based auto-escalation`);
+        console.log(
+          `📋 Found ${trackings.length} ticket(s) due for policy-based auto-escalation`,
+        );
       } else {
-        console.log('ℹ️  No policy-based tickets due for auto-escalation');
+        console.log("ℹ️  No policy-based tickets due for auto-escalation");
       }
 
       let escalated = 0;
@@ -94,7 +98,7 @@ class AutoEscalationService {
       for (const tracking of trackings) {
         try {
           const ticket = tracking.ticketId as any;
-          
+
           if (!ticket || ticket.status === 4 || ticket.status === 5) {
             // Ticket is resolved or closed, skip
             tracking.nextEscalationDue = undefined;
@@ -106,8 +110,11 @@ class AutoEscalationService {
           escalated++;
         } catch (error: any) {
           failed++;
-          console.error(`❌ Failed to escalate ticket ${tracking.ticketId}:`, error.message);
-          
+          console.error(
+            `❌ Failed to escalate ticket ${tracking.ticketId}:`,
+            error.message,
+          );
+
           await logError({
             message: `Auto-escalation failed: ${error.message}`,
             context: ErrorContext.EMAIL_POLLING, // Reusing context
@@ -123,30 +130,33 @@ class AutoEscalationService {
 
       const duration = ((Date.now() - startTime) / 1000).toFixed(2);
 
-      console.log('\n' + '='.repeat(60));
-      console.log('📊 Auto-Escalation Summary (Policy-Based):');
+      console.log("\n" + "=".repeat(60));
+      console.log("📊 Auto-Escalation Summary (Policy-Based):");
       console.log(`   Checked: ${trackings.length}`);
       console.log(`   Escalated: ${escalated}`);
       console.log(`   Failed: ${failed}`);
       console.log(`   Duration: ${duration}s`);
-      console.log('='.repeat(60) + '\n');
-      
+      console.log("=".repeat(60) + "\n");
+
       // Also process Matrix-based auto-escalation
       try {
-        console.log('🔄 Checking Matrix-based Auto-Escalation...');
+        console.log("🔄 Checking Matrix-based Auto-Escalation...");
         const matrixResult = await processMatrixAutoEscalation();
-        console.log('📊 Auto-Escalation Summary (Matrix-Based):');
+        console.log("📊 Auto-Escalation Summary (Matrix-Based):");
         console.log(`   Processed: ${matrixResult.processed}`);
         console.log(`   Escalated: ${matrixResult.escalated}`);
         if (matrixResult.errors.length > 0) {
           console.log(`   Errors: ${matrixResult.errors.length}`);
         }
-        console.log('='.repeat(60) + '\n');
+        console.log("=".repeat(60) + "\n");
       } catch (matrixError: any) {
-        console.error('❌ Matrix-based auto-escalation failed:', matrixError.message);
+        console.error(
+          "❌ Matrix-based auto-escalation failed:",
+          matrixError.message,
+        );
       }
     } catch (error: any) {
-      console.error('❌ Auto-escalation cycle failed:', error.message);
+      console.error("❌ Auto-escalation cycle failed:", error.message);
       console.error(error.stack);
     } finally {
       this.isRunning = false;
@@ -170,35 +180,43 @@ class AutoEscalationService {
     const levelConfig = policy.levels.find((l: any) => l.level === nextLevel);
 
     if (!levelConfig) {
-      console.log(`ℹ️  Ticket ${ticket.ticketNumber} reached max escalation level`);
+      console.log(
+        `ℹ️  Ticket ${ticket.ticketNumber} reached max escalation level`,
+      );
       tracking.nextEscalationDue = undefined;
       await tracking.save();
       return;
     }
 
     // Check if this level is auto-escalation
-    if (levelConfig.escalationMode !== 'auto') {
-      console.log(`⏭️  Level ${nextLevel} is manual escalation, skipping auto-escalation`);
+    if (levelConfig.escalationMode !== "auto") {
+      console.log(
+        `⏭️  Level ${nextLevel} is manual escalation, skipping auto-escalation`,
+      );
       tracking.nextEscalationDue = undefined;
       await tracking.save();
       return;
     }
 
-    console.log(`🔼 Auto-escalating ticket ${ticket.ticketNumber} to level ${nextLevel}`);
+    console.log(
+      `🔼 Auto-escalating ticket ${ticket.ticketNumber} to level ${nextLevel}`,
+    );
 
     // Find target user(s) for escalation
     const targetUsers = await this.findEscalationTargets(
       levelConfig.escalateTo,
-      ticket.project
+      ticket.project,
     );
 
     if (targetUsers.length === 0) {
-      throw new Error(`No users found for escalation target: ${levelConfig.escalateTo.targetName}`);
+      throw new Error(
+        `No users found for escalation target: ${levelConfig.escalateTo.targetName}`,
+      );
     }
 
     // Pick the first available user (you can implement load balancing here)
     const escalatedToUser = targetUsers[0];
-    
+
     // Capture the previous assignee (handler at current level) BEFORE changing
     const previousAssigneeId = ticket.assignedTo;
     const currentLevel = tracking.currentEscalationLevel;
@@ -225,20 +243,25 @@ class AutoEscalationService {
       }
 
       ticket.assignedTo = escalatedToUser._id;
-      
+
       // Mark current role-level SLA as breached and update for new level
       if (ticket.roleLevelSLA) {
         ticket.roleLevelSLA.breachedAt = new Date();
       }
-      
+
       // Calculate new role-level SLA deadline
       if (levelConfig.escalateAfter) {
         const now = new Date();
-        const slaHours = levelConfig.escalateAfter.unit === 'hours' ? levelConfig.escalateAfter.value : 
-                        levelConfig.escalateAfter.unit === 'minutes' ? levelConfig.escalateAfter.value / 60 :
-                        levelConfig.escalateAfter.value * 24;
-        const newRoleDueAt = new Date(now.getTime() + slaHours * 60 * 60 * 1000);
-        
+        const slaHours =
+          levelConfig.escalateAfter.unit === "hours"
+            ? levelConfig.escalateAfter.value
+            : levelConfig.escalateAfter.unit === "minutes"
+              ? levelConfig.escalateAfter.value / 60
+              : levelConfig.escalateAfter.value * 24;
+        const newRoleDueAt = new Date(
+          now.getTime() + slaHours * 60 * 60 * 1000,
+        );
+
         ticket.roleLevelSLA = {
           startedAt: now,
           dueAt: newRoleDueAt,
@@ -246,9 +269,11 @@ class AutoEscalationService {
           pausedAt: undefined,
           pausedDuration: 0,
         };
-        console.log(`   ↳ Role-level SLA updated: L${nextLevel} deadline = ${newRoleDueAt.toISOString()}`);
+        console.log(
+          `   ↳ Role-level SLA updated: L${nextLevel} deadline = ${newRoleDueAt.toISOString()}`,
+        );
       }
-      
+
       await ticket.save();
 
       // Update SLA tracking
@@ -261,7 +286,7 @@ class AutoEscalationService {
         escalatedAt: new Date(),
         escalatedTo: escalatedToUser._id,
         escalatedBy: previousAssigneeId || escalatedToUser._id, // Use PREVIOUS assignee
-        mode: 'auto',
+        mode: "auto",
         reason: `SLA breach - Auto-escalated from L${currentLevel} to L${nextLevel}`,
       });
 
@@ -269,24 +294,37 @@ class AutoEscalationService {
       // The new deadline is calculated from NOW + the new level's escalateAfter time
       if (levelConfig.escalateAfter) {
         const escalationTime = new Date(); // Time when escalation happens
-        const newResolutionDeadline = this.calculateEscalationDeadline(levelConfig.escalateAfter);
+        const newResolutionDeadline = this.calculateEscalationDeadline(
+          levelConfig.escalateAfter,
+        );
         tracking.resolutionDeadline = newResolutionDeadline;
-        
-        const slaHours = levelConfig.escalateAfter.unit === 'hours' ? levelConfig.escalateAfter.value : 
-                        levelConfig.escalateAfter.unit === 'minutes' ? levelConfig.escalateAfter.value / 60 :
-                        levelConfig.escalateAfter.value * 24;
-        
+
+        const slaHours =
+          levelConfig.escalateAfter.unit === "hours"
+            ? levelConfig.escalateAfter.value
+            : levelConfig.escalateAfter.unit === "minutes"
+              ? levelConfig.escalateAfter.value / 60
+              : levelConfig.escalateAfter.value * 24;
+
         console.log(`📅 L${nextLevel} SLA Timing:`);
         console.log(`   ↳ Escalation Time: ${escalationTime.toISOString()}`);
         console.log(`   ↳ SLA Duration: ${slaHours} hours`);
-        console.log(`   ↳ Resolution Deadline: ${newResolutionDeadline.toISOString()}`);
-        console.log(`   ↳ Calculation: NOW (${escalationTime.toISOString()}) + ${slaHours}h = ${newResolutionDeadline.toISOString()}`);
-        
+        console.log(
+          `   ↳ Resolution Deadline: ${newResolutionDeadline.toISOString()}`,
+        );
+        console.log(
+          `   ↳ Calculation: NOW (${escalationTime.toISOString()}) + ${slaHours}h = ${newResolutionDeadline.toISOString()}`,
+        );
+
         // If there's another level and current level is auto-escalation, set next escalation to same as resolution deadline
-        const subsequentLevel = policy.levels.find((l: any) => l.level === nextLevel + 1);
-        if (subsequentLevel && levelConfig.escalationMode === 'auto') {
+        const subsequentLevel = policy.levels.find(
+          (l: any) => l.level === nextLevel + 1,
+        );
+        if (subsequentLevel && levelConfig.escalationMode === "auto") {
           tracking.nextEscalationDue = newResolutionDeadline; // Same as resolution deadline - when current level expires
-          console.log(`   ↳ Next escalation due: ${newResolutionDeadline.toISOString()} (when L${nextLevel} SLA expires)`);
+          console.log(
+            `   ↳ Next escalation due: ${newResolutionDeadline.toISOString()} (when L${nextLevel} SLA expires)`,
+          );
         } else {
           tracking.nextEscalationDue = undefined;
         }
@@ -296,14 +334,16 @@ class AutoEscalationService {
 
       await tracking.save();
 
-      console.log(`✅ Ticket ${ticket.ticketNumber} escalated to ${escalatedToUser.firstName} ${escalatedToUser.lastName}`);
+      console.log(
+        `✅ Ticket ${ticket.ticketNumber} escalated to ${escalatedToUser.firstName} ${escalatedToUser.lastName}`,
+      );
 
       // Send notification
       await this.sendEscalationNotification(
         ticket,
         escalatedToUser,
         levelConfig,
-        nextLevel
+        nextLevel,
       );
     } catch (error) {
       throw error;
@@ -315,21 +355,21 @@ class AutoEscalationService {
    */
   private async findEscalationTargets(
     escalateTo: any,
-    projectId: mongoose.Types.ObjectId
+    projectId: mongoose.Types.ObjectId,
   ): Promise<any[]> {
     switch (escalateTo.type) {
-      case 'user':
+      case "user":
         const user = await User.findById(escalateTo.targetId);
         return user ? [user] : [];
 
-      case 'role':
+      case "role":
         return await User.find({
           role: escalateTo.targetId,
           isActive: true,
           projects: { $in: [projectId] },
         }).limit(10);
 
-      case 'group':
+      case "group":
         // Implement group logic if you have groups
         return [];
 
@@ -343,19 +383,19 @@ class AutoEscalationService {
    */
   private calculateEscalationDeadline(escalateAfter: {
     value: number;
-    unit: 'minutes' | 'hours' | 'days';
+    unit: "minutes" | "hours" | "days";
   }): Date {
     const now = new Date();
     let minutes = 0;
 
     switch (escalateAfter.unit) {
-      case 'minutes':
+      case "minutes":
         minutes = escalateAfter.value;
         break;
-      case 'hours':
+      case "hours":
         minutes = escalateAfter.value * 60;
         break;
-      case 'days':
+      case "days":
         minutes = escalateAfter.value * 24 * 60;
         break;
     }
@@ -370,22 +410,30 @@ class AutoEscalationService {
     ticket: any,
     escalatedToUser: any,
     levelConfig: any,
-    level: number
+    level: number,
   ): Promise<void> {
     try {
-      if (levelConfig.notifyMethod?.includes('email') && escalatedToUser.email) {
+      if (
+        levelConfig.notifyMethod?.includes("email") &&
+        escalatedToUser.email
+      ) {
         await sendTicketEscalatedEmail(
           escalatedToUser.email,
           ticket.ticketNumber,
           ticket.subject,
           `${escalatedToUser.firstName} ${escalatedToUser.lastName}`,
-          ticket.project
+          ticket.project,
         );
 
-        console.log(`📧 Escalation notification sent to ${escalatedToUser.email}`);
+        console.log(
+          `📧 Escalation notification sent to ${escalatedToUser.email}`,
+        );
       }
     } catch (error: any) {
-      console.error(`⚠️  Failed to send escalation notification:`, error.message);
+      console.error(
+        `⚠️  Failed to send escalation notification:`,
+        error.message,
+      );
       // Don't throw - escalation still succeeded
     }
   }
@@ -393,7 +441,11 @@ class AutoEscalationService {
   /**
    * Get service status
    */
-  public getStatus(): { isRunning: boolean; isActive: boolean; interval: string } {
+  public getStatus(): {
+    isRunning: boolean;
+    isActive: boolean;
+    interval: string;
+  } {
     return {
       isRunning: this.isRunning,
       isActive: this.cronJob !== null,

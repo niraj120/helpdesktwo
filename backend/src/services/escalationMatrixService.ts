@@ -969,7 +969,7 @@ export async function executeEscalation(
     };
 
     console.log(
-      `✅ Role-level SLA reset for Level ${targetLevel.levelNumber}: deadline = ${newRoleLevelDeadline.toISOString()} (${targetLevel.slaHours} ${targetLevel.slaUnit || 'hrs'})`,
+      `✅ Role-level SLA reset for Level ${targetLevel.levelNumber}: deadline = ${newRoleLevelDeadline.toISOString()} (${targetLevel.slaHours} ${targetLevel.slaUnit || "hrs"})`,
     );
   }
 
