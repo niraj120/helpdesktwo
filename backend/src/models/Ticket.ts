@@ -1,9 +1,10 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import mongoose, { Schema, Document } from "mongoose";
 
 export interface IAttachment {
   fieldName?: string; // Field name from the online form (if applicable)
   filename: string;
   originalName: string;
+  path?: string; // GCS URL or local /uploads/... path
   mimetype: string;
   size: number;
   uploadedAt: Date;
@@ -64,11 +65,11 @@ export interface IChangeHistory {
   newValue: string; // New value
   changedBy: mongoose.Types.ObjectId; // User who made the change
   changedAt: Date;
-  changeType: 'update' | 'add' | 'remove' | 'reassigned'; // Type of change
+  changeType: "update" | "add" | "remove" | "reassigned"; // Type of change
   // Reassignment-specific fields (only populated when changeType === 'reassigned')
   reassignmentReason?: string; // Reason for reassignment
   reassignmentCategory?: string; // Category from predefined list
-  reassignmentMode?: 'sequential' | 'flexible'; // Which mode was used
+  reassignmentMode?: "sequential" | "flexible"; // Which mode was used
 }
 
 /**
@@ -88,6 +89,7 @@ export interface ITicket extends Document {
   description: string;
   status: number; // Changed to number: 1=open, 2=in-progress, 3=on-hold, 4=resolved, 5=closed
   priority: string; // Priority code from Priority master data (e.g., LOW, MEDIUM, HIGH, CRITICAL)
+  slaRuleId?: mongoose.Types.ObjectId; // Reference to matching SLA rule (ObjectId - rename-resilient priority matching)
   category?: string; // Legacy field - kept for backward compatibility
   categoryHierarchy?: ICategoryHierarchy; // New hierarchical category storage
   createdBy: mongoose.Types.ObjectId;
@@ -100,7 +102,7 @@ export interface ITicket extends Document {
   escalationHistory?: IEscalationRecord[];
   changeHistory?: IChangeHistory[]; // Track all changes to the ticket
   tags: string[];
-  submissionSource?: 'online' | 'offline' | 'email'; // Track where ticket was created
+  submissionSource?: "online" | "offline" | "email"; // Track where ticket was created
   sourceEmail?: string; // Email address from which ticket was created (for email-to-ticket)
   sourceEmailMessageId?: string; // Message ID of the original email (for threading)
   sourceEmailName?: string; // Display name from the email sender
@@ -137,6 +139,7 @@ const AttachmentSchema = new Schema({
   fieldName: { type: String }, // Optional field name from online form
   filename: { type: String, required: true },
   originalName: { type: String, required: true },
+  path: { type: String }, // GCS URL or local /uploads/... path
   mimetype: { type: String, required: true },
   size: { type: Number, required: true },
   uploadedAt: { type: Date, default: Date.now },
@@ -152,7 +155,7 @@ const ThreadAttachmentSchema = new Schema({
 
 const ThreadSchema = new Schema({
   message: { type: String, required: true },
-  createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
   attachments: [ThreadAttachmentSchema],
   isSystemMessage: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
@@ -160,7 +163,7 @@ const ThreadSchema = new Schema({
 
 const CommentSchema = new Schema({
   text: { type: String, required: true },
-  createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date },
   isSystemComment: { type: Boolean, default: false },
@@ -169,13 +172,13 @@ const CommentSchema = new Schema({
 
 const InternalNoteSchema = new Schema({
   note: { type: String, required: true },
-  createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
   createdAt: { type: Date, default: Date.now },
 });
 
 const EscalationRecordSchema = new Schema({
-  escalatedTo: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-  escalatedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  escalatedTo: { type: Schema.Types.ObjectId, ref: "User", required: true },
+  escalatedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
   reason: { type: String, required: true },
   escalatedAt: { type: Date, default: Date.now },
   // Level tracking for proper de-escalation
@@ -184,20 +187,24 @@ const EscalationRecordSchema = new Schema({
   fromLevelName: { type: String },
   toLevelName: { type: String },
   // Store the previous assignee for re-assignment during de-escalation
-  previousAssignee: { type: Schema.Types.ObjectId, ref: 'User' },
+  previousAssignee: { type: Schema.Types.ObjectId, ref: "User" },
 });
 
 const ChangeHistorySchema = new Schema({
   field: { type: String, required: true },
   oldValue: { type: String, required: true },
   newValue: { type: String, required: true },
-  changedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  changedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
   changedAt: { type: Date, default: Date.now },
-  changeType: { type: String, enum: ['update', 'add', 'remove', 'reassigned'], default: 'update' },
+  changeType: {
+    type: String,
+    enum: ["update", "add", "remove", "reassigned"],
+    default: "update",
+  },
   // Reassignment-specific fields
   reassignmentReason: { type: String }, // Only populated when changeType === 'reassigned'
   reassignmentCategory: { type: String }, // Category from predefined list
-  reassignmentMode: { type: String, enum: ['sequential', 'flexible'] }, // Which mode was used
+  reassignmentMode: { type: String, enum: ["sequential", "flexible"] }, // Which mode was used
 });
 
 const TicketSchema: Schema = new Schema(
@@ -232,9 +239,16 @@ const TicketSchema: Schema = new Schema(
       // No enum - priority codes are dynamic from Priority master data
       // Common codes: LOW, MEDIUM, HIGH, CRITICAL
     },
+    slaRuleId: {
+      type: Schema.Types.ObjectId,
+      ref: "SLARule",
+      required: false,
+      index: true,
+      // Populated at ticket creation to enable name-change-resilient dashboard matching
+    },
     category: {
       type: Schema.Types.ObjectId,
-      ref: 'Category',
+      ref: "Category",
       trim: true,
       index: true,
     },
@@ -242,22 +256,22 @@ const TicketSchema: Schema = new Schema(
     categoryHierarchy: {
       level1: {
         type: Schema.Types.ObjectId,
-        ref: 'Category',
+        ref: "Category",
         index: true,
       },
       level2: {
         type: Schema.Types.ObjectId,
-        ref: 'Category',
+        ref: "Category",
         index: true,
       },
       level3: {
         type: Schema.Types.ObjectId,
-        ref: 'Category',
+        ref: "Category",
         index: true,
       },
       level4: {
         type: Schema.Types.ObjectId,
-        ref: 'Category',
+        ref: "Category",
         index: true,
       },
       displayPath: {
@@ -267,16 +281,16 @@ const TicketSchema: Schema = new Schema(
     },
     createdBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
       required: true,
     },
     assignedTo: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
     },
     project: {
       type: Schema.Types.ObjectId,
-      ref: 'Project',
+      ref: "Project",
       index: true,
     },
     attachments: [AttachmentSchema],
@@ -285,14 +299,16 @@ const TicketSchema: Schema = new Schema(
     internalNotes: [InternalNoteSchema],
     escalationHistory: [EscalationRecordSchema],
     changeHistory: [ChangeHistorySchema], // Track all field changes
-    tags: [{
-      type: String,
-      trim: true,
-    }],
+    tags: [
+      {
+        type: String,
+        trim: true,
+      },
+    ],
     submissionSource: {
       type: String,
-      enum: ['online', 'offline', 'email'],
-      default: 'online',
+      enum: ["online", "offline", "email"],
+      default: "online",
       index: true,
     },
     sourceEmail: {
@@ -315,7 +331,7 @@ const TicketSchema: Schema = new Schema(
     },
     sourceEmailConfigId: {
       type: Schema.Types.ObjectId,
-      ref: 'ProjectEmailConfig',
+      ref: "ProjectEmailConfig",
       // Reference to the email config that received this email (for proper reply routing)
     },
     metadata: {
@@ -332,7 +348,7 @@ const TicketSchema: Schema = new Schema(
     // Escalation Matrix fields
     escalationMatrixId: {
       type: Schema.Types.ObjectId,
-      ref: 'EscalationMatrix',
+      ref: "EscalationMatrix",
       index: true,
     },
     currentEscalationLevelId: {
@@ -347,7 +363,7 @@ const TicketSchema: Schema = new Schema(
     // SLA Tracking fields
     workingCalendarId: {
       type: Schema.Types.ObjectId,
-      ref: 'WorkingCalendar',
+      ref: "WorkingCalendar",
       index: true,
     },
     ticketLevelSLA: {
@@ -366,12 +382,16 @@ const TicketSchema: Schema = new Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 // Indexes for better query performance
 TicketSchema.index({ createdBy: 1, createdAt: -1 });
 TicketSchema.index({ assignedTo: 1, status: 1 });
-TicketSchema.index({ ticketNumber: 'text', title: 'text', description: 'text' });
+TicketSchema.index({
+  ticketNumber: "text",
+  title: "text",
+  description: "text",
+});
 
-export const Ticket = mongoose.model<ITicket>('Ticket', TicketSchema);
+export const Ticket = mongoose.model<ITicket>("Ticket", TicketSchema);

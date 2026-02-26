@@ -1,51 +1,48 @@
-import { Request, Response } from 'express';
-import { Ticket } from '../models/Ticket';
-import multer from 'multer';
-import path from 'path';
-import fs from 'fs';
-import { promisify } from 'util';
+import { Request, Response } from "express";
+import { Ticket } from "../models/Ticket";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+import { promisify } from "util";
+import { GCSService } from "../services/gcsService";
 
 const unlinkAsync = promisify(fs.unlink);
 
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadPath = path.join(__dirname, '../../uploads/attachments');
-    // Ensure directory exists
-    if (!fs.existsSync(uploadPath)) {
-      fs.mkdirSync(uploadPath, { recursive: true });
-    }
-    cb(null, uploadPath);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + '-' + file.originalname);
-  }
-});
-
+// Memory storage — file buffer available for GCS upload
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
   fileFilter: (req, file, cb) => {
     // Allow common file types
     const allowedMimes = [
-      'image/jpeg', 'image/png', 'image/gif', 'image/webp',
-      'application/pdf',
-      'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'application/zip', 'application/x-rar-compressed',
-      'text/plain', 'text/csv'
+      "image/jpeg",
+      "image/png",
+      "image/gif",
+      "image/webp",
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/zip",
+      "application/x-rar-compressed",
+      "text/plain",
+      "text/csv",
     ];
-    
+
     if (allowedMimes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only images, PDFs, documents, spreadsheets, and archives are allowed.'));
+      cb(
+        new Error(
+          "Invalid file type. Only images, PDFs, documents, spreadsheets, and archives are allowed.",
+        ),
+      );
     }
-  }
+  },
 });
 
-export const uploadMiddleware = upload.single('file');
+export const uploadMiddleware = upload.single("file");
 
 /**
  * @route   POST /api/tickets/:id/attachments
@@ -59,23 +56,28 @@ export const uploadAttachment = async (req: Request, res: Response) => {
     const userId = (req as any).user?.id;
 
     if (!file) {
-      return res.status(400).json({ message: 'No file uploaded' });
+      return res.status(400).json({ message: "No file uploaded" });
     }
 
     const ticket = await Ticket.findById(id);
     if (!ticket) {
-      // Delete uploaded file if ticket not found
-      await unlinkAsync(file.path);
-      return res.status(404).json({ message: 'Ticket not found' });
+      return res.status(404).json({ message: "Ticket not found" });
     }
 
+    // Upload to GCS (or local fallback)
+    const uploaded = await GCSService.uploadTicketFile(
+      file,
+      "ticket-attachments",
+    );
+
     const attachment = {
-      filename: file.originalname,
-      fileUrl: `/uploads/attachments/${file.filename}`,
+      filename: uploaded.filename,
+      fileUrl: uploaded.path,
+      path: uploaded.path,
       fileSize: file.size,
       mimeType: file.mimetype,
       uploadedBy: userId,
-      uploadedAt: new Date()
+      uploadedAt: new Date(),
     };
 
     ticket.attachments = ticket.attachments || [];
@@ -83,13 +85,13 @@ export const uploadAttachment = async (req: Request, res: Response) => {
     await ticket.save();
 
     res.status(201).json({
-      message: 'Attachment uploaded successfully',
-      attachment
+      message: "Attachment uploaded successfully",
+      attachment,
     });
     return;
   } catch (error: any) {
-    console.error('Upload attachment error:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    console.error("Upload attachment error:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
     return;
   }
 };
@@ -105,36 +107,50 @@ export const downloadAttachment = async (req: Request, res: Response) => {
 
     const ticket = await Ticket.findById(id);
     if (!ticket) {
-      return res.status(404).json({ message: 'Ticket not found' });
+      return res.status(404).json({ message: "Ticket not found" });
     }
 
-    const attachment = ticket.attachments?.find((att: any) => att._id.toString() === attachmentId);
+    const attachment = ticket.attachments?.find(
+      (att: any) => att._id.toString() === attachmentId,
+    );
     if (!attachment) {
-      return res.status(404).json({ message: 'Attachment not found' });
+      return res.status(404).json({ message: "Attachment not found" });
     }
 
-    // SECURITY: Sanitize file URL to prevent path traversal attacks
-    const sanitizedFileUrl = (attachment as any).fileUrl.replace(/\.\.\//g, '').replace(/\.\.\\/g, '');
-    const filePath = path.join(__dirname, '../..', sanitizedFileUrl);
-    
-    // SECURITY: Ensure file path is within uploads directory
-    const uploadsDir = path.resolve(__dirname, '../../uploads');
+    const storedPath: string =
+      (attachment as any).path || (attachment as any).fileUrl || "";
+
+    // GCS file — generate a short-lived signed URL and redirect
+    if (storedPath.startsWith("https://storage.googleapis.com/")) {
+      const signedUrl = await GCSService.getSignedUrl(storedPath, 15);
+      return res.redirect(signedUrl);
+    }
+
+    // Legacy local file fallback
+    const sanitizedFileUrl = storedPath
+      .replace(/\.\.\//g, "")
+      .replace(/\.\.\\/g, "");
+    const filePath = path.join(__dirname, "../..", sanitizedFileUrl);
+    const uploadsDir = path.resolve(__dirname, "../../uploads");
     const resolvedPath = path.resolve(filePath);
-    
+
     if (!resolvedPath.startsWith(uploadsDir)) {
-      console.error(`🚨 Path traversal attempt detected: ${(attachment as any).fileUrl}`);
-      return res.status(403).json({ message: 'Access denied' });
-    }
-    
-    if (!fs.existsSync(resolvedPath)) {
-      return res.status(404).json({ message: 'File not found on server' });
+      console.error(`🚨 Path traversal attempt: ${storedPath}`);
+      return res.status(403).json({ message: "Access denied" });
     }
 
-    res.download(resolvedPath, (attachment as any).filename);
+    if (!fs.existsSync(resolvedPath)) {
+      return res.status(404).json({ message: "File not found on server" });
+    }
+
+    res.download(
+      resolvedPath,
+      (attachment as any).filename || (attachment as any).originalName,
+    );
     return;
   } catch (error: any) {
-    console.error('Download attachment error:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    console.error("Download attachment error:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
     return;
   }
 };
@@ -150,29 +166,60 @@ export const deleteAttachment = async (req: Request, res: Response) => {
 
     const ticket = await Ticket.findById(id);
     if (!ticket) {
-      return res.status(404).json({ message: 'Ticket not found' });
+      return res.status(404).json({ message: "Ticket not found" });
     }
 
-    const attachment = ticket.attachments?.find((att: any) => att._id.toString() === attachmentId);
+    const attachment = ticket.attachments?.find(
+      (att: any) => att._id.toString() === attachmentId,
+    );
     if (!attachment) {
-      return res.status(404).json({ message: 'Attachment not found' });
+      return res.status(404).json({ message: "Attachment not found" });
     }
 
     // Delete file from filesystem
-    const filePath = path.join(__dirname, '../..', (attachment as any).fileUrl);
+    const filePath = path.join(__dirname, "../..", (attachment as any).fileUrl);
     if (fs.existsSync(filePath)) {
       await unlinkAsync(filePath);
     }
 
     // Remove attachment from ticket
-    ticket.attachments = ticket.attachments?.filter((att: any) => att._id.toString() !== attachmentId);
+    ticket.attachments = ticket.attachments?.filter(
+      (att: any) => att._id.toString() !== attachmentId,
+    );
     await ticket.save();
 
-    res.json({ message: 'Attachment deleted successfully' });
+    res.json({ message: "Attachment deleted successfully" });
     return;
   } catch (error: any) {
-    console.error('Delete attachment error:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    console.error("Delete attachment error:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+    return;
+  }
+};
+
+/**
+ * @route   GET /api/tickets/attachment-signed-url
+ * @desc    Generate a 15-min signed URL for any GCS attachment and redirect to it
+ * @access  Private
+ * @query   path — full GCS storage URL or relative GCS path
+ */
+export const getAttachmentSignedUrl = async (req: Request, res: Response) => {
+  try {
+    const gcsPath = req.query.path as string;
+    if (!gcsPath) {
+      return res.status(400).json({ message: "Missing path query parameter" });
+    }
+
+    // Local fallback — redirect as-is (served by express.static / nginx)
+    if (!gcsPath.startsWith("https://storage.googleapis.com/")) {
+      return res.json({ url: gcsPath });
+    }
+
+    const signedUrl = await GCSService.getSignedUrl(gcsPath, 15);
+    return res.json({ url: signedUrl });
+  } catch (error: any) {
+    console.error("getAttachmentSignedUrl error:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
     return;
   }
 };

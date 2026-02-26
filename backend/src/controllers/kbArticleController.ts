@@ -6,6 +6,38 @@ import GCSService from "../services/gcsService";
 import mongoose from "mongoose";
 import DOMPurify from "isomorphic-dompurify";
 
+// DOMPurify configuration to preserve CSS styles from PDF converters
+const DOMPURIFY_CONFIG = {
+  ADD_TAGS: ["style", "link", "meta", "head", "html", "body"],
+  ADD_ATTR: [
+    "style",
+    "class",
+    "id",
+    "cellpadding",
+    "cellspacing",
+    "border",
+    "colspan",
+    "rowspan",
+    "width",
+    "height",
+    "align",
+    "valign",
+    "bgcolor",
+    "color",
+    "face",
+    "size",
+    "type",
+    "rel",
+    "href",
+    "media",
+  ],
+  ALLOW_DATA_ATTR: true,
+  // Allow full HTML document structure and CSS
+  FORBID_CONTENTS: [] as string[],
+  WHOLE_DOCUMENT: true,
+  FORCE_BODY: false,
+};
+
 /**
  * Create a new KB Article
  */
@@ -83,9 +115,9 @@ export const createArticle = async (
       pdfSize = uploadResult.size;
     }
 
-    // Sanitize HTML content
+    // Sanitize HTML content while preserving styles from PDF converters
     const sanitizedHtml = htmlContent
-      ? DOMPurify.sanitize(htmlContent)
+      ? DOMPurify.sanitize(htmlContent, DOMPURIFY_CONFIG)
       : undefined;
 
     // Create article
@@ -515,7 +547,7 @@ export const updateArticle = async (
       article.externalUrl = undefined;
       // Only update htmlContent if provided, otherwise keep existing
       if (htmlContent !== undefined) {
-        article.htmlContent = DOMPurify.sanitize(htmlContent);
+        article.htmlContent = DOMPurify.sanitize(htmlContent, DOMPURIFY_CONFIG);
       }
       console.log(
         "📝 Document type: HTML - cleared PDF and externalUrl, kept htmlContent",
@@ -525,7 +557,7 @@ export const updateArticle = async (
       article.externalUrl = undefined;
       // Only update htmlContent if provided, otherwise keep existing
       if (htmlContent !== undefined) {
-        article.htmlContent = DOMPurify.sanitize(htmlContent);
+        article.htmlContent = DOMPurify.sanitize(htmlContent, DOMPURIFY_CONFIG);
       }
       console.log(
         "📄📝 Document type: Both - cleared externalUrl, kept PDF and HTML",

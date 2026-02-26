@@ -119,13 +119,34 @@ export async function autoAssignMatrixToTicket(
       };
     }
 
-    const startLevel = sortedLevels[0];
     const now = new Date();
 
     // Calculate role-level SLA deadline
     const ticket = await Ticket.findById(ticketId);
     if (!ticket) {
       return { success: false, message: "Ticket not found" };
+    }
+
+    // Detect the correct start level:
+    // If the ticket is already assigned to someone, find which level their role maps to.
+    // This handles the case where a Level 2 agent creates an offline ticket — the
+    // ticket should start at Level 2 rather than always defaulting to Level 1.
+    let startLevel = sortedLevels[0]; // default: Level 1
+    if (ticket.assignedTo) {
+      const assignedUser = await User.findById(ticket.assignedTo)
+        .select("role")
+        .lean();
+      if (assignedUser?.role) {
+        const matchedLevel = sortedLevels.find(
+          (l) => l.roleId?.toString() === assignedUser.role?.toString(),
+        );
+        if (matchedLevel) {
+          startLevel = matchedLevel;
+          console.log(
+            `🎯 Assigned agent's role matches Level ${matchedLevel.levelNumber} — starting matrix there instead of Level 1`,
+          );
+        }
+      }
     }
 
     const ticketCreatedAt = ticket.createdAt || now;

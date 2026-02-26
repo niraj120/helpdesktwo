@@ -1,16 +1,17 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Document, Schema } from "mongoose";
 
 export interface ISLARule extends Document {
   name: string;
   description?: string;
-  priority?: 'Critical' | 'Urgent' | 'High' | 'Normal' | 'Low';
+  priority?: "Critical" | "Urgent" | "High" | "Normal" | "Low";
+  dashboardCategory?: "high" | "medium" | "low";
   responseTime: {
     value: number;
-    unit: 'minutes' | 'hours' | 'days';
+    unit: "minutes" | "hours" | "days";
   };
   resolutionTime: {
     value: number;
-    unit: 'minutes' | 'hours' | 'days';
+    unit: "minutes" | "hours" | "days";
   };
   isActive: boolean;
   projectIds?: mongoose.Types.ObjectId[];
@@ -35,7 +36,12 @@ const SLARuleSchema = new Schema<ISLARule>(
     priority: {
       type: String,
       required: false,
-      enum: ['Critical', 'Urgent', 'High', 'Normal', 'Low'],
+      enum: ["Critical", "Urgent", "High", "Normal", "Low"],
+    },
+    dashboardCategory: {
+      type: String,
+      required: false,
+      enum: ["high", "medium", "low"],
     },
     responseTime: {
       value: {
@@ -46,7 +52,7 @@ const SLARuleSchema = new Schema<ISLARule>(
       unit: {
         type: String,
         required: true,
-        enum: ['minutes', 'hours', 'days'],
+        enum: ["minutes", "hours", "days"],
       },
     },
     resolutionTime: {
@@ -58,7 +64,7 @@ const SLARuleSchema = new Schema<ISLARule>(
       unit: {
         type: String,
         required: true,
-        enum: ['minutes', 'hours', 'days'],
+        enum: ["minutes", "hours", "days"],
       },
     },
     isActive: {
@@ -68,26 +74,26 @@ const SLARuleSchema = new Schema<ISLARule>(
     projectIds: [
       {
         type: Schema.Types.ObjectId,
-        ref: 'Project',
+        ref: "Project",
       },
     ],
     escalationPolicyId: {
       type: Schema.Types.ObjectId,
-      ref: 'EscalationPolicy',
+      ref: "EscalationPolicy",
     },
     createdBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
     },
     updatedBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
     },
   },
   {
     timestamps: true,
-    collection: 'slarules', // Explicitly set collection name
-  }
+    collection: "slarules", // Explicitly set collection name
+  },
 );
 
 // Indexes
@@ -95,6 +101,6 @@ SLARuleSchema.index({ priority: 1, isActive: 1 });
 SLARuleSchema.index({ projectIds: 1 });
 SLARuleSchema.index({ createdAt: -1 });
 
-const SLARule = mongoose.model<ISLARule>('SLARule', SLARuleSchema);
+const SLARule = mongoose.model<ISLARule>("SLARule", SLARuleSchema);
 
 export default SLARule;

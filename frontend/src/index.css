@@ -1073,3 +1073,37 @@
   background-color: var(--surface-variant);
   font-weight: 600;
 }
+
+/* Quill Editor Table Styles */
+.ql-editor table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1em 0;
+  table-layout: auto;
+}
+
+.ql-editor th,
+.ql-editor td {
+  border: 1px solid #ccc;
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: top;
+  min-width: 50px;
+}
+
+.ql-editor th {
+  background-color: #f5f5f5;
+  font-weight: 600;
+}
+
+.ql-editor tr:nth-child(even) td {
+  background-color: #fafafa;
+}
+
+/* Quill Editor Image Styles */
+.ql-editor img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 1em auto;
+}

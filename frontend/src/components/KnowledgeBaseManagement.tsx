@@ -167,6 +167,9 @@ const KnowledgeBaseManagement: React.FC = () => {
   });
   const [tagInput, setTagInput] = useState("");
   const [copiedArticleId, setCopiedArticleId] = useState<string | null>(null);
+  const [showHtmlSource, setShowHtmlSource] = useState(false);
+  const [showHtmlPreview, setShowHtmlPreview] = useState(false);
+  const [htmlSource, setHtmlSource] = useState("");
 
   // Fetch projects or use context
   useEffect(() => {
@@ -1460,24 +1463,229 @@ const KnowledgeBaseManagement: React.FC = () => {
                 </div>
 
                 <div style={{ marginBottom: "20px" }}>
-                  <label
+                  <div
                     style={{
-                      display: "block",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
                       marginBottom: "8px",
-                      fontSize: "14px",
-                      fontWeight: "500",
                     }}
                   >
-                    Content *
-                  </label>
-                  <ReactQuill
-                    theme="snow"
-                    value={formData.content}
-                    onChange={(content) =>
-                      setFormData({ ...formData, content })
-                    }
-                    style={{ height: "300px", marginBottom: "50px" }}
-                  />
+                    <label
+                      style={{
+                        fontSize: "14px",
+                        fontWeight: "500",
+                      }}
+                    >
+                      Content *
+                    </label>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      {showHtmlSource && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // Save HTML directly without switching to visual editor
+                            setFormData({ ...formData, content: htmlSource });
+                            alert(
+                              "HTML content saved! The formatting will be preserved when the article is displayed.",
+                            );
+                          }}
+                          style={{
+                            padding: "6px 12px",
+                            backgroundColor: "#16a34a",
+                            color: "white",
+                            border: "none",
+                            borderRadius: "4px",
+                            fontSize: "12px",
+                            cursor: "pointer",
+                          }}
+                          title="Save HTML content as-is (preserves complex formatting)"
+                        >
+                          ✓ Apply HTML
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (showHtmlSource) {
+                            // Check if HTML has complex styling that will be lost
+                            const hasComplexHtml =
+                              htmlSource.includes("<style") ||
+                              htmlSource.includes("position:") ||
+                              htmlSource.includes("pdf24") ||
+                              htmlSource.includes("<!DOCTYPE");
+                            if (hasComplexHtml) {
+                              const confirmSwitch = window.confirm(
+                                "Warning: Switching to Visual Editor will remove complex formatting (CSS styles, positioning, etc.).\n\n" +
+                                  "To preserve formatting, click 'Apply HTML' instead, which saves the content as-is.\n\n" +
+                                  "Do you still want to switch to Visual Editor?",
+                              );
+                              if (!confirmSwitch) return;
+                            }
+                            // Switching from HTML to visual - apply HTML changes
+                            setFormData({ ...formData, content: htmlSource });
+                          } else {
+                            // Switching from visual to HTML - load current content
+                            setHtmlSource(formData.content);
+                          }
+                          setShowHtmlSource(!showHtmlSource);
+                        }}
+                        style={{
+                          padding: "6px 12px",
+                          backgroundColor: "#4b5563",
+                          color: "white",
+                          border: "none",
+                          borderRadius: "4px",
+                          fontSize: "12px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        {showHtmlSource
+                          ? "👁 Visual Editor"
+                          : "</> HTML Source"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {showHtmlSource ? (
+                    <div>
+                      <div
+                        style={{
+                          marginBottom: "8px",
+                          display: "flex",
+                          gap: "8px",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setShowHtmlPreview(!showHtmlPreview)}
+                          style={{
+                            padding: "4px 10px",
+                            border: "1px solid #d1d5db",
+                            borderRadius: "4px",
+                            fontSize: "12px",
+                            cursor: "pointer",
+                            backgroundColor: "white",
+                          }}
+                        >
+                          {showHtmlPreview ? "Hide Preview" : "Show Preview"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // Extract body content from full HTML document
+                            let content = htmlSource;
+                            const bodyMatch = content.match(
+                              /<body[^>]*>([\s\S]*?)<\/body>/i,
+                            );
+                            if (bodyMatch) {
+                              // Extract style tags and body content
+                              const styleMatch = content.match(
+                                /<style[^>]*>([\s\S]*?)<\/style>/gi,
+                              );
+                              const styles = styleMatch
+                                ? styleMatch.join("\n")
+                                : "";
+                              content = styles + bodyMatch[1];
+                            }
+                            setHtmlSource(content);
+                          }}
+                          style={{
+                            padding: "4px 10px",
+                            border: "1px solid #d1d5db",
+                            borderRadius: "4px",
+                            fontSize: "12px",
+                            cursor: "pointer",
+                            backgroundColor: "white",
+                          }}
+                          title="Extract body content from full HTML document"
+                        >
+                          Extract Body
+                        </button>
+                      </div>
+                      <div
+                        style={{
+                          display: showHtmlPreview ? "grid" : "block",
+                          gridTemplateColumns: showHtmlPreview
+                            ? "1fr 1fr"
+                            : "1fr",
+                          gap: "16px",
+                        }}
+                      >
+                        <textarea
+                          value={htmlSource}
+                          onChange={(e) => setHtmlSource(e.target.value)}
+                          style={{
+                            width: "100%",
+                            height: "350px",
+                            padding: "12px",
+                            border: "1px solid #d1d5db",
+                            borderRadius: "6px",
+                            fontFamily: "monospace",
+                            fontSize: "13px",
+                          }}
+                          placeholder="Paste your HTML code here (tables, images, formatted content)..."
+                        />
+                        {showHtmlPreview && (
+                          <iframe
+                            srcDoc={htmlSource}
+                            style={{
+                              border: "1px solid #d1d5db",
+                              borderRadius: "6px",
+                              height: "350px",
+                              width: "100%",
+                              backgroundColor: "white",
+                            }}
+                            sandbox="allow-same-origin allow-scripts"
+                            title="HTML Preview"
+                          />
+                        )}
+                      </div>
+                      <p
+                        style={{
+                          fontSize: "12px",
+                          color: "#6b7280",
+                          marginTop: "8px",
+                        }}
+                      >
+                        💡 Tip: Convert PDF to HTML using{" "}
+                        <a
+                          href="https://tools.pdf24.org/en/pdf-to-html"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            color: "#2563eb",
+                            textDecoration: "underline",
+                          }}
+                        >
+                          PDF24 Tools
+                        </a>
+                        . Paste the full HTML, click "Extract Body" to clean up.
+                        Tables and formatting will be preserved.
+                      </p>
+                    </div>
+                  ) : (
+                    <div>
+                      <ReactQuill
+                        theme="snow"
+                        value={formData.content}
+                        onChange={(content) =>
+                          setFormData({ ...formData, content })
+                        }
+                        style={{ height: "300px", marginBottom: "50px" }}
+                      />
+                      <p
+                        style={{
+                          fontSize: "12px",
+                          color: "#6b7280",
+                          marginTop: "8px",
+                        }}
+                      >
+                        💡 Tip: For tables and complex layouts, switch to HTML
+                        Source mode.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <div

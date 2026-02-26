@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import axios from "axios";
 import ReactQuill from "react-quill";
 import "react-quill/dist/quill.snow.css";
@@ -211,30 +211,35 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
     });
   };
 
-  const quillModules = {
-    toolbar: [
-      [{ header: [1, 2, 3, 4, 5, 6, false] }],
-      [{ font: [] }],
-      [{ size: ["small", false, "large", "huge"] }],
-      ["bold", "italic", "underline", "strike"],
-      [{ color: [] }, { background: [] }],
-      [{ script: "sub" }, { script: "super" }],
-      [
-        { list: "ordered" },
-        { list: "bullet" },
-        { indent: "-1" },
-        { indent: "+1" },
+  // Memoize quill modules to prevent re-renders
+  const quillModules = useMemo(
+    () => ({
+      toolbar: [
+        [{ header: [1, 2, 3, 4, 5, 6, false] }],
+        [{ font: [] }],
+        [{ size: ["small", false, "large", "huge"] }],
+        ["bold", "italic", "underline", "strike"],
+        [{ color: [] }, { background: [] }],
+        [{ script: "sub" }, { script: "super" }],
+        [
+          { list: "ordered" },
+          { list: "bullet" },
+          { indent: "-1" },
+          { indent: "+1" },
+        ],
+        [{ align: [] }],
+        ["blockquote", "code-block"],
+        ["link", "image", "video"],
+        ["clean"],
       ],
-      [{ align: [] }],
-      ["blockquote", "code-block"],
-      ["link", "image", "video"],
-      ["clean"],
-    ],
-    clipboard: {
-      matchVisual: false, // Preserve formatting when pasting
-    },
-  };
+      clipboard: {
+        matchVisual: false, // Preserve formatting when pasting
+      },
+    }),
+    [],
+  );
 
+  // Include table formats for pasted content from Word/HTML
   const quillFormats = [
     "header",
     "font",
@@ -258,6 +263,7 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
   ];
 
   const [showHtmlSource, setShowHtmlSource] = useState(false);
+  const [showHtmlPreview, setShowHtmlPreview] = useState(false);
   const [htmlSource, setHtmlSource] = useState("");
 
   return (
@@ -401,75 +407,164 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
                 <label className="block text-sm font-medium">
                   HTML Content {formData.documentType === "html" ? "*" : ""}
                 </label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (showHtmlSource) {
-                      // Switching from HTML to visual - apply HTML changes
-                      setFormData({ ...formData, htmlContent: htmlSource });
-                    } else {
-                      // Switching from visual to HTML - load current content
-                      setHtmlSource(formData.htmlContent);
-                    }
-                    setShowHtmlSource(!showHtmlSource);
-                  }}
-                  className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm flex items-center gap-2"
-                >
-                  {showHtmlSource ? (
-                    <>
-                      <svg
-                        className="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                        />
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                        />
-                      </svg>
-                      Visual Editor
-                    </>
-                  ) : (
-                    <>
-                      <svg
-                        className="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"
-                        />
-                      </svg>
-                      HTML Source
-                    </>
+                <div className="flex gap-2">
+                  {showHtmlSource && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // Save HTML directly without switching to visual editor
+                        setFormData({ ...formData, htmlContent: htmlSource });
+                        alert(
+                          "HTML content saved! The formatting will be preserved when the article is displayed.",
+                        );
+                      }}
+                      className="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
+                      title="Save HTML content as-is (preserves complex formatting)"
+                    >
+                      ✓ Apply HTML
+                    </button>
                   )}
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (showHtmlSource) {
+                        // Check if HTML has complex styling that will be lost
+                        const hasComplexHtml =
+                          htmlSource.includes("<style") ||
+                          htmlSource.includes("position:") ||
+                          htmlSource.includes("pdf24") ||
+                          htmlSource.includes("<!DOCTYPE");
+                        if (hasComplexHtml) {
+                          const confirm = window.confirm(
+                            "Warning: Switching to Visual Editor will remove complex formatting (CSS styles, positioning, etc.).\n\n" +
+                              "To preserve formatting, click 'Apply HTML' instead, which saves the content as-is.\n\n" +
+                              "Do you still want to switch to Visual Editor?",
+                          );
+                          if (!confirm) return;
+                        }
+                        // Switching from HTML to visual - apply HTML changes
+                        setFormData({ ...formData, htmlContent: htmlSource });
+                      } else {
+                        // Switching from visual to HTML - load current content
+                        setHtmlSource(formData.htmlContent);
+                      }
+                      setShowHtmlSource(!showHtmlSource);
+                    }}
+                    className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm flex items-center gap-2"
+                  >
+                    {showHtmlSource ? (
+                      <>
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                          />
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                          />
+                        </svg>
+                        Visual Editor
+                      </>
+                    ) : (
+                      <>
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"
+                          />
+                        </svg>
+                        HTML Source
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
 
               {showHtmlSource ? (
                 <div>
-                  <textarea
-                    value={htmlSource}
-                    onChange={(e) => setHtmlSource(e.target.value)}
-                    className="w-full h-96 border rounded px-3 py-2 font-mono text-sm"
-                    placeholder="Paste your HTML code here..."
-                  />
+                  <div className="flex gap-2 mb-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowHtmlPreview(!showHtmlPreview)}
+                      className="px-3 py-1 text-sm border rounded hover:bg-gray-100"
+                    >
+                      {showHtmlPreview ? "Hide Preview" : "Show Preview"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // Extract body content from full HTML document
+                        let content = htmlSource;
+                        const bodyMatch = content.match(
+                          /<body[^>]*>([\s\S]*?)<\/body>/i,
+                        );
+                        if (bodyMatch) {
+                          // Extract style tags and body content
+                          const styleMatch = content.match(
+                            /<style[^>]*>([\s\S]*?)<\/style>/gi,
+                          );
+                          const styles = styleMatch
+                            ? styleMatch.join("\n")
+                            : "";
+                          content = styles + bodyMatch[1];
+                        }
+                        setHtmlSource(content);
+                      }}
+                      className="px-3 py-1 text-sm border rounded hover:bg-gray-100"
+                      title="Extract body content from full HTML document"
+                    >
+                      Extract Body
+                    </button>
+                  </div>
+                  <div
+                    className={showHtmlPreview ? "grid grid-cols-2 gap-4" : ""}
+                  >
+                    <div>
+                      <textarea
+                        value={htmlSource}
+                        onChange={(e) => setHtmlSource(e.target.value)}
+                        className="w-full h-96 border rounded px-3 py-2 font-mono text-sm"
+                        placeholder="Paste your HTML code here (tables, images, formatted content)..."
+                      />
+                    </div>
+                    {showHtmlPreview && (
+                      <iframe
+                        srcDoc={htmlSource}
+                        className="border rounded h-96 w-full bg-white"
+                        sandbox="allow-same-origin allow-scripts"
+                        title="HTML Preview"
+                      />
+                    )}
+                  </div>
                   <p className="text-xs text-gray-500 mt-1">
-                    💡 Tip: Paste HTML code directly. Switch to Visual Editor to
-                    see the result.
+                    💡 Tip: Convert PDF to HTML using{" "}
+                    <a
+                      href="https://tools.pdf24.org/en/pdf-to-html"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline"
+                    >
+                      PDF24 Tools
+                    </a>
+                    . Paste the full HTML, click "Extract Body" to clean up.
+                    Tables and formatting will be preserved.
                   </p>
                 </div>
               ) : (
@@ -486,8 +581,9 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
                     style={{ height: "400px", marginBottom: "50px" }}
                   />
                   <p className="text-xs text-gray-500 mt-1">
-                    💡 Tip: Use the toolbar for formatting, or switch to HTML
-                    Source to paste raw HTML code.
+                    💡 Tip: Use the toolbar for formatting. For tables and
+                    complex layouts, switch to HTML Source mode and paste HTML
+                    directly.
                   </p>
                 </>
               )}

@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import KnowledgeBaseViewer from '../components/knowledge-base/KnowledgeBaseViewer';
-import { API_CONFIG } from '../config/constants';
+import React, { useEffect, useState } from "react";
+import { useParams } from "react-router-dom";
+import KnowledgeBaseViewer from "../components/knowledge-base/KnowledgeBaseViewer";
+import { API_CONFIG } from "../config/constants";
 
 interface Project {
   _id: string;
@@ -18,9 +18,9 @@ interface Project {
  */
 const StudentKBViewerPage: React.FC = () => {
   const { customUrlPath } = useParams<{ customUrlPath: string }>();
-  const [projectId, setProjectId] = useState<string>('');
+  const [projectId, setProjectId] = useState<string>("");
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string>('');
+  const [error, setError] = useState<string>("");
 
   useEffect(() => {
     if (customUrlPath) {
@@ -31,7 +31,7 @@ const StudentKBViewerPage: React.FC = () => {
   const fetchProjectByUrl = async (urlPath: string) => {
     try {
       const response = await fetch(
-        `${API_CONFIG.API_URL}/projects/branding/${urlPath}`
+        `${API_CONFIG.API_URL}/projects/branding/${urlPath}`,
       );
 
       if (response.ok) {
@@ -39,14 +39,14 @@ const StudentKBViewerPage: React.FC = () => {
         if (data.success && data.data?.projectId) {
           setProjectId(data.data.projectId);
         } else {
-          setError('Project not found');
+          setError("Project not found");
         }
       } else {
-        setError('Failed to load project');
+        setError("Failed to load project");
       }
     } catch (err) {
-      console.error('Error fetching project:', err);
-      setError('Error loading project');
+      console.error("Error fetching project:", err);
+      setError("Error loading project");
     } finally {
       setLoading(false);
     }
@@ -67,7 +67,9 @@ const StudentKBViewerPage: React.FC = () => {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <p className="text-red-600 text-lg mb-2">⚠️ {error || 'Project not found'}</p>
+          <p className="text-red-600 text-lg mb-2">
+            ⚠️ {error || "Project not found"}
+          </p>
           <p className="text-gray-500">Please check the URL and try again.</p>
         </div>
       </div>
@@ -75,14 +77,17 @@ const StudentKBViewerPage: React.FC = () => {
   }
 
   return (
-    <div style={{ 
-      minHeight: 'calc(100vh - 80px)', 
-      backgroundColor: '#f9fafb'
-    }}>
+    <div
+      style={{
+        minHeight: "calc(100vh - 80px)",
+        backgroundColor: "#f9fafb",
+      }}
+    >
       {/* Student KB Viewer - No project dropdown, read-only */}
-      <KnowledgeBaseViewer 
-        projectId={projectId} 
-        showControls={false}  // Students cannot edit
+      <KnowledgeBaseViewer
+        projectId={projectId}
+        showControls={false} // Students cannot edit
+        isStudentPortal={true}
       />
     </div>
   );

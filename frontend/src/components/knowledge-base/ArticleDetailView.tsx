@@ -1,13 +1,20 @@
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import { ArrowLeft, Eye, Calendar, Tag, FileText, Download } from 'lucide-react';
-import DOMPurify from 'dompurify';
-import { API_CONFIG } from '../../config/constants';
+import React, { useState, useEffect } from "react";
+import axios from "axios";
+import {
+  ArrowLeft,
+  Eye,
+  Calendar,
+  Tag,
+  FileText,
+  Download,
+} from "lucide-react";
+import DOMPurify from "dompurify";
+import { API_CONFIG } from "../../config/constants";
 
 interface Article {
   id: string;
   documentName: string;
-  documentType: 'pdf' | 'html' | 'both' | 'link';
+  documentType: "pdf" | "html" | "both" | "link";
   description?: string;
   pdfUrl?: string;
   htmlContent?: string;
@@ -54,20 +61,20 @@ const ArticleDetailView: React.FC<ArticleDetailViewProps> = ({
   const fetchArticle = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const response = await axios.get(
         `${API_CONFIG.API_URL}/kb/public/articles/${articleId}`,
         {
           headers: { Authorization: `Bearer ${token}` },
           params: { projectId },
-        }
+        },
       );
       setArticle(response.data.data.article);
       setLevels(response.data.data.levels || []);
       setRelatedArticles(response.data.data.relatedArticles || []);
     } catch (error: any) {
-      console.error('Failed to fetch article:', error);
-      alert(error.response?.data?.message || 'Failed to fetch article');
+      console.error("Failed to fetch article:", error);
+      alert(error.response?.data?.message || "Failed to fetch article");
     } finally {
       setLoading(false);
     }
@@ -85,19 +92,51 @@ const ArticleDetailView: React.FC<ArticleDetailViewProps> = ({
     return (
       <div className="text-center py-12">
         <p className="text-gray-500">Article not found</p>
-        <button
-          onClick={onBack}
-          className="mt-4 text-blue-600 hover:underline"
-        >
+        <button onClick={onBack} className="mt-4 text-blue-600 hover:underline">
           Go back
         </button>
       </div>
     );
   }
 
-  const sanitizedHtml = article.htmlContent
-    ? DOMPurify.sanitize(article.htmlContent)
-    : '';
+  // Prepare HTML content for iframe rendering to preserve CSS styles from PDF converters
+  const prepareHtmlForViewer = (html: string): string => {
+    // If HTML already has DOCTYPE or html tag, return as-is
+    if (html.includes("<!DOCTYPE") || html.includes("<html")) {
+      // Inject viewport meta if not present for better rendering
+      if (!html.includes("<meta") || !html.includes("viewport")) {
+        return html.replace(
+          "<head>",
+          '<head><meta name="viewport" content="width=device-width, initial-scale=1.0">',
+        );
+      }
+      return html;
+    }
+    // Otherwise wrap in a basic HTML document with comprehensive styles
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; padding: 20px; margin: 0; line-height: 1.6; color: #333; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ccc; padding: 8px 12px; text-align: left; vertical-align: top; }
+    th { background-color: #f5f5f5; font-weight: 600; }
+    tr:nth-child(even) { background-color: #fafafa; }
+    img { max-width: 100%; height: auto; }
+    h1, h2, h3, h4, h5, h6 { margin-top: 1em; margin-bottom: 0.5em; color: #222; }
+    p { margin: 0.5em 0; }
+    ul, ol { padding-left: 2em; }
+    a { color: #0066cc; }
+    pre, code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: monospace; }
+    blockquote { border-left: 4px solid #ddd; margin: 1em 0; padding-left: 1em; color: #666; }
+  </style>
+</head>
+<body>${html}</body>
+</html>`;
+  };
 
   return (
     <div className="max-w-4xl mx-auto p-6">
@@ -183,7 +222,7 @@ const ArticleDetailView: React.FC<ArticleDetailViewProps> = ({
       </div>
 
       {/* PDF Content */}
-      {(article.documentType === 'pdf' || article.documentType === 'both') &&
+      {(article.documentType === "pdf" || article.documentType === "both") &&
         article.pdfUrl && (
           <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
             <div className="flex items-center justify-between mb-4">
@@ -210,12 +249,13 @@ const ArticleDetailView: React.FC<ArticleDetailViewProps> = ({
         )}
 
       {/* External Link Content */}
-      {article.documentType === 'link' && article.externalUrl && (
+      {article.documentType === "link" && article.externalUrl && (
         <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
           <div className="text-center py-8">
             <h2 className="text-xl font-semibold mb-4">External Resource</h2>
             <p className="text-gray-600 mb-6">
-              This article links to an external resource. Click the button below to access it.
+              This article links to an external resource. Click the button below
+              to access it.
             </p>
             <a
               href={article.externalUrl}
@@ -234,12 +274,28 @@ const ArticleDetailView: React.FC<ArticleDetailViewProps> = ({
       )}
 
       {/* HTML Content */}
-      {(article.documentType === 'html' || article.documentType === 'both') &&
+      {(article.documentType === "html" || article.documentType === "both") &&
         article.htmlContent && (
           <div className="bg-white rounded-lg shadow-lg p-8 mb-6">
-            <div
-              className="prose max-w-none"
-              dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
+            <iframe
+              srcDoc={prepareHtmlForViewer(article.htmlContent)}
+              className="w-full border-0 rounded"
+              style={{ minHeight: "600px", height: "auto" }}
+              sandbox="allow-same-origin allow-scripts"
+              title="Article Content"
+              onLoad={(e) => {
+                // Auto-adjust iframe height to content
+                const iframe = e.target as HTMLIFrameElement;
+                try {
+                  const height =
+                    iframe.contentWindow?.document.body?.scrollHeight;
+                  if (height && height > 200) {
+                    iframe.style.height = `${height + 50}px`;
+                  }
+                } catch (err) {
+                  // Cross-origin restriction - use default height
+                }
+              }}
             />
           </div>
         )}

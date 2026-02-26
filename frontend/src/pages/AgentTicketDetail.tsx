@@ -1,10 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import axios from 'axios';
-import DashboardLayout from '../components/DashboardLayout';
-import EscalationMatrixCard from '../components/EscalationMatrixCard';
-import HierarchyCategorySelector, { CategoryHierarchyValue, useHierarchyConfig, CategoryHierarchyDisplay } from '../components/HierarchyCategorySelector';
-import { API_CONFIG } from '../config/constants';
+import React, { useState, useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import axios from "axios";
+import DashboardLayout from "../components/DashboardLayout";
+import EscalationMatrixCard from "../components/EscalationMatrixCard";
+import HierarchyCategorySelector, {
+  CategoryHierarchyValue,
+  useHierarchyConfig,
+  CategoryHierarchyDisplay,
+} from "../components/HierarchyCategorySelector";
+import { API_CONFIG } from "../config/constants";
 import {
   ArrowLeftIcon,
   PaperClipIcon,
@@ -19,14 +23,14 @@ import {
   XCircleIcon,
   ArrowUpIcon,
   TicketIcon,
-} from '@heroicons/react/24/outline';
+} from "@heroicons/react/24/outline";
 
 // SLA Tracking interface for resolution time calculation
 interface SLATrackingData {
   currentEscalationLevel: number;
   resolutionDeadline?: string;
   nextEscalationDue?: string;
-  resolutionStatus: 'met' | 'breached' | 'pending';
+  resolutionStatus: "met" | "breached" | "pending";
   isPaused: boolean;
   pausedDuration: number;
   lastEscalationAt?: string;
@@ -34,7 +38,7 @@ interface SLATrackingData {
     level: number;
     escalatedAt: string;
     escalatedTo: string;
-    mode: 'manual' | 'auto';
+    mode: "manual" | "auto";
     reason: string;
   }>;
   escalationPolicy?: {
@@ -89,7 +93,7 @@ interface Ticket {
     lastName: string;
     email: string;
   };
-  submissionSource?: 'online' | 'offline' | 'email'; // Task 6.4: Ticket source
+  submissionSource?: "online" | "offline" | "email"; // Task 6.4: Ticket source
   sourceEmail?: string; // Task 6.4: Sender email for email tickets
   sourceEmailMessageId?: string; // Task 7.5: Original email message ID for threading
   metadata?: {
@@ -169,7 +173,7 @@ interface Attachment {
 interface EmailCommunication {
   _id: string;
   ticketId: string;
-  direction: 'incoming' | 'outgoing' | 'inbound' | 'outbound';
+  direction: "incoming" | "outgoing" | "inbound" | "outbound";
   fromEmail: string;
   toEmail: string;
   ccEmails?: string[];
@@ -221,7 +225,7 @@ interface ChangeHistory {
     email: string;
   };
   changedAt: string;
-  changeType: 'update' | 'add' | 'remove';
+  changeType: "update" | "add" | "remove";
 }
 
 interface Category {
@@ -280,21 +284,61 @@ interface AgentTicketDetailProps {
   wrapWithLayout?: boolean;
 }
 
-const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = true }) => {
+/** Opens an attachment — fetches a signed URL from the backend (with auth) then opens it in a new tab. */
+const openAttachment = async (pathOrUrl: string | undefined) => {
+  if (!pathOrUrl) return;
+  const token = localStorage.getItem("authToken");
+  try {
+    const res = await axios.get(
+      `${API_CONFIG.BASE_URL}/api/tickets/attachment-signed-url?path=${encodeURIComponent(pathOrUrl)}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    const url: string = res.data?.url || pathOrUrl;
+    window.open(url, "_blank", "noopener,noreferrer");
+  } catch {
+    // Fallback: open directly (works for non-GCS local paths)
+    window.open(pathOrUrl, "_blank", "noopener,noreferrer");
+  }
+};
+
+const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
+  wrapWithLayout = true,
+}) => {
   const { id: ticketId, customUrlPath } = useParams();
   const navigate = useNavigate();
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [loading, setLoading] = useState(true);
   const [permissions, setPermissions] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState<'details' | 'replies' | 'notes' | 'history' | 'emails'>('replies'); // Task 6.5: Added 'emails' tab
-  
+  const [activeTab, setActiveTab] = useState<
+    "details" | "replies" | "notes" | "history" | "emails"
+  >("replies"); // Task 6.5: Added 'emails' tab
+
   // Reply states
-  const [replyMessage, setReplyMessage] = useState('');
+  const [replyMessage, setReplyMessage] = useState("");
   const [replyFiles, setReplyFiles] = useState<FileList | null>(null);
   const [isSubmittingReply, setIsSubmittingReply] = useState(false);
 
+  // File upload toast
+  const [fileUploadToast, setFileUploadToast] = useState<{
+    names: string[];
+    visible: boolean;
+  } | null>(null);
+  const fileToastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+
+  const showFileUploadToast = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const names = Array.from(files).map((f) => f.name);
+    if (fileToastTimerRef.current) clearTimeout(fileToastTimerRef.current);
+    setFileUploadToast({ names, visible: true });
+    fileToastTimerRef.current = setTimeout(() => {
+      setFileUploadToast(null);
+    }, 4000);
+  };
+
   // Internal note states
-  const [noteText, setNoteText] = useState('');
+  const [noteText, setNoteText] = useState("");
   const [isAddingNote, setIsAddingNote] = useState(false);
 
   // Edit states
@@ -303,90 +347,135 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
   const [isEditingPriority, setIsEditingPriority] = useState(false);
   const [isAddingTag, setIsAddingTag] = useState(false);
 
-  const [newStatus, setNewStatus] = useState<string | number>('');
-  const [newCategory, setNewCategory] = useState('');
-  const [newPriority, setNewPriority] = useState('');
-  const [newTag, setNewTag] = useState('');
+  const [newStatus, setNewStatus] = useState<string | number>("");
+  const [newCategory, setNewCategory] = useState("");
+  const [newPriority, setNewPriority] = useState("");
+  const [newTag, setNewTag] = useState("");
+
+  // Confirmation & success modal state
+  const [confirmModal, setConfirmModal] = useState<{
+    open: boolean;
+    field: string;
+    from: string;
+    to: string;
+    onConfirm: () => void;
+  }>({ open: false, field: "", from: "", to: "", onConfirm: () => {} });
+  const [successModal, setSuccessModal] = useState<{
+    open: boolean;
+    message: string;
+  }>({ open: false, message: "" });
+  const [isFieldUpdating, setIsFieldUpdating] = useState(false);
 
   // Master data
   const [categories, setCategories] = useState<Category[]>([]);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
-  const [projectConfig, setProjectConfig] = useState<ProjectConfiguration | null>(null);
+  const [projectConfig, setProjectConfig] =
+    useState<ProjectConfiguration | null>(null);
   const [statusOptions, setStatusOptions] = useState<any[]>([]);
   const [priorityOptions, setPriorityOptions] = useState<string[]>([]);
   const [priorityData, setPriorityData] = useState<any>(null);
   const [slaRules, setSlaRules] = useState<any[]>([]);
-  
+
   // Task 6.4: State for escalation policies (for level-based SLA timing) and user role
-  const [escalationPolicies, setEscalationPolicies] = useState<EscalationPolicy[]>([]);
-  const [userRole, setUserRole] = useState<{ _id: string; name: string; code?: string } | null>(null);
+  const [escalationPolicies, setEscalationPolicies] = useState<
+    EscalationPolicy[]
+  >([]);
+  const [userRole, setUserRole] = useState<{
+    _id: string;
+    name: string;
+    code?: string;
+  } | null>(null);
 
   // Escalation Matrix and Working Calendar for SLA calculations
   const [escalationMatrix, setEscalationMatrix] = useState<any>(null);
   const [workingCalendar, setWorkingCalendar] = useState<any>(null);
-  
+
   // Category hierarchy state
-  const [categoryHierarchy, setCategoryHierarchy] = useState<CategoryHierarchyValue>({});
-  
+  const [categoryHierarchy, setCategoryHierarchy] =
+    useState<CategoryHierarchyValue>({});
+
   // Compute projectId from ticket for hierarchy config
-  const ticketProjectId = ticket?.projectId 
-    ? (typeof ticket.projectId === 'object' ? (ticket.projectId as any)._id : ticket.projectId)
-    : (ticket?.metadata?.projectId || '');
-  
+  const ticketProjectId = ticket?.projectId
+    ? typeof ticket.projectId === "object"
+      ? (ticket.projectId as any)._id
+      : ticket.projectId
+    : ticket?.metadata?.projectId || "";
+
   // Fetch hierarchy config to determine if multi-level categories are enabled
   const { config: hierarchyConfig } = useHierarchyConfig(ticketProjectId);
 
   // Task 6.5: Email communications state
-  const [emailCommunications, setEmailCommunications] = useState<EmailCommunication[]>([]);
+  const [emailCommunications, setEmailCommunications] = useState<
+    EmailCommunication[]
+  >([]);
   const [loadingEmails, setLoadingEmails] = useState(false);
   const [expandedEmails, setExpandedEmails] = useState<Set<string>>(new Set());
 
   // Task 7.1: Email reply state
-  const [replyContent, setReplyContent] = useState('');
+  const [replyContent, setReplyContent] = useState("");
   const [sendingReply, setSendingReply] = useState(false);
-  const [replySuccess, setReplySuccess] = useState('');
-  const [replyError, setReplyError] = useState('');
+  const [replySuccess, setReplySuccess] = useState("");
+  const [replyError, setReplyError] = useState("");
   const [showReplyForm, setShowReplyForm] = useState(false);
 
   // Task 6.4: Source badge helper function
-  const getSourceBadge = (source?: 'online' | 'offline' | 'email') => {
+  const getSourceBadge = (source?: "online" | "offline" | "email") => {
     const badges = {
-      online: { icon: '🌐', label: 'Online', color: '#3B82F6', bgColor: '#DBEAFE', tooltip: 'Submitted via online portal' },
-      offline: { icon: '📍', label: 'Offline', color: '#8B5CF6', bgColor: '#EDE9FE', tooltip: 'Walk-in or phone submission' },
-      email: { icon: '📧', label: 'Email', color: '#10B981', bgColor: '#D1FAE5', tooltip: 'Created from email' },
+      online: {
+        icon: "🌐",
+        label: "Online",
+        color: "#3B82F6",
+        bgColor: "#DBEAFE",
+        tooltip: "Submitted via online portal",
+      },
+      offline: {
+        icon: "📍",
+        label: "Offline",
+        color: "#8B5CF6",
+        bgColor: "#EDE9FE",
+        tooltip: "Walk-in or phone submission",
+      },
+      email: {
+        icon: "📧",
+        label: "Email",
+        color: "#10B981",
+        bgColor: "#D1FAE5",
+        tooltip: "Created from email",
+      },
     };
-    return badges[source || 'online'] || badges.online;
+    return badges[source || "online"] || badges.online;
   };
 
   // Helper function to get status display name from numeric code
   const getStatusDisplayName = (statusCode: number | string) => {
-    const code = typeof statusCode === 'string' ? Number(statusCode) : statusCode;
+    const code =
+      typeof statusCode === "string" ? Number(statusCode) : statusCode;
     const status = statusOptions.find((s: any) => s.code === code);
-    
+
     // If status found in options, return it
     if (status) return status.name;
-    
+
     // Fallback to standard status names for common codes
     const standardStatuses: { [key: number]: string } = {
-      1: 'Open',
-      2: 'In Progress',
-      3: 'Pending',
-      4: 'Resolved',
-      5: 'Closed'
+      1: "Open",
+      2: "In Progress",
+      3: "Pending",
+      4: "Resolved",
+      5: "Closed",
     };
-    
+
     return standardStatuses[code] || `Status ${code}`;
   };
 
   // Helper function to format change history values (converts status IDs to names)
   const formatChangeValue = (field: string, value: any) => {
     if (!value) return value;
-    
+
     // Convert status codes to names
-    if (field === 'Status' || field === 'status') {
+    if (field === "Status" || field === "status") {
       return getStatusDisplayName(value);
     }
-    
+
     return value;
   };
 
@@ -403,13 +492,13 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
     if (priorityData.resolutionTime) {
       const { value, unit } = priorityData.resolutionTime;
       switch (unit) {
-        case 'minutes':
+        case "minutes":
           resolutionMs = value * 60 * 1000;
           break;
-        case 'hours':
+        case "hours":
           resolutionMs = value * 60 * 60 * 1000;
           break;
-        case 'days':
+        case "days":
           resolutionMs = value * 24 * 60 * 60 * 1000;
           break;
       }
@@ -427,9 +516,9 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
       hours,
       minutes,
       isBreached,
-      displayText: isBreached 
+      displayText: isBreached
         ? `Overdue by ${hours}h ${minutes}m`
-        : `${hours}h ${minutes}m remaining`
+        : `${hours}h ${minutes}m remaining`,
     };
   };
 
@@ -437,7 +526,9 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
   const getTicketProjectId = (t: Ticket | null): string | undefined => {
     if (!t) return undefined;
     if (t.projectId) {
-      return typeof t.projectId === 'object' ? (t.projectId as any)._id : t.projectId;
+      return typeof t.projectId === "object"
+        ? (t.projectId as any)._id
+        : t.projectId;
     }
     if (t.metadata?.projectId) {
       return t.metadata.projectId;
@@ -455,70 +546,83 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
     if (!ticket || !ticketId) return;
 
     // Get current user ID from localStorage
-    const userStr = localStorage.getItem('user');
+    const userStr = localStorage.getItem("user");
     const currentUserId = userStr ? JSON.parse(userStr)?._id : null;
-    
+
     // Get ticket's current assignedTo ID
     const getAssignedToId = (t: Ticket | null) => {
       if (!t?.assignedTo) return null;
-      return typeof t.assignedTo === 'object' ? (t.assignedTo as any)._id : t.assignedTo;
+      return typeof t.assignedTo === "object"
+        ? (t.assignedTo as any)._id
+        : t.assignedTo;
     };
-    
+
     const initialAssignedTo = getAssignedToId(ticket);
-    
+
     // Only poll if the ticket is currently assigned to the logged-in user
     if (initialAssignedTo !== currentUserId) return;
-    
+
     const pollInterval = setInterval(async () => {
       try {
-        const token = localStorage.getItem('authToken');
+        const token = localStorage.getItem("authToken");
         if (!token) return;
-        
+
         const response = await axios.get(
           `${API_CONFIG.API_URL}/tickets/${ticketId}`,
-          { headers: { Authorization: `Bearer ${token}` } }
+          { headers: { Authorization: `Bearer ${token}` } },
         );
-        
+
         if (response.data.success && response.data.data) {
           const updatedTicket = response.data.data;
           const newAssignedTo = getAssignedToId(updatedTicket);
           const newLevel = updatedTicket.currentEscalationLevelNumber;
           const oldLevel = ticket.currentEscalationLevelNumber;
-          
+
           // Check if ticket was escalated (assigned to different user or level changed)
           if (newAssignedTo && newAssignedTo !== currentUserId) {
             clearInterval(pollInterval);
-            
+
             // Show notification
-            const levelChange = newLevel && oldLevel && newLevel !== oldLevel
-              ? ` from Level ${oldLevel} to Level ${newLevel}`
-              : '';
-            
-            alert(`This ticket has been escalated${levelChange} and is no longer assigned to you. Redirecting to ticket list...`);
-            
+            const levelChange =
+              newLevel && oldLevel && newLevel !== oldLevel
+                ? ` from Level ${oldLevel} to Level ${newLevel}`
+                : "";
+
+            alert(
+              `This ticket has been escalated${levelChange} and is no longer assigned to you. Redirecting to ticket list...`,
+            );
+
             // Redirect to ticket listing
             navigate(`/${customUrlPath}/portal/queries`);
           }
         }
       } catch (error) {
         // Silently fail - don't interrupt user workflow for polling errors
-        console.debug('Auto-escalation poll error:', error);
+        console.debug("Auto-escalation poll error:", error);
       }
     }, 30000); // Poll every 30 seconds
-    
+
     return () => clearInterval(pollInterval);
   }, [ticket?._id, ticketId, customUrlPath, navigate]);
 
   // Fetch master data when ticket is loaded (use ticket's projectId)
   useEffect(() => {
-    console.log('🔄 useEffect[ticket] running, ticket:', ticket?._id, 'metadata:', ticket?.metadata);
+    console.log(
+      "🔄 useEffect[ticket] running, ticket:",
+      ticket?._id,
+      "metadata:",
+      ticket?.metadata,
+    );
     const projectId = getTicketProjectId(ticket);
-    console.log('🔍 getTicketProjectId returned:', projectId);
+    console.log("🔍 getTicketProjectId returned:", projectId);
     if (projectId) {
-      console.log('📋 Ticket loaded, fetching master data with projectId:', projectId);
+      console.log(
+        "📋 Ticket loaded, fetching master data with projectId:",
+        projectId,
+      );
       fetchMasterData(projectId);
     } else {
-      console.warn('⚠️ No projectId found, skipping master data fetch');
+      console.warn("⚠️ No projectId found, skipping master data fetch");
     }
   }, [ticket]);
 
@@ -526,30 +630,31 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
   useEffect(() => {
     const fetchEscalationMatrix = async () => {
       if (!ticket?.escalationMatrixId) return;
-      
+
       // Extract _id if escalationMatrixId is an object
-      const matrixId = typeof ticket.escalationMatrixId === 'object' 
-        ? (ticket.escalationMatrixId as any)._id 
-        : ticket.escalationMatrixId;
-      
+      const matrixId =
+        typeof ticket.escalationMatrixId === "object"
+          ? (ticket.escalationMatrixId as any)._id
+          : ticket.escalationMatrixId;
+
       if (!matrixId) {
-        console.warn('⚠️ No valid escalation matrix ID found');
+        console.warn("⚠️ No valid escalation matrix ID found");
         return;
       }
-      
+
       try {
-        const token = localStorage.getItem('authToken');
+        const token = localStorage.getItem("authToken");
         const response = await axios.get(
           `${API_CONFIG.API_URL}/escalation-matrix/${matrixId}`,
-          { headers: { Authorization: `Bearer ${token}` } }
+          { headers: { Authorization: `Bearer ${token}` } },
         );
-        
+
         if (response.data.success && response.data.data) {
-          console.log('📋 Escalation Matrix loaded:', response.data.data);
+          console.log("📋 Escalation Matrix loaded:", response.data.data);
           setEscalationMatrix(response.data.data);
         }
       } catch (error) {
-        console.error('❌ Error fetching escalation matrix:', error);
+        console.error("❌ Error fetching escalation matrix:", error);
       }
     };
 
@@ -561,22 +666,24 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
     const fetchWorkingCalendar = async () => {
       const projectId = getTicketProjectId(ticket);
       if (!projectId) return;
-      
+
       try {
-        const token = localStorage.getItem('authToken');
+        const token = localStorage.getItem("authToken");
         const response = await axios.get(
           `${API_CONFIG.API_URL}/working-calendars?projectId=${projectId}`,
-          { headers: { Authorization: `Bearer ${token}` } }
+          { headers: { Authorization: `Bearer ${token}` } },
         );
-        
+
         if (response.data.success && response.data.data?.length > 0) {
           // Find the default calendar or use the first one
-          const calendar = response.data.data.find((c: any) => c.isDefault) || response.data.data[0];
-          console.log('📅 Working Calendar loaded:', calendar);
+          const calendar =
+            response.data.data.find((c: any) => c.isDefault) ||
+            response.data.data[0];
+          console.log("📅 Working Calendar loaded:", calendar);
           setWorkingCalendar(calendar);
         }
       } catch (error) {
-        console.error('❌ Error fetching working calendar:', error);
+        console.error("❌ Error fetching working calendar:", error);
       }
     };
 
@@ -585,7 +692,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
 
   // Task 6.5: Fetch email communications when ticket loads or changes
   useEffect(() => {
-    if (ticket && ticket.submissionSource === 'email') {
+    if (ticket && ticket.submissionSource === "email") {
       fetchEmailCommunications();
     }
   }, [ticket?.submissionSource, ticketId]);
@@ -593,20 +700,21 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
   // Update priority data when ticket or slaRules change (no additional API call needed)
   useEffect(() => {
     if (!ticket?.priority || !slaRules.length) return;
-    
+
     // Find the matching SLA rule by priority name from already-fetched slaRules
     const matchingSlaRule = slaRules.find(
-      (rule: any) => rule.priority?.name?.toUpperCase() === ticket.priority.toUpperCase()
+      (rule: any) =>
+        rule.priority?.name?.toUpperCase() === ticket.priority.toUpperCase(),
     );
-      
+
     if (matchingSlaRule?.priority) {
       setPriorityData({
         name: matchingSlaRule.priority.name,
         code: ticket.priority.toUpperCase(),
         resolutionTime: {
           value: matchingSlaRule.resolutionTime?.value || 0,
-          unit: matchingSlaRule.resolutionTime?.unit || 'hours'
-        }
+          unit: matchingSlaRule.resolutionTime?.unit || "hours",
+        },
       });
     }
   }, [ticket?.priority, slaRules]);
@@ -614,58 +722,63 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
   const fetchTicketDetails = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem('authToken');
-      
+      const token = localStorage.getItem("authToken");
+
       if (!token) {
-        console.error('No authentication token found');
-        alert('Session expired. Please log in again.');
+        console.error("No authentication token found");
+        alert("Session expired. Please log in again.");
         navigate(`/${customUrlPath}/portal/login`);
         return;
       }
 
       if (!ticketId) {
-        console.error('No ticket ID provided');
-        alert('Invalid ticket ID');
+        console.error("No ticket ID provided");
+        alert("Invalid ticket ID");
         navigate(`/${customUrlPath}/portal/tickets`);
         return;
       }
 
-      console.log('Fetching ticket:', ticketId);
+      console.log("Fetching ticket:", ticketId);
       const response = await axios.get(
         `${API_CONFIG.API_URL}/tickets/${ticketId}`,
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
-      
-      console.log('Ticket response:', response.data);
-      
+
+      console.log("Ticket response:", response.data);
+
       if (response.data.success && response.data.data) {
-        console.log('📋 Setting ticket with status:', response.data.data.status);
+        console.log(
+          "📋 Setting ticket with status:",
+          response.data.data.status,
+        );
         setTicket(response.data.data);
       } else if (response.data && !response.data.success) {
-        console.error('API returned error:', response.data.message);
-        alert(`Error: ${response.data.message || 'Failed to load ticket'}`);
+        console.error("API returned error:", response.data.message);
+        alert(`Error: ${response.data.message || "Failed to load ticket"}`);
       } else {
         // Handle case where data is directly in response
         setTicket(response.data);
       }
     } catch (error: any) {
-      console.error('Error fetching ticket:', error);
-      console.error('Error details:', {
+      console.error("Error fetching ticket:", error);
+      console.error("Error details:", {
         message: error.message,
         response: error.response?.data,
         status: error.response?.status,
       });
-      
+
       if (error.response?.status === 401) {
-        alert('Session expired. Please log in again.');
+        alert("Session expired. Please log in again.");
         navigate(`/${customUrlPath}/portal/login`);
       } else if (error.response?.status === 404) {
-        alert('Ticket not found');
+        alert("Ticket not found");
         navigate(`/${customUrlPath}/portal/tickets`);
       } else if (error.request) {
-        alert('Cannot connect to server. Please check if the backend is running.');
+        alert(
+          "Cannot connect to server. Please check if the backend is running.",
+        );
       } else {
         alert(`Error loading ticket: ${error.message}`);
       }
@@ -677,83 +790,98 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
   // PERFORMANCE: Consolidated master data fetch using Promise.all for parallel requests
   const fetchMasterData = async (projectIdOverride?: string) => {
     try {
-      const token = localStorage.getItem('authToken');
-      const projectContext = JSON.parse(localStorage.getItem('projectContext') || '{}');
+      const token = localStorage.getItem("authToken");
+      const projectContext = JSON.parse(
+        localStorage.getItem("projectContext") || "{}",
+      );
       const headers = { Authorization: `Bearer ${token}` };
-      
+
       // Use override projectId (from ticket) or fallback to context
       const projectId = projectIdOverride || projectContext.projectId;
 
       if (!projectId) {
-        console.warn('⚠️ No projectId available, skipping master data fetch');
+        console.warn("⚠️ No projectId available, skipping master data fetch");
         return;
       }
-      
-      console.log('📋 Fetching master data for projectId:', projectId);
+
+      console.log("📋 Fetching master data for projectId:", projectId);
 
       // PERFORMANCE: Fetch all data in parallel using Promise.all
       const [ticketConfigRes, tagsRes, escalationRes] = await Promise.all([
         // Ticket settings (statuses, priorities, categories, SLA rules)
         axios.get(
           `${API_CONFIG.API_URL}/projects/${projectId}/ticket-settings`,
-          { headers }
+          { headers },
         ),
         // Available tags (non-critical, catch errors)
-        axios.get(`${API_CONFIG.API_URL}/tickets/tags`, { headers }).catch(err => {
-          console.warn('⚠️ Error fetching tags (non-critical):', err.message);
-          return { data: { data: [] } };
-        }),
+        axios
+          .get(`${API_CONFIG.API_URL}/tickets/tags`, { headers })
+          .catch((err) => {
+            console.warn("⚠️ Error fetching tags (non-critical):", err.message);
+            return { data: { data: [] } };
+          }),
         // Escalation policies
-        axios.get(
-          `${API_CONFIG.API_URL}/escalation-policies?projectId=${projectId}&isActive=true`,
-          { headers }
-        ).catch(err => {
-          console.error('❌ Error fetching escalation policies:', err);
-          return { data: { data: [] } };
-        })
+        axios
+          .get(
+            `${API_CONFIG.API_URL}/escalation-policies?projectId=${projectId}&isActive=true`,
+            { headers },
+          )
+          .catch((err) => {
+            console.error("❌ Error fetching escalation policies:", err);
+            return { data: { data: [] } };
+          }),
       ]);
 
       // Process ticket configuration
       if (ticketConfigRes.data.success && ticketConfigRes.data.data) {
         const ticketConfig = ticketConfigRes.data.data;
-        console.log('📋 Ticket Config received:', {
+        console.log("📋 Ticket Config received:", {
           statuses: ticketConfig.allowedStatuses?.length,
           categories: ticketConfig.categories?.length,
           priorities: ticketConfig.allowedPriorities?.length,
-          slaRules: ticketConfig.slaRules?.length
+          slaRules: ticketConfig.slaRules?.length,
         });
-        
+
         if (ticketConfig.allowedStatuses?.length > 0) {
-          console.log('✅ Setting status options:', ticketConfig.allowedStatuses);
+          console.log(
+            "✅ Setting status options:",
+            ticketConfig.allowedStatuses,
+          );
           setStatusOptions(ticketConfig.allowedStatuses);
         } else {
-          console.warn('⚠️ No statuses received from API');
+          console.warn("⚠️ No statuses received from API");
         }
-        
+
         if (ticketConfig.categories?.length > 0) {
           // Categories can be either objects {_id, name} or strings
-          const mappedCats = ticketConfig.categories.map((cat: any) => 
-            typeof cat === 'string' ? { _id: cat, name: cat } : cat
+          const mappedCats = ticketConfig.categories.map((cat: any) =>
+            typeof cat === "string" ? { _id: cat, name: cat } : cat,
           );
-          console.log('✅ Setting categories:', mappedCats);
+          console.log("✅ Setting categories:", mappedCats);
           setCategories(mappedCats);
         } else {
-          console.warn('⚠️ No categories received from API');
+          console.warn("⚠️ No categories received from API");
         }
-        
+
         if (ticketConfig.allowedPriorities?.length > 0) {
-          console.log('✅ Setting priority options:', ticketConfig.allowedPriorities);
+          console.log(
+            "✅ Setting priority options:",
+            ticketConfig.allowedPriorities,
+          );
           setPriorityOptions(ticketConfig.allowedPriorities);
         } else {
-          console.warn('⚠️ No priorities received from API');
+          console.warn("⚠️ No priorities received from API");
         }
-        
+
         if (ticketConfig.slaRules?.length > 0) {
-          console.log('✅ Setting SLA rules:', ticketConfig.slaRules);
+          console.log("✅ Setting SLA rules:", ticketConfig.slaRules);
           setSlaRules(ticketConfig.slaRules);
         }
       } else {
-        console.error('❌ Ticket config response failed:', ticketConfigRes.data);
+        console.error(
+          "❌ Ticket config response failed:",
+          ticketConfigRes.data,
+        );
       }
 
       // Process tags
@@ -761,66 +889,72 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
 
       // Process escalation policies for SLA level calculation
       const policies = escalationRes.data.data || [];
-      
+
       // Task 6.4: Store raw escalation policies for SLA level calculation
       setEscalationPolicies(policies);
-      console.log('📋 Raw Escalation Policies:', policies);
-
+      console.log("📋 Raw Escalation Policies:", policies);
     } catch (error) {
-      console.error('❌ Error fetching master data:', error);
+      console.error("❌ Error fetching master data:", error);
       if (axios.isAxiosError(error)) {
-        console.error('❌ Response:', error.response?.data);
+        console.error("❌ Response:", error.response?.data);
       }
     }
   };
 
   const fetchUserPermissions = async () => {
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const response = await axios.get(`${API_CONFIG.API_URL}/auth/me`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
       if (response.data.success && response.data.data) {
         const userPermissions = response.data.data.role?.permissions || [];
-        console.log('🔐 User Permissions Loaded:', userPermissions);
-        console.log('✅ Has TICKET_ESCALATE?', userPermissions.includes('TICKET_ESCALATE'));
+        console.log("🔐 User Permissions Loaded:", userPermissions);
+        console.log(
+          "✅ Has TICKET_ESCALATE?",
+          userPermissions.includes("TICKET_ESCALATE"),
+        );
         setPermissions(userPermissions);
-        
+
         // Task 6.4: Store user role for SLA level calculation
         const role = response.data.data.role;
         if (role) {
           setUserRole({ _id: role._id, name: role.name, code: role.code });
-          console.log('👤 User Role:', role.name, role.code);
+          console.log("👤 User Role:", role.name, role.code);
         }
       }
     } catch (error) {
-      console.error('Error fetching user permissions:', error);
+      console.error("Error fetching user permissions:", error);
     }
   };
 
   // Task 6.5: Fetch email communications
   const fetchEmailCommunications = async () => {
-    if (!ticketId || !ticket?.submissionSource || ticket.submissionSource !== 'email') {
+    if (
+      !ticketId ||
+      !ticket?.submissionSource ||
+      ticket.submissionSource !== "email"
+    ) {
       // Only fetch for email tickets
       return;
     }
 
     setLoadingEmails(true);
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const response = await axios.get(
         `${API_CONFIG.API_URL}/tickets/${ticketId}/communications`,
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
 
       if (response.data.success) {
         setEmailCommunications(response.data.data || []);
       }
     } catch (error) {
-      console.error('Error fetching email communications:', error);
+      console.error("Error fetching email communications:", error);
     } finally {
       setLoadingEmails(false);
     }
@@ -829,58 +963,64 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
   // Task 7.1: Send email reply
   const handleSendReply = async () => {
     if (!replyContent.trim() || !ticket) {
-      setReplyError('Reply content is required');
+      setReplyError("Reply content is required");
       return;
     }
 
     // Validate ticket is from email source
-    if (ticket.submissionSource !== 'email' || !ticket.sourceEmail) {
-      setReplyError('Cannot send email reply: This ticket was not created via email');
+    if (ticket.submissionSource !== "email" || !ticket.sourceEmail) {
+      setReplyError(
+        "Cannot send email reply: This ticket was not created via email",
+      );
       return;
     }
 
     setSendingReply(true);
-    setReplyError('');
-    setReplySuccess('');
+    setReplyError("");
+    setReplySuccess("");
 
     try {
-      const token = localStorage.getItem('authToken');
-      
+      const token = localStorage.getItem("authToken");
+
       // Get the original message ID for threading
-      const originalMessageId = ticket.sourceEmailMessageId || 
-        (emailCommunications.length > 0 ? emailCommunications[0].messageId : undefined);
+      const originalMessageId =
+        ticket.sourceEmailMessageId ||
+        (emailCommunications.length > 0
+          ? emailCommunications[0].messageId
+          : undefined);
 
       const response = await axios.post(
         `${API_CONFIG.API_URL}/tickets/${ticket._id}/reply-email`,
         {
           replyContent: replyContent.trim(),
-          inReplyToMessageId: originalMessageId
+          inReplyToMessageId: originalMessageId,
         },
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
 
       if (response.data.success) {
-        setReplySuccess('Email reply sent successfully!');
-        setReplyContent(''); // Clear form
+        setReplySuccess("Email reply sent successfully!");
+        setReplyContent(""); // Clear form
         setShowReplyForm(false); // Hide form
-        
+
         // Refresh email communications to show the new reply
         await fetchEmailCommunications();
-        
+
         // Clear success message after 3 seconds
         setTimeout(() => {
-          setReplySuccess('');
+          setReplySuccess("");
         }, 3000);
       } else {
-        setReplyError(response.data.error || 'Failed to send reply');
+        setReplyError(response.data.error || "Failed to send reply");
       }
     } catch (error: any) {
-      console.error('Error sending email reply:', error);
-      const errorMessage = error.response?.data?.error || 
-        error.response?.data?.details || 
-        'Failed to send email reply. Please try again.';
+      console.error("Error sending email reply:", error);
+      const errorMessage =
+        error.response?.data?.error ||
+        error.response?.data?.details ||
+        "Failed to send email reply. Please try again.";
       setReplyError(errorMessage);
     } finally {
       setSendingReply(false);
@@ -889,7 +1029,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
 
   // Toggle email expand/collapse
   const toggleEmailExpanded = (emailId: string) => {
-    setExpandedEmails(prev => {
+    setExpandedEmails((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(emailId)) {
         newSet.delete(emailId);
@@ -902,107 +1042,151 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
 
   const handleUpdateStatus = async (statusOverride?: string | number) => {
     if (!ticket) return;
-    
-    const statusToUpdate = statusOverride !== undefined ? statusOverride : newStatus;
+
+    const statusToUpdate =
+      statusOverride !== undefined ? statusOverride : newStatus;
     if (!statusToUpdate && statusToUpdate !== 0) return; // Allow 0 as a valid status
 
     // Convert to number (status codes are now numeric: 1=open, 2=in-progress, 3=on-hold, 4=resolved, 5=closed)
     let statusCode: number;
-    if (typeof statusToUpdate === 'string') {
+    if (typeof statusToUpdate === "string") {
       statusCode = Number(statusToUpdate);
       if (isNaN(statusCode)) {
-        console.error('❌ Invalid status value:', statusToUpdate);
+        console.error("❌ Invalid status value:", statusToUpdate);
         return;
       }
     } else {
       statusCode = statusToUpdate;
     }
 
-    console.log('🔄 Updating status to:', statusToUpdate, '→', statusCode);
-    console.log('🔍 Type of statusCode:', typeof statusCode);
-    console.log('🔍 Status options available:', statusOptions);
+    const fromLabel = getStatusDisplayName(ticket.status);
+    const toLabel = getStatusDisplayName(statusCode);
 
+    console.log("🔄 Updating status to:", statusToUpdate, "→", statusCode);
+    console.log("🔍 Type of statusCode:", typeof statusCode);
+    console.log("🔍 Status options available:", statusOptions);
+
+    setIsFieldUpdating(true);
     try {
-      const token = localStorage.getItem('authToken');
-      console.log('📤 Sending PATCH request with body:', { status: statusCode });
+      const token = localStorage.getItem("authToken");
+      console.log("📤 Sending PATCH request with body:", {
+        status: statusCode,
+      });
       const response = await axios.patch(
         `${API_CONFIG.API_URL}/tickets/${ticket._id}/status`,
         { status: statusCode },
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
-      
-      console.log('✅ Status update response:', response.data);
-      
+
+      console.log("✅ Status update response:", response.data);
+
       // Refresh ticket details to get updated data
       await fetchTicketDetails();
-      
-      console.log('🔄 Ticket refreshed, new status should be:', statusToUpdate);
-      
+
+      console.log("🔄 Ticket refreshed, new status should be:", statusToUpdate);
+
       setIsEditingStatus(false);
-      setNewStatus('');
+      setNewStatus("");
+      setSuccessModal({
+        open: true,
+        message: `Status changed from "${fromLabel}" to "${toLabel}" successfully.`,
+      });
     } catch (error) {
-      console.error('❌ Error updating status:', error);
-      alert('Failed to update status');
+      console.error("❌ Error updating status:", error);
+      alert("Failed to update status");
+    } finally {
+      setIsFieldUpdating(false);
     }
   };
 
-  const handleUpdateCategory = async (categoryOverride?: string) => {
+  const handleUpdateCategory = async (
+    categoryOverride?: string,
+    fromName?: string,
+    toName?: string,
+  ) => {
     const categoryToUpdate = categoryOverride || newCategory;
     if (!categoryToUpdate || !ticket) return;
 
-    console.log('🔄 Updating category to:', categoryToUpdate);
+    console.log("🔄 Updating category to:", categoryToUpdate);
 
+    setIsFieldUpdating(true);
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const response = await axios.patch(
         `${API_CONFIG.API_URL}/tickets/${ticket._id}/category`,
         { category: categoryToUpdate },
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
-      
-      console.log('✅ Category update response:', response.data);
-      
+
+      console.log("✅ Category update response:", response.data);
+
       // Refresh ticket details to get updated data
       await fetchTicketDetails();
-      
-      console.log('🔄 Ticket refreshed, new category should be:', categoryToUpdate);
-      
+
+      console.log(
+        "🔄 Ticket refreshed, new category should be:",
+        categoryToUpdate,
+      );
+
       setIsEditingCategory(false);
-      setNewCategory('');
+      setNewCategory("");
+      setSuccessModal({
+        open: true,
+        message:
+          fromName && toName
+            ? `Category changed from "${fromName}" to "${toName}" successfully.`
+            : "Category updated successfully.",
+      });
     } catch (error) {
-      console.error('❌ Error updating category:', error);
-      alert('Failed to update category');
+      console.error("❌ Error updating category:", error);
+      alert("Failed to update category");
+    } finally {
+      setIsFieldUpdating(false);
     }
   };
 
-  const handleUpdateCategoryHierarchy = async (hierarchyValue: CategoryHierarchyValue) => {
+  const handleUpdateCategoryHierarchy = async (
+    hierarchyValue: CategoryHierarchyValue,
+    fromPath?: string,
+    toPath?: string,
+  ) => {
     if (!hierarchyValue || !ticket) return;
 
-    console.log('🔄 Updating category hierarchy to:', hierarchyValue);
+    console.log("🔄 Updating category hierarchy to:", hierarchyValue);
 
+    setIsFieldUpdating(true);
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const response = await axios.patch(
         `${API_CONFIG.API_URL}/tickets/${ticket._id}/category-hierarchy`,
         { categoryHierarchy: hierarchyValue },
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
-      
-      console.log('✅ Category hierarchy update response:', response.data);
-      
+
+      console.log("✅ Category hierarchy update response:", response.data);
+
       // Refresh ticket details to get updated data
       await fetchTicketDetails();
-      
-      console.log('🔄 Ticket refreshed with new category hierarchy');
+
+      console.log("🔄 Ticket refreshed with new category hierarchy");
+      setSuccessModal({
+        open: true,
+        message:
+          fromPath && toPath
+            ? `Category changed from "${fromPath}" to "${toPath}" successfully.`
+            : "Category updated successfully.",
+      });
     } catch (error) {
-      console.error('❌ Error updating category hierarchy:', error);
-      alert('Failed to update category hierarchy');
+      console.error("❌ Error updating category hierarchy:", error);
+      alert("Failed to update category hierarchy");
+    } finally {
+      setIsFieldUpdating(false);
     }
   };
 
@@ -1010,30 +1194,42 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
     const priorityToUpdate = priorityOverride || newPriority;
     if (!priorityToUpdate || !ticket) return;
 
-    console.log('🔄 Updating priority to:', priorityToUpdate);
+    const fromPriority = ticket.priority;
 
+    console.log("🔄 Updating priority to:", priorityToUpdate);
+
+    setIsFieldUpdating(true);
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const response = await axios.patch(
         `${API_CONFIG.API_URL}/tickets/${ticket._id}/priority`,
         { priority: priorityToUpdate },
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
-      
-      console.log('✅ Priority update response:', response.data);
-      
+
+      console.log("✅ Priority update response:", response.data);
+
       // Refresh ticket details to get updated data
       await fetchTicketDetails();
-      
-      console.log('🔄 Ticket refreshed, new priority should be:', priorityToUpdate);
-      
+
+      console.log(
+        "🔄 Ticket refreshed, new priority should be:",
+        priorityToUpdate,
+      );
+
       setIsEditingPriority(false);
-      setNewPriority('');
+      setNewPriority("");
+      setSuccessModal({
+        open: true,
+        message: `Priority changed from "${fromPriority}" to "${priorityToUpdate}" successfully.`,
+      });
     } catch (error) {
-      console.error('❌ Error updating priority:', error);
-      alert('Failed to update priority');
+      console.error("❌ Error updating priority:", error);
+      alert("Failed to update priority");
+    } finally {
+      setIsFieldUpdating(false);
     }
   };
 
@@ -1041,22 +1237,22 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
     if (!newTag || !ticket) return;
 
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const response = await axios.post(
         `${API_CONFIG.API_URL}/tickets/${ticket._id}/tags`,
         { tag: newTag },
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
       setTicket({ ...ticket, tags: [...(ticket.tags || []), newTag] });
       setIsAddingTag(false);
-      setNewTag('');
+      setNewTag("");
       // Refresh available tags
       fetchMasterData();
     } catch (error) {
-      console.error('Error adding tag:', error);
-      alert('Failed to add tag');
+      console.error("Error adding tag:", error);
+      alert("Failed to add tag");
     }
   };
 
@@ -1064,17 +1260,17 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
     if (!ticket) return;
 
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       await axios.delete(
         `${API_CONFIG.API_URL}/tickets/${ticket._id}/tags/${tag}`,
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
-      setTicket({ ...ticket, tags: ticket.tags?.filter(t => t !== tag) });
+      setTicket({ ...ticket, tags: ticket.tags?.filter((t) => t !== tag) });
     } catch (error) {
-      console.error('Error removing tag:', error);
-      alert('Failed to remove tag');
+      console.error("Error removing tag:", error);
+      alert("Failed to remove tag");
     }
   };
 
@@ -1084,14 +1280,14 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
 
     setIsSubmittingReply(true);
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const formData = new FormData();
-      formData.append('message', replyMessage);
-      formData.append('isInternal', 'false');
+      formData.append("message", replyMessage);
+      formData.append("isInternal", "false");
 
       if (replyFiles) {
         Array.from(replyFiles).forEach((file) => {
-          formData.append('attachments', file);
+          formData.append("attachments", file);
         });
       }
 
@@ -1101,17 +1297,17 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
         {
           headers: {
             Authorization: `Bearer ${token}`,
-            'Content-Type': 'multipart/form-data',
+            "Content-Type": "multipart/form-data",
           },
-        }
+        },
       );
 
-      setReplyMessage('');
+      setReplyMessage("");
       setReplyFiles(null);
       fetchTicketDetails();
     } catch (error) {
-      console.error('Error submitting reply:', error);
-      alert('Failed to submit reply');
+      console.error("Error submitting reply:", error);
+      alert("Failed to submit reply");
     } finally {
       setIsSubmittingReply(false);
     }
@@ -1122,52 +1318,52 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
 
     setIsAddingNote(true);
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       await axios.post(
         `${API_CONFIG.API_URL}/tickets/${ticket._id}/notes`,
         { note: noteText },
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
 
-      setNoteText('');
+      setNoteText("");
       fetchTicketDetails();
     } catch (error) {
-      console.error('Error adding note:', error);
-      alert('Failed to add internal note');
+      console.error("Error adding note:", error);
+      alert("Failed to add internal note");
     } finally {
       setIsAddingNote(false);
     }
   };
 
   const getStatusColor = (status: number | string) => {
-    const statusCode = typeof status === 'string' ? Number(status) : status;
+    const statusCode = typeof status === "string" ? Number(status) : status;
     const colors: Record<number, string> = {
-      1: 'bg-yellow-100 text-yellow-800 border-yellow-300', // open
-      2: 'bg-blue-100 text-blue-800 border-blue-300', // in-progress
-      3: 'bg-pink-100 text-pink-800 border-pink-300', // on-hold
-      4: 'bg-green-100 text-green-800 border-green-300', // resolved
-      5: 'bg-gray-100 text-gray-800 border-gray-300', // closed
+      1: "bg-yellow-100 text-yellow-800 border-yellow-300", // open
+      2: "bg-blue-100 text-blue-800 border-blue-300", // in-progress
+      3: "bg-pink-100 text-pink-800 border-pink-300", // on-hold
+      4: "bg-green-100 text-green-800 border-green-300", // resolved
+      5: "bg-gray-100 text-gray-800 border-gray-300", // closed
     };
     return colors[statusCode] || colors[1]; // Default to 'open' style
   };
 
   const getPriorityColor = (priority: string) => {
     const colors: Record<string, string> = {
-      'Critical': 'bg-red-100 text-red-800',
-      'critical': 'bg-red-100 text-red-800',
-      'Urgent': 'bg-orange-100 text-orange-800',
-      'urgent': 'bg-orange-100 text-orange-800',
-      'High': 'bg-yellow-100 text-yellow-800',
-      'high': 'bg-yellow-100 text-yellow-800',
-      'Normal': 'bg-blue-100 text-blue-800',
-      'Medium': 'bg-blue-100 text-blue-800',
-      'medium': 'bg-blue-100 text-blue-800',
-      'Low': 'bg-gray-100 text-gray-800',
-      'low': 'bg-gray-100 text-gray-800',
+      Critical: "bg-red-100 text-red-800",
+      critical: "bg-red-100 text-red-800",
+      Urgent: "bg-orange-100 text-orange-800",
+      urgent: "bg-orange-100 text-orange-800",
+      High: "bg-yellow-100 text-yellow-800",
+      high: "bg-yellow-100 text-yellow-800",
+      Normal: "bg-blue-100 text-blue-800",
+      Medium: "bg-blue-100 text-blue-800",
+      medium: "bg-blue-100 text-blue-800",
+      Low: "bg-gray-100 text-gray-800",
+      low: "bg-gray-100 text-gray-800",
     };
-    return colors[priority] || colors['Normal'];
+    return colors[priority] || colors["Normal"];
   };
 
   if (loading) {
@@ -1177,9 +1373,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
       </div>
     );
     return wrapWithLayout ? (
-      <DashboardLayout>
-        {loadingContent}
-      </DashboardLayout>
+      <DashboardLayout>{loadingContent}</DashboardLayout>
     ) : (
       loadingContent
     );
@@ -1190,8 +1384,12 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <XCircleIcon className="h-16 w-16 text-red-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Query Not Found</h2>
-          <p className="text-gray-600 mb-4">The query you're looking for doesn't exist or you don't have access.</p>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">
+            Query Not Found
+          </h2>
+          <p className="text-gray-600 mb-4">
+            The query you're looking for doesn't exist or you don't have access.
+          </p>
           <button
             onClick={() => navigate(-1)}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
@@ -1202,63 +1400,67 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
       </div>
     );
     return wrapWithLayout ? (
-      <DashboardLayout>
-        {errorContent}
-      </DashboardLayout>
+      <DashboardLayout>{errorContent}</DashboardLayout>
     ) : (
       errorContent
     );
   }
 
   const content = (
-      <div className="min-h-screen bg-gray-50">
-        {/* Header */}
-        <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center justify-between py-4">
-              <div className="flex items-center space-x-4">
-                <button
-                  onClick={() => navigate(-1)}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  <ArrowLeftIcon className="h-6 w-6 text-gray-600" />
-                </button>
-                <div>
-                  <div className="flex items-center space-x-3">
-                    <h1 className="text-2xl font-bold text-gray-900">
-                      #{ticket.ticketNumber}
-                    </h1>
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(ticket.status)}`}>
-                      {getStatusDisplayName(ticket.status)}
-                    </span>
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${getPriorityColor(ticket.priority)}`}>
-                      {ticket.priority.charAt(0).toUpperCase() + ticket.priority.slice(1).toLowerCase()}
-                    </span>
-                    {/* Task 6.4: Source badge */}
-                    {(() => {
-                      const sourceBadge = getSourceBadge(ticket.submissionSource);
-                      return (
-                        <span 
-                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium"
-                          style={{
-                            color: sourceBadge.color,
-                            backgroundColor: sourceBadge.bgColor,
-                            border: `1px solid ${sourceBadge.color}40`,
-                          }}
-                          title={sourceBadge.tooltip}
-                        >
-                          <span>{sourceBadge.icon}</span>
-                          <span>{sourceBadge.label}</span>
-                        </span>
-                      );
-                    })()}
-                  </div>
-                  <div className="flex items-center gap-3 mt-1">
-                    <p className="text-sm text-gray-600">
-                      Created {new Date(ticket.createdAt).toLocaleString()}
-                    </p>
-                    {/* Task 6.4: Show sender email for email tickets */}
-                    {ticket.submissionSource === 'email' && ticket.sourceEmail && (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between py-4">
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={() => navigate(-1)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <ArrowLeftIcon className="h-6 w-6 text-gray-600" />
+              </button>
+              <div>
+                <div className="flex items-center space-x-3">
+                  <h1 className="text-2xl font-bold text-gray-900">
+                    #{ticket.ticketNumber}
+                  </h1>
+                  <span
+                    className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(ticket.status)}`}
+                  >
+                    {getStatusDisplayName(ticket.status)}
+                  </span>
+                  <span
+                    className={`px-3 py-1 rounded-full text-xs font-medium ${getPriorityColor(ticket.priority)}`}
+                  >
+                    {ticket.priority.charAt(0).toUpperCase() +
+                      ticket.priority.slice(1).toLowerCase()}
+                  </span>
+                  {/* Task 6.4: Source badge */}
+                  {(() => {
+                    const sourceBadge = getSourceBadge(ticket.submissionSource);
+                    return (
+                      <span
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium"
+                        style={{
+                          color: sourceBadge.color,
+                          backgroundColor: sourceBadge.bgColor,
+                          border: `1px solid ${sourceBadge.color}40`,
+                        }}
+                        title={sourceBadge.tooltip}
+                      >
+                        <span>{sourceBadge.icon}</span>
+                        <span>{sourceBadge.label}</span>
+                      </span>
+                    );
+                  })()}
+                </div>
+                <div className="flex items-center gap-3 mt-1">
+                  <p className="text-sm text-gray-600">
+                    Created {new Date(ticket.createdAt).toLocaleString()}
+                  </p>
+                  {/* Task 6.4: Show sender email for email tickets */}
+                  {ticket.submissionSource === "email" &&
+                    ticket.sourceEmail && (
                       <>
                         <span className="text-gray-400">•</span>
                         <div className="flex items-center gap-2">
@@ -1274,7 +1476,9 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              navigator.clipboard.writeText(ticket.sourceEmail || '');
+                              navigator.clipboard.writeText(
+                                ticket.sourceEmail || "",
+                              );
                             }}
                             className="text-xs px-2 py-0.5 border border-gray-300 rounded hover:bg-gray-50 transition-colors"
                             title="Copy email"
@@ -1284,12 +1488,12 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                         </div>
                       </>
                     )}
-                  </div>
                 </div>
               </div>
             </div>
           </div>
         </div>
+      </div>
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -1303,40 +1507,49 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                   <div className="p-1.5 bg-blue-100 rounded-lg">
                     <TicketIcon className="h-4 w-4 text-blue-600" />
                   </div>
-                  <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Subject</span>
+                  <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                    Subject
+                  </span>
                 </div>
                 <h2 className="text-lg font-semibold text-gray-900 leading-tight">
-                  {ticket.title || ticket.subject || 'No Subject'}
+                  {ticket.title || ticket.subject || "No Subject"}
                 </h2>
               </div>
-              
+
               <div className="p-6">
                 <div className="flex items-center space-x-2 mb-3">
                   <div className="p-1.5 bg-purple-100 rounded-lg">
                     <DocumentTextIcon className="h-4 w-4 text-purple-600" />
                   </div>
-                  <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Description</span>
+                  <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                    Description
+                  </span>
                 </div>
                 <div className="prose max-w-none">
-                  <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">{ticket.description}</p>
+                  <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">
+                    {ticket.description}
+                  </p>
                 </div>
               </div>
 
               {ticket.attachments && ticket.attachments.length > 0 && (
                 <div className="mt-6 pt-6 border-t border-gray-200">
-                  <h3 className="text-sm font-medium text-gray-900 mb-3">Attachments</h3>
+                  <h3 className="text-sm font-medium text-gray-900 mb-3">
+                    Attachments
+                  </h3>
                   <div className="grid grid-cols-2 gap-3">
                     {ticket.attachments.map((attachment, index) => (
-                      <a
+                      <button
                         key={index}
-                        href={`${API_CONFIG.BASE_URL}/${attachment.path}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center space-x-2 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                        type="button"
+                        onClick={() => openAttachment(attachment.path)}
+                        className="flex items-center space-x-2 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left w-full"
                       >
-                        <PaperClipIcon className="h-5 w-5 text-gray-400" />
-                        <span className="text-sm text-gray-700 truncate">{attachment.filename}</span>
-                      </a>
+                        <PaperClipIcon className="h-5 w-5 text-gray-400 flex-shrink-0" />
+                        <span className="text-sm text-gray-700 truncate">
+                          {attachment.filename}
+                        </span>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -1344,77 +1557,105 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
             </div>
 
             {/* Latest Reply and Internal Note - Always Visible */}
-            {(ticket.threads && ticket.threads.length > 0) || (ticket.internalNotes && ticket.internalNotes.length > 0) ? (
+            {(ticket.threads && ticket.threads.length > 0) ||
+            (ticket.internalNotes && ticket.internalNotes.length > 0) ? (
               <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Activity</h3>
-                
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                  Recent Activity
+                </h3>
+
                 {/* Latest Reply */}
-                {ticket.threads && ticket.threads.length > 0 && (() => {
-                  const latestReply = [...ticket.threads].sort((a, b) => 
-                    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-                  )[0];
-                  
-                  return (
-                    <div className="border-l-4 border-blue-500 pl-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center space-x-2">
-                          <ChatBubbleLeftRightIcon className="h-5 w-5 text-blue-600" />
-                          <span className="text-sm font-semibold text-gray-900">Latest Reply</span>
-                        </div>
-                        <span className="text-xs text-gray-500">
-                          {new Date(latestReply.createdAt).toLocaleString()}
-                        </span>
-                      </div>
-                      <div className="bg-blue-50 rounded-lg p-3">
-                        <p className="text-xs font-medium text-gray-700 mb-1">
-                          {latestReply.createdBy.firstName} {latestReply.createdBy.lastName}
-                          {latestReply.createdBy.role && (
-                            <span className="text-gray-500"> • {typeof latestReply.createdBy.role === 'string' ? latestReply.createdBy.role : (latestReply.createdBy.role as any).name}</span>
-                          )}
-                        </p>
-                        <p className="text-sm text-gray-800 whitespace-pre-wrap line-clamp-3">
-                          {latestReply.message}
-                        </p>
-                        {latestReply.attachments && latestReply.attachments.length > 0 && (
-                          <div className="mt-2 flex items-center space-x-1 text-xs text-blue-600">
-                            <PaperClipIcon className="h-3 w-3" />
-                            <span>{latestReply.attachments.length} attachment(s)</span>
+                {ticket.threads &&
+                  ticket.threads.length > 0 &&
+                  (() => {
+                    const latestReply = [...ticket.threads].sort(
+                      (a, b) =>
+                        new Date(b.createdAt).getTime() -
+                        new Date(a.createdAt).getTime(),
+                    )[0];
+
+                    return (
+                      <div className="border-l-4 border-blue-500 pl-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center space-x-2">
+                            <ChatBubbleLeftRightIcon className="h-5 w-5 text-blue-600" />
+                            <span className="text-sm font-semibold text-gray-900">
+                              Latest Reply
+                            </span>
                           </div>
-                        )}
+                          <span className="text-xs text-gray-500">
+                            {new Date(latestReply.createdAt).toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="bg-blue-50 rounded-lg p-3">
+                          <p className="text-xs font-medium text-gray-700 mb-1">
+                            {latestReply.createdBy.firstName}{" "}
+                            {latestReply.createdBy.lastName}
+                            {latestReply.createdBy.role && (
+                              <span className="text-gray-500">
+                                {" "}
+                                •{" "}
+                                {typeof latestReply.createdBy.role === "string"
+                                  ? latestReply.createdBy.role
+                                  : (latestReply.createdBy.role as any).name}
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-sm text-gray-800 whitespace-pre-wrap line-clamp-3">
+                            {latestReply.message}
+                          </p>
+                          {latestReply.attachments &&
+                            latestReply.attachments.length > 0 && (
+                              <div className="mt-2 flex items-center space-x-1 text-xs text-blue-600">
+                                <PaperClipIcon className="h-3 w-3" />
+                                <span>
+                                  {latestReply.attachments.length} attachment(s)
+                                </span>
+                              </div>
+                            )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })()}
+                    );
+                  })()}
 
                 {/* Latest Internal Note */}
-                {ticket.internalNotes && ticket.internalNotes.length > 0 && (() => {
-                  const latestNote = [...ticket.internalNotes].sort((a, b) => 
-                    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-                  )[0];
-                  
-                  return (
-                    <div className="border-l-4 border-yellow-500 pl-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center space-x-2">
-                          <DocumentTextIcon className="h-5 w-5 text-yellow-600" />
-                          <span className="text-sm font-semibold text-gray-900">Latest Internal Note</span>
-                          <span className="text-xs text-gray-500 italic">(Staff only)</span>
+                {ticket.internalNotes &&
+                  ticket.internalNotes.length > 0 &&
+                  (() => {
+                    const latestNote = [...ticket.internalNotes].sort(
+                      (a, b) =>
+                        new Date(b.createdAt).getTime() -
+                        new Date(a.createdAt).getTime(),
+                    )[0];
+
+                    return (
+                      <div className="border-l-4 border-yellow-500 pl-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center space-x-2">
+                            <DocumentTextIcon className="h-5 w-5 text-yellow-600" />
+                            <span className="text-sm font-semibold text-gray-900">
+                              Latest Internal Note
+                            </span>
+                            <span className="text-xs text-gray-500 italic">
+                              (Staff only)
+                            </span>
+                          </div>
+                          <span className="text-xs text-gray-500">
+                            {new Date(latestNote.createdAt).toLocaleString()}
+                          </span>
                         </div>
-                        <span className="text-xs text-gray-500">
-                          {new Date(latestNote.createdAt).toLocaleString()}
-                        </span>
+                        <div className="bg-yellow-50 rounded-lg p-3">
+                          <p className="text-xs font-medium text-gray-700 mb-1">
+                            {latestNote.createdBy.firstName}{" "}
+                            {latestNote.createdBy.lastName}
+                          </p>
+                          <p className="text-sm text-gray-800 whitespace-pre-wrap line-clamp-3">
+                            {latestNote.note}
+                          </p>
+                        </div>
                       </div>
-                      <div className="bg-yellow-50 rounded-lg p-3">
-                        <p className="text-xs font-medium text-gray-700 mb-1">
-                          {latestNote.createdBy.firstName} {latestNote.createdBy.lastName}
-                        </p>
-                        <p className="text-sm text-gray-800 whitespace-pre-wrap line-clamp-3">
-                          {latestNote.note}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })()}
+                    );
+                  })()}
 
                 <div className="pt-2 border-t border-gray-200">
                   <p className="text-xs text-gray-500 text-center">
@@ -1429,56 +1670,74 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
               <div className="border-b border-gray-200">
                 <div className="flex space-x-8 px-6">
                   <button
-                    onClick={() => setActiveTab('replies')}
+                    onClick={() => setActiveTab("replies")}
                     className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                      activeTab === 'replies'
-                        ? 'border-blue-500 text-blue-600'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      activeTab === "replies"
+                        ? "border-blue-500 text-blue-600"
+                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                     }`}
                   >
                     <ChatBubbleLeftRightIcon className="h-5 w-5 inline-block mr-2" />
                     Replies
                   </button>
                   <button
-                    onClick={() => setActiveTab('notes')}
+                    onClick={() => setActiveTab("notes")}
                     className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                      activeTab === 'notes'
-                        ? 'border-blue-500 text-blue-600'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      activeTab === "notes"
+                        ? "border-blue-500 text-blue-600"
+                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                     }`}
                   >
                     <DocumentTextIcon className="h-5 w-5 inline-block mr-2" />
                     Internal Notes
                   </button>
                   <button
-                    onClick={() => setActiveTab('history')}
+                    onClick={() => setActiveTab("history")}
                     className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                      activeTab === 'history'
-                        ? 'border-blue-500 text-blue-600'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      activeTab === "history"
+                        ? "border-blue-500 text-blue-600"
+                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                     }`}
                   >
                     <ClockIcon className="h-5 w-5 inline-block mr-2" />
                     History
                   </button>
                   {/* Task 6.5: Emails tab - only show for email tickets */}
-                  {ticket.submissionSource === 'email' && (
+                  {ticket.submissionSource === "email" && (
                     <button
-                      onClick={() => setActiveTab('emails')}
+                      onClick={() => setActiveTab("emails")}
                       className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                        activeTab === 'emails'
-                          ? 'border-blue-500 text-blue-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        activeTab === "emails"
+                          ? "border-blue-500 text-blue-600"
+                          : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                       }`}
                     >
-                      <svg className="h-5 w-5 inline-block mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      <svg
+                        className="h-5 w-5 inline-block mr-2"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                        />
                       </svg>
-                      Email Thread ({emailCommunications.filter(e => {
-                        const isOut = e.direction === 'outgoing' || e.direction === 'outbound';
-                        const isConf = e.subject?.toLowerCase().includes('ticket created:');
-                        return !(isOut && isConf);
-                      }).length})
+                      Email Thread (
+                      {
+                        emailCommunications.filter((e) => {
+                          const isOut =
+                            e.direction === "outgoing" ||
+                            e.direction === "outbound";
+                          const isConf = e.subject
+                            ?.toLowerCase()
+                            .includes("ticket created:");
+                          return !(isOut && isConf);
+                        }).length
+                      }
+                      )
                     </button>
                   )}
                 </div>
@@ -1486,17 +1745,21 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
 
               <div className="p-6">
                 {/* Replies Tab */}
-                {activeTab === 'replies' && (
+                {activeTab === "replies" && (
                   <div className="space-y-6">
                     {/* Closed Ticket Notice */}
-                    {(String(ticket.status) === '5' || String(ticket.status).toLowerCase() === 'closed') && (
+                    {(String(ticket.status) === "5" ||
+                      String(ticket.status).toLowerCase() === "closed") && (
                       <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                         <div className="flex items-start">
                           <ExclamationTriangleIcon className="h-5 w-5 text-yellow-600 mr-2 flex-shrink-0" />
                           <div>
-                            <h4 className="text-sm font-semibold text-yellow-900">Query is Closed</h4>
+                            <h4 className="text-sm font-semibold text-yellow-900">
+                              Query is Closed
+                            </h4>
                             <p className="text-sm text-yellow-700 mt-1">
-                              This query is closed. To add a reply, please change the status to "Open" first.
+                              This query is closed. To add a reply, please
+                              change the status to "Open" first.
                             </p>
                           </div>
                         </div>
@@ -1504,180 +1767,235 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                     )}
 
                     {/* Reply Form (only if ticket is not closed) */}
-                    {!(String(ticket.status) === '5' || String(ticket.status).toLowerCase() === 'closed') && (
-                    <form onSubmit={handleSubmitReply} className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Add Reply
-                        </label>
-                        <textarea
-                          value={replyMessage}
-                          onChange={(e) => setReplyMessage(e.target.value)}
-                          rows={4}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          placeholder="Type your reply here..."
-                          required
-                        />
-                      </div>
+                    {!(
+                      String(ticket.status) === "5" ||
+                      String(ticket.status).toLowerCase() === "closed"
+                    ) && (
+                      <form onSubmit={handleSubmitReply} className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Add Reply
+                          </label>
+                          <textarea
+                            value={replyMessage}
+                            onChange={(e) => setReplyMessage(e.target.value)}
+                            rows={4}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="Type your reply here..."
+                            required
+                          />
+                        </div>
 
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Attachments (optional)
-                        </label>
-                        <input
-                          type="file"
-                          multiple
-                          onChange={(e) => setReplyFiles(e.target.files)}
-                          className="w-full"
-                        />
-                      </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Attachments (optional)
+                          </label>
+                          <input
+                            type="file"
+                            multiple
+                            onChange={(e) => {
+                              setReplyFiles(e.target.files);
+                              showFileUploadToast(e.target.files);
+                            }}
+                            className="w-full"
+                          />
+                        </div>
 
-                      <div className="flex justify-end">
-                        <button
-                          type="submit"
-                          disabled={isSubmittingReply}
-                          className="flex items-center space-x-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {isSubmittingReply ? (
-                            <>
-                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                              <span>Sending...</span>
-                            </>
-                          ) : (
-                            <>
-                              <PaperAirplaneIcon className="h-5 w-5" />
-                              <span>Send Reply</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </form>
+                        <div className="flex justify-end">
+                          <button
+                            type="submit"
+                            disabled={isSubmittingReply}
+                            className="flex items-center space-x-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {isSubmittingReply ? (
+                              <>
+                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                <span>Sending...</span>
+                              </>
+                            ) : (
+                              <>
+                                <PaperAirplaneIcon className="h-5 w-5" />
+                                <span>Send Reply</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </form>
                     )}
 
                     {/* Task 7.5: Combined Timeline - Comments (Email Replies) + Threads */}
-                    {((ticket.comments && ticket.comments.length > 0) || (ticket.threads && ticket.threads.length > 0)) && (
+                    {((ticket.comments && ticket.comments.length > 0) ||
+                      (ticket.threads && ticket.threads.length > 0)) && (
                       <div className="space-y-4 mt-8">
                         <h4 className="text-base font-semibold text-gray-900 border-b pb-2">
-                          Full Conversation ({(ticket.comments?.length || 0) + (ticket.threads?.length || 0)} messages)
+                          Full Conversation (
+                          {(ticket.comments?.length || 0) +
+                            (ticket.threads?.length || 0)}{" "}
+                          messages)
                         </h4>
 
                         {/* Task 7.5: Display Email Replies (from comments) */}
-                        {ticket.comments && ticket.comments.length > 0 && ticket.comments
-                          .filter(comment => comment.text?.startsWith('📧'))
-                          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-                          .map((comment) => {
-                            // Extract email and content from comment text
-                            const emailMatch = comment.text.match(/📧 Email reply sent to ([^:]+):\n\n(.+)/s);
-                            const recipientEmail = emailMatch ? emailMatch[1].trim() : '';
-                            const replyContent = emailMatch ? emailMatch[2].trim() : comment.text;
+                        {ticket.comments &&
+                          ticket.comments.length > 0 &&
+                          ticket.comments
+                            .filter((comment) => comment.text?.startsWith("📧"))
+                            .sort(
+                              (a, b) =>
+                                new Date(b.createdAt).getTime() -
+                                new Date(a.createdAt).getTime(),
+                            )
+                            .map((comment) => {
+                              // Extract email and content from comment text
+                              const emailMatch = comment.text.match(
+                                /📧 Email reply sent to ([^:]+):\n\n(.+)/s,
+                              );
+                              const recipientEmail = emailMatch
+                                ? emailMatch[1].trim()
+                                : "";
+                              const replyContent = emailMatch
+                                ? emailMatch[2].trim()
+                                : comment.text;
 
-                            return (
-                              <div key={comment._id} className="bg-blue-50 rounded-lg p-4 border-l-4 border-blue-500">
+                              return (
+                                <div
+                                  key={comment._id}
+                                  className="bg-blue-50 rounded-lg p-4 border-l-4 border-blue-500"
+                                >
+                                  <div className="flex items-start space-x-3">
+                                    <div className="flex-shrink-0">
+                                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-blue-400 flex items-center justify-center text-white font-semibold">
+                                        {comment.createdBy?.firstName?.charAt(
+                                          0,
+                                        ) || "A"}
+                                      </div>
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-2">
+                                          <p className="text-sm font-medium text-gray-900">
+                                            {comment.createdBy?.firstName}{" "}
+                                            {comment.createdBy?.lastName}
+                                          </p>
+                                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                            📧 Sent via Email
+                                          </span>
+                                        </div>
+                                        <p className="text-xs text-gray-500">
+                                          {new Date(
+                                            comment.createdAt,
+                                          ).toLocaleString("en-US", {
+                                            year: "numeric",
+                                            month: "short",
+                                            day: "numeric",
+                                            hour: "2-digit",
+                                            minute: "2-digit",
+                                          })}
+                                        </p>
+                                      </div>
+                                      {recipientEmail && (
+                                        <p className="text-xs text-blue-700 mb-2">
+                                          To: {recipientEmail}
+                                        </p>
+                                      )}
+                                      <div className="text-sm text-gray-700 whitespace-pre-wrap break-words">
+                                        {replyContent}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+
+                        {/* Original Threads/Replies */}
+                        {ticket.threads &&
+                          ticket.threads.length > 0 &&
+                          ticket.threads
+                            .sort(
+                              (a, b) =>
+                                new Date(b.createdAt).getTime() -
+                                new Date(a.createdAt).getTime(),
+                            )
+                            .map((thread) => (
+                              <div
+                                key={thread._id}
+                                className="bg-gray-50 rounded-lg p-4 border border-gray-200"
+                              >
                                 <div className="flex items-start space-x-3">
                                   <div className="flex-shrink-0">
-                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-blue-400 flex items-center justify-center text-white font-semibold">
-                                      {comment.createdBy?.firstName?.charAt(0) || 'A'}
+                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-semibold">
+                                      {thread.createdBy?.firstName?.charAt(0) ||
+                                        "?"}
                                     </div>
                                   </div>
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center justify-between mb-2">
-                                      <div className="flex items-center gap-2">
+                                      <div>
                                         <p className="text-sm font-medium text-gray-900">
-                                          {comment.createdBy?.firstName} {comment.createdBy?.lastName}
+                                          {thread.createdBy?.firstName}{" "}
+                                          {thread.createdBy?.lastName}
+                                          {thread.createdBy?.role && (
+                                            <span className="ml-2 text-xs text-gray-500">
+                                              (
+                                              {typeof thread.createdBy.role ===
+                                              "string"
+                                                ? thread.createdBy.role
+                                                : thread.createdBy.role.name}
+                                              )
+                                            </span>
+                                          )}
                                         </p>
-                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                                          📧 Sent via Email
-                                        </span>
+                                        <p className="text-xs text-gray-500">
+                                          {new Date(
+                                            thread.createdAt,
+                                          ).toLocaleString()}
+                                        </p>
                                       </div>
-                                      <p className="text-xs text-gray-500">
-                                        {new Date(comment.createdAt).toLocaleString('en-US', {
-                                          year: 'numeric',
-                                          month: 'short',
-                                          day: 'numeric',
-                                          hour: '2-digit',
-                                          minute: '2-digit'
-                                        })}
-                                      </p>
                                     </div>
-                                    {recipientEmail && (
-                                      <p className="text-xs text-blue-700 mb-2">
-                                        To: {recipientEmail}
-                                      </p>
-                                    )}
-                                    <div className="text-sm text-gray-700 whitespace-pre-wrap break-words">
-                                      {replyContent}
-                                    </div>
+                                    <p className="text-gray-700 whitespace-pre-wrap text-sm">
+                                      {thread.message}
+                                    </p>
+
+                                    {/* Thread Attachments */}
+                                    {thread.attachments &&
+                                      thread.attachments.length > 0 && (
+                                        <div className="mt-3 space-y-2">
+                                          {thread.attachments.map(
+                                            (file, idx) => (
+                                              <button
+                                                key={idx}
+                                                type="button"
+                                                onClick={() =>
+                                                  openAttachment(file.path)
+                                                }
+                                                className="flex items-center space-x-2 text-sm text-blue-600 hover:text-blue-700"
+                                              >
+                                                <PaperClipIcon className="h-4 w-4" />
+                                                <span>{file.filename}</span>
+                                              </button>
+                                            ),
+                                          )}
+                                        </div>
+                                      )}
                                   </div>
                                 </div>
                               </div>
-                            );
-                          })
-                        }
-
-                        {/* Original Threads/Replies */}
-                        {ticket.threads && ticket.threads.length > 0 && ticket.threads
-                          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-                          .map((thread) => (
-                            <div key={thread._id} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                              <div className="flex items-start space-x-3">
-                                <div className="flex-shrink-0">
-                                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-semibold">
-                                    {thread.createdBy?.firstName?.charAt(0) || '?'}
-                                  </div>
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center justify-between mb-2">
-                                    <div>
-                                      <p className="text-sm font-medium text-gray-900">
-                                        {thread.createdBy?.firstName} {thread.createdBy?.lastName}
-                                        {thread.createdBy?.role && (
-                                          <span className="ml-2 text-xs text-gray-500">
-                                            ({typeof thread.createdBy.role === 'string' ? thread.createdBy.role : thread.createdBy.role.name})
-                                          </span>
-                                        )}
-                                      </p>
-                                      <p className="text-xs text-gray-500">
-                                        {new Date(thread.createdAt).toLocaleString()}
-                                      </p>
-                                    </div>
-                                  </div>
-                                  <p className="text-gray-700 whitespace-pre-wrap text-sm">{thread.message}</p>
-
-                                  {/* Thread Attachments */}
-                                  {thread.attachments && thread.attachments.length > 0 && (
-                                    <div className="mt-3 space-y-2">
-                                      {thread.attachments.map((file, idx) => (
-                                        <a
-                                          key={idx}
-                                          href={`${API_CONFIG.BASE_URL}${file.path}`}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="flex items-center space-x-2 text-sm text-blue-600 hover:text-blue-700"
-                                        >
-                                          <PaperClipIcon className="h-4 w-4" />
-                                          <span>{file.filename}</span>
-                                        </a>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          ))}
+                            ))}
                       </div>
                     )}
                   </div>
                 )}
 
                 {/* Internal Notes Tab */}
-                {activeTab === 'notes' && (
+                {activeTab === "notes" && (
                   <div className="space-y-6">
                     {/* Add Note Form */}
                     <div className="space-y-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
                           Add Internal Note
-                          <span className="text-xs text-gray-500 ml-2">(Not visible to students)</span>
+                          <span className="text-xs text-gray-500 ml-2">
+                            (Not visible to students)
+                          </span>
                         </label>
                         <textarea
                           value={noteText}
@@ -1710,116 +2028,184 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                     </div>
 
                     {/* Full Internal Notes List */}
-                    {ticket.internalNotes && ticket.internalNotes.length > 0 && (
-                      <div className="space-y-4 mt-8">
-                        <h4 className="text-base font-semibold text-gray-900 border-b pb-2">
-                          All Internal Notes ({ticket.internalNotes.length} {ticket.internalNotes.length === 1 ? 'note' : 'notes'})
-                        </h4>
-                        {ticket.internalNotes
-                          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-                          .map((note) => (
-                            <div key={note._id} className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
-                              <div className="flex items-start space-x-3">
-                                <div className="flex-shrink-0">
-                                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-yellow-500 to-orange-600 flex items-center justify-center text-white font-semibold">
-                                    {note.createdBy?.firstName?.charAt(0) || '?'}
-                                  </div>
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center justify-between mb-2">
-                                    <div>
-                                      <p className="text-sm font-medium text-gray-900">
-                                        {note.createdBy?.firstName} {note.createdBy?.lastName}
-                                        <span className="ml-2 text-xs text-yellow-700 font-semibold">(STAFF ONLY)</span>
-                                      </p>
-                                      <p className="text-xs text-gray-600">
-                                        {new Date(note.createdAt).toLocaleString()}
-                                      </p>
+                    {ticket.internalNotes &&
+                      ticket.internalNotes.length > 0 && (
+                        <div className="space-y-4 mt-8">
+                          <h4 className="text-base font-semibold text-gray-900 border-b pb-2">
+                            All Internal Notes ({ticket.internalNotes.length}{" "}
+                            {ticket.internalNotes.length === 1
+                              ? "note"
+                              : "notes"}
+                            )
+                          </h4>
+                          {ticket.internalNotes
+                            .sort(
+                              (a, b) =>
+                                new Date(b.createdAt).getTime() -
+                                new Date(a.createdAt).getTime(),
+                            )
+                            .map((note) => (
+                              <div
+                                key={note._id}
+                                className="bg-yellow-50 rounded-lg p-4 border border-yellow-200"
+                              >
+                                <div className="flex items-start space-x-3">
+                                  <div className="flex-shrink-0">
+                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-yellow-500 to-orange-600 flex items-center justify-center text-white font-semibold">
+                                      {note.createdBy?.firstName?.charAt(0) ||
+                                        "?"}
                                     </div>
                                   </div>
-                                  <p className="text-gray-700 whitespace-pre-wrap text-sm">{note.note}</p>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <div>
+                                        <p className="text-sm font-medium text-gray-900">
+                                          {note.createdBy?.firstName}{" "}
+                                          {note.createdBy?.lastName}
+                                          <span className="ml-2 text-xs text-yellow-700 font-semibold">
+                                            (STAFF ONLY)
+                                          </span>
+                                        </p>
+                                        <p className="text-xs text-gray-600">
+                                          {new Date(
+                                            note.createdAt,
+                                          ).toLocaleString()}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <p className="text-gray-700 whitespace-pre-wrap text-sm">
+                                      {note.note}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      )}
+                  </div>
+                )}
+
+                {/* History Tab */}
+                {activeTab === "history" && (
+                  <div className="space-y-6">
+                    {/* Change History */}
+                    {(ticket as any).changeHistory &&
+                    (ticket as any).changeHistory.length > 0 ? (
+                      <div className="space-y-3">
+                        <h3 className="text-sm font-medium text-gray-900">
+                          Change History
+                        </h3>
+                        {[...(ticket as any).changeHistory]
+                          .reverse()
+                          .map((change: any) => (
+                            <div
+                              key={change._id}
+                              className="p-4 bg-gray-50 border border-gray-200 rounded-lg"
+                            >
+                              <div className="flex items-start space-x-3">
+                                <ClockIcon className="h-5 w-5 text-gray-600 flex-shrink-0 mt-1" />
+                                <div className="flex-1">
+                                  <div className="flex items-start justify-between">
+                                    <div>
+                                      <p className="text-sm font-medium text-gray-900">
+                                        {change.field}{" "}
+                                        {change.changeType === "add"
+                                          ? "Added"
+                                          : change.changeType === "remove"
+                                            ? "Removed"
+                                            : "Updated"}
+                                      </p>
+                                      <p className="text-xs text-gray-600 mt-1">
+                                        By {change.changedBy?.firstName}{" "}
+                                        {change.changedBy?.lastName}
+                                      </p>
+                                    </div>
+                                    <p className="text-xs text-gray-500">
+                                      {new Date(
+                                        change.changedAt,
+                                      ).toLocaleString()}
+                                    </p>
+                                  </div>
+                                  <div className="mt-2 text-sm">
+                                    {change.changeType === "add" ? (
+                                      <span className="text-green-700">
+                                        +{" "}
+                                        {formatChangeValue(
+                                          change.field,
+                                          change.newValue,
+                                        )}
+                                      </span>
+                                    ) : change.changeType === "remove" ? (
+                                      <span className="text-red-700">
+                                        -{" "}
+                                        {formatChangeValue(
+                                          change.field,
+                                          change.oldValue,
+                                        )}
+                                      </span>
+                                    ) : (
+                                      <div className="space-y-1">
+                                        <span className="text-red-700 line-through">
+                                          {formatChangeValue(
+                                            change.field,
+                                            change.oldValue,
+                                          )}
+                                        </span>
+                                        <span className="mx-2">→</span>
+                                        <span className="text-green-700">
+                                          {formatChangeValue(
+                                            change.field,
+                                            change.newValue,
+                                          )}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             </div>
                           ))}
                       </div>
-                    )}
-                  </div>
-                )}
-
-                {/* History Tab */}
-                {activeTab === 'history' && (
-                  <div className="space-y-6">
-                    {/* Change History */}
-                    {(ticket as any).changeHistory && (ticket as any).changeHistory.length > 0 ? (
-                      <div className="space-y-3">
-                        <h3 className="text-sm font-medium text-gray-900">Change History</h3>
-                        {[...(ticket as any).changeHistory].reverse().map((change: any) => (
-                          <div key={change._id} className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
-                            <div className="flex items-start space-x-3">
-                              <ClockIcon className="h-5 w-5 text-gray-600 flex-shrink-0 mt-1" />
-                              <div className="flex-1">
-                                <div className="flex items-start justify-between">
-                                  <div>
-                                    <p className="text-sm font-medium text-gray-900">
-                                      {change.field} {change.changeType === 'add' ? 'Added' : change.changeType === 'remove' ? 'Removed' : 'Updated'}
-                                    </p>
-                                    <p className="text-xs text-gray-600 mt-1">
-                                      By {change.changedBy?.firstName} {change.changedBy?.lastName}
-                                    </p>
-                                  </div>
-                                  <p className="text-xs text-gray-500">
-                                    {new Date(change.changedAt).toLocaleString()}
-                                  </p>
-                                </div>
-                                <div className="mt-2 text-sm">
-                                  {change.changeType === 'add' ? (
-                                    <span className="text-green-700">
-                                      + {formatChangeValue(change.field, change.newValue)}
-                                    </span>
-                                  ) : change.changeType === 'remove' ? (
-                                    <span className="text-red-700">
-                                      - {formatChangeValue(change.field, change.oldValue)}
-                                    </span>
-                                  ) : (
-                                    <div className="space-y-1">
-                                      <span className="text-red-700 line-through">
-                                        {formatChangeValue(change.field, change.oldValue)}
-                                      </span>
-                                      <span className="mx-2">→</span>
-                                      <span className="text-green-700">
-                                        {formatChangeValue(change.field, change.newValue)}
-                                      </span>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
                     ) : null}
 
                     {/* Escalation History */}
-                    {ticket.escalationHistory && ticket.escalationHistory.length > 0 ? (
+                    {ticket.escalationHistory &&
+                    ticket.escalationHistory.length > 0 ? (
                       <div className="space-y-3">
-                        <h3 className="text-sm font-medium text-gray-900">Escalation Timeline</h3>
-                        
+                        <h3 className="text-sm font-medium text-gray-900">
+                          Escalation Timeline
+                        </h3>
+
                         {/* Initial Creation Record */}
                         {(() => {
                           const createdAt = new Date(ticket.createdAt);
                           const firstEscalation = ticket.escalationHistory[0];
-                          const firstEscalationTime = new Date(firstEscalation.escalatedAt);
-                          
-                          const timeAtL0 = firstEscalationTime.getTime() - createdAt.getTime();
+                          const firstEscalationTime = new Date(
+                            firstEscalation.escalatedAt,
+                          );
+
+                          const timeAtL0 =
+                            firstEscalationTime.getTime() - createdAt.getTime();
                           const hours = Math.floor(timeAtL0 / (1000 * 60 * 60));
-                          const minutes = Math.floor((timeAtL0 % (1000 * 60 * 60)) / (1000 * 60));
-                          
+                          const minutes = Math.floor(
+                            (timeAtL0 % (1000 * 60 * 60)) / (1000 * 60),
+                          );
+
                           return (
                             <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
                               <div className="flex items-start space-x-3">
-                                <svg className="h-5 w-5 text-blue-600 flex-shrink-0 mt-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                <svg
+                                  className="h-5 w-5 text-blue-600 flex-shrink-0 mt-1"
+                                  fill="none"
+                                  viewBox="0 0 24 24"
+                                  stroke="currentColor"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M12 4v16m8-8H4"
+                                  />
                                 </svg>
                                 <div className="flex-1">
                                   <div className="flex items-center justify-between">
@@ -1831,19 +2217,26 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                                     </span>
                                   </div>
                                   <p className="text-xs text-gray-600 mt-1">
-                                    Created by {ticket.createdBy?.firstName} {ticket.createdBy?.lastName}
+                                    Created by {ticket.createdBy?.firstName}{" "}
+                                    {ticket.createdBy?.lastName}
                                   </p>
                                   <div className="mt-3 grid grid-cols-2 gap-4 text-xs">
                                     <div>
-                                      <p className="text-gray-500">Created At:</p>
+                                      <p className="text-gray-500">
+                                        Created At:
+                                      </p>
                                       <p className="font-medium text-gray-900">
-                                        {createdAt.toLocaleDateString()} {createdAt.toLocaleTimeString()}
+                                        {createdAt.toLocaleDateString()}{" "}
+                                        {createdAt.toLocaleTimeString()}
                                       </p>
                                     </div>
                                     <div>
-                                      <p className="text-gray-500">Time Before Escalation:</p>
+                                      <p className="text-gray-500">
+                                        Time Before Escalation:
+                                      </p>
                                       <p className="font-medium text-gray-900">
-                                        {hours > 0 ? `${hours}h ` : ''}{minutes}m
+                                        {hours > 0 ? `${hours}h ` : ""}
+                                        {minutes}m
                                       </p>
                                     </div>
                                   </div>
@@ -1852,30 +2245,45 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                             </div>
                           );
                         })()}
-                        
+
                         {/* Escalation Records */}
                         {ticket.escalationHistory?.map((record, index) => {
                           // Calculate time at this level (time until next escalation or now)
                           const escalatedAt = new Date(record.escalatedAt);
-                          const nextEscalation = ticket.escalationHistory?.[index + 1];
-                          const endTime = nextEscalation 
-                            ? new Date(nextEscalation.escalatedAt) 
+                          const nextEscalation =
+                            ticket.escalationHistory?.[index + 1];
+                          const endTime = nextEscalation
+                            ? new Date(nextEscalation.escalatedAt)
                             : new Date();
-                          
-                          const timeAtLevel = endTime.getTime() - escalatedAt.getTime();
-                          const hours = Math.floor(timeAtLevel / (1000 * 60 * 60));
-                          const minutes = Math.floor((timeAtLevel % (1000 * 60 * 60)) / (1000 * 60));
-                          
-                          const isAutoEscalation = record.escalatedBy === null || record.escalatedBy === undefined;
-                          
+
+                          const timeAtLevel =
+                            endTime.getTime() - escalatedAt.getTime();
+                          const hours = Math.floor(
+                            timeAtLevel / (1000 * 60 * 60),
+                          );
+                          const minutes = Math.floor(
+                            (timeAtLevel % (1000 * 60 * 60)) / (1000 * 60),
+                          );
+
+                          const isAutoEscalation =
+                            record.escalatedBy === null ||
+                            record.escalatedBy === undefined;
+
                           return (
-                            <div key={record._id} className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                            <div
+                              key={record._id}
+                              className="p-4 bg-orange-50 border border-orange-200 rounded-lg"
+                            >
                               <div className="flex items-start space-x-3">
                                 <ArrowUpIcon className="h-5 w-5 text-orange-600 flex-shrink-0 mt-1" />
                                 <div className="flex-1">
                                   <div className="flex items-center justify-between">
                                     <p className="text-sm font-medium text-gray-900">
-                                      Escalated to <span className="text-orange-700">{record.escalatedTo.firstName} {record.escalatedTo.lastName}</span>
+                                      Escalated to{" "}
+                                      <span className="text-orange-700">
+                                        {record.escalatedTo.firstName}{" "}
+                                        {record.escalatedTo.lastName}
+                                      </span>
                                     </p>
                                     <span className="text-xs font-medium text-orange-600 bg-orange-100 px-2 py-1 rounded">
                                       Level {index + 1}
@@ -1884,25 +2292,43 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                                   <p className="text-xs text-gray-600 mt-1">
                                     {isAutoEscalation ? (
                                       <span className="inline-flex items-center">
-                                        🤖 <span className="ml-1">Auto-escalated by system</span>
+                                        🤖{" "}
+                                        <span className="ml-1">
+                                          Auto-escalated by system
+                                        </span>
                                       </span>
                                     ) : (
-                                      <>By {record.escalatedBy.firstName} {record.escalatedBy.lastName}</>
+                                      <>
+                                        By {record.escalatedBy.firstName}{" "}
+                                        {record.escalatedBy.lastName}
+                                      </>
                                     )}
                                   </p>
-                                  <p className="text-sm text-gray-700 mt-2">{record.reason}</p>
+                                  <p className="text-sm text-gray-700 mt-2">
+                                    {record.reason}
+                                  </p>
                                   <div className="mt-3 grid grid-cols-2 gap-4 text-xs">
                                     <div>
-                                      <p className="text-gray-500">Escalated At:</p>
+                                      <p className="text-gray-500">
+                                        Escalated At:
+                                      </p>
                                       <p className="font-medium text-gray-900">
-                                        {escalatedAt.toLocaleDateString()} {escalatedAt.toLocaleTimeString()}
+                                        {escalatedAt.toLocaleDateString()}{" "}
+                                        {escalatedAt.toLocaleTimeString()}
                                       </p>
                                     </div>
                                     <div>
-                                      <p className="text-gray-500">Time at this Level:</p>
+                                      <p className="text-gray-500">
+                                        Time at this Level:
+                                      </p>
                                       <p className="font-medium text-gray-900">
-                                        {hours > 0 ? `${hours}h ` : ''}{minutes}m
-                                        {!nextEscalation && <span className="text-orange-600 ml-1">(ongoing)</span>}
+                                        {hours > 0 ? `${hours}h ` : ""}
+                                        {minutes}m
+                                        {!nextEscalation && (
+                                          <span className="text-orange-600 ml-1">
+                                            (ongoing)
+                                          </span>
+                                        )}
                                       </p>
                                     </div>
                                   </div>
@@ -1917,88 +2343,126 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                     {/* Change History */}
                     {ticket.changeHistory && ticket.changeHistory.length > 0 ? (
                       <div className="space-y-3 mt-6">
-                        <h3 className="text-sm font-medium text-gray-900">Change History</h3>
-                        
+                        <h3 className="text-sm font-medium text-gray-900">
+                          Change History
+                        </h3>
+
                         {ticket.changeHistory.map((change) => {
                           const changedAt = new Date(change.changedAt);
-                          
+
                           // Format field name for display
                           const fieldDisplayNames: Record<string, string> = {
-                            'status': 'Status',
-                            'priority': 'Priority',
-                            'assignedTo': 'Assigned Agent',
-                            'category': 'Category',
-                            'tags': 'Tags',
-                            'subject': 'Subject',
-                            'description': 'Description'
+                            status: "Status",
+                            priority: "Priority",
+                            assignedTo: "Assigned Agent",
+                            category: "Category",
+                            tags: "Tags",
+                            subject: "Subject",
+                            description: "Description",
                           };
-                          
-                          const fieldDisplay = fieldDisplayNames[change.field] || change.field;
-                          
+
+                          const fieldDisplay =
+                            fieldDisplayNames[change.field] || change.field;
+
                           // Choose icon and color based on field
-                          let iconColor = 'text-gray-600';
-                          let bgColor = 'bg-gray-50';
-                          let borderColor = 'border-gray-200';
+                          let iconColor = "text-gray-600";
+                          let bgColor = "bg-gray-50";
+                          let borderColor = "border-gray-200";
                           let icon = null;
-                          
-                          if (change.field === 'status') {
-                            iconColor = 'text-green-600';
-                            bgColor = 'bg-green-50';
-                            borderColor = 'border-green-200';
-                            icon = <CheckCircleIcon className="h-5 w-5 text-green-600 flex-shrink-0 mt-1" />;
-                          } else if (change.field === 'priority') {
-                            iconColor = 'text-red-600';
-                            bgColor = 'bg-red-50';
-                            borderColor = 'border-red-200';
-                            icon = <ExclamationTriangleIcon className="h-5 w-5 text-red-600 flex-shrink-0 mt-1" />;
-                          } else if (change.field === 'assignedTo') {
-                            iconColor = 'text-blue-600';
-                            bgColor = 'bg-blue-50';
-                            borderColor = 'border-blue-200';
-                            icon = <UserIcon className="h-5 w-5 text-blue-600 flex-shrink-0 mt-1" />;
-                          } else if (change.field === 'tags' || change.field === 'category') {
-                            iconColor = 'text-purple-600';
-                            bgColor = 'bg-purple-50';
-                            borderColor = 'border-purple-200';
-                            icon = <TagIcon className="h-5 w-5 text-purple-600 flex-shrink-0 mt-1" />;
+
+                          if (change.field === "status") {
+                            iconColor = "text-green-600";
+                            bgColor = "bg-green-50";
+                            borderColor = "border-green-200";
+                            icon = (
+                              <CheckCircleIcon className="h-5 w-5 text-green-600 flex-shrink-0 mt-1" />
+                            );
+                          } else if (change.field === "priority") {
+                            iconColor = "text-red-600";
+                            bgColor = "bg-red-50";
+                            borderColor = "border-red-200";
+                            icon = (
+                              <ExclamationTriangleIcon className="h-5 w-5 text-red-600 flex-shrink-0 mt-1" />
+                            );
+                          } else if (change.field === "assignedTo") {
+                            iconColor = "text-blue-600";
+                            bgColor = "bg-blue-50";
+                            borderColor = "border-blue-200";
+                            icon = (
+                              <UserIcon className="h-5 w-5 text-blue-600 flex-shrink-0 mt-1" />
+                            );
+                          } else if (
+                            change.field === "tags" ||
+                            change.field === "category"
+                          ) {
+                            iconColor = "text-purple-600";
+                            bgColor = "bg-purple-50";
+                            borderColor = "border-purple-200";
+                            icon = (
+                              <TagIcon className="h-5 w-5 text-purple-600 flex-shrink-0 mt-1" />
+                            );
                           } else {
-                            icon = <DocumentTextIcon className="h-5 w-5 text-gray-600 flex-shrink-0 mt-1" />;
+                            icon = (
+                              <DocumentTextIcon className="h-5 w-5 text-gray-600 flex-shrink-0 mt-1" />
+                            );
                           }
-                          
+
                           return (
-                            <div key={change._id} className={`p-4 ${bgColor} border ${borderColor} rounded-lg`}>
+                            <div
+                              key={change._id}
+                              className={`p-4 ${bgColor} border ${borderColor} rounded-lg`}
+                            >
                               <div className="flex items-start space-x-3">
                                 {icon}
                                 <div className="flex-1">
                                   <div className="flex items-center justify-between">
                                     <p className="text-sm font-medium text-gray-900">
-                                      {fieldDisplay} {change.changeType === 'update' ? 'Updated' : change.changeType === 'add' ? 'Added' : 'Removed'}
+                                      {fieldDisplay}{" "}
+                                      {change.changeType === "update"
+                                        ? "Updated"
+                                        : change.changeType === "add"
+                                          ? "Added"
+                                          : "Removed"}
                                     </p>
-                                    <span className={`text-xs font-medium ${iconColor} px-2 py-1 rounded`}>
+                                    <span
+                                      className={`text-xs font-medium ${iconColor} px-2 py-1 rounded`}
+                                    >
                                       {change.changeType}
                                     </span>
                                   </div>
                                   <p className="text-xs text-gray-600 mt-1">
-                                    By {change.changedBy.firstName} {change.changedBy.lastName}
+                                    By {change.changedBy.firstName}{" "}
+                                    {change.changedBy.lastName}
                                   </p>
                                   <div className="mt-3 grid grid-cols-2 gap-4 text-xs">
                                     <div>
                                       <p className="text-gray-500">From:</p>
                                       <p className="font-medium text-gray-900">
-                                        {change.oldValue || <span className="text-gray-400 italic">Empty</span>}
+                                        {change.oldValue || (
+                                          <span className="text-gray-400 italic">
+                                            Empty
+                                          </span>
+                                        )}
                                       </p>
                                     </div>
                                     <div>
                                       <p className="text-gray-500">To:</p>
                                       <p className="font-medium text-gray-900">
-                                        {change.newValue || <span className="text-gray-400 italic">Empty</span>}
+                                        {change.newValue || (
+                                          <span className="text-gray-400 italic">
+                                            Empty
+                                          </span>
+                                        )}
                                       </p>
                                     </div>
                                   </div>
                                   <div className="mt-2">
-                                    <p className="text-gray-500 text-xs">Changed At:</p>
+                                    <p className="text-gray-500 text-xs">
+                                      Changed At:
+                                    </p>
                                     <p className="font-medium text-gray-900 text-xs">
-                                      {changedAt.toLocaleDateString()} {changedAt.toLocaleTimeString()}
+                                      {changedAt.toLocaleDateString()}{" "}
+                                      {changedAt.toLocaleTimeString()}
                                     </p>
                                   </div>
                                 </div>
@@ -2010,165 +2474,222 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                     ) : null}
 
                     {/* No history message */}
-                    {(!ticket.changeHistory || ticket.changeHistory.length === 0) && 
-                     (!ticket.escalationHistory || ticket.escalationHistory.length === 0) && (
-                      <p className="text-center text-gray-500 py-8">No history yet</p>
-                    )}
+                    {(!ticket.changeHistory ||
+                      ticket.changeHistory.length === 0) &&
+                      (!ticket.escalationHistory ||
+                        ticket.escalationHistory.length === 0) && (
+                        <p className="text-center text-gray-500 py-8">
+                          No history yet
+                        </p>
+                      )}
                   </div>
                 )}
 
                 {/* Task 6.5: Email Communications Tab */}
-                {activeTab === 'emails' && (
+                {activeTab === "emails" && (
                   <div className="space-y-4">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-semibold text-gray-900">Email Communication Thread</h3>
+                      <h3 className="text-lg font-semibold text-gray-900">
+                        Email Communication Thread
+                      </h3>
                       {loadingEmails && (
-                        <span className="text-sm text-gray-500">Loading...</span>
+                        <span className="text-sm text-gray-500">
+                          Loading...
+                        </span>
                       )}
                     </div>
 
                     {/* Filter out automatic ticket confirmation emails (outgoing with "Ticket Created:" subject) */}
                     {(() => {
-                      const filteredEmails = emailCommunications.filter(email => {
-                        // Exclude automatic outgoing confirmation emails
-                        const isOutgoing = email.direction === 'outgoing' || email.direction === 'outbound';
-                        const isConfirmationEmail = email.subject?.toLowerCase().includes('ticket created:');
-                        return !(isOutgoing && isConfirmationEmail);
-                      });
-                      
+                      const filteredEmails = emailCommunications.filter(
+                        (email) => {
+                          // Exclude automatic outgoing confirmation emails
+                          const isOutgoing =
+                            email.direction === "outgoing" ||
+                            email.direction === "outbound";
+                          const isConfirmationEmail = email.subject
+                            ?.toLowerCase()
+                            .includes("ticket created:");
+                          return !(isOutgoing && isConfirmationEmail);
+                        },
+                      );
+
                       return (
                         <>
                           {!loadingEmails && filteredEmails.length === 0 && (
                             <div className="text-center py-12 bg-gray-50 rounded-lg">
-                              <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                              <svg
+                                className="mx-auto h-12 w-12 text-gray-400"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                                />
                               </svg>
-                              <p className="mt-4 text-sm text-gray-600">No email communications found</p>
-                              <p className="mt-1 text-xs text-gray-500">Email thread will appear here once messages are exchanged</p>
+                              <p className="mt-4 text-sm text-gray-600">
+                                No email communications found
+                              </p>
+                              <p className="mt-1 text-xs text-gray-500">
+                                Email thread will appear here once messages are
+                                exchanged
+                              </p>
                             </div>
                           )}
 
                           {filteredEmails.map((email, index) => {
-                      const isIncoming = email.direction === 'incoming' || email.direction === 'inbound';
-                      const isExpanded = expandedEmails.has(email._id);
-                      const emailBody = email.htmlBody || email.bodyHtml || email.body;
-                      const isLongEmail = emailBody.length > 500;
-                      const displayBody = !isExpanded && isLongEmail 
-                        ? emailBody.substring(0, 500) + '...' 
-                        : emailBody;
+                            const isIncoming =
+                              email.direction === "incoming" ||
+                              email.direction === "inbound";
+                            const isExpanded = expandedEmails.has(email._id);
+                            const emailBody =
+                              email.htmlBody || email.bodyHtml || email.body;
+                            const isLongEmail = emailBody.length > 500;
+                            const displayBody =
+                              !isExpanded && isLongEmail
+                                ? emailBody.substring(0, 500) + "..."
+                                : emailBody;
 
-                      return (
-                        <div 
-                          key={email._id}
-                          className={`relative border-l-4 pl-6 pr-4 py-4 rounded-r-lg ${
-                            isIncoming 
-                              ? 'bg-blue-50 border-blue-500' 
-                              : 'bg-green-50 border-green-500'
-                          }`}
-                        >
-                          {/* Thread indicator line */}
-                          {index > 0 && (
-                            <div 
-                              className="absolute left-0 -top-4 w-0.5 h-4 bg-gray-300"
-                              style={{ marginLeft: '-2px' }}
-                            />
-                          )}
-
-                          {/* Email header */}
-                          <div className="flex items-start justify-between mb-3">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className={`text-xs font-semibold px-2 py-1 rounded ${
-                                  isIncoming 
-                                    ? 'bg-blue-100 text-blue-700' 
-                                    : 'bg-green-100 text-green-700'
-                                }`}>
-                                  {isIncoming ? '📥 INCOMING' : '📤 OUTGOING'}
-                                </span>
-                                <span className="text-xs text-gray-500">
-                                  {new Date(email.createdAt).toLocaleString()}
-                                </span>
-                              </div>
-                              <div className="text-sm">
-                                <p className="font-medium text-gray-900">
-                                  <span className="text-gray-600">From:</span> {email.fromEmail}
-                                </p>
-                                <p className="text-gray-700">
-                                  <span className="text-gray-600">To:</span> {email.toEmail}
-                                </p>
-                                {email.ccEmails && email.ccEmails.length > 0 && (
-                                  <p className="text-gray-600 text-xs">
-                                    CC: {email.ccEmails.join(', ')}
-                                  </p>
+                            return (
+                              <div
+                                key={email._id}
+                                className={`relative border-l-4 pl-6 pr-4 py-4 rounded-r-lg ${
+                                  isIncoming
+                                    ? "bg-blue-50 border-blue-500"
+                                    : "bg-green-50 border-green-500"
+                                }`}
+                              >
+                                {/* Thread indicator line */}
+                                {index > 0 && (
+                                  <div
+                                    className="absolute left-0 -top-4 w-0.5 h-4 bg-gray-300"
+                                    style={{ marginLeft: "-2px" }}
+                                  />
                                 )}
-                              </div>
-                            </div>
-                          </div>
 
-                          {/* Email subject */}
-                          <div className="mb-3">
-                            <p className="text-sm font-semibold text-gray-900">
-                              Subject: {email.subject}
-                            </p>
-                          </div>
+                                {/* Email header */}
+                                <div className="flex items-start justify-between mb-3">
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span
+                                        className={`text-xs font-semibold px-2 py-1 rounded ${
+                                          isIncoming
+                                            ? "bg-blue-100 text-blue-700"
+                                            : "bg-green-100 text-green-700"
+                                        }`}
+                                      >
+                                        {isIncoming
+                                          ? "📥 INCOMING"
+                                          : "📤 OUTGOING"}
+                                      </span>
+                                      <span className="text-xs text-gray-500">
+                                        {new Date(
+                                          email.createdAt,
+                                        ).toLocaleString()}
+                                      </span>
+                                    </div>
+                                    <div className="text-sm">
+                                      <p className="font-medium text-gray-900">
+                                        <span className="text-gray-600">
+                                          From:
+                                        </span>{" "}
+                                        {email.fromEmail}
+                                      </p>
+                                      <p className="text-gray-700">
+                                        <span className="text-gray-600">
+                                          To:
+                                        </span>{" "}
+                                        {email.toEmail}
+                                      </p>
+                                      {email.ccEmails &&
+                                        email.ccEmails.length > 0 && (
+                                          <p className="text-gray-600 text-xs">
+                                            CC: {email.ccEmails.join(", ")}
+                                          </p>
+                                        )}
+                                    </div>
+                                  </div>
+                                </div>
 
-                          {/* Email body */}
-                          <div className="mb-3">
-                            {email.htmlBody || email.bodyHtml ? (
-                              <div 
-                                className="prose prose-sm max-w-none text-gray-700 bg-white p-3 rounded border border-gray-200"
-                                dangerouslySetInnerHTML={{ 
-                                  __html: displayBody 
-                                }}
-                              />
-                            ) : (
-                              <div className="text-sm text-gray-700 bg-white p-3 rounded border border-gray-200 whitespace-pre-wrap">
-                                {displayBody}
-                              </div>
-                            )}
-                          </div>
+                                {/* Email subject */}
+                                <div className="mb-3">
+                                  <p className="text-sm font-semibold text-gray-900">
+                                    Subject: {email.subject}
+                                  </p>
+                                </div>
 
-                          {/* Expand/Collapse button for long emails */}
-                          {isLongEmail && (
-                            <button
-                              onClick={() => toggleEmailExpanded(email._id)}
-                              className="text-xs text-blue-600 hover:text-blue-700 font-medium"
-                            >
-                              {isExpanded ? '▲ Show less' : '▼ Show more'}
-                            </button>
-                          )}
+                                {/* Email body */}
+                                <div className="mb-3">
+                                  {email.htmlBody || email.bodyHtml ? (
+                                    <div
+                                      className="prose prose-sm max-w-none text-gray-700 bg-white p-3 rounded border border-gray-200"
+                                      dangerouslySetInnerHTML={{
+                                        __html: displayBody,
+                                      }}
+                                    />
+                                  ) : (
+                                    <div className="text-sm text-gray-700 bg-white p-3 rounded border border-gray-200 whitespace-pre-wrap">
+                                      {displayBody}
+                                    </div>
+                                  )}
+                                </div>
 
-                          {/* Attachments */}
-                          {email.attachments && email.attachments.length > 0 && (
-                            <div className="mt-3 pt-3 border-t border-gray-200">
-                              <p className="text-xs font-medium text-gray-700 mb-2">
-                                📎 Attachments ({email.attachments.length})
-                              </p>
-                              <div className="flex flex-wrap gap-2">
-                                {email.attachments.map((att, i) => (
-                                  <span 
-                                    key={i}
-                                    className="text-xs bg-white px-2 py-1 rounded border border-gray-300 text-gray-700"
+                                {/* Expand/Collapse button for long emails */}
+                                {isLongEmail && (
+                                  <button
+                                    onClick={() =>
+                                      toggleEmailExpanded(email._id)
+                                    }
+                                    className="text-xs text-blue-600 hover:text-blue-700 font-medium"
                                   >
-                                    {att.originalName || att.filename} ({(att.size / 1024).toFixed(1)} KB)
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          )}
+                                    {isExpanded ? "▲ Show less" : "▼ Show more"}
+                                  </button>
+                                )}
 
-                          {/* Email metadata */}
-                          <div className="mt-3 pt-3 border-t border-gray-200 text-xs text-gray-500">
-                            <div className="flex items-center gap-4">
-                              <span>Message ID: {email.messageId.substring(0, 20)}...</span>
-                              {email.inReplyTo && (
-                                <span>↩️ Reply to: {email.inReplyTo.substring(0, 20)}...</span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
+                                {/* Attachments */}
+                                {email.attachments &&
+                                  email.attachments.length > 0 && (
+                                    <div className="mt-3 pt-3 border-t border-gray-200">
+                                      <p className="text-xs font-medium text-gray-700 mb-2">
+                                        📎 Attachments (
+                                        {email.attachments.length})
+                                      </p>
+                                      <div className="flex flex-wrap gap-2">
+                                        {email.attachments.map((att, i) => (
+                                          <span
+                                            key={i}
+                                            className="text-xs bg-white px-2 py-1 rounded border border-gray-300 text-gray-700"
+                                          >
+                                            {att.originalName || att.filename} (
+                                            {(att.size / 1024).toFixed(1)} KB)
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                {/* Email metadata */}
+                                <div className="mt-3 pt-3 border-t border-gray-200 text-xs text-gray-500">
+                                  <div className="flex items-center gap-4">
+                                    <span>
+                                      Message ID:{" "}
+                                      {email.messageId.substring(0, 20)}...
+                                    </span>
+                                    {email.inReplyTo && (
+                                      <span>
+                                        ↩️ Reply to:{" "}
+                                        {email.inReplyTo.substring(0, 20)}...
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </>
                       );
                     })()}
@@ -2182,13 +2703,17 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                     {replySuccess && (
                       <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
                         <span className="text-green-600">✅</span>
-                        <span className="text-sm text-green-700">{replySuccess}</span>
+                        <span className="text-sm text-green-700">
+                          {replySuccess}
+                        </span>
                       </div>
                     )}
                     {replyError && (
                       <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
                         <span className="text-red-600">❌</span>
-                        <span className="text-sm text-red-700">{replyError}</span>
+                        <span className="text-sm text-red-700">
+                          {replyError}
+                        </span>
                       </div>
                     )}
 
@@ -2210,8 +2735,8 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                           <button
                             onClick={() => {
                               setShowReplyForm(false);
-                              setReplyContent('');
-                              setReplyError('');
+                              setReplyContent("");
+                              setReplyError("");
                             }}
                             className="text-gray-400 hover:text-gray-600 transition-colors"
                             disabled={sendingReply}
@@ -2239,8 +2764,8 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                             <button
                               onClick={() => {
                                 setShowReplyForm(false);
-                                setReplyContent('');
-                                setReplyError('');
+                                setReplyContent("");
+                                setReplyError("");
                               }}
                               className="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
                               disabled={sendingReply}
@@ -2278,28 +2803,50 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
           <div className="space-y-6">
             {/* Ticket Info Card */}
             <div className="bg-white rounded-xl shadow-sm p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Query Information</h3>
-              
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                Query Information
+              </h3>
+
               <div className="space-y-4">
                 {/* Status */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Status
+                  </label>
                   <select
-                    value={ticket.status || ''}
+                    value={ticket.status || ""}
                     onChange={(e) => {
                       const value = e.target.value;
                       if (!value) return; // Don't update if no value selected
-                      
+
                       const newStatusCode = Number(value);
                       if (isNaN(newStatusCode)) {
-                        console.error('❌ Invalid status value from dropdown:', value);
+                        console.error(
+                          "❌ Invalid status value from dropdown:",
+                          value,
+                        );
                         return;
                       }
-                      
-                      console.log('✅ Status dropdown changed:', value, '→', newStatusCode);
+
+                      console.log(
+                        "✅ Status dropdown changed:",
+                        value,
+                        "→",
+                        newStatusCode,
+                      );
                       setNewStatus(newStatusCode);
-                      // Call update directly with the new numeric code
-                      handleUpdateStatus(newStatusCode);
+                      // Show confirmation modal before saving
+                      const fromLabel = getStatusDisplayName(
+                        Number(ticket.status),
+                      );
+                      const toLabel = getStatusDisplayName(newStatusCode);
+                      setConfirmModal({
+                        open: true,
+                        field: "Status",
+                        from: fromLabel,
+                        to: toLabel,
+                        onConfirm: () => handleUpdateStatus(newStatusCode),
+                      });
                     }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
@@ -2313,14 +2860,22 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
 
                 {/* Priority */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Priority</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Priority
+                  </label>
                   <select
                     value={ticket.priority.toUpperCase()}
                     onChange={(e) => {
                       const newPriorityValue = e.target.value;
                       setNewPriority(newPriorityValue);
-                      // Call update directly with the new value
-                      handleUpdatePriority(newPriorityValue);
+                      // Show confirmation modal before saving
+                      setConfirmModal({
+                        open: true,
+                        field: "Priority",
+                        from: ticket.priority,
+                        to: newPriorityValue,
+                        onConfirm: () => handleUpdatePriority(newPriorityValue),
+                      });
                     }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
@@ -2336,8 +2891,12 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                 {(() => {
                   // Check if ticket is resolved or closed
                   const statusLower = String(ticket.status).toLowerCase();
-                  const isResolved = String(ticket.status) === '4' || statusLower === 'resolved';
-                  const isClosed = String(ticket.status) === '5' || statusLower === 'closed' || statusLower === 'close';
+                  const isResolved =
+                    String(ticket.status) === "4" || statusLower === "resolved";
+                  const isClosed =
+                    String(ticket.status) === "5" ||
+                    statusLower === "closed" ||
+                    statusLower === "close";
                   const isComplete = isResolved || isClosed;
 
                   // Get priority resolution time from SLA rules
@@ -2346,24 +2905,37 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                   const ticketPriorityUpper = ticket.priority.toUpperCase();
                   const matchingSlaRule = slaRules.find((rule: any) => {
                     // Try matching by priority field first
-                    const rulePriority = typeof rule.priority === 'string' 
-                      ? rule.priority.toUpperCase() 
-                      : rule.priority?.name?.toUpperCase();
+                    const rulePriority =
+                      typeof rule.priority === "string"
+                        ? rule.priority.toUpperCase()
+                        : rule.priority?.name?.toUpperCase();
                     if (rulePriority && rulePriority === ticketPriorityUpper) {
                       return true;
                     }
                     // Fallback: match by rule name (e.g., rule.name = "Normal" matches ticket.priority = "NORMAL")
-                    if (rule.name && rule.name.toUpperCase() === ticketPriorityUpper) {
+                    if (
+                      rule.name &&
+                      rule.name.toUpperCase() === ticketPriorityUpper
+                    ) {
                       return true;
                     }
                     return false;
                   });
 
-                  console.log('🎯 Priority SLA Debug:', {
+                  console.log("🎯 Priority SLA Debug:", {
                     ticketPriority: ticket.priority,
                     slaRulesCount: slaRules.length,
-                    slaRuleNames: slaRules.map((r: any) => ({ name: r.name, priority: r.priority })),
-                    matchingSlaRule: matchingSlaRule ? { name: matchingSlaRule.name, priority: matchingSlaRule.priority, resolutionTime: matchingSlaRule.resolutionTime } : null
+                    slaRuleNames: slaRules.map((r: any) => ({
+                      name: r.name,
+                      priority: r.priority,
+                    })),
+                    matchingSlaRule: matchingSlaRule
+                      ? {
+                          name: matchingSlaRule.name,
+                          priority: matchingSlaRule.priority,
+                          resolutionTime: matchingSlaRule.resolutionTime,
+                        }
+                      : null,
                   });
 
                   if (!matchingSlaRule?.resolutionTime) {
@@ -2371,115 +2943,157 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                   }
 
                   // Use roleLevelSLA.startedAt (adjusted for working hours) if available, otherwise createdAt
-                  const slaStartedAt = (ticket as any).roleLevelSLA?.startedAt 
+                  const slaStartedAt = (ticket as any).roleLevelSLA?.startedAt
                     ? new Date((ticket as any).roleLevelSLA.startedAt)
                     : new Date(ticket.createdAt);
                   const { value, unit } = matchingSlaRule.resolutionTime;
-                  
+
                   // Convert resolution time to milliseconds
                   let resolutionMs = 0;
                   switch (unit?.toLowerCase()) {
-                    case 'minutes':
+                    case "minutes":
                       resolutionMs = value * 60 * 1000;
                       break;
-                    case 'hours':
+                    case "hours":
                       resolutionMs = value * 60 * 60 * 1000;
                       break;
-                    case 'days':
+                    case "days":
                       resolutionMs = value * 24 * 60 * 60 * 1000;
                       break;
                     default:
                       resolutionMs = value * 60 * 60 * 1000; // default to hours
                   }
 
-                  const priorityDeadline = new Date(slaStartedAt.getTime() + resolutionMs);
+                  const priorityDeadline = new Date(
+                    slaStartedAt.getTime() + resolutionMs,
+                  );
                   // Extract priority name from string or object
-                  const priorityName = typeof matchingSlaRule.priority === 'string' 
-                    ? matchingSlaRule.priority 
-                    : (matchingSlaRule.priority?.name || ticket.priority);
-                  
-                  // Format the total resolution time for display
-                  const totalResolutionDisplay = unit?.toLowerCase() === 'days' 
-                    ? `${value}d` 
-                    : unit?.toLowerCase() === 'minutes' 
-                      ? `${value}m` 
-                      : `${value}h`;
+                  const priorityName =
+                    typeof matchingSlaRule.priority === "string"
+                      ? matchingSlaRule.priority
+                      : matchingSlaRule.priority?.name || ticket.priority;
 
-                  let displayText = '';
+                  // Format the total resolution time for display
+                  const totalResolutionDisplay =
+                    unit?.toLowerCase() === "days"
+                      ? `${value}d`
+                      : unit?.toLowerCase() === "minutes"
+                        ? `${value}m`
+                        : `${value}h`;
+
+                  let displayText = "";
                   let isBreached = false;
-                  let bgColor = '';
-                  let textColor = '';
-                  let borderColor = '';
-                  let iconColor = '';
+                  let bgColor = "";
+                  let textColor = "";
+                  let borderColor = "";
+                  let iconColor = "";
                   let waitingForWorkingHours = false;
 
                   if (isComplete) {
                     // Ticket is resolved - show time taken vs allowed
-                    const completedAt = new Date(ticket.resolvedAt || ticket.closedAt || ticket.updatedAt);
-                    const timeTakenMs = completedAt.getTime() - slaStartedAt.getTime();
+                    const completedAt = new Date(
+                      ticket.resolvedAt || ticket.closedAt || ticket.updatedAt,
+                    );
+                    const timeTakenMs =
+                      completedAt.getTime() - slaStartedAt.getTime();
                     isBreached = timeTakenMs > resolutionMs;
-                    
-                    const totalHours = Math.floor(timeTakenMs / (1000 * 60 * 60));
-                    const minutes = Math.floor((timeTakenMs % (1000 * 60 * 60)) / (1000 * 60));
-                    
-                    displayText = isBreached 
+
+                    const totalHours = Math.floor(
+                      timeTakenMs / (1000 * 60 * 60),
+                    );
+                    const minutes = Math.floor(
+                      (timeTakenMs % (1000 * 60 * 60)) / (1000 * 60),
+                    );
+
+                    displayText = isBreached
                       ? `Resolved in ${totalHours}h ${minutes}m (exceeded ${totalResolutionDisplay})`
                       : `Resolved in ${totalHours}h ${minutes}m (within ${totalResolutionDisplay})`;
-                    
-                    bgColor = isBreached ? 'bg-red-50' : 'bg-green-50';
-                    borderColor = isBreached ? 'border-red-300' : 'border-green-300';
-                    textColor = isBreached ? 'text-red-600' : 'text-green-600';
-                    iconColor = isBreached ? 'text-red-500' : 'text-green-500';
+
+                    bgColor = isBreached ? "bg-red-50" : "bg-green-50";
+                    borderColor = isBreached
+                      ? "border-red-300"
+                      : "border-green-300";
+                    textColor = isBreached ? "text-red-600" : "text-green-600";
+                    iconColor = isBreached ? "text-red-500" : "text-green-500";
                   } else {
                     // Ticket is open - check if SLA has started (working hours)
                     const now = new Date();
                     const slaNotStartedYet = now < slaStartedAt;
-                    
+
                     if (slaNotStartedYet) {
                       // SLA hasn't started yet - show "Starts in X" with blue styling
                       const startsInMs = slaStartedAt.getTime() - now.getTime();
-                      const totalHours = Math.floor(startsInMs / (1000 * 60 * 60));
-                      const minutes = Math.floor((startsInMs % (1000 * 60 * 60)) / (1000 * 60));
-                      
-                      displayText = totalHours > 0 
-                        ? `Starts in ${totalHours}h ${minutes}m`
-                        : `Starts in ${minutes}m`;
-                      
-                      bgColor = 'bg-blue-50';
-                      borderColor = 'border-blue-300';
-                      textColor = 'text-blue-600';
-                      iconColor = 'text-blue-500';
+                      const totalHours = Math.floor(
+                        startsInMs / (1000 * 60 * 60),
+                      );
+                      const minutes = Math.floor(
+                        (startsInMs % (1000 * 60 * 60)) / (1000 * 60),
+                      );
+
+                      displayText =
+                        totalHours > 0
+                          ? `Starts in ${totalHours}h ${minutes}m`
+                          : `Starts in ${minutes}m`;
+
+                      bgColor = "bg-blue-50";
+                      borderColor = "border-blue-300";
+                      textColor = "text-blue-600";
+                      iconColor = "text-blue-500";
                       waitingForWorkingHours = true;
                     } else {
                       // SLA is running - show remaining time
                       const diffMs = priorityDeadline.getTime() - now.getTime();
                       isBreached = diffMs < 0;
-                      
+
                       const absDiffMs = Math.abs(diffMs);
-                      const totalHours = Math.floor(absDiffMs / (1000 * 60 * 60));
-                      const minutes = Math.floor((absDiffMs % (1000 * 60 * 60)) / (1000 * 60));
-                      
-                      displayText = isBreached 
+                      const totalHours = Math.floor(
+                        absDiffMs / (1000 * 60 * 60),
+                      );
+                      const minutes = Math.floor(
+                        (absDiffMs % (1000 * 60 * 60)) / (1000 * 60),
+                      );
+
+                      displayText = isBreached
                         ? `Overdue by ${totalHours}h ${minutes}m`
                         : `${totalHours}h ${minutes}m remaining`;
-                      
-                      bgColor = isBreached ? 'bg-red-50' : 'bg-purple-50';
-                      borderColor = isBreached ? 'border-red-300' : 'border-purple-300';
-                      textColor = isBreached ? 'text-red-600' : 'text-purple-600';
-                      iconColor = isBreached ? 'text-red-500' : 'text-purple-500';
+
+                      bgColor = isBreached ? "bg-red-50" : "bg-purple-50";
+                      borderColor = isBreached
+                        ? "border-red-300"
+                        : "border-purple-300";
+                      textColor = isBreached
+                        ? "text-red-600"
+                        : "text-purple-600";
+                      iconColor = isBreached
+                        ? "text-red-500"
+                        : "text-purple-500";
                     }
                   }
 
                   return (
-                    <div className={`p-3 rounded-lg border ${bgColor} ${borderColor}`}>
+                    <div
+                      className={`p-3 rounded-lg border ${bgColor} ${borderColor}`}
+                    >
                       <div className="flex items-center space-x-2">
                         <div className={`flex-shrink-0 ${iconColor}`}>
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="h-5 w-5"
+                            viewBox="0 0 20 20"
+                            fill="currentColor"
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z"
+                              clipRule="evenodd"
+                            />
                           </svg>
                         </div>
                         <div className="flex-1">
-                          <p className="text-xs font-medium text-gray-700">{priorityName} Priority SLA ({totalResolutionDisplay})</p>
+                          <p className="text-xs font-medium text-gray-700">
+                            {priorityName} Priority SLA (
+                            {totalResolutionDisplay})
+                          </p>
                           <p className={`text-lg font-bold ${textColor}`}>
                             {displayText}
                           </p>
@@ -2499,55 +3113,73 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                 {(() => {
                   // Check if ticket is resolved or closed (handle both numeric and string values)
                   const statusLower = String(ticket.status).toLowerCase();
-                  const isResolved = String(ticket.status) === '4' || statusLower === 'resolved';
-                  const isClosed = String(ticket.status) === '5' || statusLower === 'closed' || statusLower === 'close';
+                  const isResolved =
+                    String(ticket.status) === "4" || statusLower === "resolved";
+                  const isClosed =
+                    String(ticket.status) === "5" ||
+                    statusLower === "closed" ||
+                    statusLower === "close";
                   const isComplete = isResolved || isClosed;
-                  
+
                   // Use escalation matrix from state (fetched via ticket.escalationMatrixId)
-                  if (!escalationMatrix || !escalationMatrix.levels || escalationMatrix.levels.length === 0) {
-                    console.log('⚠️ No escalation matrix available for timer');
+                  if (
+                    !escalationMatrix ||
+                    !escalationMatrix.levels ||
+                    escalationMatrix.levels.length === 0
+                  ) {
+                    console.log("⚠️ No escalation matrix available for timer");
                     return null;
                   }
 
-                  console.log('📋 Using Escalation Matrix:', escalationMatrix.name);
-                  console.log('📋 Escalation Matrix Levels:', escalationMatrix.levels);
-                  
+                  console.log(
+                    "📋 Using Escalation Matrix:",
+                    escalationMatrix.name,
+                  );
+                  console.log(
+                    "📋 Escalation Matrix Levels:",
+                    escalationMatrix.levels,
+                  );
+
                   // Get current escalation level (0-based index, default to first level)
-                  const currentLevelIndex = ticket.currentEscalationLevelNumber 
-                    ? ticket.currentEscalationLevelNumber - 1 
+                  const currentLevelIndex = ticket.currentEscalationLevelNumber
+                    ? ticket.currentEscalationLevelNumber - 1
                     : 0;
-                  
+
                   // Get the current level configuration
-                  const currentLevelConfig = escalationMatrix.levels[currentLevelIndex] || escalationMatrix.levels[0];
-                  
+                  const currentLevelConfig =
+                    escalationMatrix.levels[currentLevelIndex] ||
+                    escalationMatrix.levels[0];
+
                   // Determine the level label
-                  const timeLabel = currentLevelConfig.levelName 
-                    || `Level ${currentLevelConfig.levelNumber || currentLevelIndex + 1} SLA`;
-                  
+                  const timeLabel =
+                    currentLevelConfig.levelName ||
+                    `Level ${currentLevelConfig.levelNumber || currentLevelIndex + 1} SLA`;
+
                   // Calculate SLA time for current level
                   let levelSlaMs = 0;
                   const slaHours = currentLevelConfig.slaHours || 0;
-                  const slaUnit = currentLevelConfig.slaUnit?.toLowerCase() || 'hrs';
-                  
+                  const slaUnit =
+                    currentLevelConfig.slaUnit?.toLowerCase() || "hrs";
+
                   switch (slaUnit) {
-                    case 'mins':
-                    case 'min':
-                    case 'minutes':
+                    case "mins":
+                    case "min":
+                    case "minutes":
                       levelSlaMs = slaHours * 60 * 1000;
                       break;
-                    case 'hrs':
-                    case 'hr':
-                    case 'hours':
+                    case "hrs":
+                    case "hr":
+                    case "hours":
                       levelSlaMs = slaHours * 60 * 60 * 1000;
                       break;
-                    case 'days':
-                    case 'day':
+                    case "days":
+                    case "day":
                       levelSlaMs = slaHours * 24 * 60 * 60 * 1000;
                       break;
                     default:
                       levelSlaMs = slaHours * 60 * 60 * 1000; // default to hours
                   }
-                  
+
                   // Calculate deadline from ticket creation
                   // For levels > 1, need to add previous levels' time
                   let totalPreviousLevelsMs = 0;
@@ -2555,105 +3187,132 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                     const prevLevel = escalationMatrix.levels[i];
                     if (prevLevel) {
                       const prevHours = prevLevel.slaHours || 0;
-                      const prevUnit = prevLevel.slaUnit?.toLowerCase() || 'hrs';
+                      const prevUnit =
+                        prevLevel.slaUnit?.toLowerCase() || "hrs";
                       switch (prevUnit) {
-                        case 'mins':
-                        case 'min':
-                        case 'minutes':
+                        case "mins":
+                        case "min":
+                        case "minutes":
                           totalPreviousLevelsMs += prevHours * 60 * 1000;
                           break;
-                        case 'days':
-                        case 'day':
-                          totalPreviousLevelsMs += prevHours * 24 * 60 * 60 * 1000;
+                        case "days":
+                        case "day":
+                          totalPreviousLevelsMs +=
+                            prevHours * 24 * 60 * 60 * 1000;
                           break;
                         default: // hours
                           totalPreviousLevelsMs += prevHours * 60 * 60 * 1000;
                       }
                     }
                   }
-                  
+
                   // Use roleLevelSLA.startedAt if available (respects working calendar)
                   // Otherwise fall back to ticket.createdAt + previous levels time
                   const createdAt = new Date(ticket.createdAt);
-                  const slaStartTime = (ticket as any).roleLevelSLA?.startedAt 
-                    ? new Date((ticket as any).roleLevelSLA.startedAt) 
+                  const slaStartTime = (ticket as any).roleLevelSLA?.startedAt
+                    ? new Date((ticket as any).roleLevelSLA.startedAt)
                     : new Date(createdAt.getTime() + totalPreviousLevelsMs);
                   const levelStartTime = slaStartTime;
-                  const levelDeadline = new Date(levelStartTime.getTime() + levelSlaMs);
-                  
+                  const levelDeadline = new Date(
+                    levelStartTime.getTime() + levelSlaMs,
+                  );
+
                   // Check if SLA hasn't started yet (outside working hours)
                   const now = new Date();
                   const slaNotStartedYet = now < slaStartTime;
-                  
+
                   // Format SLA time for display
-                  const slaDisplay = slaUnit.startsWith('min') ? `${slaHours}m` 
-                    : slaUnit.startsWith('day') ? `${slaHours}d` 
-                    : `${slaHours}h`;
-                  
-                  let displayText = '';
+                  const slaDisplay = slaUnit.startsWith("min")
+                    ? `${slaHours}m`
+                    : slaUnit.startsWith("day")
+                      ? `${slaHours}d`
+                      : `${slaHours}h`;
+
+                  let displayText = "";
                   let isBreached = false;
-                  let bgColor = '';
-                  let textColor = '';
-                  let borderColor = '';
-                  let nextEscalationInfo = '';
-                  
+                  let bgColor = "";
+                  let textColor = "";
+                  let borderColor = "";
+                  let nextEscalationInfo = "";
+
                   if (isComplete) {
                     // Ticket is resolved or closed - show time taken
-                    const completedAt = new Date(ticket.resolvedAt || ticket.closedAt || ticket.updatedAt);
-                    const timeTakenMs = completedAt.getTime() - levelStartTime.getTime();
-                    const totalHours = Math.floor(Math.abs(timeTakenMs) / (1000 * 60 * 60));
-                    const minutes = Math.floor((Math.abs(timeTakenMs) % (1000 * 60 * 60)) / (1000 * 60));
-                    
+                    const completedAt = new Date(
+                      ticket.resolvedAt || ticket.closedAt || ticket.updatedAt,
+                    );
+                    const timeTakenMs =
+                      completedAt.getTime() - levelStartTime.getTime();
+                    const totalHours = Math.floor(
+                      Math.abs(timeTakenMs) / (1000 * 60 * 60),
+                    );
+                    const minutes = Math.floor(
+                      (Math.abs(timeTakenMs) % (1000 * 60 * 60)) / (1000 * 60),
+                    );
+
                     isBreached = timeTakenMs > levelSlaMs;
                     displayText = `Resolved in ${totalHours}h ${minutes}m`;
-                    
-                    bgColor = isBreached ? 'bg-red-50' : 'bg-green-50';
-                    borderColor = isBreached ? 'border-red-300' : 'border-green-300';
-                    textColor = isBreached ? 'text-red-600' : 'text-green-600';
+
+                    bgColor = isBreached ? "bg-red-50" : "bg-green-50";
+                    borderColor = isBreached
+                      ? "border-red-300"
+                      : "border-green-300";
+                    textColor = isBreached ? "text-red-600" : "text-green-600";
                   } else if (slaNotStartedYet) {
                     // SLA hasn't started yet (outside working hours)
                     const startsInMs = slaStartTime.getTime() - now.getTime();
                     const startsInMinutes = Math.ceil(startsInMs / (1000 * 60));
                     const startsInHours = Math.floor(startsInMinutes / 60);
                     const startsInMins = startsInMinutes % 60;
-                    
-                    displayText = startsInHours > 0 
-                      ? `Starts in ${startsInHours}h ${startsInMins}m`
-                      : `Starts in ${startsInMins}m`;
-                    
-                    bgColor = 'bg-blue-50';
-                    borderColor = 'border-blue-300';
-                    textColor = 'text-blue-600';
-                    nextEscalationInfo = 'Waiting for working hours';
+
+                    displayText =
+                      startsInHours > 0
+                        ? `Starts in ${startsInHours}h ${startsInMins}m`
+                        : `Starts in ${startsInMins}m`;
+
+                    bgColor = "bg-blue-50";
+                    borderColor = "border-blue-300";
+                    textColor = "text-blue-600";
+                    nextEscalationInfo = "Waiting for working hours";
                   } else {
                     // Ticket is still open and SLA has started - show remaining time for this level
                     const diffMs = levelDeadline.getTime() - now.getTime();
                     isBreached = diffMs < 0;
-                    
+
                     const absDiffMs = Math.abs(diffMs);
                     const totalHours = Math.floor(absDiffMs / (1000 * 60 * 60));
-                    const minutes = Math.floor((absDiffMs % (1000 * 60 * 60)) / (1000 * 60));
-                    
-                    displayText = isBreached 
+                    const minutes = Math.floor(
+                      (absDiffMs % (1000 * 60 * 60)) / (1000 * 60),
+                    );
+
+                    displayText = isBreached
                       ? `Overdue by ${totalHours}h ${minutes}m`
                       : `${totalHours}h ${minutes}m remaining`;
-                    
-                    bgColor = isBreached ? 'bg-red-50' : 'bg-blue-50';
-                    borderColor = isBreached ? 'border-red-300' : 'border-blue-300';
-                    textColor = isBreached ? 'text-red-600' : 'text-blue-600';
-                    
+
+                    bgColor = isBreached ? "bg-red-50" : "bg-blue-50";
+                    borderColor = isBreached
+                      ? "border-red-300"
+                      : "border-blue-300";
+                    textColor = isBreached ? "text-red-600" : "text-blue-600";
+
                     // Show auto-escalation info if not on last level
-                    if (!isBreached && currentLevelIndex < escalationMatrix.levels.length - 1) {
+                    if (
+                      !isBreached &&
+                      currentLevelIndex < escalationMatrix.levels.length - 1
+                    ) {
                       nextEscalationInfo = `Auto-escalates in ${totalHours}h ${minutes}m`;
                     }
                   }
-                  
+
                   return (
-                    <div className={`p-3 rounded-lg border ${bgColor} ${borderColor}`}>
+                    <div
+                      className={`p-3 rounded-lg border ${bgColor} ${borderColor}`}
+                    >
                       <div className="flex items-center space-x-2">
                         <ClockIcon className={`h-5 w-5 ${textColor}`} />
                         <div className="flex-1">
-                          <p className="text-xs font-medium text-gray-700">{timeLabel} ({slaDisplay})</p>
+                          <p className="text-xs font-medium text-gray-700">
+                            {timeLabel} ({slaDisplay})
+                          </p>
                           <p className={`text-lg font-bold ${textColor}`}>
                             {displayText}
                           </p>
@@ -2664,7 +3323,8 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                           )}
                           {currentLevelIndex > 0 && (
                             <p className="text-xs text-gray-500 mt-1">
-                              Escalated {currentLevelIndex} time{currentLevelIndex > 1 ? 's' : ''}
+                              Escalated {currentLevelIndex} time
+                              {currentLevelIndex > 1 ? "s" : ""}
                             </p>
                           )}
                         </div>
@@ -2675,9 +3335,13 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
 
                 {/* Category */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Category
+                  </label>
                   {/* Use hierarchical category selector if multi-level hierarchy is configured */}
-                  {hierarchyConfig && hierarchyConfig.levelCount > 1 && ticketProjectId ? (
+                  {hierarchyConfig &&
+                  hierarchyConfig.levelCount > 1 &&
+                  ticketProjectId ? (
                     <div>
                       {/* Display current hierarchy if set */}
                       {ticket.categoryHierarchy?.displayPath && (
@@ -2686,28 +3350,90 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                           <span>{ticket.categoryHierarchy.displayPath}</span>
                         </div>
                       )}
-                      <HierarchyCategorySelector
-                        projectId={ticketProjectId}
-                        value={categoryHierarchy.level1 ? categoryHierarchy : (ticket.categoryHierarchy || {})}
-                        onChange={(newValue) => {
-                          setCategoryHierarchy(newValue);
-                          // Update ticket with new hierarchy
-                          handleUpdateCategoryHierarchy(newValue);
-                        }}
-                        mode="display"
-                        showValidation={false}
-                      />
+                      {!permissions.includes("TICKET_CHANGE_CATEGORY") ? (
+                        <div className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed">
+                          {ticket.categoryHierarchy?.displayPath ||
+                            "No category selected"}
+                          <span className="ml-2 text-xs text-gray-400">
+                            (read-only)
+                          </span>
+                        </div>
+                      ) : (
+                        <HierarchyCategorySelector
+                          projectId={ticketProjectId}
+                          value={
+                            categoryHierarchy.level1
+                              ? categoryHierarchy
+                              : ticket.categoryHierarchy || {}
+                          }
+                          onChange={(newValue) => {
+                            setCategoryHierarchy(newValue);
+                            // Show confirmation modal before saving
+                            const fromPath =
+                              ticket.categoryHierarchy?.displayPath ||
+                              "current category";
+                            const toPath =
+                              newValue.displayPath || "new category";
+                            setConfirmModal({
+                              open: true,
+                              field: "Category",
+                              from: fromPath,
+                              to: toPath,
+                              onConfirm: () =>
+                                handleUpdateCategoryHierarchy(
+                                  newValue,
+                                  fromPath,
+                                  toPath,
+                                ),
+                            });
+                          }}
+                          mode="display"
+                          showValidation={false}
+                        />
+                      )}
                     </div>
                   ) : (
                     <select
-                      value={typeof ticket.category === 'object' && ticket.category !== null ? (ticket.category as any)._id : String(ticket.category || '')}
+                      disabled={!permissions.includes("TICKET_CHANGE_CATEGORY")}
+                      value={
+                        typeof ticket.category === "object" &&
+                        ticket.category !== null
+                          ? (ticket.category as any)._id
+                          : String(ticket.category || "")
+                      }
                       onChange={(e) => {
                         const newCategoryId = e.target.value;
                         setNewCategory(newCategoryId);
-                        // Call update directly with the new value
-                        handleUpdateCategory(newCategoryId);
+                        // Show confirmation modal before saving
+                        const fromCatName =
+                          typeof ticket.category === "object" &&
+                          ticket.category !== null
+                            ? (ticket.category as any).name
+                            : categories.find(
+                                (c) =>
+                                  String(c._id) === String(ticket.category),
+                              )?.name || String(ticket.category);
+                        const toCatName =
+                          categories.find((c) => c._id === newCategoryId)
+                            ?.name || newCategoryId;
+                        setConfirmModal({
+                          open: true,
+                          field: "Category",
+                          from: fromCatName,
+                          to: toCatName,
+                          onConfirm: () =>
+                            handleUpdateCategory(
+                              newCategoryId,
+                              fromCatName,
+                              toCatName,
+                            ),
+                        });
                       }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className={`w-full px-3 py-2 border rounded-lg ${
+                        permissions.includes("TICKET_CHANGE_CATEGORY")
+                          ? "border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          : "border-gray-200 bg-gray-50 text-gray-500 cursor-not-allowed"
+                      }`}
                     >
                       {categories.map((cat) => (
                         <option key={cat._id} value={cat._id}>
@@ -2720,29 +3446,39 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
 
                 {/* Assigned To */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Assigned To</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Assigned To
+                  </label>
                   <div className="flex items-center space-x-2">
                     <UserIcon className="h-5 w-5 text-gray-400" />
                     <span className="text-sm text-gray-900">
                       {ticket.assignedTo
                         ? `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}`
-                        : 'Unassigned'}
+                        : "Unassigned"}
                     </span>
                   </div>
                 </div>
 
                 {/* Requester */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Requester</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Requester
+                  </label>
                   <div className="space-y-1">
                     {ticket.metadata?.studentName && (
-                      <p className="text-sm text-gray-900">{ticket.metadata.studentName}</p>
+                      <p className="text-sm text-gray-900">
+                        {ticket.metadata.studentName}
+                      </p>
                     )}
                     {ticket.metadata?.studentEmail && (
-                      <p className="text-sm text-gray-600">{ticket.metadata.studentEmail}</p>
+                      <p className="text-sm text-gray-600">
+                        {ticket.metadata.studentEmail}
+                      </p>
                     )}
                     {ticket.metadata?.studentPhone && (
-                      <p className="text-sm text-gray-600">{ticket.metadata.studentPhone}</p>
+                      <p className="text-sm text-gray-600">
+                        {ticket.metadata.studentPhone}
+                      </p>
                     )}
                   </div>
                 </div>
@@ -2786,7 +3522,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
                     <button
                       onClick={() => {
                         setIsAddingTag(false);
-                        setNewTag('');
+                        setNewTag("");
                       }}
                       className="flex-1 px-3 py-1 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300"
                     >
@@ -2823,7 +3559,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
             {ticket && (
               <EscalationMatrixCard
                 ticketId={ticket._id}
-                currentLevelNumber={ticket.currentEscalationLevelNumber || ticket.slaTracking?.currentEscalationLevel}
+                currentLevelNumber={
+                  ticket.currentEscalationLevelNumber ||
+                  ticket.slaTracking?.currentEscalationLevel
+                }
                 matrixName={ticket.escalationMatrixName}
                 onEscalationComplete={fetchTicketDetails}
                 permissions={permissions}
@@ -2832,44 +3571,265 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({ wrapWithLayout = 
             )}
 
             {/* Quick Actions */}
-            <div className="bg-white rounded-xl shadow-sm p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
-              <div className="space-y-2">
-                <button
-                  onClick={() => {
-                    if (confirm('Mark this ticket as resolved?')) {
-                      handleUpdateStatus(4); // 4 = resolved
-                    }
-                  }}
-                  className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100"
-                >
-                  <CheckCircleIcon className="h-5 w-5" />
-                  <span>Mark as Resolved</span>
-                </button>
+            {(() => {
+              const currentStatusOption = statusOptions.find(
+                (s: any) => s.code === Number(ticket.status),
+              );
+              // Hide "Close Query" if current status already closes tickets
+              const isAlreadyClosed =
+                currentStatusOption?.isClosed === true ||
+                String(ticket.status) === "5";
+              // Hide "Mark as Resolved" if already resolved or already in a closing status
+              const isAlreadyResolved =
+                String(ticket.status) === "4" || isAlreadyClosed;
 
-                <button
-                  onClick={() => {
-                    if (confirm('Close this ticket?')) {
-                      handleUpdateStatus(5); // 5 = closed
-                    }
-                  }}
-                  className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-gray-50 text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-100"
-                >
-                  <XCircleIcon className="h-5 w-5" />
-                  <span>Close Query</span>
-                </button>
-              </div>
-            </div>
+              // If both buttons would be hidden, don't render the card at all
+              if (isAlreadyResolved && isAlreadyClosed) return null;
+
+              return (
+                <div className="bg-white rounded-xl shadow-sm p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                    Quick Actions
+                  </h3>
+                  <div className="space-y-2">
+                    {!isAlreadyResolved && (
+                      <button
+                        onClick={() => {
+                          setConfirmModal({
+                            open: true,
+                            field: "Status",
+                            from: getStatusDisplayName(Number(ticket!.status)),
+                            to: "Resolved",
+                            onConfirm: () => handleUpdateStatus(4),
+                          });
+                        }}
+                        className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100"
+                      >
+                        <CheckCircleIcon className="h-5 w-5" />
+                        <span>Mark as Resolved</span>
+                      </button>
+                    )}
+
+                    {!isAlreadyClosed && (
+                      <button
+                        onClick={() => {
+                          setConfirmModal({
+                            open: true,
+                            field: "Status",
+                            from: getStatusDisplayName(Number(ticket!.status)),
+                            to: "Closed",
+                            onConfirm: () => handleUpdateStatus(5),
+                          });
+                        }}
+                        className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-gray-50 text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-100"
+                      >
+                        <XCircleIcon className="h-5 w-5" />
+                        <span>Close Query</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
       </div>
+
+      {/* ── Field-Update Spinner Overlay ──────────────────────────────── */}
+      {isFieldUpdating && (
+        <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl px-10 py-8 flex flex-col items-center gap-4">
+            {/* Spinner */}
+            <svg
+              className="animate-spin h-10 w-10 text-blue-600"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+              />
+            </svg>
+            <p className="text-sm font-medium text-gray-700">Saving changes…</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Confirmation Modal ─────────────────────────────────────────── */}
+      {confirmModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={() => setConfirmModal((m) => ({ ...m, open: false }))}
+          />
+          {/* Dialog */}
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
+            {/* Icon */}
+            <div className="flex items-center justify-center w-12 h-12 rounded-full bg-amber-100 mx-auto mb-4">
+              <svg
+                className="h-6 w-6 text-amber-600"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+                />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 text-center mb-2">
+              Confirm Change
+            </h3>
+            <p className="text-sm text-gray-600 text-center mb-6">
+              Are you sure you want to change{" "}
+              <span className="font-medium text-gray-800">
+                {confirmModal.field}
+              </span>{" "}
+              from{" "}
+              <span className="inline-flex items-center px-2 py-0.5 rounded bg-gray-100 text-gray-800 font-medium">
+                {confirmModal.from}
+              </span>{" "}
+              to{" "}
+              <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-medium">
+                {confirmModal.to}
+              </span>
+              ?
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmModal((m) => ({ ...m, open: false }))}
+                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setConfirmModal((m) => ({ ...m, open: false }));
+                  confirmModal.onConfirm();
+                }}
+                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Yes, Change
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Success Modal ──────────────────────────────────────────────── */}
+      {successModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/30 backdrop-blur-sm"
+            onClick={() => setSuccessModal({ open: false, message: "" })}
+          />
+          {/* Dialog */}
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6 text-center">
+            {/* Green check */}
+            <div className="flex items-center justify-center w-14 h-14 rounded-full bg-green-100 mx-auto mb-4">
+              <svg
+                className="h-7 w-7 text-green-600"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2.5}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M5 13l4 4L19 7"
+                />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Done!</h3>
+            <p className="text-sm text-gray-600 mb-6">{successModal.message}</p>
+            <button
+              onClick={() => setSuccessModal({ open: false, message: "" })}
+              className="w-full px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── File Upload Toast ──────────────────────────────────────────── */}
+      {fileUploadToast && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-top-4 fade-in duration-300">
+          <div className="flex items-start gap-3 bg-white border border-green-200 shadow-xl rounded-xl px-5 py-4 min-w-[280px] max-w-sm">
+            {/* Green check circle */}
+            <div className="flex-shrink-0 mt-0.5 bg-green-100 rounded-full p-1.5">
+              <svg
+                className="h-5 w-5 text-green-600"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2.5}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M5 13l4 4L19 7"
+                />
+              </svg>
+            </div>
+            {/* Text */}
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-gray-900">
+                {fileUploadToast.names.length === 1
+                  ? "Document attached"
+                  : `${fileUploadToast.names.length} documents attached`}
+              </p>
+              <ul className="mt-1 space-y-0.5">
+                {fileUploadToast.names.map((name, i) => (
+                  <li key={i} className="text-xs text-gray-500 truncate">
+                    {name}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            {/* Close button */}
+            <button
+              onClick={() => setFileUploadToast(null)}
+              className="flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 
   return wrapWithLayout ? (
-    <DashboardLayout>
-      {content}
-    </DashboardLayout>
+    <DashboardLayout>{content}</DashboardLayout>
   ) : (
     content
   );

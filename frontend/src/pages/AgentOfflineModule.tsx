@@ -1,8 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import { API_CONFIG } from '../config/constants';
-import ModuleHeader from '../components/ModuleHeader';
-import HierarchyCategorySelector, { CategoryHierarchyValue, useHierarchyConfig } from '../components/HierarchyCategorySelector';
+import React, { useState, useEffect } from "react";
+import axios from "axios";
+import { API_CONFIG } from "../config/constants";
+import ModuleHeader from "../components/ModuleHeader";
+import HierarchyCategorySelector, {
+  CategoryHierarchyValue,
+  useHierarchyConfig,
+} from "../components/HierarchyCategorySelector";
 import {
   UserPlusIcon,
   TicketIcon,
@@ -10,7 +13,7 @@ import {
   XMarkIcon,
   ExclamationCircleIcon,
   CheckCircleIcon,
-} from '@heroicons/react/24/outline';
+} from "@heroicons/react/24/outline";
 
 interface User {
   _id: string;
@@ -21,10 +24,12 @@ interface User {
 }
 
 interface Agent {
-  _id: string;
-  firstName: string;
-  lastName: string;
+  _id: string; // composite key: matrixId-LevelNum-userId
+  name: string; // display name
   email: string;
+  role: string; // level name or role name
+  priority?: string; // matrix name
+  userId: string; // actual MongoDB user _id — sent to backend
 }
 
 interface Category {
@@ -115,58 +120,64 @@ interface Props {
 }
 
 const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
-  const [activeTab, setActiveTab] = useState<'register' | 'create-ticket'>('register');
-  
+  const [activeTab, setActiveTab] = useState<"register" | "create-ticket">(
+    "register",
+  );
+
   // Offline Module Settings
-  const [offlineSettings, setOfflineSettings] = useState<OfflineSettings | null>(null);
+  const [offlineSettings, setOfflineSettings] =
+    useState<OfflineSettings | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(true);
-  
+
   // User Registration States
   const [userForm, setUserForm] = useState<Record<string, any>>({});
-  const [searchEmail, setSearchEmail] = useState('');
+  const [searchEmail, setSearchEmail] = useState("");
   const [foundUser, setFoundUser] = useState<User | null>(null);
   const [registering, setRegistering] = useState(false);
   const [registerSuccess, setRegisterSuccess] = useState(false);
   const [userSearched, setUserSearched] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
-  
+
   // Ticket Creation States
   const [ticketForm, setTicketForm] = useState<Record<string, any>>({
-    userEmail: '',
-    userId: '',
+    userEmail: "",
+    userId: "",
     markAsResolved: false,
     needsEscalation: false,
-    escalationReason: '',
-    escalateTo: '',
+    escalationReason: "",
+    escalateTo: "",
   });
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [ticketUserSearched, setTicketUserSearched] = useState(false);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [centers, setCenters] = useState<Center[]>([]);
-  const [selectedCenter, setSelectedCenter] = useState<string>('');
+  const [selectedCenter, setSelectedCenter] = useState<string>("");
   const [creatingTicket, setCreatingTicket] = useState(false);
   const [ticketSuccess, setTicketSuccess] = useState(false);
-  const [createdTicketNumber, setCreatedTicketNumber] = useState('');
-  const [categoryHierarchy, setCategoryHierarchy] = useState<CategoryHierarchyValue>({});
-  
+  const [createdTicketNumber, setCreatedTicketNumber] = useState("");
+  const [categoryHierarchy, setCategoryHierarchy] =
+    useState<CategoryHierarchyValue>({});
+
   // OTP Verification States
   const [otpModal, setOtpModal] = useState<{
     isOpen: boolean;
     fieldId: string;
     fieldName: string;
-    fieldType: 'phone' | 'email';
+    fieldType: "phone" | "email";
     value: string;
-    formType: 'registration' | 'ticket';
+    formType: "registration" | "ticket";
   } | null>(null);
-  const [otpValue, setOtpValue] = useState('');
-  const [otpKey, setOtpKey] = useState(''); // OTP key from server for verification
+  const [otpValue, setOtpValue] = useState("");
+  const [otpKey, setOtpKey] = useState(""); // OTP key from server for verification
   const [otpSending, setOtpSending] = useState(false);
   const [otpVerifying, setOtpVerifying] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
-  const [otpError, setOtpError] = useState('');
-  const [verifiedFields, setVerifiedFields] = useState<Record<string, boolean>>({}); // fieldId -> verified status
-  
+  const [otpError, setOtpError] = useState("");
+  const [verifiedFields, setVerifiedFields] = useState<Record<string, boolean>>(
+    {},
+  ); // fieldId -> verified status
+
   // Fetch hierarchy config to determine if multi-level categories are enabled
   const { config: hierarchyConfig } = useHierarchyConfig(projectId);
 
@@ -177,7 +188,7 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
   }, [projectId]);
 
   useEffect(() => {
-    if (activeTab === 'create-ticket') {
+    if (activeTab === "create-ticket") {
       fetchTicketAgents();
       fetchCategories();
       fetchCenters();
@@ -186,38 +197,39 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
 
   const fetchOfflineSettings = async () => {
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const response = await axios.get(
         `${API_CONFIG.API_URL}/projects/${projectId}/offline-settings`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
-      
+
       if (response.data.success) {
         const settings = response.data.data; // Changed from response.data.settings to response.data.data
         setOfflineSettings(settings);
-        
+
         // Initialize form with empty values for each configured field
         const initialRegistrationForm: Record<string, any> = {};
         settings.registrationFields?.forEach((field: RegistrationField) => {
-          initialRegistrationForm[field.fieldName] = '';
+          initialRegistrationForm[field.fieldName] = "";
         });
         setUserForm(initialRegistrationForm);
-        
+
         const initialTicketForm: Record<string, any> = {
-          userEmail: '',
-          userId: '',
+          userEmail: "",
+          userId: "",
           markAsResolved: false,
           needsEscalation: false,
-          escalationReason: '',
-          escalateTo: '',
+          escalationReason: "",
+          escalateTo: "",
         };
         settings.ticketFields?.forEach((field: TicketField) => {
-          initialTicketForm[field.fieldName] = field.fieldType === 'file' ? [] : '';
+          initialTicketForm[field.fieldName] =
+            field.fieldType === "file" ? [] : "";
         });
         setTicketForm(initialTicketForm);
       }
     } catch (error) {
-      console.error('Error fetching offline settings:', error);
+      console.error("Error fetching offline settings:", error);
     } finally {
       setSettingsLoading(false);
     }
@@ -225,47 +237,173 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
 
   const fetchTicketAgents = async () => {
     try {
-      const token = localStorage.getItem('authToken');
-      const agentResponse = await axios.get(
-        `${API_CONFIG.API_URL}/users?projectId=${projectId}&roleCode=AGENT`,
-        { headers: { Authorization: `Bearer ${token}` } }
+      const token = localStorage.getItem("authToken");
+
+      // --- Old APIs (no longer used) ---
+      // Old v1: all users with AGENT role, no hierarchy
+      // const agentResponse = await axios.get(
+      //   `${API_CONFIG.API_URL}/users?projectId=${projectId}&roleCode=AGENT`,
+      //   { headers: { Authorization: `Bearer ${token}` } }
+      // );
+      // Old v2: hierarchy-based (returns current user + reportees — wrong for escalation)
+      // const agentResponse = await axios.get(
+      //   `${API_CONFIG.API_URL}/tickets/assignable-agents`,
+      //   { headers: { Authorization: `Bearer ${token}` }, params: { viewMode: 'single', projectId } }
+      // );
+
+      // --- New: Escalation-matrix-based logic ---
+      // 1. Get current user's role to determine their level in the matrix
+      const [matrixRes, userRes] = await Promise.all([
+        axios.get(
+          `${API_CONFIG.API_URL}/escalation-matrix?projectId=${projectId}&isActive=true`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        ),
+        axios.get(`${API_CONFIG.API_URL}/auth/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      ]);
+
+      const matrices = matrixRes.data.data || [];
+      const currentUserRoleCode: string = userRes.data?.data?.role?.code || "";
+      const currentUserRoleId: string =
+        userRes.data?.data?.role?._id?.toString() || "";
+      const currentUserCenters: any[] = userRes.data?.data?.centers || [];
+      console.log(
+        `🔍 [OfflineEscalation] userRole: ${currentUserRoleCode} (${currentUserRoleId}), centers: ${currentUserCenters.length}, matrices: ${matrices.length}`,
       );
-      if (agentResponse.data.success) {
-        setAgents(agentResponse.data.data);
+
+      if (matrices.length === 0) {
+        console.warn("⚠️ No active escalation matrix found for project");
+        setAgents([]);
+        return;
       }
+
+      const matrix = matrices[0];
+      const isSequential = matrix.escalationMode === "SEQUENTIAL";
+      const sortedLevels = (matrix.levels || []).sort(
+        (a: any, b: any) => a.levelNumber - b.levelNumber,
+      );
+
+      // 2. Find the logged-in user's level index dynamically.
+      // Match by role code OR role _id (handles both populated and non-populated roleId).
+      const currentLevelIndex = sortedLevels.findIndex((l: any) => {
+        const roleCode = l.roleId?.code;
+        const roleId = l.roleId?._id?.toString() || l.roleId?.toString();
+        return (
+          (roleCode && roleCode === currentUserRoleCode) ||
+          (roleId && currentUserRoleId && roleId === currentUserRoleId)
+        );
+      });
+      console.log(
+        `🔍 [OfflineEscalation] levels: ${sortedLevels.map((l: any) => `${l.levelNumber}:${l.roleId?.code || l.roleId}`).join(", ")}`,
+      );
+      // Default to startIndex=1 if user's role not in matrix (e.g. they are level 1)
+      const startIndex = currentLevelIndex >= 0 ? currentLevelIndex + 1 : 1;
+      const endIndex = isSequential ? startIndex + 1 : sortedLevels.length;
+      console.log(
+        `📊 User at matrix level index ${currentLevelIndex}, fetching indices ${startIndex}–${endIndex - 1} (sequential: ${isSequential})`,
+      );
+
+      const contacts: Agent[] = [];
+
+      for (
+        let i = startIndex;
+        i < Math.min(endIndex, sortedLevels.length);
+        i++
+      ) {
+        const level = sortedLevels[i];
+        if (!level.isActive) continue;
+
+        try {
+          const usersRes = await axios.get(
+            `${API_CONFIG.API_URL}/escalation-matrix/${matrix._id}/levels/${level._id}/users?projectId=${projectId}`,
+            { headers: { Authorization: `Bearer ${token}` } },
+          );
+
+          let levelUsers = usersRes.data.data || [];
+          console.log(
+            `  Level ${level.levelNumber} (${level.levelName}): ${levelUsers.length} users`,
+          );
+
+          // Filter by shared center if current user has centers
+          if (currentUserCenters.length > 0) {
+            levelUsers = levelUsers.filter((user: any) => {
+              const userCenters = user.centers || [];
+              return currentUserCenters.some((cId: any) => {
+                const cIdStr =
+                  typeof cId === "string"
+                    ? cId
+                    : cId._id?.toString() || cId.toString();
+                return userCenters.some(
+                  (uC: any) =>
+                    (typeof uC === "string"
+                      ? uC
+                      : uC._id?.toString() || uC.toString()) === cIdStr,
+                );
+              });
+            });
+            console.log(`    After center filter: ${levelUsers.length} users`);
+          }
+
+          levelUsers.forEach((user: any) => {
+            contacts.push({
+              _id: `${matrix._id}-L${level.levelNumber}-${user._id}`,
+              name: `${user.firstName} ${user.lastName}`,
+              email: user.email,
+              role:
+                user.role?.name ||
+                level.levelName ||
+                `Level ${level.levelNumber}`,
+              priority: matrix.name || "",
+              userId: user._id,
+            });
+          });
+        } catch (levelError) {
+          console.error(
+            `Error fetching users for level ${level.levelNumber}:`,
+            levelError,
+          );
+        }
+      }
+
+      console.log(`✅ Escalation contacts: ${contacts.length}`, contacts);
+      setAgents(contacts);
     } catch (error) {
-      console.error('Error fetching agents:', error);
+      console.error("Error fetching escalation agents:", error);
+      setAgents([]);
     }
   };
 
   const fetchCategories = async () => {
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const response = await axios.get(
         `${API_CONFIG.API_URL}/categories/project/${projectId}`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
       if (response.data.success) {
         setCategories(response.data.data);
       }
     } catch (error) {
-      console.error('Error fetching categories:', error);
+      console.error("Error fetching categories:", error);
     }
   };
 
   const fetchCenters = async () => {
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const response = await axios.get(
         `${API_CONFIG.API_URL}/centers?projectId=${projectId}&isActive=true`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
       if (response.data.success) {
         setCenters(response.data.data || []);
-        console.log('📍 Loaded centers:', response.data.data);
+        console.log("📍 Loaded centers:", response.data.data);
       }
     } catch (error) {
-      console.error('Error fetching centers:', error);
+      console.error("Error fetching centers:", error);
     }
   };
 
@@ -277,10 +415,10 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
     setFoundUser(null);
 
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const response = await axios.get(
         `${API_CONFIG.API_URL}/users/search?email=${searchEmail}&projectId=${projectId}&studentOnly=true`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
 
       if (response.data.success && response.data.data) {
@@ -288,17 +426,22 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
         // Populate form with found user data
         const updatedForm: Record<string, any> = {};
         offlineSettings?.registrationFields.forEach((field) => {
-          const normalizedFieldName = field.fieldName.toLowerCase().replace(/\s+/g, '');
-          if (normalizedFieldName === 'firstname') {
-            updatedForm[field.fieldName] = response.data.data.firstName || '';
-          } else if (normalizedFieldName === 'lastname') {
-            updatedForm[field.fieldName] = response.data.data.lastName || '';
-          } else if (normalizedFieldName === 'email') {
-            updatedForm[field.fieldName] = response.data.data.email || '';
-          } else if (normalizedFieldName === 'phone' || normalizedFieldName === 'phonenumber') {
-            updatedForm[field.fieldName] = response.data.data.phone || '';
+          const normalizedFieldName = field.fieldName
+            .toLowerCase()
+            .replace(/\s+/g, "");
+          if (normalizedFieldName === "firstname") {
+            updatedForm[field.fieldName] = response.data.data.firstName || "";
+          } else if (normalizedFieldName === "lastname") {
+            updatedForm[field.fieldName] = response.data.data.lastName || "";
+          } else if (normalizedFieldName === "email") {
+            updatedForm[field.fieldName] = response.data.data.email || "";
+          } else if (
+            normalizedFieldName === "phone" ||
+            normalizedFieldName === "phonenumber"
+          ) {
+            updatedForm[field.fieldName] = response.data.data.phone || "";
           } else {
-            updatedForm[field.fieldName] = '';
+            updatedForm[field.fieldName] = "";
           }
         });
         setUserForm(updatedForm);
@@ -306,17 +449,17 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
         setFoundUser(null);
         const updatedForm: Record<string, any> = {};
         offlineSettings?.registrationFields.forEach((field) => {
-          if (field.fieldName.toLowerCase().includes('email')) {
+          if (field.fieldName.toLowerCase().includes("email")) {
             updatedForm[field.fieldName] = searchEmail;
           } else {
-            updatedForm[field.fieldName] = '';
+            updatedForm[field.fieldName] = "";
           }
         });
         setUserForm(updatedForm);
       }
       setUserSearched(true);
     } catch (error) {
-      console.error('Error searching user:', error);
+      console.error("Error searching user:", error);
       setFoundUser(null);
       setUserSearched(true);
     } finally {
@@ -325,52 +468,68 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
   };
 
   // OTP Functions
-  const openOtpModal = (fieldId: string, fieldName: string, fieldType: 'phone' | 'email', value: string, formType: 'registration' | 'ticket') => {
-    setOtpModal({ isOpen: true, fieldId, fieldName, fieldType, value, formType });
-    setOtpValue('');
+  const openOtpModal = (
+    fieldId: string,
+    fieldName: string,
+    fieldType: "phone" | "email",
+    value: string,
+    formType: "registration" | "ticket",
+  ) => {
+    setOtpModal({
+      isOpen: true,
+      fieldId,
+      fieldName,
+      fieldType,
+      value,
+      formType,
+    });
+    setOtpValue("");
     setOtpSent(false);
-    setOtpError('');
+    setOtpError("");
   };
 
   const closeOtpModal = () => {
     setOtpModal(null);
-    setOtpValue('');
-    setOtpKey('');
+    setOtpValue("");
+    setOtpKey("");
     setOtpSent(false);
-    setOtpError('');
+    setOtpError("");
   };
 
   const handleSendOtp = async () => {
     if (!otpModal) return;
-    
+
     setOtpSending(true);
-    setOtpError('');
-    
+    setOtpError("");
+
     try {
-      const token = localStorage.getItem('authToken');
-      const endpoint = otpModal.fieldType === 'phone' 
-        ? `${API_CONFIG.API_URL}/otp/send-phone`
-        : `${API_CONFIG.API_URL}/otp/send-email`;
-      
-      const payload = otpModal.fieldType === 'phone'
-        ? { phone: otpModal.value, projectId }
-        : { email: otpModal.value, projectId };
-      
-      const response = await axios.post(
-        endpoint,
-        payload,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      
+      const token = localStorage.getItem("authToken");
+      const endpoint =
+        otpModal.fieldType === "phone"
+          ? `${API_CONFIG.API_URL}/otp/send-phone`
+          : `${API_CONFIG.API_URL}/otp/send-email`;
+
+      const payload =
+        otpModal.fieldType === "phone"
+          ? { phone: otpModal.value, projectId }
+          : { email: otpModal.value, projectId };
+
+      const response = await axios.post(endpoint, payload, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
       if (response.data.success && response.data.otpKey) {
         setOtpKey(response.data.otpKey);
         setOtpSent(true);
       } else {
-        setOtpError(response.data.message || 'Failed to send OTP');
+        setOtpError(response.data.message || "Failed to send OTP");
       }
     } catch (error: any) {
-      console.error('Error sending OTP:', error);
-      setOtpError(error.response?.data?.message || 'Failed to send OTP. Please try again.');
+      console.error("Error sending OTP:", error);
+      setOtpError(
+        error.response?.data?.message ||
+          "Failed to send OTP. Please try again.",
+      );
     } finally {
       setOtpSending(false);
     }
@@ -378,84 +537,95 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
 
   const handleVerifyOtp = async () => {
     if (!otpModal || !otpValue || !otpKey) return;
-    
+
     setOtpVerifying(true);
-    setOtpError('');
-    
+    setOtpError("");
+
     try {
-      const token = localStorage.getItem('authToken');
-      
+      const token = localStorage.getItem("authToken");
+
       const response = await axios.post(
         `${API_CONFIG.API_URL}/otp/verify`,
         {
           otpKey,
           otp: otpValue,
           type: otpModal.fieldType,
-          value: otpModal.value
+          value: otpModal.value,
         },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
-      
+
       if (response.data.success && response.data.verified) {
         // Mark this field as verified
-        setVerifiedFields(prev => ({
+        setVerifiedFields((prev) => ({
           ...prev,
-          [otpModal.fieldId]: true
+          [otpModal.fieldId]: true,
         }));
         closeOtpModal();
       } else {
-        setOtpError(response.data.message || 'Invalid OTP. Please try again.');
+        setOtpError(response.data.message || "Invalid OTP. Please try again.");
       }
     } catch (error: any) {
-      console.error('Error verifying OTP:', error);
-      setOtpError(error.response?.data?.message || 'Invalid OTP. Please try again.');
+      console.error("Error verifying OTP:", error);
+      setOtpError(
+        error.response?.data?.message || "Invalid OTP. Please try again.",
+      );
     } finally {
       setOtpVerifying(false);
     }
   };
 
   // Check if all required OTP verifications are complete
-  const checkOtpVerificationsComplete = (formType: 'registration' | 'ticket'): { complete: boolean; missingFields: string[] } => {
-    const fields = formType === 'registration' 
-      ? offlineSettings?.registrationFields || []
-      : offlineSettings?.ticketFields || [];
-    
+  const checkOtpVerificationsComplete = (
+    formType: "registration" | "ticket",
+  ): { complete: boolean; missingFields: string[] } => {
+    const fields =
+      formType === "registration"
+        ? offlineSettings?.registrationFields || []
+        : offlineSettings?.ticketFields || [];
+
     const missingFields: string[] = [];
-    
-    fields.forEach(field => {
-      if (field.requireOtpVerification && (field.fieldType === 'phone' || field.fieldType === 'email')) {
-        const value = formType === 'registration' ? userForm[field.fieldName] : ticketForm[field.fieldName];
+
+    fields.forEach((field) => {
+      if (
+        field.requireOtpVerification &&
+        (field.fieldType === "phone" || field.fieldType === "email")
+      ) {
+        const value =
+          formType === "registration"
+            ? userForm[field.fieldName]
+            : ticketForm[field.fieldName];
         if (value && !verifiedFields[field.id]) {
           missingFields.push(field.fieldName);
         }
       }
     });
-    
+
     return { complete: missingFields.length === 0, missingFields };
   };
 
   const handleRegisterUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // Check OTP verifications before proceeding
-    const otpCheck = checkOtpVerificationsComplete('registration');
+    const otpCheck = checkOtpVerificationsComplete("registration");
     if (!otpCheck.complete) {
-      alert(`Please verify OTP for: ${otpCheck.missingFields.join(', ')}`);
+      alert(`Please verify OTP for: ${otpCheck.missingFields.join(", ")}`);
       return;
     }
-    
+
     setRegistering(true);
     setRegisterSuccess(false);
 
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const response = await axios.post(
         `${API_CONFIG.API_URL}/users/register-student`,
         {
           ...userForm,
           projectId,
         },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
 
       if (response.data.success) {
@@ -463,10 +633,10 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
         setFoundUser(response.data.data);
         setTimeout(() => {
           setRegisterSuccess(false);
-          setSearchEmail('');
+          setSearchEmail("");
           const resetForm: Record<string, any> = {};
           offlineSettings?.registrationFields.forEach((field) => {
-            resetForm[field.fieldName] = '';
+            resetForm[field.fieldName] = "";
           });
           setUserForm(resetForm);
           setFoundUser(null);
@@ -474,7 +644,7 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
         }, 3000);
       }
     } catch (error: any) {
-      alert(error.response?.data?.message || 'Failed to register user');
+      alert(error.response?.data?.message || "Failed to register user");
     } finally {
       setRegistering(false);
     }
@@ -484,31 +654,31 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
     if (!ticketForm.userEmail.trim()) return;
 
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const response = await axios.get(
         `${API_CONFIG.API_URL}/users/search?email=${ticketForm.userEmail}&projectId=${projectId}&studentOnly=true`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
 
       if (response.data.success && response.data.data) {
         setSelectedUser(response.data.data);
-        setTicketForm(prev => ({
+        setTicketForm((prev) => ({
           ...prev,
           userId: response.data.data._id,
         }));
         setTicketUserSearched(true);
       } else {
-        alert('User not found. Please register them first.');
+        alert("User not found. Please register them first.");
         setSelectedUser(null);
-        setTicketForm(prev => ({
+        setTicketForm((prev) => ({
           ...prev,
-          userId: '',
+          userId: "",
         }));
         setTicketUserSearched(true);
       }
     } catch (error) {
-      console.error('Error searching user:', error);
-      alert('Error finding user. Please try again.');
+      console.error("Error searching user:", error);
+      alert("Error finding user. Please try again.");
       setSelectedUser(null);
       setTicketUserSearched(false);
     }
@@ -516,26 +686,26 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
 
   const handleCreateTicket = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!selectedUser) {
-      alert('Please search and select a user first');
+      alert("Please search and select a user first");
       return;
     }
 
     if (!selectedCenter) {
-      alert('Please select a center');
+      alert("Please select a center");
       return;
     }
 
     if (ticketForm.needsEscalation && !ticketForm.escalateTo) {
-      alert('Please select an agent to escalate to');
+      alert("Please select an agent to escalate to");
       return;
     }
 
     // Check OTP verifications before proceeding
-    const otpCheck = checkOtpVerificationsComplete('ticket');
+    const otpCheck = checkOtpVerificationsComplete("ticket");
     if (!otpCheck.complete) {
-      alert(`Please verify OTP for: ${otpCheck.missingFields.join(', ')}`);
+      alert(`Please verify OTP for: ${otpCheck.missingFields.join(", ")}`);
       return;
     }
 
@@ -543,42 +713,46 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
     setTicketSuccess(false);
 
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const formData = new FormData();
-      
+
       // Add all configured ticket fields
       offlineSettings?.ticketFields.forEach((field) => {
-        if (field.fieldType === 'file' && ticketForm[field.fieldName]) {
+        if (field.fieldType === "file" && ticketForm[field.fieldName]) {
           const files = ticketForm[field.fieldName] as File[];
-          files.forEach(file => formData.append(field.fieldName, file));
+          files.forEach((file) => formData.append(field.fieldName, file));
         } else if (ticketForm[field.fieldName]) {
           formData.append(field.fieldName, ticketForm[field.fieldName]);
         }
       });
-      
-      formData.append('userId', selectedUser._id);
-      formData.append('studentId', selectedUser._id);
-      formData.append('projectId', projectId);
-      formData.append('centerId', selectedCenter);
-      formData.append('submissionType', 'offline');
-      
+
+      formData.append("userId", selectedUser._id);
+      formData.append("studentId", selectedUser._id);
+      formData.append("projectId", projectId);
+      formData.append("centerId", selectedCenter);
+      formData.append("submissionType", "offline");
+
       // Add hierarchical category data if configured
-      if (hierarchyConfig && hierarchyConfig.levelCount > 1 && categoryHierarchy) {
-        formData.append('categoryHierarchy', JSON.stringify(categoryHierarchy));
+      if (
+        hierarchyConfig &&
+        hierarchyConfig.levelCount > 1 &&
+        categoryHierarchy
+      ) {
+        formData.append("categoryHierarchy", JSON.stringify(categoryHierarchy));
         // Also set the primary category from level1 for backward compatibility
         if (categoryHierarchy.level1) {
-          formData.append('category', categoryHierarchy.level1);
+          formData.append("category", categoryHierarchy.level1);
         }
       }
-      
+
       if (ticketForm.markAsResolved) {
-        formData.append('status', 'resolved');
-        formData.append('resolvedAtCreation', 'true');
+        formData.append("status", "resolved");
+        formData.append("resolvedAtCreation", "true");
       }
 
       if (ticketForm.needsEscalation) {
-        formData.append('escalateTo', ticketForm.escalateTo);
-        formData.append('escalationReason', ticketForm.escalationReason);
+        formData.append("escalateTo", ticketForm.escalateTo);
+        formData.append("escalationReason", ticketForm.escalationReason);
       }
 
       const response = await axios.post(
@@ -587,9 +761,9 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
         {
           headers: {
             Authorization: `Bearer ${token}`,
-            'Content-Type': 'multipart/form-data',
+            "Content-Type": "multipart/form-data",
           },
-        }
+        },
       );
 
       if (response.data.success) {
@@ -599,64 +773,85 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
           setTicketSuccess(false);
           // Reset form
           const resetForm: Record<string, any> = {
-            userEmail: '',
-            userId: '',
+            userEmail: "",
+            userId: "",
             markAsResolved: false,
             needsEscalation: false,
-            escalationReason: '',
-            escalateTo: '',
+            escalationReason: "",
+            escalateTo: "",
           };
           offlineSettings?.ticketFields.forEach((field) => {
-            resetForm[field.fieldName] = field.fieldType === 'file' ? [] : '';
+            resetForm[field.fieldName] = field.fieldType === "file" ? [] : "";
           });
           setTicketForm(resetForm);
           setSelectedUser(null);
           setTicketUserSearched(false);
-          setCreatedTicketNumber('');
+          setCreatedTicketNumber("");
         }, 5000);
       }
     } catch (error: any) {
-      alert(error.response?.data?.message || 'Failed to create query');
+      alert(error.response?.data?.message || "Failed to create query");
     } finally {
       setCreatingTicket(false);
     }
   };
 
-  const renderDynamicField = (field: RegistrationField | TicketField, value: any, onChange: (value: any) => void, formType: 'registration' | 'ticket') => {
+  const renderDynamicField = (
+    field: RegistrationField | TicketField,
+    value: any,
+    onChange: (value: any) => void,
+    formType: "registration" | "ticket",
+  ) => {
     const isRequired = field.required;
     const placeholder = field.placeholder || field.fieldName;
-    const needsOtpVerification = field.requireOtpVerification && (field.fieldType === 'phone' || field.fieldType === 'email');
+    const needsOtpVerification =
+      field.requireOtpVerification &&
+      (field.fieldType === "phone" || field.fieldType === "email");
     const isVerified = verifiedFields[field.id] === true;
 
     switch (field.fieldType) {
-      case 'text':
-      case 'email':
-      case 'phone':
-      case 'number':
+      case "text":
+      case "email":
+      case "phone":
+      case "number":
         return (
           <div className="space-y-2">
             <div className="flex gap-2">
               <input
-                type={field.fieldType === 'email' ? 'email' : field.fieldType === 'phone' ? 'tel' : field.fieldType === 'number' ? 'number' : 'text'}
+                type={
+                  field.fieldType === "email"
+                    ? "email"
+                    : field.fieldType === "phone"
+                      ? "tel"
+                      : field.fieldType === "number"
+                        ? "number"
+                        : "text"
+                }
                 required={isRequired}
-                value={value || ''}
+                value={value || ""}
                 onChange={(e) => {
                   onChange(e.target.value);
                   // Reset verification if value changes
                   if (needsOtpVerification && isVerified) {
-                    setVerifiedFields(prev => ({ ...prev, [field.id]: false }));
+                    setVerifiedFields((prev) => ({
+                      ...prev,
+                      [field.id]: false,
+                    }));
                   }
                 }}
                 className={`flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                  needsOtpVerification && isVerified ? 'border-green-500 bg-green-50' : 'border-gray-300'
+                  needsOtpVerification && isVerified
+                    ? "border-green-500 bg-green-50"
+                    : "border-gray-300"
                 }`}
                 placeholder={placeholder}
                 minLength={field.validation?.minLength}
                 maxLength={field.validation?.maxLength}
                 pattern={field.validation?.pattern}
               />
-              {needsOtpVerification && value && (
-                isVerified ? (
+              {needsOtpVerification &&
+                value &&
+                (isVerified ? (
                   <span className="inline-flex items-center px-3 py-2 bg-green-100 text-green-700 rounded-lg text-sm font-medium">
                     <CheckCircleIcon className="h-5 w-5 mr-1" />
                     Verified
@@ -664,13 +859,20 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                 ) : (
                   <button
                     type="button"
-                    onClick={() => openOtpModal(field.id, field.fieldName, field.fieldType as 'phone' | 'email', value, formType)}
+                    onClick={() =>
+                      openOtpModal(
+                        field.id,
+                        field.fieldName,
+                        field.fieldType as "phone" | "email",
+                        value,
+                        formType,
+                      )
+                    }
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium whitespace-nowrap"
                   >
                     Send OTP
                   </button>
-                )
-              )}
+                ))}
             </div>
             {needsOtpVerification && !isVerified && value && (
               <p className="text-xs text-amber-600 flex items-center">
@@ -681,11 +883,11 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
           </div>
         );
 
-      case 'textarea':
+      case "textarea":
         return (
           <textarea
             required={isRequired}
-            value={value || ''}
+            value={value || ""}
             onChange={(e) => onChange(e.target.value)}
             rows={4}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -695,11 +897,11 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
           />
         );
 
-      case 'dropdown':
+      case "dropdown":
         return (
           <select
             required={isRequired}
-            value={value || ''}
+            value={value || ""}
             onChange={(e) => onChange(e.target.value)}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
@@ -712,25 +914,25 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
           </select>
         );
 
-      case 'date':
+      case "date":
         return (
           <input
             type="date"
             required={isRequired}
-            value={value || ''}
+            value={value || ""}
             onChange={(e) => onChange(e.target.value)}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         );
 
-      case 'file':
+      case "file":
         const ticketFieldFile = field as TicketField;
         return (
           <div>
             <input
               type="file"
               multiple={ticketFieldFile.allowMultiple}
-              accept={ticketFieldFile.allowedFileTypes?.join(',')}
+              accept={ticketFieldFile.allowedFileTypes?.join(",")}
               onChange={(e) => {
                 if (e.target.files) {
                   const filesArray = Array.from(e.target.files);
@@ -747,12 +949,17 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
             {value && value.length > 0 && (
               <div className="mt-2 space-y-1">
                 {value.map((file: File, idx: number) => (
-                  <div key={idx} className="text-sm text-gray-600 flex items-center justify-between bg-gray-50 px-3 py-1 rounded">
+                  <div
+                    key={idx}
+                    className="text-sm text-gray-600 flex items-center justify-between bg-gray-50 px-3 py-1 rounded"
+                  >
                     <span>{file.name}</span>
                     <button
                       type="button"
                       onClick={() => {
-                        const newFiles = value.filter((_: any, i: number) => i !== idx);
+                        const newFiles = value.filter(
+                          (_: any, i: number) => i !== idx,
+                        );
                         onChange(newFiles);
                       }}
                       className="text-red-600 hover:text-red-800"
@@ -769,17 +976,19 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
       // Handle all hierarchy field types dynamically
       default:
         // Check if this is a hierarchy field type (handles hierarchy-level-1, hierarchy-level-2, etc.)
-        const fieldTypeLower = field.fieldType?.toLowerCase() || '';
-        const isHierarchyField = fieldTypeLower === 'category' || 
-                                  fieldTypeLower === 'hierarchy' || 
-                                  fieldTypeLower.startsWith('hierarchy-level-');
-        
+        const fieldTypeLower = field.fieldType?.toLowerCase() || "";
+        const isHierarchyField =
+          fieldTypeLower === "category" ||
+          fieldTypeLower === "hierarchy" ||
+          fieldTypeLower.startsWith("hierarchy-level-");
+
         if (isHierarchyField) {
           // For level 1 or single hierarchy field, render the HierarchyCategorySelector
-          const isLevel1 = fieldTypeLower === 'category' || 
-                          fieldTypeLower === 'hierarchy' || 
-                          fieldTypeLower === 'hierarchy-level-1';
-          
+          const isLevel1 =
+            fieldTypeLower === "category" ||
+            fieldTypeLower === "hierarchy" ||
+            fieldTypeLower === "hierarchy-level-1";
+
           if (isLevel1) {
             // Use hierarchical category selector if multi-level hierarchy is configured
             if (hierarchyConfig && hierarchyConfig.levelCount > 1) {
@@ -801,7 +1010,7 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
             return (
               <select
                 required={isRequired}
-                value={value || ''}
+                value={value || ""}
                 onChange={(e) => onChange(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
@@ -814,17 +1023,17 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
               </select>
             );
           }
-          
+
           // For levels 2, 3, 4, etc. - they are handled by HierarchyCategorySelector
           return null;
         }
-        
+
         // Default text input for unknown field types
         return (
           <input
             type="text"
             required={isRequired}
-            value={value || ''}
+            value={value || ""}
             onChange={(e) => onChange(e.target.value)}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder={placeholder}
@@ -849,9 +1058,12 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
       <div className="p-6 max-w-6xl mx-auto">
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
           <ExclamationCircleIcon className="h-12 w-12 text-yellow-600 mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-yellow-900 mb-2">Offline Module Not Configured</h3>
+          <h3 className="text-lg font-semibold text-yellow-900 mb-2">
+            Offline Module Not Configured
+          </h3>
           <p className="text-yellow-700">
-            Please ask your administrator to configure the offline module settings first.
+            Please ask your administrator to configure the offline module
+            settings first.
           </p>
         </div>
       </div>
@@ -860,7 +1072,7 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
-      <ModuleHeader 
+      <ModuleHeader
         title="Offline Support Center"
         subtitle="Register users and create queries for walk-in support"
       />
@@ -868,11 +1080,11 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
       {/* Tab Navigation */}
       <div className="flex space-x-4 border-b border-gray-200 mb-8">
         <button
-          onClick={() => setActiveTab('register')}
+          onClick={() => setActiveTab("register")}
           className={`px-6 py-3 font-medium transition-colors border-b-2 ${
-            activeTab === 'register'
-              ? 'border-blue-600 text-blue-600'
-              : 'border-transparent text-gray-600 hover:text-gray-900'
+            activeTab === "register"
+              ? "border-blue-600 text-blue-600"
+              : "border-transparent text-gray-600 hover:text-gray-900"
           }`}
         >
           <div className="flex items-center space-x-2">
@@ -881,11 +1093,11 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
           </div>
         </button>
         <button
-          onClick={() => setActiveTab('create-ticket')}
+          onClick={() => setActiveTab("create-ticket")}
           className={`px-6 py-3 font-medium transition-colors border-b-2 ${
-            activeTab === 'create-ticket'
-              ? 'border-blue-600 text-blue-600'
-              : 'border-transparent text-gray-600 hover:text-gray-900'
+            activeTab === "create-ticket"
+              ? "border-blue-600 text-blue-600"
+              : "border-transparent text-gray-600 hover:text-gray-900"
           }`}
         >
           <div className="flex items-center space-x-2">
@@ -896,15 +1108,18 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
       </div>
 
       {/* Register User Tab */}
-      {activeTab === 'register' && (
+      {activeTab === "register" && (
         <div className="bg-white rounded-xl shadow-md p-8">
           {registerSuccess && (
             <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-start space-x-3">
               <CheckCircleIcon className="h-6 w-6 text-green-600 flex-shrink-0 mt-0.5" />
               <div>
-                <h4 className="font-semibold text-green-900">User Registered Successfully!</h4>
+                <h4 className="font-semibold text-green-900">
+                  User Registered Successfully!
+                </h4>
                 <p className="text-sm text-green-700 mt-1">
-                  {foundUser?.firstName} {foundUser?.lastName} has been registered and can now submit queries.
+                  {foundUser?.firstName} {foundUser?.lastName} has been
+                  registered and can now submit queries.
                 </p>
               </div>
             </div>
@@ -919,7 +1134,7 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                 type="email"
                 value={searchEmail}
                 onChange={(e) => setSearchEmail(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && searchUser()}
+                onKeyPress={(e) => e.key === "Enter" && searchUser()}
                 className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="user@example.com"
               />
@@ -947,13 +1162,21 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                     <p className="text-sm text-blue-900 flex items-center space-x-2">
                       <CheckCircleIcon className="h-5 w-5" />
                       <span>
-                        User found: <strong>{foundUser.firstName} {foundUser.lastName}</strong>
+                        User found:{" "}
+                        <strong>
+                          {foundUser.firstName} {foundUser.lastName}
+                        </strong>
                       </span>
                     </p>
-                    <p className="text-xs text-blue-700 mt-1">This user is already registered in the system.</p>
+                    <p className="text-xs text-blue-700 mt-1">
+                      This user is already registered in the system.
+                    </p>
                   </div>
                 ) : (
-                  <p className="text-sm text-blue-900">User not found. Complete the registration form below to create a new user.</p>
+                  <p className="text-sm text-blue-900">
+                    User not found. Complete the registration form below to
+                    create a new user.
+                  </p>
                 )}
               </div>
             )}
@@ -964,16 +1187,25 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
               {offlineSettings.registrationFields
                 .sort((a, b) => (a.order || 0) - (b.order || 0))
                 .map((field) => (
-                  <div key={field.id} className={field.fieldType === 'textarea' ? 'col-span-2' : ''}>
+                  <div
+                    key={field.id}
+                    className={
+                      field.fieldType === "textarea" ? "col-span-2" : ""
+                    }
+                  >
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {field.fieldName.charAt(0).toUpperCase() + field.fieldName.slice(1)}
-                      {field.required && <span className="text-red-500"> *</span>}
+                      {field.fieldName.charAt(0).toUpperCase() +
+                        field.fieldName.slice(1)}
+                      {field.required && (
+                        <span className="text-red-500"> *</span>
+                      )}
                     </label>
                     {renderDynamicField(
                       field,
                       userForm[field.fieldName],
-                      (value) => setUserForm({ ...userForm, [field.fieldName]: value }),
-                      'registration'
+                      (value) =>
+                        setUserForm({ ...userForm, [field.fieldName]: value }),
+                      "registration",
                     )}
                   </div>
                 ))}
@@ -983,10 +1215,10 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
               <button
                 type="button"
                 onClick={() => {
-                  setSearchEmail('');
+                  setSearchEmail("");
                   const resetForm: Record<string, any> = {};
                   offlineSettings.registrationFields.forEach((field) => {
-                    resetForm[field.fieldName] = '';
+                    resetForm[field.fieldName] = "";
                   });
                   setUserForm(resetForm);
                   setFoundUser(null);
@@ -1009,7 +1241,9 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                 ) : (
                   <>
                     <UserPlusIcon className="h-5 w-5" />
-                    <span>{foundUser ? 'Already Registered' : 'Register User'}</span>
+                    <span>
+                      {foundUser ? "Already Registered" : "Register User"}
+                    </span>
                   </>
                 )}
               </button>
@@ -1019,17 +1253,19 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
       )}
 
       {/* Create Ticket Tab */}
-      {activeTab === 'create-ticket' && (
+      {activeTab === "create-ticket" && (
         <div className="bg-white rounded-xl shadow-md p-8">
           {ticketSuccess && (
             <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-start space-x-3">
               <CheckCircleIcon className="h-6 w-6 text-green-600 flex-shrink-0 mt-0.5" />
               <div>
-                <h4 className="font-semibold text-green-900">Query Created Successfully!</h4>
+                <h4 className="font-semibold text-green-900">
+                  Query Created Successfully!
+                </h4>
                 <p className="text-sm text-green-700 mt-1">
                   Query #{createdTicketNumber} has been created
-                  {ticketForm.markAsResolved && ' and marked as resolved'}
-                  {ticketForm.needsEscalation && ' and escalated'}.
+                  {ticketForm.markAsResolved && " and marked as resolved"}
+                  {ticketForm.needsEscalation && " and escalated"}.
                 </p>
               </div>
             </div>
@@ -1039,7 +1275,8 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
             {/* User Search */}
             <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg mb-4">
               <p className="text-sm text-amber-900 mb-3">
-                <span className="font-semibold">Important:</span> You must search for and select a user before creating a query.
+                <span className="font-semibold">Important:</span> You must
+                search for and select a user before creating a query.
               </p>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1051,11 +1288,17 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                     required
                     value={ticketForm.userEmail}
                     onChange={(e) => {
-                      setTicketForm({ ...ticketForm, userEmail: e.target.value });
+                      setTicketForm({
+                        ...ticketForm,
+                        userEmail: e.target.value,
+                      });
                       setTicketUserSearched(false);
                       setSelectedUser(null);
                     }}
-                    onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), searchUserForTicket())}
+                    onKeyPress={(e) =>
+                      e.key === "Enter" &&
+                      (e.preventDefault(), searchUserForTicket())
+                    }
                     className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="user@example.com"
                   />
@@ -1076,7 +1319,11 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                       <p className="text-sm text-green-900 flex items-center space-x-2">
                         <CheckCircleIcon className="h-5 w-5" />
                         <span>
-                          User: <strong>{selectedUser.firstName} {selectedUser.lastName}</strong> ({selectedUser.email})
+                          User:{" "}
+                          <strong>
+                            {selectedUser.firstName} {selectedUser.lastName}
+                          </strong>{" "}
+                          ({selectedUser.email})
                         </span>
                       </p>
                     </div>
@@ -1115,42 +1362,59 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                   No centers configured. Please add centers in project settings.
                 </p>
               )}
-              
+
               {/* Selected Center Details */}
-              {selectedCenter && centers.find(c => c._id === selectedCenter) && (
-                <div className="mt-3 p-3 bg-white rounded-lg border border-blue-300 space-y-2">
-                  {(() => {
-                    const center = centers.find(c => c._id === selectedCenter);
-                    return (
-                      <>
-                        <h4 className="font-medium text-gray-900">{center?.centerName}</h4>
-                        <div className="text-sm text-gray-600 space-y-1">
-                          <p>📍 {center?.address}</p>
-                          <p>{center?.city}, {center?.state} {center?.pincode}</p>
-                          {center?.phone && <p>📞 {center.phone}</p>}
-                          {center?.email && <p>✉️ {center.email}</p>}
-                          {center?.workingHours && (
-                            <p>🕒 {center.workingHours}</p>
-                          )}
-                          {(center?.googleMapLink || center?.mapLink) && (
-                            <a
-                              href={center.googleMapLink || center.mapLink}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium"
-                            >
-                              🗺️ View on Google Maps
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                              </svg>
-                            </a>
-                          )}
-                        </div>
-                      </>
-                    );
-                  })()}
-                </div>
-              )}
+              {selectedCenter &&
+                centers.find((c) => c._id === selectedCenter) && (
+                  <div className="mt-3 p-3 bg-white rounded-lg border border-blue-300 space-y-2">
+                    {(() => {
+                      const center = centers.find(
+                        (c) => c._id === selectedCenter,
+                      );
+                      return (
+                        <>
+                          <h4 className="font-medium text-gray-900">
+                            {center?.centerName}
+                          </h4>
+                          <div className="text-sm text-gray-600 space-y-1">
+                            <p>📍 {center?.address}</p>
+                            <p>
+                              {center?.city}, {center?.state} {center?.pincode}
+                            </p>
+                            {center?.phone && <p>📞 {center.phone}</p>}
+                            {center?.email && <p>✉️ {center.email}</p>}
+                            {center?.workingHours && (
+                              <p>🕒 {center.workingHours}</p>
+                            )}
+                            {(center?.googleMapLink || center?.mapLink) && (
+                              <a
+                                href={center.googleMapLink || center.mapLink}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium"
+                              >
+                                🗺️ View on Google Maps
+                                <svg
+                                  className="w-4 h-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                                  />
+                                </svg>
+                              </a>
+                            )}
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
             </div>
 
             {/* Dynamic Ticket Fields */}
@@ -1159,10 +1423,10 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                 ?.filter((field) => {
                   // Hide disabled fixed fields
                   if (field.isFixed && field.isEnabled === false) return false;
-                  
+
                   // Skip hierarchy level 2+ fields dynamically as they are handled by HierarchyCategorySelector
-                  const fieldType = field.fieldType?.toLowerCase() || '';
-                  if (fieldType.startsWith('hierarchy-level-')) {
+                  const fieldType = field.fieldType?.toLowerCase() || "";
+                  if (fieldType.startsWith("hierarchy-level-")) {
                     const levelMatch = fieldType.match(/hierarchy-level-(\d+)/);
                     if (levelMatch) {
                       const level = parseInt(levelMatch[1], 10);
@@ -1170,21 +1434,28 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                       if (level > 1) return false;
                     }
                   }
-                  
+
                   return true;
                 })
                 .sort((a, b) => (a.order || 0) - (b.order || 0))
                 .map((field) => (
                   <div key={field.id}>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {field.fieldName.charAt(0).toUpperCase() + field.fieldName.slice(1).replace(/([A-Z])/g, ' $1')}
-                      {field.required && <span className="text-red-500"> *</span>}
+                      {field.fieldName.charAt(0).toUpperCase() +
+                        field.fieldName.slice(1).replace(/([A-Z])/g, " $1")}
+                      {field.required && (
+                        <span className="text-red-500"> *</span>
+                      )}
                     </label>
                     {renderDynamicField(
                       field,
                       ticketForm[field.fieldName],
-                      (value) => setTicketForm({ ...ticketForm, [field.fieldName]: value }),
-                      'ticket'
+                      (value) =>
+                        setTicketForm({
+                          ...ticketForm,
+                          [field.fieldName]: value,
+                        }),
+                      "ticket",
                     )}
                   </div>
                 ))}
@@ -1197,11 +1468,18 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                   type="checkbox"
                   id="markResolved"
                   checked={ticketForm.markAsResolved}
-                  onChange={(e) => setTicketForm({ ...ticketForm, markAsResolved: e.target.checked })}
+                  onChange={(e) =>
+                    setTicketForm({
+                      ...ticketForm,
+                      markAsResolved: e.target.checked,
+                    })
+                  }
                   className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                 />
                 <label htmlFor="markResolved" className="text-sm">
-                  <span className="font-medium text-gray-900">Mark as Resolved</span>
+                  <span className="font-medium text-gray-900">
+                    Mark as Resolved
+                  </span>
                   <p className="text-gray-600 text-xs mt-1">
                     Check this if you resolved the issue during walk-in support
                   </p>
@@ -1213,11 +1491,18 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                   type="checkbox"
                   id="needsEscalation"
                   checked={ticketForm.needsEscalation}
-                  onChange={(e) => setTicketForm({ ...ticketForm, needsEscalation: e.target.checked })}
+                  onChange={(e) =>
+                    setTicketForm({
+                      ...ticketForm,
+                      needsEscalation: e.target.checked,
+                    })
+                  }
                   className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                 />
                 <label htmlFor="needsEscalation" className="text-sm flex-1">
-                  <span className="font-medium text-gray-900">Escalate Query</span>
+                  <span className="font-medium text-gray-900">
+                    Escalate Query
+                  </span>
                   <p className="text-gray-600 text-xs mt-1">
                     Escalate to another agent for specialized support
                   </p>
@@ -1233,13 +1518,20 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                     <select
                       required={ticketForm.needsEscalation}
                       value={ticketForm.escalateTo}
-                      onChange={(e) => setTicketForm({ ...ticketForm, escalateTo: e.target.value })}
+                      onChange={(e) =>
+                        setTicketForm({
+                          ...ticketForm,
+                          escalateTo: e.target.value,
+                        })
+                      }
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
-                      <option value="">Select agent</option>
+                      <option value="">
+                        Select contact ({agents.length} available)
+                      </option>
                       {agents.map((agent) => (
-                        <option key={agent._id} value={agent._id}>
-                          {agent.firstName} {agent.lastName} ({agent.email})
+                        <option key={agent._id} value={agent.userId}>
+                          {agent.name} ({agent.role})
                         </option>
                       ))}
                     </select>
@@ -1252,7 +1544,12 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                       required={ticketForm.needsEscalation}
                       rows={3}
                       value={ticketForm.escalationReason}
-                      onChange={(e) => setTicketForm({ ...ticketForm, escalationReason: e.target.value })}
+                      onChange={(e) =>
+                        setTicketForm({
+                          ...ticketForm,
+                          escalationReason: e.target.value,
+                        })
+                      }
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       placeholder="Reason for escalation..."
                     />
@@ -1266,15 +1563,16 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                 type="button"
                 onClick={() => {
                   const resetForm: Record<string, any> = {
-                    userEmail: '',
-                    userId: '',
+                    userEmail: "",
+                    userId: "",
                     markAsResolved: false,
                     needsEscalation: false,
-                    escalationReason: '',
-                    escalateTo: '',
+                    escalationReason: "",
+                    escalateTo: "",
                   };
                   offlineSettings?.ticketFields.forEach((field) => {
-                    resetForm[field.fieldName] = field.fieldType === 'file' ? [] : '';
+                    resetForm[field.fieldName] =
+                      field.fieldType === "file" ? [] : "";
                   });
                   setTicketForm(resetForm);
                   setSelectedUser(null);
@@ -1317,7 +1615,10 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
           <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold text-gray-900">
-                Verify {otpModal.fieldType === 'phone' ? 'Phone Number' : 'Email Address'}
+                Verify{" "}
+                {otpModal.fieldType === "phone"
+                  ? "Phone Number"
+                  : "Email Address"}
               </h3>
               <button
                 onClick={closeOtpModal}
@@ -1350,8 +1651,20 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                 {otpSending ? (
                   <>
                     <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                        fill="none"
+                      />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      />
                     </svg>
                     <span>Sending...</span>
                   </>
@@ -1369,7 +1682,9 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                     type="text"
                     value={otpValue}
                     onChange={(e) => {
-                      const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+                      const value = e.target.value
+                        .replace(/\D/g, "")
+                        .slice(0, 6);
                       setOtpValue(value);
                     }}
                     placeholder="Enter 6-digit OTP"
@@ -1393,9 +1708,24 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                   >
                     {otpVerifying ? (
                       <>
-                        <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        <svg
+                          className="animate-spin h-5 w-5"
+                          viewBox="0 0 24 24"
+                        >
+                          <circle
+                            className="opacity-25"
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                            fill="none"
+                          />
+                          <path
+                            className="opacity-75"
+                            fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                          />
                         </svg>
                         <span>Verifying...</span>
                       </>

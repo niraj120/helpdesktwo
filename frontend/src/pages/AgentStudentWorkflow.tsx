@@ -1,8 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
-import axios from 'axios';
-import { API_CONFIG } from '../config/constants';
-import HierarchyCategorySelector, { CategoryHierarchyValue, useHierarchyConfig } from '../components/HierarchyCategorySelector';
+import React, { useState, useEffect, useRef } from "react";
+import { useParams } from "react-router-dom";
+import axios from "axios";
+import { API_CONFIG } from "../config/constants";
+import HierarchyCategorySelector, {
+  CategoryHierarchyValue,
+  useHierarchyConfig,
+} from "../components/HierarchyCategorySelector";
 import {
   UserPlusIcon,
   TicketIcon,
@@ -12,7 +15,7 @@ import {
   CheckCircleIcon,
   ChevronRightIcon,
   UserIcon,
-} from '@heroicons/react/24/outline';
+} from "@heroicons/react/24/outline";
 
 interface Student {
   _id: string;
@@ -90,21 +93,27 @@ interface OfflineSettings {
   };
 }
 
-type WorkflowStep = 'search' | 'register' | 'ticket';
+type WorkflowStep = "search" | "register" | "ticket";
+
+// localStorage key for persisting the in-progress registration form
+const REG_DRAFT_KEY = "sac_offline_reg_draft";
 
 const AgentStudentWorkflow: React.FC = () => {
   // Get customUrlPath from URL
   const { customUrlPath } = useParams<{ customUrlPath: string }>();
-  const [projectId, setProjectId] = useState<string>('');  
+  const [projectId, setProjectId] = useState<string>("");
   const [projectLoading, setProjectLoading] = useState(true);
-  
+
   // Workflow state
-  const [workflowStep, setWorkflowStep] = useState<WorkflowStep>('search');
+  const [workflowStep, setWorkflowStep] = useState<WorkflowStep>("search");
   const [currentStudent, setCurrentStudent] = useState<Student | null>(null);
-  const [newlyRegisteredStudentId, setNewlyRegisteredStudentId] = useState<string | null>(null);
+  const [newlyRegisteredStudentId, setNewlyRegisteredStudentId] = useState<
+    string | null
+  >(null);
 
   // Offline Module Settings
-  const [offlineSettings, setOfflineSettings] = useState<OfflineSettings | null>(null);
+  const [offlineSettings, setOfflineSettings] =
+    useState<OfflineSettings | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(true);
 
   // Fetch projectId from customUrlPath
@@ -112,13 +121,13 @@ const AgentStudentWorkflow: React.FC = () => {
     const fetchProjectId = async () => {
       try {
         const response = await axios.get(
-          `${API_CONFIG.API_URL}/projects/branding/${customUrlPath}`
+          `${API_CONFIG.API_URL}/projects/branding/${customUrlPath}`,
         );
         if (response.data.success && response.data.data) {
           setProjectId(response.data.data.projectId || response.data.data._id);
         }
       } catch (error) {
-        console.error('Error fetching project:', error);
+        console.error("Error fetching project:", error);
       } finally {
         setProjectLoading(false);
       }
@@ -130,30 +139,35 @@ const AgentStudentWorkflow: React.FC = () => {
   }, [customUrlPath]);
 
   // Step 1: Student Search States
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchType, setSearchType] = useState<'name' | 'email' | 'phone' | 'all'>('all');
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchType, setSearchType] = useState<
+    "name" | "email" | "phone" | "all"
+  >("all");
   const [searchResults, setSearchResults] = useState<Student[]>([]);
   const [searching, setSearching] = useState(false);
-  const [searchMessage, setSearchMessage] = useState('');
+  const [searchMessage, setSearchMessage] = useState("");
 
   // Step 2: Registration States
-  const [registrationForm, setRegistrationForm] = useState<Record<string, any>>({});
+  const [registrationForm, setRegistrationForm] = useState<Record<string, any>>(
+    {},
+  );
   const [registering, setRegistering] = useState(false);
-  const [registrationError, setRegistrationError] = useState('');
+  const [registrationError, setRegistrationError] = useState("");
 
   // Step 3: Ticket States
   const [ticketForm, setTicketForm] = useState<Record<string, any>>({
     markAsResolved: false,
     needsEscalation: false,
-    escalationReason: '',
-    escalateTo: '',
+    escalationReason: "",
+    escalateTo: "",
   });
   const [agents, setAgents] = useState<EscalationContact[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [creatingTicket, setCreatingTicket] = useState(false);
-  const [ticketMessage, setTicketMessage] = useState('');
-  const [categoryHierarchy, setCategoryHierarchy] = useState<CategoryHierarchyValue>({});
-  
+  const [ticketMessage, setTicketMessage] = useState("");
+  const [categoryHierarchy, setCategoryHierarchy] =
+    useState<CategoryHierarchyValue>({});
+
   // Fetch hierarchy config to determine if multi-level categories are enabled
   const { config: hierarchyConfig } = useHierarchyConfig(projectId);
 
@@ -162,17 +176,64 @@ const AgentStudentWorkflow: React.FC = () => {
     isOpen: boolean;
     fieldId: string;
     fieldName: string;
-    fieldType: 'phone' | 'email';
+    fieldType: "phone" | "email";
     value: string;
-    formType: 'registration' | 'ticket';
+    formType: "registration" | "ticket";
   } | null>(null);
-  const [otpValue, setOtpValue] = useState('');
-  const [otpKey, setOtpKey] = useState('');
+  const [otpValue, setOtpValue] = useState("");
+  const [otpKey, setOtpKey] = useState("");
   const [otpSending, setOtpSending] = useState(false);
   const [otpVerifying, setOtpVerifying] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
-  const [otpError, setOtpError] = useState('');
-  const [verifiedFields, setVerifiedFields] = useState<Record<string, boolean>>({});
+  const [otpError, setOtpError] = useState("");
+  const [verifiedFields, setVerifiedFields] = useState<Record<string, boolean>>(
+    {},
+  );
+  // Inline per-field validation errors (keyed by field.id)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  /** Requires at least one dot in the domain part with 2+ chars after it. */
+  const validateEmail = (email: string): string => {
+    if (!email) return "";
+    const valid = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim());
+    return valid
+      ? ""
+      : "Please enter a valid email address (e.g. name@domain.com)";
+  };
+
+  // Ticket creation success popup
+  const [ticketSuccessModal, setTicketSuccessModal] = useState<{
+    ticketNumber: string;
+    studentName: string;
+  } | null>(null);
+
+  // File upload toast notification
+  const [fileUploadToast, setFileUploadToast] = useState<{
+    names: string[];
+    visible: boolean;
+  } | null>(null);
+  const fileToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showFileUploadToast = (files: File[]) => {
+    if (fileToastTimerRef.current) clearTimeout(fileToastTimerRef.current);
+    setFileUploadToast({ names: files.map((f) => f.name), visible: true });
+    fileToastTimerRef.current = setTimeout(() => {
+      setFileUploadToast(null);
+    }, 4000);
+  };
+
+  // Duplicate-user warning state (set when email/phone already exists in system)
+  const [duplicateUserWarning, setDuplicateUserWarning] = useState<{
+    type: "email" | "phone";
+    fieldName: string;
+    existingUser: {
+      _id: string;
+      firstName: string;
+      lastName: string;
+      email: string;
+      phone?: string;
+    };
+  } | null>(null);
 
   // Load settings on mount
   useEffect(() => {
@@ -181,9 +242,36 @@ const AgentStudentWorkflow: React.FC = () => {
     }
   }, [projectId]);
 
+  // Restore registration draft saved by previous session (network loss / window close)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(REG_DRAFT_KEY);
+      if (raw) {
+        const { form, verified } = JSON.parse(raw);
+        if (form && Object.keys(form).length > 0) {
+          setRegistrationForm(form);
+          setVerifiedFields(verified || {});
+          setWorkflowStep("register");
+        }
+      }
+    } catch {
+      // ignore corrupt draft
+    }
+  }, []); // run once on mount
+
+  // Persist registration form to localStorage while on the register step
+  useEffect(() => {
+    if (workflowStep === "register") {
+      localStorage.setItem(
+        REG_DRAFT_KEY,
+        JSON.stringify({ form: registrationForm, verified: verifiedFields }),
+      );
+    }
+  }, [registrationForm, verifiedFields, workflowStep]);
+
   // Fetch agents and categories when moving to ticket step
   useEffect(() => {
-    if (workflowStep === 'ticket') {
+    if (workflowStep === "ticket") {
       fetchTicketAgents();
       fetchCategories();
     }
@@ -192,42 +280,42 @@ const AgentStudentWorkflow: React.FC = () => {
   const fetchOfflineSettings = async () => {
     try {
       if (!projectId) {
-        console.error('No projectId provided');
+        console.error("No projectId provided");
         setSettingsLoading(false);
         return;
       }
 
-      const token = localStorage.getItem('authToken');
-      
+      const token = localStorage.getItem("authToken");
+
       const response = await axios.get(
         `${API_CONFIG.API_URL}/projects/${projectId}/offline-settings`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
 
       if (response.data.success) {
         let settings = response.data.data;
-        
+
         // Remove duplicate Category fields - keep only the first one
         if (settings.ticketFields) {
           const seenCategories = new Set();
           settings.ticketFields = settings.ticketFields.filter((field: any) => {
-            if (field.fieldName === 'Category') {
-              if (seenCategories.has('Category')) {
-                console.log('Removing duplicate Category field:', field.id);
+            if (field.fieldName === "Category") {
+              if (seenCategories.has("Category")) {
+                console.log("Removing duplicate Category field:", field.id);
                 return false; // Remove duplicate
               }
-              seenCategories.add('Category');
+              seenCategories.add("Category");
             }
             return true;
           });
         }
-        
+
         setOfflineSettings(settings);
 
         // Initialize registration form
         const initialRegForm: Record<string, any> = {};
         settings.registrationFields?.forEach((field: RegistrationField) => {
-          initialRegForm[field.fieldName] = '';
+          initialRegForm[field.fieldName] = "";
         });
         setRegistrationForm(initialRegForm);
 
@@ -235,19 +323,22 @@ const AgentStudentWorkflow: React.FC = () => {
         const initialTicketForm: Record<string, any> = {
           markAsResolved: false,
           needsEscalation: false,
-          escalationReason: '',
-          escalateTo: '',
+          escalationReason: "",
+          escalateTo: "",
         };
         settings.ticketFields?.forEach((field: TicketField) => {
-          initialTicketForm[field.fieldName] = field.fieldType === 'file' ? [] : '';
+          initialTicketForm[field.fieldName] =
+            field.fieldType === "file" ? [] : "";
         });
         setTicketForm(initialTicketForm);
       }
     } catch (error: any) {
-      console.error('Error fetching offline settings:', error);
-      console.error('Error details:', error.response?.data || error.message);
+      console.error("Error fetching offline settings:", error);
+      console.error("Error details:", error.response?.data || error.message);
       // Show error message to user
-      alert(`Failed to load offline module settings: ${error.response?.data?.message || error.message}`);
+      alert(
+        `Failed to load offline module settings: ${error.response?.data?.message || error.message}`,
+      );
     } finally {
       setSettingsLoading(false);
     }
@@ -255,175 +346,239 @@ const AgentStudentWorkflow: React.FC = () => {
 
   const fetchTicketAgents = async () => {
     try {
-      const token = localStorage.getItem('authToken');
-      console.log('🔍 Fetching escalation options for project:', projectId);
-      
+      const token = localStorage.getItem("authToken");
+      console.log("🔍 Fetching escalation options for project:", projectId);
+
       // First, try to get escalation matrix for the project
       const matrixRes = await axios.get(
         `${API_CONFIG.API_URL}/escalation-matrix?projectId=${projectId}&isActive=true`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
-      
+
       const matrices = matrixRes.data.data || [];
-      console.log(`📊 Found ${matrices.length} escalation matrices for project`);
-      
-      // Get current user's centers for filtering
-      const userRes = await axios.get(
-        `${API_CONFIG.API_URL}/auth/me`,
-        { headers: { Authorization: `Bearer ${token}` } }
+      console.log(
+        `📊 Found ${matrices.length} escalation matrices for project`,
       );
-      // Response structure is { success: true, data: { centers: [...] } }
+
+      // Get current user's role + centers for dynamic level detection
+      const userRes = await axios.get(`${API_CONFIG.API_URL}/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      // Response structure is { success: true, data: { role: { code, _id }, centers: [...] } }
       const currentUserCenters: any[] = userRes.data?.data?.centers || [];
-      console.log(`🏢 Current user centers:`, currentUserCenters);
-      
+      const currentUserRoleCode: string = userRes.data?.data?.role?.code || "";
+      const currentUserRoleId: string =
+        userRes.data?.data?.role?._id?.toString() || "";
+      console.log(
+        `🏢 Current user centers: ${currentUserCenters.length}, role: ${currentUserRoleCode} (${currentUserRoleId})`,
+      );
+
       if (matrices.length > 0) {
         // Use escalation matrix levels for sequential escalation
         const matrix = matrices[0]; // Use first active matrix
-        console.log(`📋 Using escalation matrix: ${matrix.name} (${matrix.escalationMode})`);
-        
+        console.log(
+          `📋 Using escalation matrix: ${matrix.name} (${matrix.escalationMode})`,
+        );
+
         const contacts: EscalationContact[] = [];
-        const isSequential = matrix.escalationMode === 'SEQUENTIAL';
-        
-        // For sequential mode, only show next level (level 2)
-        // For random mode, show all levels
-        // Skip level 1 (current user's level)
-        const sortedLevels = (matrix.levels || []).sort((a: any, b: any) => a.levelNumber - b.levelNumber);
-        const startIndex = 1; // Skip level 1 (index 0)
-        const endIndex = isSequential ? 2 : sortedLevels.length; // Sequential: only level 2, Random: all levels
-        
-        console.log(`📊 Mode: ${isSequential ? 'SEQUENTIAL' : 'RANDOM'}, showing levels ${startIndex + 1} to ${Math.min(endIndex, sortedLevels.length)} (of ${sortedLevels.length} total)`);
-        
-        for (let i = startIndex; i < Math.min(endIndex, sortedLevels.length); i++) {
+        const isSequential = matrix.escalationMode === "SEQUENTIAL";
+
+        const sortedLevels = (matrix.levels || []).sort(
+          (a: any, b: any) => a.levelNumber - b.levelNumber,
+        );
+
+        // Dynamically detect the logged-in user's level in the matrix.
+        // Match by role code OR role _id (handles both populated and non-populated roleId).
+        const currentLevelIndex = sortedLevels.findIndex((l: any) => {
+          const roleCode = l.roleId?.code;
+          const roleId = l.roleId?._id?.toString() || l.roleId?.toString();
+          return (
+            (roleCode && roleCode === currentUserRoleCode) ||
+            (roleId && currentUserRoleId && roleId === currentUserRoleId)
+          );
+        });
+        console.log(
+          `🔍 [Escalation] levels: ${sortedLevels.map((l: any) => `L${l.levelNumber}:${l.roleId?.code || l.roleId}`).join(", ")}`,
+        );
+        // If user's role is not found in matrix, default to 0 (show from level 2 onward).
+        // This handles L1 users who may not need level detection.
+        const startIndex = currentLevelIndex >= 0 ? currentLevelIndex + 1 : 1;
+        const endIndex = isSequential ? startIndex + 1 : sortedLevels.length;
+
+        console.log(
+          `📊 User at matrix level index ${currentLevelIndex} (${currentUserRoleCode}), fetching indices ${startIndex}–${endIndex - 1} of ${sortedLevels.length} (sequential: ${isSequential})`,
+        );
+
+        for (
+          let i = startIndex;
+          i < Math.min(endIndex, sortedLevels.length);
+          i++
+        ) {
           const level = sortedLevels[i];
           if (!level.isActive) continue;
-          
+
           try {
             // Fetch users for this level with center filtering
             const usersRes = await axios.get(
               `${API_CONFIG.API_URL}/escalation-matrix/${matrix._id}/levels/${level._id}/users?projectId=${projectId}`,
-              { headers: { Authorization: `Bearer ${token}` } }
+              { headers: { Authorization: `Bearer ${token}` } },
             );
-            
+
             let levelUsers = usersRes.data.data || [];
-            console.log(`  Level ${level.levelNumber} (${level.levelName}): ${levelUsers.length} users total`);
-            
+            console.log(
+              `  Level ${level.levelNumber} (${level.levelName}): ${levelUsers.length} users total`,
+            );
+
             // Filter by center if current user has centers assigned (for offline projects)
             if (currentUserCenters.length > 0) {
               levelUsers = levelUsers.filter((user: any) => {
                 // Check if user shares any center with current user
+                // Handle both string IDs and object references for centers
                 const userCenters = user.centers || [];
-                return currentUserCenters.some((cId: string) => 
-                  userCenters.some((uCId: any) => 
-                    (typeof uCId === 'string' ? uCId : uCId.toString()) === cId
-                  )
-                );
+                return currentUserCenters.some((cId: any) => {
+                  const cIdStr =
+                    typeof cId === "string"
+                      ? cId
+                      : cId._id?.toString() || cId.toString();
+                  return userCenters.some(
+                    (uC: any) =>
+                      (typeof uC === "string"
+                        ? uC
+                        : uC._id?.toString() || uC.toString()) === cIdStr,
+                  );
+                });
               });
-              console.log(`    After center filter: ${levelUsers.length} users`);
+              console.log(
+                `    After center filter: ${levelUsers.length} users`,
+              );
             }
-            
+
             levelUsers.forEach((user: any) => {
               contacts.push({
                 _id: `${matrix._id}-L${level.levelNumber}-${user._id}`,
                 name: `${user.firstName} ${user.lastName}`,
                 email: user.email,
-                role: user.role?.name || level.levelName || `Level ${level.levelNumber}`,
-                priority: matrix.name || '',
+                role:
+                  user.role?.name ||
+                  level.levelName ||
+                  `Level ${level.levelNumber}`,
+                priority: matrix.name || "",
                 userId: user._id,
               });
             });
           } catch (levelError) {
-            console.error(`Error fetching users for level ${level.levelNumber}:`, levelError);
+            console.error(
+              `Error fetching users for level ${level.levelNumber}:`,
+              levelError,
+            );
           }
         }
-        
-        console.log(`✅ Total escalation contacts from matrix: ${contacts.length}`, contacts);
+
+        console.log(
+          `✅ Total escalation contacts from matrix: ${contacts.length}`,
+          contacts,
+        );
         setAgents(contacts);
         return;
       }
-      
+
       // Fallback to escalation policies if no matrix found
-      console.log('📋 No escalation matrix found, falling back to escalation policies');
+      console.log(
+        "📋 No escalation matrix found, falling back to escalation policies",
+      );
       const escalationContactsRes = await axios.get(
         `${API_CONFIG.API_URL}/escalation-policies?projectId=${projectId}&isActive=true`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
 
-      console.log('📋 Escalation policies response:', escalationContactsRes.data);
+      console.log(
+        "📋 Escalation policies response:",
+        escalationContactsRes.data,
+      );
 
       // Transform escalation policies into contact format for the dropdown
       const policies = escalationContactsRes.data.data || [];
-      
-      console.log(`📊 Found ${policies.length} active policies for this project`);
-      
+
+      console.log(
+        `📊 Found ${policies.length} active policies for this project`,
+      );
+
       const contacts = policies.flatMap((policy: any) => {
-        console.log(`📌 Processing policy: ${policy.name}, levels: ${policy.levels?.length}`);
-        
+        console.log(
+          `📌 Processing policy: ${policy.name}, levels: ${policy.levels?.length}`,
+        );
+
         return (policy.levels || []).flatMap((level: any) => {
-          console.log(`  Level ${level.level}: ${level.users?.length} users, escalateTo:`, level.escalateTo);
-          
+          console.log(
+            `  Level ${level.level}: ${level.users?.length} users, escalateTo:`,
+            level.escalateTo,
+          );
+
           // If level has users array, create a contact for each user
           if (level.users && level.users.length > 0) {
             return level.users.map((user: any) => ({
               _id: `${policy._id}-L${level.level}-${user._id}`,
               name: `${user.firstName} ${user.lastName}`,
               email: user.email,
-              role: user.role?.name || level.escalateTo?.targetName || 'N/A',
-              priority: policy.name || '',
+              role: user.role?.name || level.escalateTo?.targetName || "N/A",
+              priority: policy.name || "",
               userId: user._id,
             }));
           } else {
             // Fallback to old format if no users found
-            return [{
-              _id: `${policy._id}-L${level.level}`,
-              name: level.escalateTo?.targetName || `Level ${level.level}`,
-              email: level.escalateTo?.targetId || '',
-              role: level.escalateTo?.type || 'role',
-              priority: policy.name || '',
-            }];
+            return [
+              {
+                _id: `${policy._id}-L${level.level}`,
+                name: level.escalateTo?.targetName || `Level ${level.level}`,
+                email: level.escalateTo?.targetId || "",
+                role: level.escalateTo?.type || "role",
+                priority: policy.name || "",
+              },
+            ];
           }
         });
       });
-      
+
       console.log(`✅ Total contacts extracted: ${contacts.length}`, contacts);
       setAgents(contacts);
     } catch (error) {
-      console.error('❌ Error fetching escalation agents:', error);
+      console.error("❌ Error fetching escalation agents:", error);
     }
   };
 
   const fetchCategories = async () => {
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const response = await axios.get(
         `${API_CONFIG.API_URL}/categories/project/${projectId}`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
       if (response.data.success) {
         setCategories(response.data.data);
       }
     } catch (error) {
-      console.error('Error fetching categories:', error);
+      console.error("Error fetching categories:", error);
     }
   };
 
   // STEP 1: Search Student
   const handleSearchStudent = async () => {
     if (!searchQuery.trim()) {
-      setSearchMessage('Please enter a search query');
+      setSearchMessage("Please enter a search query");
       return;
     }
 
     setSearching(true);
-    setSearchMessage('');
+    setSearchMessage("");
     setSearchResults([]);
 
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const response = await axios.get(
         `${API_CONFIG.API_URL}/users/search-students?query=${encodeURIComponent(
-          searchQuery
+          searchQuery,
         )}&projectId=${projectId}&searchType=${searchType}`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
 
       if (response.data.success) {
@@ -431,13 +586,15 @@ const AgentStudentWorkflow: React.FC = () => {
           setSearchResults(response.data.data);
           setSearchMessage(`Found ${response.data.count} candidate(s)`);
         } else {
-          setSearchMessage('No candidates found. Please register a new candidate.');
+          setSearchMessage(
+            "No candidates found. Please register a new candidate.",
+          );
           setSearchResults([]);
         }
       }
     } catch (error) {
-      console.error('Error searching candidates:', error);
-      setSearchMessage('Error searching candidates. Please try again.');
+      console.error("Error searching candidates:", error);
+      setSearchMessage("Error searching candidates. Please try again.");
     } finally {
       setSearching(false);
     }
@@ -446,20 +603,49 @@ const AgentStudentWorkflow: React.FC = () => {
   // Select student from search results
   const selectStudent = (student: Student) => {
     setCurrentStudent(student);
-    setWorkflowStep('ticket');
+    setWorkflowStep("ticket");
     // Auto-populate ticket form with student ID
-    setTicketForm(prev => ({
+    setTicketForm((prev) => ({
       ...prev,
       studentId: student._id,
     }));
   };
 
   // STEP 2: Register New Student
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+  /** Skip registration and proceed to ticket creation using an already-existing user. */
+  const useExistingUserForTicket = (user: {
+    _id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone?: string;
+  }) => {
+    setCurrentStudent({
+      _id: user._id,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      phone: user.phone,
+    });
+    setTicketForm((prev) => ({ ...prev, studentId: user._id }));
+    setDuplicateUserWarning(null);
+    closeOtpModal();
+    // Clear draft — user is moving past registration
+    clearRegDraft();
+    setRegistrationForm({});
+    setVerifiedFields({});
+    setFieldErrors({});
+    setWorkflowStep("ticket");
+  };
+
   const handleRegisterStudent = async (e: React.FormEvent) => {
     e.preventDefault();
 
     // Validate required fields
-    const requiredFields = offlineSettings?.registrationFields.filter(f => f.required) || [];
+    const requiredFields =
+      offlineSettings?.registrationFields.filter((f) => f.required) || [];
     for (const field of requiredFields) {
       if (!registrationForm[field.fieldName]) {
         setRegistrationError(`${field.fieldName} is required`);
@@ -467,60 +653,98 @@ const AgentStudentWorkflow: React.FC = () => {
       }
     }
 
+    // Validate email format for all email-type fields
+    const allFields = offlineSettings?.registrationFields || [];
+    for (const field of allFields) {
+      if (field.fieldType === "email" && registrationForm[field.fieldName]) {
+        const err = validateEmail(registrationForm[field.fieldName]);
+        if (err) {
+          setFieldErrors((prev) => ({ ...prev, [field.id]: err }));
+          setRegistrationError(`${field.fieldName}: ${err}`);
+          return;
+        }
+      }
+    }
+
     // Check OTP verification for required fields
-    const otpCheck = checkOtpVerificationsComplete('registration');
+    const otpCheck = checkOtpVerificationsComplete("registration");
     if (!otpCheck.complete) {
-      setRegistrationError(`Please verify: ${otpCheck.missingFields.join(', ')}`);
+      setRegistrationError(
+        `Please verify: ${otpCheck.missingFields.join(", ")}`,
+      );
       return;
     }
 
     setRegistering(true);
-    setRegistrationError('');
+    setRegistrationError("");
 
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const response = await axios.post(
         `${API_CONFIG.API_URL}/users/register-student`,
         {
           ...registrationForm,
           projectId,
         },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
 
       if (response.data.success) {
         const newStudent = response.data.data;
         setCurrentStudent(newStudent);
         setNewlyRegisteredStudentId(newStudent._id);
-
         // Show success message with default password
         if (newStudent.defaultPassword) {
           alert(
             `✅ Candidate Registered Successfully!\n\n` +
-            `Name: ${newStudent.firstName} ${newStudent.lastName}\n` +
-            `Email: ${newStudent.email}\n` +
-            `Default Password: ${newStudent.defaultPassword}\n\n` +
-            `⚠️ IMPORTANT: Please share this password with the candidate securely.\n` +
-            `The candidate can login to the candidate portal using:\n` +
-            `Email: ${newStudent.email}\n` +
-            `Password: ${newStudent.defaultPassword}\n\n` +
-            `They will be required to change their password on first login.`
+              `Name: ${newStudent.firstName} ${newStudent.lastName}\n` +
+              `Email: ${newStudent.email}\n` +
+              `Default Password: ${newStudent.defaultPassword}\n\n` +
+              `⚠️ IMPORTANT: Please share this password with the candidate securely.\n` +
+              `The candidate can login to the candidate portal using:\n` +
+              `Email: ${newStudent.email}\n` +
+              `Password: ${newStudent.defaultPassword}\n\n` +
+              `They will be required to change their password on first login.`,
           );
         }
 
         // Auto-populate ticket form with new student ID
-        setTicketForm(prev => ({
+        setTicketForm((prev) => ({
           ...prev,
           studentId: newStudent._id,
         }));
 
+        // Clear draft — registration complete, moving to ticket creation
+        clearRegDraft();
+        setRegistrationForm({});
+        setVerifiedFields({});
+        setFieldErrors({});
+
         // Move to ticket creation
-        setWorkflowStep('ticket');
+        setWorkflowStep("ticket");
       }
     } catch (error: any) {
-      setRegistrationError(
-        error.response?.data?.message || 'Failed to register candidate. Please try again.'
-      );
+      // 409 → duplicate user detected by backend
+      if (
+        error.response?.status === 409 &&
+        error.response?.data?.existingUser
+      ) {
+        const eu = error.response.data.existingUser;
+        const field: "email" | "phone" =
+          error.response.data.duplicateField === "phone" ? "phone" : "email";
+        setDuplicateUserWarning({
+          type: field,
+          fieldName: field === "phone" ? "Mobile Number" : "Email",
+          existingUser: eu,
+        });
+        setRegistrationError(""); // clear inline error — modal will show instead
+      } else {
+        setRegistrationError(
+          error.response?.data?.message ||
+            error.response?.data?.error ||
+            "Failed to register candidate. Please try again.",
+        );
+      }
     } finally {
       setRegistering(false);
     }
@@ -531,40 +755,49 @@ const AgentStudentWorkflow: React.FC = () => {
     e.preventDefault();
 
     if (!currentStudent) {
-      setTicketMessage('No candidate selected. Please search or register a candidate first.');
+      setTicketMessage(
+        "No candidate selected. Please search or register a candidate first.",
+      );
       return;
     }
 
     if (ticketForm.needsEscalation && !ticketForm.escalateTo) {
-      setTicketMessage('Please select an agent to escalate to');
+      setTicketMessage("Please select an agent to escalate to");
       return;
     }
 
     setCreatingTicket(true);
-    setTicketMessage('');
+    setTicketMessage("");
 
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const formData = new FormData();
 
       // Debug: Log all ticket form data before processing
-      console.log('=== TICKET FORM DEBUG ===');
-      console.log('Current ticketForm:', ticketForm);
-      console.log('Offline settings ticket fields:', offlineSettings?.ticketFields);
-      console.log('========================');
+      console.log("=== TICKET FORM DEBUG ===");
+      console.log("Current ticketForm:", ticketForm);
+      console.log(
+        "Offline settings ticket fields:",
+        offlineSettings?.ticketFields,
+      );
+      console.log("========================");
 
       // Map field names to normalize variations
       const normalizeFieldName = (name: string): string => {
-        const normalized = name.toLowerCase().trim().replace(/\s+/g, '');
-        
-        if (normalized.includes('description') || normalized.includes('details') || normalized.includes('issue')) {
-          return 'description';
+        const normalized = name.toLowerCase().trim().replace(/\s+/g, "");
+
+        if (
+          normalized.includes("description") ||
+          normalized.includes("details") ||
+          normalized.includes("issue")
+        ) {
+          return "description";
         }
-        if (normalized.includes('category')) {
-          return 'category';
+        if (normalized.includes("category")) {
+          return "category";
         }
-        if (normalized.includes('priority')) {
-          return 'priority';
+        if (normalized.includes("priority")) {
+          return "priority";
         }
         return name;
       };
@@ -576,35 +809,53 @@ const AgentStudentWorkflow: React.FC = () => {
       offlineSettings?.ticketFields.forEach((field) => {
         const normalizedName = normalizeFieldName(field.fieldName);
         const fieldValue = ticketForm[field.fieldName];
-        const fieldTypeLower = field.fieldType?.toLowerCase() || '';
-        const isHierarchyField = fieldTypeLower === 'category' || 
-                                  fieldTypeLower === 'hierarchy' || 
-                                  fieldTypeLower.startsWith('hierarchy-level-');
-        
-        if (field.fieldType === 'file' && fieldValue) {
+        const fieldTypeLower = field.fieldType?.toLowerCase() || "";
+        const isHierarchyField =
+          fieldTypeLower === "category" ||
+          fieldTypeLower === "hierarchy" ||
+          fieldTypeLower.startsWith("hierarchy-level-");
+
+        if (field.fieldType === "file" && fieldValue) {
           const files = fieldValue as File[];
-          files.forEach(file => formData.append('attachments', file));
-        } else if (isHierarchyField && typeof fieldValue === 'object' && fieldValue !== null) {
+          files.forEach((file) => formData.append("attachments", file));
+        } else if (
+          isHierarchyField &&
+          typeof fieldValue === "object" &&
+          fieldValue !== null
+        ) {
           // Handle hierarchy category fields - send as JSON and extract deepest category
           const hierarchyValue = fieldValue as CategoryHierarchyValue;
-          console.log(`Appending hierarchy field: ${field.fieldName} ->`, hierarchyValue);
-          
+          console.log(
+            `Appending hierarchy field: ${field.fieldName} ->`,
+            hierarchyValue,
+          );
+
           // Send the full hierarchy as JSON for backend processing
-          formData.append('categoryHierarchy', JSON.stringify(hierarchyValue));
-          
+          formData.append("categoryHierarchy", JSON.stringify(hierarchyValue));
+
           // Get the deepest selected category ID for backward compatibility
-          const deepestCategory = hierarchyValue.level4 || hierarchyValue.level3 || hierarchyValue.level2 || hierarchyValue.level1;
+          const deepestCategory =
+            hierarchyValue.level4 ||
+            hierarchyValue.level3 ||
+            hierarchyValue.level2 ||
+            hierarchyValue.level1;
           if (deepestCategory) {
-            formData.append('category', deepestCategory);
+            formData.append("category", deepestCategory);
             hasCategory = true;
           }
-        } else if (fieldValue !== undefined && fieldValue !== null && fieldValue !== '') {
-          console.log(`Appending field: ${field.fieldName} -> ${normalizedName} = ${fieldValue}`);
+        } else if (
+          fieldValue !== undefined &&
+          fieldValue !== null &&
+          fieldValue !== ""
+        ) {
+          console.log(
+            `Appending field: ${field.fieldName} -> ${normalizedName} = ${fieldValue}`,
+          );
           formData.append(normalizedName, String(fieldValue));
-          
+
           // Track required fields
-          if (normalizedName === 'description') hasDescription = true;
-          if (normalizedName === 'category') hasCategory = true;
+          if (normalizedName === "description") hasDescription = true;
+          if (normalizedName === "category") hasCategory = true;
         } else {
           console.log(`Field ${field.fieldName} is empty or undefined`);
         }
@@ -612,28 +863,30 @@ const AgentStudentWorkflow: React.FC = () => {
 
       // Validate required fields before submission
       if (!hasDescription || !hasCategory) {
-        setTicketMessage(`Missing required fields: ${!hasDescription ? 'Description ' : ''}${!hasCategory ? 'Category' : ''}`);
+        setTicketMessage(
+          `Missing required fields: ${!hasDescription ? "Description " : ""}${!hasCategory ? "Category" : ""}`,
+        );
         setCreatingTicket(false);
         return;
       }
 
-      formData.append('userId', currentStudent._id);
-      formData.append('studentId', currentStudent._id);
-      formData.append('projectId', projectId);
-      formData.append('submissionType', 'offline');
+      formData.append("userId", currentStudent._id);
+      formData.append("studentId", currentStudent._id);
+      formData.append("projectId", projectId);
+      formData.append("submissionType", "offline");
 
       if (ticketForm.markAsResolved) {
-        formData.append('status', 'resolved');
-        formData.append('resolvedAtCreation', 'true');
+        formData.append("status", "resolved");
+        formData.append("resolvedAtCreation", "true");
       }
 
       if (ticketForm.needsEscalation) {
-        formData.append('escalateTo', ticketForm.escalateTo);
-        formData.append('escalationReason', ticketForm.escalationReason);
+        formData.append("escalateTo", ticketForm.escalateTo);
+        formData.append("escalationReason", ticketForm.escalationReason);
       }
 
       // Log all FormData entries AFTER everything is appended
-      console.log('Final FormData entries:');
+      console.log("Final FormData entries:");
       for (let [key, value] of formData.entries()) {
         console.log(`${key}: ${value}`);
       }
@@ -644,100 +897,171 @@ const AgentStudentWorkflow: React.FC = () => {
         {
           headers: {
             Authorization: `Bearer ${token}`,
-            'Content-Type': 'multipart/form-data',
+            "Content-Type": "multipart/form-data",
           },
-        }
+        },
       );
 
       if (response.data.success) {
-        setTicketMessage(
-          `✓ Query #${response.data.data.ticketNumber} created successfully for ${currentStudent.firstName} ${currentStudent.lastName}`
-        );
+        const ticketNo = response.data.data.ticketNumber;
+        const studentName = `${currentStudent.firstName} ${currentStudent.lastName}`;
 
-        // Reset workflow
+        // Show success popup
+        setTicketSuccessModal({ ticketNumber: ticketNo, studentName });
+
+        // Auto-dismiss after 6 seconds and reset workflow
         setTimeout(() => {
-          setWorkflowStep('search');
+          setTicketSuccessModal(null);
+          clearRegDraft();
+          setWorkflowStep("search");
           setCurrentStudent(null);
           setNewlyRegisteredStudentId(null);
-          setSearchQuery('');
+          setSearchQuery("");
           setSearchResults([]);
-          setTicketMessage('');
+          setTicketMessage("");
+          setRegistrationForm({});
+          setVerifiedFields({});
+          setFieldErrors({});
           setTicketForm({
             markAsResolved: false,
             needsEscalation: false,
-            escalationReason: '',
-            escalateTo: '',
+            escalationReason: "",
+            escalateTo: "",
           });
-        }, 3000);
+        }, 6000);
       }
     } catch (error: any) {
-      setTicketMessage(error.response?.data?.message || 'Failed to create query');
+      setTicketMessage(
+        error.response?.data?.message || "Failed to create query",
+      );
     } finally {
       setCreatingTicket(false);
     }
   };
 
+  // Clear the persisted registration draft from localStorage
+  const clearRegDraft = () => localStorage.removeItem(REG_DRAFT_KEY);
+
   // Go back to search
   const resetWorkflow = () => {
-    setWorkflowStep('search');
+    clearRegDraft();
+    setWorkflowStep("search");
     setCurrentStudent(null);
     setNewlyRegisteredStudentId(null);
-    setSearchQuery('');
+    setSearchQuery("");
     setSearchResults([]);
-    setSearchMessage('');
-    setRegistrationError('');
-    setTicketMessage('');
+    setSearchMessage("");
+    setRegistrationError("");
+    setRegistrationForm({});
+    setTicketMessage("");
     setVerifiedFields({});
+    setFieldErrors({});
   };
 
   // OTP Functions
-  const openOtpModal = (fieldId: string, fieldName: string, fieldType: 'phone' | 'email', value: string, formType: 'registration' | 'ticket') => {
-    setOtpModal({ isOpen: true, fieldId, fieldName, fieldType, value, formType });
-    setOtpValue('');
-    setOtpKey('');
+  const openOtpModal = (
+    fieldId: string,
+    fieldName: string,
+    fieldType: "phone" | "email",
+    value: string,
+    formType: "registration" | "ticket",
+  ) => {
+    // Validate email format before opening the OTP modal
+    if (fieldType === "email") {
+      const err = validateEmail(value);
+      if (err) {
+        setFieldErrors((prev) => ({ ...prev, [fieldId]: err }));
+        return;
+      }
+    }
+    setOtpModal({
+      isOpen: true,
+      fieldId,
+      fieldName,
+      fieldType,
+      value,
+      formType,
+    });
+    setOtpValue("");
+    setOtpKey("");
     setOtpSent(false);
-    setOtpError('');
+    setOtpError("");
   };
 
   const closeOtpModal = () => {
     setOtpModal(null);
-    setOtpValue('');
-    setOtpKey('');
+    setOtpValue("");
+    setOtpKey("");
     setOtpSent(false);
-    setOtpError('');
+    setOtpError("");
   };
 
   const handleSendOtp = async () => {
     if (!otpModal) return;
-    
+
     setOtpSending(true);
-    setOtpError('');
-    
+    setOtpError("");
+
     try {
-      const token = localStorage.getItem('authToken');
-      const endpoint = otpModal.fieldType === 'phone' 
-        ? `${API_CONFIG.API_URL}/otp/send-phone`
-        : `${API_CONFIG.API_URL}/otp/send-email`;
-      
-      const payload = otpModal.fieldType === 'phone'
-        ? { phone: otpModal.value, projectId }
-        : { email: otpModal.value, projectId };
-      
-      const response = await axios.post(
-        endpoint,
-        payload,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      
+      const token = localStorage.getItem("authToken");
+
+      // ── Duplicate check (registration forms only) ─────────────────────────
+      // Before sending an OTP for a phone/email being entered during registration,
+      // verify the value doesn't already belong to another user in the system.
+      if (otpModal.formType === "registration") {
+        const dupType = otpModal.fieldType === "phone" ? "phone" : "email";
+        try {
+          const dupRes = await axios.get(
+            `${API_CONFIG.API_URL}/users/check-duplicate`,
+            {
+              params: { type: dupType, value: otpModal.value },
+              headers: { Authorization: `Bearer ${token}` },
+            },
+          );
+          if (dupRes.data.exists && dupRes.data.existingUser) {
+            // Close OTP modal first, then show duplicate warning
+            closeOtpModal();
+            setDuplicateUserWarning({
+              type: dupType,
+              fieldName: dupType === "phone" ? "Mobile Number" : "Email",
+              existingUser: dupRes.data.existingUser,
+            });
+            setOtpSending(false);
+            return;
+          }
+        } catch {
+          // If the duplicate check itself fails, allow OTP to proceed
+          // (graceful degradation — backend will catch it on form submit)
+        }
+      }
+      // ──────────────────────────────────────────────────────────────────────
+
+      const endpoint =
+        otpModal.fieldType === "phone"
+          ? `${API_CONFIG.API_URL}/otp/send-phone`
+          : `${API_CONFIG.API_URL}/otp/send-email`;
+
+      const payload =
+        otpModal.fieldType === "phone"
+          ? { phone: otpModal.value, projectId }
+          : { email: otpModal.value, projectId };
+
+      const response = await axios.post(endpoint, payload, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
       if (response.data.success && response.data.otpKey) {
         setOtpKey(response.data.otpKey);
         setOtpSent(true);
       } else {
-        setOtpError(response.data.message || 'Failed to send OTP');
+        setOtpError(response.data.message || "Failed to send OTP");
       }
     } catch (error: any) {
-      console.error('Error sending OTP:', error);
-      setOtpError(error.response?.data?.message || 'Failed to send OTP. Please try again.');
+      console.error("Error sending OTP:", error);
+      setOtpError(
+        error.response?.data?.message ||
+          "Failed to send OTP. Please try again.",
+      );
     } finally {
       setOtpSending(false);
     }
@@ -745,61 +1069,70 @@ const AgentStudentWorkflow: React.FC = () => {
 
   const handleVerifyOtp = async () => {
     if (!otpModal || !otpValue || !otpKey) return;
-    
+
     setOtpVerifying(true);
-    setOtpError('');
-    
+    setOtpError("");
+
     try {
-      const token = localStorage.getItem('authToken');
-      
+      const token = localStorage.getItem("authToken");
+
       const response = await axios.post(
         `${API_CONFIG.API_URL}/otp/verify`,
         {
           otpKey,
           otp: otpValue,
           type: otpModal.fieldType,
-          value: otpModal.value
+          value: otpModal.value,
         },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
-      
+
       if (response.data.success && response.data.verified) {
-        setVerifiedFields(prev => ({
+        setVerifiedFields((prev) => ({
           ...prev,
-          [otpModal.fieldId]: true
+          [otpModal.fieldId]: true,
         }));
         closeOtpModal();
       } else {
-        setOtpError(response.data.message || 'Invalid OTP. Please try again.');
+        setOtpError(response.data.message || "Invalid OTP. Please try again.");
       }
     } catch (error: any) {
-      console.error('Error verifying OTP:', error);
-      setOtpError(error.response?.data?.message || 'Invalid OTP. Please try again.');
+      console.error("Error verifying OTP:", error);
+      setOtpError(
+        error.response?.data?.message || "Invalid OTP. Please try again.",
+      );
     } finally {
       setOtpVerifying(false);
     }
   };
 
   // Check if all required OTP verifications are complete
-  const checkOtpVerificationsComplete = (formType: 'registration' | 'ticket'): { complete: boolean; missingFields: string[] } => {
-    const fields = formType === 'registration' 
-      ? offlineSettings?.registrationFields || []
-      : offlineSettings?.ticketFields || [];
-    
+  const checkOtpVerificationsComplete = (
+    formType: "registration" | "ticket",
+  ): { complete: boolean; missingFields: string[] } => {
+    const fields =
+      formType === "registration"
+        ? offlineSettings?.registrationFields || []
+        : offlineSettings?.ticketFields || [];
+
     const missingFields: string[] = [];
-    
+
     fields.forEach((field) => {
-      if (field.requireOtpVerification && (field.fieldType === 'phone' || field.fieldType === 'email')) {
-        const formData = formType === 'registration' ? registrationForm : ticketForm;
+      if (
+        field.requireOtpVerification &&
+        (field.fieldType === "phone" || field.fieldType === "email")
+      ) {
+        const formData =
+          formType === "registration" ? registrationForm : ticketForm;
         if (formData[field.fieldName] && !verifiedFields[field.id]) {
           missingFields.push(field.fieldName);
         }
       }
     });
-    
+
     return {
       complete: missingFields.length === 0,
-      missingFields
+      missingFields,
     };
   };
 
@@ -807,21 +1140,23 @@ const AgentStudentWorkflow: React.FC = () => {
     field: RegistrationField | TicketField,
     value: any,
     onChange: (value: any) => void,
-    formType: 'registration' | 'ticket' = 'registration'
+    formType: "registration" | "ticket" = "registration",
   ) => {
     const isRequired = field.required;
     const placeholder = field.placeholder || field.fieldName;
-    const needsOtpVerification = field.requireOtpVerification && (field.fieldType === 'phone' || field.fieldType === 'email');
+    const needsOtpVerification =
+      field.requireOtpVerification &&
+      (field.fieldType === "phone" || field.fieldType === "email");
     const isVerified = verifiedFields[field.id];
 
     switch (field.fieldType) {
-      case 'text':
-      case 'number':
+      case "text":
+      case "number":
         return (
           <input
-            type={field.fieldType === 'number' ? 'number' : 'text'}
+            type={field.fieldType === "number" ? "number" : "text"}
             required={isRequired}
-            value={value || ''}
+            value={value || ""}
             onChange={(e) => onChange(e.target.value)}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder={placeholder}
@@ -830,58 +1165,98 @@ const AgentStudentWorkflow: React.FC = () => {
             pattern={field.validation?.pattern}
           />
         );
-      
-      case 'email':
-      case 'phone':
+
+      case "email":
+      case "phone": {
+        const emailError =
+          field.fieldType === "email" ? fieldErrors[field.id] || "" : "";
+        const hasEmailError = field.fieldType === "email" && !!emailError;
         return (
-          <div className="flex gap-2">
-            <input
-              type={field.fieldType === 'email' ? 'email' : 'tel'}
-              required={isRequired}
-              value={value || ''}
-              onChange={(e) => {
-                onChange(e.target.value);
-                // Reset verification if value changes
-                if (verifiedFields[field.id]) {
-                  setVerifiedFields(prev => {
-                    const updated = { ...prev };
-                    delete updated[field.id];
-                    return updated;
-                  });
-                }
-              }}
-              className={`flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                isVerified ? 'border-green-500 bg-green-50' : 'border-gray-300'
-              }`}
-              placeholder={placeholder}
-              minLength={field.validation?.minLength}
-              maxLength={field.validation?.maxLength}
-              pattern={field.validation?.pattern}
-            />
-            {needsOtpVerification && value && (
-              isVerified ? (
-                <span className="flex items-center px-3 py-2 bg-green-100 text-green-700 rounded-lg text-sm font-medium">
-                  <CheckCircleIcon className="h-5 w-5 mr-1" />
-                  Verified
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => openOtpModal(field.id, field.fieldName, field.fieldType as 'phone' | 'email', value, formType)}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
-                >
-                  Verify
-                </button>
-              )
+          <div className="space-y-1">
+            <div className="flex gap-2">
+              <input
+                type={field.fieldType === "email" ? "email" : "tel"}
+                required={isRequired}
+                value={value || ""}
+                onChange={(e) => {
+                  const newVal = e.target.value;
+                  onChange(newVal);
+                  // Validate email format live
+                  if (field.fieldType === "email") {
+                    setFieldErrors((prev) => ({
+                      ...prev,
+                      [field.id]: validateEmail(newVal),
+                    }));
+                  }
+                  // Reset OTP verification if value changes
+                  if (verifiedFields[field.id]) {
+                    setVerifiedFields((prev) => {
+                      const updated = { ...prev };
+                      delete updated[field.id];
+                      return updated;
+                    });
+                  }
+                }}
+                onBlur={(e) => {
+                  if (field.fieldType === "email") {
+                    setFieldErrors((prev) => ({
+                      ...prev,
+                      [field.id]: validateEmail(e.target.value),
+                    }));
+                  }
+                }}
+                className={`flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                  isVerified
+                    ? "border-green-500 bg-green-50"
+                    : hasEmailError
+                      ? "border-red-400 bg-red-50"
+                      : "border-gray-300"
+                }`}
+                placeholder={placeholder}
+                minLength={field.validation?.minLength}
+                maxLength={field.validation?.maxLength}
+              />
+              {needsOtpVerification &&
+                value &&
+                (isVerified ? (
+                  <span className="flex items-center px-3 py-2 bg-green-100 text-green-700 rounded-lg text-sm font-medium">
+                    <CheckCircleIcon className="h-5 w-5 mr-1" />
+                    Verified
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={field.fieldType === "email" && hasEmailError}
+                    onClick={() =>
+                      openOtpModal(
+                        field.id,
+                        field.fieldName,
+                        field.fieldType as "phone" | "email",
+                        value,
+                        formType,
+                      )
+                    }
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                  >
+                    Verify
+                  </button>
+                ))}
+            </div>
+            {hasEmailError && (
+              <p className="text-xs text-red-600 flex items-center gap-1">
+                <ExclamationCircleIcon className="h-3.5 w-3.5 flex-shrink-0" />
+                {emailError}
+              </p>
             )}
           </div>
         );
+      }
 
-      case 'textarea':
+      case "textarea":
         return (
           <textarea
             required={isRequired}
-            value={value || ''}
+            value={value || ""}
             onChange={(e) => onChange(e.target.value)}
             rows={4}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -891,11 +1266,11 @@ const AgentStudentWorkflow: React.FC = () => {
           />
         );
 
-      case 'dropdown':
+      case "dropdown":
         return (
           <select
             required={isRequired}
-            value={value || ''}
+            value={value || ""}
             onChange={(e) => onChange(e.target.value)}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
@@ -908,25 +1283,25 @@ const AgentStudentWorkflow: React.FC = () => {
           </select>
         );
 
-      case 'date':
+      case "date":
         return (
           <input
             type="date"
             required={isRequired}
-            value={value || ''}
+            value={value || ""}
             onChange={(e) => onChange(e.target.value)}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         );
 
-      case 'file':
+      case "file":
         const ticketField = field as TicketField;
         return (
           <div>
             <input
               type="file"
               multiple={ticketField.allowMultiple}
-              accept={ticketField.allowedFileTypes?.join(',')}
+              accept={ticketField.allowedFileTypes?.join(",")}
               onChange={(e) => {
                 if (e.target.files) {
                   const filesArray = Array.from(e.target.files);
@@ -936,6 +1311,7 @@ const AgentStudentWorkflow: React.FC = () => {
                     return;
                   }
                   onChange(filesArray);
+                  if (filesArray.length > 0) showFileUploadToast(filesArray);
                 }
               }}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -951,7 +1327,9 @@ const AgentStudentWorkflow: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => {
-                        const newFiles = value.filter((_: any, i: number) => i !== idx);
+                        const newFiles = value.filter(
+                          (_: any, i: number) => i !== idx,
+                        );
                         onChange(newFiles);
                       }}
                       className="text-red-600 hover:text-red-800"
@@ -968,17 +1346,19 @@ const AgentStudentWorkflow: React.FC = () => {
       // Handle all hierarchy field types dynamically
       default:
         // Check if this is a hierarchy field type (handles category, hierarchy, hierarchy-level-1, hierarchy-level-2, etc.)
-        const fieldTypeLower = field.fieldType?.toLowerCase() || '';
-        const isHierarchyField = fieldTypeLower === 'category' || 
-                                  fieldTypeLower === 'hierarchy' || 
-                                  fieldTypeLower.startsWith('hierarchy-level-');
-        
+        const fieldTypeLower = field.fieldType?.toLowerCase() || "";
+        const isHierarchyField =
+          fieldTypeLower === "category" ||
+          fieldTypeLower === "hierarchy" ||
+          fieldTypeLower.startsWith("hierarchy-level-");
+
         if (isHierarchyField) {
           // For level 1 or single hierarchy field, render the HierarchyCategorySelector
-          const isLevel1 = fieldTypeLower === 'category' || 
-                          fieldTypeLower === 'hierarchy' || 
-                          fieldTypeLower === 'hierarchy-level-1';
-          
+          const isLevel1 =
+            fieldTypeLower === "category" ||
+            fieldTypeLower === "hierarchy" ||
+            fieldTypeLower === "hierarchy-level-1";
+
           if (isLevel1) {
             // Use hierarchical category selector if multi-level hierarchy is configured
             if (hierarchyConfig && hierarchyConfig.levelCount > 1) {
@@ -1000,7 +1380,7 @@ const AgentStudentWorkflow: React.FC = () => {
             return (
               <select
                 required={isRequired}
-                value={value || ''}
+                value={value || ""}
                 onChange={(e) => onChange(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
@@ -1013,17 +1393,17 @@ const AgentStudentWorkflow: React.FC = () => {
               </select>
             );
           }
-          
+
           // For levels 2, 3, 4, etc. - they are handled by HierarchyCategorySelector
           return null;
         }
-        
+
         // Default text input for unknown field types
         return (
           <input
             type="text"
             required={isRequired}
-            value={value || ''}
+            value={value || ""}
             onChange={(e) => onChange(e.target.value)}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder={placeholder}
@@ -1037,7 +1417,11 @@ const AgentStudentWorkflow: React.FC = () => {
       <div className="p-6 max-w-6xl mx-auto flex items-center justify-center min-h-[400px]">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">{projectLoading ? 'Loading project...' : 'Loading workflow settings...'}</p>
+          <p className="text-gray-600">
+            {projectLoading
+              ? "Loading project..."
+              : "Loading workflow settings..."}
+          </p>
         </div>
       </div>
     );
@@ -1048,9 +1432,12 @@ const AgentStudentWorkflow: React.FC = () => {
       <div className="p-6 max-w-6xl mx-auto">
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
           <ExclamationCircleIcon className="h-12 w-12 text-yellow-600 mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-yellow-900 mb-2">Offline Module Not Configured</h3>
+          <h3 className="text-lg font-semibold text-yellow-900 mb-2">
+            Offline Module Not Configured
+          </h3>
           <p className="text-yellow-700">
-            Please ask your administrator to configure the offline module settings first.
+            Please ask your administrator to configure the offline module
+            settings first.
           </p>
         </div>
       </div>
@@ -1059,17 +1446,74 @@ const AgentStudentWorkflow: React.FC = () => {
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
+      {/* File upload toast — top-center */}
+      {fileUploadToast && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 animate-slide-down">
+          <div className="flex items-start gap-3 bg-white border border-green-200 shadow-lg rounded-xl px-5 py-3 min-w-[280px] max-w-sm">
+            <div className="flex-shrink-0 w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+              <svg
+                className="w-4 h-4 text-green-600"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M5 13l4 4L19 7"
+                />
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-gray-800">
+                File selected successfully
+              </p>
+              {fileUploadToast.names.map((name, i) => (
+                <p key={i} className="text-xs text-gray-500 truncate">
+                  {name}
+                </p>
+              ))}
+            </div>
+            <button
+              onClick={() => setFileUploadToast(null)}
+              className="flex-shrink-0 text-gray-400 hover:text-gray-600 ml-1"
+            >
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Candidate Management Workflow</h1>
-        <p className="text-gray-600 mt-2">Search, register, and create queries for walk-in candidates</p>
+        <h1 className="text-3xl font-bold text-gray-900">
+          Candidate Management Workflow
+        </h1>
+        <p className="text-gray-600 mt-2">
+          Search, register, and create queries for walk-in candidates
+        </p>
       </div>
 
       {/* Workflow Progress */}
       <div className="mb-8 flex items-center space-x-4">
         <div
           className={`flex items-center space-x-2 px-4 py-2 rounded-lg ${
-            workflowStep === 'search' ? 'bg-blue-100 text-blue-900 font-semibold' : 'bg-gray-100 text-gray-600'
+            workflowStep === "search"
+              ? "bg-blue-100 text-blue-900 font-semibold"
+              : "bg-gray-100 text-gray-600"
           }`}
         >
           <MagnifyingGlassIcon className="h-5 w-5" />
@@ -1078,7 +1522,9 @@ const AgentStudentWorkflow: React.FC = () => {
         <ChevronRightIcon className="h-5 w-5 text-gray-400" />
         <div
           className={`flex items-center space-x-2 px-4 py-2 rounded-lg ${
-            workflowStep === 'register' ? 'bg-blue-100 text-blue-900 font-semibold' : 'bg-gray-100 text-gray-600'
+            workflowStep === "register"
+              ? "bg-blue-100 text-blue-900 font-semibold"
+              : "bg-gray-100 text-gray-600"
           }`}
         >
           <UserPlusIcon className="h-5 w-5" />
@@ -1087,7 +1533,9 @@ const AgentStudentWorkflow: React.FC = () => {
         <ChevronRightIcon className="h-5 w-5 text-gray-400" />
         <div
           className={`flex items-center space-x-2 px-4 py-2 rounded-lg ${
-            workflowStep === 'ticket' ? 'bg-blue-100 text-blue-900 font-semibold' : 'bg-gray-100 text-gray-600'
+            workflowStep === "ticket"
+              ? "bg-blue-100 text-blue-900 font-semibold"
+              : "bg-gray-100 text-gray-600"
           }`}
         >
           <TicketIcon className="h-5 w-5" />
@@ -1096,14 +1544,18 @@ const AgentStudentWorkflow: React.FC = () => {
       </div>
 
       {/* STEP 1: SEARCH */}
-      {workflowStep === 'search' && (
+      {workflowStep === "search" && (
         <div className="bg-white rounded-xl shadow-md p-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-6">Search for a Candidate</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-6">
+            Search for a Candidate
+          </h2>
 
           {/* Search Form */}
           <div className="space-y-6">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Search Type</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Search Type
+              </label>
               <select
                 value={searchType}
                 onChange={(e) => setSearchType(e.target.value as any)}
@@ -1125,16 +1577,16 @@ const AgentStudentWorkflow: React.FC = () => {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleSearchStudent()}
+                  onKeyPress={(e) => e.key === "Enter" && handleSearchStudent()}
                   className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder={
-                    searchType === 'name'
-                      ? 'e.g., John Doe'
-                      : searchType === 'email'
-                      ? 'e.g., student@example.com'
-                      : searchType === 'phone'
-                      ? 'e.g., 9876543210'
-                      : 'Enter name, email, or phone'
+                    searchType === "name"
+                      ? "e.g., John Doe"
+                      : searchType === "email"
+                        ? "e.g., student@example.com"
+                        : searchType === "phone"
+                          ? "e.g., 9876543210"
+                          : "Enter name, email, or phone"
                   }
                 />
                 <button
@@ -1161,8 +1613,8 @@ const AgentStudentWorkflow: React.FC = () => {
               <div
                 className={`p-4 rounded-lg ${
                   searchResults.length > 0
-                    ? 'bg-green-50 border border-green-200 text-green-900'
-                    : 'bg-amber-50 border border-amber-200 text-amber-900'
+                    ? "bg-green-50 border border-green-200 text-green-900"
+                    : "bg-amber-50 border border-amber-200 text-amber-900"
                 }`}
               >
                 {searchResults.length > 0 ? (
@@ -1182,7 +1634,9 @@ const AgentStudentWorkflow: React.FC = () => {
             {/* Search Results */}
             {searchResults.length > 0 && (
               <div className="space-y-3">
-                <h3 className="text-sm font-semibold text-gray-700">Select a Candidate:</h3>
+                <h3 className="text-sm font-semibold text-gray-700">
+                  Select a Candidate:
+                </h3>
                 {searchResults.map((student) => (
                   <div
                     key={student._id}
@@ -1196,10 +1650,14 @@ const AgentStudentWorkflow: React.FC = () => {
                         </p>
                         <p className="text-sm text-gray-600">{student.email}</p>
                         {student.phone && (
-                          <p className="text-sm text-gray-600">Phone: {student.phone}</p>
+                          <p className="text-sm text-gray-600">
+                            Phone: {student.phone}
+                          </p>
                         )}
                         {student.uniqueId && (
-                          <p className="text-sm text-gray-600">ID: {student.uniqueId}</p>
+                          <p className="text-sm text-gray-600">
+                            ID: {student.uniqueId}
+                          </p>
                         )}
                       </div>
                     </div>
@@ -1218,7 +1676,7 @@ const AgentStudentWorkflow: React.FC = () => {
             {/* Register New Student Button */}
             {searchResults.length === 0 && searchMessage && (
               <button
-                onClick={() => setWorkflowStep('register')}
+                onClick={() => setWorkflowStep("register")}
                 className="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center space-x-2 font-semibold"
               >
                 <UserPlusIcon className="h-5 w-5" />
@@ -1230,9 +1688,11 @@ const AgentStudentWorkflow: React.FC = () => {
       )}
 
       {/* STEP 2: REGISTER */}
-      {workflowStep === 'register' && (
+      {workflowStep === "register" && (
         <div className="bg-white rounded-xl shadow-md p-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-6">Register New Student</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-6">
+            Register New Student
+          </h2>
 
           {registrationError && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-900 flex items-start space-x-3">
@@ -1249,16 +1709,28 @@ const AgentStudentWorkflow: React.FC = () => {
               {offlineSettings.registrationFields
                 .sort((a, b) => (a.order || 0) - (b.order || 0))
                 .map((field) => (
-                  <div key={field.id} className={field.fieldType === 'textarea' ? 'col-span-2' : ''}>
+                  <div
+                    key={field.id}
+                    className={
+                      field.fieldType === "textarea" ? "col-span-2" : ""
+                    }
+                  >
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {field.fieldName.charAt(0).toUpperCase() + field.fieldName.slice(1)}
-                      {field.required && <span className="text-red-500"> *</span>}
+                      {field.fieldName.charAt(0).toUpperCase() +
+                        field.fieldName.slice(1)}
+                      {field.required && (
+                        <span className="text-red-500"> *</span>
+                      )}
                     </label>
                     {renderDynamicField(
                       field,
                       registrationForm[field.fieldName],
-                      (value) => setRegistrationForm({ ...registrationForm, [field.fieldName]: value }),
-                      'registration'
+                      (value) =>
+                        setRegistrationForm({
+                          ...registrationForm,
+                          [field.fieldName]: value,
+                        }),
+                      "registration",
                     )}
                   </div>
                 ))}
@@ -1267,7 +1739,7 @@ const AgentStudentWorkflow: React.FC = () => {
             <div className="flex justify-end space-x-4 pt-6 border-t">
               <button
                 type="button"
-                onClick={() => setWorkflowStep('search')}
+                onClick={() => setWorkflowStep("search")}
                 className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
               >
                 Back to Search
@@ -1295,34 +1767,39 @@ const AgentStudentWorkflow: React.FC = () => {
       )}
 
       {/* STEP 3: CREATE TICKET */}
-      {workflowStep === 'ticket' && currentStudent && (
+      {workflowStep === "ticket" && currentStudent && (
         <div className="bg-white rounded-xl shadow-md p-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Create Query</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">
+            Create Query
+          </h2>
 
           {/* Student Info Card */}
           <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
             <p className="text-sm text-gray-600 mb-2">
-              {newlyRegisteredStudentId ? '📝 Newly Registered' : '✓ Existing'} Student:
+              {newlyRegisteredStudentId ? "📝 Newly Registered" : "✓ Existing"}{" "}
+              Student:
             </p>
             <p className="text-lg font-semibold text-gray-900">
               {currentStudent.firstName} {currentStudent.lastName}
             </p>
             <p className="text-sm text-gray-600 mt-1">{currentStudent.email}</p>
             {currentStudent.phone && (
-              <p className="text-sm text-gray-600">Phone: {currentStudent.phone}</p>
+              <p className="text-sm text-gray-600">
+                Phone: {currentStudent.phone}
+              </p>
             )}
           </div>
 
           {ticketMessage && (
             <div
               className={`mb-6 p-4 rounded-lg ${
-                ticketMessage.startsWith('✓')
-                  ? 'bg-green-50 border border-green-200 text-green-900'
-                  : 'bg-red-50 border border-red-200 text-red-900'
+                ticketMessage.startsWith("✓")
+                  ? "bg-green-50 border border-green-200 text-green-900"
+                  : "bg-red-50 border border-red-200 text-red-900"
               }`}
             >
               <p className="flex items-center space-x-2">
-                {ticketMessage.startsWith('✓') ? (
+                {ticketMessage.startsWith("✓") ? (
                   <CheckCircleIcon className="h-5 w-5" />
                 ) : (
                   <ExclamationCircleIcon className="h-5 w-5" />
@@ -1339,10 +1816,10 @@ const AgentStudentWorkflow: React.FC = () => {
                 .filter((field) => {
                   // Hide disabled fixed fields
                   if (field.isFixed && field.isEnabled === false) return false;
-                  
+
                   // Skip hierarchy level 2+ fields dynamically as they are handled by HierarchyCategorySelector
-                  const fieldType = field.fieldType?.toLowerCase() || '';
-                  if (fieldType.startsWith('hierarchy-level-')) {
+                  const fieldType = field.fieldType?.toLowerCase() || "";
+                  if (fieldType.startsWith("hierarchy-level-")) {
                     const levelMatch = fieldType.match(/hierarchy-level-(\d+)/);
                     if (levelMatch) {
                       const level = parseInt(levelMatch[1], 10);
@@ -1350,21 +1827,28 @@ const AgentStudentWorkflow: React.FC = () => {
                       if (level > 1) return false;
                     }
                   }
-                  
+
                   return true;
                 })
                 .sort((a, b) => (a.order || 0) - (b.order || 0))
                 .map((field) => (
                   <div key={field.id}>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {field.fieldName.charAt(0).toUpperCase() + field.fieldName.slice(1).replace(/([A-Z])/g, ' $1')}
-                      {field.required && <span className="text-red-500"> *</span>}
+                      {field.fieldName.charAt(0).toUpperCase() +
+                        field.fieldName.slice(1).replace(/([A-Z])/g, " $1")}
+                      {field.required && (
+                        <span className="text-red-500"> *</span>
+                      )}
                     </label>
                     {renderDynamicField(
                       field,
                       ticketForm[field.fieldName],
-                      (value) => setTicketForm({ ...ticketForm, [field.fieldName]: value }),
-                      'ticket'
+                      (value) =>
+                        setTicketForm({
+                          ...ticketForm,
+                          [field.fieldName]: value,
+                        }),
+                      "ticket",
                     )}
                   </div>
                 ))}
@@ -1374,7 +1858,9 @@ const AgentStudentWorkflow: React.FC = () => {
             <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
               <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                 <p className="text-sm text-blue-800">
-                  <strong>ℹ️ Auto-Assignment:</strong> This query will be automatically assigned to you unless you escalate it to another agent.
+                  <strong>ℹ️ Auto-Assignment:</strong> This query will be
+                  automatically assigned to you unless you escalate it to
+                  another agent.
                 </p>
               </div>
 
@@ -1383,12 +1869,21 @@ const AgentStudentWorkflow: React.FC = () => {
                   type="checkbox"
                   id="markResolved"
                   checked={ticketForm.markAsResolved}
-                  onChange={(e) => setTicketForm({ ...ticketForm, markAsResolved: e.target.checked })}
+                  onChange={(e) =>
+                    setTicketForm({
+                      ...ticketForm,
+                      markAsResolved: e.target.checked,
+                    })
+                  }
                   className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                 />
                 <label htmlFor="markResolved" className="text-sm">
-                  <span className="font-medium text-gray-900">Mark as Resolved</span>
-                  <p className="text-gray-600 text-xs mt-1">Check if the issue was resolved during this visit</p>
+                  <span className="font-medium text-gray-900">
+                    Mark as Resolved
+                  </span>
+                  <p className="text-gray-600 text-xs mt-1">
+                    Check if the issue was resolved during this visit
+                  </p>
                 </label>
               </div>
 
@@ -1397,12 +1892,19 @@ const AgentStudentWorkflow: React.FC = () => {
                   type="checkbox"
                   id="needsEscalation"
                   checked={ticketForm.needsEscalation}
-                  onChange={(e) => setTicketForm({ ...ticketForm, needsEscalation: e.target.checked })}
+                  onChange={(e) =>
+                    setTicketForm({
+                      ...ticketForm,
+                      needsEscalation: e.target.checked,
+                    })
+                  }
                   className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                 />
                 <label htmlFor="needsEscalation" className="text-sm flex-1">
                   <span className="font-medium text-gray-900">Escalate</span>
-                  <p className="text-gray-600 text-xs mt-1">Check if this query needs specialized support</p>
+                  <p className="text-gray-600 text-xs mt-1">
+                    Check if this query needs specialized support
+                  </p>
                 </label>
               </div>
 
@@ -1415,12 +1917,22 @@ const AgentStudentWorkflow: React.FC = () => {
                     <select
                       required={ticketForm.needsEscalation}
                       value={ticketForm.escalateTo}
-                      onChange={(e) => setTicketForm({ ...ticketForm, escalateTo: e.target.value })}
+                      onChange={(e) =>
+                        setTicketForm({
+                          ...ticketForm,
+                          escalateTo: e.target.value,
+                        })
+                      }
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
-                      <option value="">Select contact ({agents.length} available)</option>
+                      <option value="">
+                        Select contact ({agents.length} available)
+                      </option>
                       {agents.map((contact) => (
-                        <option key={contact._id} value={contact.userId || contact._id}>
+                        <option
+                          key={contact._id}
+                          value={contact.userId || contact._id}
+                        >
                           {contact.name} - {contact.role}
                         </option>
                       ))}
@@ -1434,7 +1946,12 @@ const AgentStudentWorkflow: React.FC = () => {
                       required={ticketForm.needsEscalation}
                       rows={3}
                       value={ticketForm.escalationReason}
-                      onChange={(e) => setTicketForm({ ...ticketForm, escalationReason: e.target.value })}
+                      onChange={(e) =>
+                        setTicketForm({
+                          ...ticketForm,
+                          escalationReason: e.target.value,
+                        })
+                      }
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       placeholder="Explain why this query needs escalation..."
                     />
@@ -1473,13 +1990,81 @@ const AgentStudentWorkflow: React.FC = () => {
         </div>
       )}
 
+      {/* ── Duplicate User Warning Modal ───────────────────────────────────── */}
+      {duplicateUserWarning && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+            {/* Header */}
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex-shrink-0 w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center">
+                <ExclamationCircleIcon className="h-6 w-6 text-amber-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900">
+                {duplicateUserWarning.type === "phone"
+                  ? "Mobile Number Already Exists"
+                  : "Email Already Exists"}
+              </h3>
+            </div>
+
+            {/* Body */}
+            <p className="text-sm text-gray-600 mb-4">
+              A user with this{" "}
+              <span className="font-medium">
+                {duplicateUserWarning.fieldName}
+              </span>{" "}
+              already exists in the system:
+            </p>
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6 space-y-1">
+              <p className="text-sm font-medium text-gray-900">
+                {duplicateUserWarning.existingUser.firstName}{" "}
+                {duplicateUserWarning.existingUser.lastName}
+              </p>
+              <p className="text-sm text-gray-600">
+                📧 {duplicateUserWarning.existingUser.email}
+              </p>
+              {duplicateUserWarning.existingUser.phone && (
+                <p className="text-sm text-gray-600">
+                  📱 {duplicateUserWarning.existingUser.phone}
+                </p>
+              )}
+            </div>
+
+            <p className="text-sm text-gray-600 mb-6">
+              Would you like to use this existing user and proceed to raise a
+              ticket on their behalf?
+            </p>
+
+            {/* Actions */}
+            <div className="flex gap-3">
+              <button
+                onClick={() =>
+                  useExistingUserForTicket(duplicateUserWarning.existingUser)
+                }
+                className="flex-1 py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm"
+              >
+                Use Existing User
+              </button>
+              <button
+                onClick={() => setDuplicateUserWarning(null)}
+                className="flex-1 py-2 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium text-sm"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* OTP Verification Modal */}
       {otpModal && otpModal.isOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold text-gray-900">
-                Verify {otpModal.fieldType === 'phone' ? 'Phone Number' : 'Email Address'}
+                Verify{" "}
+                {otpModal.fieldType === "phone"
+                  ? "Phone Number"
+                  : "Email Address"}
               </h3>
               <button
                 onClick={closeOtpModal}
@@ -1512,8 +2097,20 @@ const AgentStudentWorkflow: React.FC = () => {
                 {otpSending ? (
                   <>
                     <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                        fill="none"
+                      />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      />
                     </svg>
                     <span>Sending...</span>
                   </>
@@ -1531,7 +2128,9 @@ const AgentStudentWorkflow: React.FC = () => {
                     type="text"
                     value={otpValue}
                     onChange={(e) => {
-                      const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+                      const value = e.target.value
+                        .replace(/\D/g, "")
+                        .slice(0, 6);
                       setOtpValue(value);
                     }}
                     placeholder="Enter 6-digit OTP"
@@ -1555,9 +2154,24 @@ const AgentStudentWorkflow: React.FC = () => {
                   >
                     {otpVerifying ? (
                       <>
-                        <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        <svg
+                          className="animate-spin h-5 w-5"
+                          viewBox="0 0 24 24"
+                        >
+                          <circle
+                            className="opacity-25"
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                            fill="none"
+                          />
+                          <path
+                            className="opacity-75"
+                            fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                          />
                         </svg>
                         <span>Verifying...</span>
                       </>
@@ -1568,6 +2182,89 @@ const AgentStudentWorkflow: React.FC = () => {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Ticket Created Success Modal ─────────────────────────────── */}
+      {ticketSuccessModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden animate-in fade-in zoom-in duration-300">
+            {/* Green header band */}
+            <div className="bg-green-500 px-6 py-8 flex flex-col items-center text-white">
+              {/* Big checkmark circle */}
+              <div className="bg-white/20 rounded-full p-4 mb-3">
+                <svg
+                  className="h-12 w-12 text-white"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+              </div>
+              <h2 className="text-2xl font-bold tracking-tight">
+                Query Created!
+              </h2>
+              <p className="text-green-100 text-sm mt-1">
+                Successfully submitted
+              </p>
+            </div>
+
+            {/* Body */}
+            <div className="px-6 py-6 text-center space-y-4">
+              {/* Ticket number badge */}
+              <div className="inline-flex items-center gap-2 bg-green-50 border border-green-200 rounded-full px-5 py-2">
+                <span className="text-green-600 font-semibold text-sm uppercase tracking-wide">
+                  Query No.
+                </span>
+                <span className="text-green-800 font-bold text-xl">
+                  #{ticketSuccessModal.ticketNumber}
+                </span>
+              </div>
+
+              <p className="text-gray-600 text-sm">
+                Query has been raised for{" "}
+                <span className="font-semibold text-gray-800">
+                  {ticketSuccessModal.studentName}
+                </span>
+              </p>
+
+              <p className="text-xs text-gray-400">
+                This window will close automatically in a few seconds.
+              </p>
+
+              {/* Action button */}
+              <button
+                onClick={() => {
+                  setTicketSuccessModal(null);
+                  clearRegDraft();
+                  setWorkflowStep("search");
+                  setCurrentStudent(null);
+                  setNewlyRegisteredStudentId(null);
+                  setSearchQuery("");
+                  setSearchResults([]);
+                  setTicketMessage("");
+                  setRegistrationForm({});
+                  setVerifiedFields({});
+                  setFieldErrors({});
+                  setTicketForm({
+                    markAsResolved: false,
+                    needsEscalation: false,
+                    escalationReason: "",
+                    escalateTo: "",
+                  });
+                }}
+                className="w-full py-2.5 px-4 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors"
+              >
+                Start New Flow
+              </button>
+            </div>
           </div>
         </div>
       )}

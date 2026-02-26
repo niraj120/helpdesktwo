@@ -5,11 +5,35 @@ import KBArticleLevelMapping from "../models/KBArticleLevelMapping";
 import KBTable from "../models/KBTable";
 import mongoose from "mongoose";
 
+// Student role ID - used for public student portal access
+const STUDENT_ROLE_ID = "6915aeb10561bff7f36244a9";
+
 /**
  * Build visibility filter for KB articles based on user authentication and role
+ * @param req - Express request object
+ * @param context - Optional context override (e.g., 'student-portal' for public student pages)
  */
 function buildVisibilityFilter(req: Request): any {
   const user = (req as any).user;
+  const context = req.query.context as string;
+
+  // If context is student-portal and user is not authenticated, treat as Student role
+  if (!user && context === "student-portal") {
+    console.log(
+      "[KB_VISIBILITY] Student portal context - applying Student role visibility",
+    );
+    return {
+      $or: [
+        { visibility: { $exists: false } }, // Legacy articles without visibility field
+        { visibility: "all" },
+        { visibility: "public" },
+        {
+          visibility: "role_based",
+          visibleToRoles: new mongoose.Types.ObjectId(STUDENT_ROLE_ID),
+        },
+      ],
+    };
+  }
 
   if (!user) {
     // Unauthenticated user - can only see 'all' and 'public' articles
@@ -22,7 +46,33 @@ function buildVisibilityFilter(req: Request): any {
     };
   }
 
-  const userRoleId = user.roleId?.toString();
+  // Support both 'role' and 'roleId' field names from different auth middlewares
+  // Also handle case where role might be an ObjectId object
+  let userRoleId: string | null = null;
+  const roleValue = user.roleId || user.role;
+
+  console.log("[KB_VISIBILITY] roleValue type:", typeof roleValue);
+  console.log("[KB_VISIBILITY] roleValue:", JSON.stringify(roleValue));
+
+  if (roleValue) {
+    // If it's already an ObjectId object, get string representation
+    if (typeof roleValue === "object" && roleValue._id) {
+      userRoleId = roleValue._id.toString();
+      console.log("[KB_VISIBILITY] Extracted _id from object:", userRoleId);
+    } else if (typeof roleValue === "object" && roleValue.toString) {
+      userRoleId = roleValue.toString();
+      console.log("[KB_VISIBILITY] Used toString():", userRoleId);
+    } else if (typeof roleValue === "string") {
+      userRoleId = roleValue;
+      console.log("[KB_VISIBILITY] Used string directly:", userRoleId);
+    }
+  }
+
+  console.log("[KB_VISIBILITY] Final userRoleId:", userRoleId);
+  console.log(
+    "[KB_VISIBILITY] Valid ObjectId format:",
+    userRoleId ? /^[0-9a-fA-F]{24}$/.test(userRoleId) : false,
+  );
 
   // Authenticated user - can see 'all', 'internal', and role-based articles
   const visibilityConditions: any[] = [
@@ -31,8 +81,8 @@ function buildVisibilityFilter(req: Request): any {
     { visibility: "internal" },
   ];
 
-  // Add role-based filter if user has a role
-  if (userRoleId) {
+  // Add role-based filter if user has a valid role ID (24 hex chars)
+  if (userRoleId && /^[0-9a-fA-F]{24}$/.test(userRoleId)) {
     visibilityConditions.push({
       visibility: "role_based",
       visibleToRoles: new mongoose.Types.ObjectId(userRoleId),
@@ -115,6 +165,12 @@ export const getPublicArticles = async (
 
     // Build visibility filter based on user authentication and role
     const visibilityFilter = buildVisibilityFilter(req);
+    console.log("[KB_VISIBILITY] User:", (req as any).user?.email);
+    console.log("[KB_VISIBILITY] User role:", (req as any).user?.role);
+    console.log(
+      "[KB_VISIBILITY] Filter:",
+      JSON.stringify(visibilityFilter, null, 2),
+    );
 
     const articleFilter: any = {
       _id: { $in: allArticleIds },
@@ -137,6 +193,12 @@ export const getPublicArticles = async (
       )
       .sort({ isFeatured: -1, displayOrder: 1, publishedAt: -1 })
       .lean();
+
+    console.log("[KB_VISIBILITY] Articles found:", allArticles.length);
+    console.log(
+      "[KB_VISIBILITY] Article names:",
+      allArticles.map((a) => a.documentName),
+    );
 
     // Batch fetch all tables for all levels
     const tablesQuery: any = {
@@ -261,15 +323,17 @@ export const getPublicArticleById = async (
 
     // Build visibility filter based on user authentication and role
     const visibilityFilter = buildVisibilityFilter(req);
-    
+
     const articleQuery: any = {
       _id: id,
       status: "active",
       projectIds: projectId,
       ...visibilityFilter,
     };
-    
-    const article = await KBArticle.findOne(articleQuery).select("-createdBy -updatedBy");
+
+    const article = await KBArticle.findOne(articleQuery).select(
+      "-createdBy -updatedBy",
+    );
 
     if (!article) {
       res.status(404).json({
@@ -411,10 +475,10 @@ export const searchPublicArticles = async (
         },
       ],
     };
-    
+
     // Build visibility filter based on user authentication and role
     const visibilityFilter = buildVisibilityFilter(req);
-    
+
     filter.$and = [publishTypeFilter, visibilityFilter];
 
     const articles = await KBArticle.find(filter)

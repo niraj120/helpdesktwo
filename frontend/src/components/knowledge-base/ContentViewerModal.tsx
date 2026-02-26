@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { X, FileText, ExternalLink, Code } from 'lucide-react';
-import axios from 'axios';
-import { API_CONFIG } from '../../config/constants';
+import React, { useState, useEffect } from "react";
+import { X, FileText, ExternalLink, Code } from "lucide-react";
+import axios from "axios";
+import { API_CONFIG } from "../../config/constants";
 
 interface ContentViewerModalProps {
   articleId: string;
@@ -11,16 +11,58 @@ interface ContentViewerModalProps {
 interface Article {
   _id: string;
   title: string;
-  documentType: 'pdf' | 'link' | 'html' | 'both';
+  documentType: "pdf" | "link" | "html" | "both";
   pdfUrl?: string;
   externalUrl?: string;
   htmlContent?: string;
 }
 
-const ContentViewerModal: React.FC<ContentViewerModalProps> = ({ articleId, onClose }) => {
+const ContentViewerModal: React.FC<ContentViewerModalProps> = ({
+  articleId,
+  onClose,
+}) => {
   const [article, setArticle] = useState<Article | null>(null);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<'pdf' | 'html'>('pdf');
+  const [viewMode, setViewMode] = useState<"pdf" | "html">("pdf");
+
+  // Prepare HTML content for iframe rendering to preserve CSS styles from PDF converters
+  const prepareHtmlForViewer = (html: string): string => {
+    // If HTML already has DOCTYPE or html tag, return as-is
+    if (html.includes("<!DOCTYPE") || html.includes("<html")) {
+      // Inject viewport meta if not present for better rendering
+      if (!html.includes("<meta") || !html.includes("viewport")) {
+        return html.replace(
+          "<head>",
+          '<head><meta name="viewport" content="width=device-width, initial-scale=1.0">',
+        );
+      }
+      return html;
+    }
+    // Otherwise wrap in a basic HTML document with comprehensive styles
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; padding: 20px; margin: 0; line-height: 1.6; color: #333; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ccc; padding: 8px 12px; text-align: left; vertical-align: top; }
+    th { background-color: #f5f5f5; font-weight: 600; }
+    tr:nth-child(even) { background-color: #fafafa; }
+    img { max-width: 100%; height: auto; }
+    h1, h2, h3, h4, h5, h6 { margin-top: 1em; margin-bottom: 0.5em; color: #222; }
+    p { margin: 0.5em 0; }
+    ul, ol { padding-left: 2em; }
+    a { color: #0066cc; }
+    pre, code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: monospace; }
+    blockquote { border-left: 4px solid #ddd; margin: 1em 0; padding-left: 1em; color: #666; }
+  </style>
+</head>
+<body>${html}</body>
+</html>`;
+  };
 
   useEffect(() => {
     fetchArticle();
@@ -29,22 +71,22 @@ const ContentViewerModal: React.FC<ContentViewerModalProps> = ({ articleId, onCl
   const fetchArticle = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const response = await axios.get(
         `${API_CONFIG.API_URL}/kb/articles/${articleId}`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
       const articleData = response.data.data;
       setArticle(articleData);
-      
+
       // Set default view mode
       if (articleData.pdfUrl) {
-        setViewMode('pdf');
+        setViewMode("pdf");
       } else if (articleData.htmlContent) {
-        setViewMode('html');
+        setViewMode("html");
       }
     } catch (error) {
-      console.error('Failed to fetch article:', error);
+      console.error("Failed to fetch article:", error);
     } finally {
       setLoading(false);
     }
@@ -52,7 +94,7 @@ const ContentViewerModal: React.FC<ContentViewerModalProps> = ({ articleId, onCl
 
   const handleExternalLink = () => {
     if (article?.externalUrl) {
-      window.open(article.externalUrl, '_blank', 'noopener,noreferrer');
+      window.open(article.externalUrl, "_blank", "noopener,noreferrer");
     }
   };
 
@@ -82,18 +124,20 @@ const ContentViewerModal: React.FC<ContentViewerModalProps> = ({ articleId, onCl
         <div className="px-6 py-4 border-b flex items-center justify-between bg-gradient-to-r from-blue-50 to-indigo-50">
           <div className="flex items-center gap-3 flex-1">
             <FileText className="text-blue-600" size={24} />
-            <h2 className="text-xl font-bold text-gray-900 truncate">{article.title}</h2>
+            <h2 className="text-xl font-bold text-gray-900 truncate">
+              {article.title}
+            </h2>
           </div>
-          
+
           {/* View Mode Tabs */}
           <div className="flex items-center gap-2 mx-4">
             {hasPDF && (
               <button
-                onClick={() => setViewMode('pdf')}
+                onClick={() => setViewMode("pdf")}
                 className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
-                  viewMode === 'pdf'
-                    ? 'bg-blue-600 text-white shadow-md'
-                    : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200'
+                  viewMode === "pdf"
+                    ? "bg-blue-600 text-white shadow-md"
+                    : "bg-white text-gray-700 hover:bg-gray-100 border border-gray-200"
                 }`}
               >
                 PDF
@@ -101,11 +145,11 @@ const ContentViewerModal: React.FC<ContentViewerModalProps> = ({ articleId, onCl
             )}
             {hasHTML && (
               <button
-                onClick={() => setViewMode('html')}
+                onClick={() => setViewMode("html")}
                 className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
-                  viewMode === 'html'
-                    ? 'bg-blue-600 text-white shadow-md'
-                    : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200'
+                  viewMode === "html"
+                    ? "bg-blue-600 text-white shadow-md"
+                    : "bg-white text-gray-700 hover:bg-gray-100 border border-gray-200"
                 }`}
               >
                 Content
@@ -132,91 +176,34 @@ const ContentViewerModal: React.FC<ContentViewerModalProps> = ({ articleId, onCl
 
         {/* Content Area */}
         <div className="flex-1 overflow-hidden bg-gray-50">
-          {viewMode === 'pdf' && hasPDF && (
+          {viewMode === "pdf" && hasPDF && (
             <iframe
               src={article.pdfUrl}
               className="w-full h-full border-0"
               title={article.title}
             />
           )}
-          
-          {viewMode === 'html' && hasHTML && (
+
+          {viewMode === "html" && hasHTML && (
             <div className="w-full h-full overflow-auto">
-              <div className="max-w-4xl mx-auto px-8 py-8">
-                <style>{`
-                  .kb-content {
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
-                    font-size: 16px;
-                    line-height: 1.8;
-                    color: #1f2937;
-                  }
-                  .kb-content p {
-                    margin-bottom: 1em;
-                  }
-                  .kb-content a {
-                    color: #2563eb;
-                    text-decoration: underline;
-                    transition: color 0.2s ease;
-                  }
-                  .kb-content a:hover {
-                    color: #1d4ed8;
-                    text-decoration: underline;
-                  }
-                  .kb-content h1, .kb-content h2, .kb-content h3, .kb-content h4 {
-                    font-weight: 600;
-                    margin-top: 1.5em;
-                    margin-bottom: 0.75em;
-                    color: #111827;
-                  }
-                  .kb-content h1 { font-size: 2em; }
-                  .kb-content h2 { font-size: 1.5em; }
-                  .kb-content h3 { font-size: 1.25em; }
-                  .kb-content ul, .kb-content ol {
-                    margin-left: 1.5em;
-                    margin-bottom: 1em;
-                  }
-                  .kb-content li {
-                    margin-bottom: 0.5em;
-                  }
-                  .kb-content strong, .kb-content b {
-                    font-weight: 600;
-                    color: #111827;
-                  }
-                  .kb-content img {
-                    max-width: 100%;
-                    height: auto;
-                    border-radius: 8px;
-                    margin: 1em 0;
-                  }
-                  .kb-content code {
-                    background-color: #f3f4f6;
-                    padding: 0.2em 0.4em;
-                    border-radius: 4px;
-                    font-family: 'Courier New', monospace;
-                    font-size: 0.9em;
-                  }
-                  .kb-content blockquote {
-                    border-left: 4px solid #3b82f6;
-                    padding-left: 1em;
-                    margin: 1em 0;
-                    color: #4b5563;
-                    font-style: italic;
-                  }
-                `}</style>
-                <div 
-                  className="kb-content"
-                  dangerouslySetInnerHTML={{ __html: article.htmlContent || '' }}
-                />
-              </div>
+              <iframe
+                srcDoc={prepareHtmlForViewer(article.htmlContent || "")}
+                className="w-full h-full border-0"
+                sandbox="allow-same-origin allow-scripts"
+                title="Article Content"
+              />
             </div>
           )}
 
           {/* No content message */}
-          {((viewMode === 'pdf' && !hasPDF) || (viewMode === 'html' && !hasHTML)) && (
+          {((viewMode === "pdf" && !hasPDF) ||
+            (viewMode === "html" && !hasHTML)) && (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
                 <FileText size={64} className="mx-auto text-gray-400 mb-4" />
-                <p className="text-gray-600 text-lg">No {viewMode.toUpperCase()} content available</p>
+                <p className="text-gray-600 text-lg">
+                  No {viewMode.toUpperCase()} content available
+                </p>
               </div>
             </div>
           )}

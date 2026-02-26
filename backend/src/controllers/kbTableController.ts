@@ -1,13 +1,87 @@
-import { Request, Response } from 'express';
-import KBTable from '../models/KBTable';
-import KBArticle from '../models/KBArticle';
-import KBArticleLevelMapping from '../models/KBArticleLevelMapping';
-import mongoose from 'mongoose';
+import { Request, Response } from "express";
+import KBTable from "../models/KBTable";
+import KBArticle from "../models/KBArticle";
+import KBArticleLevelMapping from "../models/KBArticleLevelMapping";
+import mongoose from "mongoose";
+
+// Student role ID - used for public student portal access
+const STUDENT_ROLE_ID = "6915aeb10561bff7f36244a9";
+
+/**
+ * Build visibility filter for KB articles based on user authentication and role
+ */
+function buildVisibilityFilter(req: Request): any {
+  const user = (req as any).user;
+  const context = req.query.context as string;
+
+  // If context is student-portal and user is not authenticated, treat as Student role
+  if (!user && context === "student-portal") {
+    console.log(
+      "[KB_TABLE_VISIBILITY] Student portal context - applying Student role visibility",
+    );
+    return {
+      $or: [
+        { visibility: { $exists: false } },
+        { visibility: "all" },
+        { visibility: "public" },
+        {
+          visibility: "role_based",
+          visibleToRoles: new mongoose.Types.ObjectId(STUDENT_ROLE_ID),
+        },
+      ],
+    };
+  }
+
+  if (!user) {
+    // Unauthenticated user - can only see 'all' and 'public' articles
+    return {
+      $or: [
+        { visibility: { $exists: false } },
+        { visibility: "all" },
+        { visibility: "public" },
+      ],
+    };
+  }
+
+  // Support both 'role' and 'roleId' field names from different auth middlewares
+  let userRoleId: string | null = null;
+  const roleValue = user.roleId || user.role;
+
+  if (roleValue) {
+    if (typeof roleValue === "object" && roleValue._id) {
+      userRoleId = roleValue._id.toString();
+    } else if (typeof roleValue === "object" && roleValue.toString) {
+      userRoleId = roleValue.toString();
+    } else if (typeof roleValue === "string") {
+      userRoleId = roleValue;
+    }
+  }
+
+  // Authenticated user - can see 'all', 'internal', and role-based articles
+  const visibilityConditions: any[] = [
+    { visibility: { $exists: false } },
+    { visibility: "all" },
+    { visibility: "internal" },
+  ];
+
+  // Add role-based filter if user has a valid role ID (24 hex chars)
+  if (userRoleId && /^[0-9a-fA-F]{24}$/.test(userRoleId)) {
+    visibilityConditions.push({
+      visibility: "role_based",
+      visibleToRoles: new mongoose.Types.ObjectId(userRoleId),
+    });
+  }
+
+  return { $or: visibilityConditions };
+}
 
 /**
  * Create a new KB Table
  */
-export const createTable = async (req: Request, res: Response): Promise<void> => {
+export const createTable = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const {
       tableName,
@@ -26,7 +100,7 @@ export const createTable = async (req: Request, res: Response): Promise<void> =>
     if (!tableName || !projectId || !columns || columns.length === 0) {
       res.status(400).json({
         success: false,
-        message: 'Table name, project, and at least one column are required',
+        message: "Table name, project, and at least one column are required",
       });
       return;
     }
@@ -37,7 +111,7 @@ export const createTable = async (req: Request, res: Response): Promise<void> =>
       if (!col.columnName) {
         res.status(400).json({
           success: false,
-          message: 'All columns must have a name',
+          message: "All columns must have a name",
         });
         return;
       }
@@ -61,7 +135,7 @@ export const createTable = async (req: Request, res: Response): Promise<void> =>
       showSerialNumber: showSerialNumber !== false,
       isSearchable: isSearchable !== false,
       isPaginated: isPaginated !== false,
-      displayStyle: displayStyle || 'table',
+      displayStyle: displayStyle || "table",
       createdBy: userId,
     });
 
@@ -69,14 +143,14 @@ export const createTable = async (req: Request, res: Response): Promise<void> =>
 
     res.status(201).json({
       success: true,
-      message: 'KB Table created successfully',
+      message: "KB Table created successfully",
       data: newTable,
     });
   } catch (error: any) {
-    console.error('Create KB Table error:', error);
+    console.error("Create KB Table error:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to create KB Table',
+      message: "Failed to create KB Table",
       error: error.message,
     });
   }
@@ -87,11 +161,18 @@ export const createTable = async (req: Request, res: Response): Promise<void> =>
  */
 export const getTables = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { projectId, levelId, status, page = '1', limit = '50', includeRows = 'false' } = req.query;
+    const {
+      projectId,
+      levelId,
+      status,
+      page = "1",
+      limit = "50",
+      includeRows = "false",
+    } = req.query;
 
     const filter: any = {};
     // Only add project filter if projectId is provided and not 'all' (super admin view)
-    if (projectId && projectId !== 'all') filter.projectId = projectId;
+    if (projectId && projectId !== "all") filter.projectId = projectId;
     if (levelId) filter.levelIds = levelId; // Filter tables that contain this levelId
     if (status) filter.status = status;
 
@@ -100,20 +181,21 @@ export const getTables = async (req: Request, res: Response): Promise<void> => {
     const skip = (pageNum - 1) * limitNum;
 
     // Select only necessary fields, exclude heavy row data unless explicitly requested
-    const selectFields = includeRows === 'true' 
-      ? {} // Include all fields
-      : { rows: 0 }; // Exclude rows to reduce payload size
+    const selectFields =
+      includeRows === "true"
+        ? {} // Include all fields
+        : { rows: 0 }; // Exclude rows to reduce payload size
 
     const [tables, total] = await Promise.all([
       KBTable.find(filter, selectFields)
-        .populate('createdBy', 'email')
-        .populate('updatedBy', 'email')
-        .populate('levelIds', 'levelName')
+        .populate("createdBy", "email")
+        .populate("updatedBy", "email")
+        .populate("levelIds", "levelName")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limitNum)
         .lean(),
-      KBTable.countDocuments(filter)
+      KBTable.countDocuments(filter),
     ]);
 
     res.json({
@@ -123,14 +205,14 @@ export const getTables = async (req: Request, res: Response): Promise<void> => {
         total,
         page: pageNum,
         limit: limitNum,
-        pages: Math.ceil(total / limitNum)
-      }
+        pages: Math.ceil(total / limitNum),
+      },
     });
   } catch (error: any) {
-    console.error('Get KB Tables error:', error);
+    console.error("Get KB Tables error:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch KB Tables',
+      message: "Failed to fetch KB Tables",
       error: error.message,
     });
   }
@@ -140,7 +222,10 @@ export const getTables = async (req: Request, res: Response): Promise<void> => {
  * Get a single KB Table by ID for public viewing
  * For tables with dataSource='articles', dynamically fetch fresh data from articles
  */
-export const getPublicTable = async (req: Request, res: Response): Promise<void> => {
+export const getPublicTable = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { id } = req.params;
     const { levelId } = req.query; // Optional: filter by specific level
@@ -148,45 +233,57 @@ export const getPublicTable = async (req: Request, res: Response): Promise<void>
     if (!mongoose.Types.ObjectId.isValid(id)) {
       res.status(400).json({
         success: false,
-        message: 'Invalid table ID',
+        message: "Invalid table ID",
       });
       return;
     }
 
     const table = await KBTable.findById(id)
-      .populate('createdBy', 'name email')
-      .populate('updatedBy', 'name email')
-      .populate('levelIds', 'levelName levelIcon')
+      .populate("createdBy", "name email")
+      .populate("updatedBy", "name email")
+      .populate("levelIds", "levelName levelIcon")
       .lean();
 
     if (!table) {
       res.status(404).json({
         success: false,
-        message: 'Table not found',
+        message: "Table not found",
       });
       return;
     }
 
     // If table uses article data source, dynamically fetch fresh data from articles
-    if (table.dataSource === 'articles') {
-      console.log(`📊 Dynamically fetching article data for table: ${table.tableName}${levelId ? ` (filtered by level: ${levelId})` : ''}`);
-      
+    if (table.dataSource === "articles") {
+      console.log(
+        `📊 Dynamically fetching article data for table: ${table.tableName}${levelId ? ` (filtered by level: ${levelId})` : ""}`,
+      );
+
+      // Build visibility filter based on user authentication and role
+      const visibilityFilter = buildVisibilityFilter(req);
+      console.log(`📊 Visibility filter:`, JSON.stringify(visibilityFilter));
+
       // Build article query based on project and level mappings (same as populate logic)
       let articleQuery: any = {
         projectIds: table.projectId,
-        status: 'active',
+        status: "active",
+        ...visibilityFilter, // Apply visibility filter
       };
 
       // If levelId is provided in query, filter by that specific level only
       // Otherwise, get articles from all table's associated levels
-      const targetLevelIds = levelId && mongoose.Types.ObjectId.isValid(levelId as string)
-        ? [levelId]
-        : (table.levelIds && table.levelIds.length > 0 ? table.levelIds.map((l: any) => l._id || l) : []);
+      const targetLevelIds =
+        levelId && mongoose.Types.ObjectId.isValid(levelId as string)
+          ? [levelId]
+          : table.levelIds && table.levelIds.length > 0
+            ? table.levelIds.map((l: any) => l._id || l)
+            : [];
 
       if (targetLevelIds.length > 0) {
-        const mappings = await KBArticleLevelMapping.find({ levelId: { $in: targetLevelIds } });
-        const articleIds = mappings.map(m => m.articleId);
-        
+        const mappings = await KBArticleLevelMapping.find({
+          levelId: { $in: targetLevelIds },
+        });
+        const articleIds = mappings.map((m) => m.articleId);
+
         if (articleIds.length > 0) {
           articleQuery._id = { $in: articleIds };
         } else {
@@ -194,7 +291,7 @@ export const getPublicTable = async (req: Request, res: Response): Promise<void>
           articleQuery._id = { $in: [] };
         }
       }
-      
+
       const articles = await KBArticle.find(articleQuery)
         .sort({ displayOrder: 1, publishedDate: -1 })
         .lean();
@@ -204,39 +301,42 @@ export const getPublicTable = async (req: Request, res: Response): Promise<void>
       // Map articles to rows using column field mappings
       const dynamicRows = articles.map((article, index) => {
         const rowData: any = {};
-        
-        table.columns.forEach(column => {
+
+        table.columns.forEach((column) => {
           const fieldMapping = column.articleFieldMapping || [];
           let value = null;
 
-          console.log(`   Column "${column.columnName}" field mapping:`, fieldMapping);
+          console.log(
+            `   Column "${column.columnName}" field mapping:`,
+            fieldMapping,
+          );
 
           // Try each mapped field until we find a non-empty value
           for (const field of fieldMapping) {
-            if (field === 'pdfUrl' && article.pdfUrl) {
+            if (field === "pdfUrl" && article.pdfUrl) {
               value = article.pdfUrl;
               break;
-            } else if (field === 'externalUrl' && article.externalUrl) {
+            } else if (field === "externalUrl" && article.externalUrl) {
               value = article.externalUrl;
               break;
-            } else if (field === 'htmlContent' && article.htmlContent) {
+            } else if (field === "htmlContent" && article.htmlContent) {
               // For HTML content, return article link so it can be viewed in modal
               value = `/kb/articles/${article._id}`;
               break;
-            } else if (field === 'articleLink') {
+            } else if (field === "articleLink") {
               value = `/kb/articles/${article._id}`;
               break;
-            } else if (field === 'documentName') {
+            } else if (field === "documentName") {
               value = article.documentName;
               break;
-            } else if (field === 'description') {
+            } else if (field === "description") {
               value = article.description;
               break;
-            } else if (field === 'publishedDate') {
+            } else if (field === "publishedDate") {
               value = article.publishedDate;
               break;
-            } else if (field === 'showNewTag') {
-              value = article.showNewTag ? 'Yes' : 'No';
+            } else if (field === "showNewTag") {
+              value = article.showNewTag ? "Yes" : "No";
               break;
             } else if ((article as any)[field]) {
               value = (article as any)[field];
@@ -244,13 +344,13 @@ export const getPublicTable = async (req: Request, res: Response): Promise<void>
             }
           }
 
-          rowData[column.columnName] = value || 'N/A';
+          rowData[column.columnName] = value || "N/A";
         });
 
         return {
           _id: article._id,
           rowData,
-          order: index + 1
+          order: index + 1,
         };
       });
 
@@ -264,10 +364,10 @@ export const getPublicTable = async (req: Request, res: Response): Promise<void>
       data: table,
     });
   } catch (error: any) {
-    console.error('Get public KB Table error:', error);
+    console.error("Get public KB Table error:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch KB Table',
+      message: "Failed to fetch KB Table",
       error: error.message,
     });
   }
@@ -276,28 +376,31 @@ export const getPublicTable = async (req: Request, res: Response): Promise<void>
 /**
  * Get a single KB Table by ID (for editing)
  */
-export const getTableById = async (req: Request, res: Response): Promise<void> => {
+export const getTableById = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       res.status(400).json({
         success: false,
-        message: 'Invalid table ID',
+        message: "Invalid table ID",
       });
       return;
     }
 
     const table = await KBTable.findById(id)
-      .populate('createdBy', 'name email')
-      .populate('updatedBy', 'name email')
-      .populate('levelIds', 'levelName levelIcon')
+      .populate("createdBy", "name email")
+      .populate("updatedBy", "name email")
+      .populate("levelIds", "levelName levelIcon")
       .lean();
 
     if (!table) {
       res.status(404).json({
         success: false,
-        message: 'Table not found',
+        message: "Table not found",
       });
       return;
     }
@@ -307,10 +410,10 @@ export const getTableById = async (req: Request, res: Response): Promise<void> =
       data: table,
     });
   } catch (error: any) {
-    console.error('Get KB Table by ID error:', error);
+    console.error("Get KB Table by ID error:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch KB Table',
+      message: "Failed to fetch KB Table",
       error: error.message,
     });
   }
@@ -319,7 +422,10 @@ export const getTableById = async (req: Request, res: Response): Promise<void> =
 /**
  * Update KB Table structure (columns, settings)
  */
-export const updateTable = async (req: Request, res: Response): Promise<void> => {
+export const updateTable = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { id } = req.params;
     const {
@@ -338,7 +444,7 @@ export const updateTable = async (req: Request, res: Response): Promise<void> =>
     if (!mongoose.Types.ObjectId.isValid(id)) {
       res.status(400).json({
         success: false,
-        message: 'Invalid table ID',
+        message: "Invalid table ID",
       });
       return;
     }
@@ -347,7 +453,7 @@ export const updateTable = async (req: Request, res: Response): Promise<void> =>
     if (!table) {
       res.status(404).json({
         success: false,
-        message: 'Table not found',
+        message: "Table not found",
       });
       return;
     }
@@ -355,62 +461,74 @@ export const updateTable = async (req: Request, res: Response): Promise<void> =>
     // Update fields
     if (tableName) table.tableName = tableName;
     if (description !== undefined) table.description = description;
-    if (levelIds !== undefined) table.levelIds = Array.isArray(levelIds) ? levelIds : levelIds ? [levelIds] : [];
-    
+    if (levelIds !== undefined)
+      table.levelIds = Array.isArray(levelIds)
+        ? levelIds
+        : levelIds
+          ? [levelIds]
+          : [];
+
     // Handle column updates and rename row data keys if column names changed
     if (columns) {
       const oldColumns = table.columns;
       const columnNameMap: { [oldName: string]: string } = {};
-      
+
       // Build a map of old column names to new column names
       oldColumns.forEach((oldCol, index) => {
         if (columns[index] && oldCol.columnName !== columns[index].columnName) {
           columnNameMap[oldCol.columnName] = columns[index].columnName;
         }
       });
-      
+
       // Update row data keys if column names changed
-      if (Object.keys(columnNameMap).length > 0 && table.rows && table.rows.length > 0) {
-        table.rows = table.rows.map(row => {
+      if (
+        Object.keys(columnNameMap).length > 0 &&
+        table.rows &&
+        table.rows.length > 0
+      ) {
+        table.rows = table.rows.map((row) => {
           const newRowData: any = {};
-          Object.keys(row.rowData).forEach(oldKey => {
+          Object.keys(row.rowData).forEach((oldKey) => {
             const newKey = columnNameMap[oldKey] || oldKey;
             newRowData[newKey] = row.rowData[oldKey];
           });
           return {
             ...row,
-            rowData: newRowData
+            rowData: newRowData,
           };
         });
       }
-      
+
       table.columns = columns;
     }
-    
+
     if (status) table.status = status;
-    if (showSerialNumber !== undefined) table.showSerialNumber = showSerialNumber;
+    if (showSerialNumber !== undefined)
+      table.showSerialNumber = showSerialNumber;
     if (isSearchable !== undefined) table.isSearchable = isSearchable;
     if (isPaginated !== undefined) table.isPaginated = isPaginated;
     if (displayStyle !== undefined) {
-      console.log(`📊 Updating displayStyle from "${table.displayStyle}" to "${displayStyle}"`);
+      console.log(
+        `📊 Updating displayStyle from "${table.displayStyle}" to "${displayStyle}"`,
+      );
       table.displayStyle = displayStyle;
     }
     table.updatedBy = userId;
 
     await table.save();
-    
+
     console.log(`✅ Table saved. displayStyle is now: ${table.displayStyle}`);
 
     res.json({
       success: true,
-      message: 'Table updated successfully',
+      message: "Table updated successfully",
       data: table,
     });
   } catch (error: any) {
-    console.error('Update KB Table error:', error);
+    console.error("Update KB Table error:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to update KB Table',
+      message: "Failed to update KB Table",
       error: error.message,
     });
   }
@@ -427,7 +545,7 @@ export const addRow = async (req: Request, res: Response): Promise<void> => {
     if (!mongoose.Types.ObjectId.isValid(id)) {
       res.status(400).json({
         success: false,
-        message: 'Invalid table ID',
+        message: "Invalid table ID",
       });
       return;
     }
@@ -436,13 +554,13 @@ export const addRow = async (req: Request, res: Response): Promise<void> => {
     if (!table) {
       res.status(404).json({
         success: false,
-        message: 'Table not found',
+        message: "Table not found",
       });
       return;
     }
 
     // Validate row data against columns
-    const requiredColumns = table.columns.filter(col => col.isRequired);
+    const requiredColumns = table.columns.filter((col) => col.isRequired);
     for (const col of requiredColumns) {
       if (!rowData[col.columnName]) {
         res.status(400).json({
@@ -463,14 +581,14 @@ export const addRow = async (req: Request, res: Response): Promise<void> => {
 
     res.json({
       success: true,
-      message: 'Row added successfully',
+      message: "Row added successfully",
       data: table,
     });
   } catch (error: any) {
-    console.error('Add row error:', error);
+    console.error("Add row error:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to add row',
+      message: "Failed to add row",
       error: error.message,
     });
   }
@@ -487,7 +605,7 @@ export const updateRow = async (req: Request, res: Response): Promise<void> => {
     if (!mongoose.Types.ObjectId.isValid(id)) {
       res.status(400).json({
         success: false,
-        message: 'Invalid table ID',
+        message: "Invalid table ID",
       });
       return;
     }
@@ -496,16 +614,16 @@ export const updateRow = async (req: Request, res: Response): Promise<void> => {
     if (!table) {
       res.status(404).json({
         success: false,
-        message: 'Table not found',
+        message: "Table not found",
       });
       return;
     }
 
-    const rowIndex = table.rows.findIndex(r => r._id?.toString() === rowId);
+    const rowIndex = table.rows.findIndex((r) => r._id?.toString() === rowId);
     if (rowIndex === -1) {
       res.status(404).json({
         success: false,
-        message: 'Row not found',
+        message: "Row not found",
       });
       return;
     }
@@ -515,14 +633,14 @@ export const updateRow = async (req: Request, res: Response): Promise<void> => {
 
     res.json({
       success: true,
-      message: 'Row updated successfully',
+      message: "Row updated successfully",
       data: table,
     });
   } catch (error: any) {
-    console.error('Update row error:', error);
+    console.error("Update row error:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to update row',
+      message: "Failed to update row",
       error: error.message,
     });
   }
@@ -538,7 +656,7 @@ export const deleteRow = async (req: Request, res: Response): Promise<void> => {
     if (!mongoose.Types.ObjectId.isValid(id)) {
       res.status(400).json({
         success: false,
-        message: 'Invalid table ID',
+        message: "Invalid table ID",
       });
       return;
     }
@@ -547,24 +665,24 @@ export const deleteRow = async (req: Request, res: Response): Promise<void> => {
     if (!table) {
       res.status(404).json({
         success: false,
-        message: 'Table not found',
+        message: "Table not found",
       });
       return;
     }
 
-    table.rows = table.rows.filter(r => r._id?.toString() !== rowId);
+    table.rows = table.rows.filter((r) => r._id?.toString() !== rowId);
     await table.save();
 
     res.json({
       success: true,
-      message: 'Row deleted successfully',
+      message: "Row deleted successfully",
       data: table,
     });
   } catch (error: any) {
-    console.error('Delete row error:', error);
+    console.error("Delete row error:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to delete row',
+      message: "Failed to delete row",
       error: error.message,
     });
   }
@@ -573,14 +691,17 @@ export const deleteRow = async (req: Request, res: Response): Promise<void> => {
 /**
  * Delete KB Table
  */
-export const deleteTable = async (req: Request, res: Response): Promise<void> => {
+export const deleteTable = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       res.status(400).json({
         success: false,
-        message: 'Invalid table ID',
+        message: "Invalid table ID",
       });
       return;
     }
@@ -589,20 +710,20 @@ export const deleteTable = async (req: Request, res: Response): Promise<void> =>
     if (!table) {
       res.status(404).json({
         success: false,
-        message: 'Table not found',
+        message: "Table not found",
       });
       return;
     }
 
     res.json({
       success: true,
-      message: 'Table deleted successfully',
+      message: "Table deleted successfully",
     });
   } catch (error: any) {
-    console.error('Delete KB Table error:', error);
+    console.error("Delete KB Table error:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to delete KB Table',
+      message: "Failed to delete KB Table",
       error: error.message,
     });
   }
@@ -611,7 +732,10 @@ export const deleteTable = async (req: Request, res: Response): Promise<void> =>
 /**
  * Populate table rows from KB Articles based on column mappings
  */
-export const populateTableFromArticles = async (req: Request, res: Response): Promise<void> => {
+export const populateTableFromArticles = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { id } = req.params;
 
@@ -620,17 +744,19 @@ export const populateTableFromArticles = async (req: Request, res: Response): Pr
     if (!table) {
       res.status(404).json({
         success: false,
-        message: 'Table not found',
+        message: "Table not found",
       });
       return;
     }
 
     // Check if table has article mappings
-    const mappedColumns = table.columns.filter(col => col.articleFieldMapping);
+    const mappedColumns = table.columns.filter(
+      (col) => col.articleFieldMapping,
+    );
     if (mappedColumns.length === 0) {
       res.status(400).json({
         success: false,
-        message: 'No article field mappings configured for this table',
+        message: "No article field mappings configured for this table",
       });
       return;
     }
@@ -638,26 +764,31 @@ export const populateTableFromArticles = async (req: Request, res: Response): Pr
     // Fetch articles based on project and level
     let articleQuery: any = {
       projectIds: table.projectId,
-      status: 'active',
+      status: "active",
     };
 
     // If table is associated with specific levels, get articles from those levels
     if (table.levelIds && table.levelIds.length > 0) {
-      const mappings = await KBArticleLevelMapping.find({ levelId: { $in: table.levelIds } });
-      const articleIds = mappings.map(m => m.articleId);
+      const mappings = await KBArticleLevelMapping.find({
+        levelId: { $in: table.levelIds },
+      });
+      const articleIds = mappings.map((m) => m.articleId);
       articleQuery._id = { $in: articleIds };
     }
 
-    const articles = await KBArticle.find(articleQuery).sort({ displayOrder: 1, createdAt: -1 });
+    const articles = await KBArticle.find(articleQuery).sort({
+      displayOrder: 1,
+      createdAt: -1,
+    });
 
     console.log(`📊 Found ${articles.length} articles for table population`);
     if (articles.length > 0) {
-      console.log('Sample article fields:', {
+      console.log("Sample article fields:", {
         id: articles[0]._id,
         documentName: articles[0].documentName,
         pdfUrl: articles[0].pdfUrl,
         externalUrl: articles[0].externalUrl,
-        documentType: articles[0].documentType
+        documentType: articles[0].documentType,
       });
     }
 
@@ -667,69 +798,92 @@ export const populateTableFromArticles = async (req: Request, res: Response): Pr
     // Populate rows from articles
     articles.forEach((article, index) => {
       const rowData: any = {};
-      
-      table.columns.forEach(column => {
-        if (column.articleFieldMapping && column.articleFieldMapping.length > 0) {
+
+      table.columns.forEach((column) => {
+        if (
+          column.articleFieldMapping &&
+          column.articleFieldMapping.length > 0
+        ) {
           let value: any = null;
-          
-          console.log(`🔍 Column "${column.columnName}" mapped to:`, column.articleFieldMapping);
-          
+
+          console.log(
+            `🔍 Column "${column.columnName}" mapped to:`,
+            column.articleFieldMapping,
+          );
+
           // Helper function to get value for a field
           const getFieldValue = (fieldName: string): any => {
             switch (fieldName) {
-              case 'documentName':
+              case "documentName":
                 return article.documentName;
-              case 'documentType':
+              case "documentType":
                 return article.documentType;
-              case 'description':
+              case "description":
                 return article.description;
-              case 'author':
+              case "author":
                 return article.author;
-              case 'publishedAt':
-                return article.publishedAt ? new Date(article.publishedAt).toLocaleDateString() : null;
-              case 'publishedDate':
-                return article.publishedDate ? new Date(article.publishedDate).toLocaleDateString() : null;
-              case 'viewsCount':
+              case "publishedAt":
+                return article.publishedAt
+                  ? new Date(article.publishedAt).toLocaleDateString()
+                  : null;
+              case "publishedDate":
+                return article.publishedDate
+                  ? new Date(article.publishedDate).toLocaleDateString()
+                  : null;
+              case "viewsCount":
                 return article.viewsCount || 0;
-              case 'status':
+              case "status":
                 return article.status;
-              case 'tags':
-                return article.tags && article.tags.length > 0 ? article.tags.join(', ') : null;
-              case 'pdfUrl':
+              case "tags":
+                return article.tags && article.tags.length > 0
+                  ? article.tags.join(", ")
+                  : null;
+              case "pdfUrl":
                 console.log(`  📎 Checking pdfUrl: ${article.pdfUrl}`);
                 return article.pdfUrl;
-              case 'htmlContent':
-                return article.htmlContent ? article.htmlContent.substring(0, 100) + '...' : null;
-              case 'externalUrl':
-                console.log(`  🔗 Checking externalUrl: ${article.externalUrl}`);
+              case "htmlContent":
+                return article.htmlContent
+                  ? article.htmlContent.substring(0, 100) + "..."
+                  : null;
+              case "externalUrl":
+                console.log(
+                  `  🔗 Checking externalUrl: ${article.externalUrl}`,
+                );
                 return article.externalUrl;
-              case 'isFeatured':
-                return article.isFeatured ? 'Yes' : 'No';
-              case 'showNewTag':
-                return article.showNewTag ? 'Yes' : 'No';
-              case 'articleId':
+              case "isFeatured":
+                return article.isFeatured ? "Yes" : "No";
+              case "showNewTag":
+                return article.showNewTag ? "Yes" : "No";
+              case "articleId":
                 return article._id.toString();
-              case 'articleLink':
+              case "articleLink":
                 return `/kb-new/viewer?article=${article._id}`;
               default:
                 return null;
             }
           };
-          
+
           // Try each mapped field in order until we find a non-null/non-empty value
           for (const fieldName of column.articleFieldMapping) {
             const fieldValue = getFieldValue(fieldName);
             console.log(`  ✓ Field "${fieldName}" returned:`, fieldValue);
-            if (fieldValue !== null && fieldValue !== undefined && fieldValue !== '') {
+            if (
+              fieldValue !== null &&
+              fieldValue !== undefined &&
+              fieldValue !== ""
+            ) {
               value = fieldValue;
               console.log(`  ✅ Using value: ${value}`);
               break;
             }
           }
-          
+
           // If no value found from any mapping, use 'N/A'
-          rowData[column.columnName] = value || 'N/A';
-          console.log(`  Final value for "${column.columnName}":`, rowData[column.columnName]);
+          rowData[column.columnName] = value || "N/A";
+          console.log(
+            `  Final value for "${column.columnName}":`,
+            rowData[column.columnName],
+          );
         }
       });
 
@@ -747,10 +901,10 @@ export const populateTableFromArticles = async (req: Request, res: Response): Pr
       data: table,
     });
   } catch (error: any) {
-    console.error('Error populating table from articles:', error);
+    console.error("Error populating table from articles:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to populate table from articles',
+      message: "Failed to populate table from articles",
       error: error.message,
     });
   }

@@ -1,12 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import { Table, Download, ExternalLink, Calendar, X, Search } from 'lucide-react';
-import { API_CONFIG } from '../../config/constants';
-import ContentViewerModal from './ContentViewerModal';
+import React, { useState, useEffect } from "react";
+import axios from "axios";
+import {
+  Table,
+  Download,
+  ExternalLink,
+  Calendar,
+  X,
+  Search,
+} from "lucide-react";
+import { API_CONFIG } from "../../config/constants";
+import ContentViewerModal from "./ContentViewerModal";
 
 interface TableColumn {
   columnName: string;
-  columnType: 'text' | 'number' | 'date' | 'url' | 'file';
+  columnType: "text" | "number" | "date" | "url" | "file";
   isRequired: boolean;
   order: number;
   articleFieldMapping?: string;
@@ -22,7 +29,7 @@ interface KBTableData {
   _id: string;
   tableName: string;
   description?: string;
-  displayStyle?: 'table' | 'tiles';
+  displayStyle?: "table" | "tiles";
   columns: TableColumn[];
   rows: TableRow[];
   showSerialNumber: boolean;
@@ -36,18 +43,20 @@ interface KBTableViewerProps {
   onClose?: () => void;
   showHeader?: boolean;
   autoPopulate?: boolean;
+  isStudentPortal?: boolean; // When true, adds student-portal context for visibility filtering
 }
 
-const KBTableViewer: React.FC<KBTableViewerProps> = ({ 
-  tableId, 
+const KBTableViewer: React.FC<KBTableViewerProps> = ({
+  tableId,
   levelId,
-  onClose, 
-  showHeader = true, 
-  autoPopulate = true 
+  onClose,
+  showHeader = true,
+  autoPopulate = true,
+  isStudentPortal = false,
 }) => {
   const [table, setTable] = useState<KBTableData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [viewingArticleId, setViewingArticleId] = useState<string | null>(null);
   const itemsPerPage = 10;
@@ -59,7 +68,7 @@ const KBTableViewer: React.FC<KBTableViewerProps> = ({
   const fetchTable = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const headers: Record<string, string> = {};
       if (token) {
         headers.Authorization = `Bearer ${token}`;
@@ -69,48 +78,55 @@ const KBTableViewer: React.FC<KBTableViewerProps> = ({
       if (levelId) {
         params.levelId = levelId;
       }
+      // Add student-portal context for visibility filtering when unauthenticated
+      if (isStudentPortal && !token) {
+        params.context = "student-portal";
+      }
       const response = await axios.get(
         `${API_CONFIG.API_URL}/kb/tables/public/${tableId}`,
-        { headers, params }
+        { headers, params },
       );
       // Set default displayStyle for backward compatibility
       const tableData = response.data.data;
       if (!tableData.displayStyle) {
-        tableData.displayStyle = 'table';
+        tableData.displayStyle = "table";
       }
       setTable(tableData);
-      
+
       // Auto-populate table from articles if enabled and no rows exist
-      if (autoPopulate && (!response.data.data.rows || response.data.data.rows.length === 0)) {
-        await populateFromArticles(tableId, token || '');
+      if (
+        autoPopulate &&
+        (!response.data.data.rows || response.data.data.rows.length === 0)
+      ) {
+        await populateFromArticles(tableId, token || "");
         // Refetch after population
         const updatedResponse = await axios.get(
           `${API_CONFIG.API_URL}/kb/tables/public/${tableId}`,
-          { headers, params }
+          { headers, params },
         );
         // Set default displayStyle for backward compatibility
         const updatedTableData = updatedResponse.data.data;
         if (!updatedTableData.displayStyle) {
-          updatedTableData.displayStyle = 'table';
+          updatedTableData.displayStyle = "table";
         }
         setTable(updatedTableData);
       }
     } catch (error) {
-      console.error('Failed to fetch table:', error);
+      console.error("Failed to fetch table:", error);
     } finally {
       setLoading(false);
     }
   };
-  
+
   const populateFromArticles = async (id: string, token: string) => {
     try {
       await axios.post(
         `${API_CONFIG.API_URL}/kb/tables/${id}/populate-from-articles`,
         {},
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
     } catch (error) {
-      console.error('Failed to populate table:', error);
+      console.error("Failed to populate table:", error);
     }
   };
 
@@ -131,57 +147,79 @@ const KBTableViewer: React.FC<KBTableViewerProps> = ({
   }
 
   // Filter rows based on search query
-  const filteredRows = table.isSearchable && searchQuery
-    ? table.rows.filter(row =>
-        Object.values(row.rowData).some(value =>
-          String(value).toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredRows =
+    table.isSearchable && searchQuery
+      ? table.rows.filter((row) =>
+          Object.values(row.rowData).some((value) =>
+            String(value).toLowerCase().includes(searchQuery.toLowerCase()),
+          ),
         )
-      )
-    : table.rows;
+      : table.rows;
 
   // Pagination
-  const totalPages = table.isPaginated ? Math.ceil(filteredRows.length / itemsPerPage) : 1;
+  const totalPages = table.isPaginated
+    ? Math.ceil(filteredRows.length / itemsPerPage)
+    : 1;
   const paginatedRows = table.isPaginated
-    ? filteredRows.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+    ? filteredRows.slice(
+        (currentPage - 1) * itemsPerPage,
+        currentPage * itemsPerPage,
+      )
     : filteredRows;
 
   const sortedColumns = [...table.columns].sort((a, b) => a.order - b.order);
 
-  const renderCellContent = (column: TableColumn, value: any, row: TableRow) => {
-    if (!value || value === 'N/A') {
+  const renderCellContent = (
+    column: TableColumn,
+    value: any,
+    row: TableRow,
+  ) => {
+    if (!value || value === "N/A") {
       return <span className="text-gray-400 italic">N/A</span>;
     }
 
     // Handle showNewTag field - render as badge instead of text
-    if (column.columnName.toLowerCase().includes('new') || column.articleFieldMapping?.includes('showNewTag') || value === 'Yes' || value === 'No' || value === true || value === false) {
-      if (value === 'Yes' || value === true) {
+    if (
+      column.columnName.toLowerCase().includes("new") ||
+      column.articleFieldMapping?.includes("showNewTag") ||
+      value === "Yes" ||
+      value === "No" ||
+      value === true ||
+      value === false
+    ) {
+      if (value === "Yes" || value === true) {
         return (
           <span className="inline-flex items-center px-2.5 py-1 text-xs font-bold rounded-md bg-gradient-to-r from-red-500 to-pink-500 text-white shadow-lg animate-pulse">
             🔥 NEW
           </span>
         );
-      } else if (value === 'No' || value === false) {
+      } else if (value === "No" || value === false) {
         return <span className="text-gray-400 text-xs">—</span>;
       }
     }
 
     // Auto-detect URLs even if column type is 'text'
-    const isUrl = typeof value === 'string' && (
-      value.startsWith('http://') || 
-      value.startsWith('https://') || 
-      value.startsWith('www.') ||
-      value.startsWith('/kb')
-    );
+    const isUrl =
+      typeof value === "string" &&
+      (value.startsWith("http://") ||
+        value.startsWith("https://") ||
+        value.startsWith("www.") ||
+        value.startsWith("/kb"));
 
     // Special handling for columns named 'View', 'Download', 'Link', 'URL', etc.
-    const isLinkColumn = column.columnName.toLowerCase().match(/view|download|link|url|open/);
+    const isLinkColumn = column.columnName
+      .toLowerCase()
+      .match(/view|download|link|url|open/);
 
     // If it's a URL or looks like a link column with a URL value, render as link
-    if ((column.columnType === 'url' || isUrl || (isLinkColumn && isUrl)) && typeof value === 'string') {
+    if (
+      (column.columnType === "url" || isUrl || (isLinkColumn && isUrl)) &&
+      typeof value === "string"
+    ) {
       // Check if this is a KB article link (contains article ID)
-      const isKBArticle = value.includes('/kb/') || row._id;
-      const isExternalUrl = value.startsWith('http');
-      
+      const isKBArticle = value.includes("/kb/") || row._id;
+      const isExternalUrl = value.startsWith("http");
+
       if (isKBArticle && row._id) {
         // Open in modal for PDF/HTML content
         return (
@@ -190,7 +228,11 @@ const KBTableViewer: React.FC<KBTableViewerProps> = ({
             className="text-blue-600 hover:text-blue-800 flex items-center gap-1 hover:underline"
           >
             <ExternalLink size={16} />
-            <span>{column.columnName.toLowerCase().includes('download') ? 'Download' : 'View'}</span>
+            <span>
+              {column.columnName.toLowerCase().includes("download")
+                ? "Download"
+                : "View"}
+            </span>
           </button>
         );
       } else if (isExternalUrl) {
@@ -216,14 +258,18 @@ const KBTableViewer: React.FC<KBTableViewerProps> = ({
             className="text-blue-600 hover:text-blue-800 flex items-center gap-1 hover:underline"
           >
             <ExternalLink size={16} />
-            <span>{column.columnName.toLowerCase().includes('download') ? 'Download' : 'View'}</span>
+            <span>
+              {column.columnName.toLowerCase().includes("download")
+                ? "Download"
+                : "View"}
+            </span>
           </a>
         );
       }
     }
 
     switch (column.columnType) {
-      case 'file':
+      case "file":
         return (
           <a
             href={value}
@@ -234,10 +280,18 @@ const KBTableViewer: React.FC<KBTableViewerProps> = ({
             <span>Download</span>
           </a>
         );
-      case 'date':
-        return <span className="text-gray-900">{new Date(value).toLocaleDateString()}</span>;
-      case 'number':
-        return <span className="font-medium text-gray-900">{typeof value === 'number' ? value.toLocaleString() : value}</span>;
+      case "date":
+        return (
+          <span className="text-gray-900">
+            {new Date(value).toLocaleDateString()}
+          </span>
+        );
+      case "number":
+        return (
+          <span className="font-medium text-gray-900">
+            {typeof value === "number" ? value.toLocaleString() : value}
+          </span>
+        );
       default:
         return <span className="text-gray-900">{value}</span>;
     }
@@ -285,7 +339,7 @@ const KBTableViewer: React.FC<KBTableViewerProps> = ({
           )}
         </div>
       )}
-      
+
       {/* Search (when header is hidden) */}
       {!showHeader && table.isSearchable && (
         <div className="p-6 bg-gradient-to-r from-blue-50 to-indigo-50">
@@ -308,14 +362,16 @@ const KBTableViewer: React.FC<KBTableViewerProps> = ({
       )}
 
       {/* Table */}
-      {table.displayStyle === 'tiles' ? (
+      {table.displayStyle === "tiles" ? (
         /* Tile View */
         <div className="p-8 bg-gray-100">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {paginatedRows.length === 0 ? (
               <div className="col-span-full text-center py-16 text-gray-500">
                 <div className="text-6xl mb-4">📋</div>
-                <p className="text-lg">{searchQuery ? 'No results found' : 'No data available'}</p>
+                <p className="text-lg">
+                  {searchQuery ? "No results found" : "No data available"}
+                </p>
               </div>
             ) : (
               paginatedRows.map((row, index) => (
@@ -330,11 +386,17 @@ const KBTableViewer: React.FC<KBTableViewerProps> = ({
                         <div className="flex items-start justify-between gap-2">
                           <span className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-1.5 flex items-center gap-1">
                             {column.columnName}
-                            {column.isRequired && <span className="text-red-500">*</span>}
+                            {column.isRequired && (
+                              <span className="text-red-500">*</span>
+                            )}
                           </span>
                         </div>
                         <div className="text-sm font-medium text-gray-900 mt-1">
-                          {renderCellContent(column, row.rowData[column.columnName], row)}
+                          {renderCellContent(
+                            column,
+                            row.rowData[column.columnName],
+                            row,
+                          )}
                         </div>
                       </div>
                     ))}
@@ -358,11 +420,13 @@ const KBTableViewer: React.FC<KBTableViewerProps> = ({
                 {sortedColumns.map((column, idx) => (
                   <th
                     key={column.columnName}
-                    className={`px-6 py-4 text-left text-sm font-bold ${idx < sortedColumns.length - 1 ? 'border-r border-blue-500' : ''}`}
+                    className={`px-6 py-4 text-left text-sm font-bold ${idx < sortedColumns.length - 1 ? "border-r border-blue-500" : ""}`}
                   >
                     <div className="flex items-center gap-2">
                       {column.columnName}
-                      {column.isRequired && <span className="text-red-300">*</span>}
+                      {column.isRequired && (
+                        <span className="text-red-300">*</span>
+                      )}
                     </div>
                   </th>
                 ))}
@@ -372,18 +436,25 @@ const KBTableViewer: React.FC<KBTableViewerProps> = ({
               {paginatedRows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={sortedColumns.length + (table.showSerialNumber ? 1 : 0)}
+                    colSpan={
+                      sortedColumns.length + (table.showSerialNumber ? 1 : 0)
+                    }
                     className="px-6 py-16 text-center border-b border-gray-200"
                   >
                     <div className="text-gray-500">
                       <div className="text-5xl mb-3">📋</div>
-                      <p className="text-lg">{searchQuery ? 'No results found' : 'No data available'}</p>
+                      <p className="text-lg">
+                        {searchQuery ? "No results found" : "No data available"}
+                      </p>
                     </div>
                   </td>
                 </tr>
               ) : (
                 paginatedRows.map((row, index) => (
-                  <tr key={row._id} className="hover:bg-blue-50 transition-all duration-200 border-b border-gray-200 group">
+                  <tr
+                    key={row._id}
+                    className="hover:bg-blue-50 transition-all duration-200 border-b border-gray-200 group"
+                  >
                     {table.showSerialNumber && (
                       <td className="px-6 py-5 text-sm font-semibold text-gray-900 border-r border-gray-200">
                         <div className="flex items-center gap-2">
@@ -394,8 +465,15 @@ const KBTableViewer: React.FC<KBTableViewerProps> = ({
                       </td>
                     )}
                     {sortedColumns.map((column, idx) => (
-                      <td key={column.columnName} className={`px-6 py-5 text-sm ${idx < sortedColumns.length - 1 ? 'border-r border-gray-200' : ''}`}>
-                        {renderCellContent(column, row.rowData[column.columnName], row)}
+                      <td
+                        key={column.columnName}
+                        className={`px-6 py-5 text-sm ${idx < sortedColumns.length - 1 ? "border-r border-gray-200" : ""}`}
+                      >
+                        {renderCellContent(
+                          column,
+                          row.rowData[column.columnName],
+                          row,
+                        )}
                       </td>
                     ))}
                   </tr>
@@ -410,9 +488,19 @@ const KBTableViewer: React.FC<KBTableViewerProps> = ({
       {table.isPaginated && totalPages > 1 && (
         <div className="px-6 py-5 bg-gradient-to-r from-gray-50 to-blue-50 border-t border-gray-200 flex items-center justify-between">
           <div className="text-sm font-medium text-gray-700">
-            Showing <span className="font-bold text-blue-600">{(currentPage - 1) * itemsPerPage + 1}</span> to{' '}
-            <span className="font-bold text-blue-600">{Math.min(currentPage * itemsPerPage, filteredRows.length)}</span> of{' '}
-            <span className="font-bold text-blue-600">{filteredRows.length}</span> entries
+            Showing{" "}
+            <span className="font-bold text-blue-600">
+              {(currentPage - 1) * itemsPerPage + 1}
+            </span>{" "}
+            to{" "}
+            <span className="font-bold text-blue-600">
+              {Math.min(currentPage * itemsPerPage, filteredRows.length)}
+            </span>{" "}
+            of{" "}
+            <span className="font-bold text-blue-600">
+              {filteredRows.length}
+            </span>{" "}
+            entries
           </div>
           <div className="flex gap-2">
             <button
@@ -434,15 +522,15 @@ const KBTableViewer: React.FC<KBTableViewerProps> = ({
                 } else {
                   pageNum = currentPage - 2 + i;
                 }
-                
+
                 return (
                   <button
                     key={pageNum}
                     onClick={() => setCurrentPage(pageNum)}
                     className={`px-4 py-2.5 rounded-lg font-medium transition-all shadow-sm ${
                       currentPage === pageNum
-                        ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md scale-110'
-                        : 'bg-white border-2 border-gray-300 text-gray-700 hover:bg-blue-50 hover:border-blue-400'
+                        ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md scale-110"
+                        : "bg-white border-2 border-gray-300 text-gray-700 hover:bg-blue-50 hover:border-blue-400"
                     }`}
                   >
                     {pageNum}
@@ -451,7 +539,9 @@ const KBTableViewer: React.FC<KBTableViewerProps> = ({
               })}
             </div>
             <button
-              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+              onClick={() =>
+                setCurrentPage(Math.min(totalPages, currentPage + 1))
+              }
               disabled={currentPage === totalPages}
               className="px-5 py-2.5 bg-white border-2 border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-400 disabled:opacity-40 disabled:cursor-not-allowed font-medium text-gray-700 transition-all shadow-sm"
             >

@@ -1,23 +1,26 @@
-import { Request, Response } from 'express';
-import { User } from '../models/User';
-import { Role } from '../models/Role';
-import { hrmsService } from '../services/hrmsService';
-import mongoose from 'mongoose';
-import { logActivity } from '../utils/logger';
+import { Request, Response } from "express";
+import { User } from "../models/User";
+import { Role } from "../models/Role";
+import { hrmsService } from "../services/hrmsService";
+import mongoose from "mongoose";
+import { logActivity } from "../utils/logger";
 
 /**
  * Get all users with filters and pagination
  */
-export const getAllUsers = async (req: Request, res: Response): Promise<void> => {
+export const getAllUsers = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const {
       page = 1,
       limit = 20,
-      search = '',
-      role = '',
-      isActive = '',
-      project = '',
-      department = '',
+      search = "",
+      role = "",
+      isActive = "",
+      project = "",
+      department = "",
     } = req.query;
 
     const pageNum = parseInt(page as string);
@@ -29,25 +32,28 @@ export const getAllUsers = async (req: Request, res: Response): Promise<void> =>
 
     if (search) {
       filter.$or = [
-        { firstName: { $regex: search, $options: 'i' } },
-        { lastName: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
-        { employeeCode: { $regex: search, $options: 'i' } },
-        { mobile: { $regex: search, $options: 'i' } },
+        { firstName: { $regex: search, $options: "i" } },
+        { lastName: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+        { employeeCode: { $regex: search, $options: "i" } },
+        { mobile: { $regex: search, $options: "i" } },
       ];
     }
 
     if (role) {
       // Check if role is a valid 24-character hex ObjectId
-      const isValidObjectId = typeof role === 'string' && 
-        role.length === 24 && 
+      const isValidObjectId =
+        typeof role === "string" &&
+        role.length === 24 &&
         /^[0-9a-fA-F]{24}$/.test(role);
-      
+
       if (isValidObjectId) {
         filter.role = new mongoose.Types.ObjectId(role as string);
       } else {
         // If not a valid ObjectId, treat it as a role code and look up the role
-        const roleDoc = await Role.findOne({ code: { $regex: new RegExp(`^${role}$`, 'i') } }).select('_id');
+        const roleDoc = await Role.findOne({
+          code: { $regex: new RegExp(`^${role}$`, "i") },
+        }).select("_id");
         if (roleDoc) {
           filter.role = roleDoc._id;
         } else {
@@ -67,8 +73,8 @@ export const getAllUsers = async (req: Request, res: Response): Promise<void> =>
       }
     }
 
-    if (isActive !== '') {
-      filter.isActive = isActive === 'true';
+    if (isActive !== "") {
+      filter.isActive = isActive === "true";
     }
 
     if (project) {
@@ -79,13 +85,13 @@ export const getAllUsers = async (req: Request, res: Response): Promise<void> =>
     }
 
     if (department) {
-      filter.department = { $regex: department, $options: 'i' };
+      filter.department = { $regex: department, $options: "i" };
     }
 
     // ============================================
     // ADDITIONAL FILTERS (date range, centers)
     // ============================================
-    
+
     // Date range filter
     if (req.query.createdAfter || req.query.createdBefore) {
       filter.createdAt = {};
@@ -102,10 +108,13 @@ export const getAllUsers = async (req: Request, res: Response): Promise<void> =>
       }
       if (Object.keys(filter.createdAt).length === 0) delete filter.createdAt;
     }
-    
+
     // Centers filter
     if (req.query.centers) {
-      const centerIds = String(req.query.centers).split(',').map(c => c.trim()).filter(Boolean);
+      const centerIds = String(req.query.centers)
+        .split(",")
+        .map((c) => c.trim())
+        .filter(Boolean);
       if (centerIds.length > 0) {
         filter.centers = { $in: centerIds };
       }
@@ -114,9 +123,17 @@ export const getAllUsers = async (req: Request, res: Response): Promise<void> =>
     // ============================================
     // SORTING
     // ============================================
-    const allowedSortFields = ['createdAt', 'firstName', 'lastName', 'email', 'lastLogin'];
-    const sortBy = allowedSortFields.includes(req.query.sortBy as string) ? req.query.sortBy as string : 'createdAt';
-    const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
+    const allowedSortFields = [
+      "createdAt",
+      "firstName",
+      "lastName",
+      "email",
+      "lastLogin",
+    ];
+    const sortBy = allowedSortFields.includes(req.query.sortBy as string)
+      ? (req.query.sortBy as string)
+      : "createdAt";
+    const sortOrder = req.query.sortOrder === "asc" ? 1 : -1;
     const sortObj: Record<string, 1 | -1> = { [sortBy]: sortOrder as 1 | -1 };
 
     // Enforce max limit
@@ -130,21 +147,23 @@ export const getAllUsers = async (req: Request, res: Response): Promise<void> =>
       // If a specific role filter is set, use $and to combine with type check
       filter.$and = filter.$and || [];
       filter.$and.push({ role: roleFilter });
-      filter.$and.push({ role: { $type: 'objectId' } });
+      filter.$and.push({ role: { $type: "objectId" } });
       delete filter.role;
     } else {
       // Just ensure role is a valid ObjectId
-      filter.role = { $type: 'objectId' };
+      filter.role = { $type: "objectId" };
     }
 
     const [users, total] = await Promise.all([
       User.find(filter)
         // OPTIMIZED: Exclude password and heavy fields, reduce populate data for list view
-        .select('-password -resetPasswordOTP -resetPasswordOTPExpires -permissions -notificationPreferences -metadata')
-        .populate('role', 'name code isAgent')
-        .populate('projects', 'name') // Only name for list view
-        .populate('centers', 'centerName') // Only name for list view
-        .populate('reportingManager', 'firstName lastName') // Reduced fields
+        .select(
+          "-password -resetPasswordOTP -resetPasswordOTPExpires -permissions -notificationPreferences -metadata",
+        )
+        .populate("role", "name code isAgent")
+        .populate("projects", "name") // Only name for list view
+        .populate("centers", "centerName") // Only name for list view
+        .populate("reportingManager", "firstName lastName") // Reduced fields
         .sort(sortObj)
         .skip(skip)
         .limit(effectiveLimit)
@@ -163,10 +182,10 @@ export const getAllUsers = async (req: Request, res: Response): Promise<void> =>
       },
     });
   } catch (error: any) {
-    console.error('Error fetching users:', error);
+    console.error("Error fetching users:", error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch users',
+      error: "Failed to fetch users",
       message: error.message,
     });
   }
@@ -175,21 +194,24 @@ export const getAllUsers = async (req: Request, res: Response): Promise<void> =>
 /**
  * Get single user by ID
  */
-export const getUserById = async (req: Request, res: Response): Promise<void> => {
+export const getUserById = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { id } = req.params;
 
     const user = await User.findById(id)
-      .select('-password -resetPasswordOTP -resetPasswordOTPExpires')
-      .populate('role', 'name code permissions')
-      .populate('projects', 'name code')
-      .populate('reportingManager', 'firstName lastName email employeeCode')
+      .select("-password -resetPasswordOTP -resetPasswordOTPExpires")
+      .populate("role", "name code permissions")
+      .populate("projects", "name code")
+      .populate("reportingManager", "firstName lastName email employeeCode")
       .lean();
 
     if (!user) {
       res.status(404).json({
         success: false,
-        error: 'User not found',
+        error: "User not found",
       });
       return;
     }
@@ -199,10 +221,10 @@ export const getUserById = async (req: Request, res: Response): Promise<void> =>
       data: user,
     });
   } catch (error: any) {
-    console.error('Error fetching user:', error);
+    console.error("Error fetching user:", error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch user',
+      error: "Failed to fetch user",
       message: error.message,
     });
   }
@@ -211,7 +233,10 @@ export const getUserById = async (req: Request, res: Response): Promise<void> =>
 /**
  * Create new user (manual creation or HRMS import)
  */
-export const createUser = async (req: Request, res: Response): Promise<void> => {
+export const createUser = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const {
       email,
@@ -235,7 +260,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
     if (!role) {
       res.status(400).json({
         success: false,
-        error: 'Role is required',
+        error: "Role is required",
       });
       return;
     }
@@ -243,7 +268,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
     if (!syncFromHRMS && !email) {
       res.status(400).json({
         success: false,
-        error: 'Email is required',
+        error: "Email is required",
       });
       return;
     }
@@ -251,7 +276,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
     if (syncFromHRMS && !employeeCode) {
       res.status(400).json({
         success: false,
-        error: 'Employee code is required when syncing from HRMS',
+        error: "Employee code is required when syncing from HRMS",
       });
       return;
     }
@@ -262,7 +287,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
       if (existingUser) {
         res.status(400).json({
           success: false,
-          error: 'User with this email already exists',
+          error: "User with this email already exists",
         });
         return;
       }
@@ -274,7 +299,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
       if (existingEmployee) {
         res.status(400).json({
           success: false,
-          error: 'User with this employee code already exists',
+          error: "User with this employee code already exists",
         });
         return;
       }
@@ -285,7 +310,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
     if (!roleDoc) {
       res.status(400).json({
         success: false,
-        error: 'Invalid role ID',
+        error: "Invalid role ID",
       });
       return;
     }
@@ -322,7 +347,9 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
 
         // Check if email from HRMS already exists
         if (userData.email) {
-          const existingUserByEmail = await User.findOne({ email: userData.email });
+          const existingUserByEmail = await User.findOne({
+            email: userData.email,
+          });
           if (existingUserByEmail) {
             res.status(400).json({
               success: false,
@@ -334,7 +361,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
       } catch (hrmsError: any) {
         res.status(400).json({
           success: false,
-          error: 'Failed to sync from HRMS',
+          error: "Failed to sync from HRMS",
           message: hrmsError.message,
         });
         return;
@@ -354,12 +381,13 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
     // Automatically create hierarchy mapping if reportingManager is assigned
     if (reportingManager) {
       try {
-        const { UserReportingHierarchy } = await import('../models/UserReportingHierarchy');
-        
+        const { UserReportingHierarchy } =
+          await import("../models/UserReportingHierarchy");
+
         // Check if mapping already exists (using actual DB field names)
         const existingMapping = await UserReportingHierarchy.findOne({
           userId: user._id,
-          reportingManager: reportingManager
+          reportingManager: reportingManager,
         });
 
         if (!existingMapping) {
@@ -367,75 +395,91 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
           await UserReportingHierarchy.create({
             userId: user._id,
             reportingManager: reportingManager,
-            createdAt: new Date()
+            createdAt: new Date(),
           });
-          console.log(`✅ [HIERARCHY] Auto-created: User ${user._id} reports to ${reportingManager}`);
+          console.log(
+            `✅ [HIERARCHY] Auto-created: User ${user._id} reports to ${reportingManager}`,
+          );
         } else {
-          console.log(`ℹ️ [HIERARCHY] Mapping already exists for user ${user._id}`);
+          console.log(
+            `ℹ️ [HIERARCHY] Mapping already exists for user ${user._id}`,
+          );
         }
       } catch (hierError) {
-        console.error('❌ [HIERARCHY] Failed to auto-create hierarchy mapping:', hierError);
+        console.error(
+          "❌ [HIERARCHY] Failed to auto-create hierarchy mapping:",
+          hierError,
+        );
         // Don't fail user creation if hierarchy fails
       }
     }
 
     // Populate role and projects before returning
-    await user.populate('role', 'name code');
-    await user.populate('projects', 'name code');
+    await user.populate("role", "name code");
+    await user.populate("projects", "name code");
 
     const userResponse: any = user.toObject();
     delete userResponse.password;
     delete userResponse.resetPasswordOTP;
     delete userResponse.resetPasswordOTPExpires;
-    
+
     // Log activity
     try {
       const currentUser = (req as any).user;
       if (currentUser) {
-        const projectNames = user.projects && Array.isArray(user.projects) && user.projects.length > 0
-          ? (user.projects as any[]).map(p => p.name || p).join(', ')
-          : 'No projects';
-        const projectIds = user.projects && Array.isArray(user.projects) && user.projects.length > 0
-          ? (user.projects as any[])[0]._id || (user.projects as any[])[0]
-          : undefined;
-        
+        const projectNames =
+          user.projects &&
+          Array.isArray(user.projects) &&
+          user.projects.length > 0
+            ? (user.projects as any[]).map((p) => p.name || p).join(", ")
+            : "No projects";
+        const projectIds =
+          user.projects &&
+          Array.isArray(user.projects) &&
+          user.projects.length > 0
+            ? (user.projects as any[])[0]._id || (user.projects as any[])[0]
+            : undefined;
+
         await logActivity({
           userId: currentUser.userId,
-          userName: `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim(),
+          userName:
+            `${currentUser.firstName || ""} ${currentUser.lastName || ""}`.trim(),
           userEmail: currentUser.email,
-          action: 'create',
-          entity: 'user',
+          action: "create",
+          entity: "user",
           entityId: user._id.toString(),
           entityName: `${user.firstName} ${user.lastName}`,
           projectId: projectIds?.toString(),
           projectName: projectNames,
-          description: `User ${user.email} created with role ${(user.role as any)?.name || 'N/A'}`,
+          description: `User ${user.email} created with role ${(user.role as any)?.name || "N/A"}`,
           req,
-          metadata: { employeeCode: user.employeeCode, syncFromHRMS }
+          metadata: { employeeCode: user.employeeCode, syncFromHRMS },
         });
       }
     } catch (logError) {
-      console.error('Failed to log activity:', logError);
+      console.error("Failed to log activity:", logError);
     }
 
     res.status(201).json({
       success: true,
       data: userResponse,
-      message: 'User created successfully',
+      message: "User created successfully",
     });
   } catch (error: any) {
-    console.error('Error creating user:', error);
-    
+    console.error("Error creating user:", error);
+
     // Handle Mongoose validation errors
-    if (error.name === 'ValidationError') {
-      const messages = Object.values(error.errors).map((err: any) => err.message);
+    if (error.name === "ValidationError") {
+      const messages = Object.values(error.errors).map(
+        (err: any) => err.message,
+      );
       res.status(400).json({
         success: false,
-        error: messages.join(', '),
+        error: messages.join(", "),
       });
       return;
     }
-    
+
     // Handle duplicate key errors
     if (error.code === 11000) {
       const field = Object.keys(error.keyPattern)[0];
@@ -445,10 +489,10 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
       });
       return;
     }
-    
+
     res.status(500).json({
       success: false,
-      error: error.message || 'Failed to create user',
+      error: error.message || "Failed to create user",
     });
   }
 };
@@ -456,7 +500,10 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
 /**
  * Update user
  */
-export const updateUser = async (req: Request, res: Response): Promise<void> => {
+export const updateUser = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { id } = req.params;
     const {
@@ -478,7 +525,7 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
     if (!user) {
       res.status(404).json({
         success: false,
-        error: 'User not found',
+        error: "User not found",
       });
       return;
     }
@@ -489,7 +536,7 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       if (existingUser) {
         res.status(400).json({
           success: false,
-          error: 'User with this email already exists',
+          error: "User with this email already exists",
         });
         return;
       }
@@ -497,12 +544,16 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
     }
 
     // Check if employee code is being changed and if it's unique (only if non-empty)
-    if (employeeCode && employeeCode.trim() && employeeCode !== user.employeeCode) {
+    if (
+      employeeCode &&
+      employeeCode.trim() &&
+      employeeCode !== user.employeeCode
+    ) {
       const existingEmployee = await User.findOne({ employeeCode });
       if (existingEmployee) {
         res.status(400).json({
           success: false,
-          error: 'User with this employee code already exists',
+          error: "User with this employee code already exists",
         });
         return;
       }
@@ -514,18 +565,20 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       if (!roleDoc) {
         res.status(400).json({
           success: false,
-          error: 'Invalid role ID',
+          error: "Invalid role ID",
         });
         return;
       }
-      
+
       // Check if role is actually changing
       const roleChanged = user.role.toString() !== role.toString();
       user.role = role;
-      
+
       // Increment token version to invalidate existing tokens when role changes
       if (roleChanged) {
-        console.log(`🔄 Role changed for user ${user.email}. Incrementing token version.`);
+        console.log(
+          `🔄 Role changed for user ${user.email}. Incrementing token version.`,
+        );
         await user.incrementTokenVersion();
       }
     }
@@ -533,12 +586,14 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
     // Sync from HRMS if requested
     if (syncFromHRMS && (employeeCode || user.employeeCode)) {
       try {
-        const hrmsData = await hrmsService.syncEmployeeData(employeeCode || user.employeeCode!);
+        const hrmsData = await hrmsService.syncEmployeeData(
+          employeeCode || user.employeeCode!,
+        );
         Object.assign(user, hrmsData);
       } catch (hrmsError: any) {
         res.status(400).json({
           success: false,
-          error: 'Failed to sync from HRMS',
+          error: "Failed to sync from HRMS",
           message: hrmsError.message,
         });
         return;
@@ -553,18 +608,21 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
     if (lastName !== undefined) user.lastName = lastName;
     if (mobile !== undefined) user.mobile = mobile || undefined;
     // Convert empty string to undefined for sparse unique fields
-    if (employeeCode !== undefined) user.employeeCode = employeeCode || undefined;
+    if (employeeCode !== undefined)
+      user.employeeCode = employeeCode || undefined;
     if (department !== undefined) user.department = department;
     if (designation !== undefined) user.designation = designation;
     if (joiningDate !== undefined) user.joiningDate = new Date(joiningDate);
-    if (reportingManager !== undefined) user.reportingManager = reportingManager;
+    if (reportingManager !== undefined)
+      user.reportingManager = reportingManager;
     if (projects !== undefined) user.projects = projects;
     if (centers !== undefined) user.centers = centers;
 
     // Handle hierarchy mapping when reportingManager changes
     if (reportingManager !== undefined) {
       try {
-        const { UserReportingHierarchy } = await import('../models/UserReportingHierarchy');
+        const { UserReportingHierarchy } =
+          await import("../models/UserReportingHierarchy");
         const newManagerId = reportingManager;
 
         // If reporting manager changed
@@ -573,9 +631,11 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
           if (oldManagerId) {
             await UserReportingHierarchy.deleteMany({
               userId: user._id,
-              reportingManager: oldManagerId
+              reportingManager: oldManagerId,
             });
-            console.log(`🔄 [HIERARCHY] Deleted old mapping: User ${user._id} → ${oldManagerId}`);
+            console.log(
+              `🔄 [HIERARCHY] Deleted old mapping: User ${user._id} → ${oldManagerId}`,
+            );
           }
 
           // Create new mapping if new manager assigned
@@ -583,87 +643,117 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
             // Check if mapping already exists (using actual DB field names)
             const existingMapping = await UserReportingHierarchy.findOne({
               userId: user._id,
-              reportingManager: newManagerId
+              reportingManager: newManagerId,
             });
 
             if (!existingMapping) {
               await UserReportingHierarchy.create({
                 userId: user._id,
                 reportingManager: newManagerId,
-                createdAt: new Date()
+                createdAt: new Date(),
               });
-              console.log(`✅ [HIERARCHY] Auto-created: User ${user._id} reports to ${newManagerId}`);
+              console.log(
+                `✅ [HIERARCHY] Auto-created: User ${user._id} reports to ${newManagerId}`,
+              );
             } else {
-              console.log(`ℹ️ [HIERARCHY] Mapping already exists for user ${user._id}`);
+              console.log(
+                `ℹ️ [HIERARCHY] Mapping already exists for user ${user._id}`,
+              );
             }
           } else {
-            console.log(`ℹ️ [HIERARCHY] Reporting manager removed, no new mapping created`);
+            console.log(
+              `ℹ️ [HIERARCHY] Reporting manager removed, no new mapping created`,
+            );
           }
         }
       } catch (hierError) {
-        console.error('❌ [HIERARCHY] Failed to update hierarchy mapping:', hierError);
+        console.error(
+          "❌ [HIERARCHY] Failed to update hierarchy mapping:",
+          hierError,
+        );
         // Don't fail user update if hierarchy fails
       }
     }
 
     await user.save();
 
-    await user.populate('role', 'name code');
-    await user.populate('projects', 'name code');
-    await user.populate('centers', 'centerName city state projectId');
-    await user.populate('reportingManager', 'firstName lastName email employeeCode');
+    await user.populate("role", "name code");
+    await user.populate("projects", "name code");
+    await user.populate("centers", "centerName city state projectId");
+    await user.populate(
+      "reportingManager",
+      "firstName lastName email employeeCode",
+    );
 
     const userResponse: any = user.toObject();
     delete userResponse.password;
     delete userResponse.resetPasswordOTP;
     delete userResponse.resetPasswordOTPExpires;
-    
+
     // Log activity
     try {
       const currentUser = (req as any).user;
       if (currentUser) {
-        const projectNames = user.projects && Array.isArray(user.projects) && user.projects.length > 0
-          ? (user.projects as any[]).map(p => p.name || p).join(', ')
-          : 'No projects';
-        const projectIds = user.projects && Array.isArray(user.projects) && user.projects.length > 0
-          ? (user.projects as any[])[0]._id || (user.projects as any[])[0]
-          : undefined;
-        
+        const projectNames =
+          user.projects &&
+          Array.isArray(user.projects) &&
+          user.projects.length > 0
+            ? (user.projects as any[]).map((p) => p.name || p).join(", ")
+            : "No projects";
+        const projectIds =
+          user.projects &&
+          Array.isArray(user.projects) &&
+          user.projects.length > 0
+            ? (user.projects as any[])[0]._id || (user.projects as any[])[0]
+            : undefined;
+
         // Track changes
         const changes = [];
-        if (firstName !== undefined) changes.push({ field: 'firstName', oldValue: user.firstName, newValue: firstName });
-        if (lastName !== undefined) changes.push({ field: 'lastName', oldValue: user.lastName, newValue: lastName });
-        if (role !== undefined) changes.push({ field: 'role', oldValue: user.role, newValue: role });
-        
+        if (firstName !== undefined)
+          changes.push({
+            field: "firstName",
+            oldValue: user.firstName,
+            newValue: firstName,
+          });
+        if (lastName !== undefined)
+          changes.push({
+            field: "lastName",
+            oldValue: user.lastName,
+            newValue: lastName,
+          });
+        if (role !== undefined)
+          changes.push({ field: "role", oldValue: user.role, newValue: role });
+
         await logActivity({
           userId: currentUser.userId,
-          userName: `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim(),
+          userName:
+            `${currentUser.firstName || ""} ${currentUser.lastName || ""}`.trim(),
           userEmail: currentUser.email,
-          action: 'update',
-          entity: 'user',
+          action: "update",
+          entity: "user",
           entityId: user._id.toString(),
           entityName: `${user.firstName} ${user.lastName}`,
           projectId: projectIds?.toString(),
           projectName: projectNames,
           changes: changes.length > 0 ? changes : undefined,
           description: `User ${user.email} updated`,
-          req
+          req,
         });
       }
     } catch (logError) {
-      console.error('Failed to log activity:', logError);
+      console.error("Failed to log activity:", logError);
     }
 
     res.json({
       success: true,
       data: userResponse,
-      message: 'User updated successfully',
+      message: "User updated successfully",
     });
   } catch (error: any) {
-    console.error('Error updating user:', error);
+    console.error("Error updating user:", error);
     res.status(500).json({
       success: false,
-      error: 'Failed to update user',
+      error: "Failed to update user",
       message: error.message,
     });
   }
@@ -672,7 +762,10 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
 /**
  * Delete user
  */
-export const deleteUser = async (req: Request, res: Response): Promise<void> => {
+export const deleteUser = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { id } = req.params;
 
@@ -680,18 +773,18 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
     if (!user) {
       res.status(404).json({
         success: false,
-        error: 'User not found',
+        error: "User not found",
       });
       return;
     }
 
     // Don't allow deleting super admin - check if user has a role first
     if (user.role) {
-      await user.populate('role', 'code type');
-      if ((user.role as any)?.code === 'SUPER_ADMIN') {
+      await user.populate("role", "code type");
+      if ((user.role as any)?.code === "SUPER_ADMIN") {
         res.status(403).json({
           success: false,
-          error: 'Cannot delete Super Admin user',
+          error: "Cannot delete Super Admin user",
         });
         return;
       }
@@ -702,40 +795,41 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
       id: user._id.toString(),
       name: `${user.firstName} ${user.lastName}`,
       email: user.email,
-      projects: user.projects
+      projects: user.projects,
     };
-    
+
     await User.findByIdAndDelete(id);
-    
+
     // Log activity
     try {
       const currentUser = (req as any).user;
       if (currentUser) {
         await logActivity({
           userId: currentUser.userId,
-          userName: `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim(),
+          userName:
+            `${currentUser.firstName || ""} ${currentUser.lastName || ""}`.trim(),
           userEmail: currentUser.email,
-          action: 'delete',
-          entity: 'user',
+          action: "delete",
+          entity: "user",
           entityId: deletedUserData.id,
           entityName: deletedUserData.name,
           description: `User ${deletedUserData.email} deleted`,
-          req
+          req,
         });
       }
     } catch (logError) {
-      console.error('Failed to log activity:', logError);
+      console.error("Failed to log activity:", logError);
     }
 
     res.json({
       success: true,
-      message: 'User deleted successfully',
+      message: "User deleted successfully",
     });
   } catch (error: any) {
-    console.error('Error deleting user:', error);
+    console.error("Error deleting user:", error);
     res.status(500).json({
       success: false,
-      error: 'Failed to delete user',
+      error: "Failed to delete user",
       message: error.message,
     });
   }
@@ -744,24 +838,27 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
 /**
  * Toggle user active status
  */
-export const toggleUserStatus = async (req: Request, res: Response): Promise<void> => {
+export const toggleUserStatus = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { id } = req.params;
 
-    const user = await User.findById(id).populate('role', 'code type');
+    const user = await User.findById(id).populate("role", "code type");
     if (!user) {
       res.status(404).json({
         success: false,
-        error: 'User not found',
+        error: "User not found",
       });
       return;
     }
 
     // Don't allow deactivating super admin
-    if ((user.role as any).code === 'SUPER_ADMIN') {
+    if ((user.role as any).code === "SUPER_ADMIN") {
       res.status(403).json({
         success: false,
-        error: 'Cannot deactivate Super Admin user',
+        error: "Cannot deactivate Super Admin user",
       });
       return;
     }
@@ -769,8 +866,8 @@ export const toggleUserStatus = async (req: Request, res: Response): Promise<voi
     user.isActive = !user.isActive;
     await user.save();
 
-    await user.populate('role', 'name code');
-    await user.populate('projects', 'name code');
+    await user.populate("role", "name code");
+    await user.populate("projects", "name code");
 
     const userResponse: any = user.toObject();
     delete userResponse.password;
@@ -780,13 +877,13 @@ export const toggleUserStatus = async (req: Request, res: Response): Promise<voi
     res.json({
       success: true,
       data: userResponse,
-      message: `User ${user.isActive ? 'activated' : 'deactivated'} successfully`,
+      message: `User ${user.isActive ? "activated" : "deactivated"} successfully`,
     });
   } catch (error: any) {
-    console.error('Error toggling user status:', error);
+    console.error("Error toggling user status:", error);
     res.status(500).json({
       success: false,
-      error: 'Failed to toggle user status',
+      error: "Failed to toggle user status",
       message: error.message,
     });
   }
@@ -795,14 +892,17 @@ export const toggleUserStatus = async (req: Request, res: Response): Promise<voi
 /**
  * Search HRMS employees
  */
-export const searchHRMSEmployees = async (req: Request, res: Response): Promise<void> => {
+export const searchHRMSEmployees = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { query } = req.query;
 
-    if (!query || typeof query !== 'string') {
+    if (!query || typeof query !== "string") {
       res.status(400).json({
         success: false,
-        error: 'Search query is required',
+        error: "Search query is required",
       });
       return;
     }
@@ -814,10 +914,10 @@ export const searchHRMSEmployees = async (req: Request, res: Response): Promise<
       data: employees,
     });
   } catch (error: any) {
-    console.error('Error searching HRMS employees:', error);
+    console.error("Error searching HRMS employees:", error);
     res.status(500).json({
       success: false,
-      error: 'Failed to search HRMS employees',
+      error: "Failed to search HRMS employees",
       message: error.message,
     });
   }
@@ -826,14 +926,17 @@ export const searchHRMSEmployees = async (req: Request, res: Response): Promise<
 /**
  * Validate employee code from HRMS
  */
-export const validateEmployeeCode = async (req: Request, res: Response): Promise<void> => {
+export const validateEmployeeCode = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { employeeCode } = req.params;
 
     if (!employeeCode) {
       res.status(400).json({
         success: false,
-        error: 'Employee code is required',
+        error: "Employee code is required",
       });
       return;
     }
@@ -843,7 +946,7 @@ export const validateEmployeeCode = async (req: Request, res: Response): Promise
     if (!isValid) {
       res.status(404).json({
         success: false,
-        error: 'Employee code not found in HRMS',
+        error: "Employee code not found in HRMS",
       });
       return;
     }
@@ -853,13 +956,13 @@ export const validateEmployeeCode = async (req: Request, res: Response): Promise
     res.json({
       success: true,
       data: employee,
-      message: 'Employee code is valid',
+      message: "Employee code is valid",
     });
   } catch (error: any) {
-    console.error('Error validating employee code:', error);
+    console.error("Error validating employee code:", error);
     res.status(500).json({
       success: false,
-      error: 'Failed to validate employee code',
+      error: "Failed to validate employee code",
       message: error.message,
     });
   }
@@ -868,14 +971,17 @@ export const validateEmployeeCode = async (req: Request, res: Response): Promise
 /**
  * Bulk import users from HRMS
  */
-export const bulkImportFromHRMS = async (req: Request, res: Response): Promise<void> => {
+export const bulkImportFromHRMS = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { employeeCodes, roleId, projectIds } = req.body;
 
     if (!Array.isArray(employeeCodes) || employeeCodes.length === 0) {
       res.status(400).json({
         success: false,
-        error: 'Employee codes array is required',
+        error: "Employee codes array is required",
       });
       return;
     }
@@ -883,7 +989,7 @@ export const bulkImportFromHRMS = async (req: Request, res: Response): Promise<v
     if (!roleId) {
       res.status(400).json({
         success: false,
-        error: 'Role ID is required',
+        error: "Role ID is required",
       });
       return;
     }
@@ -893,7 +999,7 @@ export const bulkImportFromHRMS = async (req: Request, res: Response): Promise<v
     if (!role) {
       res.status(400).json({
         success: false,
-        error: 'Invalid role ID',
+        error: "Invalid role ID",
       });
       return;
     }
@@ -910,7 +1016,7 @@ export const bulkImportFromHRMS = async (req: Request, res: Response): Promise<v
         if (existingUser) {
           results.failed.push({
             employeeCode,
-            reason: 'User already exists',
+            reason: "User already exists",
           });
           continue;
         }
@@ -922,7 +1028,7 @@ export const bulkImportFromHRMS = async (req: Request, res: Response): Promise<v
         if (!hrmsData) {
           results.failed.push({
             employeeCode,
-            reason: 'No HRMS data found',
+            reason: "No HRMS data found",
           });
           continue;
         }
@@ -954,10 +1060,10 @@ export const bulkImportFromHRMS = async (req: Request, res: Response): Promise<v
       message: `Imported ${results.success.length} users, ${results.failed.length} failed`,
     });
   } catch (error: any) {
-    console.error('Error bulk importing users:', error);
+    console.error("Error bulk importing users:", error);
     res.status(500).json({
       success: false,
-      error: 'Failed to bulk import users',
+      error: "Failed to bulk import users",
       message: error.message,
     });
   }
@@ -966,7 +1072,10 @@ export const bulkImportFromHRMS = async (req: Request, res: Response): Promise<v
 /**
  * Reset user password (admin function)
  */
-export const resetUserPassword = async (req: Request, res: Response): Promise<void> => {
+export const resetUserPassword = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { id } = req.params;
     const { newPassword } = req.body;
@@ -974,7 +1083,7 @@ export const resetUserPassword = async (req: Request, res: Response): Promise<vo
     if (!newPassword || newPassword.length < 8) {
       res.status(400).json({
         success: false,
-        error: 'Password must be at least 8 characters long',
+        error: "Password must be at least 8 characters long",
       });
       return;
     }
@@ -983,7 +1092,7 @@ export const resetUserPassword = async (req: Request, res: Response): Promise<vo
     if (!user) {
       res.status(404).json({
         success: false,
-        error: 'User not found',
+        error: "User not found",
       });
       return;
     }
@@ -998,13 +1107,13 @@ export const resetUserPassword = async (req: Request, res: Response): Promise<vo
 
     res.json({
       success: true,
-      message: 'Password reset successfully',
+      message: "Password reset successfully",
     });
   } catch (error: any) {
-    console.error('Error resetting password:', error);
+    console.error("Error resetting password:", error);
     res.status(500).json({
       success: false,
-      error: 'Failed to reset password',
+      error: "Failed to reset password",
       message: error.message,
     });
   }
@@ -1013,16 +1122,19 @@ export const resetUserPassword = async (req: Request, res: Response): Promise<vo
 /**
  * Get user permissions by role and project
  */
-export const getUserPermissions = async (req: Request, res: Response): Promise<void> => {
+export const getUserPermissions = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { id } = req.params;
     const { projectId } = req.query;
 
-    const user = await User.findById(id).populate('role');
+    const user = await User.findById(id).populate("role");
     if (!user) {
       res.status(404).json({
         success: false,
-        error: 'User not found',
+        error: "User not found",
       });
       return;
     }
@@ -1039,7 +1151,7 @@ export const getUserPermissions = async (req: Request, res: Response): Promise<v
 
     // If projectId is provided, filter permissions for that project
     let permissions = role.permissions;
-    
+
     if (projectId) {
       // Filter permissions by project (if role-project mapping exists)
       // For now, return all role permissions
@@ -1050,12 +1162,11 @@ export const getUserPermissions = async (req: Request, res: Response): Promise<v
       success: true,
       data: permissions,
     });
-
   } catch (error: any) {
-    console.error('Get user permissions error:', error);
+    console.error("Get user permissions error:", error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch user permissions',
+      error: "Failed to fetch user permissions",
       message: error.message,
     });
   }
@@ -1064,27 +1175,30 @@ export const getUserPermissions = async (req: Request, res: Response): Promise<v
 /**
  * Search user by email (for offline module)
  */
-export const searchUserByEmail = async (req: Request, res: Response): Promise<void> => {
+export const searchUserByEmail = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { email, projectId, studentOnly } = req.query;
 
     if (!email) {
       res.status(400).json({
         success: false,
-        error: 'Email is required',
+        error: "Email is required",
       });
       return;
     }
 
     const filter: any = { email: email as string };
-    
+
     if (projectId) {
       filter.projects = projectId;
     }
 
     // If studentOnly is true, filter by Student role
-    if (studentOnly === 'true') {
-      const studentRole = await Role.findOne({ code: 'STUDENT' });
+    if (studentOnly === "true") {
+      const studentRole = await Role.findOne({ code: "STUDENT" });
       if (studentRole) {
         filter.role = studentRole._id;
       } else {
@@ -1097,18 +1211,19 @@ export const searchUserByEmail = async (req: Request, res: Response): Promise<vo
       }
     }
 
-    const user = await User.findOne(filter).select('firstName lastName email phone role');
-    
+    const user = await User.findOne(filter).select(
+      "firstName lastName email phone role",
+    );
+
     res.json({
       success: true,
       data: user,
     });
-
   } catch (error: any) {
-    console.error('Search user error:', error);
+    console.error("Search user error:", error);
     res.status(500).json({
       success: false,
-      error: 'Failed to search user',
+      error: "Failed to search user",
       message: error.message,
     });
   }
@@ -1118,57 +1233,73 @@ export const searchUserByEmail = async (req: Request, res: Response): Promise<vo
  * Register student for offline support
  * Creates a full user account with STUDENT role that can login to student portal
  */
-export const registerStudent = async (req: Request, res: Response): Promise<void> => {
+export const registerStudent = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { projectId, ...studentData } = req.body;
-    
-    console.log('📝 Student registration - phone and parent mobile are OPTIONAL');
-    console.log('📝 Request data:', { projectId, fields: Object.keys(studentData) });
-    
+
+    console.log(
+      "📝 Student registration - phone and parent mobile are OPTIONAL",
+    );
+    console.log("📝 Request data:", {
+      projectId,
+      fields: Object.keys(studentData),
+    });
+
     // Field mapping to normalize various field name formats to expected backend fields
     const fieldMapping: Record<string, string> = {
-      'First Name': 'firstName',
-      'firstname': 'firstName',
-      'first_name': 'firstName',
-      'Last Name': 'lastName',
-      'lastname': 'lastName',
-      'last_name': 'lastName',
-      'Email': 'email',
-      'Email ID': 'email',
-      'email_id': 'email',
-      'Phone': 'phone',
-      'Mobile': 'phone',
-      'Mobile number': 'phone',
-      'mobile_number': 'phone',
-      'phone_number': 'phone',
-      'Parent Mobile': 'parentMobile',
-      'Parent Contact': 'parentMobile',
-      'parent_mobile': 'parentMobile',
-      'parent_contact': 'parentMobile',
-      'parentmobile': 'parentMobile',
-      'Unique ID': 'uniqueId',
-      'unique_id': 'uniqueId',
-      'uniqueid': 'uniqueId',
-      'Student ID': 'uniqueId',
-      'Full Name': 'fullName',
-      'fullname': 'fullName',
-      'full_name': 'fullName',
+      "First Name": "firstName",
+      firstname: "firstName",
+      first_name: "firstName",
+      "Last Name": "lastName",
+      lastname: "lastName",
+      last_name: "lastName",
+      Email: "email",
+      "Email ID": "email",
+      email_id: "email",
+      Phone: "phone",
+      Mobile: "phone",
+      "Mobile number": "phone",
+      mobile_number: "phone",
+      phone_number: "phone",
+      "Parent Mobile": "parentMobile",
+      "Parent Contact": "parentMobile",
+      parent_mobile: "parentMobile",
+      parent_contact: "parentMobile",
+      parentmobile: "parentMobile",
+      "Unique ID": "uniqueId",
+      unique_id: "uniqueId",
+      uniqueid: "uniqueId",
+      "Student ID": "uniqueId",
+      "Full Name": "fullName",
+      fullname: "fullName",
+      full_name: "fullName",
     };
 
     // Normalize field names
     const normalizedData: Record<string, any> = {};
-    Object.keys(studentData).forEach(key => {
+    Object.keys(studentData).forEach((key) => {
       const normalizedKey = fieldMapping[key] || key;
       normalizedData[normalizedKey] = studentData[key];
     });
 
-    const { firstName, lastName, fullName, email, phone, parentMobile, uniqueId } = normalizedData;
+    const {
+      firstName,
+      lastName,
+      fullName,
+      email,
+      phone,
+      parentMobile,
+      uniqueId,
+    } = normalizedData;
 
     // Validate required fields
     if (!email || !projectId) {
       res.status(400).json({
         success: false,
-        error: 'Email and project ID are required',
+        error: "Email and project ID are required",
       });
       return;
     }
@@ -1193,17 +1324,42 @@ export const registerStudent = async (req: Request, res: Response): Promise<void
     // Check if user already exists with this email
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      res.status(400).json({
+      res.status(409).json({
         success: false,
-        error: 'User with this email already exists',
+        error: "User with this email already exists",
+        duplicateField: "email",
         existingUser: {
           _id: existingUser._id,
           firstName: existingUser.firstName,
           lastName: existingUser.lastName,
           email: existingUser.email,
-        }
+          phone: existingUser.phone || (existingUser as any).mobile,
+        },
       });
       return;
+    }
+
+    // Check if user already exists with this phone/mobile number
+    if (phone) {
+      const existingUserByPhone = await User.findOne({
+        $or: [{ phone }, { mobile: phone }],
+      }).select("_id firstName lastName email phone mobile");
+      if (existingUserByPhone) {
+        res.status(409).json({
+          success: false,
+          error: "User with this mobile number already exists",
+          duplicateField: "phone",
+          existingUser: {
+            _id: existingUserByPhone._id,
+            firstName: existingUserByPhone.firstName,
+            lastName: existingUserByPhone.lastName,
+            email: existingUserByPhone.email,
+            phone:
+              existingUserByPhone.phone || (existingUserByPhone as any).mobile,
+          },
+        });
+        return;
+      }
     }
 
     // Check if uniqueId already exists (if provided)
@@ -1212,18 +1368,19 @@ export const registerStudent = async (req: Request, res: Response): Promise<void
       if (existingUserByUniqueId) {
         res.status(400).json({
           success: false,
-          error: 'User with this Unique ID already exists',
+          error: "User with this Unique ID already exists",
         });
         return;
       }
     }
 
     // Get STUDENT role
-    const studentRole = await Role.findOne({ code: 'STUDENT' });
+    const studentRole = await Role.findOne({ code: "STUDENT" });
     if (!studentRole) {
       res.status(500).json({
         success: false,
-        error: 'Student role not found in system. Please run seed-student-role.js',
+        error:
+          "Student role not found in system. Please run seed-student-role.js",
       });
       return;
     }
@@ -1242,7 +1399,7 @@ export const registerStudent = async (req: Request, res: Response): Promise<void
       projects: [projectId],
       isActive: true,
       requirePasswordSetup: true, // Student needs to change password on first login
-      registrationSource: 'offline', // Mark as offline registration
+      registrationSource: "offline", // Mark as offline registration
       eulaAccepted: false,
     };
 
@@ -1261,8 +1418,19 @@ export const registerStudent = async (req: Request, res: Response): Promise<void
     if (uniqueId) userData.uniqueId = uniqueId;
 
     // Store ALL additional dynamic fields from offline settings (using normalized data)
-    Object.keys(normalizedData).forEach(key => {
-      if (!['firstName', 'lastName', 'fullName', 'email', 'phone', 'parentMobile', 'uniqueId', 'projectId'].includes(key)) {
+    Object.keys(normalizedData).forEach((key) => {
+      if (
+        ![
+          "firstName",
+          "lastName",
+          "fullName",
+          "email",
+          "phone",
+          "parentMobile",
+          "uniqueId",
+          "projectId",
+        ].includes(key)
+      ) {
         userData[key] = normalizedData[key];
       }
     });
@@ -1275,12 +1443,13 @@ export const registerStudent = async (req: Request, res: Response): Promise<void
 
     res.status(201).json({
       success: true,
-      message: 'Student registered successfully. Default password sent to student.',
+      message:
+        "Student registered successfully. Default password sent to student.",
       data: {
         _id: newStudent._id,
-        firstName: newStudent.firstName || '',
-        lastName: newStudent.lastName || '',
-        fullName: newStudent.fullName || '',
+        firstName: newStudent.firstName || "",
+        lastName: newStudent.lastName || "",
+        fullName: newStudent.fullName || "",
         email: newStudent.email,
         phone: newStudent.phone,
         parentMobile: (newStudent as any).parentMobile,
@@ -1288,12 +1457,11 @@ export const registerStudent = async (req: Request, res: Response): Promise<void
         // Do not return plaintext passwords in API responses for security
       },
     });
-
   } catch (error: any) {
-    console.error('Register student error:', error);
+    console.error("Register student error:", error);
     res.status(500).json({
       success: false,
-      error: 'Failed to register student',
+      error: "Failed to register student",
       message: error.message,
     });
   }
@@ -1303,26 +1471,29 @@ export const registerStudent = async (req: Request, res: Response): Promise<void
  * Advanced search for students/users by name, phone, or unique ID
  * Only returns users with STUDENT role
  */
-export const searchStudents = async (req: Request, res: Response): Promise<void> => {
+export const searchStudents = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { query, projectId, searchType } = req.query;
 
     if (!query) {
       res.status(400).json({
         success: false,
-        error: 'Search query is required',
+        error: "Search query is required",
       });
       return;
     }
 
     // Get Student role ID to filter only student users
-    const studentRole = await Role.findOne({ code: 'STUDENT' });
+    const studentRole = await Role.findOne({ code: "STUDENT" });
     if (!studentRole) {
       res.json({
         success: true,
         data: [],
         count: 0,
-        message: 'Student role not configured',
+        message: "Student role not configured",
       });
       return;
     }
@@ -1330,39 +1501,39 @@ export const searchStudents = async (req: Request, res: Response): Promise<void>
     const filter: any = {
       role: studentRole._id, // Only search users with Student role
     };
-    
+
     if (projectId) {
       filter.projects = projectId;
     }
 
     // Build search filter based on searchType
     // searchType can be: 'name', 'email', 'phone', 'all'
-    if (searchType === 'name' || searchType === 'all') {
+    if (searchType === "name" || searchType === "all") {
       filter.$or = [
-        { firstName: { $regex: query as string, $options: 'i' } },
-        { lastName: { $regex: query as string, $options: 'i' } },
-        { fullName: { $regex: query as string, $options: 'i' } },
+        { firstName: { $regex: query as string, $options: "i" } },
+        { lastName: { $regex: query as string, $options: "i" } },
+        { fullName: { $regex: query as string, $options: "i" } },
       ];
     }
 
-    if (searchType === 'email') {
-      filter.email = { $regex: query as string, $options: 'i' };
+    if (searchType === "email") {
+      filter.email = { $regex: query as string, $options: "i" };
     }
 
-    if (searchType === 'phone' || (searchType === 'all' && !filter.$or)) {
+    if (searchType === "phone" || (searchType === "all" && !filter.$or)) {
       filter.phone = query as string;
     }
 
     // If searchType is 'all', combine all search criteria
-    if (searchType === 'all' && filter.$or) {
+    if (searchType === "all" && filter.$or) {
       filter.$or.push(
-        { email: { $regex: query as string, $options: 'i' } },
-        { phone: query as string }
+        { email: { $regex: query as string, $options: "i" } },
+        { phone: query as string },
       );
     }
 
     const users = await User.find(filter)
-      .select('_id firstName lastName fullName email phone parentMobile')
+      .select("_id firstName lastName fullName email phone parentMobile")
       .limit(20); // Limit to 20 results
 
     res.json({
@@ -1370,12 +1541,11 @@ export const searchStudents = async (req: Request, res: Response): Promise<void>
       data: users,
       count: users.length,
     });
-
   } catch (error: any) {
-    console.error('Search students error:', error);
+    console.error("Search students error:", error);
     res.status(500).json({
       success: false,
-      error: 'Failed to search students',
+      error: "Failed to search students",
       message: error.message,
     });
   }
@@ -1384,39 +1554,40 @@ export const searchStudents = async (req: Request, res: Response): Promise<void>
 /**
  * Get agents from escalation policies for a project
  */
-export const getEscalationAgents = async (req: Request, res: Response): Promise<void> => {
+export const getEscalationAgents = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { projectId } = req.query;
 
     if (!projectId) {
       res.status(400).json({
         success: false,
-        error: 'Project ID is required',
+        error: "Project ID is required",
       });
       return;
     }
 
     // Import EscalationPolicy model
-    const EscalationPolicy = require('../models/sla-module/EscalationPolicy').default;
+    const EscalationPolicy =
+      require("../models/sla-module/EscalationPolicy").default;
 
     // Get all active escalation policies for this project
     const policies = await EscalationPolicy.find({
-      $or: [
-        { projectId: projectId },
-        { projectIds: projectId }
-      ],
+      $or: [{ projectId: projectId }, { projectIds: projectId }],
       isActive: true,
     });
 
     // Extract agents with their escalation level info
     const agentsMap = new Map<string, any>();
-    
+
     policies.forEach((policy: any) => {
       policy.levels?.forEach((level: any) => {
-        if (level.escalateTo?.type === 'user') {
+        if (level.escalateTo?.type === "user") {
           const userId = level.escalateTo.targetId;
           const targetName = level.escalateTo.targetName;
-          
+
           // Store agent with escalation level info
           if (!agentsMap.has(userId)) {
             agentsMap.set(userId, {
@@ -1443,33 +1614,34 @@ export const getEscalationAgents = async (req: Request, res: Response): Promise<
       _id: { $in: userIds },
       isActive: true,
     })
-      .select('_id firstName lastName email')
+      .select("_id firstName lastName email")
       .sort({ firstName: 1 });
 
     // Combine user details with escalation info
-    const agents = users.map((user: any) => {
-      const escalationInfo = agentsMap.get(user._id.toString());
-      return {
-        _id: user._id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        escalationLevel: escalationInfo?.escalationLevel || 'Unknown',
-        escalationLevelNumber: escalationInfo?.escalationLevelNumber || 999,
-      };
-    }).sort((a, b) => a.escalationLevelNumber - b.escalationLevelNumber);
+    const agents = users
+      .map((user: any) => {
+        const escalationInfo = agentsMap.get(user._id.toString());
+        return {
+          _id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          escalationLevel: escalationInfo?.escalationLevel || "Unknown",
+          escalationLevelNumber: escalationInfo?.escalationLevelNumber || 999,
+        };
+      })
+      .sort((a, b) => a.escalationLevelNumber - b.escalationLevelNumber);
 
     res.json({
       success: true,
       data: agents,
       count: agents.length,
     });
-
   } catch (error: any) {
-    console.error('Get escalation agents error:', error);
+    console.error("Get escalation agents error:", error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch escalation agents',
+      error: "Failed to fetch escalation agents",
       message: error.message,
     });
   }
@@ -1479,29 +1651,34 @@ export const getEscalationAgents = async (req: Request, res: Response): Promise<
  * Get employee report data
  * @route GET /api/users/report
  */
-export const getUserReport = async (req: Request, res: Response): Promise<void> => {
+export const getUserReport = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const users = await User.find({ isActive: true })
-      .select('employeeCode firstName lastName email mobile isActive role centers')
-      .populate('role', 'name')
-      .populate('centers', 'centerName')
+      .select(
+        "employeeCode firstName lastName email mobile isActive role centers",
+      )
+      .populate("role", "name")
+      .populate("centers", "centerName")
       .sort({ employeeCode: 1 })
       .lean();
 
-    const reportData = users.map(user => ({
+    const reportData = users.map((user) => ({
       _id: user._id,
-      employeeCode: user.employeeCode || 'N/A',
+      employeeCode: user.employeeCode || "N/A",
       firstName: user.firstName,
       lastName: user.lastName,
       fullName: `${user.firstName} ${user.lastName}`,
       email: user.email,
-      mobile: user.mobile || 'N/A',
-      centersMapped: Array.isArray(user.centers) 
-        ? user.centers.map((c: any) => c.centerName || 'N/A').join(', ') 
-        : 'N/A',
+      mobile: user.mobile || "N/A",
+      centersMapped: Array.isArray(user.centers)
+        ? user.centers.map((c: any) => c.centerName || "N/A").join(", ")
+        : "N/A",
       isActive: user.isActive,
-      status: user.isActive ? 'Active' : 'Inactive',
-      role: (user.role as any)?.name || 'N/A',
+      status: user.isActive ? "Active" : "Inactive",
+      role: (user.role as any)?.name || "N/A",
     }));
 
     res.json({
@@ -1509,13 +1686,75 @@ export const getUserReport = async (req: Request, res: Response): Promise<void> 
       data: reportData,
       count: reportData.length,
     });
-
   } catch (error: any) {
-    console.error('Get user report error:', error);
+    console.error("Get user report error:", error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch user report',
+      error: "Failed to fetch user report",
       message: error.message,
     });
+  }
+};
+
+/**
+ * Check if an email or phone/mobile already exists in the system.
+ * Used by the offline module registration form to warn agents before sending OTP.
+ * GET /api/users/check-duplicate?type=email|phone&value=<value>
+ */
+export const checkDuplicate = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { type, value } = req.query;
+
+    if (!type || !value || typeof value !== "string") {
+      res
+        .status(400)
+        .json({
+          success: false,
+          error: "type and value query parameters are required",
+        });
+      return;
+    }
+
+    let existingUser: any = null;
+
+    if (type === "email") {
+      existingUser = await User.findOne({ email: value.toLowerCase().trim() })
+        .select("_id firstName lastName email phone mobile")
+        .lean();
+    } else if (type === "phone") {
+      const normalised = value.trim();
+      existingUser = await User.findOne({
+        $or: [{ phone: normalised }, { mobile: normalised }],
+      })
+        .select("_id firstName lastName email phone mobile")
+        .lean();
+    } else {
+      res
+        .status(400)
+        .json({ success: false, error: 'type must be "email" or "phone"' });
+      return;
+    }
+
+    if (existingUser) {
+      res.json({
+        success: true,
+        exists: true,
+        existingUser: {
+          _id: existingUser._id,
+          firstName: existingUser.firstName || "",
+          lastName: existingUser.lastName || "",
+          email: existingUser.email,
+          phone: existingUser.phone || existingUser.mobile || "",
+        },
+      });
+    } else {
+      res.json({ success: true, exists: false });
+    }
+  } catch (error: any) {
+    console.error("Check duplicate error:", error);
+    res.status(500).json({ success: false, error: error.message });
   }
 };

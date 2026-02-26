@@ -132,3 +132,7 @@ clear-token.html
 
 # Pipeline configuration (do not push changes)
 bitbucket-pipelines.yml
+
+# Backend uploaded files
+backend/uploads/tickets/*
+!backend/uploads/tickets/.gitkeep
