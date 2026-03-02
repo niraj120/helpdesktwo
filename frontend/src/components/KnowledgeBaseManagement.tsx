@@ -25,6 +25,9 @@ interface KBArticle {
   publishedAt?: string;
   createdAt: string;
   updatedAt: string;
+  visibility?: "all" | "internal" | "public" | "role_based";
+  visibleToRoles?: string[];
+  alsoShowOnPublicPortal?: boolean;
 }
 
 interface Project {
@@ -164,6 +167,7 @@ const KnowledgeBaseManagement: React.FC = () => {
     displayOrder: 0,
     visibility: "all" as "all" | "internal" | "public" | "role_based",
     visibleToRoles: [] as string[],
+    alsoShowOnPublicPortal: false,
   });
   const [tagInput, setTagInput] = useState("");
   const [copiedArticleId, setCopiedArticleId] = useState<string | null>(null);
@@ -376,6 +380,7 @@ const KnowledgeBaseManagement: React.FC = () => {
       displayOrder: 0,
       visibility: "all",
       visibleToRoles: [],
+      alsoShowOnPublicPortal: false,
     });
     setShowModal(true);
   };
@@ -393,6 +398,7 @@ const KnowledgeBaseManagement: React.FC = () => {
       displayOrder: article.displayOrder,
       visibility: (article as any).visibility || "all",
       visibleToRoles: (article as any).visibleToRoles || [],
+      alsoShowOnPublicPortal: (article as any).alsoShowOnPublicPortal || false,
     });
     setShowModal(true);
   };
@@ -779,6 +785,68 @@ const KnowledgeBaseManagement: React.FC = () => {
                             >
                               {article.status}
                             </span>
+                            {/* Visibility badge */}
+                            <span
+                              title={
+                                article.visibility === "public"
+                                  ? "Visible on student submit-ticket portal"
+                                  : article.visibility === "internal"
+                                    ? "Internal only — hidden from student portal"
+                                    : article.visibility === "role_based"
+                                      ? "Role-based visibility"
+                                      : "Visible to everyone"
+                              }
+                              style={{
+                                padding: "4px 10px",
+                                borderRadius: "12px",
+                                fontSize: "11px",
+                                fontWeight: "600",
+                                cursor: "default",
+                                backgroundColor:
+                                  article.visibility === "public"
+                                    ? "#dbeafe"
+                                    : article.visibility === "internal"
+                                      ? "#fee2e2"
+                                      : article.visibility === "role_based"
+                                        ? "#fef3c7"
+                                        : "#f0fdf4",
+                                color:
+                                  article.visibility === "public"
+                                    ? "#1d4ed8"
+                                    : article.visibility === "internal"
+                                      ? "#b91c1c"
+                                      : article.visibility === "role_based"
+                                        ? "#92400e"
+                                        : "#15803d",
+                              }}
+                            >
+                              {article.visibility === "public"
+                                ? "🌐 Public"
+                                : article.visibility === "internal"
+                                  ? "🔒 Internal"
+                                  : article.visibility === "role_based"
+                                    ? "👥 Role-Based"
+                                    : "🌍 All Users"}
+                            </span>
+                            {/* +Portal badge when alsoShowOnPublicPortal is set */}
+                            {(article as any).alsoShowOnPublicPortal &&
+                              article.visibility !== "public" &&
+                              article.visibility !== "all" && (
+                                <span
+                                  title="Also visible on student submit-ticket portal"
+                                  style={{
+                                    padding: "4px 8px",
+                                    borderRadius: "12px",
+                                    fontSize: "11px",
+                                    fontWeight: "600",
+                                    cursor: "default",
+                                    backgroundColor: "#dbeafe",
+                                    color: "#1d4ed8",
+                                  }}
+                                >
+                                  🌐 +Portal
+                                </span>
+                              )}
                           </div>
                           {article.category && (
                             <div
@@ -1897,13 +1965,17 @@ const KnowledgeBaseManagement: React.FC = () => {
                         fontSize: "14px",
                       }}
                     >
-                      <option value="all">All Users (Everyone)</option>
-                      <option value="public">
-                        Public Only (End Users / Students)
+                      <option value="all">
+                        🌍 All Users (Agents + Student Portal)
                       </option>
-                      <option value="internal">Internal Only (Agents)</option>
+                      <option value="public">
+                        🌐 Public Only (Student submit-ticket portal)
+                      </option>
+                      <option value="internal">
+                        🔒 Internal Only (Agents, hidden from students)
+                      </option>
                       <option value="role_based">
-                        Role-Based (Select specific roles)
+                        👥 Role-Based (Select specific roles)
                       </option>
                     </select>
                     <p
@@ -1914,13 +1986,13 @@ const KnowledgeBaseManagement: React.FC = () => {
                       }}
                     >
                       {formData.visibility === "all" &&
-                        "This article will be visible to everyone."}
+                        "Visible to everyone — including agents AND the student submit-ticket portal."}
                       {formData.visibility === "public" &&
-                        "This article will only be visible to end users (students) on the public portal."}
+                        "🌐 Visible ONLY on the student submit-ticket portal (unauthenticated users). Hidden from internal agents."}
                       {formData.visibility === "internal" &&
-                        "This article will only be visible to internal agents for ticket resolution."}
+                        "🔒 Only visible to logged-in agents. Use the toggle below to also show on the student submit-ticket portal."}
                       {formData.visibility === "role_based" &&
-                        "Select which roles can view this article below."}
+                        "Visible only to users with the selected roles below. Use the toggle below to also show on the student submit-ticket portal."}
                     </p>
                   </div>
 
@@ -2028,6 +2100,67 @@ const KnowledgeBaseManagement: React.FC = () => {
                           {formData.visibleToRoles.length} role(s) selected
                         </p>
                       )}
+                    </div>
+                  )}
+
+                  {/* Also show on public portal toggle — shown when visibility is role_based or internal */}
+                  {(formData.visibility === "role_based" ||
+                    formData.visibility === "internal") && (
+                    <div
+                      style={{
+                        marginTop: "12px",
+                        padding: "12px",
+                        border: "1px solid #bfdbfe",
+                        borderRadius: "6px",
+                        backgroundColor: "#eff6ff",
+                      }}
+                    >
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: "10px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={formData.alsoShowOnPublicPortal}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              alsoShowOnPublicPortal: e.target.checked,
+                            })
+                          }
+                          style={{
+                            width: "16px",
+                            height: "16px",
+                            marginTop: "2px",
+                            flexShrink: 0,
+                          }}
+                        />
+                        <div>
+                          <span
+                            style={{
+                              fontSize: "13px",
+                              fontWeight: "600",
+                              color: "#1d4ed8",
+                              display: "block",
+                            }}
+                          >
+                            🌐 Also show on student portal (submit-ticket URL)
+                          </span>
+                          <span style={{ fontSize: "12px", color: "#6b7280" }}>
+                            When checked, this article will ALSO appear on the
+                            public student submit-ticket portal, in addition to
+                            the selected{" "}
+                            {formData.visibility === "role_based"
+                              ? "roles"
+                              : "internal agents"}
+                            .
+                          </span>
+                        </div>
+                      </label>
                     </div>
                   )}
                 </div>

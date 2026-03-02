@@ -4,9 +4,75 @@ import KBLevel from "../models/KBLevel";
 import KBArticleLevelMapping from "../models/KBArticleLevelMapping";
 import KBTable from "../models/KBTable";
 import mongoose from "mongoose";
+import GCSService from "../services/gcsService";
 
 // Student role ID - used for public student portal access
 const STUDENT_ROLE_ID = "6915aeb10561bff7f36244a9";
+
+/**
+ * Refresh a signed GCS URL if it appears to be expired or close to expiration.
+ * Supports both v2 (Expires param) and v4 (X-Goog-Date + X-Goog-Expires) signed URLs.
+ * Returns a fresh signed URL or the original URL if not a GCS URL.
+ */
+async function refreshSignedUrlIfNeeded(
+  url: string | undefined,
+): Promise<string | undefined> {
+  if (!url) return url;
+
+  // Only process GCS storage URLs
+  if (!url.includes("storage.googleapis.com")) {
+    return url;
+  }
+
+  try {
+    const urlObj = new URL(url);
+    const now = Math.floor(Date.now() / 1000);
+    let isExpired = false;
+
+    // Check for v2 signed URL (Expires parameter is Unix timestamp)
+    const expiresV2 = urlObj.searchParams.get("Expires");
+    if (expiresV2) {
+      const expiryTimestamp = parseInt(expiresV2, 10);
+      // Expired or will expire within 24 hours
+      isExpired = expiryTimestamp < now + 86400;
+    }
+
+    // Check for v4 signed URL (X-Goog-Date + X-Goog-Expires)
+    const googDate = urlObj.searchParams.get("X-Goog-Date");
+    const googExpires = urlObj.searchParams.get("X-Goog-Expires");
+    if (googDate && googExpires) {
+      // Parse X-Goog-Date format: 20260224T092016Z
+      const year = parseInt(googDate.substring(0, 4), 10);
+      const month = parseInt(googDate.substring(4, 6), 10) - 1;
+      const day = parseInt(googDate.substring(6, 8), 10);
+      const hour = parseInt(googDate.substring(9, 11), 10);
+      const minute = parseInt(googDate.substring(11, 13), 10);
+      const second = parseInt(googDate.substring(13, 15), 10);
+      const startTime = Date.UTC(year, month, day, hour, minute, second) / 1000;
+      const duration = parseInt(googExpires, 10);
+      const expiryTimestamp = startTime + duration;
+      // Expired or will expire within 24 hours
+      isExpired = expiryTimestamp < now + 86400;
+    }
+
+    if (isExpired) {
+      console.log(`🔄 Refreshing expired GCS signed URL`);
+      return await GCSService.getSignedUrl(url);
+    }
+
+    // URL seems fine, return as-is
+    return url;
+  } catch (error) {
+    console.error("Error checking/refreshing signed URL:", error);
+    // Try to refresh anyway since we know it's a GCS URL
+    try {
+      return await GCSService.getSignedUrl(url);
+    } catch (refreshError) {
+      console.error("Failed to refresh URL:", refreshError);
+      return url;
+    }
+  }
+}
 
 /**
  * Build visibility filter for KB articles based on user authentication and role
@@ -27,6 +93,7 @@ function buildVisibilityFilter(req: Request): any {
         { visibility: { $exists: false } }, // Legacy articles without visibility field
         { visibility: "all" },
         { visibility: "public" },
+        { alsoShowOnPublicPortal: true }, // Explicitly opted-in to show on portal
         {
           visibility: "role_based",
           visibleToRoles: new mongoose.Types.ObjectId(STUDENT_ROLE_ID),
@@ -42,6 +109,7 @@ function buildVisibilityFilter(req: Request): any {
         { visibility: { $exists: false } }, // Legacy articles without visibility field
         { visibility: "all" },
         { visibility: "public" },
+        { alsoShowOnPublicPortal: true }, // Explicitly opted-in to show on portal
       ],
     };
   }
@@ -74,12 +142,21 @@ function buildVisibilityFilter(req: Request): any {
     userRoleId ? /^[0-9a-fA-F]{24}$/.test(userRoleId) : false,
   );
 
-  // Authenticated user - can see 'all', 'internal', and role-based articles
+  // Check if this is a Student role - students should see 'public' articles
+  const isStudentRole = userRoleId === STUDENT_ROLE_ID;
+
+  // Authenticated internal user (DNO, Counselor, etc.) - can see 'all', 'internal', and role-based articles
+  // NOTE: 'public' visibility is ONLY for public URLs (student portal, submit-ticket) - NOT for internal staff
   const visibilityConditions: any[] = [
     { visibility: { $exists: false } }, // Legacy articles without visibility field
     { visibility: "all" },
     { visibility: "internal" },
   ];
+
+  // Students should also see 'public' articles
+  if (isStudentRole) {
+    visibilityConditions.push({ visibility: "public" });
+  }
 
   // Add role-based filter if user has a valid role ID (24 hex chars)
   if (userRoleId && /^[0-9a-fA-F]{24}$/.test(userRoleId)) {
@@ -226,57 +303,64 @@ export const getPublicArticles = async (
     });
 
     // Map levels with their articles and tables (no additional queries)
-    const levelsWithArticles = levels.map((level) => {
-      const levelIdStr = level._id.toString();
-      const articleIdsForLevel = mappingsByLevel.get(levelIdStr) || [];
+    const levelsWithArticles = await Promise.all(
+      levels.map(async (level) => {
+        const levelIdStr = level._id.toString();
+        const articleIdsForLevel = mappingsByLevel.get(levelIdStr) || [];
 
-      // Get articles for this level from the map
-      const articles = articleIdsForLevel
-        .map((id) => articleMap.get(id))
-        .filter(Boolean)
-        .sort((a: any, b: any) => {
-          // Featured articles first
-          if (a.isFeatured !== b.isFeatured) return b.isFeatured ? 1 : -1;
-          // Then sort by displayOrder ascending (lower number = higher priority/first)
-          const orderA = Number(a.displayOrder) || 0;
-          const orderB = Number(b.displayOrder) || 0;
-          return orderA - orderB;
-        });
+        // Get articles for this level from the map
+        const articles = articleIdsForLevel
+          .map((id) => articleMap.get(id))
+          .filter(Boolean)
+          .sort((a: any, b: any) => {
+            // Featured articles first
+            if (a.isFeatured !== b.isFeatured) return b.isFeatured ? 1 : -1;
+            // Then sort by displayOrder ascending (lower number = higher priority/first)
+            const orderA = Number(a.displayOrder) || 0;
+            const orderB = Number(b.displayOrder) || 0;
+            return orderA - orderB;
+          });
 
-      // Get tables that include this level
-      const tables = allTables.filter((t) =>
-        t.levelIds?.some((lid: any) => lid.toString() === levelIdStr),
-      );
+        // Get tables that include this level
+        const tables = allTables.filter((t) =>
+          t.levelIds?.some((lid: any) => lid.toString() === levelIdStr),
+        );
 
-      return {
-        id: level._id,
-        levelName: level.levelName,
-        levelOrder: level.levelOrder,
-        levelIcon: level.levelIcon,
-        articles: articles.map((article: any) => ({
-          id: article._id,
-          documentName: article.documentName,
-          documentType: article.documentType,
-          pdfUrl: article.pdfUrl,
-          externalUrl: article.externalUrl,
-          description: article.description,
-          showNewTag: article.showNewTag,
-          isFeatured: article.isFeatured,
-          author: article.author,
-          publishedAt: article.publishedAt,
-          viewsCount: article.viewsCount,
-          tags: article.tags,
-        })),
-        tables: tables.map((table: any) => ({
-          _id: table._id,
-          tableName: table.tableName,
-          description: table.description,
-          status: table.status,
-          displayStyle: table.displayStyle || "table",
-          dataSource: table.dataSource || "manual",
-        })),
-      };
-    });
+        // Refresh signed URLs for articles with pdfUrl
+        const articlesWithFreshUrls = await Promise.all(
+          articles.map(async (article: any) => ({
+            id: article._id,
+            documentName: article.documentName,
+            documentType: article.documentType,
+            pdfUrl: await refreshSignedUrlIfNeeded(article.pdfUrl),
+            externalUrl: article.externalUrl,
+            description: article.description,
+            showNewTag: article.showNewTag,
+            isFeatured: article.isFeatured,
+            author: article.author,
+            publishedAt: article.publishedAt,
+            viewsCount: article.viewsCount,
+            tags: article.tags,
+          })),
+        );
+
+        return {
+          id: level._id,
+          levelName: level.levelName,
+          levelOrder: level.levelOrder,
+          levelIcon: level.levelIcon,
+          articles: articlesWithFreshUrls,
+          tables: tables.map((table: any) => ({
+            _id: table._id,
+            tableName: table.tableName,
+            description: table.description,
+            status: table.status,
+            displayStyle: table.displayStyle || "table",
+            dataSource: table.dataSource || "manual",
+          })),
+        };
+      }),
+    );
 
     res.status(200).json({
       success: true,
@@ -390,6 +474,9 @@ export const getPublicArticleById = async (
       .limit(5)
       .lean();
 
+    // Refresh signed URL if needed
+    const freshPdfUrl = await refreshSignedUrlIfNeeded(article.pdfUrl);
+
     res.status(200).json({
       success: true,
       data: {
@@ -397,7 +484,7 @@ export const getPublicArticleById = async (
           id: article._id,
           documentName: article.documentName,
           documentType: article.documentType,
-          pdfUrl: article.pdfUrl,
+          pdfUrl: freshPdfUrl,
           htmlContent: article.htmlContent,
           author: article.author,
           publishedAt: article.publishedAt,
@@ -485,7 +572,6 @@ export const searchPublicArticles = async (
       .select(
         "documentName documentType pdfUrl externalUrl htmlContent description showNewTag isFeatured author publishedAt viewsCount tags",
       )
-      .populate("levels", "levelName levelOrder levelIcon")
       .sort({ isFeatured: -1, publishedAt: -1 })
       .limit(50)
       .lean();

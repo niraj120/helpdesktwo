@@ -6,6 +6,8 @@ import { API_CONFIG } from "../../config/constants";
 interface ContentViewerModalProps {
   articleId: string;
   onClose: () => void;
+  projectId?: string; // Required for public (student) access
+  isStudentPortal?: boolean; // When true, uses public endpoint (no auth required)
 }
 
 interface Article {
@@ -20,6 +22,8 @@ interface Article {
 const ContentViewerModal: React.FC<ContentViewerModalProps> = ({
   articleId,
   onClose,
+  projectId,
+  isStudentPortal = false,
 }) => {
   const [article, setArticle] = useState<Article | null>(null);
   const [loading, setLoading] = useState(true);
@@ -72,11 +76,41 @@ const ContentViewerModal: React.FC<ContentViewerModalProps> = ({
     try {
       setLoading(true);
       const token = localStorage.getItem("authToken");
-      const response = await axios.get(
-        `${API_CONFIG.API_URL}/kb/articles/${articleId}`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      const articleData = response.data.data;
+      const usePublic = isStudentPortal || !token;
+
+      let articleData: Article;
+      if (usePublic) {
+        // Use public endpoint — no auth required
+        // Never send an expired/invalid token on the student portal public route
+        const params: any = {};
+        if (projectId) params.projectId = projectId;
+        const response = await axios.get(
+          `${API_CONFIG.API_URL}/kb/public/articles/${articleId}`,
+          {
+            // Omit Authorization header entirely on student portal to avoid
+            // "token expired" errors from optional auth middleware
+            headers: {},
+            params,
+          },
+        );
+        const pub = response.data.data.article;
+        articleData = {
+          _id: pub.id || pub._id,
+          title: pub.documentName,
+          documentType: pub.documentType,
+          pdfUrl: pub.pdfUrl,
+          htmlContent: pub.htmlContent,
+          externalUrl: pub.externalUrl,
+        };
+      } else {
+        // Use private endpoint for admin/staff
+        const response = await axios.get(
+          `${API_CONFIG.API_URL}/kb/articles/${articleId}`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        articleData = response.data.data;
+      }
+
       setArticle(articleData);
 
       // Set default view mode
@@ -100,7 +134,7 @@ const ContentViewerModal: React.FC<ContentViewerModalProps> = ({
 
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1050]">
         <div className="bg-white rounded-lg p-8">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading content...</p>
@@ -118,7 +152,7 @@ const ContentViewerModal: React.FC<ContentViewerModalProps> = ({
   const hasExternal = !!article.externalUrl;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1050] p-4">
       <div className="bg-white rounded-lg shadow-2xl w-full max-w-6xl h-[90vh] flex flex-col">
         {/* Header */}
         <div className="px-6 py-4 border-b flex items-center justify-between bg-gradient-to-r from-blue-50 to-indigo-50">

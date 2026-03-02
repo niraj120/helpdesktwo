@@ -14,7 +14,6 @@ import {
 } from "@heroicons/react/24/outline";
 import { StudentLoginModal } from "../components/StudentLoginModal";
 import { LanguageToggle } from "../components/LanguageToggle";
-import KBChatbot from "../components/KBChatbot";
 import KnowledgeBaseViewer from "../components/knowledge-base/KnowledgeBaseViewer";
 import { useBranding } from "../contexts/BrandingContext";
 import { API_CONFIG } from "../config/constants";
@@ -2394,9 +2393,6 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
           customUrlPath={customUrlPath || ""}
         />
       )}
-
-      {/* KB Chatbot */}
-      <KBChatbot />
     </div>
   );
 };

@@ -62,8 +62,10 @@ const KnowledgeBaseViewer: React.FC<KnowledgeBaseViewerProps> = ({
 }) => {
   const { t } = useTranslation();
   const [levels, setLevels] = useState<KBLevel[]>([]);
+  const [allLevels, setAllLevels] = useState<KBLevel[]>([]); // master copy, never filtered
   const [activeLevel, setActiveLevel] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [appliedSearchQuery, setAppliedSearchQuery] = useState(""); // set on Search click, passed to tables
   const [loading, setLoading] = useState(true);
   const [selectedArticle, setSelectedArticle] = useState<string | null>(null);
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
@@ -87,21 +89,20 @@ const KnowledgeBaseViewer: React.FC<KnowledgeBaseViewerProps> = ({
     try {
       setLoading(true);
       const token = localStorage.getItem("authToken");
-      // Build headers - only include auth if token exists (supports public access)
+      // Build headers - only include auth if NOT student portal and token exists
+      // For student portal, skip token to avoid expired token errors on public access
       const headers: any = {};
-      if (token) {
+      if (!isStudentPortal && token) {
         headers.Authorization = `Bearer ${token}`;
       }
       console.log(
         "KnowledgeBaseViewer: Fetching KB with projectId:",
         projectId,
+        "isStudentPortal:",
+        isStudentPortal,
       );
 
-      // Build params - add context for student portal to show Student-visible content
       const params: any = { projectId };
-      if (isStudentPortal && !token) {
-        params.context = "student-portal";
-      }
 
       const response = await axios.get(
         `${API_CONFIG.API_URL}/kb/public/articles`,
@@ -111,6 +112,7 @@ const KnowledgeBaseViewer: React.FC<KnowledgeBaseViewerProps> = ({
         },
       );
       const fetchedLevels = response.data.data.levels || [];
+      setAllLevels(fetchedLevels);
       setLevels(fetchedLevels);
       if (fetchedLevels.length > 0) {
         setActiveLevel(fetchedLevels[0].id);
@@ -122,90 +124,35 @@ const KnowledgeBaseViewer: React.FC<KnowledgeBaseViewerProps> = ({
     }
   };
 
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) {
-      fetchKnowledgeBase();
+  const handleSearch = () => {
+    const q = searchQuery.trim().toLowerCase();
+
+    if (!q) {
+      // Restore full view
+      setLevels(allLevels);
+      if (allLevels.length > 0) setActiveLevel(allLevels[0].id);
+      setAppliedSearchQuery("");
       return;
     }
 
-    try {
-      setLoading(true);
-      const token = localStorage.getItem("authToken");
-      // Build headers - only include auth if token exists (supports public access)
-      const headers: any = {};
-      if (token) {
-        headers.Authorization = `Bearer ${token}`;
-      }
+    setAppliedSearchQuery(q);
 
-      // Build params - add context for student portal
-      const params: any = { q: searchQuery, projectId };
-      if (isStudentPortal && !token) {
-        params.context = "student-portal";
-      }
+    // Filter already-loaded levels (respects all role/visibility rules applied at load time)
+    const filtered = allLevels
+      .map((level) => ({
+        ...level,
+        articles: level.articles.filter(
+          (article) =>
+            article.documentName.toLowerCase().includes(q) ||
+            (article.description?.toLowerCase().includes(q) ?? false) ||
+            (article.author?.toLowerCase().includes(q) ?? false) ||
+            article.tags.some((tag) => tag.toLowerCase().includes(q)),
+        ),
+      }))
+      .filter((level) => level.articles.length > 0);
 
-      const response = await axios.get(
-        `${API_CONFIG.API_URL}/kb/public/articles/search`,
-        {
-          headers,
-          params,
-        },
-      );
-
-      if (response.data.success) {
-        const searchResults = response.data.data || [];
-
-        // Group search results by level
-        const levelMap = new Map<string, KBLevel>();
-
-        searchResults.forEach((article: any) => {
-          article.levels?.forEach((level: any) => {
-            const levelId = level._id || level.id;
-            if (!levelMap.has(levelId)) {
-              levelMap.set(levelId, {
-                id: levelId,
-                levelName: level.levelName,
-                levelOrder: level.levelOrder || 0,
-                levelIcon: level.levelIcon,
-                articles: [],
-                tables: [],
-              });
-            }
-
-            const existingLevel = levelMap.get(levelId)!;
-            if (!existingLevel.articles.find((a) => a.id === article._id)) {
-              existingLevel.articles.push({
-                id: article._id,
-                documentName: article.documentName,
-                documentType: article.documentType,
-                pdfUrl: article.pdfUrl,
-                htmlContent: article.htmlContent,
-                externalUrl: article.externalUrl,
-                description: article.description,
-                showNewTag: article.showNewTag,
-                isFeatured: article.isFeatured,
-                author: article.author,
-                publishedAt: article.publishedAt,
-                viewsCount: article.viewsCount,
-                tags: article.tags || [],
-              });
-            }
-          });
-        });
-
-        const searchedLevels = Array.from(levelMap.values()).sort(
-          (a, b) => a.levelOrder - b.levelOrder,
-        );
-        setLevels(searchedLevels);
-        if (searchedLevels.length > 0) {
-          setActiveLevel(searchedLevels[0].id);
-        }
-      }
-    } catch (error: any) {
-      console.error("Failed to search:", error);
-      alert("Search failed. Please try again.");
-    } finally {
-      setLoading(false);
-    }
+    setLevels(filtered);
+    if (filtered.length > 0) setActiveLevel(filtered[0].id);
   };
 
   if (selectedArticle) {
@@ -214,6 +161,7 @@ const KnowledgeBaseViewer: React.FC<KnowledgeBaseViewerProps> = ({
         articleId={selectedArticle}
         projectId={projectId}
         onBack={() => setSelectedArticle(null)}
+        isStudentPortal={isStudentPortal}
       />
     );
   }
@@ -266,7 +214,14 @@ const KnowledgeBaseViewer: React.FC<KnowledgeBaseViewerProps> = ({
           <input
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              if (!e.target.value.trim()) {
+                setLevels(allLevels);
+                if (allLevels.length > 0) setActiveLevel(allLevels[0].id);
+                setAppliedSearchQuery("");
+              }
+            }}
             onKeyPress={(e) => e.key === "Enter" && handleSearch()}
             placeholder={t("searchForArticles")}
             className="w-full pl-16 pr-32 py-5 text-lg rounded-2xl focus:outline-none focus:ring-4 focus:ring-blue-500/20"
@@ -471,6 +426,8 @@ const KnowledgeBaseViewer: React.FC<KnowledgeBaseViewerProps> = ({
                         showHeader={false}
                         autoPopulate={true}
                         isStudentPortal={isStudentPortal}
+                        externalSearchQuery={appliedSearchQuery}
+                        projectId={projectId}
                       />
                     </div>
                   ))}

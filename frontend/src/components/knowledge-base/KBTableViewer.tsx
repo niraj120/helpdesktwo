@@ -44,6 +44,8 @@ interface KBTableViewerProps {
   showHeader?: boolean;
   autoPopulate?: boolean;
   isStudentPortal?: boolean; // When true, adds student-portal context for visibility filtering
+  externalSearchQuery?: string; // When provided, filters table rows from parent search
+  projectId?: string; // Passed to ContentViewerModal for public article access
 }
 
 const KBTableViewer: React.FC<KBTableViewerProps> = ({
@@ -53,6 +55,8 @@ const KBTableViewer: React.FC<KBTableViewerProps> = ({
   showHeader = true,
   autoPopulate = true,
   isStudentPortal = false,
+  externalSearchQuery = "",
+  projectId,
 }) => {
   const [table, setTable] = useState<KBTableData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -70,7 +74,8 @@ const KBTableViewer: React.FC<KBTableViewerProps> = ({
       setLoading(true);
       const token = localStorage.getItem("authToken");
       const headers: Record<string, string> = {};
-      if (token) {
+      // Only send token if NOT student portal to avoid expired token errors
+      if (!isStudentPortal && token) {
         headers.Authorization = `Bearer ${token}`;
       }
       // Build query params - include levelId if provided to filter articles
@@ -93,9 +98,11 @@ const KBTableViewer: React.FC<KBTableViewerProps> = ({
       }
       setTable(tableData);
 
-      // Auto-populate table from articles if enabled and no rows exist
+      // Auto-populate table from articles if enabled, has valid token, not student portal, and no rows exist
       if (
         autoPopulate &&
+        !isStudentPortal &&
+        token &&
         (!response.data.data.rows || response.data.data.rows.length === 0)
       ) {
         await populateFromArticles(tableId, token || "");
@@ -146,15 +153,15 @@ const KBTableViewer: React.FC<KBTableViewerProps> = ({
     );
   }
 
-  // Filter rows based on search query
-  const filteredRows =
-    table.isSearchable && searchQuery
-      ? table.rows.filter((row) =>
-          Object.values(row.rowData).some((value) =>
-            String(value).toLowerCase().includes(searchQuery.toLowerCase()),
-          ),
-        )
-      : table.rows;
+  // Filter rows based on search query (external from parent search bar takes priority)
+  const activeQuery = externalSearchQuery || searchQuery;
+  const filteredRows = activeQuery
+    ? table.rows.filter((row) =>
+        Object.values(row.rowData).some((value) =>
+          String(value).toLowerCase().includes(activeQuery.toLowerCase()),
+        ),
+      )
+    : table.rows;
 
   // Pagination
   const totalPages = table.isPaginated
@@ -564,6 +571,8 @@ const KBTableViewer: React.FC<KBTableViewerProps> = ({
         <ContentViewerModal
           articleId={viewingArticleId}
           onClose={() => setViewingArticleId(null)}
+          projectId={projectId}
+          isStudentPortal={isStudentPortal}
         />
       )}
     </div>

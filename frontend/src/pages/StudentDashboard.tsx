@@ -1,13 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
-import axios from 'axios';
-import DOMPurify from 'dompurify';
-import { API_CONFIG } from '../config/constants';
-import { PERMISSIONS } from '../constants/permissions';
-import { usePermissions } from '../hooks/usePermissions';
-import { LanguageToggle } from '../components/LanguageToggle';
-import FAQViewer from '../components/FAQViewer';
+import React, { useState, useEffect, useRef } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
+import axios from "axios";
+import DOMPurify from "dompurify";
+import { API_CONFIG } from "../config/constants";
+import { PERMISSIONS } from "../constants/permissions";
+import { usePermissions } from "../hooks/usePermissions";
+import { LanguageToggle } from "../components/LanguageToggle";
+import FAQViewer from "../components/FAQViewer";
 import {
   HomeIcon,
   TicketIcon,
@@ -33,7 +33,7 @@ import {
   ChevronDownIcon,
   QuestionMarkCircleIcon,
   InboxIcon,
-} from '@heroicons/react/24/outline';
+} from "@heroicons/react/24/outline";
 
 interface Ticket {
   _id: string;
@@ -41,7 +41,7 @@ interface Ticket {
   title: string;
   description: string;
   status: number; // 1=Open, 2=In Progress, 3=On Hold, 4=Resolved, 5=Closed
-  priority: 'low' | 'medium' | 'high' | 'urgent';
+  priority: "low" | "medium" | "high" | "urgent";
   category: string;
   createdAt: string;
   updatedAt: string;
@@ -83,7 +83,19 @@ interface User {
 
 interface OnlineFormField {
   fieldName: string;
-  fieldType: 'text' | 'number' | 'date' | 'email' | 'phone' | 'url' | 'textarea' | 'dropdown' | 'multiselect' | 'radio' | 'checkbox' | 'file';
+  fieldType:
+    | "text"
+    | "number"
+    | "date"
+    | "email"
+    | "phone"
+    | "url"
+    | "textarea"
+    | "dropdown"
+    | "multiselect"
+    | "radio"
+    | "checkbox"
+    | "file";
   required: boolean;
   placeholder: string;
   options?: string[];
@@ -110,7 +122,7 @@ interface OfflineCenter {
 }
 
 interface TicketSubmissionSettings {
-  mode: 'online' | 'offline' | 'both';
+  mode: "online" | "offline" | "both";
   enableOnlineForm: boolean;
   enableOfflineCenter: boolean;
   onlineFormFields: OnlineFormField[];
@@ -136,7 +148,17 @@ const StudentDashboard: React.FC = () => {
   const { customUrlPath } = useParams();
   const { hasPermission, hasAnyPermission } = usePermissions();
   const { t } = useTranslation();
-  const [activeModule, setActiveModule] = useState<'dashboard' | 'my-queries' | 'submit-ticket' | 'find-center' | 'knowledge-base' | 'faq' | 'ticket-detail' | 'profile' | 'change-password'>('dashboard');
+  const [activeModule, setActiveModule] = useState<
+    | "dashboard"
+    | "my-queries"
+    | "submit-ticket"
+    | "find-center"
+    | "knowledge-base"
+    | "faq"
+    | "ticket-detail"
+    | "profile"
+    | "change-password"
+  >("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
@@ -144,7 +166,7 @@ const StudentDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const profileDropdownRef = useRef<HTMLDivElement>(null);
-  
+
   // Extended user profile data
   const [userProfile, setUserProfile] = useState<{
     firstName: string;
@@ -153,62 +175,70 @@ const StudentDashboard: React.FC = () => {
     phone?: string;
     parentPhone?: string;
   } | null>(null);
-  
+
   // Change password states
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [passwordError, setPasswordError] = useState('');
-  const [passwordSuccess, setPasswordSuccess] = useState('');
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordSuccess, setPasswordSuccess] = useState("");
   const [changingPassword, setChangingPassword] = useState(false);
-  
+
   // Initialize projectBranding from sessionStorage immediately to prevent flickering
   const [projectBranding, setProjectBranding] = useState<any>(() => {
     const cachedBrandingKey = `branding_${customUrlPath}`;
     const cachedData = sessionStorage.getItem(cachedBrandingKey);
     return cachedData ? JSON.parse(cachedData) : null;
   });
-  
+
   // Ticket submission states
-  const [ticketSettings, setTicketSettings] = useState<TicketSubmissionSettings | null>(null);
+  const [ticketSettings, setTicketSettings] =
+    useState<TicketSubmissionSettings | null>(null);
   const [formData, setFormData] = useState<Record<string, any>>({});
   const [fieldFiles, setFieldFiles] = useState<Record<string, File[]>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  
+
   // Find center states
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterType, setFilterType] = useState<'all' | 'state' | 'city' | 'pincode'>('all');
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterType, setFilterType] = useState<
+    "all" | "state" | "city" | "pincode"
+  >("all");
   const [filteredCenters, setFilteredCenters] = useState<OfflineCenter[]>([]);
-  
+
   // Knowledge Base states
   const [kbArticles, setKbArticles] = useState<KBArticle[]>([]);
   const [kbCategories, setKbCategories] = useState<string[]>([]);
-  const [kbSelectedCategory, setKbSelectedCategory] = useState<string>('all');
-  const [kbSearchQuery, setKbSearchQuery] = useState('');
-  const [selectedKbArticle, setSelectedKbArticle] = useState<KBArticle | null>(null);
-  const [articleVotes, setArticleVotes] = useState<Record<string, 'helpful' | 'not-helpful' | null>>({});
+  const [kbSelectedCategory, setKbSelectedCategory] = useState<string>("all");
+  const [kbSearchQuery, setKbSearchQuery] = useState("");
+  const [selectedKbArticle, setSelectedKbArticle] = useState<KBArticle | null>(
+    null,
+  );
+  const [articleVotes, setArticleVotes] = useState<
+    Record<string, "helpful" | "not-helpful" | null>
+  >({});
 
   // Ticket Detail states
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [loadingTicketDetail, setLoadingTicketDetail] = useState(false);
-  const [replyMessage, setReplyMessage] = useState('');
+  const [replyMessage, setReplyMessage] = useState("");
   const [replyFiles, setReplyFiles] = useState<File[]>([]);
   const [submittingReply, setSubmittingReply] = useState(false);
   const [replySuccess, setReplySuccess] = useState(false);
   const [replyError, setReplyError] = useState<string | null>(null);
   const [closingTicket, setClosingTicket] = useState(false);
-  const [allowStudentToCloseTicket, setAllowStudentToCloseTicket] = useState(false);
+  const [allowStudentToCloseTicket, setAllowStudentToCloseTicket] =
+    useState(false);
 
   // Load KB votes from localStorage
   useEffect(() => {
-    const savedVotes = localStorage.getItem('kb_article_votes');
+    const savedVotes = localStorage.getItem("kb_article_votes");
     if (savedVotes) {
       try {
         setArticleVotes(JSON.parse(savedVotes));
       } catch (error) {
-        console.error('Error loading KB votes:', error);
+        console.error("Error loading KB votes:", error);
       }
     }
   }, []);
@@ -216,109 +246,119 @@ const StudentDashboard: React.FC = () => {
   // Close profile dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (profileDropdownRef.current && !profileDropdownRef.current.contains(event.target as Node)) {
+      if (
+        profileDropdownRef.current &&
+        !profileDropdownRef.current.contains(event.target as Node)
+      ) {
         setProfileDropdownOpen(false);
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   // Fetch user profile data
   const fetchUserProfile = async () => {
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       if (!token) return;
-      
+
       const response = await axios.get(`${API_CONFIG.API_URL}/auth/profile`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
-      
+
       if (response.data) {
         setUserProfile({
-          firstName: response.data.firstName || '',
-          lastName: response.data.lastName || '',
-          email: response.data.email || '',
-          phone: response.data.phone || response.data.mobileNumber || '',
-          parentPhone: response.data.parentPhone || response.data.guardianPhone || '',
+          firstName: response.data.firstName || "",
+          lastName: response.data.lastName || "",
+          email: response.data.email || "",
+          phone: response.data.phone || response.data.mobileNumber || "",
+          parentPhone:
+            response.data.parentPhone || response.data.guardianPhone || "",
         });
       }
     } catch (error) {
-      console.error('Error fetching user profile:', error);
+      console.error("Error fetching user profile:", error);
     }
   };
 
   // Handle password change
   const handleChangePassword = async () => {
-    setPasswordError('');
-    setPasswordSuccess('');
-    
+    setPasswordError("");
+    setPasswordSuccess("");
+
     if (!currentPassword || !newPassword || !confirmPassword) {
-      setPasswordError('All fields are required');
+      setPasswordError("All fields are required");
       return;
     }
-    
+
     if (newPassword !== confirmPassword) {
-      setPasswordError('New passwords do not match');
+      setPasswordError("New passwords do not match");
       return;
     }
-    
+
     if (newPassword.length < 6) {
-      setPasswordError('New password must be at least 6 characters');
+      setPasswordError("New password must be at least 6 characters");
       return;
     }
-    
+
     try {
       setChangingPassword(true);
-      const token = localStorage.getItem('authToken');
-      
-      await axios.post(`${API_CONFIG.API_URL}/auth/change-password`, {
-        currentPassword,
-        newPassword,
-      }, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      setPasswordSuccess('Password changed successfully!');
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-      
+      const token = localStorage.getItem("authToken");
+
+      await axios.post(
+        `${API_CONFIG.API_URL}/auth/change-password`,
+        {
+          currentPassword,
+          newPassword,
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+
+      setPasswordSuccess("Password changed successfully!");
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+
       setTimeout(() => {
-        setPasswordSuccess('');
-        setActiveModule('dashboard');
+        setPasswordSuccess("");
+        setActiveModule("dashboard");
       }, 2000);
     } catch (error: any) {
-      setPasswordError(error.response?.data?.message || 'Failed to change password');
+      setPasswordError(
+        error.response?.data?.message || "Failed to change password",
+      );
     } finally {
       setChangingPassword(false);
     }
   };
 
   useEffect(() => {
-    const token = localStorage.getItem('authToken');
-    console.log('🔑 Token from localStorage:', token ? 'EXISTS' : 'MISSING');
-    
+    const token = localStorage.getItem("authToken");
+    console.log("🔑 Token from localStorage:", token ? "EXISTS" : "MISSING");
+
     if (!token) {
-      console.log('❌ No token found, redirecting to student portal');
+      console.log("❌ No token found, redirecting to student portal");
       navigate(`/${customUrlPath}/submit-ticket`);
       return;
     }
 
     // Decode JWT to get user info
     try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      console.log('📦 Decoded token payload:', payload);
-      
+      const payload = JSON.parse(atob(token.split(".")[1]));
+      console.log("📦 Decoded token payload:", payload);
+
       setUser({
         id: payload.userId,
         email: payload.email,
-        firstName: payload.firstName || 'Candidate',
-        lastName: payload.lastName || '',
+        firstName: payload.firstName || "Candidate",
+        lastName: payload.lastName || "",
       });
     } catch (error) {
-      console.error('❌ Failed to decode token:', error);
-      localStorage.removeItem('authToken');
+      console.error("❌ Failed to decode token:", error);
+      localStorage.removeItem("authToken");
       navigate(`/${customUrlPath}/submit-ticket`);
       return;
     }
@@ -328,48 +368,50 @@ const StudentDashboard: React.FC = () => {
 
   const fetchData = async () => {
     try {
-      const token = localStorage.getItem('authToken');
-      console.log('🔄 Fetching data with token:', token ? 'YES' : 'NO');
-      
+      const token = localStorage.getItem("authToken");
+      console.log("🔄 Fetching data with token:", token ? "YES" : "NO");
+
       if (!token) {
-        console.error('❌ No token found in fetchData');
+        console.error("❌ No token found in fetchData");
         setLoading(false);
         navigate(`/${customUrlPath}/submit-ticket`);
         return;
       }
-      
+
       // Try to get cached branding from sessionStorage first
       const cachedBrandingKey = `branding_${customUrlPath}`;
       const cachedBrandingData = sessionStorage.getItem(cachedBrandingKey);
-      
+
       let branding;
       if (cachedBrandingData) {
-        console.log('📦 Using cached branding data');
+        console.log("📦 Using cached branding data");
         branding = JSON.parse(cachedBrandingData);
         setProjectBranding(branding);
       } else {
         // Fetch project branding
-        console.log('🌐 Fetching branding data from API');
+        console.log("🌐 Fetching branding data from API");
         const brandingRes = await axios.get(
-          `${API_CONFIG.API_URL}/projects/branding/${customUrlPath}`
+          `${API_CONFIG.API_URL}/projects/branding/${customUrlPath}`,
         );
-        const brandingData = brandingRes.data.success ? brandingRes.data.data : brandingRes.data;
-        
+        const brandingData = brandingRes.data.success
+          ? brandingRes.data.data
+          : brandingRes.data;
+
         // Parse colorTheme if it's a string
         let colorTheme = brandingData.branding?.colorTheme;
-        if (typeof colorTheme === 'string') {
+        if (typeof colorTheme === "string") {
           // Parse string like "@{primary=#49bc8f; secondary=#64748b; accent=#3b82f6; background=#ffffff}"
           const parsed: any = {};
           const matches = colorTheme.match(/(\w+)=#([a-zA-Z0-9]+)/g);
           if (matches) {
             matches.forEach((match: string) => {
-              const [key, value] = match.split('=');
-              parsed[key] = '#' + value;
+              const [key, value] = match.split("=");
+              parsed[key] = "#" + value;
             });
             colorTheme = parsed;
           }
         }
-        
+
         // Add parsed colors to branding
         branding = {
           ...brandingData,
@@ -377,10 +419,10 @@ const StudentDashboard: React.FC = () => {
             ...brandingData.branding,
             colorTheme,
           },
-          primaryColor: colorTheme?.primary || '#49bc8f',
-          secondaryColor: colorTheme?.secondary || '#64748b',
+          primaryColor: colorTheme?.primary || "#49bc8f",
+          secondaryColor: colorTheme?.secondary || "#64748b",
         };
-        
+
         // Cache the branding data
         sessionStorage.setItem(cachedBrandingKey, JSON.stringify(branding));
         setProjectBranding(branding);
@@ -389,15 +431,31 @@ const StudentDashboard: React.FC = () => {
       // Fetch ticket settings for submit ticket and find center
       const cacheBuster = `?t=${Date.now()}`;
       const settingsRes = await axios.get(
-        `${API_CONFIG.API_URL}/projects/${branding.projectId}/ticket-settings${cacheBuster}`
+        `${API_CONFIG.API_URL}/projects/${branding.projectId}/ticket-settings${cacheBuster}`,
       );
-      const settings = settingsRes.data.success ? settingsRes.data.data : settingsRes.data;
-      
+      const settings = settingsRes.data.success
+        ? settingsRes.data.data
+        : settingsRes.data;
+
       // Filter out student profile fields (Name, Email, Phone) since student is already logged in
-      const excludeFields = ['name', 'email', 'phone', 'mobile', 'mobile number', 'phone number', 'student name', 'student email', 'contact number', 'email address', 'full name', 'priority'];
+      const excludeFields = [
+        "name",
+        "email",
+        "phone",
+        "mobile",
+        "mobile number",
+        "phone number",
+        "student name",
+        "student email",
+        "contact number",
+        "email address",
+        "full name",
+        "priority",
+      ];
       if (settings.onlineFormFields && settings.onlineFormFields.length > 0) {
         settings.onlineFormFields = settings.onlineFormFields.filter(
-          (field: any) => !excludeFields.includes(field.fieldName.toLowerCase())
+          (field: any) =>
+            !excludeFields.includes(field.fieldName.toLowerCase()),
         );
       }
 
@@ -405,24 +463,24 @@ const StudentDashboard: React.FC = () => {
       let centersData: any[] = [];
       try {
         const centersResponse = await axios.get(
-          `${API_CONFIG.API_URL}/centers?projectId=${branding.projectId}&isActive=true`
+          `${API_CONFIG.API_URL}/centers?projectId=${branding.projectId}&isActive=true`,
         );
         if (centersResponse.data.success) {
           centersData = centersResponse.data.data || [];
-          console.log('📍 Loaded centers from centers API:', centersData);
+          console.log("📍 Loaded centers from centers API:", centersData);
         }
       } catch (centersError) {
-        console.error('Error fetching centers:', centersError);
+        console.error("Error fetching centers:", centersError);
         centersData = [];
       }
 
       // Merge settings with centers data
       const mergedSettings = {
         ...settings,
-        offlineCenters: centersData
+        offlineCenters: centersData,
       };
       setTicketSettings(mergedSettings);
-      
+
       // Initialize filtered centers
       if (centersData.length > 0) {
         setFilteredCenters(centersData);
@@ -431,113 +489,118 @@ const StudentDashboard: React.FC = () => {
       // Fetch KB articles
       try {
         const articlesRes = await axios.get(
-          `${API_CONFIG.API_URL}/kb/project/${branding.projectId}`
+          `${API_CONFIG.API_URL}/kb/project/${branding.projectId}`,
         );
         setKbArticles(articlesRes.data.data || []);
 
         // Fetch KB categories
         const categoriesRes = await axios.get(
-          `${API_CONFIG.API_URL}/kb/project/${branding.projectId}/categories`
+          `${API_CONFIG.API_URL}/kb/project/${branding.projectId}/categories`,
         );
         setKbCategories(categoriesRes.data.data || []);
       } catch (kbError) {
-        console.error('KB not available:', kbError);
+        console.error("KB not available:", kbError);
       }
 
       // Fetch student's tickets
-      console.log('🎫 Fetching tickets with Authorization header...');
-      console.log('📦 Project ID:', branding.projectId);
+      console.log("🎫 Fetching tickets with Authorization header...");
+      console.log("📦 Project ID:", branding.projectId);
       const ticketsRes = await axios.get(
         `${API_CONFIG.API_URL}/tickets/my-tickets?projectId=${branding.projectId}`,
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
-      console.log('✅ Tickets fetched:', ticketsRes.data.data?.length || 0);
+      console.log("✅ Tickets fetched:", ticketsRes.data.data?.length || 0);
       setTickets(ticketsRes.data.data || []);
-      
+
       setLoading(false);
     } catch (error: any) {
-      console.error('❌ Error fetching data:', error.response?.data || error.message);
-      console.error('❌ Error status:', error.response?.status);
-      
+      console.error(
+        "❌ Error fetching data:",
+        error.response?.data || error.message,
+      );
+      console.error("❌ Error status:", error.response?.status);
+
       // If token is invalid, clear it and redirect to student portal
       if (error.response?.status === 401) {
-        console.log('🔒 Token invalid (401), clearing and redirecting to student portal');
-        localStorage.removeItem('authToken');
+        console.log(
+          "🔒 Token invalid (401), clearing and redirecting to student portal",
+        );
+        localStorage.removeItem("authToken");
         // Show a message if it's a token version mismatch
-        if (error.response?.data?.code === 'TOKEN_VERSION_MISMATCH') {
-          alert('Your permissions have been updated. Please log in again.');
+        if (error.response?.data?.code === "TOKEN_VERSION_MISMATCH") {
+          alert("Your permissions have been updated. Please log in again.");
         }
         // Redirect to student portal submit-ticket page (which has login button)
         window.location.href = `/${customUrlPath}/submit-ticket`;
         return;
       }
-      
+
       setLoading(false);
     }
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('authToken');
+    localStorage.removeItem("authToken");
     // Clear cached branding data on logout
     sessionStorage.removeItem(`branding_${customUrlPath}`);
     navigate(`/${customUrlPath}/submit-ticket`);
   };
 
   const getStatusName = (status: string | number): string => {
-    const statusCode = typeof status === 'number' ? status : Number(status);
+    const statusCode = typeof status === "number" ? status : Number(status);
     const statusNames: Record<number, string> = {
-      1: 'Open',
-      2: 'In Progress',
-      3: 'On Hold',
-      4: 'Resolved',
-      5: 'Closed'
+      1: "Open",
+      2: "In Progress",
+      3: "On Hold",
+      4: "Resolved",
+      5: "Closed",
     };
     return statusNames[statusCode] || `Status ${statusCode}`;
   };
 
   const getStatusColor = (status: string | number) => {
-    const statusCode = typeof status === 'number' ? status : Number(status);
+    const statusCode = typeof status === "number" ? status : Number(status);
     const colors: Record<number, string> = {
-      1: 'bg-blue-100 text-blue-800',
-      2: 'bg-yellow-100 text-yellow-800',
-      3: 'bg-pink-100 text-pink-800',
-      4: 'bg-green-100 text-green-800',
-      5: 'bg-gray-100 text-gray-800'
+      1: "bg-blue-100 text-blue-800",
+      2: "bg-yellow-100 text-yellow-800",
+      3: "bg-pink-100 text-pink-800",
+      4: "bg-green-100 text-green-800",
+      5: "bg-gray-100 text-gray-800",
     };
-    return colors[statusCode] || 'bg-gray-100 text-gray-800';
+    return colors[statusCode] || "bg-gray-100 text-gray-800";
   };
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
-      case 'urgent':
-        return 'text-red-600';
-      case 'high':
-        return 'text-orange-600';
-      case 'medium':
-        return 'text-yellow-600';
-      case 'low':
-        return 'text-green-600';
+      case "urgent":
+        return "text-red-600";
+      case "high":
+        return "text-orange-600";
+      case "medium":
+        return "text-yellow-600";
+      case "low":
+        return "text-green-600";
       default:
-        return 'text-gray-600';
+        return "text-gray-600";
     }
   };
 
   // Filter centers based on search
   useEffect(() => {
     if (!ticketSettings?.offlineCenters) return;
-    
+
     let filtered = ticketSettings.offlineCenters;
-    
+
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter((center) => {
-        if (filterType === 'state') {
+        if (filterType === "state") {
           return center.state.toLowerCase().includes(query);
-        } else if (filterType === 'city') {
+        } else if (filterType === "city") {
           return center.city.toLowerCase().includes(query);
-        } else if (filterType === 'pincode') {
+        } else if (filterType === "pincode") {
           return center.pincode.includes(query);
         } else {
           return (
@@ -549,7 +612,7 @@ const StudentDashboard: React.FC = () => {
         }
       });
     }
-    
+
     setFilteredCenters(filtered);
   }, [searchQuery, filterType, ticketSettings]);
 
@@ -559,34 +622,44 @@ const StudentDashboard: React.FC = () => {
   };
 
   // Handle file uploads for form fields
-  const handleFieldFileChange = (fieldName: string, files: FileList | null, field: OnlineFormField) => {
+  const handleFieldFileChange = (
+    fieldName: string,
+    files: FileList | null,
+    field: OnlineFormField,
+  ) => {
     if (!files) return;
-    
+
     const fileArray = Array.from(files);
     const maxSize = (field.maxFileSizeMB || 10) * 1024 * 1024;
-    
+
     // Validate file size
     for (const file of fileArray) {
       if (file.size > maxSize) {
-        setSubmitError(`File "${file.name}" exceeds maximum size of ${field.maxFileSizeMB || 10}MB`);
+        setSubmitError(
+          `File "${file.name}" exceeds maximum size of ${field.maxFileSizeMB || 10}MB`,
+        );
         return;
       }
     }
-    
+
     // Validate file types
     if (field.allowedFileTypes && field.allowedFileTypes.length > 0) {
       for (const file of fileArray) {
-        const fileExt = '.' + file.name.split('.').pop()?.toLowerCase();
+        const fileExt = "." + file.name.split(".").pop()?.toLowerCase();
         if (!field.allowedFileTypes.includes(fileExt)) {
-          setSubmitError(`File "${file.name}" type not allowed. Allowed: ${field.allowedFileTypes.join(', ')}`);
+          setSubmitError(
+            `File "${file.name}" type not allowed. Allowed: ${field.allowedFileTypes.join(", ")}`,
+          );
           return;
         }
       }
     }
-    
+
     setFieldFiles((prev) => ({
       ...prev,
-      [fieldName]: field.allowMultiple ? [...(prev[fieldName] || []), ...fileArray] : fileArray,
+      [fieldName]: field.allowMultiple
+        ? [...(prev[fieldName] || []), ...fileArray]
+        : fileArray,
     }));
   };
 
@@ -607,11 +680,11 @@ const StudentDashboard: React.FC = () => {
 
     try {
       const formDataToSend = new FormData();
-      
+
       // Add metadata
-      formDataToSend.append('projectId', projectBranding.projectId);
-      formDataToSend.append('customUrlPath', customUrlPath || '');
-      
+      formDataToSend.append("projectId", projectBranding.projectId);
+      formDataToSend.append("customUrlPath", customUrlPath || "");
+
       // Add form fields
       Object.keys(formData).forEach((key) => {
         const value = formData[key];
@@ -625,25 +698,32 @@ const StudentDashboard: React.FC = () => {
       // Add files
       Object.keys(fieldFiles).forEach((fieldName) => {
         fieldFiles[fieldName].forEach((file) => {
-          formDataToSend.append('attachments', file);
+          formDataToSend.append("attachments", file);
         });
       });
 
-      await axios.post(`${API_CONFIG.API_URL}/tickets/student-submit`, formDataToSend, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      await axios.post(
+        `${API_CONFIG.API_URL}/tickets/student-submit`,
+        formDataToSend,
+        {
+          headers: { "Content-Type": "multipart/form-data" },
+        },
+      );
 
       setSubmitSuccess(true);
       setFormData({});
       setFieldFiles({});
-      
+
       // Refresh tickets list
       fetchData();
-      
+
       // Scroll to top to show success message
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (error: any) {
-      setSubmitError(error.response?.data?.message || 'Failed to submit ticket. Please try again.');
+      setSubmitError(
+        error.response?.data?.message ||
+          "Failed to submit ticket. Please try again.",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -651,11 +731,12 @@ const StudentDashboard: React.FC = () => {
 
   // Render form field based on type
   const renderFormField = (field: OnlineFormField) => {
-    const value = formData[field.fieldName] || '';
-    const commonClasses = 'w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none';
+    const value = formData[field.fieldName] || "";
+    const commonClasses =
+      "w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none";
 
     switch (field.fieldType) {
-      case 'textarea':
+      case "textarea":
         return (
           <textarea
             placeholder={field.placeholder}
@@ -664,61 +745,81 @@ const StudentDashboard: React.FC = () => {
             required={field.required}
             rows={4}
             className={`${commonClasses} focus:ring-2`}
-            style={{ ['--tw-ring-color' as any]: projectBranding?.primaryColor }}
+            style={{
+              ["--tw-ring-color" as any]: projectBranding?.primaryColor,
+            }}
           />
         );
-      case 'dropdown':
+      case "dropdown":
         return (
           <select
             value={value}
             onChange={(e) => handleInputChange(field.fieldName, e.target.value)}
             required={field.required}
             className={`${commonClasses} focus:ring-2`}
-            style={{ ['--tw-ring-color' as any]: projectBranding?.primaryColor }}
+            style={{
+              ["--tw-ring-color" as any]: projectBranding?.primaryColor,
+            }}
           >
             <option value="">{field.placeholder}</option>
             {field.options?.map((option, idx) => (
-              <option key={idx} value={option}>{option}</option>
+              <option key={idx} value={option}>
+                {option}
+              </option>
             ))}
           </select>
         );
-      case 'file':
+      case "file":
         return (
           <div>
             <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
               <DocumentArrowUpIcon className="w-12 h-12 text-gray-400 mx-auto mb-2" />
               <label className="cursor-pointer">
-                <span className="text-sm font-medium hover:underline" style={{ color: projectBranding?.primaryColor }}>
+                <span
+                  className="text-sm font-medium hover:underline"
+                  style={{ color: projectBranding?.primaryColor }}
+                >
                   Choose files
                 </span>
                 <input
                   type="file"
                   multiple={field.allowMultiple}
-                  onChange={(e) => handleFieldFileChange(field.fieldName, e.target.files, field)}
+                  onChange={(e) =>
+                    handleFieldFileChange(
+                      field.fieldName,
+                      e.target.files,
+                      field,
+                    )
+                  }
                   className="hidden"
                 />
               </label>
               <p className="text-xs text-gray-500 mt-1">
                 Max size: {field.maxFileSizeMB || 10} MB
-                {(field.allowedFileTypes || []).length > 0 && ` | Allowed: ${field.allowedFileTypes?.join(', ')}`}
+                {(field.allowedFileTypes || []).length > 0 &&
+                  ` | Allowed: ${field.allowedFileTypes?.join(", ")}`}
               </p>
             </div>
-            {fieldFiles[field.fieldName] && fieldFiles[field.fieldName].length > 0 && (
-              <ul className="mt-4 space-y-2">
-                {fieldFiles[field.fieldName].map((file, idx) => (
-                  <li key={idx} className="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
-                    <span className="text-sm text-gray-700">{file.name}</span>
-                    <button
-                      type="button"
-                      onClick={() => removeFieldFile(field.fieldName, idx)}
-                      className="text-red-600 hover:text-red-700 text-sm font-medium"
+            {fieldFiles[field.fieldName] &&
+              fieldFiles[field.fieldName].length > 0 && (
+                <ul className="mt-4 space-y-2">
+                  {fieldFiles[field.fieldName].map((file, idx) => (
+                    <li
+                      key={idx}
+                      className="flex items-center justify-between bg-gray-50 p-3 rounded-lg"
                     >
-                      Remove
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
+                      <span className="text-sm text-gray-700">{file.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeFieldFile(field.fieldName, idx)}
+                        className="text-red-600 hover:text-red-700 text-sm font-medium"
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
           </div>
         );
       default:
@@ -730,7 +831,9 @@ const StudentDashboard: React.FC = () => {
             onChange={(e) => handleInputChange(field.fieldName, e.target.value)}
             required={field.required}
             className={`${commonClasses} focus:ring-2`}
-            style={{ ['--tw-ring-color' as any]: projectBranding?.primaryColor }}
+            style={{
+              ["--tw-ring-color" as any]: projectBranding?.primaryColor,
+            }}
           />
         );
     }
@@ -739,35 +842,37 @@ const StudentDashboard: React.FC = () => {
   // Knowledge Base functions
   const handleKbArticleClick = async (article: KBArticle) => {
     setSelectedKbArticle(article);
-    
+
     // Increment view count
     try {
       await axios.post(`${API_CONFIG.API_URL}/kb/${article._id}/view`);
-      
+
       // Update local state
       setKbArticles((prev) =>
         prev.map((a) =>
-          a._id === article._id
-            ? { ...a, viewCount: a.viewCount + 1 }
-            : a
-        )
+          a._id === article._id ? { ...a, viewCount: a.viewCount + 1 } : a,
+        ),
       );
     } catch (error) {
-      console.error('Error incrementing view count:', error);
+      console.error("Error incrementing view count:", error);
     }
   };
 
   const handleKbFeedback = async (articleId: string, helpful: boolean) => {
     try {
       const currentVote = articleVotes[articleId];
-      const newVoteType: 'helpful' | 'not-helpful' = helpful ? 'helpful' : 'not-helpful';
+      const newVoteType: "helpful" | "not-helpful" = helpful
+        ? "helpful"
+        : "not-helpful";
 
       // If clicking the same vote, remove it (toggle off)
       if (currentVote === newVoteType) {
-        const updatedVotes: Record<string, 'helpful' | 'not-helpful' | null> = { ...articleVotes };
+        const updatedVotes: Record<string, "helpful" | "not-helpful" | null> = {
+          ...articleVotes,
+        };
         delete updatedVotes[articleId];
         setArticleVotes(updatedVotes);
-        localStorage.setItem('kb_article_votes', JSON.stringify(updatedVotes));
+        localStorage.setItem("kb_article_votes", JSON.stringify(updatedVotes));
 
         // Update counts (decrement the vote)
         setKbArticles((prev) =>
@@ -775,37 +880,56 @@ const StudentDashboard: React.FC = () => {
             article._id === articleId
               ? {
                   ...article,
-                  helpfulCount: helpful ? Math.max(0, article.helpfulCount - 1) : article.helpfulCount,
-                  notHelpfulCount: !helpful ? Math.max(0, article.notHelpfulCount - 1) : article.notHelpfulCount,
+                  helpfulCount: helpful
+                    ? Math.max(0, article.helpfulCount - 1)
+                    : article.helpfulCount,
+                  notHelpfulCount: !helpful
+                    ? Math.max(0, article.notHelpfulCount - 1)
+                    : article.notHelpfulCount,
                 }
-              : article
-          )
+              : article,
+          ),
         );
-        
+
         // Update selected article if it's the same
         if (selectedKbArticle && selectedKbArticle._id === articleId) {
-          setSelectedKbArticle((prev) => prev ? {
-            ...prev,
-            helpfulCount: helpful ? Math.max(0, prev.helpfulCount - 1) : prev.helpfulCount,
-            notHelpfulCount: !helpful ? Math.max(0, prev.notHelpfulCount - 1) : prev.notHelpfulCount,
-          } : null);
+          setSelectedKbArticle((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  helpfulCount: helpful
+                    ? Math.max(0, prev.helpfulCount - 1)
+                    : prev.helpfulCount,
+                  notHelpfulCount: !helpful
+                    ? Math.max(0, prev.notHelpfulCount - 1)
+                    : prev.notHelpfulCount,
+                }
+              : null,
+          );
         }
         return;
       }
 
       // If user already voted differently, prevent changing vote
       if (currentVote && currentVote !== newVoteType) {
-        alert('You have already voted on this article. You can only remove your vote by clicking the same button again.');
+        alert(
+          "You have already voted on this article. You can only remove your vote by clicking the same button again.",
+        );
         return;
       }
 
       // Submit new vote
-      await axios.post(`${API_CONFIG.API_URL}/kb/${articleId}/feedback`, { helpful });
+      await axios.post(`${API_CONFIG.API_URL}/kb/${articleId}/feedback`, {
+        helpful,
+      });
 
       // Save vote to localStorage
-      const updatedVotes: Record<string, 'helpful' | 'not-helpful' | null> = { ...articleVotes, [articleId]: newVoteType };
+      const updatedVotes: Record<string, "helpful" | "not-helpful" | null> = {
+        ...articleVotes,
+        [articleId]: newVoteType,
+      };
       setArticleVotes(updatedVotes);
-      localStorage.setItem('kb_article_votes', JSON.stringify(updatedVotes));
+      localStorage.setItem("kb_article_votes", JSON.stringify(updatedVotes));
 
       // Update counts
       setKbArticles((prev) =>
@@ -813,23 +937,35 @@ const StudentDashboard: React.FC = () => {
           article._id === articleId
             ? {
                 ...article,
-                helpfulCount: helpful ? article.helpfulCount + 1 : article.helpfulCount,
-                notHelpfulCount: !helpful ? article.notHelpfulCount + 1 : article.notHelpfulCount,
+                helpfulCount: helpful
+                  ? article.helpfulCount + 1
+                  : article.helpfulCount,
+                notHelpfulCount: !helpful
+                  ? article.notHelpfulCount + 1
+                  : article.notHelpfulCount,
               }
-            : article
-        )
+            : article,
+        ),
       );
-      
+
       // Update selected article if it's the same
       if (selectedKbArticle && selectedKbArticle._id === articleId) {
-        setSelectedKbArticle((prev) => prev ? {
-          ...prev,
-          helpfulCount: helpful ? prev.helpfulCount + 1 : prev.helpfulCount,
-          notHelpfulCount: !helpful ? prev.notHelpfulCount + 1 : prev.notHelpfulCount,
-        } : null);
+        setSelectedKbArticle((prev) =>
+          prev
+            ? {
+                ...prev,
+                helpfulCount: helpful
+                  ? prev.helpfulCount + 1
+                  : prev.helpfulCount,
+                notHelpfulCount: !helpful
+                  ? prev.notHelpfulCount + 1
+                  : prev.notHelpfulCount,
+              }
+            : null,
+        );
       }
     } catch (error) {
-      console.error('Error submitting KB feedback:', error);
+      console.error("Error submitting KB feedback:", error);
     }
   };
 
@@ -837,8 +973,10 @@ const StudentDashboard: React.FC = () => {
     let filtered = kbArticles;
 
     // Filter by category
-    if (kbSelectedCategory !== 'all') {
-      filtered = filtered.filter((article) => article.category === kbSelectedCategory);
+    if (kbSelectedCategory !== "all") {
+      filtered = filtered.filter(
+        (article) => article.category === kbSelectedCategory,
+      );
     }
 
     // Filter by search query
@@ -849,7 +987,7 @@ const StudentDashboard: React.FC = () => {
           article.title.toLowerCase().includes(query) ||
           article.content.toLowerCase().includes(query) ||
           article.category?.toLowerCase().includes(query) ||
-          article.tags?.some((tag) => tag.toLowerCase().includes(query))
+          article.tags?.some((tag) => tag.toLowerCase().includes(query)),
       );
     }
 
@@ -860,15 +998,18 @@ const StudentDashboard: React.FC = () => {
   const fetchTicketDetail = async (ticketId: string) => {
     setLoadingTicketDetail(true);
     try {
-      const token = localStorage.getItem('authToken');
-      const response = await axios.get(`${API_CONFIG.API_URL}/tickets/${ticketId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const token = localStorage.getItem("authToken");
+      const response = await axios.get(
+        `${API_CONFIG.API_URL}/tickets/${ticketId}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
       setSelectedTicket(response.data.data);
     } catch (error: any) {
-      console.error('Error fetching ticket detail:', error);
-      alert(error.response?.data?.message || 'Failed to fetch ticket details');
-      setActiveModule('dashboard');
+      console.error("Error fetching ticket detail:", error);
+      alert(error.response?.data?.message || "Failed to fetch ticket details");
+      setActiveModule("dashboard");
     } finally {
       setLoadingTicketDetail(false);
     }
@@ -893,12 +1034,12 @@ const StudentDashboard: React.FC = () => {
     setReplySuccess(false);
 
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const formData = new FormData();
-      formData.append('message', replyMessage);
+      formData.append("message", replyMessage);
 
       replyFiles.forEach((file) => {
-        formData.append('attachments', file);
+        formData.append("attachments", file);
       });
 
       await axios.post(
@@ -907,13 +1048,13 @@ const StudentDashboard: React.FC = () => {
         {
           headers: {
             Authorization: `Bearer ${token}`,
-            'Content-Type': 'multipart/form-data',
+            "Content-Type": "multipart/form-data",
           },
-        }
+        },
       );
 
       setReplySuccess(true);
-      setReplyMessage('');
+      setReplyMessage("");
       setReplyFiles([]);
 
       // Refresh ticket data
@@ -923,51 +1064,58 @@ const StudentDashboard: React.FC = () => {
 
       // Scroll to bottom
       setTimeout(() => {
-        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        window.scrollTo({
+          top: document.body.scrollHeight,
+          behavior: "smooth",
+        });
       }, 100);
     } catch (error: any) {
-      setReplyError(error.response?.data?.message || 'Failed to submit reply');
+      setReplyError(error.response?.data?.message || "Failed to submit reply");
     } finally {
       setSubmittingReply(false);
     }
   };
 
   const handleCloseTicket = async () => {
-    if (!confirm("Are you sure you want to close this ticket? You won't be able to reopen it.")) {
+    if (
+      !confirm(
+        "Are you sure you want to close this ticket? You won't be able to reopen it.",
+      )
+    ) {
       return;
     }
 
     setClosingTicket(true);
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       await axios.patch(
         `${API_CONFIG.API_URL}/tickets/${selectedTicketId}/close`,
         {},
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
 
-      alert('Ticket closed successfully');
-      
+      alert("Ticket closed successfully");
+
       // Refresh ticket data
       if (selectedTicketId) {
         await fetchTicketDetail(selectedTicketId);
       }
     } catch (error: any) {
-      alert(error.response?.data?.message || 'Failed to close ticket');
+      alert(error.response?.data?.message || "Failed to close ticket");
     } finally {
       setClosingTicket(false);
     }
   };
 
   const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
-    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(2) + " MB";
   };
 
   // Load ticket detail when module changes
   useEffect(() => {
-    if (activeModule === 'ticket-detail' && selectedTicketId) {
+    if (activeModule === "ticket-detail" && selectedTicketId) {
       fetchTicketDetail(selectedTicketId);
     }
   }, [activeModule, selectedTicketId]);
@@ -988,7 +1136,7 @@ const StudentDashboard: React.FC = () => {
         style={{
           background: projectBranding
             ? `linear-gradient(135deg, ${projectBranding.primaryColor} 0%, ${projectBranding.secondaryColor} 100%)`
-            : 'linear-gradient(135deg, #3b82f6 0%, #1e40af 100%)',
+            : "linear-gradient(135deg, #3b82f6 0%, #1e40af 100%)",
         }}
       >
         <div className="h-full px-4 flex items-center justify-between">
@@ -1004,12 +1152,19 @@ const StudentDashboard: React.FC = () => {
                 <Bars3Icon className="h-6 w-6" />
               )}
             </button>
-            {projectBranding?.logoUrl && (
-              projectBranding?.branding?.logoLinkbackUrl || projectBranding?.logoLinkbackUrl ? (
-                <a 
-                  href={(projectBranding?.branding?.logoLinkbackUrl || projectBranding?.logoLinkbackUrl).startsWith('http') 
-                    ? (projectBranding?.branding?.logoLinkbackUrl || projectBranding?.logoLinkbackUrl) 
-                    : `https://${projectBranding?.branding?.logoLinkbackUrl || projectBranding?.logoLinkbackUrl}`}
+            {projectBranding?.logoUrl &&
+              (projectBranding?.branding?.logoLinkbackUrl ||
+              projectBranding?.logoLinkbackUrl ? (
+                <a
+                  href={
+                    (
+                      projectBranding?.branding?.logoLinkbackUrl ||
+                      projectBranding?.logoLinkbackUrl
+                    ).startsWith("http")
+                      ? projectBranding?.branding?.logoLinkbackUrl ||
+                        projectBranding?.logoLinkbackUrl
+                      : `https://${projectBranding?.branding?.logoLinkbackUrl || projectBranding?.logoLinkbackUrl}`
+                  }
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -1027,17 +1182,16 @@ const StudentDashboard: React.FC = () => {
                   loading="lazy"
                   className="h-10 w-auto"
                 />
-              )
-            )}
+              ))}
             <h1 className="text-xl font-bold text-white hidden sm:block">
-              {projectBranding?.name || 'Candidate Portal'}
+              {projectBranding?.name || "Candidate Portal"}
             </h1>
           </div>
 
           {/* Right: User Info with Profile Dropdown */}
           <div className="flex items-center space-x-4">
             <LanguageToggle />
-            
+
             {/* Profile Dropdown */}
             <div className="relative" ref={profileDropdownRef}>
               <button
@@ -1054,23 +1208,27 @@ const StudentDashboard: React.FC = () => {
                   </p>
                   <p className="text-white/70 text-xs">{user?.email}</p>
                 </div>
-                <ChevronDownIcon className={`h-4 w-4 text-white transition-transform ${profileDropdownOpen ? 'rotate-180' : ''}`} />
+                <ChevronDownIcon
+                  className={`h-4 w-4 text-white transition-transform ${profileDropdownOpen ? "rotate-180" : ""}`}
+                />
               </button>
-              
+
               {/* Dropdown Menu */}
               {profileDropdownOpen && (
                 <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
                   {/* User Info Header */}
                   <div className="px-4 py-3 border-b border-gray-100">
-                    <p className="font-medium text-gray-900">{user?.firstName} {user?.lastName}</p>
+                    <p className="font-medium text-gray-900">
+                      {user?.firstName} {user?.lastName}
+                    </p>
                     <p className="text-sm text-gray-500">{user?.email}</p>
                   </div>
-                  
+
                   {/* Profile Option */}
                   <button
                     onClick={() => {
                       setProfileDropdownOpen(false);
-                      setActiveModule('profile');
+                      setActiveModule("profile");
                       fetchUserProfile();
                     }}
                     className="w-full flex items-center space-x-3 px-4 py-2.5 text-gray-700 hover:bg-gray-50 transition-colors"
@@ -1078,29 +1236,29 @@ const StudentDashboard: React.FC = () => {
                     <UserCircleIcon className="h-5 w-5 text-gray-400" />
                     <span>My Profile</span>
                   </button>
-                  
+
                   {/* Change Password Option */}
                   <button
                     onClick={() => {
                       setProfileDropdownOpen(false);
-                      setActiveModule('change-password');
+                      setActiveModule("change-password");
                     }}
                     className="w-full flex items-center space-x-3 px-4 py-2.5 text-gray-700 hover:bg-gray-50 transition-colors"
                   >
                     <KeyIcon className="h-5 w-5 text-gray-400" />
                     <span>Change Password</span>
                   </button>
-                  
+
                   {/* Divider */}
                   <div className="border-t border-gray-100 my-1"></div>
-                  
+
                   {/* Logout Option */}
                   <button
                     onClick={handleLogout}
                     className="w-full flex items-center space-x-3 px-4 py-2.5 text-red-600 hover:bg-red-50 transition-colors"
                   >
                     <ArrowRightOnRectangleIcon className="h-5 w-5" />
-                    <span>{t('logout')}</span>
+                    <span>{t("logout")}</span>
                   </button>
                 </div>
               )}
@@ -1112,33 +1270,33 @@ const StudentDashboard: React.FC = () => {
       {/* Sidebar */}
       <aside
         className={`fixed top-16 left-0 bottom-0 w-64 bg-white border-r border-gray-200 shadow-lg transition-transform duration-300 z-20 ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
         } lg:translate-x-0`}
       >
         <nav className="p-4 space-y-2">
           {/* Dashboard - Always visible for logged-in users */}
           <button
-            onClick={() => setActiveModule('dashboard')}
+            onClick={() => setActiveModule("dashboard")}
             className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
-              activeModule === 'dashboard'
-                ? 'bg-blue-50 text-blue-600 font-medium'
-                : 'text-gray-700 hover:bg-gray-50'
+              activeModule === "dashboard"
+                ? "bg-blue-50 text-blue-600 font-medium"
+                : "text-gray-700 hover:bg-gray-50"
             }`}
           >
             <HomeIcon className="h-5 w-5" />
-            <span>{t('dashboard')}</span>
+            <span>{t("dashboard")}</span>
           </button>
 
           {/* My Queries - View student's own tickets */}
-          {(hasPermission(PERMISSIONS.TICKET_CREATE) || 
-            hasPermission(PERMISSIONS.TICKET_VIEW_OWN) || 
+          {(hasPermission(PERMISSIONS.TICKET_CREATE) ||
+            hasPermission(PERMISSIONS.TICKET_VIEW_OWN) ||
             hasPermission(PERMISSIONS.OFFLINE_TICKET_CREATE)) && (
             <button
-              onClick={() => setActiveModule('my-queries')}
+              onClick={() => setActiveModule("my-queries")}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
-                activeModule === 'my-queries'
-                  ? 'bg-blue-50 text-blue-600 font-medium'
-                  : 'text-gray-700 hover:bg-gray-50'
+                activeModule === "my-queries"
+                  ? "bg-blue-50 text-blue-600 font-medium"
+                  : "text-gray-700 hover:bg-gray-50"
               }`}
             >
               <InboxIcon className="h-5 w-5" />
@@ -1147,13 +1305,20 @@ const StudentDashboard: React.FC = () => {
           )}
 
           {/* Knowledge Base - Requires KB_VIEW permission */}
-          {hasAnyPermission([PERMISSIONS.KB_VIEW, PERMISSIONS.KB_VIEW_CONTENT, PERMISSIONS.KB_MANAGE, PERMISSIONS.KB_MANAGE_LEVELS, PERMISSIONS.KB_MANAGE_ARTICLES, PERMISSIONS.KB_MANAGE_TABLES]) && (
+          {hasAnyPermission([
+            PERMISSIONS.KB_VIEW,
+            PERMISSIONS.KB_VIEW_CONTENT,
+            PERMISSIONS.KB_MANAGE,
+            PERMISSIONS.KB_MANAGE_LEVELS,
+            PERMISSIONS.KB_MANAGE_ARTICLES,
+            PERMISSIONS.KB_MANAGE_TABLES,
+          ]) && (
             <button
-              onClick={() => setActiveModule('knowledge-base')}
+              onClick={() => setActiveModule("knowledge-base")}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
-                activeModule === 'knowledge-base'
-                  ? 'bg-blue-50 text-blue-600 font-medium'
-                  : 'text-gray-700 hover:bg-gray-50'
+                activeModule === "knowledge-base"
+                  ? "bg-blue-50 text-blue-600 font-medium"
+                  : "text-gray-700 hover:bg-gray-50"
               }`}
             >
               <BookOpenIcon className="h-5 w-5" />
@@ -1162,13 +1327,17 @@ const StudentDashboard: React.FC = () => {
           )}
 
           {/* FAQ - Requires FAQ_VIEW permission */}
-          {hasAnyPermission([PERMISSIONS.FAQ_VIEW, 'FAQ_CREATE', 'FAQ_EDIT']) && (
+          {hasAnyPermission([
+            PERMISSIONS.FAQ_VIEW,
+            "FAQ_CREATE",
+            "FAQ_EDIT",
+          ]) && (
             <button
-              onClick={() => setActiveModule('faq')}
+              onClick={() => setActiveModule("faq")}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
-                activeModule === 'faq'
-                  ? 'bg-blue-50 text-blue-600 font-medium'
-                  : 'text-gray-700 hover:bg-gray-50'
+                activeModule === "faq"
+                  ? "bg-blue-50 text-blue-600 font-medium"
+                  : "text-gray-700 hover:bg-gray-50"
               }`}
             >
               <QuestionMarkCircleIcon className="h-5 w-5" />
@@ -1179,11 +1348,11 @@ const StudentDashboard: React.FC = () => {
           {/* Find Center - Requires OFFLINE_MODULE_ACCESS permission */}
           {hasPermission(PERMISSIONS.OFFLINE_MODULE_ACCESS) && (
             <button
-              onClick={() => setActiveModule('find-center')}
+              onClick={() => setActiveModule("find-center")}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
-                activeModule === 'find-center'
-                  ? 'bg-blue-50 text-blue-600 font-medium'
-                  : 'text-gray-700 hover:bg-gray-50'
+                activeModule === "find-center"
+                  ? "bg-blue-50 text-blue-600 font-medium"
+                  : "text-gray-700 hover:bg-gray-50"
               }`}
             >
               <MapPinIcon className="h-5 w-5" />
@@ -1196,26 +1365,28 @@ const StudentDashboard: React.FC = () => {
       {/* Main Content */}
       <main
         className={`pt-16 transition-all duration-300 ${
-          sidebarOpen ? 'lg:pl-64' : 'pl-0'
+          sidebarOpen ? "lg:pl-64" : "pl-0"
         }`}
       >
         <div className="p-6 relative">
           {/* Dashboard Module */}
-          <div className={`transition-opacity duration-200 ${activeModule === 'dashboard' ? 'opacity-100' : 'opacity-0 absolute pointer-events-none'}`}>
+          <div
+            className={`transition-opacity duration-200 ${activeModule === "dashboard" ? "opacity-100" : "opacity-0 absolute pointer-events-none"}`}
+          >
             <div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-6">{t('myTickets')}</h2>
-              
+              <h2 className="text-2xl font-bold text-gray-900 mb-6">
+                {t("myTickets")}
+              </h2>
+
               {tickets.length === 0 ? (
                 <div className="bg-white rounded-xl shadow-sm p-12 text-center">
                   <TicketIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 mb-2">
-                    {t('noTicketsYet')}
+                    {t("noTicketsYet")}
                   </h3>
-                  <p className="text-gray-500 mb-6">
-                    {t('noTicketsMessage')}
-                  </p>
+                  <p className="text-gray-500 mb-6">{t("noTicketsMessage")}</p>
                   <button
-                    onClick={() => setActiveModule('submit-ticket')}
+                    onClick={() => setActiveModule("submit-ticket")}
                     className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                   >
                     Submit Your First Ticket
@@ -1229,7 +1400,7 @@ const StudentDashboard: React.FC = () => {
                       className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md transition-shadow cursor-pointer"
                       onClick={() => {
                         setSelectedTicketId(ticket._id);
-                        setActiveModule('ticket-detail');
+                        setActiveModule("ticket-detail");
                       }}
                     >
                       <div className="flex items-start justify-between mb-3">
@@ -1242,34 +1413,37 @@ const StudentDashboard: React.FC = () => {
                         <div className="flex flex-col items-end space-y-2">
                           <span
                             className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(
-                              ticket.status
+                              ticket.status,
                             )}`}
                           >
                             {getStatusName(ticket.status).toUpperCase()}
                           </span>
-                          <span className={`text-xs font-medium ${getPriorityColor(ticket.priority)}`}>
+                          <span
+                            className={`text-xs font-medium ${getPriorityColor(ticket.priority)}`}
+                          >
                             {ticket.priority.toUpperCase()}
                           </span>
                         </div>
                       </div>
-                      
+
                       <p className="text-gray-600 text-sm mb-4 line-clamp-2">
                         {ticket.description}
                       </p>
-                      
+
                       <div className="flex items-center justify-between text-sm text-gray-500">
                         <span>Category: {ticket.category}</span>
                         <span>
                           {new Date(ticket.createdAt).toLocaleDateString()}
                         </span>
                       </div>
-                      
+
                       {ticket.assignedTo && (
                         <div className="mt-3 pt-3 border-t border-gray-100">
                           <p className="text-sm text-gray-600">
-                            Assigned to:{' '}
+                            Assigned to:{" "}
                             <span className="font-medium">
-                              {ticket.assignedTo.firstName} {ticket.assignedTo.lastName}
+                              {ticket.assignedTo.firstName}{" "}
+                              {ticket.assignedTo.lastName}
                             </span>
                           </p>
                         </div>
@@ -1282,19 +1456,21 @@ const StudentDashboard: React.FC = () => {
           </div>
 
           {/* My Queries Module */}
-          <div className={`transition-opacity duration-200 ${activeModule === 'my-queries' ? 'opacity-100' : 'opacity-0 absolute pointer-events-none'}`}>
+          <div
+            className={`transition-opacity duration-200 ${activeModule === "my-queries" ? "opacity-100" : "opacity-0 absolute pointer-events-none"}`}
+          >
             <div>
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-2xl font-bold text-gray-900">My Queries</h2>
                 <button
-                  onClick={() => setActiveModule('submit-ticket')}
+                  onClick={() => setActiveModule("submit-ticket")}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
                 >
                   <DocumentArrowUpIcon className="h-5 w-5" />
                   <span>Submit New Query</span>
                 </button>
               </div>
-              
+
               {tickets.length === 0 ? (
                 <div className="bg-white rounded-xl shadow-sm p-12 text-center">
                   <InboxIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
@@ -1302,10 +1478,11 @@ const StudentDashboard: React.FC = () => {
                     No Queries Yet
                   </h3>
                   <p className="text-gray-500 mb-6">
-                    You haven't submitted any queries yet. Click below to create your first query.
+                    You haven't submitted any queries yet. Click below to create
+                    your first query.
                   </p>
                   <button
-                    onClick={() => setActiveModule('submit-ticket')}
+                    onClick={() => setActiveModule("submit-ticket")}
                     className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                   >
                     Submit Your First Query
@@ -1338,20 +1515,31 @@ const StudentDashboard: React.FC = () => {
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                       {tickets.map((ticket) => (
-                        <tr key={ticket._id} className="hover:bg-gray-50 transition-colors">
+                        <tr
+                          key={ticket._id}
+                          className="hover:bg-gray-50 transition-colors"
+                        >
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <span className="text-sm font-medium text-blue-600">{ticket.ticketNumber}</span>
+                            <span className="text-sm font-medium text-blue-600">
+                              {ticket.ticketNumber}
+                            </span>
                           </td>
                           <td className="px-6 py-4">
-                            <span className="text-sm text-gray-900">{ticket.title}</span>
+                            <span className="text-sm text-gray-900">
+                              {ticket.title}
+                            </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(ticket.status)}`}>
+                            <span
+                              className={`px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(ticket.status)}`}
+                            >
                               {getStatusName(ticket.status)}
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`text-xs font-medium ${getPriorityColor(ticket.priority)}`}>
+                            <span
+                              className={`text-xs font-medium ${getPriorityColor(ticket.priority)}`}
+                            >
                               {ticket.priority.toUpperCase()}
                             </span>
                           </td>
@@ -1364,7 +1552,7 @@ const StudentDashboard: React.FC = () => {
                             <button
                               onClick={() => {
                                 setSelectedTicketId(ticket._id);
-                                setActiveModule('ticket-detail');
+                                setActiveModule("ticket-detail");
                               }}
                               className="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center space-x-1"
                             >
@@ -1382,236 +1570,316 @@ const StudentDashboard: React.FC = () => {
           </div>
 
           {/* Submit Ticket Module */}
-          <div className={`transition-opacity duration-200 ${activeModule === 'submit-ticket' ? 'opacity-100' : 'opacity-0 absolute pointer-events-none'}`}>
+          <div
+            className={`transition-opacity duration-200 ${activeModule === "submit-ticket" ? "opacity-100" : "opacity-0 absolute pointer-events-none"}`}
+          >
             {ticketSettings && (
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-6">Submit New Query</h2>
-              
-              {/* Success Message */}
-              {submitSuccess && (
-                <div className="bg-green-50 border border-green-200 rounded-xl p-6 mb-6 flex items-start space-x-4">
-                  <CheckCircleIcon className="w-6 h-6 text-green-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h3 className="text-lg font-semibold text-green-900 mb-1">
-                      Query Submitted Successfully!
-                    </h3>
-                    <p className="text-green-700">
-                      {ticketSettings.successMessage || 'Your query has been submitted. Our team will get back to you soon.'}
-                    </p>
-                  </div>
-                </div>
-              )}
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 mb-6">
+                  Submit New Query
+                </h2>
 
-              {/* Error Message */}
-              {submitError && (
-                <div className="bg-red-50 border border-red-200 rounded-xl p-6 mb-6 flex items-start space-x-4">
-                  <ExclamationCircleIcon className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h3 className="text-lg font-semibold text-red-900 mb-1">Submission Error</h3>
-                    <p className="text-red-700">{submitError}</p>
-                  </div>
-                </div>
-              )}
-              
-              <div className="bg-white rounded-xl shadow-md p-8">
-                <form onSubmit={handleSubmitTicket} className="space-y-6">
-                  {ticketSettings.onlineFormFields.map((field) => (
-                    <div key={field.fieldName}>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {field.fieldName}
-                        {field.required && <span className="text-red-500 ml-1">*</span>}
-                      </label>
-                      {renderFormField(field)}
+                {/* Success Message */}
+                {submitSuccess && (
+                  <div className="bg-green-50 border border-green-200 rounded-xl p-6 mb-6 flex items-start space-x-4">
+                    <CheckCircleIcon className="w-6 h-6 text-green-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <h3 className="text-lg font-semibold text-green-900 mb-1">
+                        Query Submitted Successfully!
+                      </h3>
+                      <p className="text-green-700">
+                        {ticketSettings.successMessage ||
+                          "Your query has been submitted. Our team will get back to you soon."}
+                      </p>
                     </div>
-                  ))}
+                  </div>
+                )}
 
-                  {/* Submit Button */}
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    className="w-full py-3 px-6 rounded-lg text-white font-semibold shadow-md hover:shadow-lg transform hover:scale-[1.02] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{
-                      background: `linear-gradient(135deg, ${projectBranding.primaryColor} 0%, ${projectBranding.secondaryColor} 100%)`,
-                    }}
-                  >
-                    {submitting ? 'Submitting...' : 'Submit Query'}
-                  </button>
-                </form>
+                {/* Error Message */}
+                {submitError && (
+                  <div className="bg-red-50 border border-red-200 rounded-xl p-6 mb-6 flex items-start space-x-4">
+                    <ExclamationCircleIcon className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <h3 className="text-lg font-semibold text-red-900 mb-1">
+                        Submission Error
+                      </h3>
+                      <p className="text-red-700">{submitError}</p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="bg-white rounded-xl shadow-md p-8">
+                  <form onSubmit={handleSubmitTicket} className="space-y-6">
+                    {ticketSettings.onlineFormFields.map((field) => (
+                      <div key={field.fieldName}>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          {field.fieldName}
+                          {field.required && (
+                            <span className="text-red-500 ml-1">*</span>
+                          )}
+                        </label>
+                        {renderFormField(field)}
+                      </div>
+                    ))}
+
+                    {/* Submit Button */}
+                    <button
+                      type="submit"
+                      disabled={submitting}
+                      className="w-full py-3 px-6 rounded-lg text-white font-semibold shadow-md hover:shadow-lg transform hover:scale-[1.02] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{
+                        background: `linear-gradient(135deg, ${projectBranding.primaryColor} 0%, ${projectBranding.secondaryColor} 100%)`,
+                      }}
+                    >
+                      {submitting ? "Submitting..." : "Submit Query"}
+                    </button>
+                  </form>
+                </div>
               </div>
-            </div>
             )}
           </div>
 
           {/* Find Center Module */}
-          <div className={`transition-opacity duration-200 ${activeModule === 'find-center' ? 'opacity-100' : 'opacity-0 absolute pointer-events-none'}`}>
+          <div
+            className={`transition-opacity duration-200 ${activeModule === "find-center" ? "opacity-100" : "opacity-0 absolute pointer-events-none"}`}
+          >
             {ticketSettings && (
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-6">Find Nearest Center</h2>
-              
-              <div className="bg-white rounded-xl shadow-md p-8">
-                {/* Filter Buttons */}
-                <div className="mb-4 flex flex-wrap gap-2">
-                  <button
-                    onClick={() => {
-                      setFilterType('all');
-                      setSearchQuery('');
-                    }}
-                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                      filterType === 'all' ? 'text-white shadow-md' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                    style={{ backgroundColor: filterType === 'all' ? projectBranding.primaryColor : undefined }}
-                  >
-                    All Centers
-                  </button>
-                  <button
-                    onClick={() => {
-                      setFilterType('state');
-                      setSearchQuery('');
-                    }}
-                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                      filterType === 'state' ? 'text-white shadow-md' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                    style={{ backgroundColor: filterType === 'state' ? projectBranding.primaryColor : undefined }}
-                  >
-                    By State
-                  </button>
-                  <button
-                    onClick={() => {
-                      setFilterType('city');
-                      setSearchQuery('');
-                    }}
-                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                      filterType === 'city' ? 'text-white shadow-md' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                    style={{ backgroundColor: filterType === 'city' ? projectBranding.primaryColor : undefined }}
-                  >
-                    By City
-                  </button>
-                  <button
-                    onClick={() => {
-                      setFilterType('pincode');
-                      setSearchQuery('');
-                    }}
-                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                      filterType === 'pincode' ? 'text-white shadow-md' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                    style={{ backgroundColor: filterType === 'pincode' ? projectBranding.primaryColor : undefined }}
-                  >
-                    By Pincode
-                  </button>
-                </div>
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 mb-6">
+                  Find Nearest Center
+                </h2>
 
-                {/* Search */}
-                <div className="mb-6">
-                  <input
-                    type="text"
-                    placeholder={
-                      filterType === 'state'
-                        ? 'Search by state...'
-                        : filterType === 'city'
-                        ? 'Search by city...'
-                        : filterType === 'pincode'
-                        ? 'Search by pincode...'
-                        : 'Search by city, state, or pincode...'
-                    }
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:outline-none"
-                    style={{ ['--tw-ring-color' as any]: projectBranding?.primaryColor }}
-                  />
-                </div>
+                <div className="bg-white rounded-xl shadow-md p-8">
+                  {/* Filter Buttons */}
+                  <div className="mb-4 flex flex-wrap gap-2">
+                    <button
+                      onClick={() => {
+                        setFilterType("all");
+                        setSearchQuery("");
+                      }}
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                        filterType === "all"
+                          ? "text-white shadow-md"
+                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      }`}
+                      style={{
+                        backgroundColor:
+                          filterType === "all"
+                            ? projectBranding.primaryColor
+                            : undefined,
+                      }}
+                    >
+                      All Centers
+                    </button>
+                    <button
+                      onClick={() => {
+                        setFilterType("state");
+                        setSearchQuery("");
+                      }}
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                        filterType === "state"
+                          ? "text-white shadow-md"
+                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      }`}
+                      style={{
+                        backgroundColor:
+                          filterType === "state"
+                            ? projectBranding.primaryColor
+                            : undefined,
+                      }}
+                    >
+                      By State
+                    </button>
+                    <button
+                      onClick={() => {
+                        setFilterType("city");
+                        setSearchQuery("");
+                      }}
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                        filterType === "city"
+                          ? "text-white shadow-md"
+                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      }`}
+                      style={{
+                        backgroundColor:
+                          filterType === "city"
+                            ? projectBranding.primaryColor
+                            : undefined,
+                      }}
+                    >
+                      By City
+                    </button>
+                    <button
+                      onClick={() => {
+                        setFilterType("pincode");
+                        setSearchQuery("");
+                      }}
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                        filterType === "pincode"
+                          ? "text-white shadow-md"
+                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      }`}
+                      style={{
+                        backgroundColor:
+                          filterType === "pincode"
+                            ? projectBranding.primaryColor
+                            : undefined,
+                      }}
+                    >
+                      By Pincode
+                    </button>
+                  </div>
 
-                {/* Centers List */}
-                <div className="space-y-6">
-                  {filteredCenters.length === 0 ? (
-                    <p className="text-gray-500 text-center py-8">No centers found</p>
-                  ) : (
-                    filteredCenters.map((center, idx) => (
-                      <div key={idx} className="border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow">
-                        <h3 className="text-xl font-bold text-gray-900 mb-4">{center.centerName}</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="flex items-start space-x-3">
-                            <MapPinIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
-                            <div>
-                              <p className="text-sm font-medium text-gray-700">Address</p>
-                              <p className="text-sm text-gray-600">
-                                {center.address}, {center.city}, {center.state} - {center.pincode}
+                  {/* Search */}
+                  <div className="mb-6">
+                    <input
+                      type="text"
+                      placeholder={
+                        filterType === "state"
+                          ? "Search by state..."
+                          : filterType === "city"
+                            ? "Search by city..."
+                            : filterType === "pincode"
+                              ? "Search by pincode..."
+                              : "Search by city, state, or pincode..."
+                      }
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:outline-none"
+                      style={{
+                        ["--tw-ring-color" as any]:
+                          projectBranding?.primaryColor,
+                      }}
+                    />
+                  </div>
+
+                  {/* Centers List */}
+                  <div className="space-y-6">
+                    {filteredCenters.length === 0 ? (
+                      <p className="text-gray-500 text-center py-8">
+                        No centers found
+                      </p>
+                    ) : (
+                      filteredCenters.map((center, idx) => (
+                        <div
+                          key={idx}
+                          className="border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow"
+                        >
+                          <h3 className="text-xl font-bold text-gray-900 mb-4">
+                            {center.centerName}
+                          </h3>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="flex items-start space-x-3">
+                              <MapPinIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
+                              <div>
+                                <p className="text-sm font-medium text-gray-700">
+                                  Address
+                                </p>
+                                <p className="text-sm text-gray-600">
+                                  {center.address}, {center.city},{" "}
+                                  {center.state} - {center.pincode}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-start space-x-3">
+                              <PhoneIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
+                              <div>
+                                <p className="text-sm font-medium text-gray-700">
+                                  Phone
+                                </p>
+                                <p className="text-sm text-gray-600">
+                                  {center.phone}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-start space-x-3">
+                              <EnvelopeIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
+                              <div>
+                                <p className="text-sm font-medium text-gray-700">
+                                  Email
+                                </p>
+                                <p className="text-sm text-gray-600">
+                                  {center.email}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-start space-x-3">
+                              <ClockIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
+                              <div>
+                                <p className="text-sm font-medium text-gray-700">
+                                  Working Hours
+                                </p>
+                                <p className="text-sm text-gray-600">
+                                  {center.workingHours}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Features */}
+                          {center.features && center.features.length > 0 && (
+                            <div className="mt-4 pt-4 border-t border-gray-200">
+                              <p className="text-sm font-medium text-gray-700 mb-2">
+                                {t("availableFeatures")}
                               </p>
+                              <div className="flex flex-wrap gap-2">
+                                {center.features.map((feature, featureIdx) => (
+                                  <span
+                                    key={featureIdx}
+                                    className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                                  >
+                                    {feature}
+                                  </span>
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                          <div className="flex items-start space-x-3">
-                            <PhoneIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
-                            <div>
-                              <p className="text-sm font-medium text-gray-700">Phone</p>
-                              <p className="text-sm text-gray-600">{center.phone}</p>
-                            </div>
-                          </div>
-                          <div className="flex items-start space-x-3">
-                            <EnvelopeIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
-                            <div>
-                              <p className="text-sm font-medium text-gray-700">Email</p>
-                              <p className="text-sm text-gray-600">{center.email}</p>
-                            </div>
-                          </div>
-                          <div className="flex items-start space-x-3">
-                            <ClockIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
-                            <div>
-                              <p className="text-sm font-medium text-gray-700">Working Hours</p>
-                              <p className="text-sm text-gray-600">{center.workingHours}</p>
-                            </div>
+                          )}
+
+                          {/* Get Directions Button */}
+                          <div className="mt-4">
+                            <button
+                              onClick={() => {
+                                let mapUrl =
+                                  center.mapLink || center.googleMapLink;
+                                if (
+                                  !mapUrl &&
+                                  center.latitude &&
+                                  center.longitude
+                                ) {
+                                  mapUrl = `https://www.google.com/maps?q=${center.latitude},${center.longitude}`;
+                                } else if (!mapUrl) {
+                                  mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                                    `${center.address}, ${center.city}, ${center.state} ${center.pincode}`,
+                                  )}`;
+                                }
+                                window.open(mapUrl, "_blank");
+                              }}
+                              className="w-full py-3 px-4 rounded-lg text-white font-semibold shadow hover:shadow-lg transition-all"
+                              style={{
+                                background: `linear-gradient(135deg, ${projectBranding?.primaryColor} 0%, ${projectBranding?.secondaryColor} 100%)`,
+                              }}
+                            >
+                              🗺️ {t("getDirections")}
+                            </button>
                           </div>
                         </div>
-
-                        {/* Features */}
-                        {center.features && center.features.length > 0 && (
-                          <div className="mt-4 pt-4 border-t border-gray-200">
-                            <p className="text-sm font-medium text-gray-700 mb-2">{t('availableFeatures')}</p>
-                            <div className="flex flex-wrap gap-2">
-                              {center.features.map((feature, featureIdx) => (
-                                <span key={featureIdx} className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                  {feature}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Get Directions Button */}
-                        <div className="mt-4">
-                          <button
-                            onClick={() => {
-                              let mapUrl = center.mapLink || center.googleMapLink;
-                              if (!mapUrl && center.latitude && center.longitude) {
-                                mapUrl = `https://www.google.com/maps?q=${center.latitude},${center.longitude}`;
-                              } else if (!mapUrl) {
-                                mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                                  `${center.address}, ${center.city}, ${center.state} ${center.pincode}`
-                                )}`;
-                              }
-                              window.open(mapUrl, '_blank');
-                            }}
-                            className="w-full py-3 px-4 rounded-lg text-white font-semibold shadow hover:shadow-lg transition-all"
-                            style={{
-                              background: `linear-gradient(135deg, ${projectBranding?.primaryColor} 0%, ${projectBranding?.secondaryColor} 100%)`,
-                            }}
-                          >
-                            🗺️ {t('getDirections')}
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                  )}
+                      ))
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
             )}
           </div>
 
           {/* Knowledge Base Module */}
-          <div className={`transition-opacity duration-200 ${activeModule === 'knowledge-base' ? 'opacity-100' : 'opacity-0 absolute pointer-events-none'}`}>
+          <div
+            className={`transition-opacity duration-200 ${activeModule === "knowledge-base" ? "opacity-100" : "opacity-0 absolute pointer-events-none"}`}
+          >
             <div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-6">Knowledge Base</h2>
-              
+              <h2 className="text-2xl font-bold text-gray-900 mb-6">
+                Knowledge Base
+              </h2>
+
               {/* Search and Filter */}
               <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1620,7 +1888,7 @@ const StudentDashboard: React.FC = () => {
                     <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                     <input
                       type="text"
-                      placeholder="Search articles..."
+                      placeholder="Search Article"
                       value={kbSearchQuery}
                       onChange={(e) => setKbSearchQuery(e.target.value)}
                       className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -1652,9 +1920,9 @@ const StudentDashboard: React.FC = () => {
                     <div className="col-span-full bg-white rounded-xl shadow-sm p-12 text-center">
                       <BookOpenIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                       <p className="text-gray-500">
-                        {kbSearchQuery || kbSelectedCategory !== 'all'
-                          ? 'No articles found matching your search.'
-                          : 'No articles available yet.'}
+                        {kbSearchQuery || kbSelectedCategory !== "all"
+                          ? "No articles found matching your search."
+                          : "No articles available yet."}
                       </p>
                     </div>
                   ) : (
@@ -1791,7 +2059,9 @@ const StudentDashboard: React.FC = () => {
 
                     <div
                       className="prose prose-blue max-w-none mb-8 text-gray-700 leading-relaxed kb-article-content"
-                      dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(selectedKbArticle.content) }}
+                      dangerouslySetInnerHTML={{
+                        __html: DOMPurify.sanitize(selectedKbArticle.content),
+                      }}
                     />
 
                     {/* Feedback Section */}
@@ -1801,25 +2071,39 @@ const StudentDashboard: React.FC = () => {
                       </p>
                       <div className="flex items-center space-x-3">
                         <button
-                          onClick={() => handleKbFeedback(selectedKbArticle._id, true)}
+                          onClick={() =>
+                            handleKbFeedback(selectedKbArticle._id, true)
+                          }
                           className={`flex items-center space-x-2 px-6 py-3 text-sm font-medium rounded-lg transition-all ${
-                            articleVotes[selectedKbArticle._id] === 'helpful'
-                              ? 'bg-green-600 text-white shadow-lg'
-                              : 'bg-white text-green-600 border-2 border-green-600 hover:bg-green-50'
+                            articleVotes[selectedKbArticle._id] === "helpful"
+                              ? "bg-green-600 text-white shadow-lg"
+                              : "bg-white text-green-600 border-2 border-green-600 hover:bg-green-50"
                           }`}
-                          title={articleVotes[selectedKbArticle._id] === 'helpful' ? 'Click to remove your vote' : 'Mark as helpful'}
+                          title={
+                            articleVotes[selectedKbArticle._id] === "helpful"
+                              ? "Click to remove your vote"
+                              : "Mark as helpful"
+                          }
                         >
                           <HandThumbUpIcon className="h-5 w-5" />
                           <span>Yes</span>
                         </button>
                         <button
-                          onClick={() => handleKbFeedback(selectedKbArticle._id, false)}
+                          onClick={() =>
+                            handleKbFeedback(selectedKbArticle._id, false)
+                          }
                           className={`flex items-center space-x-2 px-6 py-3 text-sm font-medium rounded-lg transition-all ${
-                            articleVotes[selectedKbArticle._id] === 'not-helpful'
-                              ? 'bg-red-600 text-white shadow-lg'
-                              : 'bg-white text-red-600 border-2 border-red-600 hover:bg-red-50'
+                            articleVotes[selectedKbArticle._id] ===
+                            "not-helpful"
+                              ? "bg-red-600 text-white shadow-lg"
+                              : "bg-white text-red-600 border-2 border-red-600 hover:bg-red-50"
                           }`}
-                          title={articleVotes[selectedKbArticle._id] === 'not-helpful' ? 'Click to remove your vote' : 'Mark as not helpful'}
+                          title={
+                            articleVotes[selectedKbArticle._id] ===
+                            "not-helpful"
+                              ? "Click to remove your vote"
+                              : "Mark as not helpful"
+                          }
                         >
                           <HandThumbDownIcon className="h-5 w-5" />
                           <span>No</span>
@@ -1833,9 +2117,13 @@ const StudentDashboard: React.FC = () => {
           </div>
 
           {/* FAQ Module */}
-          <div className={`transition-opacity duration-200 ${activeModule === 'faq' ? 'opacity-100' : 'opacity-0 absolute pointer-events-none'}`}>
+          <div
+            className={`transition-opacity duration-200 ${activeModule === "faq" ? "opacity-100" : "opacity-0 absolute pointer-events-none"}`}
+          >
             <div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-6">Frequently Asked Questions</h2>
+              <h2 className="text-2xl font-bold text-gray-900 mb-6">
+                Frequently Asked Questions
+              </h2>
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <FAQViewer />
               </div>
@@ -1843,23 +2131,28 @@ const StudentDashboard: React.FC = () => {
           </div>
 
           {/* Profile Module */}
-          <div className={`transition-opacity duration-200 ${activeModule === 'profile' ? 'opacity-100' : 'opacity-0 absolute pointer-events-none'}`}>
+          <div
+            className={`transition-opacity duration-200 ${activeModule === "profile" ? "opacity-100" : "opacity-0 absolute pointer-events-none"}`}
+          >
             <div>
               <div className="flex items-center space-x-4 mb-6">
                 <button
-                  onClick={() => setActiveModule('dashboard')}
+                  onClick={() => setActiveModule("dashboard")}
                   className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition-colors"
                 >
                   <ArrowLeftIcon className="h-5 w-5" />
                   <span>Back to Dashboard</span>
                 </button>
               </div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-6">My Profile</h2>
+              <h2 className="text-2xl font-bold text-gray-900 mb-6">
+                My Profile
+              </h2>
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <div className="flex items-center space-x-6 mb-8">
                   <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
                     <span className="text-3xl font-bold text-white">
-                      {userProfile?.firstName?.charAt(0)}{userProfile?.lastName?.charAt(0)}
+                      {userProfile?.firstName?.charAt(0)}
+                      {userProfile?.lastName?.charAt(0)}
                     </span>
                   </div>
                   <div>
@@ -1869,34 +2162,42 @@ const StudentDashboard: React.FC = () => {
                     <p className="text-gray-500">Student</p>
                   </div>
                 </div>
-                
+
                 <div className="grid gap-6 md:grid-cols-2">
                   <div className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-500 mb-1">Full Name</label>
+                      <label className="block text-sm font-medium text-gray-500 mb-1">
+                        Full Name
+                      </label>
                       <p className="text-lg text-gray-900 bg-gray-50 px-4 py-3 rounded-lg">
                         {userProfile?.firstName} {userProfile?.lastName}
                       </p>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-500 mb-1">Email Address</label>
+                      <label className="block text-sm font-medium text-gray-500 mb-1">
+                        Email Address
+                      </label>
                       <p className="text-lg text-gray-900 bg-gray-50 px-4 py-3 rounded-lg flex items-center space-x-2">
                         <EnvelopeIcon className="h-5 w-5 text-gray-400" />
-                        <span>{userProfile?.email || 'Not provided'}</span>
+                        <span>{userProfile?.email || "Not provided"}</span>
                       </p>
                     </div>
                   </div>
                   <div className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-500 mb-1">Mobile Number</label>
+                      <label className="block text-sm font-medium text-gray-500 mb-1">
+                        Mobile Number
+                      </label>
                       <p className="text-lg text-gray-900 bg-gray-50 px-4 py-3 rounded-lg flex items-center space-x-2">
                         <PhoneIcon className="h-5 w-5 text-gray-400" />
-                        <span>{userProfile?.phone || 'Not provided'}</span>
+                        <span>{userProfile?.phone || "Not provided"}</span>
                       </p>
                     </div>
                     {userProfile?.parentPhone && (
                       <div>
-                        <label className="block text-sm font-medium text-gray-500 mb-1">Parent/Guardian Phone</label>
+                        <label className="block text-sm font-medium text-gray-500 mb-1">
+                          Parent/Guardian Phone
+                        </label>
                         <p className="text-lg text-gray-900 bg-gray-50 px-4 py-3 rounded-lg flex items-center space-x-2">
                           <PhoneIcon className="h-5 w-5 text-gray-400" />
                           <span>{userProfile.parentPhone}</span>
@@ -1905,10 +2206,10 @@ const StudentDashboard: React.FC = () => {
                     )}
                   </div>
                 </div>
-                
+
                 <div className="mt-8 pt-6 border-t border-gray-200">
                   <button
-                    onClick={() => setActiveModule('change-password')}
+                    onClick={() => setActiveModule("change-password")}
                     className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                   >
                     <KeyIcon className="h-5 w-5" />
@@ -1920,18 +2221,22 @@ const StudentDashboard: React.FC = () => {
           </div>
 
           {/* Change Password Module */}
-          <div className={`transition-opacity duration-200 ${activeModule === 'change-password' ? 'opacity-100' : 'opacity-0 absolute pointer-events-none'}`}>
+          <div
+            className={`transition-opacity duration-200 ${activeModule === "change-password" ? "opacity-100" : "opacity-0 absolute pointer-events-none"}`}
+          >
             <div>
               <div className="flex items-center space-x-4 mb-6">
                 <button
-                  onClick={() => setActiveModule('profile')}
+                  onClick={() => setActiveModule("profile")}
                   className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition-colors"
                 >
                   <ArrowLeftIcon className="h-5 w-5" />
                   <span>Back to Profile</span>
                 </button>
               </div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-6">Change Password</h2>
+              <h2 className="text-2xl font-bold text-gray-900 mb-6">
+                Change Password
+              </h2>
               <div className="bg-white rounded-xl shadow-sm p-6 max-w-md">
                 {passwordError && (
                   <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center space-x-3">
@@ -1945,10 +2250,12 @@ const StudentDashboard: React.FC = () => {
                     <span className="text-green-700">{passwordSuccess}</span>
                   </div>
                 )}
-                
+
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Current Password</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Current Password
+                    </label>
                     <input
                       type="password"
                       value={currentPassword}
@@ -1958,7 +2265,9 @@ const StudentDashboard: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      New Password
+                    </label>
                     <input
                       type="password"
                       value={newPassword}
@@ -1968,7 +2277,9 @@ const StudentDashboard: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Confirm New Password
+                    </label>
                     <input
                       type="password"
                       value={confirmPassword}
@@ -2000,13 +2311,15 @@ const StudentDashboard: React.FC = () => {
           </div>
 
           {/* Ticket Detail Module */}
-          <div className={`transition-opacity duration-200 ${activeModule === 'ticket-detail' ? 'opacity-100' : 'opacity-0 absolute pointer-events-none'}`}>
+          <div
+            className={`transition-opacity duration-200 ${activeModule === "ticket-detail" ? "opacity-100" : "opacity-0 absolute pointer-events-none"}`}
+          >
             <div className="space-y-6">
               {/* Header with Back Button */}
               <div className="flex items-center space-x-4">
                 <button
                   onClick={() => {
-                    setActiveModule('dashboard');
+                    setActiveModule("dashboard");
                     setSelectedTicket(null);
                     setSelectedTicketId(null);
                   }}
@@ -2028,7 +2341,9 @@ const StudentDashboard: React.FC = () => {
                     <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-start space-x-3">
                       <CheckCircleIcon className="w-6 h-6 text-green-600 flex-shrink-0 mt-0.5" />
                       <div>
-                        <h3 className="text-sm font-semibold text-green-900">Reply sent successfully!</h3>
+                        <h3 className="text-sm font-semibold text-green-900">
+                          Reply sent successfully!
+                        </h3>
                       </div>
                     </div>
                   )}
@@ -2037,7 +2352,9 @@ const StudentDashboard: React.FC = () => {
                     <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start space-x-3">
                       <ExclamationCircleIcon className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" />
                       <div>
-                        <h3 className="text-sm font-semibold text-red-900">Error</h3>
+                        <h3 className="text-sm font-semibold text-red-900">
+                          Error
+                        </h3>
                         <p className="text-sm text-red-700">{replyError}</p>
                       </div>
                     </div>
@@ -2050,113 +2367,151 @@ const StudentDashboard: React.FC = () => {
                       <div className="bg-white rounded-xl shadow-sm p-6">
                         <div className="flex items-start justify-between mb-4">
                           <div>
-                            <p className="text-sm text-gray-500 mb-1">{selectedTicket.ticketNumber}</p>
-                            <h2 className="text-2xl font-bold text-gray-900">{selectedTicket.title}</h2>
+                            <p className="text-sm text-gray-500 mb-1">
+                              {selectedTicket.ticketNumber}
+                            </p>
+                            <h2 className="text-2xl font-bold text-gray-900">
+                              {selectedTicket.title}
+                            </h2>
                           </div>
                           <div className="flex flex-col items-end space-y-2">
                             <span
                               className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(
-                                selectedTicket.status
+                                selectedTicket.status,
                               )}`}
                             >
-                              {getStatusName(selectedTicket.status).toUpperCase()}
+                              {getStatusName(
+                                selectedTicket.status,
+                              ).toUpperCase()}
                             </span>
-                            <span className={`text-xs font-medium ${getPriorityColor(selectedTicket.priority)}`}>
+                            <span
+                              className={`text-xs font-medium ${getPriorityColor(selectedTicket.priority)}`}
+                            >
                               {selectedTicket.priority.toUpperCase()}
                             </span>
                           </div>
                         </div>
 
                         <div className="prose max-w-none">
-                          <p className="text-gray-700 whitespace-pre-wrap">{selectedTicket.description}</p>
+                          <p className="text-gray-700 whitespace-pre-wrap">
+                            {selectedTicket.description}
+                          </p>
                         </div>
 
                         {/* Original Attachments */}
-                        {selectedTicket.attachments && selectedTicket.attachments.length > 0 && (
-                          <div className="mt-4 pt-4 border-t border-gray-200">
-                            <h3 className="text-sm font-medium text-gray-700 mb-2">Attachments:</h3>
-                            <div className="space-y-2">
-                              {selectedTicket.attachments.map((file, idx) => (
-                                <a
-                                  key={idx}
-                                  href={`${API_CONFIG.BASE_URL}{file.path}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="flex items-center space-x-2 text-sm text-blue-600 hover:text-blue-700"
-                                >
-                                  <PaperClipIcon className="h-4 w-4" />
-                                  <span>{file.filename}</span>
-                                  <span className="text-gray-400">({formatFileSize(file.size)})</span>
-                                </a>
-                              ))}
+                        {selectedTicket.attachments &&
+                          selectedTicket.attachments.length > 0 && (
+                            <div className="mt-4 pt-4 border-t border-gray-200">
+                              <h3 className="text-sm font-medium text-gray-700 mb-2">
+                                Attachments:
+                              </h3>
+                              <div className="space-y-2">
+                                {selectedTicket.attachments.map((file, idx) => (
+                                  <a
+                                    key={idx}
+                                    href={`${API_CONFIG.BASE_URL}{file.path}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center space-x-2 text-sm text-blue-600 hover:text-blue-700"
+                                  >
+                                    <PaperClipIcon className="h-4 w-4" />
+                                    <span>{file.filename}</span>
+                                    <span className="text-gray-400">
+                                      ({formatFileSize(file.size)})
+                                    </span>
+                                  </a>
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          )}
                       </div>
 
                       {/* Threads/Replies */}
-                      {selectedTicket.threads && selectedTicket.threads.length > 0 && (
-                        <div className="space-y-4">
-                          <h3 className="text-lg font-semibold text-gray-900">Conversation</h3>
-                          {selectedTicket.threads.map((thread) => (
-                            <div key={thread._id} className="bg-white rounded-xl shadow-sm p-6">
-                              <div className="flex items-start space-x-3">
-                                <div className="flex-shrink-0">
-                                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-semibold">
-                                    {thread.createdBy.firstName.charAt(0)}
-                                  </div>
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center justify-between mb-2">
-                                    <div>
-                                      <p className="text-sm font-medium text-gray-900">
-                                        {thread.createdBy.firstName} {thread.createdBy.lastName}
-                                        <span className="ml-2 text-xs text-gray-500">
-                                          ({thread.createdBy.role.name})
-                                        </span>
-                                      </p>
-                                      <p className="text-xs text-gray-500">
-                                        {new Date(thread.createdAt).toLocaleString()}
-                                      </p>
+                      {selectedTicket.threads &&
+                        selectedTicket.threads.length > 0 && (
+                          <div className="space-y-4">
+                            <h3 className="text-lg font-semibold text-gray-900">
+                              Conversation
+                            </h3>
+                            {selectedTicket.threads.map((thread) => (
+                              <div
+                                key={thread._id}
+                                className="bg-white rounded-xl shadow-sm p-6"
+                              >
+                                <div className="flex items-start space-x-3">
+                                  <div className="flex-shrink-0">
+                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-semibold">
+                                      {thread.createdBy.firstName.charAt(0)}
                                     </div>
                                   </div>
-                                  <p className="text-gray-700 whitespace-pre-wrap">{thread.message}</p>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <div>
+                                        <p className="text-sm font-medium text-gray-900">
+                                          {thread.createdBy.firstName}{" "}
+                                          {thread.createdBy.lastName}
+                                          <span className="ml-2 text-xs text-gray-500">
+                                            ({thread.createdBy.role.name})
+                                          </span>
+                                        </p>
+                                        <p className="text-xs text-gray-500">
+                                          {new Date(
+                                            thread.createdAt,
+                                          ).toLocaleString()}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <p className="text-gray-700 whitespace-pre-wrap">
+                                      {thread.message}
+                                    </p>
 
-                                  {/* Thread Attachments */}
-                                  {thread.attachments && thread.attachments.length > 0 && (
-                                    <div className="mt-3 space-y-2">
-                                      {thread.attachments.map((file, idx) => (
-                                        <a
-                                          key={idx}
-                                          href={`${API_CONFIG.BASE_URL}{file.path}`}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="flex items-center space-x-2 text-sm text-blue-600 hover:text-blue-700"
-                                        >
-                                          <PaperClipIcon className="h-4 w-4" />
-                                          <span>{file.filename}</span>
-                                          <span className="text-gray-400">({formatFileSize(file.size)})</span>
-                                        </a>
-                                      ))}
-                                    </div>
-                                  )}
+                                    {/* Thread Attachments */}
+                                    {thread.attachments &&
+                                      thread.attachments.length > 0 && (
+                                        <div className="mt-3 space-y-2">
+                                          {thread.attachments.map(
+                                            (file, idx) => (
+                                              <a
+                                                key={idx}
+                                                href={`${API_CONFIG.BASE_URL}{file.path}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="flex items-center space-x-2 text-sm text-blue-600 hover:text-blue-700"
+                                              >
+                                                <PaperClipIcon className="h-4 w-4" />
+                                                <span>{file.filename}</span>
+                                                <span className="text-gray-400">
+                                                  ({formatFileSize(file.size)})
+                                                </span>
+                                              </a>
+                                            ),
+                                          )}
+                                        </div>
+                                      )}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                            ))}
+                          </div>
+                        )}
 
                       {/* Reply Form (only if ticket is not closed) */}
                       {/* 5 = Closed */}
                       {selectedTicket.status !== 5 && (
                         <div className="bg-white rounded-xl shadow-sm p-6">
-                          <h3 className="text-lg font-semibold text-gray-900 mb-4">Add Reply</h3>
-                          <form onSubmit={handleReplySubmit} className="space-y-4">
+                          <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                            Add Reply
+                          </h3>
+                          <form
+                            onSubmit={handleReplySubmit}
+                            className="space-y-4"
+                          >
                             <div>
                               <textarea
                                 value={replyMessage}
-                                onChange={(e) => setReplyMessage(e.target.value)}
+                                onChange={(e) =>
+                                  setReplyMessage(e.target.value)
+                                }
                                 placeholder="Type your message..."
                                 rows={4}
                                 className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -2168,7 +2523,9 @@ const StudentDashboard: React.FC = () => {
                             <div>
                               <label className="flex items-center justify-center w-full px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-500 transition-colors">
                                 <DocumentArrowUpIcon className="h-6 w-6 text-gray-400 mr-2" />
-                                <span className="text-sm text-gray-600">Attach files (optional)</span>
+                                <span className="text-sm text-gray-600">
+                                  Attach files (optional)
+                                </span>
                                 <input
                                   type="file"
                                   multiple
@@ -2185,7 +2542,9 @@ const StudentDashboard: React.FC = () => {
                                       key={idx}
                                       className="flex items-center justify-between bg-gray-50 p-3 rounded-lg"
                                     >
-                                      <span className="text-sm text-gray-700">{file.name}</span>
+                                      <span className="text-sm text-gray-700">
+                                        {file.name}
+                                      </span>
                                       <button
                                         type="button"
                                         onClick={() => removeReplyFile(idx)}
@@ -2206,10 +2565,10 @@ const StudentDashboard: React.FC = () => {
                               style={{
                                 background: projectBranding
                                   ? `linear-gradient(135deg, ${projectBranding.primaryColor} 0%, ${projectBranding.secondaryColor} 100%)`
-                                  : 'linear-gradient(135deg, #3b82f6 0%, #1e40af 100%)',
+                                  : "linear-gradient(135deg, #3b82f6 0%, #1e40af 100%)",
                               }}
                             >
-                              {submittingReply ? 'Sending...' : 'Send Reply'}
+                              {submittingReply ? "Sending..." : "Send Reply"}
                             </button>
                           </form>
                         </div>
@@ -2220,29 +2579,46 @@ const StudentDashboard: React.FC = () => {
                     <div className="space-y-6">
                       {/* Ticket Details */}
                       <div className="bg-white rounded-xl shadow-sm p-6">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-4">Query Information</h3>
+                        <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                          Query Information
+                        </h3>
                         <dl className="space-y-3">
                           <div>
-                            <dt className="text-sm font-medium text-gray-500">Category</dt>
-                            <dd className="text-sm text-gray-900 mt-1">{selectedTicket.category}</dd>
-                          </div>
-                          <div>
-                            <dt className="text-sm font-medium text-gray-500">Created</dt>
+                            <dt className="text-sm font-medium text-gray-500">
+                              Category
+                            </dt>
                             <dd className="text-sm text-gray-900 mt-1">
-                              {new Date(selectedTicket.createdAt).toLocaleString()}
+                              {selectedTicket.category}
                             </dd>
                           </div>
                           <div>
-                            <dt className="text-sm font-medium text-gray-500">Last Updated</dt>
+                            <dt className="text-sm font-medium text-gray-500">
+                              Created
+                            </dt>
                             <dd className="text-sm text-gray-900 mt-1">
-                              {new Date(selectedTicket.updatedAt).toLocaleString()}
+                              {new Date(
+                                selectedTicket.createdAt,
+                              ).toLocaleString()}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-sm font-medium text-gray-500">
+                              Last Updated
+                            </dt>
+                            <dd className="text-sm text-gray-900 mt-1">
+                              {new Date(
+                                selectedTicket.updatedAt,
+                              ).toLocaleString()}
                             </dd>
                           </div>
                           {selectedTicket.assignedTo && (
                             <div>
-                              <dt className="text-sm font-medium text-gray-500">Assigned To</dt>
+                              <dt className="text-sm font-medium text-gray-500">
+                                Assigned To
+                              </dt>
                               <dd className="text-sm text-gray-900 mt-1">
-                                {selectedTicket.assignedTo.firstName} {selectedTicket.assignedTo.lastName}
+                                {selectedTicket.assignedTo.firstName}{" "}
+                                {selectedTicket.assignedTo.lastName}
                               </dd>
                             </div>
                           )}
@@ -2251,21 +2627,25 @@ const StudentDashboard: React.FC = () => {
 
                       {/* Close Ticket Button */}
                       {/* 5 = Closed */}
-                      {allowStudentToCloseTicket && selectedTicket.status !== 5 && (
-                        <div className="bg-white rounded-xl shadow-sm p-6">
-                          <h3 className="text-lg font-semibold text-gray-900 mb-3">Actions</h3>
-                          <button
-                            onClick={handleCloseTicket}
-                            disabled={closingTicket}
-                            className="w-full py-2 px-4 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            {closingTicket ? 'Closing...' : 'Close Query'}
-                          </button>
-                          <p className="text-xs text-gray-500 mt-2">
-                            Once closed, you won't be able to reopen this query.
-                          </p>
-                        </div>
-                      )}
+                      {allowStudentToCloseTicket &&
+                        selectedTicket.status !== 5 && (
+                          <div className="bg-white rounded-xl shadow-sm p-6">
+                            <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                              Actions
+                            </h3>
+                            <button
+                              onClick={handleCloseTicket}
+                              disabled={closingTicket}
+                              className="w-full py-2 px-4 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {closingTicket ? "Closing..." : "Close Query"}
+                            </button>
+                            <p className="text-xs text-gray-500 mt-2">
+                              Once closed, you won't be able to reopen this
+                              query.
+                            </p>
+                          </div>
+                        )}
                     </div>
                   </div>
                 </>

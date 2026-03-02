@@ -42,12 +42,14 @@ interface ArticleDetailViewProps {
   articleId: string;
   projectId: string;
   onBack: () => void;
+  isStudentPortal?: boolean; // When true, skip token to support public access
 }
 
 const ArticleDetailView: React.FC<ArticleDetailViewProps> = ({
   articleId,
   projectId,
   onBack,
+  isStudentPortal = false,
 }) => {
   const [article, setArticle] = useState<Article | null>(null);
   const [levels, setLevels] = useState<Level[]>([]);
@@ -62,10 +64,15 @@ const ArticleDetailView: React.FC<ArticleDetailViewProps> = ({
     try {
       setLoading(true);
       const token = localStorage.getItem("authToken");
+      // Build headers - skip token for student portal to avoid expired token errors
+      const headers: any = {};
+      if (!isStudentPortal && token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
       const response = await axios.get(
         `${API_CONFIG.API_URL}/kb/public/articles/${articleId}`,
         {
-          headers: { Authorization: `Bearer ${token}` },
+          headers,
           params: { projectId },
         },
       );
@@ -74,7 +81,7 @@ const ArticleDetailView: React.FC<ArticleDetailViewProps> = ({
       setRelatedArticles(response.data.data.relatedArticles || []);
     } catch (error: any) {
       console.error("Failed to fetch article:", error);
-      alert(error.response?.data?.message || "Failed to fetch article");
+      // Don't alert - just log the error, the UI will show "Article not found" state
     } finally {
       setLoading(false);
     }
