@@ -3,6 +3,7 @@ import KBArticle from "../models/KBArticle";
 import KBArticleLevelMapping from "../models/KBArticleLevelMapping";
 import KBLevel from "../models/KBLevel";
 import GCSService from "../services/gcsService";
+import { refreshSignedUrlIfNeeded } from "../utils/gcsUrlHelper";
 import mongoose from "mongoose";
 import DOMPurify from "isomorphic-dompurify";
 
@@ -389,12 +390,24 @@ export const getArticleById = async (
 
     // Increment view count
     article.viewsCount += 1;
+
+    // Refresh signed URL if expired (handles old v4 URLs stored in DB).
+    // Persist the refreshed URL to DB so future requests skip the GCS API call.
+    const articleObj = article.toObject() as any;
+    if (articleObj.pdfUrl) {
+      const freshUrl = await refreshSignedUrlIfNeeded(articleObj.pdfUrl);
+      if (freshUrl && freshUrl !== articleObj.pdfUrl) {
+        article.pdfUrl = freshUrl;
+        articleObj.pdfUrl = freshUrl;
+      }
+    }
+
     await article.save();
 
     res.status(200).json({
       success: true,
       data: {
-        ...article.toObject(),
+        ...articleObj,
         levels: mappings.map((m) => m.levelId),
       },
     });
