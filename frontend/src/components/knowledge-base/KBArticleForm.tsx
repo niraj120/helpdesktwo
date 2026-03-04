@@ -100,9 +100,10 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
   const fetchRoles = async () => {
     try {
       const token = localStorage.getItem("authToken");
+      // Fetch ALL roles (no projectId filter) so visibleToRoles selector shows
+      // every role regardless of which project the editor is currently in.
       const response = await axios.get(`${API_CONFIG.API_URL}/roles`, {
         headers: { Authorization: `Bearer ${token}` },
-        params: { projectId },
       });
       const rolesData = response.data.data || response.data || [];
       setRoles(rolesData);
@@ -122,7 +123,11 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
       // Append all fields
       formDataToSend.append("documentName", formData.documentName);
       formDataToSend.append("documentType", formData.documentType);
-      formDataToSend.append("projectIds", JSON.stringify([projectId]));
+      // Only set projectIds for NEW articles. On edit, omit it so the backend
+      // preserves the existing projectIds (which may span multiple projects).
+      if (!article) {
+        formDataToSend.append("projectIds", JSON.stringify([projectId]));
+      }
       formDataToSend.append("levelIds", JSON.stringify(formData.levelIds));
       formDataToSend.append("status", formData.status);
       formDataToSend.append("isFeatured", formData.isFeatured.toString());

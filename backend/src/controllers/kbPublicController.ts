@@ -297,6 +297,78 @@ export const getPublicArticles = async (
       }),
     );
 
+    // -----------------------------------------------------------------------
+    // Cross-project role-based articles
+    // Documents may be created in a different project hierarchy (e.g. district)
+    // yet should be visible to roles in a sibling/parent project (e.g. state).
+    // The level-mapping query above only covers the current projectId.  This
+    // secondary query fetches role_based articles from ANY project that match
+    // the authenticated user's role, then injects them as a virtual level so
+    // they are visible regardless of which project context the viewer opened.
+    // -----------------------------------------------------------------------
+    const reqUser = (req as any).user;
+    const crossProjectRoleId = (() => {
+      const rv = reqUser?.roleId || reqUser?.role;
+      if (!rv) return null;
+      if (typeof rv === "object" && rv._id) return rv._id.toString();
+      return typeof rv === "string" ? rv : null;
+    })();
+
+    if (crossProjectRoleId && /^[0-9a-fA-F]{24}$/.test(crossProjectRoleId)) {
+      // IDs already shown via the level-mapping path — avoid duplicates
+      const existingIds = new Set(allArticles.map((a: any) => a._id.toString()));
+
+      const crossProjectFilter: any = {
+        status: "active",
+        visibility: "role_based",
+        visibleToRoles: new mongoose.Types.ObjectId(crossProjectRoleId),
+        $and: [publishTypeFilter],
+      };
+
+      const crossArticles = await KBArticle.find(crossProjectFilter)
+        .select(
+          "documentName documentType pdfUrl externalUrl description showNewTag isFeatured author publishedAt viewsCount tags displayOrder",
+        )
+        .sort({ isFeatured: -1, displayOrder: 1, publishedAt: -1 })
+        .lean();
+
+      const additionalArticles = crossArticles.filter(
+        (a: any) => !existingIds.has(a._id.toString()),
+      );
+
+      console.log(
+        `[KB_VISIBILITY] Cross-project role-based articles: ${additionalArticles.length}`,
+      );
+
+      if (additionalArticles.length > 0) {
+        const crossArticlesWithUrls = await Promise.all(
+          additionalArticles.map(async (art: any) => ({
+            id: art._id,
+            documentName: art.documentName,
+            documentType: art.documentType,
+            pdfUrl: await refreshSignedUrlIfNeeded(art.pdfUrl),
+            externalUrl: art.externalUrl,
+            description: art.description,
+            showNewTag: art.showNewTag,
+            isFeatured: art.isFeatured,
+            author: art.author,
+            publishedAt: art.publishedAt,
+            viewsCount: art.viewsCount,
+            tags: art.tags,
+          })),
+        );
+
+        levelsWithArticles.push({
+          id: "shared-role-based",
+          levelName: "Documents Shared with Your Role",
+          levelOrder: 9999,
+          levelIcon: undefined,
+          articles: crossArticlesWithUrls,
+          tables: [],
+        });
+      }
+    }
+
     res.status(200).json({
       success: true,
       data: {
@@ -343,16 +415,38 @@ export const getPublicArticleById = async (
     // Build visibility filter based on user authentication and role
     const visibilityFilter = buildVisibilityFilter(req);
 
-    const articleQuery: any = {
+    let articleQuery: any = {
       _id: id,
       status: "active",
       projectIds: projectId,
       ...visibilityFilter,
     };
 
-    const article = await KBArticle.findOne(articleQuery).select(
+    let article = await KBArticle.findOne(articleQuery).select(
       "-createdBy -updatedBy",
     );
+
+    // Fallback: cross-project role-based article (e.g. district article visible
+    // to a state-level role).  If the article was not found under the current
+    // project, check whether it is role_based and the user's role is listed.
+    if (!article) {
+      const detailUser = (req as any).user;
+      const detailRoleId = (() => {
+        const rv = detailUser?.roleId || detailUser?.role;
+        if (!rv) return null;
+        if (typeof rv === "object" && rv._id) return rv._id.toString();
+        return typeof rv === "string" ? rv : null;
+      })();
+
+      if (detailRoleId && /^[0-9a-fA-F]{24}$/.test(detailRoleId)) {
+        article = await KBArticle.findOne({
+          _id: id,
+          status: "active",
+          visibility: "role_based",
+          visibleToRoles: new mongoose.Types.ObjectId(detailRoleId),
+        }).select("-createdBy -updatedBy");
+      }
+    }
 
     if (!article) {
       res.status(404).json({
