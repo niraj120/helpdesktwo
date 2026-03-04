@@ -316,7 +316,9 @@ export const getPublicArticles = async (
 
     if (crossProjectRoleId && /^[0-9a-fA-F]{24}$/.test(crossProjectRoleId)) {
       // IDs already shown via the level-mapping path — avoid duplicates
-      const existingIds = new Set(allArticles.map((a: any) => a._id.toString()));
+      const existingIds = new Set(
+        allArticles.map((a: any) => a._id.toString()),
+      );
 
       const crossProjectFilter: any = {
         status: "active",
@@ -422,7 +424,8 @@ export const getPublicArticleById = async (
       ...visibilityFilter,
     };
 
-    let article = await KBArticle.findOne(articleQuery).select(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let article: any = await KBArticle.findOne(articleQuery).select(
       "-createdBy -updatedBy",
     );
 
