@@ -34,6 +34,59 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     category: "dashboard",
   },
   // =====================================================
+  // HIERARCHICAL DASHBOARD PERMISSIONS
+  // =====================================================
+  {
+    module: "Dashboard",
+    name: "View Own Dashboard",
+    code: "DASHBOARD_VIEW_OWN",
+    description: "Can view own tickets on the dashboard",
+    category: "dashboard",
+  },
+  {
+    module: "Dashboard",
+    name: "View Team Dashboard",
+    code: "DASHBOARD_VIEW_TEAM",
+    description: "Can view direct team members' tickets on the dashboard",
+    category: "dashboard",
+  },
+  {
+    module: "Dashboard",
+    name: "View Full Hierarchy Dashboard",
+    code: "DASHBOARD_VIEW_HIERARCHY",
+    description: "Can view multi-level team hierarchy on the dashboard",
+    category: "dashboard",
+  },
+  {
+    module: "Dashboard",
+    name: "View Team Breakdown",
+    code: "DASHBOARD_VIEW_TEAM_BREAKDOWN",
+    description:
+      "Can see individual team member ticket breakdown on the dashboard",
+    category: "dashboard",
+  },
+  {
+    module: "Dashboard",
+    name: "View All Tickets Dashboard",
+    code: "DASHBOARD_VIEW_ALL",
+    description: "Can view all tickets globally on the dashboard",
+    category: "dashboard",
+  },
+  {
+    module: "Team Management",
+    name: "Manage Team Hierarchy",
+    code: "HIERARCHY_MANAGE_TEAM",
+    description: "Can create and manage user reporting relationships",
+    category: "rbac-setup",
+  },
+  {
+    module: "Team Management",
+    name: "View Team Structure",
+    code: "HIERARCHY_VIEW_TEAM",
+    description: "Can view the team reporting structure",
+    category: "rbac-setup",
+  },
+  // =====================================================
   // PROJECT MANAGEMENT CATEGORY
   // =====================================================
   {

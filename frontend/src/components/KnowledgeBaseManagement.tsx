@@ -201,15 +201,15 @@ const KnowledgeBaseManagement: React.FC = () => {
   const fetchRoles = async () => {
     try {
       const token = localStorage.getItem("authToken");
-      const response = await fetch(
-        `${API_CONFIG.API_URL}/roles?projectId=${selectedProject}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          credentials: "include",
+      // Fetch ALL roles (no projectId filter) so that cross-project roles like
+      // "CET State SPOC" (state-level) appear in the visibleToRoles selector
+      // even when the article belongs to a district-level project.
+      const response = await fetch(`${API_CONFIG.API_URL}/roles`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
         },
-      );
+        credentials: "include",
+      });
       const data = await response.json();
       if (data.success) {
         setRoles(data.data || []);
@@ -2026,7 +2026,7 @@ const KnowledgeBaseManagement: React.FC = () => {
                               padding: "8px",
                             }}
                           >
-                            No roles found for this project
+                            No roles found
                           </p>
                         ) : (
                           roles.map((role) => (

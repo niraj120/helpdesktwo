@@ -1182,11 +1182,25 @@ export async function processAutoEscalation(): Promise<{
         if (!matrix) continue;
 
         const currentLevelNumber = ticket.currentEscalationLevelNumber || 1;
-        const currentLevel = matrix.levels.find(
+
+        // BUG FIX: Handle both SAME_FOR_ALL and PER_PRIORITY matrices.
+        // Previously used matrix.levels directly which is EMPTY for PER_PRIORITY mode.
+        const levelsForPriority: IEscalationLevel[] =
+          matrix.priorityMode === "PER_PRIORITY"
+            ? matrix.getLevelsForPriority(ticket.priority || "MEDIUM")
+            : matrix.levels;
+
+        const currentLevel = levelsForPriority.find(
           (l) => l.levelNumber === currentLevelNumber && l.isActive,
         );
 
-        if (!currentLevel) continue;
+        if (!currentLevel) {
+          console.log(
+            `⚠️  [AUTO-ESC] Ticket ${ticket.ticketNumber}: No active level ${currentLevelNumber} found in matrix "${matrix.name}" ` +
+              `(priorityMode=${matrix.priorityMode}, priority=${ticket.priority}, levelsCount=${levelsForPriority.length})`,
+          );
+          continue;
+        }
 
         // Check if role-level SLA is paused
         if (ticket.roleLevelSLA?.pausedAt) {
@@ -1199,30 +1213,50 @@ export async function processAutoEscalation(): Promise<{
         // Check if role-level SLA has been breached using roleLevelSLA.dueAt
         const now = new Date();
         let slaBreach = false;
+        let slaSource = "unknown";
 
         // Use roleLevelSLA.dueAt as the primary source for role-level escalation
         if (ticket.roleLevelSLA?.dueAt) {
           slaBreach = now > new Date(ticket.roleLevelSLA.dueAt);
+          slaSource = `roleLevelSLA.dueAt=${ticket.roleLevelSLA.dueAt}`;
           if (slaBreach) {
             console.log(
-              `⏰ Ticket ${ticket.ticketNumber}: Role-level SLA breached (dueAt: ${ticket.roleLevelSLA.dueAt})`,
+              `⏰ [AUTO-ESC] Ticket ${ticket.ticketNumber}: Role-level SLA breached (dueAt: ${ticket.roleLevelSLA.dueAt})`,
+            );
+          } else {
+            const minsLeft = Math.round(
+              (new Date(ticket.roleLevelSLA.dueAt).getTime() - now.getTime()) /
+                60000,
+            );
+            console.log(
+              `✅ [AUTO-ESC] Ticket ${ticket.ticketNumber}: SLA OK, ${minsLeft} min(s) remaining`,
             );
           }
         } else {
-          // Fallback: Check legacy SLATracking model
+          // BUG FIX: roleLevelSLA not set (older ticket or auto-assign didn't run).
+          // Fallback 1: Check legacy SLATracking model
           const slaTracking = await SLATracking.findOne({
             ticketId: ticket._id,
           });
           if (slaTracking?.resolutionDeadline) {
             slaBreach = now > slaTracking.resolutionDeadline;
+            slaSource = `SLATracking.resolutionDeadline=${slaTracking.resolutionDeadline}`;
           } else {
-            // Final fallback: Calculate from ticket creation + level SLA
-            const escalationStartTime = ticket.createdAt;
+            // Fallback 2: Use roleLevelSLA.startedAt if available (more accurate than createdAt for escalated tickets).
+            // Only fall back to createdAt if at level 1 to avoid false positives.
+            const slaStartTime =
+              currentLevelNumber === 1
+                ? ticket.createdAt
+                : ticket.roleLevelSLA?.startedAt || ticket.createdAt;
             const slaDeadline = new Date(
-              escalationStartTime.getTime() +
+              slaStartTime.getTime() +
                 slaToMs(currentLevel.slaHours, currentLevel.slaUnit),
             );
             slaBreach = now > slaDeadline;
+            slaSource = `fallback from ${slaStartTime.toISOString()} + ${currentLevel.slaHours}${currentLevel.slaUnit || "hrs"}`;
+            console.log(
+              `⚠️  [AUTO-ESC] Ticket ${ticket.ticketNumber}: roleLevelSLA missing, using fallback SLA source (${slaSource})`,
+            );
           }
         }
 
@@ -1232,7 +1266,8 @@ export async function processAutoEscalation(): Promise<{
         }
 
         // SLA breached - find next level (sequential behavior for auto-escalation)
-        const sortedLevels = [...matrix.levels]
+        // BUG FIX: Use levelsForPriority (already resolved above) not matrix.levels
+        const sortedLevels = [...levelsForPriority]
           .filter((l) => l.isActive)
           .sort((a, b) => a.levelNumber - b.levelNumber);
 
@@ -1242,20 +1277,32 @@ export async function processAutoEscalation(): Promise<{
 
         if (!nextLevel) {
           // Already at highest level, can't escalate further
+          console.log(
+            `ℹ️  [AUTO-ESC] Ticket ${ticket.ticketNumber}: Already at highest level (L${currentLevelNumber}), cannot auto-escalate further`,
+          );
           continue;
         }
 
-        // Find a user in the target role to assign
-        // Note: User model has 'role' field, not 'roleId'
-        const usersInRole = await User.find({
+        // BUG FIX: Add project scope to user query to avoid finding users from other projects
+        const userQuery: any = {
           role: nextLevel.roleId,
           isActive: true,
-        }).select("_id firstName lastName");
+        };
+        if (ticket.project) {
+          userQuery.$or = [
+            { projects: { $in: [ticket.project] } },
+            { projects: { $exists: false } },
+            { projects: { $size: 0 } },
+          ];
+        }
+        const usersInRole = await User.find(userQuery).select(
+          "_id firstName lastName",
+        );
 
         if (usersInRole.length === 0) {
-          result.errors.push(
-            `Ticket ${ticket.ticketNumber}: No users found in role for level ${nextLevel.levelNumber}`,
-          );
+          const errMsg = `Ticket ${ticket.ticketNumber}: No active users in role ${nextLevel.roleId} for level ${nextLevel.levelNumber} (project: ${ticket.project})`;
+          console.log(`❌ [AUTO-ESC] ${errMsg}`);
+          result.errors.push(errMsg);
           continue;
         }
 

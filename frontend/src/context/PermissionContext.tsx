@@ -1,4 +1,10 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from "react";
 
 interface PermissionContextType {
   permissions: string[];
@@ -11,7 +17,9 @@ interface PermissionContextType {
   isLoading: boolean;
 }
 
-const PermissionContext = createContext<PermissionContextType | undefined>(undefined);
+const PermissionContext = createContext<PermissionContextType | undefined>(
+  undefined,
+);
 
 interface PermissionProviderProps {
   children: ReactNode;
@@ -21,7 +29,9 @@ interface PermissionProviderProps {
  * PermissionProvider - Global permission state management
  * Wraps the entire application to provide permission context
  */
-export const PermissionProvider: React.FC<PermissionProviderProps> = ({ children }) => {
+export const PermissionProvider: React.FC<PermissionProviderProps> = ({
+  children,
+}) => {
   const [permissions, setPermissionsState] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -30,25 +40,25 @@ export const PermissionProvider: React.FC<PermissionProviderProps> = ({ children
     const loadPermissions = () => {
       try {
         // Try to get permissions from localStorage
-        const storedPermissions = localStorage.getItem('userPermissions');
+        const storedPermissions = localStorage.getItem("userPermissions");
         if (storedPermissions) {
           setPermissionsState(JSON.parse(storedPermissions));
         } else {
           // Fallback: try to extract from JWT token
-          const token = localStorage.getItem('authToken');
+          const token = localStorage.getItem("authToken");
           if (token) {
-            const parts = token.split('.');
+            const parts = token.split(".");
             if (parts.length === 3) {
               const payload = JSON.parse(atob(parts[1]));
               const perms = payload.role?.permissions || [];
               setPermissionsState(perms);
               // Store for faster access next time
-              localStorage.setItem('userPermissions', JSON.stringify(perms));
+              localStorage.setItem("userPermissions", JSON.stringify(perms));
             }
           }
         }
       } catch (error) {
-        console.error('Error loading permissions:', error);
+        console.error("Error loading permissions:", error);
         setPermissionsState([]);
       } finally {
         setIsLoading(false);
@@ -58,12 +68,34 @@ export const PermissionProvider: React.FC<PermissionProviderProps> = ({ children
     loadPermissions();
   }, []);
 
+  // Listen for silent permission refresh events (triggered by api.ts interceptor)
+  // This updates React state immediately when admin changes role permissions,
+  // without requiring the user to log out and back in.
+  useEffect(() => {
+    const handlePermissionsRefreshed = (event: Event) => {
+      const newPermissions = (event as CustomEvent<string[]>).detail;
+      console.log(
+        "🔄 PermissionContext: received permissions-refreshed event, updating state...",
+      );
+      setPermissionsState(newPermissions);
+    };
+    window.addEventListener(
+      "permissions-refreshed",
+      handlePermissionsRefreshed,
+    );
+    return () =>
+      window.removeEventListener(
+        "permissions-refreshed",
+        handlePermissionsRefreshed,
+      );
+  }, []);
+
   /**
    * Set permissions and persist to localStorage
    */
   const setPermissions = (newPermissions: string[]) => {
     setPermissionsState(newPermissions);
-    localStorage.setItem('userPermissions', JSON.stringify(newPermissions));
+    localStorage.setItem("userPermissions", JSON.stringify(newPermissions));
   };
 
   /**
@@ -77,21 +109,27 @@ export const PermissionProvider: React.FC<PermissionProviderProps> = ({ children
    * Check if user has ANY of the specified permissions (OR logic)
    */
   const hasAnyPermission = (permissionList: string[]): boolean => {
-    return permissionList.some((permission) => permissions.includes(permission));
+    return permissionList.some((permission) =>
+      permissions.includes(permission),
+    );
   };
 
   /**
    * Check if user has ALL of the specified permissions (AND logic)
    */
   const hasAllPermissions = (permissionList: string[]): boolean => {
-    return permissionList.every((permission) => permissions.includes(permission));
+    return permissionList.every((permission) =>
+      permissions.includes(permission),
+    );
   };
 
   /**
    * Check if user has any permission starting with the given prefix
    */
   const hasModuleAccess = (modulePrefix: string): boolean => {
-    return permissions.some((permission) => permission.startsWith(modulePrefix));
+    return permissions.some((permission) =>
+      permission.startsWith(modulePrefix),
+    );
   };
 
   /**
@@ -99,7 +137,7 @@ export const PermissionProvider: React.FC<PermissionProviderProps> = ({ children
    */
   const clearPermissions = () => {
     setPermissionsState([]);
-    localStorage.removeItem('userPermissions');
+    localStorage.removeItem("userPermissions");
   };
 
   const value: PermissionContextType = {
@@ -127,7 +165,9 @@ export const PermissionProvider: React.FC<PermissionProviderProps> = ({ children
 export const usePermissionContext = (): PermissionContextType => {
   const context = useContext(PermissionContext);
   if (context === undefined) {
-    throw new Error('usePermissionContext must be used within a PermissionProvider');
+    throw new Error(
+      "usePermissionContext must be used within a PermissionProvider",
+    );
   }
   return context;
 };

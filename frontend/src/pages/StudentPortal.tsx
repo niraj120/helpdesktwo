@@ -1742,7 +1742,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
                                   d="M6 18L18 6M6 6l12 12"
                                 />
                               </svg>
-                              <span>Clear Sort</span>
+                              <span>{t("clearSort")}</span>
                             </button>
                           )}
                         </div>
