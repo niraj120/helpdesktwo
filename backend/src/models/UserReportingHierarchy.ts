@@ -141,30 +141,53 @@ UserReportingHierarchySchema.statics.getDirectReportees = async function (
     : supervisorId;
     
   const query: any = {
-    supervisorUserId: managerId, // MATCHES ACTUAL DB FIELD
-    isActive: true, // Only active relationships
+    supervisorUserId: managerId,
+    isActive: true,
   };
 
   if (projectId) {
     query.projectId = projectId;
   }
 
-  const reportees = await this.find(query)
+  const hierarchyReportees = await this.find(query)
     .populate('reporteeUserId', 'firstName lastName email role')
     .lean();
   
-  console.log(`📋 [HIERARCHY] getDirectReportees: Found ${reportees.length} direct reports for supervisor ${supervisorId}`);
-  return reportees.map((r: any) => ({
+  const found = new Set(hierarchyReportees.map((r: any) => (r.reporteeUserId?._id || r.reporteeUserId)?.toString()));
+  const result = hierarchyReportees.map((r: any) => ({
     userId: r.reporteeUserId?._id || r.reporteeUserId,
     firstName: r.reporteeUserId?.firstName,
     lastName: r.reporteeUserId?.lastName,
     email: r.reporteeUserId?.email,
     role: r.reporteeUserId?.role
   }));
+
+  // Fallback: also query users.reportingManager directly (handles cases where
+  // userreportinghierarchies collection is not synced with user setup)
+  const User = mongoose.model('User');
+  const userQuery: any = { reportingManager: managerId, isActive: true };
+  if (projectId) {
+    userQuery.projects = projectId;
+  }
+  const directFromUsers = await User.find(userQuery)
+    .select('_id firstName lastName email role')
+    .lean();
+
+  for (const u of directFromUsers) {
+    const uid = (u._id as any).toString();
+    if (!found.has(uid)) {
+      found.add(uid);
+      result.push({ userId: u._id, firstName: (u as any).firstName, lastName: (u as any).lastName, email: (u as any).email, role: (u as any).role });
+    }
+  }
+
+  console.log(`📋 [HIERARCHY] getDirectReportees: Found ${result.length} direct reports for supervisor ${supervisorId} (${hierarchyReportees.length} from hierarchy collection, ${directFromUsers.length} from users.reportingManager)`);
+  return result;
 };
 
 // Static method: Get all reportees recursively (multi-level hierarchy)
-// SIMPLE APPROACH: Direct query + recursive calls
+// Queries BOTH userreportinghierarchies (new format) AND users.reportingManager
+// (direct field) so that users set up via either flow are always included.
 UserReportingHierarchySchema.statics.getAllReporteesRecursive = async function (
   supervisorId: mongoose.Types.ObjectId | string,
   projectId?: mongoose.Types.ObjectId | string,
@@ -177,36 +200,43 @@ UserReportingHierarchySchema.statics.getAllReporteesRecursive = async function (
   
   const allReportees: any[] = [];
   const visited = new Set<string>();
-  
-  // Simple recursive function
+  const User = mongoose.model('User');
+
+  // Internal recursive function — merges results from hierarchy collection
+  // AND from users.reportingManager field to cover both data sources.
   const collectReportees = async (supId: mongoose.Types.ObjectId, depth: number) => {
     if (depth > maxDepth) return;
-    
-    const query: any = {
-      supervisorUserId: supId,
-      isActive: true,
-    };
-    if (projectId) {
-      query.projectId = projectId;
-    }
-    
-    // Find direct reportees
-    const directReportees = await this.find(query).lean();
-    
-    for (const entry of directReportees) {
-      const reporteeId = entry.reporteeUserId?.toString();
-      if (reporteeId && !visited.has(reporteeId)) {
-        visited.add(reporteeId);
-        allReportees.push({
-          userId: entry.reporteeUserId,
-          _id: entry.reporteeUserId,
-        });
-        // Recursively get their reportees
-        await collectReportees(entry.reporteeUserId, depth + 1);
+
+    // Source 1: userreportinghierarchies collection
+    const hierarchyQuery: any = { supervisorUserId: supId, isActive: true };
+    if (projectId) hierarchyQuery.projectId = projectId;
+    const fromHierarchy = await this.find(hierarchyQuery).lean();
+
+    // Source 2: users.reportingManager field (fallback / supplement)
+    const userQuery: any = { reportingManager: supId, isActive: true };
+    if (projectId) userQuery.projects = projectId;
+    const fromUsers = await User.find(userQuery).select('_id').lean();
+
+    // Merge both sources
+    const candidateIds = new Set<string>();
+    fromHierarchy.forEach((e: any) => {
+      const id = e.reporteeUserId?.toString();
+      if (id) candidateIds.add(id);
+    });
+    fromUsers.forEach((u: any) => {
+      candidateIds.add((u._id as any).toString());
+    });
+
+    for (const idStr of candidateIds) {
+      if (!visited.has(idStr)) {
+        visited.add(idStr);
+        const oid = new mongoose.Types.ObjectId(idStr);
+        allReportees.push({ userId: oid, _id: oid });
+        await collectReportees(oid, depth + 1);
       }
     }
   };
-  
+
   await collectReportees(managerId, 1);
   
   console.log(`📋 [HIERARCHY] getAllReporteesRecursive: Found ${allReportees.length} reportees for supervisor ${supervisorId}`);
