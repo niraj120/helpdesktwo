@@ -1,20 +1,23 @@
-import { Request, Response } from 'express';
-import ActivityLog from '../models/ActivityLog';
-import { AuthRequest } from '../middleware/auth';
+import { Request, Response } from "express";
+import ActivityLog from "../models/ActivityLog";
+import { AuthRequest } from "../middleware/auth";
 
 // Get all activity logs with filtering and pagination
-export const getAllActivityLogs = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getAllActivityLogs = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
   try {
-    const { 
-      page = 1, 
-      limit = 50, 
-      userId, 
-      action, 
+    const {
+      page = 1,
+      limit = 50,
+      userId,
+      action,
       entity,
       projectId,
-      startDate, 
+      startDate,
       endDate,
-      search 
+      search,
     } = req.query;
 
     const filter: any = {};
@@ -24,10 +27,10 @@ export const getAllActivityLogs = async (req: AuthRequest, res: Response): Promi
       filter.userId = userId;
     }
     if (action) {
-      filter.action = action;
+      filter.action = { $regex: `^${action}$`, $options: "i" };
     }
     if (entity) {
-      filter.entity = entity;
+      filter.entity = { $regex: entity, $options: "i" };
     }
     if (projectId) {
       filter.project = projectId;
@@ -35,18 +38,24 @@ export const getAllActivityLogs = async (req: AuthRequest, res: Response): Promi
     if (startDate || endDate) {
       filter.timestamp = {};
       if (startDate) {
-        filter.timestamp.$gte = new Date(startDate as string);
+        // Start of the selected day (00:00:00.000 UTC)
+        filter.timestamp.$gte = new Date(
+          (startDate as string) + "T00:00:00.000Z",
+        );
       }
       if (endDate) {
-        filter.timestamp.$lte = new Date(endDate as string);
+        // End of the selected day (23:59:59.999 UTC)
+        filter.timestamp.$lte = new Date(
+          (endDate as string) + "T23:59:59.999Z",
+        );
       }
     }
     if (search) {
       filter.$or = [
-        { userName: { $regex: search, $options: 'i' } },
-        { userEmail: { $regex: search, $options: 'i' } },
-        { entityName: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } }
+        { userName: { $regex: search, $options: "i" } },
+        { userEmail: { $regex: search, $options: "i" } },
+        { entityName: { $regex: search, $options: "i" } },
+        { description: { $regex: search, $options: "i" } },
       ];
     }
 
@@ -56,13 +65,13 @@ export const getAllActivityLogs = async (req: AuthRequest, res: Response): Promi
 
     const [logs, total] = await Promise.all([
       ActivityLog.find(filter)
-        .populate('userId', 'firstName lastName email')
-        .populate('project', 'name code')
+        .populate("userId", "firstName lastName email")
+        .populate("project", "name code")
         .sort({ timestamp: -1 })
         .skip(skip)
         .limit(limitNum)
         .lean(),
-      ActivityLog.countDocuments(filter)
+      ActivityLog.countDocuments(filter),
     ]);
 
     res.status(200).json({
@@ -72,56 +81,62 @@ export const getAllActivityLogs = async (req: AuthRequest, res: Response): Promi
         total,
         page: pageNum,
         limit: limitNum,
-        pages: Math.ceil(total / limitNum)
-      }
+        pages: Math.ceil(total / limitNum),
+      },
     });
   } catch (error: any) {
-    console.error('Error fetching activity logs:', error);
+    console.error("Error fetching activity logs:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch activity logs',
-      error: error.message
+      message: "Failed to fetch activity logs",
+      error: error.message,
     });
   }
 };
 
 // Get single activity log by ID
-export const getActivityLogById = async (req: Request, res: Response): Promise<void> => {
+export const getActivityLogById = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
   try {
     const { id } = req.params;
 
     const log = await ActivityLog.findById(id)
-      .populate('userId', 'firstName lastName email')
-      .populate('project', 'name code');
+      .populate("userId", "firstName lastName email")
+      .populate("project", "name code");
 
     if (!log) {
       res.status(404).json({
         success: false,
-        message: 'Activity log not found'
+        message: "Activity log not found",
       });
       return;
     }
 
     res.status(200).json({
       success: true,
-      data: log
+      data: log,
     });
   } catch (error: any) {
-    console.error('Error fetching activity log:', error);
+    console.error("Error fetching activity log:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch activity log',
-      error: error.message
+      message: "Failed to fetch activity log",
+      error: error.message,
     });
   }
 };
 
 // Create activity log (typically called by utility function)
-export const createActivityLog = async (req: AuthRequest, res: Response): Promise<void> => {
+export const createActivityLog = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
   try {
     const logData = {
       ...req.body,
-      timestamp: new Date()
+      timestamp: new Date(),
     };
 
     const log = new ActivityLog(logData);
@@ -129,47 +144,54 @@ export const createActivityLog = async (req: AuthRequest, res: Response): Promis
 
     res.status(201).json({
       success: true,
-      message: 'Activity log created successfully',
-      data: log
+      message: "Activity log created successfully",
+      data: log,
     });
   } catch (error: any) {
-    console.error('Error creating activity log:', error);
+    console.error("Error creating activity log:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to create activity log',
-      error: error.message
+      message: "Failed to create activity log",
+      error: error.message,
     });
   }
 };
 
 // Get activity log statistics
-export const getActivityStats = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getActivityStats = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
   try {
     const { startDate, endDate } = req.query;
-    
+
     const dateFilter: any = {};
     if (startDate || endDate) {
       dateFilter.timestamp = {};
       if (startDate) {
-        dateFilter.timestamp.$gte = new Date(startDate as string);
+        dateFilter.timestamp.$gte = new Date(
+          (startDate as string) + "T00:00:00.000Z",
+        );
       }
       if (endDate) {
-        dateFilter.timestamp.$lte = new Date(endDate as string);
+        dateFilter.timestamp.$lte = new Date(
+          (endDate as string) + "T23:59:59.999Z",
+        );
       }
     }
 
     const [actionStats, entityStats, totalLogs] = await Promise.all([
       ActivityLog.aggregate([
         { $match: dateFilter },
-        { $group: { _id: '$action', count: { $sum: 1 } } },
-        { $sort: { count: -1 } }
+        { $group: { _id: "$action", count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
       ]),
       ActivityLog.aggregate([
         { $match: dateFilter },
-        { $group: { _id: '$entity', count: { $sum: 1 } } },
-        { $sort: { count: -1 } }
+        { $group: { _id: "$entity", count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
       ]),
-      ActivityLog.countDocuments(dateFilter)
+      ActivityLog.countDocuments(dateFilter),
     ]);
 
     res.status(200).json({
@@ -177,37 +199,46 @@ export const getActivityStats = async (req: AuthRequest, res: Response): Promise
       data: {
         totalLogs,
         byAction: actionStats,
-        byEntity: entityStats
-      }
+        byEntity: entityStats,
+      },
     });
   } catch (error: any) {
-    console.error('Error fetching activity stats:', error);
+    console.error("Error fetching activity stats:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch activity statistics',
-      error: error.message
+      message: "Failed to fetch activity statistics",
+      error: error.message,
     });
   }
 };
 
 // Export activity logs (returns data for download)
-export const exportActivityLogs = async (req: AuthRequest, res: Response): Promise<void> => {
+export const exportActivityLogs = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
   try {
     const { userId, action, entity, startDate, endDate } = req.query;
-    
+
     const filter: any = {};
     if (userId) filter.userId = userId;
-    if (action) filter.action = action;
-    if (entity) filter.entity = entity;
+    if (action) filter.action = { $regex: `^${action}$`, $options: "i" };
+    if (entity) filter.entity = { $regex: entity as string, $options: "i" };
     if (startDate || endDate) {
       filter.timestamp = {};
-      if (startDate) filter.timestamp.$gte = new Date(startDate as string);
-      if (endDate) filter.timestamp.$lte = new Date(endDate as string);
+      if (startDate)
+        filter.timestamp.$gte = new Date(
+          (startDate as string) + "T00:00:00.000Z",
+        );
+      if (endDate)
+        filter.timestamp.$lte = new Date(
+          (endDate as string) + "T23:59:59.999Z",
+        );
     }
 
     const logs = await ActivityLog.find(filter)
-      .populate('userId', 'firstName lastName email')
-      .populate('project', 'name code')
+      .populate("userId", "firstName lastName email")
+      .populate("project", "name code")
       .sort({ timestamp: -1 })
       .limit(10000) // Limit export to 10k records
       .lean();
@@ -215,14 +246,14 @@ export const exportActivityLogs = async (req: AuthRequest, res: Response): Promi
     res.status(200).json({
       success: true,
       data: logs,
-      count: logs.length
+      count: logs.length,
     });
   } catch (error: any) {
-    console.error('Error exporting activity logs:', error);
+    console.error("Error exporting activity logs:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to export activity logs',
-      error: error.message
+      message: "Failed to export activity logs",
+      error: error.message,
     });
   }
 };

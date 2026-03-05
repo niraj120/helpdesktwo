@@ -1,25 +1,25 @@
-import { Request, Response } from 'express';
-import multer from 'multer';
-import path from 'path';
-import fs from 'fs';
-import { CenterAssetMapping } from '../models/CenterAssetMapping';
-import { Asset } from '../models/Asset';
-import { Project } from '../models/Project';
-import { Center } from '../models/Center';
+import { Request, Response } from "express";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+import { CenterAssetMapping } from "../models/CenterAssetMapping";
+import { Asset } from "../models/Asset";
+import { Project } from "../models/Project";
+import { Center } from "../models/Center";
 
 // Configure multer for asset photos
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const uploadDir = path.join(__dirname, '../../uploads/asset-photos');
+    const uploadDir = path.join(__dirname, "../../uploads/asset-photos");
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'asset-' + uniqueSuffix + path.extname(file.originalname));
-  }
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, "asset-" + uniqueSuffix + path.extname(file.originalname));
+  },
 });
 
 export const uploadAssetPhotos = multer({
@@ -27,48 +27,50 @@ export const uploadAssetPhotos = multer({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB per file
   fileFilter: (req, file, cb) => {
     const allowedTypes = /jpeg|jpg|png|gif|webp/;
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const extname = allowedTypes.test(
+      path.extname(file.originalname).toLowerCase(),
+    );
     const mimetype = allowedTypes.test(file.mimetype);
-    
+
     if (mimetype && extname) {
       return cb(null, true);
     } else {
-      cb(new Error('Only image files are allowed!'));
+      cb(new Error("Only image files are allowed!"));
     }
-  }
-}).array('photos', 10); // Max 10 photos
+  },
+}).array("photos", 10); // Max 10 photos
 
 // @desc    Map assets to centers (bulk)
 // @route   POST /api/center-assets/bulk-map
 // @access  Private (Super Admin)
 export const bulkMapAssets = async (req: Request, res: Response) => {
   try {
-    const { 
-      assetIds, 
-      centerIds,      // NEW: Direct center IDs
-      projectIds,     // LEGACY: Will be converted to center IDs
-      projectId,      // Single project reference
-      applyToAllCenters, 
-      quantities, 
-      lastAuditDate, 
-      auditFrequencyMonths
+    const {
+      assetIds,
+      centerIds, // NEW: Direct center IDs
+      projectIds, // LEGACY: Will be converted to center IDs
+      projectId, // Single project reference
+      applyToAllCenters,
+      quantities,
+      lastAuditDate,
+      auditFrequencyMonths,
     } = req.body;
     const userId = (req as any).user.userId;
 
-    console.log('📥 Bulk map request received:', {
+    console.log("📥 Bulk map request received:", {
       assetIds,
       centerIds,
       projectIds,
       projectId,
       quantities,
       lastAuditDate,
-      auditFrequencyMonths
+      auditFrequencyMonths,
     });
 
     if (!assetIds || !Array.isArray(assetIds) || assetIds.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'Asset IDs are required'
+        message: "Asset IDs are required",
       });
     }
 
@@ -78,21 +80,31 @@ export const bulkMapAssets = async (req: Request, res: Response) => {
     if (centerIds && Array.isArray(centerIds) && centerIds.length > 0) {
       // NEW: Direct center IDs provided
       targetCenterIds = centerIds;
-    } else if (projectIds && Array.isArray(projectIds) && projectIds.length > 0) {
+    } else if (
+      projectIds &&
+      Array.isArray(projectIds) &&
+      projectIds.length > 0
+    ) {
       // LEGACY: Get all centers for the given projects
-      const centers = await Center.find({ projectId: { $in: projectIds } }, '_id');
-      targetCenterIds = centers.map(c => c._id.toString());
+      const centers = await Center.find(
+        { projectId: { $in: projectIds } },
+        "_id",
+      );
+      targetCenterIds = centers.map((c) => c._id.toString());
     } else if (applyToAllCenters) {
       // Get all centers from active projects
-      const allProjects = await Project.find({ isActive: true }, '_id');
-      const centers = await Center.find({ projectId: { $in: allProjects.map(p => p._id) } }, '_id');
-      targetCenterIds = centers.map(c => c._id.toString());
+      const allProjects = await Project.find({ isActive: true }, "_id");
+      const centers = await Center.find(
+        { projectId: { $in: allProjects.map((p) => p._id) } },
+        "_id",
+      );
+      targetCenterIds = centers.map((c) => c._id.toString());
     }
 
     if (targetCenterIds.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'Center IDs or Project IDs are required'
+        message: "Center IDs or Project IDs are required",
       });
     }
 
@@ -105,16 +117,19 @@ export const bulkMapAssets = async (req: Request, res: Response) => {
       Center.find({ _id: { $in: targetCenterIds } }).lean(),
       CenterAssetMapping.find({
         assetId: { $in: assetIds },
-        centerId: { $in: targetCenterIds }
-      })
+        centerId: { $in: targetCenterIds },
+      }),
     ]);
 
     // Create lookup maps
-    const assetMap = new Map(assets.map(a => [a._id.toString(), a]));
-    const centerMap = new Map(centers.map(c => [c._id.toString(), c]));
+    const assetMap = new Map(assets.map((a) => [a._id.toString(), a]));
+    const centerMap = new Map(centers.map((c) => [c._id.toString(), c]));
     // Key by centerId-assetId for per-center lookups
     const mappingLookup = new Map(
-      existingMappings.map(m => [`${m.centerId?.toString()}-${m.assetId.toString()}`, m])
+      existingMappings.map((m) => [
+        `${m.centerId?.toString()}-${m.assetId.toString()}`,
+        m,
+      ]),
     );
 
     for (const assetId of assetIds) {
@@ -133,9 +148,10 @@ export const bulkMapAssets = async (req: Request, res: Response) => {
           }
 
           // Get quantity for this center (or use predefined count)
-          const quantity = quantities && quantities[centerId] !== undefined 
-            ? quantities[centerId] 
-            : (asset as any).predefinedCount || 1;
+          const quantity =
+            quantities && quantities[centerId] !== undefined
+              ? quantities[centerId]
+              : (asset as any).predefinedCount || 1;
 
           // Check if mapping already exists for this center+asset
           const existingMapping = mappingLookup.get(`${centerId}-${assetId}`);
@@ -145,27 +161,27 @@ export const bulkMapAssets = async (req: Request, res: Response) => {
             existingMapping.totalAssigned = quantity;
             existingMapping.assetNotUsed = quantity;
             existingMapping.lastUpdatedBy = userId;
-            
+
             if (lastAuditDate) {
               existingMapping.lastAuditDate = new Date(lastAuditDate);
             }
             if (auditFrequencyMonths !== undefined) {
               existingMapping.auditFrequencyMonths = auditFrequencyMonths;
             }
-            
+
             await existingMapping.save();
-            console.log('✅ Updated CENTER mapping:', {
+            console.log("✅ Updated CENTER mapping:", {
               centerId,
               centerName: (center as any).centerName,
               assetId,
-              quantity
+              quantity,
             });
             mappings.push(existingMapping);
           } else {
             // Create new mapping with centerId
             const mappingData: any = {
               projectId: (center as any).projectId,
-              centerId,  // Store center ID
+              centerId, // Store center ID
               assetId,
               totalAssigned: quantity,
               assetUsed: 0,
@@ -173,28 +189,30 @@ export const bulkMapAssets = async (req: Request, res: Response) => {
               workingAsset: 0,
               notWorkingAsset: 0,
               photos: [],
-              lastUpdatedBy: userId
+              lastUpdatedBy: userId,
             };
-            
+
             if (lastAuditDate) {
               mappingData.lastAuditDate = new Date(lastAuditDate);
             }
             if (auditFrequencyMonths !== undefined) {
               mappingData.auditFrequencyMonths = auditFrequencyMonths;
             }
-            
+
             const newMapping = await CenterAssetMapping.create(mappingData);
-            console.log('✅ Created CENTER mapping:', {
+            console.log("✅ Created CENTER mapping:", {
               centerId,
               centerName: (center as any).centerName,
               assetId,
-              quantity
+              quantity,
             });
             mappings.push(newMapping);
           }
         } catch (error: any) {
-          console.error('❌ Error mapping asset:', error);
-          errors.push(`Error mapping asset ${assetId} to center ${centerId}: ${error.message}`);
+          console.error("❌ Error mapping asset:", error);
+          errors.push(
+            `Error mapping asset ${assetId} to center ${centerId}: ${error.message}`,
+          );
         }
       }
     }
@@ -204,15 +222,15 @@ export const bulkMapAssets = async (req: Request, res: Response) => {
       message: `Successfully mapped ${mappings.length} asset(s) to center(s)`,
       data: {
         mappings,
-        errors: errors.length > 0 ? errors : undefined
-      }
+        errors: errors.length > 0 ? errors : undefined,
+      },
     });
   } catch (error: any) {
-    console.error('Error bulk mapping assets:', error);
+    console.error("Error bulk mapping assets:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to map assets',
-      error: error.message
+      message: "Failed to map assets",
+      error: error.message,
     });
   }
 };
@@ -236,24 +254,26 @@ export const getCenterAssetMappings = async (req: Request, res: Response) => {
     }
 
     const mappings = await CenterAssetMapping.find(filter)
-      .populate('projectId', 'name customUrlPath')
-      .populate('assetId', 'name description category unit predefinedCount')
-      .populate('lastUpdatedBy', 'firstName lastName email')
+      .populate("projectId", "name customUrlPath")
+      .populate("assetId", "name description category unit predefinedCount")
+      .populate("lastUpdatedBy", "firstName lastName email")
       .sort({ updatedAt: -1 });
 
     // Filter out mappings where referenced docs were deleted (null after populate)
-    const validMappings = mappings.filter(m => m.assetId != null && m.projectId != null);
+    const validMappings = mappings.filter(
+      (m) => m.assetId != null && m.projectId != null,
+    );
 
     return res.status(200).json({
       success: true,
-      data: validMappings
+      data: validMappings,
     });
   } catch (error: any) {
-    console.error('Error fetching center asset mappings:', error);
+    console.error("Error fetching center asset mappings:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to fetch mappings',
-      error: error.message
+      message: "Failed to fetch mappings",
+      error: error.message,
     });
   }
 };
@@ -261,32 +281,35 @@ export const getCenterAssetMappings = async (req: Request, res: Response) => {
 // @desc    Get center asset mapping by ID
 // @route   GET /api/center-assets/:id
 // @access  Private
-export const getCenterAssetMappingById = async (req: Request, res: Response) => {
+export const getCenterAssetMappingById = async (
+  req: Request,
+  res: Response,
+) => {
   try {
     const { id } = req.params;
 
     const mapping = await CenterAssetMapping.findById(id)
-      .populate('projectId', 'name customUrlPath')
-      .populate('assetId', 'name description category unit predefinedCount')
-      .populate('lastUpdatedBy', 'firstName lastName email');
+      .populate("projectId", "name customUrlPath")
+      .populate("assetId", "name description category unit predefinedCount")
+      .populate("lastUpdatedBy", "firstName lastName email");
 
     if (!mapping) {
       return res.status(404).json({
         success: false,
-        message: 'Asset mapping not found'
+        message: "Asset mapping not found",
       });
     }
 
     return res.status(200).json({
       success: true,
-      data: mapping
+      data: mapping,
     });
   } catch (error: any) {
-    console.error('Error fetching center asset mapping:', error);
+    console.error("Error fetching center asset mapping:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to fetch mapping',
-      error: error.message
+      message: "Failed to fetch mapping",
+      error: error.message,
     });
   }
 };
@@ -305,7 +328,7 @@ export const updateCenterAssetMapping = async (req: Request, res: Response) => {
     if (!mapping) {
       return res.status(404).json({
         success: false,
-        message: 'Asset mapping not found'
+        message: "Asset mapping not found",
       });
     }
 
@@ -314,27 +337,27 @@ export const updateCenterAssetMapping = async (req: Request, res: Response) => {
     if (assetUsed !== undefined) mapping.assetUsed = assetUsed;
     if (assetNotUsed !== undefined) mapping.assetNotUsed = assetNotUsed;
     if (workingAsset !== undefined) mapping.workingAsset = workingAsset;
-    
+
     mapping.lastUpdatedBy = userId;
 
     await mapping.save();
 
     const updatedMapping = await CenterAssetMapping.findById(id)
-      .populate('projectId', 'name customUrlPath')
-      .populate('assetId', 'name description category unit')
-      .populate('lastUpdatedBy', 'firstName lastName email');
+      .populate("projectId", "name customUrlPath")
+      .populate("assetId", "name description category unit")
+      .populate("lastUpdatedBy", "firstName lastName email");
 
     return res.status(200).json({
       success: true,
-      message: 'Asset mapping updated successfully',
-      data: updatedMapping
+      message: "Asset mapping updated successfully",
+      data: updatedMapping,
     });
   } catch (error: any) {
-    console.error('Error updating center asset mapping:', error);
+    console.error("Error updating center asset mapping:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to update mapping',
-      error: error.message
+      message: "Failed to update mapping",
+      error: error.message,
     });
   }
 };
@@ -352,24 +375,24 @@ export const uploadCenterAssetPhotos = async (req: Request, res: Response) => {
     if (!mapping) {
       return res.status(404).json({
         success: false,
-        message: 'Asset mapping not found'
+        message: "Asset mapping not found",
       });
     }
 
     if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'No photos uploaded'
+        message: "No photos uploaded",
       });
     }
 
     // Add photos to mapping
-    const photos = (req.files as Express.Multer.File[]).map(file => ({
+    const photos = (req.files as Express.Multer.File[]).map((file) => ({
       filename: file.filename,
       path: `/uploads/asset-photos/${file.filename}`,
       mimetype: file.mimetype,
       size: file.size,
-      uploadedAt: new Date()
+      uploadedAt: new Date(),
     }));
 
     mapping.photos.push(...photos);
@@ -378,15 +401,15 @@ export const uploadCenterAssetPhotos = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       success: true,
-      message: 'Photos uploaded successfully',
-      data: photos
+      message: "Photos uploaded successfully",
+      data: photos,
     });
   } catch (error: any) {
-    console.error('Error uploading photos:', error);
+    console.error("Error uploading photos:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to upload photos',
-      error: error.message
+      message: "Failed to upload photos",
+      error: error.message,
     });
   }
 };
@@ -404,7 +427,7 @@ export const deleteCenterAssetPhoto = async (req: Request, res: Response) => {
     if (!mapping) {
       return res.status(404).json({
         success: false,
-        message: 'Asset mapping not found'
+        message: "Asset mapping not found",
       });
     }
 
@@ -412,13 +435,13 @@ export const deleteCenterAssetPhoto = async (req: Request, res: Response) => {
     if (isNaN(index) || index < 0 || index >= mapping.photos.length) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid photo index'
+        message: "Invalid photo index",
       });
     }
 
     // Delete physical file
     const photo = mapping.photos[index];
-    const filePath = path.join(__dirname, '../../', photo.path);
+    const filePath = path.join(__dirname, "../../", photo.path);
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
     }
@@ -430,14 +453,14 @@ export const deleteCenterAssetPhoto = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       success: true,
-      message: 'Photo deleted successfully'
+      message: "Photo deleted successfully",
     });
   } catch (error: any) {
-    console.error('Error deleting photo:', error);
+    console.error("Error deleting photo:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to delete photo',
-      error: error.message
+      message: "Failed to delete photo",
+      error: error.message,
     });
   }
 };
@@ -454,13 +477,13 @@ export const deleteCenterAssetMapping = async (req: Request, res: Response) => {
     if (!mapping) {
       return res.status(404).json({
         success: false,
-        message: 'Asset mapping not found'
+        message: "Asset mapping not found",
       });
     }
 
     // Delete all physical photo files
     for (const photo of mapping.photos) {
-      const filePath = path.join(__dirname, '../../', photo.path);
+      const filePath = path.join(__dirname, "../../", photo.path);
       if (fs.existsSync(filePath)) {
         try {
           fs.unlinkSync(filePath);
@@ -474,14 +497,69 @@ export const deleteCenterAssetMapping = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       success: true,
-      message: 'Asset mapping deleted successfully'
+      message: "Asset mapping deleted successfully",
     });
   } catch (error: any) {
-    console.error('Error deleting center asset mapping:', error);
+    console.error("Error deleting center asset mapping:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to delete mapping',
-      error: error.message
+      message: "Failed to delete mapping",
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Remove specific asset mappings for a center (when user unchecks assets)
+// @route   DELETE /api/center-assets/unmap
+// @access  Private (Super Admin)
+export const unmapCenterAssets = async (req: Request, res: Response) => {
+  try {
+    const { centerId, projectId, assetIds } = req.body;
+
+    if (
+      !centerId ||
+      !assetIds ||
+      !Array.isArray(assetIds) ||
+      assetIds.length === 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "centerId and assetIds array are required",
+      });
+    }
+
+    // Delete both per-center mappings (centerId field) AND legacy project-level
+    // mappings (no centerId, matched by projectId) for the given assets.
+    const deleteFilter: any = {
+      assetId: { $in: assetIds },
+      $or: [
+        { centerId: centerId },
+        ...(projectId
+          ? [
+              { centerId: { $exists: false }, projectId: projectId },
+              { centerId: null, projectId: projectId },
+            ]
+          : []),
+      ],
+    };
+
+    const result = await CenterAssetMapping.deleteMany(deleteFilter);
+
+    console.log(
+      `🗑️ Unmapped ${result.deletedCount} asset(s) from center ${centerId}`,
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: `Removed ${result.deletedCount} asset mapping(s)`,
+      data: { deletedCount: result.deletedCount },
+    });
+  } catch (error: any) {
+    console.error("Error unmapping center assets:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to unmap assets",
+      error: error.message,
     });
   }
 };
@@ -506,14 +584,14 @@ export const getAssetMappingStats = async (req: Request, res: Response) => {
       {
         $group: {
           _id: null,
-          totalAssignedSum: { $sum: '$totalAssigned' },
-          assetUsedSum: { $sum: '$assetUsed' },
-          assetNotUsedSum: { $sum: '$assetNotUsed' },
-          workingAssetSum: { $sum: '$workingAsset' },
-          notWorkingAssetSum: { $sum: '$notWorkingAsset' },
-          totalMappings: { $sum: 1 }
-        }
-      }
+          totalAssignedSum: { $sum: "$totalAssigned" },
+          assetUsedSum: { $sum: "$assetUsed" },
+          assetNotUsedSum: { $sum: "$assetNotUsed" },
+          workingAssetSum: { $sum: "$workingAsset" },
+          notWorkingAssetSum: { $sum: "$notWorkingAsset" },
+          totalMappings: { $sum: 1 },
+        },
+      },
     ]);
 
     const result = stats[0] || {
@@ -522,19 +600,19 @@ export const getAssetMappingStats = async (req: Request, res: Response) => {
       assetNotUsedSum: 0,
       workingAssetSum: 0,
       notWorkingAssetSum: 0,
-      totalMappings: 0
+      totalMappings: 0,
     };
 
     return res.status(200).json({
       success: true,
-      data: result
+      data: result,
     });
   } catch (error: any) {
-    console.error('Error fetching stats:', error);
+    console.error("Error fetching stats:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to fetch statistics',
-      error: error.message
+      message: "Failed to fetch statistics",
+      error: error.message,
     });
   }
 };

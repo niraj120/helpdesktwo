@@ -316,6 +316,10 @@ const EmailConfigPage: React.FC = () => {
   const [bundleSendSMS, setBundleSendSMS] = useState(false);
   const [bundleTestEmail, setBundleTestEmail] = useState("");
   const [bundleTestPhone, setBundleTestPhone] = useState("");
+  const [bundleTestErrors, setBundleTestErrors] = useState<{
+    email?: string;
+    phone?: string;
+  }>({});
   const [bundleTesting, setBundleTesting] = useState(false);
   const [bundleResult, setBundleResult] = useState<Record<
     string,
@@ -403,10 +407,26 @@ const EmailConfigPage: React.FC = () => {
     init();
   }, []);
 
+  // Clear all stale per-project data whenever the project changes
   useEffect(() => {
-    if (projectId) {
-      fetchEmailConfig();
-    }
+    if (!projectId) return;
+    // Reset all tab-specific state so each tab reloads fresh data
+    setConfig(null);
+    setWhatsappConfig(null);
+    setSmsConfig(null);
+    setSelectedTrigger(null);
+    setTriggerEdits({});
+    setSelectedWaTrigger(null);
+    setWaTriggerEdits({});
+    setSelectedSmsTrigger(null);
+    setSmsTriggerEdits({});
+    setBundleResult(null);
+    // Always re-fetch email config (active by default)
+    fetchEmailConfig();
+    // If already on whatsapp/sms tab, re-fetch immediately
+    if (activeTab === "whatsapp") fetchWhatsAppConfig();
+    if (activeTab === "sms") fetchSMSConfig();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
   const fetchEmailConfig = async () => {
@@ -450,11 +470,12 @@ const EmailConfigPage: React.FC = () => {
   };
 
   // Fetch WhatsApp config when switching to whatsapp tab
+  // Always fetch WhatsApp config when switching to whatsapp tab (project reset clears stale data)
   useEffect(() => {
-    if (activeTab === "whatsapp" && projectId && !whatsappConfig) {
+    if (activeTab === "whatsapp" && projectId) {
       fetchWhatsAppConfig();
     }
-  }, [activeTab, projectId]);
+  }, [activeTab]); // projectId changes are handled by the reset effect above
 
   // Fetch SMS configuration
   const fetchSMSConfig = async () => {
@@ -477,11 +498,12 @@ const EmailConfigPage: React.FC = () => {
   };
 
   // Fetch SMS config when switching to sms tab
+  // Always fetch SMS config when switching to sms tab (project reset clears stale data)
   useEffect(() => {
-    if (activeTab === "sms" && projectId && !smsConfig) {
+    if (activeTab === "sms" && projectId) {
       fetchSMSConfig();
     }
-  }, [activeTab, projectId]);
+  }, [activeTab]); // projectId changes are handled by the reset effect above
 
   // WhatsApp helper functions
   const saveWaApiSettings = async () => {
@@ -545,7 +567,7 @@ const EmailConfigPage: React.FC = () => {
       const token = localStorage.getItem("authToken");
       const response = await axios.post(
         `${API_BASE_URL}/whatsapp-config/${projectId}/triggers/${triggerKey}/test`,
-        { testPhoneNumber: testPhone },
+        { testPhoneNumber: "91" + testPhone },
         { headers: { Authorization: `Bearer ${token}` } },
       );
       setWaTestResult({
@@ -727,7 +749,7 @@ const EmailConfigPage: React.FC = () => {
       const token = localStorage.getItem("authToken");
       const response = await axios.post(
         `${API_BASE_URL}/sms-config/${projectId}/triggers/${triggerKey}/test`,
-        { phone: testSmsPhone },
+        { phone: "91" + testSmsPhone },
         { headers: { Authorization: `Bearer ${token}` } },
       );
 
@@ -836,6 +858,32 @@ const EmailConfigPage: React.FC = () => {
 
   const testNotificationBundle = async () => {
     if (!projectId) return;
+
+    // Validate inputs before firing the request
+    const errors: { email?: string; phone?: string } = {};
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const phoneRegex = /^\d{10}$/;
+
+    if (bundleSendEmail) {
+      if (!bundleTestEmail.trim()) {
+        errors.email = "Email address is required";
+      } else if (!emailRegex.test(bundleTestEmail.trim())) {
+        errors.email = "Enter a valid email address (e.g. user@example.com)";
+      }
+    }
+    if (bundleSendWhatsApp || bundleSendSMS) {
+      if (!bundleTestPhone.trim()) {
+        errors.phone = "Phone number is required";
+      } else if (!phoneRegex.test(bundleTestPhone.trim())) {
+        errors.phone = "Enter a valid 10-digit mobile number";
+      }
+    }
+    if (Object.keys(errors).length > 0) {
+      setBundleTestErrors(errors);
+      return;
+    }
+    setBundleTestErrors({});
+
     setBundleTesting(true);
     setBundleResult(null);
     try {
@@ -847,7 +895,7 @@ const EmailConfigPage: React.FC = () => {
           sendSMS: bundleSendSMS,
           sendWhatsApp: bundleSendWhatsApp,
           testEmail: bundleTestEmail,
-          testPhone: bundleTestPhone,
+          testPhone: "91" + bundleTestPhone,
         },
         {
           headers: { Authorization: `Bearer ${token}` },
@@ -1658,6 +1706,31 @@ const EmailConfigPage: React.FC = () => {
                                   />
                                 </div>
 
+                                <div className="flex-1 min-w-[160px]">
+                                  <label className="block text-xs text-gray-500 mb-1">
+                                    Template Name{" "}
+                                    <span className="text-red-500">*</span>
+                                    {!trigger.templateName && (
+                                      <span className="ml-1 text-amber-600 font-medium">
+                                        (required)
+                                      </span>
+                                    )}
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={trigger.templateName || ""}
+                                    onChange={(e) =>
+                                      updateWaTriggerField(
+                                        key,
+                                        "templateName",
+                                        e.target.value,
+                                      )
+                                    }
+                                    placeholder="e.g., account_created"
+                                    className={`w-full text-sm border rounded px-2 py-1.5 focus:ring-green-500 focus:border-green-500 ${!trigger.templateName ? "border-amber-400 bg-amber-50" : "border-gray-300"}`}
+                                  />
+                                </div>
+
                                 <div className="w-24">
                                   <label className="block text-xs text-gray-500 mb-1">
                                     Language
@@ -1685,21 +1758,31 @@ const EmailConfigPage: React.FC = () => {
                                     <label className="block text-xs text-gray-500 mb-1">
                                       Test Phone
                                     </label>
-                                    <input
-                                      type="text"
-                                      value={testPhone}
-                                      onChange={(e) =>
-                                        setTestPhone(e.target.value)
-                                      }
-                                      placeholder="919876543210"
-                                      className="w-32 text-sm border border-gray-300 rounded px-2 py-1.5"
-                                    />
+                                    <div className="flex items-center border border-gray-300 rounded overflow-hidden w-44">
+                                      <span className="px-2 py-1.5 bg-gray-100 text-sm text-gray-600 border-r border-gray-300 select-none whitespace-nowrap">
+                                        +91
+                                      </span>
+                                      <input
+                                        type="text"
+                                        value={testPhone}
+                                        onChange={(e) =>
+                                          setTestPhone(
+                                            e.target.value
+                                              .replace(/\D/g, "")
+                                              .slice(0, 10),
+                                          )
+                                        }
+                                        placeholder="9876543210"
+                                        className="w-full text-sm px-2 py-1.5 outline-none"
+                                      />
+                                    </div>
                                   </div>
                                   <button
                                     onClick={() => testWaTrigger(key)}
                                     disabled={
                                       testingWaTrigger === key ||
-                                      !trigger.numberId
+                                      !trigger.numberId ||
+                                      !trigger.templateName
                                     }
                                     className="px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 flex items-center gap-1"
                                   >
@@ -1798,6 +1881,29 @@ const EmailConfigPage: React.FC = () => {
                   />
                   <p className="mt-1 text-xs text-gray-500">
                     Pre-approved Number ID from WhatsApp for this template
+                  </p>
+                </div>
+
+                {/* Template Name */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Template Name <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={waTriggerEdits.templateName || ""}
+                    onChange={(e) =>
+                      setWaTriggerEdits({
+                        ...waTriggerEdits,
+                        templateName: e.target.value,
+                      })
+                    }
+                    placeholder="e.g., account_created"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Exact name of the pre-approved WhatsApp template (e.g.,
+                    account_created, password_reset)
                   </p>
                 </div>
 
@@ -2341,21 +2447,24 @@ const EmailConfigPage: React.FC = () => {
 
                               {/* Test SMS Input */}
                               <div className="mt-3 flex items-center gap-2">
-                                <input
-                                  type="text"
-                                  value={
-                                    testingSmsTrigger === key
-                                      ? testSmsPhone
-                                      : testSmsPhone || ""
-                                  } // Shared state issue if multiple inputs. Better to have one shared input or local var.
-                                  // Simplified: Just one test phone input shared across for now, or user types in the specific box.
-                                  // Let's use the shared state `testSmsPhone` but inputs sync.
-                                  onChange={(e) =>
-                                    setTestSmsPhone(e.target.value)
-                                  }
-                                  placeholder="Test Phone (e.g. 919876543210)"
-                                  className="text-xs border border-gray-300 rounded px-2 py-1 w-48"
-                                />
+                                <div className="flex items-center border border-gray-300 rounded overflow-hidden">
+                                  <span className="px-2 py-1 bg-gray-100 text-xs text-gray-600 border-r border-gray-300 select-none whitespace-nowrap">
+                                    +91
+                                  </span>
+                                  <input
+                                    type="text"
+                                    value={testSmsPhone}
+                                    onChange={(e) =>
+                                      setTestSmsPhone(
+                                        e.target.value
+                                          .replace(/\D/g, "")
+                                          .slice(0, 10),
+                                      )
+                                    }
+                                    placeholder="9876543210"
+                                    className="text-xs px-2 py-1 w-32 outline-none"
+                                  />
+                                </div>
                                 <button
                                   onClick={() => testSMSTrigger(key)}
                                   disabled={
@@ -2679,33 +2788,71 @@ const EmailConfigPage: React.FC = () => {
                     <input
                       type="email"
                       value={bundleTestEmail}
-                      onChange={(e) => setBundleTestEmail(e.target.value)}
+                      onChange={(e) => {
+                        setBundleTestEmail(e.target.value);
+                        if (bundleTestErrors.email)
+                          setBundleTestErrors((prev) => ({
+                            ...prev,
+                            email: undefined,
+                          }));
+                      }}
                       placeholder="user@example.com"
                       disabled={!bundleSendEmail}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed ${bundleTestErrors.email ? "border-red-500 bg-red-50" : "border-gray-300"}`}
                     />
-                    <p className="mt-1 text-xs text-gray-500">
-                      Required if Email is selected
-                    </p>
+                    {bundleTestErrors.email ? (
+                      <p className="mt-1 text-xs text-red-600">
+                        {bundleTestErrors.email}
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-xs text-gray-500">
+                        Required if Email is selected
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Test Phone Number (with country code)
+                      Test Phone Number
                       {(bundleSendWhatsApp || bundleSendSMS) && (
                         <span className="text-red-500 ml-1">*</span>
                       )}
                     </label>
-                    <input
-                      type="tel"
-                      value={bundleTestPhone}
-                      onChange={(e) => setBundleTestPhone(e.target.value)}
-                      placeholder="919876543210"
-                      disabled={!bundleSendWhatsApp && !bundleSendSMS}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
-                    />
-                    <p className="mt-1 text-xs text-gray-500">
-                      Required if WhatsApp or SMS is selected
-                    </p>
+                    <div
+                      className={`flex items-center border rounded-lg overflow-hidden ${bundleTestErrors.phone ? "border-red-500 bg-red-50" : "border-gray-300"} ${!bundleSendWhatsApp && !bundleSendSMS ? "opacity-60" : ""}`}
+                    >
+                      <span className="px-3 py-2 bg-gray-100 text-sm text-gray-600 border-r border-gray-300 select-none whitespace-nowrap font-medium">
+                        +91
+                      </span>
+                      <input
+                        type="tel"
+                        value={bundleTestPhone}
+                        onChange={(e) => {
+                          const numeric = e.target.value
+                            .replace(/\D/g, "")
+                            .slice(0, 10);
+                          setBundleTestPhone(numeric);
+                          if (bundleTestErrors.phone)
+                            setBundleTestErrors((prev) => ({
+                              ...prev,
+                              phone: undefined,
+                            }));
+                        }}
+                        placeholder="9876543210"
+                        disabled={!bundleSendWhatsApp && !bundleSendSMS}
+                        maxLength={10}
+                        className="flex-1 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed bg-transparent"
+                      />
+                    </div>
+                    {bundleTestErrors.phone ? (
+                      <p className="mt-1 text-xs text-red-600">
+                        {bundleTestErrors.phone}
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-xs text-gray-500">
+                        Enter 10-digit mobile number (country code +91 is
+                        prefixed)
+                      </p>
+                    )}
                   </div>
                 </div>
 

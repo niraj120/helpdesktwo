@@ -1,5 +1,5 @@
-import { Request, Response } from 'express';
-import { FeedbackForm } from '../models/FeedbackForm';
+import { Request, Response } from "express";
+import { FeedbackForm } from "../models/FeedbackForm";
 
 // @desc    Create Feedback Form
 // @route   POST /api/feedback-forms
@@ -14,7 +14,7 @@ export const createFeedbackForm = async (req: Request, res: Response) => {
       isActive,
       triggers,
       emailTemplate,
-      settings
+      settings,
     } = req.body;
 
     const userId = (req as any).user.userId;
@@ -25,27 +25,36 @@ export const createFeedbackForm = async (req: Request, res: Response) => {
       description,
       questions,
       isActive: isActive !== undefined ? isActive : true,
-      triggers: triggers || [{ type: 'ticket_closed', enabled: true, conditions: {} }],
+      triggers: triggers || [
+        { type: "ticket_closed", enabled: true, conditions: {} },
+      ],
       emailTemplate,
       settings: settings || {
         showAfterTicketClosed: true,
         allowMultipleSubmissions: false,
         sendEmailNotification: true,
-        emailDelay: 0
+        emailDelay: 0,
       },
-      createdBy: userId
+      createdBy: userId,
     });
 
     return res.status(201).json({
       success: true,
-      message: 'Feedback form created successfully',
-      data: form
+      message: "Feedback form created successfully",
+      data: form,
     });
   } catch (error: any) {
-    console.error('Error creating feedback form:', error);
+    console.error("Error creating feedback form:", error);
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "A feedback form with this name already exists in this project. Please use a different name.",
+      });
+    }
     return res.status(500).json({
       success: false,
-      message: error.message || 'Failed to create feedback form'
+      message: error.message || "Failed to create feedback form",
     });
   }
 };
@@ -53,23 +62,26 @@ export const createFeedbackForm = async (req: Request, res: Response) => {
 // @desc    Get all Feedback Forms for a project
 // @route   GET /api/feedback-forms/project/:projectId
 // @access  Private
-export const getFeedbackFormsByProject = async (req: Request, res: Response) => {
+export const getFeedbackFormsByProject = async (
+  req: Request,
+  res: Response,
+) => {
   try {
     const { projectId } = req.params;
 
     const forms = await FeedbackForm.find({ projectId })
-      .populate('createdBy', 'firstName lastName email')
+      .populate("createdBy", "firstName lastName email")
       .sort({ createdAt: -1 });
 
     return res.json({
       success: true,
-      data: forms
+      data: forms,
     });
   } catch (error: any) {
-    console.error('Error fetching feedback forms:', error);
+    console.error("Error fetching feedback forms:", error);
     return res.status(500).json({
       success: false,
-      message: error.message || 'Failed to fetch feedback forms'
+      message: error.message || "Failed to fetch feedback forms",
     });
   }
 };
@@ -81,25 +93,27 @@ export const getFeedbackFormById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    const form = await FeedbackForm.findById(id)
-      .populate('createdBy', 'firstName lastName email');
+    const form = await FeedbackForm.findById(id).populate(
+      "createdBy",
+      "firstName lastName email",
+    );
 
     if (!form) {
       return res.status(404).json({
         success: false,
-        message: 'Feedback form not found'
+        message: "Feedback form not found",
       });
     }
 
     return res.json({
       success: true,
-      data: form
+      data: form,
     });
   } catch (error: any) {
-    console.error('Error fetching feedback form:', error);
+    console.error("Error fetching feedback form:", error);
     return res.status(500).json({
       success: false,
-      message: error.message || 'Failed to fetch feedback form'
+      message: error.message || "Failed to fetch feedback form",
     });
   }
 };
@@ -113,25 +127,25 @@ export const getActiveFeedbackForm = async (req: Request, res: Response) => {
 
     const form = await FeedbackForm.findOne({
       projectId,
-      isActive: true
+      isActive: true,
     });
 
     if (!form) {
       return res.status(404).json({
         success: false,
-        message: 'No active feedback form found for this project'
+        message: "No active feedback form found for this project",
       });
     }
 
     return res.json({
       success: true,
-      data: form
+      data: form,
     });
   } catch (error: any) {
-    console.error('Error fetching active feedback form:', error);
+    console.error("Error fetching active feedback form:", error);
     return res.status(500).json({
       success: false,
-      message: error.message || 'Failed to fetch active feedback form'
+      message: error.message || "Failed to fetch active feedback form",
     });
   }
 };
@@ -149,7 +163,7 @@ export const updateFeedbackForm = async (req: Request, res: Response) => {
       isActive,
       triggers,
       emailTemplate,
-      settings
+      settings,
     } = req.body;
 
     const form = await FeedbackForm.findById(id);
@@ -157,7 +171,7 @@ export const updateFeedbackForm = async (req: Request, res: Response) => {
     if (!form) {
       return res.status(404).json({
         success: false,
-        message: 'Feedback form not found'
+        message: "Feedback form not found",
       });
     }
 
@@ -168,20 +182,28 @@ export const updateFeedbackForm = async (req: Request, res: Response) => {
     if (isActive !== undefined) form.isActive = isActive;
     if (triggers !== undefined) form.triggers = triggers;
     if (emailTemplate !== undefined) form.emailTemplate = emailTemplate;
-    if (settings !== undefined) form.settings = { ...form.settings, ...settings };
+    if (settings !== undefined)
+      form.settings = { ...form.settings, ...settings };
 
     await form.save();
 
     return res.json({
       success: true,
-      message: 'Feedback form updated successfully',
-      data: form
+      message: "Feedback form updated successfully",
+      data: form,
     });
   } catch (error: any) {
-    console.error('Error updating feedback form:', error);
+    console.error("Error updating feedback form:", error);
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "A feedback form with this name already exists in this project. Please use a different name.",
+      });
+    }
     return res.status(500).json({
       success: false,
-      message: error.message || 'Failed to update feedback form'
+      message: error.message || "Failed to update feedback form",
     });
   }
 };
@@ -198,19 +220,19 @@ export const deleteFeedbackForm = async (req: Request, res: Response) => {
     if (!form) {
       return res.status(404).json({
         success: false,
-        message: 'Feedback form not found'
+        message: "Feedback form not found",
       });
     }
 
     return res.json({
       success: true,
-      message: 'Feedback form deleted successfully'
+      message: "Feedback form deleted successfully",
     });
   } catch (error: any) {
-    console.error('Error deleting feedback form:', error);
+    console.error("Error deleting feedback form:", error);
     return res.status(500).json({
       success: false,
-      message: error.message || 'Failed to delete feedback form'
+      message: error.message || "Failed to delete feedback form",
     });
   }
 };
@@ -227,7 +249,7 @@ export const toggleFeedbackFormActive = async (req: Request, res: Response) => {
     if (!form) {
       return res.status(404).json({
         success: false,
-        message: 'Feedback form not found'
+        message: "Feedback form not found",
       });
     }
 
@@ -236,14 +258,14 @@ export const toggleFeedbackFormActive = async (req: Request, res: Response) => {
 
     return res.json({
       success: true,
-      message: `Feedback form ${form.isActive ? 'activated' : 'deactivated'} successfully`,
-      data: form
+      message: `Feedback form ${form.isActive ? "activated" : "deactivated"} successfully`,
+      data: form,
     });
   } catch (error: any) {
-    console.error('Error toggling feedback form status:', error);
+    console.error("Error toggling feedback form status:", error);
     return res.status(500).json({
       success: false,
-      message: error.message || 'Failed to toggle feedback form status'
+      message: error.message || "Failed to toggle feedback form status",
     });
   }
 };
