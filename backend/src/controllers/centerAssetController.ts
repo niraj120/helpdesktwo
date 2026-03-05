@@ -237,13 +237,16 @@ export const getCenterAssetMappings = async (req: Request, res: Response) => {
 
     const mappings = await CenterAssetMapping.find(filter)
       .populate('projectId', 'name customUrlPath')
-      .populate('assetId', 'name description category unit')
+      .populate('assetId', 'name description category unit predefinedCount')
       .populate('lastUpdatedBy', 'firstName lastName email')
       .sort({ updatedAt: -1 });
 
+    // Filter out mappings where referenced docs were deleted (null after populate)
+    const validMappings = mappings.filter(m => m.assetId != null && m.projectId != null);
+
     return res.status(200).json({
       success: true,
-      data: mappings
+      data: validMappings
     });
   } catch (error: any) {
     console.error('Error fetching center asset mappings:', error);

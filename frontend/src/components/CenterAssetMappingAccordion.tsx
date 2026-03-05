@@ -176,8 +176,8 @@ const CenterAssetMappingAccordion: React.FC = () => {
         const mappedCenters = data.data.map((center: any) => ({
           _id: center._id,
           centerName: center.centerName,
-          projectId: center.projectId._id || center.projectId,
-          projectName: center.projectId.name || center.projectId.projectName || 'Unknown Project',
+          projectId: center.projectId ? (center.projectId._id || center.projectId) : '',
+          projectName: center.projectId ? (center.projectId.name || center.projectId.projectName || 'Unknown Project') : 'Unknown Project',
           address: center.address,
           city: center.city,
           state: center.state,
@@ -224,35 +224,45 @@ const CenterAssetMappingAccordion: React.FC = () => {
         
         // Populate from existing mappings - mappings use projectId which matches our selectedProject
         data.data.forEach((mapping: CenterAssetMapping) => {
-          const mappingProjectId = typeof mapping.projectId === 'object' ? mapping.projectId._id : mapping.projectId;
-          const assetId = typeof mapping.assetId === 'object' ? mapping.assetId._id : mapping.assetId;
-          
-          // Apply this mapping to ALL centers in the current project
-          centers.forEach((center: Center) => {
-            if (center.projectId === selectedProject || center.projectId === mappingProjectId) {
-              if (!newSelections[center._id].selectedAssets.includes(assetId)) {
-                newSelections[center._id].selectedAssets.push(assetId);
-              }
-              
-              // Use existing user-modified value if available, otherwise use DB value
-              const existingQty = existingSelections[center._id]?.assetQuantities?.[assetId];
-              newSelections[center._id].assetQuantities[assetId] = existingQty !== undefined ? existingQty : mapping.totalAssigned;
-              
-              // Load audit data from database (prefer existing values to avoid reset)
-              if (!newSelections[center._id].lastAuditDate) {
-                newSelections[center._id].lastAuditDate = existingSelections[center._id]?.lastAuditDate || mapping.lastAuditDate;
-              }
-              if (!newSelections[center._id].auditFrequencyMonths) {
-                newSelections[center._id].auditFrequencyMonths = existingSelections[center._id]?.auditFrequencyMonths || mapping.auditFrequencyMonths;
-              }
-              if (!newSelections[center._id].auditStartDate) {
-                newSelections[center._id].auditStartDate = existingSelections[center._id]?.auditStartDate || mapping.lastAuditDate;
-              }
-              if (!newSelections[center._id].nextAuditDate) {
-                newSelections[center._id].nextAuditDate = existingSelections[center._id]?.nextAuditDate || mapping.nextAuditDate;
-              }
+          // Guard against null populated refs (e.g. deleted assets/projects)
+          const mappingProjectId = (mapping.projectId != null && typeof mapping.projectId === 'object') ? mapping.projectId._id : mapping.projectId;
+          const assetId = (mapping.assetId != null && typeof mapping.assetId === 'object') ? mapping.assetId._id : mapping.assetId;
+          if (!assetId) return; // skip mappings whose asset was deleted
+
+          const applyToCenter = (center: Center) => {
+            if (!newSelections[center._id]) return;
+            if (!newSelections[center._id].selectedAssets.includes(assetId)) {
+              newSelections[center._id].selectedAssets.push(assetId);
             }
-          });
+            const existingQty = existingSelections[center._id]?.assetQuantities?.[assetId];
+            newSelections[center._id].assetQuantities[assetId] = existingQty !== undefined ? existingQty : mapping.totalAssigned;
+            if (!newSelections[center._id].lastAuditDate) {
+              newSelections[center._id].lastAuditDate = existingSelections[center._id]?.lastAuditDate || mapping.lastAuditDate;
+            }
+            if (!newSelections[center._id].auditFrequencyMonths) {
+              newSelections[center._id].auditFrequencyMonths = existingSelections[center._id]?.auditFrequencyMonths || mapping.auditFrequencyMonths;
+            }
+            if (!newSelections[center._id].auditStartDate) {
+              newSelections[center._id].auditStartDate = existingSelections[center._id]?.auditStartDate || mapping.lastAuditDate;
+            }
+            if (!newSelections[center._id].nextAuditDate) {
+              newSelections[center._id].nextAuditDate = existingSelections[center._id]?.nextAuditDate || mapping.nextAuditDate;
+            }
+          };
+
+          const mappingCenterId = (mapping as any).centerId;
+          if (mappingCenterId) {
+            // Per-center mapping: apply only to the specific center
+            const specificCenter = centers.find(c => c._id === String(mappingCenterId));
+            if (specificCenter) applyToCenter(specificCenter);
+          } else {
+            // Legacy project-level mapping: apply to ALL centers in this project
+            centers.forEach((center: Center) => {
+              if (center.projectId === selectedProject || center.projectId === mappingProjectId) {
+                applyToCenter(center);
+              }
+            });
+          }
         });
         
         setCenterSelections(newSelections);
@@ -724,7 +734,17 @@ const CenterAssetMappingAccordion: React.FC = () => {
 
   // Get mappings for a specific center (memoized)
   const getCenterMappings = useCallback((centerId: string): CenterAssetMapping[] => {
-    return mappings.filter(m => m.projectId._id === centerId);
+    return mappings.filter(m => {
+      // New per-center mappings: match by centerId field
+      const mCenterId = (m as any).centerId;
+      if (mCenterId) {
+        return String(mCenterId) === centerId;
+      }
+      // Legacy project-level mappings: safe projectId comparison
+      if (!m.projectId) return false;
+      const mProjectId = typeof m.projectId === 'object' ? m.projectId._id : m.projectId;
+      return mProjectId === centerId;
+    });
   }, [mappings]);
 
   // Memoize filtered assets to prevent recalculation on every render
