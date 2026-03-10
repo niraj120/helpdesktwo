@@ -1,10 +1,14 @@
-import { Request, Response } from 'express';
-import EmailConfig from '../models/EmailConfig';
-import SMSConfig from '../models/SMSConfig';
-import WhatsAppConfig from '../models/WhatsAppConfig';
-import { sendGupshupSMS } from '../utils/smsService';
-import { sendWhatsAppTemplateMessage, getSampleParametersForTrigger } from '../utils/whatsappService';
-import nodemailer from 'nodemailer';
+import { Request, Response } from "express";
+import EmailConfig from "../models/EmailConfig";
+import SMSConfig from "../models/SMSConfig";
+import WhatsAppConfig from "../models/WhatsAppConfig";
+import { sendGupshupSMS } from "../utils/smsService";
+import {
+  sendWhatsAppTemplateMessage,
+  getSampleParametersForTrigger,
+} from "../utils/whatsappService";
+import nodemailer from "nodemailer";
+import sgMail from "@sendgrid/mail";
 
 // Get email configuration for a project
 export const getEmailConfig = async (req: Request, res: Response) => {
@@ -19,20 +23,21 @@ export const getEmailConfig = async (req: Request, res: Response) => {
       config = await EmailConfig.create({
         projectId,
         enabled: false,
-        smtpHost: '',
+        smtpHost: "",
         smtpPort: 587,
         smtpSecure: false,
-        smtpUser: '',
-        smtpPassword: '',
-        fromEmail: '',
-        fromName: 'SAC Helpdesk',
+        smtpUser: "",
+        smtpPassword: "",
+        fromEmail: "",
+        fromName: "SAC Helpdesk",
       });
     }
 
-    // Mask password unless explicitly requested
+    // Mask secrets unless explicitly requested
     const configData = config.toObject();
-    if (showPassword !== 'true') {
-      configData.smtpPassword = configData.smtpPassword ? '********' : '';
+    if (showPassword !== "true") {
+      configData.smtpPassword = configData.smtpPassword ? "********" : "";
+      if (configData.sendgridApiKey) configData.sendgridApiKey = "****";
     }
 
     return res.status(200).json({
@@ -40,11 +45,11 @@ export const getEmailConfig = async (req: Request, res: Response) => {
       data: configData,
     });
   } catch (error) {
-    console.error('Get email config error:', error);
+    console.error("Get email config error:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to get email configuration',
-      error: error instanceof Error ? error.message : 'Unknown error',
+      message: "Failed to get email configuration",
+      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
@@ -55,32 +60,36 @@ export const updateEmailConfig = async (req: Request, res: Response) => {
     const { projectId } = req.params;
     const updates = req.body;
 
-    // If password is '********', don't update it
-    if (updates.smtpPassword === '********') {
+    // Don't overwrite secrets with masked placeholders
+    if (updates.smtpPassword === "********") {
       delete updates.smtpPassword;
+    }
+    if (updates.sendgridApiKey === "****") {
+      delete updates.sendgridApiKey;
     }
 
     const config = await EmailConfig.findOneAndUpdate(
       { projectId },
       { $set: updates },
-      { new: true, upsert: true }
+      { new: true, upsert: true },
     );
 
-    // Don't send password to frontend
+    // Don't send secrets to frontend
     const configData = config.toObject();
-    configData.smtpPassword = configData.smtpPassword ? '********' : '';
+    configData.smtpPassword = configData.smtpPassword ? "********" : "";
+    if (configData.sendgridApiKey) configData.sendgridApiKey = "****";
 
     return res.status(200).json({
       success: true,
-      message: 'Email configuration updated successfully',
+      message: "Email configuration updated successfully",
       data: configData,
     });
   } catch (error) {
-    console.error('Update email config error:', error);
+    console.error("Update email config error:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to update email configuration',
-      error: error instanceof Error ? error.message : 'Unknown error',
+      message: "Failed to update email configuration",
+      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
@@ -94,7 +103,7 @@ export const testEmailConfig = async (req: Request, res: Response) => {
     if (!testEmail) {
       return res.status(400).json({
         success: false,
-        message: 'Test email address is required',
+        message: "Test email address is required",
       });
     }
 
@@ -103,61 +112,83 @@ export const testEmailConfig = async (req: Request, res: Response) => {
     if (!config) {
       return res.status(400).json({
         success: false,
-        message: 'Email configuration is missing',
-      });
-    }
-
-    if (!config.enabled) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email integration is disabled',
-      });
-    }
-
-    if (!config.smtpHost || !config.smtpUser || !config.smtpPassword) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email configuration is incomplete',
+        message: "Email configuration is missing",
       });
     }
 
     if (!config.fromEmail) {
       return res.status(400).json({
         success: false,
-        message: 'From email is missing',
+        message: "From email is missing",
       });
     }
 
-    // Create transporter
-    const transporter = nodemailer.createTransport({
-      host: config.smtpHost,
-      port: config.smtpPort,
-      secure: config.smtpSecure,
-      auth: {
-        user: config.smtpUser,
-        pass: config.smtpPassword,
-      },
-    });
+    const provider = (config as any).emailProvider || "smtp";
 
-    // Send test email
-    await transporter.sendMail({
-      from: `"${config.fromName}" <${config.fromEmail}>`,
-      to: testEmail,
-      subject: 'Test Email from SAC Helpdesk',
-      text: 'This is a test email to verify your email configuration.',
-      html: '<p>This is a test email to verify your email configuration.</p><p>If you received this, your email settings are working correctly!</p>',
-    });
+    if (provider === "sendgrid") {
+      // --- SendGrid path ---
+      const apiKey = (config as any).sendgridApiKey;
+      if (!apiKey) {
+        return res.status(400).json({
+          success: false,
+          message: "SendGrid API key is not configured",
+        });
+      }
+      sgMail.setApiKey(apiKey);
+      await sgMail.send({
+        to: testEmail,
+        from: {
+          email: config.fromEmail,
+          name: config.fromName || "SAC Helpdesk",
+        },
+        replyTo: {
+          email: config.fromEmail,
+          name: config.fromName || "SAC Helpdesk",
+        },
+        subject: "SAC Helpdesk: Email Configuration Verified",
+        text: `Hello,\n\nThis email confirms that your SAC Helpdesk email configuration is working correctly.\n\nYou can now enable this configuration to start sending notifications.\n\nIf you did not expect this email, please ignore it.\n\n-- SAC Helpdesk`,
+        html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;border:1px solid #e5e7eb;border-radius:8px;">
+  <h2 style="color:#1d4ed8;margin-top:0;">Email Configuration Verified</h2>
+  <p style="color:#374151;">Your SAC Helpdesk email configuration is working correctly.</p>
+  <p style="color:#374151;">You can now enable this configuration to start sending ticket notifications to your team and users.</p>
+  <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;" />
+  <p style="color:#6b7280;font-size:12px;">If you did not expect this email, please ignore it. This was sent as a configuration test.</p>
+</div>`,
+      });
+    } else {
+      // --- Direct SMTP path ---
+      if (!config.smtpHost || !config.smtpUser || !config.smtpPassword) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "SMTP configuration is incomplete (host, username, password required)",
+        });
+      }
+      const transporter = nodemailer.createTransport({
+        host: config.smtpHost,
+        port: config.smtpPort,
+        secure: config.smtpSecure,
+        auth: { user: config.smtpUser, pass: config.smtpPassword },
+      });
+      await transporter.sendMail({
+        from: `"${config.fromName}" <${config.fromEmail}>`,
+        to: testEmail,
+        subject: "Test Email from SAC Helpdesk",
+        text: "This is a test email to verify your SMTP configuration.",
+        html: "<p>This is a test email to verify your <strong>SMTP</strong> configuration.</p><p>If you received this, your email settings are working correctly!</p>",
+      });
+    }
 
     return res.status(200).json({
       success: true,
-      message: 'Test email sent successfully',
+      message: `Test email sent successfully via ${provider === "sendgrid" ? "SendGrid" : "SMTP"}`,
     });
   } catch (error) {
-    console.error('Test email error:', error);
+    console.error("Test email error:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to send test email',
-      error: error instanceof Error ? error.message : 'Unknown error',
+      message: "Failed to send test email",
+      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
@@ -165,13 +196,14 @@ export const testEmailConfig = async (req: Request, res: Response) => {
 // Test Email + WhatsApp + SMS together (toggle per channel)
 export const testNotificationBundle = async (req: Request, res: Response) => {
   const { projectId } = req.params;
-  const { sendEmail, sendSMS, sendWhatsApp, testEmail, testPhone } = req.body as {
-    sendEmail?: boolean;
-    sendSMS?: boolean;
-    sendWhatsApp?: boolean;
-    testEmail?: string;
-    testPhone?: string;
-  };
+  const { sendEmail, sendSMS, sendWhatsApp, testEmail, testPhone } =
+    req.body as {
+      sendEmail?: boolean;
+      sendSMS?: boolean;
+      sendWhatsApp?: boolean;
+      testEmail?: string;
+      testPhone?: string;
+    };
 
   const results: Record<string, { success: boolean; message: string }> = {};
 
@@ -179,7 +211,7 @@ export const testNotificationBundle = async (req: Request, res: Response) => {
     if (!sendEmail && !sendSMS && !sendWhatsApp) {
       return res.status(400).json({
         success: false,
-        message: 'Select at least one channel to test',
+        message: "Select at least one channel to test",
         results,
       });
     }
@@ -187,18 +219,30 @@ export const testNotificationBundle = async (req: Request, res: Response) => {
     // Email test
     if (sendEmail) {
       if (!testEmail) {
-        results.email = { success: false, message: 'Test email is required' };
+        results.email = { success: false, message: "Test email is required" };
       } else {
         try {
           const config = await EmailConfig.findOne({ projectId });
           if (!config) {
-            results.email = { success: false, message: 'Email config not found' };
-          } else if (!config.enabled) {
-            results.email = { success: false, message: 'Email integration is disabled' };
-          } else if (!config.smtpHost || !config.smtpUser || !config.smtpPassword) {
-            results.email = { success: false, message: 'Email config incomplete (missing SMTP host, user, or password)' };
+            results.email = {
+              success: false,
+              message: "Email config not found",
+            };
+          } else if (
+            !config.smtpHost ||
+            !config.smtpUser ||
+            !config.smtpPassword
+          ) {
+            results.email = {
+              success: false,
+              message:
+                "Email config incomplete (missing SMTP host, user, or password)",
+            };
           } else if (!config.fromEmail) {
-            results.email = { success: false, message: 'From email is missing' };
+            results.email = {
+              success: false,
+              message: "From email is missing",
+            };
           } else {
             const transporter = nodemailer.createTransport({
               host: config.smtpHost,
@@ -210,7 +254,7 @@ export const testNotificationBundle = async (req: Request, res: Response) => {
             await transporter.sendMail({
               from: `"${config.fromName}" <${config.fromEmail}>`,
               to: testEmail,
-              subject: 'Test Notification - Verify Email Configuration',
+              subject: "Test Notification - Verify Email Configuration",
               text: `Hello,\n\nThis is a test email notification from your helpdesk system.\n\nYour verification code is: 987654\n\nIf you received this email, your email configuration is working correctly!\n\nThank you,\n${config.fromName}`,
               html: `
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -224,13 +268,16 @@ export const testNotificationBundle = async (req: Request, res: Response) => {
                   <p style="color: #10b981;">✅ If you received this email, your email configuration is working correctly!</p>
                   <p style="color: #6b7280; font-size: 12px; margin-top: 30px;">Thank you,<br>${config.fromName}</p>
                 </div>
-              `
+              `,
             });
 
-            results.email = { success: true, message: 'Test email sent' };
+            results.email = { success: true, message: "Test email sent" };
           }
         } catch (err: any) {
-          results.email = { success: false, message: err?.message || 'Email send failed' };
+          results.email = {
+            success: false,
+            message: err?.message || "Email send failed",
+          };
         }
       }
     }
@@ -238,24 +285,43 @@ export const testNotificationBundle = async (req: Request, res: Response) => {
     // SMS test
     if (sendSMS) {
       if (!testPhone) {
-        results.sms = { success: false, message: 'Test phone is required for SMS' };
+        results.sms = {
+          success: false,
+          message: "Test phone is required for SMS",
+        };
       } else {
         try {
           const smsConfig = await SMSConfig.findOne({ projectId });
           if (!smsConfig) {
-            results.sms = { success: false, message: 'SMS config not found' };
+            results.sms = { success: false, message: "SMS config not found" };
           } else if (!smsConfig.enabled) {
-            results.sms = { success: false, message: 'SMS integration is disabled' };
+            results.sms = {
+              success: false,
+              message: "SMS integration is disabled",
+            };
           } else if (!smsConfig.userId || !smsConfig.password) {
-            results.sms = { success: false, message: 'SMS credentials (User ID or Password) are missing' };
+            results.sms = {
+              success: false,
+              message: "SMS credentials (User ID or Password) are missing",
+            };
           } else {
-            const smsResult = await sendGupshupSMS(testPhone, 'Test SMS from SAC Helpdesk', smsConfig);
+            const smsResult = await sendGupshupSMS(
+              testPhone,
+              "Test SMS from SAC Helpdesk",
+              smsConfig,
+            );
             results.sms = smsResult.success
-              ? { success: true, message: 'Test SMS sent' }
-              : { success: false, message: smsResult.error || 'SMS send failed' };
+              ? { success: true, message: "Test SMS sent" }
+              : {
+                  success: false,
+                  message: smsResult.error || "SMS send failed",
+                };
           }
         } catch (err: any) {
-          results.sms = { success: false, message: err?.message || 'SMS send failed' };
+          results.sms = {
+            success: false,
+            message: err?.message || "SMS send failed",
+          };
         }
       }
     }
@@ -263,78 +329,109 @@ export const testNotificationBundle = async (req: Request, res: Response) => {
     // WhatsApp test
     if (sendWhatsApp) {
       if (!testPhone) {
-        results.whatsapp = { success: false, message: 'Test phone is required for WhatsApp' };
+        results.whatsapp = {
+          success: false,
+          message: "Test phone is required for WhatsApp",
+        };
       } else {
         try {
           const waConfig = await WhatsAppConfig.findOne({ projectId });
           if (!waConfig) {
-            results.whatsapp = { success: false, message: 'WhatsApp config not found' };
+            results.whatsapp = {
+              success: false,
+              message: "WhatsApp config not found",
+            };
           } else if (!waConfig.enabled) {
-            results.whatsapp = { success: false, message: 'WhatsApp integration is disabled' };
+            results.whatsapp = {
+              success: false,
+              message: "WhatsApp integration is disabled",
+            };
           } else if (!waConfig.apiBaseUrl || !waConfig.accessToken) {
-            results.whatsapp = { success: false, message: 'WhatsApp credentials are incomplete (missing API Base URL or Access Token)' };
+            results.whatsapp = {
+              success: false,
+              message:
+                "WhatsApp credentials are incomplete (missing API Base URL or Access Token)",
+            };
           } else {
             const triggers = waConfig.triggers as any;
             // Pick first ENABLED trigger that has numberId, fallback to any trigger with numberId
             let candidate = Object.values(triggers || {}).find(
-              (t: any) => t?.numberId && t?.enabled
+              (t: any) => t?.numberId && t?.enabled,
             );
 
             // If no enabled trigger found, use any trigger with numberId
             if (!candidate) {
               candidate = Object.values(triggers || {}).find(
-                (t: any) => t?.numberId
+                (t: any) => t?.numberId,
               );
             }
 
             if (!candidate) {
               results.whatsapp = {
                 success: false,
-                message: 'No WhatsApp trigger configured. Please configure at least one trigger with numberId in WhatsApp Triggers tab'
+                message:
+                  "No WhatsApp trigger configured. Please configure at least one trigger with numberId in WhatsApp Triggers tab",
               };
             } else {
               // Type assertion for candidate
-              const triggerCandidate = candidate as { templateName?: string; numberId?: string; templateLanguage?: string; enabled?: boolean };
+              const triggerCandidate = candidate as {
+                templateName?: string;
+                numberId?: string;
+                templateLanguage?: string;
+                enabled?: boolean;
+              };
 
               // Use Number ID as template name if template name is not provided (same logic as individual trigger test)
-              const templateName = triggerCandidate.templateName || triggerCandidate.numberId || '';
-              const language = triggerCandidate.templateLanguage || 'en';
+              const templateName =
+                triggerCandidate.templateName ||
+                triggerCandidate.numberId ||
+                "";
+              const language = triggerCandidate.templateLanguage || "en";
 
               // Find the trigger name from the triggers object
-              const triggerName = Object.keys(triggers || {}).find(
-                key => triggers[key] === candidate
-              ) || 'studentOTP';
+              const triggerName =
+                Object.keys(triggers || {}).find(
+                  (key) => triggers[key] === candidate,
+                ) || "studentOTP";
 
               // Get sample parameters for this trigger (e.g., OTP code for studentOTP)
               const sampleParams = getSampleParametersForTrigger(triggerName);
 
               const waResult = await sendWhatsAppTemplateMessage(
-                triggerCandidate.numberId || '',
+                triggerCandidate.numberId || "",
                 testPhone,
                 templateName,
                 language,
-                sampleParams.bodyParams,      // Use sample parameters from trigger definition
-                sampleParams.buttonParams,    // Include button params for OTP etc
+                sampleParams.bodyParams, // Use sample parameters from trigger definition
+                sampleParams.buttonParams, // Include button params for OTP etc
                 waConfig,
                 projectId,
-                { triggerType: 'test', triggerName }
+                { triggerType: "test", triggerName },
               );
 
               results.whatsapp = waResult.success
-                ? { success: true, message: 'Test WhatsApp sent' }
-                : { success: false, message: waResult.error || 'WhatsApp send failed' };
+                ? { success: true, message: "Test WhatsApp sent" }
+                : {
+                    success: false,
+                    message: waResult.error || "WhatsApp send failed",
+                  };
             }
           }
         } catch (err: any) {
-          results.whatsapp = { success: false, message: err?.message || 'WhatsApp send failed' };
+          results.whatsapp = {
+            success: false,
+            message: err?.message || "WhatsApp send failed",
+          };
         }
       }
     }
 
     return res.status(200).json({ success: true, results });
   } catch (error) {
-    console.error('Test notification bundle error:', error);
-    return res.status(500).json({ success: false, message: 'Failed to run tests' });
+    console.error("Test notification bundle error:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to run tests" });
   }
 };
 
@@ -347,27 +444,27 @@ export const updateEmailTrigger = async (req: Request, res: Response) => {
     const config = await EmailConfig.findOneAndUpdate(
       { projectId },
       { $set: { [`triggers.${triggerName}`]: updates } },
-      { new: true }
+      { new: true },
     );
 
     if (!config) {
       return res.status(404).json({
         success: false,
-        message: 'Email configuration not found',
+        message: "Email configuration not found",
       });
     }
 
     return res.status(200).json({
       success: true,
-      message: 'Email trigger updated successfully',
+      message: "Email trigger updated successfully",
       data: config.triggers,
     });
   } catch (error) {
-    console.error('Update email trigger error:', error);
+    console.error("Update email trigger error:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to update email trigger',
-      error: error instanceof Error ? error.message : 'Unknown error',
+      message: "Failed to update email trigger",
+      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };

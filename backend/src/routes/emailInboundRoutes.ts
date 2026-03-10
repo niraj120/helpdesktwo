@@ -1,6 +1,6 @@
-import { Router } from 'express';
-import multer from 'multer';
-import { handleSendgridInbound } from '../controllers/sendgridInboundController';
+import { Router } from "express";
+import multer from "multer";
+import { handleSendgridInbound } from "../controllers/sendgridInboundController";
 
 const router = Router();
 
@@ -11,6 +11,6 @@ const upload = multer({ storage: multer.memoryStorage() });
  * POST /api/email/inbound/sendgrid
  * SendGrid Inbound Parse webhook (public — auth handled by SendGrid IP ranges)
  */
-router.post('/inbound/sendgrid', upload.any(), handleSendgridInbound);
+router.post("/inbound/sendgrid", upload.any(), handleSendgridInbound);
 
 export default router;

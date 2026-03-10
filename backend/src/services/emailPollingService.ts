@@ -1,19 +1,20 @@
-import Imap from 'imap';
-import { simpleParser, ParsedMail, Attachment } from 'mailparser';
-import * as cron from 'node-cron';
-import ProjectEmailConfig from '../models/ProjectEmailConfig';
-import EmailProcessingQueue from '../models/EmailProcessingQueue';
-import { IEmailProcessingQueue } from '../models/EmailProcessingQueue';
-import SystemSettings from '../models/SystemSettings';
-import { EmailParser } from '../utils/emailParser'; // Task 8.3
-import { validateEmail, shouldRejectEmail } from '../utils/emailValidator'; // Task 8.3
-import { logError, ErrorContext, ErrorSeverity } from '../utils/errorLogger'; // Task 8.3
+import Imap from "imap";
+import { simpleParser, ParsedMail, Attachment } from "mailparser";
+import * as cron from "node-cron";
+import ProjectEmailConfig from "../models/ProjectEmailConfig";
+import EmailProcessingQueue from "../models/EmailProcessingQueue";
+import { IEmailProcessingQueue } from "../models/EmailProcessingQueue";
+import SystemSettings from "../models/SystemSettings";
+import { EmailParser } from "../utils/emailParser"; // Task 8.3
+import { validateEmail, shouldRejectEmail } from "../utils/emailValidator"; // Task 8.3
+import { logError, ErrorContext, ErrorSeverity } from "../utils/errorLogger"; // Task 8.3
 
 // Email polling configuration - with sensible defaults
 // Can be overridden via environment variables or database settings
-const DEFAULT_POLLING_INTERVAL = process.env.EMAIL_POLLING_INTERVAL || '*/30 * * * * *'; // Every 30 seconds for immediate ticket creation
-const MAX_EMAILS_PER_FETCH = process.env.MAX_EMAILS_PER_FETCH 
-  ? parseInt(process.env.MAX_EMAILS_PER_FETCH, 10) 
+const DEFAULT_POLLING_INTERVAL =
+  process.env.EMAIL_POLLING_INTERVAL || "*/30 * * * * *"; // Every 30 seconds for immediate ticket creation
+const MAX_EMAILS_PER_FETCH = process.env.MAX_EMAILS_PER_FETCH
+  ? parseInt(process.env.MAX_EMAILS_PER_FETCH, 10)
   : 50; // Default: 50 emails per config per cycle
 const IMAP_CONNECTION_TIMEOUT = 30000; // 30 seconds
 
@@ -50,17 +51,21 @@ class EmailPollingService {
    */
   private async getPollingInterval(): Promise<string> {
     try {
-      const setting = await SystemSettings.findOne({ key: 'email_polling_interval' });
+      const setting = await SystemSettings.findOne({
+        key: "email_polling_interval",
+      });
       if (setting && setting.value) {
         // Validate the cron expression
         if (cron.validate(setting.value)) {
           return setting.value;
         } else {
-          console.warn(`⚠️  Invalid cron expression in database: ${setting.value}, using default`);
+          console.warn(
+            `⚠️  Invalid cron expression in database: ${setting.value}, using default`,
+          );
         }
       }
     } catch (error) {
-      console.error('Error fetching polling interval from database:', error);
+      console.error("Error fetching polling interval from database:", error);
     }
     return DEFAULT_POLLING_INTERVAL;
   }
@@ -68,33 +73,38 @@ class EmailPollingService {
   /**
    * Update the polling interval dynamically
    */
-  public async updatePollingInterval(newInterval: string, updatedBy?: string): Promise<boolean> {
+  public async updatePollingInterval(
+    newInterval: string,
+    updatedBy?: string,
+  ): Promise<boolean> {
     try {
       // Validate the cron expression
       if (!cron.validate(newInterval)) {
-        throw new Error('Invalid cron expression');
+        throw new Error("Invalid cron expression");
       }
 
       // Save to database
       await SystemSettings.findOneAndUpdate(
-        { key: 'email_polling_interval' },
+        { key: "email_polling_interval" },
         {
           value: newInterval,
-          description: 'Email polling interval (cron expression)',
+          description: "Email polling interval (cron expression)",
           updatedBy: updatedBy,
         },
-        { upsert: true, new: true }
+        { upsert: true, new: true },
       );
 
       this.currentInterval = newInterval;
-      
+
       // Restart the cron job with new interval
-      console.log(`🔄 Updating polling interval from ${this.currentInterval} to ${newInterval}`);
+      console.log(
+        `🔄 Updating polling interval from ${this.currentInterval} to ${newInterval}`,
+      );
       this.restart();
-      
+
       return true;
     } catch (error: any) {
-      console.error('❌ Error updating polling interval:', error);
+      console.error("❌ Error updating polling interval:", error);
       throw error;
     }
   }
@@ -103,7 +113,7 @@ class EmailPollingService {
    * Restart the email polling service
    */
   public async restart(): Promise<void> {
-    console.log('🔄 Restarting Email Polling Service...');
+    console.log("🔄 Restarting Email Polling Service...");
     this.stop();
     await this.start();
   }
@@ -113,7 +123,7 @@ class EmailPollingService {
    */
   public async start(): Promise<void> {
     if (this.cronJob) {
-      console.log('⚠️  Email polling service is already running');
+      console.log("⚠️  Email polling service is already running");
       return;
     }
 
@@ -122,7 +132,9 @@ class EmailPollingService {
 
     console.log(`🚀 Starting Email Polling Service`);
     console.log(`   Interval: ${this.currentInterval}`);
-    console.log(`   Max Emails Per Fetch: ${MAX_EMAILS_PER_FETCH} emails/config/cycle`);
+    console.log(
+      `   Max Emails Per Fetch: ${MAX_EMAILS_PER_FETCH} emails/config/cycle`,
+    );
     console.log(`   IMAP Timeout: ${IMAP_CONNECTION_TIMEOUT / 1000}s`);
 
     // Schedule the cron job
@@ -130,7 +142,7 @@ class EmailPollingService {
       await this.pollEmails();
     });
 
-    console.log('✅ Email Polling Service started successfully');
+    console.log("✅ Email Polling Service started successfully");
 
     // Run immediately on startup (optional, comment out if not desired)
     setTimeout(() => {
@@ -145,7 +157,7 @@ class EmailPollingService {
     if (this.cronJob) {
       this.cronJob.stop();
       this.cronJob = null;
-      console.log('🛑 Email Polling Service stopped');
+      console.log("🛑 Email Polling Service stopped");
     }
   }
 
@@ -155,7 +167,7 @@ class EmailPollingService {
   private async pollEmails(): Promise<void> {
     // Prevent concurrent runs
     if (this.isRunning) {
-      console.log('⏭️  Email polling already in progress, skipping this cycle');
+      console.log("⏭️  Email polling already in progress, skipping this cycle");
       return;
     }
 
@@ -163,25 +175,29 @@ class EmailPollingService {
     const startTime = Date.now();
 
     try {
-      console.log('\n' + '='.repeat(60));
-      console.log(`📬 Email Polling Cycle Started - ${new Date().toISOString()}`);
-      console.log('='.repeat(60));
+      console.log("\n" + "=".repeat(60));
+      console.log(
+        `📬 Email Polling Cycle Started - ${new Date().toISOString()}`,
+      );
+      console.log("=".repeat(60));
 
       // Fetch all enabled email configurations (IMAP only — SendGrid comes via webhook)
       const enabledConfigs = await ProjectEmailConfig.find({
         isEnabled: true,
         isDeleted: { $ne: true },
-        $or: [{ inboundMethod: 'imap' }, { inboundMethod: { $exists: false } }],
+        $or: [{ inboundMethod: "imap" }, { inboundMethod: { $exists: false } }],
       }).select(
-        'projectId emailAddress imapHost imapPort imapUsername imapPassword inboundMethod lastCheckedAt'
+        "projectId emailAddress imapHost imapPort imapUsername imapPassword inboundMethod lastCheckedAt",
       );
 
       if (enabledConfigs.length === 0) {
-        console.log('ℹ️  No enabled email configurations found');
+        console.log("ℹ️  No enabled email configurations found");
         return;
       }
 
-      console.log(`📧 Found ${enabledConfigs.length} enabled email configuration(s)`);
+      console.log(
+        `📧 Found ${enabledConfigs.length} enabled email configuration(s)`,
+      );
 
       let totalEmailsFetched = 0;
       let successfulConfigs = 0;
@@ -190,7 +206,9 @@ class EmailPollingService {
       // Process each email configuration
       for (const config of enabledConfigs) {
         try {
-          console.log(`\n📥 Processing: ${config.emailAddress} (${config.imapHost}:${config.imapPort})`);
+          console.log(
+            `\n📥 Processing: ${config.emailAddress} (${config.imapHost}:${config.imapPort})`,
+          );
 
           const emailCount = await this.fetchEmailsForConfig(config);
           totalEmailsFetched += emailCount;
@@ -200,9 +218,9 @@ class EmailPollingService {
         } catch (error: any) {
           failedConfigs++;
           console.error(`   ❌ Error: ${error.message}`);
-          
+
           // Update last check status
-          config.lastCheckStatus = 'failed';
+          config.lastCheckStatus = "failed";
           config.lastCheckError = error.message;
           config.lastCheckedAt = new Date();
           await config.save();
@@ -211,16 +229,16 @@ class EmailPollingService {
 
       const duration = ((Date.now() - startTime) / 1000).toFixed(2);
 
-      console.log('\n' + '='.repeat(60));
-      console.log('📊 Polling Cycle Summary:');
+      console.log("\n" + "=".repeat(60));
+      console.log("📊 Polling Cycle Summary:");
       console.log(`   Total Configs: ${enabledConfigs.length}`);
       console.log(`   Successful: ${successfulConfigs}`);
       console.log(`   Failed: ${failedConfigs}`);
       console.log(`   Total Emails Fetched: ${totalEmailsFetched}`);
       console.log(`   Duration: ${duration}s`);
-      console.log('='.repeat(60) + '\n');
+      console.log("=".repeat(60) + "\n");
     } catch (error: any) {
-      console.error('❌ Email polling cycle failed:', error.message);
+      console.error("❌ Email polling cycle failed:", error.message);
       console.error(error.stack);
     } finally {
       this.isRunning = false;
@@ -230,9 +248,7 @@ class EmailPollingService {
   /**
    * Fetch emails for a specific email configuration
    */
-  private async fetchEmailsForConfig(
-    config: any
-  ): Promise<number> {
+  private async fetchEmailsForConfig(config: any): Promise<number> {
     return new Promise(async (resolve, reject) => {
       let emailCount = 0;
 
@@ -255,38 +271,40 @@ class EmailPollingService {
         // Connection timeout handler
         const connectionTimeout = setTimeout(() => {
           imap.end();
-          reject(new Error('IMAP connection timeout'));
+          reject(new Error("IMAP connection timeout"));
         }, IMAP_CONNECTION_TIMEOUT);
 
         // Error handler
-        imap.once('error', (err: Error) => {
+        imap.once("error", (err: Error) => {
           clearTimeout(connectionTimeout);
           console.error(`   IMAP Error: ${err.message}`);
           reject(err);
         });
 
         // End handler
-        imap.once('end', () => {
+        imap.once("end", () => {
           clearTimeout(connectionTimeout);
           console.log(`   📤 IMAP connection closed`);
         });
 
         // Ready handler - connection established
-        imap.once('ready', () => {
+        imap.once("ready", () => {
           clearTimeout(connectionTimeout);
           console.log(`   🔌 IMAP connected successfully`);
 
           // Open INBOX
-          imap.openBox('INBOX', false, async (err, box) => {
+          imap.openBox("INBOX", false, async (err, box) => {
             if (err) {
               imap.end();
               return reject(new Error(`Failed to open INBOX: ${err.message}`));
             }
 
-            console.log(`   📬 INBOX opened (${box.messages.total} total messages)`);
+            console.log(
+              `   📬 INBOX opened (${box.messages.total} total messages)`,
+            );
 
             // Search for unread emails
-            imap.search(['UNSEEN'], async (err, results) => {
+            imap.search(["UNSEEN"], async (err, results) => {
               if (err) {
                 imap.end();
                 return reject(new Error(`Search failed: ${err.message}`));
@@ -295,13 +313,13 @@ class EmailPollingService {
               if (!results || results.length === 0) {
                 console.log(`   ℹ️  No unread emails found`);
                 imap.end();
-                
+
                 // Update last checked time
                 config.lastCheckedAt = new Date();
-                config.lastCheckStatus = 'success';
+                config.lastCheckStatus = "success";
                 config.lastCheckError = undefined;
                 await config.save();
-                
+
                 return resolve(0);
               }
 
@@ -310,7 +328,9 @@ class EmailPollingService {
               // Limit emails to fetch
               const emailsToFetch = results.slice(0, MAX_EMAILS_PER_FETCH);
               if (results.length > MAX_EMAILS_PER_FETCH) {
-                console.log(`   ⚠️  Limiting to ${MAX_EMAILS_PER_FETCH} emails (${results.length - MAX_EMAILS_PER_FETCH} will be processed in next cycle)`);
+                console.log(
+                  `   ⚠️  Limiting to ${MAX_EMAILS_PER_FETCH} emails (${results.length - MAX_EMAILS_PER_FETCH} will be processed in next cycle)`,
+                );
               }
 
               const fetchedEmails: EmailData[] = [];
@@ -319,11 +339,11 @@ class EmailPollingService {
 
               // Fetch email details
               const fetch = imap.fetch(emailsToFetch, {
-                bodies: '', // Fetch entire email
+                bodies: "", // Fetch entire email
                 markSeen: false, // Don't mark as seen yet (we'll do it after queuing)
               });
 
-              fetch.on('message', (msg, seqno) => {
+              fetch.on("message", (msg, seqno) => {
                 console.log(`   📄 Fetching email #${seqno}`);
 
                 const chunks: Buffer[] = [];
@@ -332,8 +352,8 @@ class EmailPollingService {
                 let uid: number = 0;
                 let sizeExceeded = false;
 
-                msg.on('body', (stream: any) => {
-                  stream.on('data', (chunk: Buffer) => {
+                msg.on("body", (stream: any) => {
+                  stream.on("data", (chunk: Buffer) => {
                     // Check if adding this chunk would exceed the limit
                     if (totalSize + chunk.length > MAX_EMAIL_SIZE) {
                       sizeExceeded = true;
@@ -350,16 +370,18 @@ class EmailPollingService {
                   });
                 });
 
-                msg.once('attributes', (attrs) => {
+                msg.once("attributes", (attrs) => {
                   uid = attrs.uid;
                 });
 
-                msg.once('end', async () => {
+                msg.once("end", async () => {
                   try {
                     // Check if email size was exceeded
                     if (sizeExceeded) {
-                      console.error(`   ❌ Email #${seqno} exceeds size limit (${MAX_EMAIL_SIZE / 1024 / 1024}MB)`);
-                      
+                      console.error(
+                        `   ❌ Email #${seqno} exceeds size limit (${MAX_EMAIL_SIZE / 1024 / 1024}MB)`,
+                      );
+
                       await logError({
                         message: `Email exceeds size limit: ${MAX_EMAIL_SIZE / 1024 / 1024}MB`,
                         context: ErrorContext.EMAIL_PARSING,
@@ -376,49 +398,73 @@ class EmailPollingService {
 
                     // Combine chunks into single buffer
                     const buffer = Buffer.concat(chunks, totalSize);
-                    
+
                     // Task 8.3: Parse email with validation and error handling
                     console.log(`   📧 Parsing email #${seqno}...`);
-                    
+
                     const parsed: ParsedMail = await simpleParser(buffer);
 
                     // Task 8.3: Build email data with safe extraction
                     const emailData: EmailData = {
-                      messageId: parsed.messageId || `${Date.now()}-${uid}@helpdesk.local`,
+                      messageId:
+                        parsed.messageId ||
+                        `${Date.now()}-${uid}@helpdesk.local`,
                       from: this.extractEmailAddressObject(parsed.from),
-                      to: parsed.to ? this.extractEmailAddressArray(parsed.to) : [{ address: 'support@helpdesk.local' }],
-                      subject: parsed.subject && parsed.subject.trim() ? parsed.subject.trim() : '(No Subject)',
-                      body: parsed.text && parsed.text.trim() ? parsed.text.trim() : '(Empty message)',
+                      to: parsed.to
+                        ? this.extractEmailAddressArray(parsed.to)
+                        : [{ address: "support@helpdesk.local" }],
+                      subject:
+                        parsed.subject && parsed.subject.trim()
+                          ? parsed.subject.trim()
+                          : "(No Subject)",
+                      body:
+                        parsed.text && parsed.text.trim()
+                          ? parsed.text.trim()
+                          : "(Empty message)",
                       htmlBody: parsed.html || undefined,
                       headers: parsed.headers,
                       attachments: this.extractAttachments(parsed.attachments),
-                      receivedDate: parsed.date instanceof Date && !isNaN(parsed.date.getTime()) ? parsed.date : new Date(),
+                      receivedDate:
+                        parsed.date instanceof Date &&
+                        !isNaN(parsed.date.getTime())
+                          ? parsed.date
+                          : new Date(),
                       uid: uid,
-                      date: parsed.date instanceof Date && !isNaN(parsed.date.getTime()) ? parsed.date : new Date(),
+                      date:
+                        parsed.date instanceof Date &&
+                        !isNaN(parsed.date.getTime())
+                          ? parsed.date
+                          : new Date(),
                     };
 
                     // Task 8.3: Log warnings for unusual emails
                     const warnings: string[] = [];
-                    
-                    if (!parsed.from || !parsed.from.value || parsed.from.value.length === 0) {
-                      warnings.push('Missing FROM address');
+
+                    if (
+                      !parsed.from ||
+                      !parsed.from.value ||
+                      parsed.from.value.length === 0
+                    ) {
+                      warnings.push("Missing FROM address");
                     }
-                    if (!parsed.subject || parsed.subject.trim() === '') {
-                      warnings.push('Missing subject');
+                    if (!parsed.subject || parsed.subject.trim() === "") {
+                      warnings.push("Missing subject");
                     }
                     if (!parsed.text && !parsed.html) {
-                      warnings.push('Missing body content');
+                      warnings.push("Missing body content");
                     }
                     if (!parsed.messageId) {
-                      warnings.push('Missing Message-ID (generated)');
+                      warnings.push("Missing Message-ID (generated)");
                     }
 
                     if (warnings.length > 0) {
-                      console.warn(`   ⚠️  Email has issues: ${warnings.join(', ')}`);
-                      
+                      console.warn(
+                        `   ⚠️  Email has issues: ${warnings.join(", ")}`,
+                      );
+
                       // Log warning for unusual email
                       await logError({
-                        message: `Malformed email detected: ${warnings.join('; ')}`,
+                        message: `Malformed email detected: ${warnings.join("; ")}`,
                         context: ErrorContext.EMAIL_POLLING,
                         severity: ErrorSeverity.LOW,
                         details: {
@@ -433,12 +479,17 @@ class EmailPollingService {
                     }
 
                     fetchedEmails.push(emailData);
-                    console.log(`   ✅ Parsed: "${emailData.subject}" from ${emailData.from.address}`);
+                    console.log(
+                      `   ✅ Parsed: "${emailData.subject}" from ${emailData.from.address}`,
+                    );
                     messagesProcessed++;
                   } catch (parseError: any) {
-                    console.error(`   ❌ Parse error for email #${seqno}:`, parseError.message);
+                    console.error(
+                      `   ❌ Parse error for email #${seqno}:`,
+                      parseError.message,
+                    );
                     messagesProcessed++;
-                    
+
                     // Task 8.3: Log parse error but don't crash
                     await logError({
                       message: `Email parsing failed: ${parseError.message}`,
@@ -451,26 +502,30 @@ class EmailPollingService {
                         uid,
                       },
                     });
-                    
+
                     // Task 8.3: Don't crash - continue processing other emails
                   }
                 });
               });
 
-              fetch.once('error', (fetchErr) => {
+              fetch.once("error", (fetchErr) => {
                 console.error(`   ❌ Fetch error:`, fetchErr.message);
                 imap.end();
                 reject(fetchErr);
               });
 
-              fetch.once('end', async () => {
-                console.log(`   📦 Fetch completed, waiting for message processing...`);
-                
+              fetch.once("end", async () => {
+                console.log(
+                  `   📦 Fetch completed, waiting for message processing...`,
+                );
+
                 // Wait for all messages to be processed
                 const checkInterval = setInterval(async () => {
                   if (messagesProcessed >= totalMessages) {
                     clearInterval(checkInterval);
-                    console.log(`   ✅ All ${totalMessages} messages processed, ${fetchedEmails.length} successfully parsed`);
+                    console.log(
+                      `   ✅ All ${totalMessages} messages processed, ${fetchedEmails.length} successfully parsed`,
+                    );
 
                     try {
                       // Add emails to processing queue
@@ -481,12 +536,17 @@ class EmailPollingService {
 
                       // Mark emails as seen/read
                       if (fetchedEmails.length > 0) {
-                        const uids = fetchedEmails.map(e => e.uid);
-                        imap.setFlags(uids, ['\\Seen'], (flagErr) => {
+                        const uids = fetchedEmails.map((e) => e.uid);
+                        imap.setFlags(uids, ["\\Seen"], (flagErr) => {
                           if (flagErr) {
-                            console.error(`   ⚠️  Failed to mark emails as read:`, flagErr.message);
+                            console.error(
+                              `   ⚠️  Failed to mark emails as read:`,
+                              flagErr.message,
+                            );
                           } else {
-                            console.log(`   ✓ Marked ${uids.length} email(s) as read`);
+                            console.log(
+                              `   ✓ Marked ${uids.length} email(s) as read`,
+                            );
                           }
 
                           // Close connection
@@ -498,7 +558,7 @@ class EmailPollingService {
 
                       // Update last checked status
                       config.lastCheckedAt = new Date();
-                      config.lastCheckStatus = 'success';
+                      config.lastCheckStatus = "success";
                       config.lastCheckError = undefined;
                       await config.save();
 
@@ -510,14 +570,16 @@ class EmailPollingService {
                     }
                   }
                 }, 100); // Check every 100ms
-                
+
                 // Timeout after 30 seconds
                 setTimeout(() => {
                   clearInterval(checkInterval);
                   if (messagesProcessed < totalMessages) {
-                    console.error(`   ❌ Timeout waiting for messages: ${messagesProcessed}/${totalMessages} processed`);
+                    console.error(
+                      `   ❌ Timeout waiting for messages: ${messagesProcessed}/${totalMessages} processed`,
+                    );
                     imap.end();
-                    reject(new Error('Timeout waiting for message processing'));
+                    reject(new Error("Timeout waiting for message processing"));
                   }
                 }, 30000);
               });
@@ -537,19 +599,18 @@ class EmailPollingService {
   /**
    * Add email to processing queue
    */
-  private async addToQueue(
-    config: any,
-    emailData: EmailData
-  ): Promise<void> {
+  private async addToQueue(config: any, emailData: EmailData): Promise<void> {
     try {
       // Check if email already exists in queue (prevent duplicates)
       const existing = await EmailProcessingQueue.findOne({
-        'metadata.messageId': emailData.messageId,
+        "metadata.messageId": emailData.messageId,
         projectEmailConfigId: config._id,
       });
 
       if (existing) {
-        console.log(`   ⏭️  Email already in queue (Message-ID: ${emailData.messageId})`);
+        console.log(
+          `   ⏭️  Email already in queue (Message-ID: ${emailData.messageId})`,
+        );
         return;
       }
 
@@ -560,10 +621,12 @@ class EmailPollingService {
 
       // Skip if email is too large for MongoDB
       if (emailSize > MAX_DOCUMENT_SIZE) {
-        console.error(`   ❌ Email too large for storage: ${(emailSize / 1024 / 1024).toFixed(2)}MB (limit: ${MAX_DOCUMENT_SIZE / 1024 / 1024}MB)`);
+        console.error(
+          `   ❌ Email too large for storage: ${(emailSize / 1024 / 1024).toFixed(2)}MB (limit: ${MAX_DOCUMENT_SIZE / 1024 / 1024}MB)`,
+        );
         console.error(`      Subject: ${emailData.subject}`);
         console.error(`      From: ${emailData.from.address}`);
-        
+
         // Log oversized email error
         await logError({
           message: `Email too large to store: ${(emailSize / 1024 / 1024).toFixed(2)}MB`,
@@ -577,7 +640,7 @@ class EmailPollingService {
             limit: MAX_DOCUMENT_SIZE,
           },
         });
-        
+
         return; // Skip this email
       }
 
@@ -585,11 +648,11 @@ class EmailPollingService {
       const queueEntry = new EmailProcessingQueue({
         projectEmailConfigId: config._id,
         rawEmail: emailJson,
-        status: 'pending',
+        status: "pending",
         retryCount: 0,
         metadata: {
           fromEmail: emailData.from.address,
-          toEmail: emailData.to.map(t => t.address).join(', '),
+          toEmail: emailData.to.map((t) => t.address).join(", "),
           subject: emailData.subject,
           messageId: emailData.messageId,
           size: emailSize,
@@ -597,7 +660,9 @@ class EmailPollingService {
       });
 
       await queueEntry.save();
-      console.log(`   ➕ Added to queue: ${emailData.subject} (Queue ID: ${queueEntry._id})`);
+      console.log(
+        `   ➕ Added to queue: ${emailData.subject} (Queue ID: ${queueEntry._id})`,
+      );
     } catch (error: any) {
       console.error(`   ❌ Failed to add to queue:`, error.message);
       throw error;
@@ -607,57 +672,64 @@ class EmailPollingService {
   /**
    * Extract email address from parsed email object as EmailAddress object
    */
-  private extractEmailAddressObject(addressObj: any): { address: string; name?: string } {
+  private extractEmailAddressObject(addressObj: any): {
+    address: string;
+    name?: string;
+  } {
     if (!addressObj) {
-      return { address: 'unknown@invalid.local', name: 'Unknown Sender' };
+      return { address: "unknown@invalid.local", name: "Unknown Sender" };
     }
-    
-    if (typeof addressObj === 'string') {
+
+    if (typeof addressObj === "string") {
       return { address: addressObj };
     }
-    
+
     if (Array.isArray(addressObj.value) && addressObj.value.length > 0) {
       const first = addressObj.value[0];
       return {
-        address: first.address || 'unknown@invalid.local',
-        name: first.name
+        address: first.address || "unknown@invalid.local",
+        name: first.name,
       };
     }
-    
+
     if (addressObj.address) {
       return {
         address: addressObj.address,
-        name: addressObj.name
+        name: addressObj.name,
       };
     }
-    
-    return { address: 'unknown@invalid.local', name: 'Unknown Sender' };
+
+    return { address: "unknown@invalid.local", name: "Unknown Sender" };
   }
 
   /**
    * Extract email address array from parsed email object
    */
-  private extractEmailAddressArray(addressObj: any): Array<{ address: string; name?: string }> {
+  private extractEmailAddressArray(
+    addressObj: any,
+  ): Array<{ address: string; name?: string }> {
     if (!addressObj) return [];
-    
-    if (typeof addressObj === 'string') {
+
+    if (typeof addressObj === "string") {
       return [{ address: addressObj }];
     }
-    
+
     if (Array.isArray(addressObj.value)) {
       return addressObj.value.map((addr: any) => ({
-        address: addr.address || 'unknown@invalid.local',
-        name: addr.name
+        address: addr.address || "unknown@invalid.local",
+        name: addr.name,
       }));
     }
-    
+
     if (addressObj.address) {
-      return [{
-        address: addressObj.address,
-        name: addressObj.name
-      }];
+      return [
+        {
+          address: addressObj.address,
+          name: addressObj.name,
+        },
+      ];
     }
-    
+
     return [];
   }
 
@@ -681,8 +753,8 @@ class EmailPollingService {
     if (!attachments || attachments.length === 0) return [];
 
     return attachments.map((att) => ({
-      filename: att.filename || 'unknown',
-      contentType: att.contentType || 'application/octet-stream',
+      filename: att.filename || "unknown",
+      contentType: att.contentType || "application/octet-stream",
       size: att.size || 0,
       content: att.content,
     }));
@@ -691,7 +763,12 @@ class EmailPollingService {
   /**
    * Get service status
    */
-  public getStatus(): { isRunning: boolean; isActive: boolean; interval: string; maxEmailsPerFetch: number } {
+  public getStatus(): {
+    isRunning: boolean;
+    isActive: boolean;
+    interval: string;
+    maxEmailsPerFetch: number;
+  } {
     return {
       isRunning: this.isRunning,
       isActive: this.cronJob !== null,

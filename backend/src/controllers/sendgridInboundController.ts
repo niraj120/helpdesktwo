@@ -1,7 +1,7 @@
-import { Request, Response } from 'express';
-import ProjectEmailConfig from '../models/ProjectEmailConfig';
-import EmailProcessingQueue from '../models/EmailProcessingQueue';
-import { logError, ErrorContext, ErrorSeverity } from '../utils/errorLogger';
+import { Request, Response } from "express";
+import ProjectEmailConfig from "../models/ProjectEmailConfig";
+import EmailProcessingQueue from "../models/EmailProcessingQueue";
+import { logError, ErrorContext, ErrorSeverity } from "../utils/errorLogger";
 
 /**
  * POST /api/email/inbound/sendgrid
@@ -21,19 +21,11 @@ export const handleSendgridInbound = async (req: Request, res: Response) => {
   res.status(200).json({ received: true });
 
   try {
-    const {
-      to,
-      from,
-      subject,
-      text,
-      html,
-      headers,
-      envelope,
-      charsets,
-    } = req.body as Record<string, string>;
+    const { to, from, subject, text, html, headers, envelope, charsets } =
+      req.body as Record<string, string>;
 
     // ---------- resolve recipient address ----------
-    let toAddress = '';
+    let toAddress = "";
     if (envelope) {
       try {
         const env = JSON.parse(envelope);
@@ -51,7 +43,9 @@ export const handleSendgridInbound = async (req: Request, res: Response) => {
     }
 
     if (!toAddress) {
-      console.warn('⚠️  SendGrid inbound: could not determine recipient, skipping');
+      console.warn(
+        "⚠️  SendGrid inbound: could not determine recipient, skipping",
+      );
       return;
     }
 
@@ -59,18 +53,22 @@ export const handleSendgridInbound = async (req: Request, res: Response) => {
     const config = await ProjectEmailConfig.findOne({
       emailAddress: toAddress,
       isEnabled: true,
-      inboundMethod: 'sendgrid',
+      inboundMethod: "sendgrid",
     });
 
     if (!config) {
-      console.warn(`⚠️  SendGrid inbound: no SendGrid config found for ${toAddress}`);
+      console.warn(
+        `⚠️  SendGrid inbound: no SendGrid config found for ${toAddress}`,
+      );
       return;
     }
 
-    console.log(`📬 SendGrid inbound email for ${toAddress} (project: ${config.projectId})`);
+    console.log(
+      `📬 SendGrid inbound email for ${toAddress} (project: ${config.projectId})`,
+    );
 
     // ---------- parse sender ----------
-    let fromAddress = 'unknown@invalid.local';
+    let fromAddress = "unknown@invalid.local";
     let fromName: string | undefined;
     if (from) {
       const nameMatch = from.match(/^(.*?)\s*<([^>]+)>/);
@@ -85,8 +83,8 @@ export const handleSendgridInbound = async (req: Request, res: Response) => {
     // ---------- attachments from multer ----------
     const files = (req as any).files as Express.Multer.File[] | undefined;
     const attachments = (files || []).map((f) => ({
-      filename: f.originalname || 'attachment',
-      contentType: f.mimetype || 'application/octet-stream',
+      filename: f.originalname || "attachment",
+      contentType: f.mimetype || "application/octet-stream",
       size: f.size,
       content: f.buffer,
     }));
@@ -95,9 +93,9 @@ export const handleSendgridInbound = async (req: Request, res: Response) => {
     const messageId =
       (headers &&
         headers
-          .split('\n')
-          .find((h: string) => h.toLowerCase().startsWith('message-id:'))
-          ?.replace(/message-id:\s*/i, '')
+          .split("\n")
+          .find((h: string) => h.toLowerCase().startsWith("message-id:"))
+          ?.replace(/message-id:\s*/i, "")
           .trim()) ||
       `sendgrid-${Date.now()}@helpdesk.local`;
 
@@ -105,10 +103,10 @@ export const handleSendgridInbound = async (req: Request, res: Response) => {
       messageId,
       from: { address: fromAddress, name: fromName },
       to: [{ address: toAddress }],
-      subject: subject?.trim() || '(No Subject)',
-      body: text?.trim() || '(Empty message)',
+      subject: subject?.trim() || "(No Subject)",
+      body: text?.trim() || "(Empty message)",
       htmlBody: html || undefined,
-      headers: headers || '',
+      headers: headers || "",
       attachments,
       receivedDate: new Date(),
       uid: 0,
@@ -117,7 +115,7 @@ export const handleSendgridInbound = async (req: Request, res: Response) => {
 
     // ---------- dedup check ----------
     const existing = await EmailProcessingQueue.findOne({
-      'metadata.messageId': messageId,
+      "metadata.messageId": messageId,
       projectEmailConfigId: config._id,
     });
 
@@ -132,12 +130,19 @@ export const handleSendgridInbound = async (req: Request, res: Response) => {
     const MAX_DOC = 15 * 1024 * 1024;
 
     if (emailSize > MAX_DOC) {
-      console.error(`   ❌ SendGrid email too large: ${(emailSize / 1024 / 1024).toFixed(2)}MB`);
+      console.error(
+        `   ❌ SendGrid email too large: ${(emailSize / 1024 / 1024).toFixed(2)}MB`,
+      );
       await logError({
         message: `SendGrid inbound email too large: ${(emailSize / 1024 / 1024).toFixed(2)}MB`,
         context: ErrorContext.EMAIL_PARSING,
         severity: ErrorSeverity.MEDIUM,
-        details: { messageId, subject: emailData.subject, from: fromAddress, size: emailSize },
+        details: {
+          messageId,
+          subject: emailData.subject,
+          from: fromAddress,
+          size: emailSize,
+        },
       });
       return;
     }
@@ -146,7 +151,7 @@ export const handleSendgridInbound = async (req: Request, res: Response) => {
     const queueEntry = new EmailProcessingQueue({
       projectEmailConfigId: config._id,
       rawEmail: emailJson,
-      status: 'pending',
+      status: "pending",
       retryCount: 0,
       metadata: {
         fromEmail: fromAddress,
@@ -158,10 +163,11 @@ export const handleSendgridInbound = async (req: Request, res: Response) => {
     });
 
     await queueEntry.save();
-    console.log(`   ✅ SendGrid inbound queued: "${emailData.subject}" (Queue ID: ${queueEntry._id})`);
-
+    console.log(
+      `   ✅ SendGrid inbound queued: "${emailData.subject}" (Queue ID: ${queueEntry._id})`,
+    );
   } catch (error: any) {
-    console.error('❌ SendGrid inbound webhook error:', error.message);
+    console.error("❌ SendGrid inbound webhook error:", error.message);
     await logError({
       message: `SendGrid inbound webhook failed: ${error.message}`,
       context: ErrorContext.EMAIL_POLLING,
