@@ -13,7 +13,8 @@ import {
 
 // Provider and auth method types
 type EmailProvider = 'google' | 'microsoft' | 'other';
-type AuthMethod = 'basic' | 'app_password';// | 'oauth2'; // OAuth2 disabled for now
+type AuthMethod = 'basic' | 'app_password';
+type InboundMethod = 'imap' | 'sendgrid';
 
 interface EmailConfig {
   _id: string;
@@ -38,6 +39,7 @@ interface EmailConfigModalProps {
 
 interface FormData {
   emailAddress: string;
+  inboundMethod: InboundMethod;
   imapHost: string;
   imapPort: number | string;
   imapUsername: string;
@@ -107,6 +109,7 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
     if (editingConfig) {
       return {
         emailAddress: editingConfig.emailAddress,
+        inboundMethod: (editingConfig as any).inboundMethod || 'imap',
         imapHost: editingConfig.imapHost,
         imapPort: editingConfig.imapPort,
         imapUsername: editingConfig.imapUsername,
@@ -121,6 +124,7 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
     }
     return {
       emailAddress: '',
+      inboundMethod: 'imap' as InboundMethod,
       imapHost: '',
       imapPort: 993,
       imapUsername: '',
@@ -170,20 +174,21 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
       newErrors.emailAddress = 'Invalid email format';
     }
 
-    // IMAP validations
-    if (!formData.imapHost.trim()) {
-      newErrors.imapHost = 'IMAP host is required';
-    }
-    const imapPort = Number(formData.imapPort);
-    if (!formData.imapPort || isNaN(imapPort) || imapPort < 1 || imapPort > 65535) {
-      newErrors.imapPort = 'Valid IMAP port is required (1-65535)';
-    }
-    if (!formData.imapUsername.trim()) {
-      newErrors.imapUsername = 'IMAP username is required';
-    }
-    // In edit mode, password is optional (only required if changing)
-    if (!editingConfig && !formData.imapPassword.trim()) {
-      newErrors.imapPassword = 'IMAP password is required';
+    // IMAP validations — only when using IMAP inbound
+    if (formData.inboundMethod === 'imap') {
+      if (!formData.imapHost.trim()) {
+        newErrors.imapHost = 'IMAP host is required';
+      }
+      const imapPort = Number(formData.imapPort);
+      if (!formData.imapPort || isNaN(imapPort) || imapPort < 1 || imapPort > 65535) {
+        newErrors.imapPort = 'Valid IMAP port is required (1-65535)';
+      }
+      if (!formData.imapUsername.trim()) {
+        newErrors.imapUsername = 'IMAP username is required';
+      }
+      if (!editingConfig && !formData.imapPassword.trim()) {
+        newErrors.imapPassword = 'IMAP password is required';
+      }
     }
 
     // SMTP validations
@@ -320,9 +325,10 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
       // Prepare payload - only include passwords if provided
       const payload: any = {
         email_address: formData.emailAddress,
-        imap_host: formData.imapHost,
-        imap_port: Number(formData.imapPort),
-        imap_username: formData.imapUsername,
+        inbound_method: formData.inboundMethod,
+        imap_host: formData.inboundMethod === 'imap' ? formData.imapHost : undefined,
+        imap_port: formData.inboundMethod === 'imap' ? Number(formData.imapPort) : undefined,
+        imap_username: formData.inboundMethod === 'imap' ? formData.imapUsername : undefined,
         smtp_host: formData.smtpHost,
         smtp_port: Number(formData.smtpPort),
         smtp_username: formData.smtpUsername,
@@ -330,8 +336,8 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
         authMethod: formData.authMethod,
       };
 
-      // Only include passwords if provided (required for add, optional for edit)
-      if (formData.imapPassword.trim()) {
+      // Only include passwords if provided
+      if (formData.inboundMethod === 'imap' && formData.imapPassword.trim()) {
         payload.imap_password = formData.imapPassword;
       }
       if (formData.smtpPassword.trim()) {
@@ -446,6 +452,64 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
               )}
             </div>
 
+            {/* Inbound Method Selector */}
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <h3 className="text-sm font-semibold text-blue-900 mb-3">Incoming Email Method</h3>
+              <div className="flex flex-col gap-3">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="inboundMethod"
+                    value="imap"
+                    checked={formData.inboundMethod === 'imap'}
+                    onChange={() => handleInputChange('inboundMethod', 'imap')}
+                    className="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                  />
+                  <div>
+                    <span className="text-sm font-medium text-gray-800">Direct IMAP Polling</span>
+                    <p className="text-xs text-gray-500 mt-0.5">System polls your mailbox via IMAP at regular intervals (Gmail, Outlook, custom mail server)</p>
+                  </div>
+                </label>
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="inboundMethod"
+                    value="sendgrid"
+                    checked={formData.inboundMethod === 'sendgrid'}
+                    onChange={() => handleInputChange('inboundMethod', 'sendgrid')}
+                    className="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                  />
+                  <div>
+                    <span className="text-sm font-medium text-gray-800">SendGrid Inbound Parse</span>
+                    <span className="ml-2 text-xs text-green-700 font-medium bg-green-100 px-1.5 py-0.5 rounded">No IMAP needed</span>
+                    <p className="text-xs text-gray-500 mt-0.5">SendGrid receives email and pushes it to this system via webhook — no IMAP credentials required</p>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            {/* SendGrid Inbound Parse setup instructions */}
+            {formData.inboundMethod === 'sendgrid' && (
+              <div className="p-4 bg-green-50 border border-green-200 rounded-lg space-y-3">
+                <div className="flex items-center gap-2">
+                  <InformationCircleIcon className="w-5 h-5 text-green-700 flex-shrink-0" />
+                  <h4 className="text-sm font-semibold text-green-900">SendGrid Inbound Parse Setup</h4>
+                </div>
+                <ol className="text-xs text-green-800 space-y-1.5 list-decimal list-inside">
+                  <li>Go to <a href="https://app.sendgrid.com/settings/parse" target="_blank" rel="noreferrer" className="underline font-medium">SendGrid → Settings → Inbound Parse</a></li>
+                  <li>Click <strong>Add Host &amp; URL</strong></li>
+                  <li>Set the receiving domain/subdomain that matches this email address</li>
+                  <li>Set the <strong>Destination URL</strong> to:</li>
+                </ol>
+                <div className="flex items-center gap-2 bg-white border border-green-300 rounded px-3 py-2">
+                  <code className="text-xs text-green-900 flex-1 break-all">
+                    {window.location.origin.replace(':3000', ':5000').replace(':3001', ':5000')}/api/email/inbound/sendgrid
+                  </code>
+                </div>
+                <p className="text-xs text-green-700">Emails sent to <strong>{formData.emailAddress || 'this address'}</strong> will be delivered to SAC Helpdesk automatically.</p>
+              </div>
+            )}
+
             {/* Provider Info Banner */}
             {formData.provider !== 'other' && (
               <div className={`flex items-start p-4 rounded-lg ${
@@ -540,7 +604,8 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
               )}
             </div>
 
-            {/* IMAP Settings Section */}
+            {/* IMAP Settings Section — only for IMAP inbound */}
+            {formData.inboundMethod === 'imap' && (
             <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
               <div className="flex items-center mb-4">
                 <ServerIcon className="w-5 h-5 text-gray-600 mr-2" />
@@ -639,6 +704,7 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                 </div>
               </div>
             </div>
+            )}
 
             {/* SMTP Settings Section */}
             <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
@@ -766,7 +832,8 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
 
             {/* Action Buttons */}
             <div className="flex items-center justify-between pt-4 border-t border-gray-200">
-              {/* Test Connection Button */}
+              {/* Test Connection Button — only for IMAP inbound */}
+              {formData.inboundMethod === 'imap' ? (
               <button
                 type="button"
                 onClick={handleTestConnection}
@@ -788,6 +855,9 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                   </>
                 )}
               </button>
+              ) : (
+                <div />
+              )}
 
               {/* Save & Cancel Buttons */}
               <div className="flex space-x-3">

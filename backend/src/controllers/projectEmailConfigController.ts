@@ -315,14 +315,16 @@ export const addEmailConfig = async (req: Request, res: Response) => {
       // New OAuth2 fields
       provider,
       authMethod = 'basic',
+      inboundMethod = 'imap',
       oauth2,
     } = req.body;
 
     // Auto-detect provider from email if not specified
     const detectedProvider = provider || detectEmailProvider(email_address || '');
     const authType = authMethod as AuthMethod;
+    const inboundType = inboundMethod as 'imap' | 'sendgrid';
 
-    // Validate based on auth method
+    // Validate based on auth method and inbound method
     if (authType === 'oauth2') {
       // OAuth2 requires oauth2 object with tokens
       if (!oauth2?.clientId || !oauth2?.refreshToken) {
@@ -337,8 +339,16 @@ export const addEmailConfig = async (req: Request, res: Response) => {
           message: 'Email address is required',
         });
       }
+    } else if (inboundType === 'sendgrid') {
+      // SendGrid inbound: only email_address, smtp fields, and sendgrid API key needed
+      if (!email_address || !smtp_host || !smtp_port || !smtp_username || !smtp_password) {
+        return res.status(400).json({
+          success: false,
+          message: 'Email address and SMTP settings are required for SendGrid inbound',
+        });
+      }
     } else {
-      // Basic and app_password require all fields
+      // Basic and app_password (IMAP) require all fields
       if (
         !email_address ||
         !imap_host ||
@@ -404,37 +414,40 @@ export const addEmailConfig = async (req: Request, res: Response) => {
       });
     }
 
-    // Test IMAP connection
-    console.log(`Testing IMAP connection for ${email_address} (auth: ${authType})...`);
-    
-    // Prepare defaults for OAuth2 connections
+    // Prepare defaults for OAuth2/sendgrid connections
     const defaults = getProviderDefaults(detectedProvider);
     const imapHostToUse = imap_host || defaults.imapHost;
     const imapPortToUse = imap_port || defaults.imapPort;
     const smtpHostToUse = smtp_host || defaults.smtpHost;
     const smtpPortToUse = smtp_port || defaults.smtpPort;
-    
-    const imapTest = await testImapConnection(
-      imapHostToUse,
-      imapPortToUse,
-      imap_username || email_address,
-      imap_password || '',
-      authType,
-      authType === 'oauth2' ? {
-        clientId: oauth2?.clientId,
-        clientSecret: oauth2?.clientSecret,
-        accessToken: oauth2?.accessToken,
-        refreshToken: oauth2?.refreshToken,
-        provider: detectedProvider,
-      } : undefined
-    );
 
-    if (!imapTest.success) {
-      return res.status(400).json({
-        success: false,
-        message: 'IMAP connection failed',
-        error: imapTest.error,
-      });
+    // Test IMAP connection only when using IMAP inbound
+    if (inboundType !== 'sendgrid') {
+      console.log(`Testing IMAP connection for ${email_address} (auth: ${authType})...`);
+      const imapTest = await testImapConnection(
+        imapHostToUse,
+        imapPortToUse,
+        imap_username || email_address,
+        imap_password || '',
+        authType,
+        authType === 'oauth2' ? {
+          clientId: oauth2?.clientId,
+          clientSecret: oauth2?.clientSecret,
+          accessToken: oauth2?.accessToken,
+          refreshToken: oauth2?.refreshToken,
+          provider: detectedProvider,
+        } : undefined
+      );
+
+      if (!imapTest.success) {
+        return res.status(400).json({
+          success: false,
+          message: 'IMAP connection failed',
+          error: imapTest.error,
+        });
+      }
+    } else {
+      console.log(`Skipping IMAP test — inbound method is SendGrid (webhook-based)`);
     }
 
     // Test SMTP connection
@@ -469,10 +482,11 @@ export const addEmailConfig = async (req: Request, res: Response) => {
       emailAddress: email_address.toLowerCase(),
       provider: detectedProvider,
       authMethod: authType,
-      imapHost: imapHostToUse,
-      imapPort: imapPortToUse,
-      imapUsername: imap_username || email_address,
-      imapPassword: imap_password || '', // Will be encrypted by pre-save hook
+      inboundMethod: inboundType,
+      imapHost: inboundType === 'sendgrid' ? '' : imapHostToUse,
+      imapPort: inboundType === 'sendgrid' ? 993 : imapPortToUse,
+      imapUsername: inboundType === 'sendgrid' ? '' : (imap_username || email_address),
+      imapPassword: inboundType === 'sendgrid' ? '' : (imap_password || ''), // Will be encrypted by pre-save hook
       smtpHost: smtpHostToUse,
       smtpPort: smtpPortToUse,
       smtpUsername: smtp_username || email_address,
@@ -694,6 +708,7 @@ export const updateEmailConfig = async (req: Request, res: Response) => {
 
     // Update fields if provided
     if (email_address !== undefined) config.emailAddress = email_address.toLowerCase();
+    if (req.body.inbound_method !== undefined) (config as any).inboundMethod = req.body.inbound_method;
     if (imap_host !== undefined) config.imapHost = imap_host;
     if (imap_port !== undefined) config.imapPort = Number(imap_port);
     if (imap_username !== undefined) config.imapUsername = imap_username;

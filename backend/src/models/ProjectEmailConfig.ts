@@ -8,6 +8,8 @@ const ALGORITHM = 'aes-256-cbc';
 export type EmailProvider = 'google' | 'microsoft' | 'other';
 export type AuthMethod = 'basic' | 'oauth2' | 'app_password';
 
+export type InboundMethod = 'imap' | 'sendgrid';
+
 export interface IProjectEmailConfig extends Document {
   projectId: mongoose.Types.ObjectId;
   emailAddress: string;
@@ -16,8 +18,9 @@ export interface IProjectEmailConfig extends Document {
   // Provider and auth method
   provider: EmailProvider;
   authMethod: AuthMethod;
+  inboundMethod: InboundMethod;
   
-  // IMAP settings
+  // IMAP settings (not used when inboundMethod === 'sendgrid')
   imapHost: string;
   imapPort: number;
   imapUsername: string;
@@ -92,27 +95,42 @@ const ProjectEmailConfigSchema: Schema = new Schema(
       enum: ['basic', 'oauth2', 'app_password'],
       default: 'basic',
     },
+    inboundMethod: {
+      type: String,
+      enum: ['imap', 'sendgrid'],
+      default: 'imap',
+    },
     imapHost: {
       type: String,
-      required: true,
+      required: function(this: any) {
+        return this.inboundMethod !== 'sendgrid';
+      },
       trim: true,
+      default: '',
     },
     imapPort: {
       type: Number,
-      required: true,
+      required: function(this: any) {
+        return this.inboundMethod !== 'sendgrid';
+      },
       min: 1,
       max: 65535,
+      default: 993,
     },
     imapUsername: {
       type: String,
-      required: true,
+      required: function(this: any) {
+        return this.inboundMethod !== 'sendgrid';
+      },
       trim: true,
+      default: '',
     },
     imapPassword: {
       type: String,
       required: function(this: any) {
-        return this.authMethod !== 'oauth2';
+        return this.inboundMethod !== 'sendgrid' && this.authMethod !== 'oauth2';
       },
+      default: '',
     },
     smtpHost: {
       type: String,

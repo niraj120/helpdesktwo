@@ -167,12 +167,13 @@ class EmailPollingService {
       console.log(`📬 Email Polling Cycle Started - ${new Date().toISOString()}`);
       console.log('='.repeat(60));
 
-      // Fetch all enabled email configurations
+      // Fetch all enabled email configurations (IMAP only — SendGrid comes via webhook)
       const enabledConfigs = await ProjectEmailConfig.find({
         isEnabled: true,
         isDeleted: { $ne: true },
+        $or: [{ inboundMethod: 'imap' }, { inboundMethod: { $exists: false } }],
       }).select(
-        'projectId emailAddress imapHost imapPort imapUsername imapPassword lastCheckedAt'
+        'projectId emailAddress imapHost imapPort imapUsername imapPassword inboundMethod lastCheckedAt'
       );
 
       if (enabledConfigs.length === 0) {
