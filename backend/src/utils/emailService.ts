@@ -1,13 +1,19 @@
-import nodemailer from 'nodemailer';
-import EmailConfig from '../models/EmailConfig';
-import ProjectEmailConfig from '../models/ProjectEmailConfig';
-import EmailLog from '../models/EmailLog';
-import { Project } from '../models/Project';
-import { decrypt, isEncrypted } from './encryption';
-import { logOutgoingEmail } from './emailCommunicationLogger';
-import { logEmailError, ErrorContext, ErrorSeverity } from './errorLogger'; // Task 8.1
-import { testSmtpConnection, updateConnectionStatus, handleConnectionFailure, shouldRetryConnection } from './connectionMonitor'; // Task 8.2
-import mongoose from 'mongoose';
+import nodemailer from "nodemailer";
+import sgMail from "@sendgrid/mail";
+import EmailConfig from "../models/EmailConfig";
+import ProjectEmailConfig from "../models/ProjectEmailConfig";
+import EmailLog from "../models/EmailLog";
+import { Project } from "../models/Project";
+import { decrypt, isEncrypted } from "./encryption";
+import { logOutgoingEmail } from "./emailCommunicationLogger";
+import { logEmailError, ErrorContext, ErrorSeverity } from "./errorLogger"; // Task 8.1
+import {
+  testSmtpConnection,
+  updateConnectionStatus,
+  handleConnectionFailure,
+  shouldRetryConnection,
+} from "./connectionMonitor"; // Task 8.2
+import mongoose from "mongoose";
 
 // Helper function to log email attempts
 const logEmail = async (params: {
@@ -15,8 +21,14 @@ const logEmail = async (params: {
   recipient: string;
   subject: string;
   body?: string;
-  type: 'otp' | 'ticket_created' | 'student_welcome' | 'password_reset' | 'ticket_update' | 'other';
-  status: 'sent' | 'failed' | 'blocked' | 'simulated';
+  type:
+    | "otp"
+    | "ticket_created"
+    | "student_welcome"
+    | "password_reset"
+    | "ticket_update"
+    | "other";
+  status: "sent" | "failed" | "blocked" | "simulated";
   error?: string;
   metadata?: any;
   smtpHost?: string;
@@ -42,13 +54,15 @@ const logEmail = async (params: {
       metadata: params.metadata,
       smtpHost: params.smtpHost,
       fromEmail: params.fromEmail,
-      sentAt: new Date()
+      sentAt: new Date(),
     });
 
     await emailLog.save();
-    console.log(`📝 Email log saved: ${params.status} - ${params.type} to ${params.recipient}`);
+    console.log(
+      `📝 Email log saved: ${params.status} - ${params.type} to ${params.recipient}`,
+    );
   } catch (error) {
-    console.error('❌ Failed to save email log:', error);
+    console.error("❌ Failed to save email log:", error);
     // Don't throw - logging failures shouldn't break email sending
   }
 };
@@ -59,39 +73,50 @@ const getEmailTransporter = async (configIdOrProjectId?: string) => {
   try {
     let emailConfig: any = null;
     let isProjectEmailConfig = false;
-    
+
     // Check if the provided ID is a valid ObjectId (could be emailConfigId or projectId)
     if (configIdOrProjectId) {
       // First try ProjectEmailConfig (newer model for ticket emails)
-      emailConfig = await ProjectEmailConfig.findById(configIdOrProjectId).exec();
+      emailConfig =
+        await ProjectEmailConfig.findById(configIdOrProjectId).exec();
       if (emailConfig) {
         isProjectEmailConfig = true;
         console.log(`📧 Found ProjectEmailConfig: ${emailConfig.emailAddress}`);
       }
-      
+
       // If not found, try legacy EmailConfig by direct _id
       if (!emailConfig) {
         emailConfig = await EmailConfig.findById(configIdOrProjectId).exec();
       }
-      
+
       // If still not found, try by projectId in ProjectEmailConfig
       if (!emailConfig) {
-        emailConfig = await ProjectEmailConfig.findOne({ projectId: configIdOrProjectId, isEnabled: true }).exec();
+        emailConfig = await ProjectEmailConfig.findOne({
+          projectId: configIdOrProjectId,
+          isEnabled: true,
+        }).exec();
         if (emailConfig) {
           isProjectEmailConfig = true;
-          console.log(`📧 Found ProjectEmailConfig by projectId: ${emailConfig.emailAddress}`);
+          console.log(
+            `📧 Found ProjectEmailConfig by projectId: ${emailConfig.emailAddress}`,
+          );
         }
       }
-      
+
       // Try by projectId in EmailConfig
       if (!emailConfig) {
-        emailConfig = await EmailConfig.findOne({ projectId: configIdOrProjectId, enabled: true }).exec();
+        emailConfig = await EmailConfig.findOne({
+          projectId: configIdOrProjectId,
+          enabled: true,
+        }).exec();
       }
     }
-    
+
     // Final fallback: any enabled config (prefer ProjectEmailConfig)
     if (!emailConfig) {
-      emailConfig = await ProjectEmailConfig.findOne({ isEnabled: true }).exec();
+      emailConfig = await ProjectEmailConfig.findOne({
+        isEnabled: true,
+      }).exec();
       if (emailConfig) {
         isProjectEmailConfig = true;
       } else {
@@ -100,39 +125,138 @@ const getEmailTransporter = async (configIdOrProjectId?: string) => {
     }
 
     // Handle field name differences between ProjectEmailConfig and EmailConfig
-    const smtpHost = isProjectEmailConfig ? emailConfig?.smtpHost : emailConfig?.smtpHost;
-    const smtpUser = isProjectEmailConfig ? emailConfig?.smtpUsername : emailConfig?.smtpUser;
-    const smtpPasswordField = isProjectEmailConfig ? emailConfig?.smtpPassword : emailConfig?.smtpPassword;
+    const smtpHost = isProjectEmailConfig
+      ? emailConfig?.smtpHost
+      : emailConfig?.smtpHost;
+    const smtpUser = isProjectEmailConfig
+      ? emailConfig?.smtpUsername
+      : emailConfig?.smtpUser;
+    const smtpPasswordField = isProjectEmailConfig
+      ? emailConfig?.smtpPassword
+      : emailConfig?.smtpPassword;
     const smtpPort = emailConfig?.smtpPort;
     const smtpSecure = emailConfig?.smtpSecure;
 
     if (!emailConfig || !smtpHost || !smtpUser || !smtpPasswordField) {
-      console.log('⚠️  Email configuration not found or incomplete, using simulation mode');
+      // Check if SendGrid provider is configured (doesn't need SMTP)
+      const provider = emailConfig?.emailProvider || "smtp";
+      if (provider === "sendgrid" && emailConfig?.sendgridApiKey) {
+        const apiKey = emailConfig.sendgridApiKey;
+        const fromEmail = emailConfig.fromEmail || emailConfig.smtpUser || "";
+        const fromName = emailConfig.fromName || "SAC Helpdesk";
+        sgMail.setApiKey(apiKey);
+        // Return a nodemailer-compatible wrapper so all send code works unchanged
+        return {
+          sendMail: async (options: any) => {
+            const msg: any = {
+              to: options.to,
+              from: { email: fromEmail, name: fromName },
+              subject: options.subject,
+              text: options.text,
+              html: options.html,
+            };
+            if (options.cc) msg.cc = options.cc;
+            if (options.bcc) msg.bcc = options.bcc;
+            if (options.replyTo) msg.replyTo = options.replyTo;
+            if (options.attachments?.length) {
+              msg.attachments = options.attachments.map((a: any) => ({
+                content: a.content,
+                filename: a.filename,
+                type: a.contentType || "application/octet-stream",
+                disposition: "attachment",
+              }));
+            }
+            const [res] = await sgMail.send(msg);
+            return {
+              messageId: res.headers["x-message-id"] || `sg-${Date.now()}`,
+            };
+          },
+        } as any;
+      }
+      console.log(
+        "⚠️  Email configuration not found or incomplete, using simulation mode",
+      );
       return null;
     }
 
+    // Check if SendGrid is configured (overrides nodemailer even when SMTP fields exist)
+    const emailProvider = emailConfig?.emailProvider || "smtp";
+    if (emailProvider === "sendgrid") {
+      const apiKey = emailConfig.sendgridApiKey;
+      if (!apiKey) {
+        console.log(
+          "⚠️  SendGrid provider set but no API key found, falling back to SMTP",
+        );
+      } else {
+        const fromEmail =
+          emailConfig.fromEmail ||
+          (isProjectEmailConfig
+            ? emailConfig.smtpUsername
+            : emailConfig.smtpUser) ||
+          "";
+        const fromName = emailConfig.fromName || "SAC Helpdesk";
+        sgMail.setApiKey(apiKey);
+        console.log(`📧 Using SendGrid for delivery (from: ${fromEmail})`);
+        return {
+          sendMail: async (options: any) => {
+            const msg: any = {
+              to: options.to,
+              from: { email: fromEmail, name: fromName },
+              subject: options.subject,
+              text: options.text,
+              html: options.html,
+            };
+            if (options.cc) msg.cc = options.cc;
+            if (options.bcc) msg.bcc = options.bcc;
+            if (options.replyTo) msg.replyTo = options.replyTo;
+            if (options.attachments?.length) {
+              msg.attachments = options.attachments.map((a: any) => ({
+                content: a.content,
+                filename: a.filename,
+                type: a.contentType || "application/octet-stream",
+                disposition: "attachment",
+              }));
+            }
+            const [res] = await sgMail.send(msg);
+            return {
+              messageId: res.headers["x-message-id"] || `sg-${Date.now()}`,
+            };
+          },
+        } as any;
+      }
+    }
+
     // Task 8.2: Check connection status before attempting to use
-    if (emailConfig.connectionStatus === 'disconnected' || emailConfig.connectionStatus === 'error') {
+    if (
+      emailConfig.connectionStatus === "disconnected" ||
+      emailConfig.connectionStatus === "error"
+    ) {
       if (!shouldRetryConnection(emailConfig)) {
-        const minutesToRetry = emailConfig.nextRetryAt 
+        const minutesToRetry = emailConfig.nextRetryAt
           ? Math.ceil((emailConfig.nextRetryAt.getTime() - Date.now()) / 60000)
           : 0;
-        console.log(`⏭️  Skipping email - SMTP disconnected. Retry in ${minutesToRetry} minutes`);
+        console.log(
+          `⏭️  Skipping email - SMTP disconnected. Retry in ${minutesToRetry} minutes`,
+        );
         return null;
       }
 
       // Time to retry - test connection
-      console.log('🔄 Retry cooldown elapsed, testing connection...');
+      console.log("🔄 Retry cooldown elapsed, testing connection...");
       const testResult = await testSmtpConnection(emailConfig);
-      
+
       if (!testResult.success) {
-        await handleConnectionFailure(emailConfig, testResult.error || 'Connection test failed', 'smtp');
+        await handleConnectionFailure(
+          emailConfig,
+          testResult.error || "Connection test failed",
+          "smtp",
+        );
         return null;
       }
-      
+
       // Connection restored
-      await updateConnectionStatus(emailConfig._id.toString(), 'connected');
-      console.log('✅ Connection restored successfully');
+      await updateConnectionStatus(emailConfig._id.toString(), "connected");
+      console.log("✅ Connection restored successfully");
     }
 
     // Decrypt SMTP password - use model method for ProjectEmailConfig, or manual decrypt for EmailConfig
@@ -143,7 +267,10 @@ const getEmailTransporter = async (configIdOrProjectId?: string) => {
         smtpPassword = emailConfig.getDecryptedSmtpPassword();
         console.log(`🔓 Used ProjectEmailConfig.getDecryptedSmtpPassword()`);
       } catch (error) {
-        console.error('Failed to decrypt SMTP password using model method:', error);
+        console.error(
+          "Failed to decrypt SMTP password using model method:",
+          error,
+        );
         return null;
       }
     } else if (isEncrypted(smtpPassword)) {
@@ -151,20 +278,24 @@ const getEmailTransporter = async (configIdOrProjectId?: string) => {
       try {
         smtpPassword = decrypt(smtpPassword);
       } catch (error) {
-        console.error('Failed to decrypt SMTP password:', error);
+        console.error("Failed to decrypt SMTP password:", error);
         return null;
       }
     }
 
     // Test connection for untested configs
-    if (emailConfig.connectionStatus === 'untested') {
-      console.log('🔍 Testing new SMTP configuration...');
+    if (emailConfig.connectionStatus === "untested") {
+      console.log("🔍 Testing new SMTP configuration...");
       const testResult = await testSmtpConnection(emailConfig);
-      
+
       if (testResult.success) {
-        await updateConnectionStatus(emailConfig._id.toString(), 'connected');
+        await updateConnectionStatus(emailConfig._id.toString(), "connected");
       } else {
-        await handleConnectionFailure(emailConfig, testResult.error || 'Initial connection test failed', 'smtp');
+        await handleConnectionFailure(
+          emailConfig,
+          testResult.error || "Initial connection test failed",
+          "smtp",
+        );
         return null;
       }
     }
@@ -179,27 +310,35 @@ const getEmailTransporter = async (configIdOrProjectId?: string) => {
       },
     });
   } catch (error) {
-    console.error('Failed to get email transporter:', error);
+    console.error("Failed to get email transporter:", error);
     return null;
   }
 };
 
-export const sendOTPEmail = async (email: string, otp: string, projectId?: string): Promise<boolean> => {
+export const sendOTPEmail = async (
+  email: string,
+  otp: string,
+  projectId?: string,
+): Promise<boolean> => {
   try {
     console.log(`📧 [EMAIL SERVICE] Sending OTP to ${email}`);
 
-    const emailConfig = await EmailConfig.findOne(projectId ? { projectId } : {});
+    const emailConfig = await EmailConfig.findOne(
+      projectId ? { projectId } : {},
+    );
 
     // Check if email integration is enabled
     if (emailConfig && !emailConfig.enabled) {
-      console.log(`⚠️  [EMAIL SERVICE] Email sending is disabled for project ${projectId || 'default'}`);
+      console.log(
+        `⚠️  [EMAIL SERVICE] Email sending is disabled for project ${projectId || "default"}`,
+      );
       return false;
     }
 
     const transporter = await getEmailTransporter(projectId);
 
     // Get project name for replacement
-    const projectName = emailConfig?.fromName || 'SAC Helpdesk';
+    const projectName = emailConfig?.fromName || "SAC Helpdesk";
 
     // Default templates
     const defaultSubject = `Your OTP for {{projectName}}`;
@@ -228,34 +367,34 @@ export const sendOTPEmail = async (email: string, otp: string, projectId?: strin
       .replace(/\{\{projectName\}\}/g, projectName);
 
     let body = (trigger?.body || defaultBody)
-      .replace(/\{\{studentName\}\}/g, email.split('@')[0])
+      .replace(/\{\{studentName\}\}/g, email.split("@")[0])
       .replace(/\{\{otp\}\}/g, otp)
       .replace(/\{\{projectName\}\}/g, projectName);
 
     if (!transporter) {
-      console.log('✅ Email sent successfully (simulated)');
+      console.log("✅ Email sent successfully (simulated)");
       await logEmail({
         projectId,
         recipient: email,
         subject,
         body,
-        type: 'otp',
-        status: 'simulated'
+        type: "otp",
+        status: "simulated",
       });
       return true;
     }
 
     // Check if email trigger is enabled
     if (!trigger?.enabled) {
-      console.log('⚠️  Student OTP email trigger is disabled');
+      console.log("⚠️  Student OTP email trigger is disabled");
       await logEmail({
         projectId,
         recipient: email,
         subject,
         body,
-        type: 'otp',
-        status: 'blocked',
-        error: 'Trigger disabled'
+        type: "otp",
+        status: "blocked",
+        error: "Trigger disabled",
       });
       return false;
     }
@@ -263,68 +402,79 @@ export const sendOTPEmail = async (email: string, otp: string, projectId?: strin
     console.log(`📧 Sending OTP email with subject: ${subject}`);
 
     await transporter.sendMail({
-      from: `"${emailConfig?.fromName || 'SAC Helpdesk'}" <${emailConfig?.fromEmail || emailConfig?.smtpUser}>`,
+      from: `"${emailConfig?.fromName || "SAC Helpdesk"}" <${emailConfig?.fromEmail || emailConfig?.smtpUser}>`,
       to: email,
       subject: subject,
       html: body,
     });
 
-    console.log('✅ OTP email sent successfully via SMTP');
+    console.log("✅ OTP email sent successfully via SMTP");
     await logEmail({
       projectId,
       recipient: email,
       subject,
       body,
-      type: 'otp',
-      status: 'sent',
+      type: "otp",
+      status: "sent",
       smtpHost: emailConfig?.smtpHost,
-      fromEmail: emailConfig?.fromEmail || emailConfig?.smtpUser
+      fromEmail: emailConfig?.fromEmail || emailConfig?.smtpUser,
     });
     return true;
   } catch (error) {
-    console.error('❌ [EMAIL SERVICE] Failed to send OTP email:', error);
-    console.error('Error details:', error);
+    console.error("❌ [EMAIL SERVICE] Failed to send OTP email:", error);
+    console.error("Error details:", error);
 
     await logEmail({
       projectId,
       recipient: email,
       subject: `Your OTP for SAC Helpdesk`,
-      type: 'otp',
-      status: 'failed',
-      error: error instanceof Error ? error.message : 'Unknown error'
+      type: "otp",
+      status: "failed",
+      error: error instanceof Error ? error.message : "Unknown error",
     });
     return false;
   }
 };
 
-export const sendVerificationEmail = async (email: string, token: string): Promise<boolean> => {
+export const sendVerificationEmail = async (
+  email: string,
+  token: string,
+): Promise<boolean> => {
   try {
     console.log(`📧 [EMAIL SERVICE] Sending verification email to ${email}`);
     // Do not log verification tokens in plaintext
-    console.log('✅ Email send simulated (verification token generated)');
+    console.log("✅ Email send simulated (verification token generated)");
 
     return true;
   } catch (error) {
-    console.error('❌ [EMAIL SERVICE] Failed to send verification email:', error);
+    console.error(
+      "❌ [EMAIL SERVICE] Failed to send verification email:",
+      error,
+    );
     return false;
   }
 };
 
-export const sendWelcomeEmail = async (email: string, name: string): Promise<boolean> => {
+export const sendWelcomeEmail = async (
+  email: string,
+  name: string,
+): Promise<boolean> => {
   try {
-    console.log(`📧 [EMAIL SERVICE] Sending welcome email to ${name} (${email})`);
-    console.log('✅ Email sent successfully (simulated)');
+    console.log(
+      `📧 [EMAIL SERVICE] Sending welcome email to ${name} (${email})`,
+    );
+    console.log("✅ Email sent successfully (simulated)");
 
     return true;
   } catch (error) {
-    console.error('❌ [EMAIL SERVICE] Failed to send welcome email:', error);
+    console.error("❌ [EMAIL SERVICE] Failed to send welcome email:", error);
     return false;
   }
 };
 
 /**
  * Send ticket confirmation email with threading support (Task 5.5)
- * 
+ *
  * @param email - Recipient email address
  * @param ticketNumber - Ticket number (e.g., TKT-1234)
  * @param ticketTitle - Ticket subject/title
@@ -344,7 +494,7 @@ export const sendTicketCreatedEmail = async (
     ticketId?: string | mongoose.Types.ObjectId;
     originalMessageId?: string; // For threading - In-Reply-To header
     references?: string[]; // For threading - References header
-  }
+  },
 ): Promise<boolean> => {
   try {
     console.log(`📧 [EMAIL SERVICE] Sending ticket confirmation to ${email}`);
@@ -352,13 +502,15 @@ export const sendTicketCreatedEmail = async (
     console.log(`📄 Ticket Title: ${ticketTitle}`);
     console.log(`🏢 Project ID: ${projectId}`);
 
-    const emailConfig = await EmailConfig.findOne(projectId ? { projectId } : {});
+    const emailConfig = await EmailConfig.findOne(
+      projectId ? { projectId } : {},
+    );
     const transporter = await getEmailTransporter(projectId);
 
     // Prepare replacement values
-    const studentName = additionalData?.studentName || 'Student';
-    const status = additionalData?.status || 'Open';
-    const priority = additionalData?.priority || 'Medium';
+    const studentName = additionalData?.studentName || "Student";
+    const status = additionalData?.status || "Open";
+    const priority = additionalData?.priority || "Medium";
 
     // Default templates
     const defaultSubject = `Ticket Created: {{ticketTitle}} [#{{ticketNumber}}]`;
@@ -382,7 +534,9 @@ export const sendTicketCreatedEmail = async (
     `;
 
     // Get the ticket created trigger settings
-    const trigger = emailConfig?.triggers?.ticketCreatedStudent || emailConfig?.triggers?.ticketCreatedOnline;
+    const trigger =
+      emailConfig?.triggers?.ticketCreatedStudent ||
+      emailConfig?.triggers?.ticketCreatedOnline;
 
     // Use template from config or default, then replace variables
     let subject = (trigger?.subject || defaultSubject)
@@ -399,36 +553,39 @@ export const sendTicketCreatedEmail = async (
       .replace(/\{\{ticketPriority\}\}/g, priority);
 
     // Convert plain text newlines to HTML if body doesn't contain HTML tags
-    if (!body.includes('<') && !body.includes('>')) {
+    if (!body.includes("<") && !body.includes(">")) {
       body = body
-        .split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0)
-        .map(line => `<p>${line}</p>`)
-        .join('');
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .map((line) => `<p>${line}</p>`)
+        .join("");
     }
 
     // Generate Message-ID for this confirmation email
     const confirmationMessageId = `<ticket-${ticketNumber}-${Date.now()}@sac-helpdesk.com>`;
-    const fromEmail = emailConfig?.fromEmail || emailConfig?.smtpUser || 'support@sac-helpdesk.com';
+    const fromEmail =
+      emailConfig?.fromEmail ||
+      emailConfig?.smtpUser ||
+      "support@sac-helpdesk.com";
 
     if (!transporter) {
-      console.log('✅ Email sent successfully (simulated)');
+      console.log("✅ Email sent successfully (simulated)");
       await logEmail({
         projectId,
         recipient: email,
         subject,
         body,
-        type: 'ticket_created',
-        status: 'simulated',
-        metadata: { 
-          ticketNumber, 
-          ticketTitle, 
-          status, 
+        type: "ticket_created",
+        status: "simulated",
+        metadata: {
+          ticketNumber,
+          ticketTitle,
+          status,
           priority,
           messageId: confirmationMessageId,
           inReplyTo: additionalData?.originalMessageId,
-        }
+        },
       });
 
       // Log to TicketEmailCommunication for threading (Task 5.4)
@@ -436,18 +593,27 @@ export const sendTicketCreatedEmail = async (
         try {
           await logOutgoingEmail(additionalData.ticketId, {
             messageId: confirmationMessageId,
-            from: { address: fromEmail, name: emailConfig?.fromName || 'SAC Helpdesk' },
+            from: {
+              address: fromEmail,
+              name: emailConfig?.fromName || "SAC Helpdesk",
+            },
             to: [{ address: email, name: studentName }],
             subject,
-            body: body.replace(/<[^>]*>/g, ''), // Strip HTML for plain text
+            body: body.replace(/<[^>]*>/g, ""), // Strip HTML for plain text
             htmlBody: body,
             inReplyTo: additionalData.originalMessageId,
-            references: additionalData.references || (additionalData.originalMessageId ? [additionalData.originalMessageId] : []),
+            references:
+              additionalData.references ||
+              (additionalData.originalMessageId
+                ? [additionalData.originalMessageId]
+                : []),
             date: new Date(),
           });
-          console.log(`   ✅ Outgoing email logged to TicketEmailCommunication`);
+          console.log(
+            `   ✅ Outgoing email logged to TicketEmailCommunication`,
+          );
         } catch (logError) {
-          console.error('   ⚠️ Failed to log outgoing email:', logError);
+          console.error("   ⚠️ Failed to log outgoing email:", logError);
           // Don't fail the email send if logging fails
         }
       }
@@ -457,16 +623,16 @@ export const sendTicketCreatedEmail = async (
 
     // Check if email trigger is enabled
     if (!trigger?.enabled) {
-      console.log('⚠️  Ticket creation email trigger is disabled');
+      console.log("⚠️  Ticket creation email trigger is disabled");
       await logEmail({
         projectId,
         recipient: email,
         subject,
         body,
-        type: 'ticket_created',
-        status: 'blocked',
-        error: 'Trigger disabled',
-        metadata: { ticketNumber, ticketTitle, status, priority }
+        type: "ticket_created",
+        status: "blocked",
+        error: "Trigger disabled",
+        metadata: { ticketNumber, ticketTitle, status, priority },
       });
       return false;
     }
@@ -479,7 +645,7 @@ export const sendTicketCreatedEmail = async (
 
     // Prepare email options with threading headers
     const mailOptions: any = {
-      from: `"${emailConfig?.fromName || 'SAC Helpdesk'}" <${fromEmail}>`,
+      from: `"${emailConfig?.fromName || "SAC Helpdesk"}" <${fromEmail}>`,
       to: email,
       subject: subject,
       html: body,
@@ -489,30 +655,32 @@ export const sendTicketCreatedEmail = async (
     // Add threading headers if original email exists
     if (additionalData?.originalMessageId) {
       mailOptions.inReplyTo = additionalData.originalMessageId; // Link to original email
-      mailOptions.references = additionalData.references || [additionalData.originalMessageId]; // Build reference chain
+      mailOptions.references = additionalData.references || [
+        additionalData.originalMessageId,
+      ]; // Build reference chain
       console.log(`   ✅ Threading headers added (reply to original email)`);
     }
 
     await transporter.sendMail(mailOptions);
 
-    console.log('✅ Ticket creation email sent successfully via SMTP');
+    console.log("✅ Ticket creation email sent successfully via SMTP");
     await logEmail({
       projectId,
       recipient: email,
       subject,
       body,
-      type: 'ticket_created',
-      status: 'sent',
+      type: "ticket_created",
+      status: "sent",
       smtpHost: emailConfig?.smtpHost,
       fromEmail,
-      metadata: { 
-        ticketNumber, 
-        ticketTitle, 
-        status, 
+      metadata: {
+        ticketNumber,
+        ticketTitle,
+        status,
         priority,
         messageId: confirmationMessageId,
         inReplyTo: additionalData?.originalMessageId,
-      }
+      },
     });
 
     // Log to TicketEmailCommunication for threading (Task 5.4)
@@ -520,35 +688,45 @@ export const sendTicketCreatedEmail = async (
       try {
         await logOutgoingEmail(additionalData.ticketId, {
           messageId: confirmationMessageId,
-          from: { address: fromEmail, name: emailConfig?.fromName || 'SAC Helpdesk' },
+          from: {
+            address: fromEmail,
+            name: emailConfig?.fromName || "SAC Helpdesk",
+          },
           to: [{ address: email, name: studentName }],
           subject,
-          body: body.replace(/<[^>]*>/g, ''), // Strip HTML for plain text
+          body: body.replace(/<[^>]*>/g, ""), // Strip HTML for plain text
           htmlBody: body,
           inReplyTo: additionalData.originalMessageId,
-          references: additionalData.references || (additionalData.originalMessageId ? [additionalData.originalMessageId] : []),
+          references:
+            additionalData.references ||
+            (additionalData.originalMessageId
+              ? [additionalData.originalMessageId]
+              : []),
           date: new Date(),
         });
         console.log(`   ✅ Outgoing email logged to TicketEmailCommunication`);
       } catch (logError) {
-        console.error('   ⚠️ Failed to log outgoing email:', logError);
+        console.error("   ⚠️ Failed to log outgoing email:", logError);
         // Don't fail the email send if logging fails
       }
     }
 
     return true;
   } catch (error) {
-    console.error('❌ [EMAIL SERVICE] Failed to send ticket creation email:', error);
-    console.error('Error details:', error);
+    console.error(
+      "❌ [EMAIL SERVICE] Failed to send ticket creation email:",
+      error,
+    );
+    console.error("Error details:", error);
 
     await logEmail({
       projectId,
       recipient: email,
       subject: `Ticket Created - ${ticketNumber}`,
-      type: 'ticket_created',
-      status: 'failed',
-      error: error instanceof Error ? error.message : 'Unknown error',
-      metadata: { ticketNumber, ticketTitle }
+      type: "ticket_created",
+      status: "failed",
+      error: error instanceof Error ? error.message : "Unknown error",
+      metadata: { ticketNumber, ticketTitle },
     });
     return false;
   }
@@ -559,15 +737,19 @@ export const sendStudentWelcomeEmail = async (
   studentName: string,
   projectName: string,
   loginUrl: string,
-  projectId?: string
+  projectId?: string,
 ): Promise<boolean> => {
   try {
-    console.log(`📧 [EMAIL SERVICE] Sending welcome email to new student: ${email}`);
+    console.log(
+      `📧 [EMAIL SERVICE] Sending welcome email to new student: ${email}`,
+    );
     console.log(`👤 Student Name: ${studentName}`);
     console.log(`🏢 Project Name: ${projectName}`);
     console.log(`🔗 Login URL: ${loginUrl}`);
 
-    const emailConfig = await EmailConfig.findOne(projectId ? { projectId } : {});
+    const emailConfig = await EmailConfig.findOne(
+      projectId ? { projectId } : {},
+    );
     const transporter = await getEmailTransporter(projectId);
 
     // Default templates with placeholders
@@ -629,41 +811,41 @@ export const sendStudentWelcomeEmail = async (
       .replace(/\{\{projectName\}\}/g, projectName);
 
     // Convert plain text newlines to HTML if body doesn't contain HTML tags
-    if (!body.includes('<') && !body.includes('>')) {
+    if (!body.includes("<") && !body.includes(">")) {
       body = body
-        .split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0)
-        .map(line => `<p>${line}</p>`)
-        .join('');
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .map((line) => `<p>${line}</p>`)
+        .join("");
     }
 
     if (!transporter) {
-      console.log('✅ Welcome email sent successfully (simulated)');
+      console.log("✅ Welcome email sent successfully (simulated)");
       await logEmail({
         projectId,
         recipient: email,
         subject,
         body,
-        type: 'student_welcome',
-        status: 'simulated',
-        metadata: { studentName, projectName, loginUrl }
+        type: "student_welcome",
+        status: "simulated",
+        metadata: { studentName, projectName, loginUrl },
       });
       return true;
     }
 
     // Check if email trigger is enabled
     if (!trigger?.enabled) {
-      console.log('⚠️  Account creation email trigger is disabled');
+      console.log("⚠️  Account creation email trigger is disabled");
       await logEmail({
         projectId,
         recipient: email,
         subject,
         body,
-        type: 'student_welcome',
-        status: 'blocked',
-        error: 'Trigger disabled',
-        metadata: { studentName, projectName, loginUrl }
+        type: "student_welcome",
+        status: "blocked",
+        error: "Trigger disabled",
+        metadata: { studentName, projectName, loginUrl },
       });
       return false;
     }
@@ -677,31 +859,31 @@ export const sendStudentWelcomeEmail = async (
       html: body,
     });
 
-    console.log('✅ Student welcome email sent successfully via SMTP');
+    console.log("✅ Student welcome email sent successfully via SMTP");
     await logEmail({
       projectId,
       recipient: email,
       subject,
       body,
-      type: 'student_welcome',
-      status: 'sent',
+      type: "student_welcome",
+      status: "sent",
       smtpHost: emailConfig?.smtpHost,
       fromEmail: emailConfig?.fromEmail || emailConfig?.smtpUser,
-      metadata: { studentName, projectName, loginUrl }
+      metadata: { studentName, projectName, loginUrl },
     });
     return true;
   } catch (error) {
-    console.error('❌ [EMAIL SERVICE] Failed to send welcome email:', error);
-    console.error('Error details:', error);
+    console.error("❌ [EMAIL SERVICE] Failed to send welcome email:", error);
+    console.error("Error details:", error);
 
     await logEmail({
       projectId,
       recipient: email,
       subject: `Welcome to ${projectName} - Account Created`,
-      type: 'student_welcome',
-      status: 'failed',
-      error: error instanceof Error ? error.message : 'Unknown error',
-      metadata: { studentName, projectName, loginUrl }
+      type: "student_welcome",
+      status: "failed",
+      error: error instanceof Error ? error.message : "Unknown error",
+      metadata: { studentName, projectName, loginUrl },
     });
     return false;
   }
@@ -719,16 +901,20 @@ export const sendTicketStatusChangedEmail = async (
   projectId?: string,
   additionalData?: {
     studentName?: string;
-  }
+  },
 ): Promise<boolean> => {
   try {
     console.log(`📧 [EMAIL SERVICE] Sending status change email to ${email}`);
-    console.log(`🎫 Ticket: ${ticketNumber} | ${previousStatus} → ${newStatus}`);
+    console.log(
+      `🎫 Ticket: ${ticketNumber} | ${previousStatus} → ${newStatus}`,
+    );
 
-    const emailConfig = await EmailConfig.findOne(projectId ? { projectId } : {});
+    const emailConfig = await EmailConfig.findOne(
+      projectId ? { projectId } : {},
+    );
     const transporter = await getEmailTransporter(projectId);
-    const studentName = additionalData?.studentName || 'Student';
-    const projectName = emailConfig?.fromName || 'SAC Helpdesk';
+    const studentName = additionalData?.studentName || "Student";
+    const projectName = emailConfig?.fromName || "SAC Helpdesk";
 
     const defaultSubject = `Ticket {{ticketNumber}} Status Updated`;
     const defaultBody = `
@@ -765,64 +951,67 @@ export const sendTicketStatusChangedEmail = async (
       .replace(/\{\{projectName\}\}/g, projectName);
 
     if (!transporter) {
-      console.log('✅ Status change email sent (simulated)');
+      console.log("✅ Status change email sent (simulated)");
       await logEmail({
         projectId,
         recipient: email,
         subject,
         body,
-        type: 'ticket_update',
-        status: 'simulated',
-        metadata: { ticketNumber, ticketTitle, newStatus, previousStatus }
+        type: "ticket_update",
+        status: "simulated",
+        metadata: { ticketNumber, ticketTitle, newStatus, previousStatus },
       });
       return true;
     }
 
     if (!trigger?.enabled) {
-      console.log('⚠️  Ticket status change email trigger is disabled');
+      console.log("⚠️  Ticket status change email trigger is disabled");
       await logEmail({
         projectId,
         recipient: email,
         subject,
         body,
-        type: 'ticket_update',
-        status: 'blocked',
-        error: 'Trigger disabled',
-        metadata: { ticketNumber, ticketTitle, newStatus, previousStatus }
+        type: "ticket_update",
+        status: "blocked",
+        error: "Trigger disabled",
+        metadata: { ticketNumber, ticketTitle, newStatus, previousStatus },
       });
       return false;
     }
 
     await transporter.sendMail({
-      from: `"${emailConfig?.fromName || 'SAC Helpdesk'}" <${emailConfig?.fromEmail || emailConfig?.smtpUser}>`,
+      from: `"${emailConfig?.fromName || "SAC Helpdesk"}" <${emailConfig?.fromEmail || emailConfig?.smtpUser}>`,
       to: email,
       subject,
       html: body,
     });
 
-    console.log('✅ Status change email sent successfully');
+    console.log("✅ Status change email sent successfully");
     await logEmail({
       projectId,
       recipient: email,
       subject,
       body,
-      type: 'ticket_update',
-      status: 'sent',
+      type: "ticket_update",
+      status: "sent",
       smtpHost: emailConfig?.smtpHost,
       fromEmail: emailConfig?.fromEmail || emailConfig?.smtpUser,
-      metadata: { ticketNumber, ticketTitle, newStatus, previousStatus }
+      metadata: { ticketNumber, ticketTitle, newStatus, previousStatus },
     });
     return true;
   } catch (error) {
-    console.error('❌ [EMAIL SERVICE] Failed to send status change email:', error);
+    console.error(
+      "❌ [EMAIL SERVICE] Failed to send status change email:",
+      error,
+    );
     await logEmail({
       projectId,
       recipient: email,
       subject: `Ticket ${ticketNumber} Status Updated`,
-      type: 'ticket_update',
-      status: 'failed',
-      error: error instanceof Error ? error.message : 'Unknown error',
-      metadata: { ticketNumber, ticketTitle, newStatus, previousStatus }
+      type: "ticket_update",
+      status: "failed",
+      error: error instanceof Error ? error.message : "Unknown error",
+      metadata: { ticketNumber, ticketTitle, newStatus, previousStatus },
     });
     return false;
   }
@@ -839,16 +1028,18 @@ export const sendTicketClosedEmail = async (
   projectId?: string,
   additionalData?: {
     studentName?: string;
-  }
+  },
 ): Promise<boolean> => {
   try {
     console.log(`📧 [EMAIL SERVICE] Sending ticket closed email to ${email}`);
     console.log(`🎫 Ticket Closed: ${ticketNumber}`);
 
-    const emailConfig = await EmailConfig.findOne(projectId ? { projectId } : {});
+    const emailConfig = await EmailConfig.findOne(
+      projectId ? { projectId } : {},
+    );
     const transporter = await getEmailTransporter(projectId);
-    const studentName = additionalData?.studentName || 'Student';
-    const projectName = emailConfig?.fromName || 'SAC Helpdesk';
+    const studentName = additionalData?.studentName || "Student";
+    const projectName = emailConfig?.fromName || "SAC Helpdesk";
 
     const defaultSubject = `Ticket {{ticketNumber}} Closed`;
     const defaultBody = `
@@ -880,68 +1071,71 @@ export const sendTicketClosedEmail = async (
       .replace(/\{\{ticketTitle\}\}/g, ticketTitle)
       .replace(/\{\{ticketSubject\}\}/g, ticketTitle)
       .replace(/\{\{studentName\}\}/g, studentName)
-      .replace(/\{\{resolution\}\}/g, resolution || 'Ticket resolved.')
+      .replace(/\{\{resolution\}\}/g, resolution || "Ticket resolved.")
       .replace(/\{\{projectName\}\}/g, projectName);
 
     if (!transporter) {
-      console.log('✅ Ticket closed email sent (simulated)');
+      console.log("✅ Ticket closed email sent (simulated)");
       await logEmail({
         projectId,
         recipient: email,
         subject,
         body,
-        type: 'ticket_update',
-        status: 'simulated',
-        metadata: { ticketNumber, ticketTitle, resolution }
+        type: "ticket_update",
+        status: "simulated",
+        metadata: { ticketNumber, ticketTitle, resolution },
       });
       return true;
     }
 
     if (!trigger?.enabled) {
-      console.log('⚠️  Ticket closed email trigger is disabled');
+      console.log("⚠️  Ticket closed email trigger is disabled");
       await logEmail({
         projectId,
         recipient: email,
         subject,
         body,
-        type: 'ticket_update',
-        status: 'blocked',
-        error: 'Trigger disabled',
-        metadata: { ticketNumber, ticketTitle, resolution }
+        type: "ticket_update",
+        status: "blocked",
+        error: "Trigger disabled",
+        metadata: { ticketNumber, ticketTitle, resolution },
       });
       return false;
     }
 
     await transporter.sendMail({
-      from: `"${emailConfig?.fromName || 'SAC Helpdesk'}" <${emailConfig?.fromEmail || emailConfig?.smtpUser}>`,
+      from: `"${emailConfig?.fromName || "SAC Helpdesk"}" <${emailConfig?.fromEmail || emailConfig?.smtpUser}>`,
       to: email,
       subject,
       html: body,
     });
 
-    console.log('✅ Ticket closed email sent successfully');
+    console.log("✅ Ticket closed email sent successfully");
     await logEmail({
       projectId,
       recipient: email,
       subject,
       body,
-      type: 'ticket_update',
-      status: 'sent',
+      type: "ticket_update",
+      status: "sent",
       smtpHost: emailConfig?.smtpHost,
       fromEmail: emailConfig?.fromEmail || emailConfig?.smtpUser,
-      metadata: { ticketNumber, ticketTitle, resolution }
+      metadata: { ticketNumber, ticketTitle, resolution },
     });
     return true;
   } catch (error) {
-    console.error('❌ [EMAIL SERVICE] Failed to send ticket closed email:', error);
+    console.error(
+      "❌ [EMAIL SERVICE] Failed to send ticket closed email:",
+      error,
+    );
     await logEmail({
       projectId,
       recipient: email,
       subject: `Ticket ${ticketNumber} Closed`,
-      type: 'ticket_update',
-      status: 'failed',
-      error: error instanceof Error ? error.message : 'Unknown error',
-      metadata: { ticketNumber, ticketTitle, resolution }
+      type: "ticket_update",
+      status: "failed",
+      error: error instanceof Error ? error.message : "Unknown error",
+      metadata: { ticketNumber, ticketTitle, resolution },
     });
     return false;
   }
@@ -956,14 +1150,18 @@ export const sendTicketAssignedEmail = async (
   ticketTitle: string,
   studentName: string,
   priority: string,
-  projectId?: string
+  projectId?: string,
 ): Promise<boolean> => {
   try {
-    console.log(`📧 [EMAIL SERVICE] Sending ticket assigned email to agent ${agentEmail}`);
+    console.log(
+      `📧 [EMAIL SERVICE] Sending ticket assigned email to agent ${agentEmail}`,
+    );
 
-    const emailConfig = await EmailConfig.findOne(projectId ? { projectId } : {});
+    const emailConfig = await EmailConfig.findOne(
+      projectId ? { projectId } : {},
+    );
     const transporter = await getEmailTransporter(projectId);
-    const projectName = emailConfig?.fromName || 'SAC Helpdesk';
+    const projectName = emailConfig?.fromName || "SAC Helpdesk";
 
     const defaultSubject = `New Ticket Assigned: {{ticketNumber}}`;
     const defaultBody = `
@@ -984,8 +1182,10 @@ export const sendTicketAssignedEmail = async (
 
     const trigger = emailConfig?.triggers?.ticketAssigned;
 
-    let subject = (trigger?.subject || defaultSubject)
-      .replace(/\{\{ticketNumber\}\}/g, ticketNumber);
+    let subject = (trigger?.subject || defaultSubject).replace(
+      /\{\{ticketNumber\}\}/g,
+      ticketNumber,
+    );
 
     let body = (trigger?.body || defaultBody)
       .replace(/\{\{ticketNumber\}\}/g, ticketNumber)
@@ -996,30 +1196,30 @@ export const sendTicketAssignedEmail = async (
       .replace(/\{\{projectName\}\}/g, projectName);
 
     if (!transporter) {
-      console.log('✅ Ticket assigned email sent (simulated)');
+      console.log("✅ Ticket assigned email sent (simulated)");
       await logEmail({
         projectId,
         recipient: agentEmail,
         subject,
         body,
-        type: 'other',
-        status: 'simulated',
-        metadata: { ticketNumber, ticketTitle, studentName, priority }
+        type: "other",
+        status: "simulated",
+        metadata: { ticketNumber, ticketTitle, studentName, priority },
       });
       return true;
     }
 
     if (!trigger?.enabled) {
-      console.log('⚠️  Ticket assigned email trigger is disabled');
+      console.log("⚠️  Ticket assigned email trigger is disabled");
       await logEmail({
         projectId,
         recipient: agentEmail,
         subject,
         body,
-        type: 'other',
-        status: 'blocked',
-        error: 'Trigger disabled',
-        metadata: { ticketNumber, ticketTitle, studentName, priority }
+        type: "other",
+        status: "blocked",
+        error: "Trigger disabled",
+        metadata: { ticketNumber, ticketTitle, studentName, priority },
       });
       return false;
     }
@@ -1031,29 +1231,32 @@ export const sendTicketAssignedEmail = async (
       html: body,
     });
 
-    console.log('✅ Ticket assigned email sent successfully');
+    console.log("✅ Ticket assigned email sent successfully");
     await logEmail({
       projectId,
       recipient: agentEmail,
       subject,
       body,
-      type: 'other',
-      status: 'sent',
+      type: "other",
+      status: "sent",
       smtpHost: emailConfig?.smtpHost,
       fromEmail: emailConfig?.fromEmail || emailConfig?.smtpUser,
-      metadata: { ticketNumber, ticketTitle, studentName, priority }
+      metadata: { ticketNumber, ticketTitle, studentName, priority },
     });
     return true;
   } catch (error) {
-    console.error('❌ [EMAIL SERVICE] Failed to send ticket assigned email:', error);
+    console.error(
+      "❌ [EMAIL SERVICE] Failed to send ticket assigned email:",
+      error,
+    );
     await logEmail({
       projectId,
       recipient: agentEmail,
       subject: `New Ticket Assigned: ${ticketNumber}`,
-      type: 'other',
-      status: 'failed',
-      error: error instanceof Error ? error.message : 'Unknown error',
-      metadata: { ticketNumber, ticketTitle, studentName, priority }
+      type: "other",
+      status: "failed",
+      error: error instanceof Error ? error.message : "Unknown error",
+      metadata: { ticketNumber, ticketTitle, studentName, priority },
     });
     return false;
   }
@@ -1068,15 +1271,17 @@ export const sendTicketRejectedEmail = async (
   ticketTitle: string,
   reason: string,
   projectId?: string,
-  additionalData?: { studentName?: string }
+  additionalData?: { studentName?: string },
 ): Promise<boolean> => {
   try {
     console.log(`📧 [EMAIL SERVICE] Sending ticket rejected email to ${email}`);
 
-    const emailConfig = await EmailConfig.findOne(projectId ? { projectId } : {});
+    const emailConfig = await EmailConfig.findOne(
+      projectId ? { projectId } : {},
+    );
     const transporter = await getEmailTransporter(projectId);
-    const studentName = additionalData?.studentName || 'Student';
-    const projectName = emailConfig?.fromName || 'SAC Helpdesk';
+    const studentName = additionalData?.studentName || "Student";
+    const projectName = emailConfig?.fromName || "SAC Helpdesk";
 
     const defaultSubject = `Ticket {{ticketNumber}} Rejected`;
     const defaultBody = `
@@ -1096,7 +1301,10 @@ export const sendTicketRejectedEmail = async (
     `;
 
     const trigger = emailConfig?.triggers?.ticketRejected;
-    let subject = (trigger?.subject || defaultSubject).replace(/\{\{ticketNumber\}\}/g, ticketNumber);
+    let subject = (trigger?.subject || defaultSubject).replace(
+      /\{\{ticketNumber\}\}/g,
+      ticketNumber,
+    );
     let body = (trigger?.body || defaultBody)
       .replace(/\{\{ticketNumber\}\}/g, ticketNumber)
       .replace(/\{\{ticketTitle\}\}/g, ticketTitle)
@@ -1105,20 +1313,49 @@ export const sendTicketRejectedEmail = async (
       .replace(/\{\{projectName\}\}/g, projectName);
 
     if (!transporter) {
-      await logEmail({ projectId, recipient: email, subject, body, type: 'ticket_update', status: 'simulated', metadata: { ticketNumber, reason } });
+      await logEmail({
+        projectId,
+        recipient: email,
+        subject,
+        body,
+        type: "ticket_update",
+        status: "simulated",
+        metadata: { ticketNumber, reason },
+      });
       return true;
     }
 
     if (!trigger?.enabled) {
-      await logEmail({ projectId, recipient: email, subject, body, type: 'ticket_update', status: 'blocked', error: 'Trigger disabled' });
+      await logEmail({
+        projectId,
+        recipient: email,
+        subject,
+        body,
+        type: "ticket_update",
+        status: "blocked",
+        error: "Trigger disabled",
+      });
       return false;
     }
 
-    await transporter.sendMail({ from: `"${projectName}" <${emailConfig?.fromEmail}>`, to: email, subject, html: body });
-    await logEmail({ projectId, recipient: email, subject, body, type: 'ticket_update', status: 'sent', smtpHost: emailConfig?.smtpHost });
+    await transporter.sendMail({
+      from: `"${projectName}" <${emailConfig?.fromEmail}>`,
+      to: email,
+      subject,
+      html: body,
+    });
+    await logEmail({
+      projectId,
+      recipient: email,
+      subject,
+      body,
+      type: "ticket_update",
+      status: "sent",
+      smtpHost: emailConfig?.smtpHost,
+    });
     return true;
   } catch (error) {
-    console.error('❌ Failed to send ticket rejected email:', error);
+    console.error("❌ Failed to send ticket rejected email:", error);
     return false;
   }
 };
@@ -1131,13 +1368,15 @@ export const sendTicketReopenedEmail = async (
   ticketNumber: string,
   ticketTitle: string,
   projectId?: string,
-  additionalData?: { studentName?: string }
+  additionalData?: { studentName?: string },
 ): Promise<boolean> => {
   try {
-    const emailConfig = await EmailConfig.findOne(projectId ? { projectId } : {});
+    const emailConfig = await EmailConfig.findOne(
+      projectId ? { projectId } : {},
+    );
     const transporter = await getEmailTransporter(projectId);
-    const studentName = additionalData?.studentName || 'Student';
-    const projectName = emailConfig?.fromName || 'SAC Helpdesk';
+    const studentName = additionalData?.studentName || "Student";
+    const projectName = emailConfig?.fromName || "SAC Helpdesk";
 
     const defaultSubject = `Ticket {{ticketNumber}} Reopened`;
     const defaultBody = `
@@ -1155,7 +1394,10 @@ export const sendTicketReopenedEmail = async (
     `;
 
     const trigger = emailConfig?.triggers?.ticketReopened;
-    let subject = (trigger?.subject || defaultSubject).replace(/\{\{ticketNumber\}\}/g, ticketNumber);
+    let subject = (trigger?.subject || defaultSubject).replace(
+      /\{\{ticketNumber\}\}/g,
+      ticketNumber,
+    );
     let body = (trigger?.body || defaultBody)
       .replace(/\{\{ticketNumber\}\}/g, ticketNumber)
       .replace(/\{\{ticketTitle\}\}/g, ticketTitle)
@@ -1163,20 +1405,47 @@ export const sendTicketReopenedEmail = async (
       .replace(/\{\{projectName\}\}/g, projectName);
 
     if (!transporter) {
-      await logEmail({ projectId, recipient: email, subject, body, type: 'ticket_update', status: 'simulated' });
+      await logEmail({
+        projectId,
+        recipient: email,
+        subject,
+        body,
+        type: "ticket_update",
+        status: "simulated",
+      });
       return true;
     }
 
     if (!trigger?.enabled) {
-      await logEmail({ projectId, recipient: email, subject, body, type: 'ticket_update', status: 'blocked', error: 'Trigger disabled' });
+      await logEmail({
+        projectId,
+        recipient: email,
+        subject,
+        body,
+        type: "ticket_update",
+        status: "blocked",
+        error: "Trigger disabled",
+      });
       return false;
     }
 
-    await transporter.sendMail({ from: `"${projectName}" <${emailConfig?.fromEmail}>`, to: email, subject, html: body });
-    await logEmail({ projectId, recipient: email, subject, body, type: 'ticket_update', status: 'sent' });
+    await transporter.sendMail({
+      from: `"${projectName}" <${emailConfig?.fromEmail}>`,
+      to: email,
+      subject,
+      html: body,
+    });
+    await logEmail({
+      projectId,
+      recipient: email,
+      subject,
+      body,
+      type: "ticket_update",
+      status: "sent",
+    });
     return true;
   } catch (error) {
-    console.error('❌ Failed to send ticket reopened email:', error);
+    console.error("❌ Failed to send ticket reopened email:", error);
     return false;
   }
 };
@@ -1190,13 +1459,15 @@ export const sendTicketCommentAddedEmail = async (
   ticketTitle: string,
   commentText: string,
   projectId?: string,
-  additionalData?: { studentName?: string }
+  additionalData?: { studentName?: string },
 ): Promise<boolean> => {
   try {
-    const emailConfig = await EmailConfig.findOne(projectId ? { projectId } : {});
+    const emailConfig = await EmailConfig.findOne(
+      projectId ? { projectId } : {},
+    );
     const transporter = await getEmailTransporter(projectId);
-    const studentName = additionalData?.studentName || 'Student';
-    const projectName = emailConfig?.fromName || 'SAC Helpdesk';
+    const studentName = additionalData?.studentName || "Student";
+    const projectName = emailConfig?.fromName || "SAC Helpdesk";
 
     const defaultSubject = `New Comment on Ticket {{ticketNumber}}`;
     const defaultBody = `
@@ -1214,7 +1485,10 @@ export const sendTicketCommentAddedEmail = async (
     `;
 
     const trigger = emailConfig?.triggers?.ticketCommentAdded;
-    let subject = (trigger?.subject || defaultSubject).replace(/\{\{ticketNumber\}\}/g, ticketNumber);
+    let subject = (trigger?.subject || defaultSubject).replace(
+      /\{\{ticketNumber\}\}/g,
+      ticketNumber,
+    );
     let body = (trigger?.body || defaultBody)
       .replace(/\{\{ticketNumber\}\}/g, ticketNumber)
       .replace(/\{\{ticketTitle\}\}/g, ticketTitle)
@@ -1223,27 +1497,54 @@ export const sendTicketCommentAddedEmail = async (
       .replace(/\{\{projectName\}\}/g, projectName);
 
     if (!transporter) {
-      await logEmail({ projectId, recipient: email, subject, body, type: 'ticket_update', status: 'simulated' });
+      await logEmail({
+        projectId,
+        recipient: email,
+        subject,
+        body,
+        type: "ticket_update",
+        status: "simulated",
+      });
       return true;
     }
 
     if (!trigger?.enabled) {
-      await logEmail({ projectId, recipient: email, subject, body, type: 'ticket_update', status: 'blocked', error: 'Trigger disabled' });
+      await logEmail({
+        projectId,
+        recipient: email,
+        subject,
+        body,
+        type: "ticket_update",
+        status: "blocked",
+        error: "Trigger disabled",
+      });
       return false;
     }
 
-    await transporter.sendMail({ from: `"${projectName}" <${emailConfig?.fromEmail}>`, to: email, subject, html: body });
-    await logEmail({ projectId, recipient: email, subject, body, type: 'ticket_update', status: 'sent' });
+    await transporter.sendMail({
+      from: `"${projectName}" <${emailConfig?.fromEmail}>`,
+      to: email,
+      subject,
+      html: body,
+    });
+    await logEmail({
+      projectId,
+      recipient: email,
+      subject,
+      body,
+      type: "ticket_update",
+      status: "sent",
+    });
     return true;
   } catch (error) {
-    console.error('❌ Failed to send ticket comment email:', error);
+    console.error("❌ Failed to send ticket comment email:", error);
     return false;
   }
 };
 
 /**
  * Send agent notification about new email reply on ticket (Task 5.6)
- * 
+ *
  * @param agentEmail - Agent's email address
  * @param ticketNumber - Ticket number
  * @param ticketTitle - Ticket subject
@@ -1258,19 +1559,24 @@ export const sendAgentNewReplyNotification = async (
   ticketTitle: string,
   replyPreview: string,
   customerName: string,
-  projectId?: string
+  projectId?: string,
 ): Promise<boolean> => {
   try {
-    console.log(`📧 [EMAIL SERVICE] Sending new reply notification to agent ${agentEmail}`);
+    console.log(
+      `📧 [EMAIL SERVICE] Sending new reply notification to agent ${agentEmail}`,
+    );
 
-    const emailConfig = await EmailConfig.findOne(projectId ? { projectId } : {});
+    const emailConfig = await EmailConfig.findOne(
+      projectId ? { projectId } : {},
+    );
     const transporter = await getEmailTransporter(projectId);
-    const projectName = emailConfig?.fromName || 'SAC Helpdesk';
+    const projectName = emailConfig?.fromName || "SAC Helpdesk";
 
     // Truncate reply preview if too long
-    const truncatedReply = replyPreview.length > 200 
-      ? replyPreview.substring(0, 200) + '...' 
-      : replyPreview;
+    const truncatedReply =
+      replyPreview.length > 200
+        ? replyPreview.substring(0, 200) + "..."
+        : replyPreview;
 
     const defaultSubject = `New Reply on Ticket {{ticketNumber}}`;
     const defaultBody = `
@@ -1292,7 +1598,9 @@ export const sendAgentNewReplyNotification = async (
       </div>
     `;
 
-    const trigger = emailConfig?.triggers?.ticketReplied || emailConfig?.triggers?.ticketCommentAdded;
+    const trigger =
+      emailConfig?.triggers?.ticketReplied ||
+      emailConfig?.triggers?.ticketCommentAdded;
 
     let subject = (trigger?.subject || defaultSubject)
       .replace(/\{\{ticketNumber\}\}/g, ticketNumber)
@@ -1307,30 +1615,35 @@ export const sendAgentNewReplyNotification = async (
       .replace(/\{\{projectName\}\}/g, projectName);
 
     if (!transporter) {
-      console.log('✅ Agent notification sent (simulated)');
+      console.log("✅ Agent notification sent (simulated)");
       await logEmail({
         projectId,
         recipient: agentEmail,
         subject,
         body,
-        type: 'other',
-        status: 'simulated',
-        metadata: { ticketNumber, ticketTitle, customerName, replyPreview: truncatedReply }
+        type: "other",
+        status: "simulated",
+        metadata: {
+          ticketNumber,
+          ticketTitle,
+          customerName,
+          replyPreview: truncatedReply,
+        },
       });
       return true;
     }
 
     if (!trigger?.enabled) {
-      console.log('⚠️  Agent notification trigger is disabled');
+      console.log("⚠️  Agent notification trigger is disabled");
       await logEmail({
         projectId,
         recipient: agentEmail,
         subject,
         body,
-        type: 'other',
-        status: 'blocked',
-        error: 'Trigger disabled',
-        metadata: { ticketNumber, ticketTitle, customerName }
+        type: "other",
+        status: "blocked",
+        error: "Trigger disabled",
+        metadata: { ticketNumber, ticketTitle, customerName },
       });
       return false;
     }
@@ -1342,29 +1655,37 @@ export const sendAgentNewReplyNotification = async (
       html: body,
     });
 
-    console.log('✅ Agent notification sent successfully');
+    console.log("✅ Agent notification sent successfully");
     await logEmail({
       projectId,
       recipient: agentEmail,
       subject,
       body,
-      type: 'other',
-      status: 'sent',
+      type: "other",
+      status: "sent",
       smtpHost: emailConfig?.smtpHost,
       fromEmail: emailConfig?.fromEmail || emailConfig?.smtpUser,
-      metadata: { ticketNumber, ticketTitle, customerName, replyPreview: truncatedReply }
+      metadata: {
+        ticketNumber,
+        ticketTitle,
+        customerName,
+        replyPreview: truncatedReply,
+      },
     });
     return true;
   } catch (error) {
-    console.error('❌ [EMAIL SERVICE] Failed to send agent notification:', error);
+    console.error(
+      "❌ [EMAIL SERVICE] Failed to send agent notification:",
+      error,
+    );
     await logEmail({
       projectId,
       recipient: agentEmail,
       subject: `New Reply on Ticket ${ticketNumber}`,
-      type: 'other',
-      status: 'failed',
-      error: error instanceof Error ? error.message : 'Unknown error',
-      metadata: { ticketNumber, ticketTitle, customerName }
+      type: "other",
+      status: "failed",
+      error: error instanceof Error ? error.message : "Unknown error",
+      metadata: { ticketNumber, ticketTitle, customerName },
     });
     return false;
   }
@@ -1378,13 +1699,15 @@ export const sendTicketRepliedEmail = async (
   ticketNumber: string,
   ticketTitle: string,
   projectId?: string,
-  additionalData?: { studentName?: string }
+  additionalData?: { studentName?: string },
 ): Promise<boolean> => {
   try {
-    const emailConfig = await EmailConfig.findOne(projectId ? { projectId } : {});
+    const emailConfig = await EmailConfig.findOne(
+      projectId ? { projectId } : {},
+    );
     const transporter = await getEmailTransporter(projectId);
-    const studentName = additionalData?.studentName || 'Student';
-    const projectName = emailConfig?.fromName || 'SAC Helpdesk';
+    const studentName = additionalData?.studentName || "Student";
+    const projectName = emailConfig?.fromName || "SAC Helpdesk";
 
     const defaultSubject = `Reply to Ticket {{ticketNumber}}`;
     const defaultBody = `
@@ -1401,7 +1724,10 @@ export const sendTicketRepliedEmail = async (
     `;
 
     const trigger = emailConfig?.triggers?.ticketReplied;
-    let subject = (trigger?.subject || defaultSubject).replace(/\{\{ticketNumber\}\}/g, ticketNumber);
+    let subject = (trigger?.subject || defaultSubject).replace(
+      /\{\{ticketNumber\}\}/g,
+      ticketNumber,
+    );
     let body = (trigger?.body || defaultBody)
       .replace(/\{\{ticketNumber\}\}/g, ticketNumber)
       .replace(/\{\{ticketTitle\}\}/g, ticketTitle)
@@ -1409,20 +1735,47 @@ export const sendTicketRepliedEmail = async (
       .replace(/\{\{projectName\}\}/g, projectName);
 
     if (!transporter) {
-      await logEmail({ projectId, recipient: email, subject, body, type: 'ticket_update', status: 'simulated' });
+      await logEmail({
+        projectId,
+        recipient: email,
+        subject,
+        body,
+        type: "ticket_update",
+        status: "simulated",
+      });
       return true;
     }
 
     if (!trigger?.enabled) {
-      await logEmail({ projectId, recipient: email, subject, body, type: 'ticket_update', status: 'blocked', error: 'Trigger disabled' });
+      await logEmail({
+        projectId,
+        recipient: email,
+        subject,
+        body,
+        type: "ticket_update",
+        status: "blocked",
+        error: "Trigger disabled",
+      });
       return false;
     }
 
-    await transporter.sendMail({ from: `"${projectName}" <${emailConfig?.fromEmail}>`, to: email, subject, html: body });
-    await logEmail({ projectId, recipient: email, subject, body, type: 'ticket_update', status: 'sent' });
+    await transporter.sendMail({
+      from: `"${projectName}" <${emailConfig?.fromEmail}>`,
+      to: email,
+      subject,
+      html: body,
+    });
+    await logEmail({
+      projectId,
+      recipient: email,
+      subject,
+      body,
+      type: "ticket_update",
+      status: "sent",
+    });
     return true;
   } catch (error) {
-    console.error('❌ Failed to send ticket replied email:', error);
+    console.error("❌ Failed to send ticket replied email:", error);
     return false;
   }
 };
@@ -1435,12 +1788,14 @@ export const sendTicketEscalatedEmail = async (
   ticketNumber: string,
   ticketTitle: string,
   escalatedTo: string,
-  projectId?: string
+  projectId?: string,
 ): Promise<boolean> => {
   try {
-    const emailConfig = await EmailConfig.findOne(projectId ? { projectId } : {});
+    const emailConfig = await EmailConfig.findOne(
+      projectId ? { projectId } : {},
+    );
     const transporter = await getEmailTransporter(projectId);
-    const projectName = emailConfig?.fromName || 'SAC Helpdesk';
+    const projectName = emailConfig?.fromName || "SAC Helpdesk";
 
     const defaultSubject = `Ticket {{ticketNumber}} Escalated`;
     const defaultBody = `
@@ -1457,7 +1812,10 @@ export const sendTicketEscalatedEmail = async (
     `;
 
     const trigger = emailConfig?.triggers?.ticketEscalated;
-    let subject = (trigger?.subject || defaultSubject).replace(/\{\{ticketNumber\}\}/g, ticketNumber);
+    let subject = (trigger?.subject || defaultSubject).replace(
+      /\{\{ticketNumber\}\}/g,
+      ticketNumber,
+    );
     let body = (trigger?.body || defaultBody)
       .replace(/\{\{ticketNumber\}\}/g, ticketNumber)
       .replace(/\{\{ticketTitle\}\}/g, ticketTitle)
@@ -1465,20 +1823,47 @@ export const sendTicketEscalatedEmail = async (
       .replace(/\{\{projectName\}\}/g, projectName);
 
     if (!transporter) {
-      await logEmail({ projectId, recipient: email, subject, body, type: 'other', status: 'simulated' });
+      await logEmail({
+        projectId,
+        recipient: email,
+        subject,
+        body,
+        type: "other",
+        status: "simulated",
+      });
       return true;
     }
 
     if (!trigger?.enabled) {
-      await logEmail({ projectId, recipient: email, subject, body, type: 'other', status: 'blocked', error: 'Trigger disabled' });
+      await logEmail({
+        projectId,
+        recipient: email,
+        subject,
+        body,
+        type: "other",
+        status: "blocked",
+        error: "Trigger disabled",
+      });
       return false;
     }
 
-    await transporter.sendMail({ from: `"${projectName}" <${emailConfig?.fromEmail}>`, to: email, subject, html: body });
-    await logEmail({ projectId, recipient: email, subject, body, type: 'other', status: 'sent' });
+    await transporter.sendMail({
+      from: `"${projectName}" <${emailConfig?.fromEmail}>`,
+      to: email,
+      subject,
+      html: body,
+    });
+    await logEmail({
+      projectId,
+      recipient: email,
+      subject,
+      body,
+      type: "other",
+      status: "sent",
+    });
     return true;
   } catch (error) {
-    console.error('❌ Failed to send ticket escalated email:', error);
+    console.error("❌ Failed to send ticket escalated email:", error);
     return false;
   }
 };
@@ -1491,12 +1876,14 @@ export const sendTicketReassignedEmail = async (
   ticketNumber: string,
   ticketTitle: string,
   previousAgent: string,
-  projectId?: string
+  projectId?: string,
 ): Promise<boolean> => {
   try {
-    const emailConfig = await EmailConfig.findOne(projectId ? { projectId } : {});
+    const emailConfig = await EmailConfig.findOne(
+      projectId ? { projectId } : {},
+    );
     const transporter = await getEmailTransporter(projectId);
-    const projectName = emailConfig?.fromName || 'SAC Helpdesk';
+    const projectName = emailConfig?.fromName || "SAC Helpdesk";
 
     const defaultSubject = `Ticket {{ticketNumber}} Reassigned to You`;
     const defaultBody = `
@@ -1513,7 +1900,10 @@ export const sendTicketReassignedEmail = async (
     `;
 
     const trigger = emailConfig?.triggers?.ticketReassigned;
-    let subject = (trigger?.subject || defaultSubject).replace(/\{\{ticketNumber\}\}/g, ticketNumber);
+    let subject = (trigger?.subject || defaultSubject).replace(
+      /\{\{ticketNumber\}\}/g,
+      ticketNumber,
+    );
     let body = (trigger?.body || defaultBody)
       .replace(/\{\{ticketNumber\}\}/g, ticketNumber)
       .replace(/\{\{ticketTitle\}\}/g, ticketTitle)
@@ -1521,27 +1911,54 @@ export const sendTicketReassignedEmail = async (
       .replace(/\{\{projectName\}\}/g, projectName);
 
     if (!transporter) {
-      await logEmail({ projectId, recipient: email, subject, body, type: 'other', status: 'simulated' });
+      await logEmail({
+        projectId,
+        recipient: email,
+        subject,
+        body,
+        type: "other",
+        status: "simulated",
+      });
       return true;
     }
 
     if (!trigger?.enabled) {
-      await logEmail({ projectId, recipient: email, subject, body, type: 'other', status: 'blocked', error: 'Trigger disabled' });
+      await logEmail({
+        projectId,
+        recipient: email,
+        subject,
+        body,
+        type: "other",
+        status: "blocked",
+        error: "Trigger disabled",
+      });
       return false;
     }
 
-    await transporter.sendMail({ from: `"${projectName}" <${emailConfig?.fromEmail}>`, to: email, subject, html: body });
-    await logEmail({ projectId, recipient: email, subject, body, type: 'other', status: 'sent' });
+    await transporter.sendMail({
+      from: `"${projectName}" <${emailConfig?.fromEmail}>`,
+      to: email,
+      subject,
+      html: body,
+    });
+    await logEmail({
+      projectId,
+      recipient: email,
+      subject,
+      body,
+      type: "other",
+      status: "sent",
+    });
     return true;
   } catch (error) {
-    console.error('❌ Failed to send ticket reassigned email:', error);
+    console.error("❌ Failed to send ticket reassigned email:", error);
     return false;
   }
 };
 
 /**
  * Send ticket reply email with threading support (Task 7.1, 7.3)
- * 
+ *
  * @param params - Email parameters
  * @returns Promise<{ success: boolean; messageId?: string; error?: string }>
  */
@@ -1559,16 +1976,26 @@ export const sendTicketReplyEmail = async (params: {
   referencesChain?: string[]; // Task 7.3: Full chain of previous Message-IDs
   projectId?: string;
   emailConfigId?: string; // Specific email config to use (for proper reply routing)
-}): Promise<{ success: boolean; messageId?: string; fromEmail?: string; fromName?: string; error?: string }> => {
+}): Promise<{
+  success: boolean;
+  messageId?: string;
+  fromEmail?: string;
+  fromName?: string;
+  error?: string;
+}> => {
   // Declare emailConfig outside try block so it's accessible in catch
   let emailConfig: any = null;
-  
+
   try {
-    console.log(`📧 [EMAIL SERVICE] Sending ticket reply to ${params.recipientEmail}`);
+    console.log(
+      `📧 [EMAIL SERVICE] Sending ticket reply to ${params.recipientEmail}`,
+    );
     console.log(`🎫 Ticket Number: ${params.ticketNumber}`);
     console.log(`👤 Agent: ${params.agentName} (${params.agentEmail})`);
-    console.log(`📦 Project ID: ${params.projectId || 'not provided'}`);
-    console.log(`📧 Email Config ID: ${params.emailConfigId || 'not provided'}`);
+    console.log(`📦 Project ID: ${params.projectId || "not provided"}`);
+    console.log(
+      `📧 Email Config ID: ${params.emailConfigId || "not provided"}`,
+    );
 
     // Priority: 1. Use specific emailConfigId from ProjectEmailConfig (same config that received the original email)
     //          2. Fallback to ProjectEmailConfig for the project
@@ -1578,32 +2005,48 @@ export const sendTicketReplyEmail = async (params: {
       // First try ProjectEmailConfig (ticket email configs)
       emailConfig = await ProjectEmailConfig.findById(params.emailConfigId);
       if (emailConfig) {
-        console.log(`   ✅ Using ProjectEmailConfig: ${emailConfig.emailAddress || emailConfig.smtpUsername}`);
+        console.log(
+          `   ✅ Using ProjectEmailConfig: ${emailConfig.emailAddress || emailConfig.smtpUsername}`,
+        );
       } else {
         // Fallback to legacy EmailConfig
         emailConfig = await EmailConfig.findById(params.emailConfigId);
         if (emailConfig) {
-          console.log(`   ✅ Using EmailConfig: ${emailConfig.fromEmail || emailConfig.smtpUser}`);
+          console.log(
+            `   ✅ Using EmailConfig: ${emailConfig.fromEmail || emailConfig.smtpUser}`,
+          );
         } else {
-          console.log(`   ⚠️ Email config ${params.emailConfigId} not found in either collection, trying project fallback`);
+          console.log(
+            `   ⚠️ Email config ${params.emailConfigId} not found in either collection, trying project fallback`,
+          );
         }
       }
     }
-    
+
     // Fallback: Use project's email config from ProjectEmailConfig
     if (!emailConfig && params.projectId) {
-      emailConfig = await ProjectEmailConfig.findOne({ projectId: params.projectId, isEnabled: true });
+      emailConfig = await ProjectEmailConfig.findOne({
+        projectId: params.projectId,
+        isEnabled: true,
+      });
       if (emailConfig) {
-        console.log(`   ℹ️ Using project's ProjectEmailConfig: ${emailConfig.emailAddress || emailConfig.smtpUsername}`);
+        console.log(
+          `   ℹ️ Using project's ProjectEmailConfig: ${emailConfig.emailAddress || emailConfig.smtpUsername}`,
+        );
       } else {
         // Try legacy EmailConfig
-        emailConfig = await EmailConfig.findOne({ projectId: params.projectId, enabled: true });
+        emailConfig = await EmailConfig.findOne({
+          projectId: params.projectId,
+          enabled: true,
+        });
         if (emailConfig) {
-          console.log(`   ℹ️ Using project's EmailConfig: ${emailConfig.fromEmail || emailConfig.smtpUser}`);
+          console.log(
+            `   ℹ️ Using project's EmailConfig: ${emailConfig.fromEmail || emailConfig.smtpUser}`,
+          );
         }
       }
     }
-    
+
     // Final fallback: Use any enabled config
     if (!emailConfig) {
       emailConfig = await ProjectEmailConfig.findOne({ isEnabled: true });
@@ -1611,12 +2054,16 @@ export const sendTicketReplyEmail = async (params: {
         emailConfig = await EmailConfig.findOne({ enabled: true });
       }
       if (emailConfig) {
-        console.log(`   ⚠️ Using fallback email config: ${(emailConfig as any).emailAddress || (emailConfig as any).fromEmail || (emailConfig as any).smtpUser || (emailConfig as any).smtpUsername}`);
+        console.log(
+          `   ⚠️ Using fallback email config: ${(emailConfig as any).emailAddress || (emailConfig as any).fromEmail || (emailConfig as any).smtpUser || (emailConfig as any).smtpUsername}`,
+        );
       }
     }
-    
+
     // Get transporter using the same email config
-    const transporter = await getEmailTransporter(params.emailConfigId || params.projectId);
+    const transporter = await getEmailTransporter(
+      params.emailConfigId || params.projectId,
+    );
 
     // Prepare subject with ticket subject for threading (fallback to ticket number)
     const subject = `Re: ${params.ticketSubject || params.ticketNumber}`;
@@ -1627,11 +2074,19 @@ export const sendTicketReplyEmail = async (params: {
     // Generate Message-ID for this reply
     const replyMessageId = `<ticket-${params.ticketNumber}-reply-${Date.now()}@sac-helpdesk.com>`;
     // Handle both ProjectEmailConfig (emailAddress, smtpUsername) and EmailConfig (fromEmail, smtpUser) field names
-    const fromEmail = (emailConfig as any)?.emailAddress || (emailConfig as any)?.fromEmail || (emailConfig as any)?.smtpUsername || (emailConfig as any)?.smtpUser || params.agentEmail || 'support@sac-helpdesk.com';
+    const fromEmail =
+      (emailConfig as any)?.emailAddress ||
+      (emailConfig as any)?.fromEmail ||
+      (emailConfig as any)?.smtpUsername ||
+      (emailConfig as any)?.smtpUser ||
+      params.agentEmail ||
+      "support@sac-helpdesk.com";
     // Use only email config's fromName - don't show agent name to customer
-    const fromName = (emailConfig as any)?.fromName || 'Support';
+    const fromName = (emailConfig as any)?.fromName || "Support";
 
-    console.log(`📧 [EMAIL SERVICE] From email resolved to: ${fromEmail} (name: ${fromName})`);
+    console.log(
+      `📧 [EMAIL SERVICE] From email resolved to: ${fromEmail} (name: ${fromName})`,
+    );
     console.log(`   EmailConfig found: ${!!emailConfig}`);
     if (emailConfig) {
       console.log(`   EmailConfig._id: ${emailConfig._id}`);
@@ -1642,20 +2097,20 @@ export const sendTicketReplyEmail = async (params: {
     console.log(`   Agent fallback email: ${params.agentEmail}`);
 
     if (!transporter) {
-      console.log('✅ Email reply simulated (no transporter configured)');
+      console.log("✅ Email reply simulated (no transporter configured)");
       await logEmail({
         projectId: params.projectId,
         recipient: params.recipientEmail,
         subject,
         body: params.replyContent,
-        type: 'ticket_update',
-        status: 'simulated',
-        metadata: { 
+        type: "ticket_update",
+        status: "simulated",
+        metadata: {
           ticketNumber: params.ticketNumber,
           agentName: params.agentName,
           messageId: replyMessageId,
           inReplyTo: params.originalMessageId,
-        }
+        },
       });
       return { success: true, messageId: replyMessageId, fromEmail, fromName };
     }
@@ -1666,7 +2121,9 @@ export const sendTicketReplyEmail = async (params: {
       console.log(`   🔗 In-Reply-To: ${params.originalMessageId}`);
     }
     if (params.referencesChain && params.referencesChain.length > 0) {
-      console.log(`   🔗 References: ${params.referencesChain.length} previous messages`);
+      console.log(
+        `   🔗 References: ${params.referencesChain.length} previous messages`,
+      );
     }
 
     // Prepare email options with threading headers
@@ -1682,7 +2139,7 @@ export const sendTicketReplyEmail = async (params: {
     // Task 7.3: Add threading headers to maintain conversation thread
     if (params.originalMessageId) {
       mailOptions.inReplyTo = params.originalMessageId; // Link to most recent email
-      
+
       // Build complete References chain: all previous Message-IDs + new reply
       if (params.referencesChain && params.referencesChain.length > 0) {
         // Use the full chain of previous messages
@@ -1691,77 +2148,82 @@ export const sendTicketReplyEmail = async (params: {
         // Fallback: just use the original message ID
         mailOptions.references = [params.originalMessageId];
       }
-      
-      console.log(`   ✅ Threading headers added (In-Reply-To: last message, References: ${mailOptions.references.length} messages)`);
+
+      console.log(
+        `   ✅ Threading headers added (In-Reply-To: last message, References: ${mailOptions.references.length} messages)`,
+      );
     }
 
     await transporter.sendMail(mailOptions);
 
-    console.log('✅ Ticket reply email sent successfully via SMTP');
+    console.log("✅ Ticket reply email sent successfully via SMTP");
     await logEmail({
       projectId: params.projectId,
       recipient: params.recipientEmail,
       subject,
       body: params.replyContent,
-      type: 'ticket_update',
-      status: 'sent',
+      type: "ticket_update",
+      status: "sent",
       smtpHost: emailConfig?.smtpHost,
       fromEmail,
-      metadata: { 
+      metadata: {
         ticketNumber: params.ticketNumber,
         agentName: params.agentName,
         messageId: replyMessageId,
         inReplyTo: params.originalMessageId,
-      }
+      },
     });
 
     return { success: true, messageId: replyMessageId, fromEmail, fromName };
   } catch (error) {
-    console.error('❌ [EMAIL SERVICE] Failed to send ticket reply email:', error);
-    console.error('Error details:', error);
+    console.error(
+      "❌ [EMAIL SERVICE] Failed to send ticket reply email:",
+      error,
+    );
+    console.error("Error details:", error);
 
     // Task 8.2: Handle connection failures
-    if (emailConfig && (error instanceof Error && 
-        (error.message.includes('ECONNREFUSED') || 
-         error.message.includes('ETIMEDOUT') ||
-         error.message.includes('Authentication failed') ||
-         error.message.includes('Invalid login')))) {
-      console.error('🚨 SMTP connection failure detected');
-      const { handleConnectionFailure } = await import('./connectionMonitor');
-      await handleConnectionFailure(emailConfig, error, 'smtp');
+    if (
+      emailConfig &&
+      error instanceof Error &&
+      (error.message.includes("ECONNREFUSED") ||
+        error.message.includes("ETIMEDOUT") ||
+        error.message.includes("Authentication failed") ||
+        error.message.includes("Invalid login"))
+    ) {
+      console.error("🚨 SMTP connection failure detected");
+      const { handleConnectionFailure } = await import("./connectionMonitor");
+      await handleConnectionFailure(emailConfig, error, "smtp");
     }
 
     // Task 8.1: Log error with detailed context
-    await logEmailError(
-      error as Error,
-      ErrorContext.EMAIL_SENDING,
-      {
-        ticketNumber: params.ticketNumber,
-        ticketId: params.ticketId,
-        recipientEmail: params.recipientEmail,
-        agentName: params.agentName,
-        agentEmail: params.agentEmail,
-        errorType: 'reply_email_send_failure'
-      }
-    );
+    await logEmailError(error as Error, ErrorContext.EMAIL_SENDING, {
+      ticketNumber: params.ticketNumber,
+      ticketId: params.ticketId,
+      recipientEmail: params.recipientEmail,
+      agentName: params.agentName,
+      agentEmail: params.agentEmail,
+      errorType: "reply_email_send_failure",
+    });
 
     await logEmail({
       projectId: params.projectId,
       recipient: params.recipientEmail,
       subject: `Re: ${params.ticketNumber}`,
       body: params.replyContent,
-      type: 'ticket_update',
-      status: 'failed',
-      error: error instanceof Error ? error.message : 'Unknown error',
-      metadata: { 
+      type: "ticket_update",
+      status: "failed",
+      error: error instanceof Error ? error.message : "Unknown error",
+      metadata: {
         ticketNumber: params.ticketNumber,
         agentName: params.agentName,
-      }
+      },
     });
 
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Unknown error sending email' 
+    return {
+      success: false,
+      error:
+        error instanceof Error ? error.message : "Unknown error sending email",
     };
   }
 };

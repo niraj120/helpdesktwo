@@ -140,6 +140,10 @@ interface EmailConfig {
   _id: string;
   projectId: string;
   enabled: boolean;
+  // Delivery provider
+  emailProvider: "smtp" | "sendgrid";
+  sendgridApiKey?: string;
+  // SMTP
   smtpHost: string;
   smtpPort: number;
   smtpSecure: boolean;
@@ -266,6 +270,7 @@ const EmailConfigPage: React.FC = () => {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projects, setProjects] = useState<any[]>([]);
   const [showPassword, setShowPassword] = useState(false);
+  const [showSendgridKey, setShowSendgridKey] = useState(false);
 
   // WhatsApp state
   const [whatsappConfig, setWhatsappConfig] = useState<WhatsAppConfig | null>(
@@ -804,19 +809,28 @@ const EmailConfigPage: React.FC = () => {
       setSaving(true);
       const token = localStorage.getItem("authToken");
 
-      const updates = {
+      const provider = config?.emailProvider || "smtp";
+      const updates: any = {
         enabled: config?.enabled,
-        smtpHost: config?.smtpHost,
-        smtpPort: config?.smtpPort,
-        smtpSecure: config?.smtpSecure,
-        smtpUser: config?.smtpUser,
+        emailProvider: provider,
         fromEmail: config?.fromEmail,
         fromName: config?.fromName,
       };
 
-      // Only include password if it's not the masked value
-      if (config?.smtpPassword && config.smtpPassword !== "********") {
-        (updates as any).smtpPassword = config.smtpPassword;
+      if (provider === "sendgrid") {
+        // Only send API key if it was actually changed (not the masked '****' placeholder)
+        if (config?.sendgridApiKey && config.sendgridApiKey !== "****") {
+          updates.sendgridApiKey = config.sendgridApiKey;
+        }
+      } else {
+        // SMTP fields
+        updates.smtpHost = config?.smtpHost;
+        updates.smtpPort = config?.smtpPort;
+        updates.smtpSecure = config?.smtpSecure;
+        updates.smtpUser = config?.smtpUser;
+        if (config?.smtpPassword && config.smtpPassword !== "********") {
+          updates.smtpPassword = config.smtpPassword;
+        }
       }
 
       await axios.put(`${API_BASE_URL}/email-config/${projectId}`, updates, {
@@ -1097,132 +1111,264 @@ const EmailConfigPage: React.FC = () => {
                       </label>
                     </div>
 
-                    {/* SMTP Configuration Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          SMTP Host *
-                        </label>
-                        <input
-                          type="text"
-                          value={config.smtpHost}
-                          onChange={(e) =>
-                            handleSMTPChange("smtpHost", e.target.value)
-                          }
-                          placeholder="smtp.gmail.com"
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          SMTP Port *
-                        </label>
-                        <input
-                          type="number"
-                          value={config.smtpPort}
-                          onChange={(e) =>
-                            handleSMTPChange(
-                              "smtpPort",
-                              parseInt(e.target.value),
-                            )
-                          }
-                          placeholder="587"
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          SMTP Username *
-                        </label>
-                        <input
-                          type="text"
-                          value={config.smtpUser}
-                          onChange={(e) =>
-                            handleSMTPChange("smtpUser", e.target.value)
-                          }
-                          placeholder="your_email@gmail.com"
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          SMTP Password *
-                        </label>
-                        <div className="relative">
+                    {/* Delivery Provider Selector */}
+                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                      <h4 className="text-sm font-semibold text-blue-900 mb-3">
+                        Delivery Provider
+                      </h4>
+                      <div className="flex gap-4">
+                        <label className="flex items-center gap-2 cursor-pointer">
                           <input
-                            type={showPassword ? "text" : "password"}
-                            value={config.smtpPassword}
-                            onChange={(e) =>
-                              handleSMTPChange("smtpPassword", e.target.value)
+                            type="radio"
+                            name="emailProvider"
+                            value="smtp"
+                            checked={
+                              (config.emailProvider || "smtp") === "smtp"
                             }
-                            placeholder="********"
-                            className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            onChange={() =>
+                              handleSMTPChange("emailProvider", "smtp")
+                            }
+                            className="h-4 w-4 text-blue-600 border-gray-300"
                           />
-                          <button
-                            type="button"
-                            onClick={togglePasswordVisibility}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                          >
-                            {showPassword ? (
-                              <EyeSlashIcon className="h-5 w-5" />
-                            ) : (
-                              <EyeIcon className="h-5 w-5" />
-                            )}
-                          </button>
+                          <span className="text-sm font-medium text-gray-800">
+                            Direct SMTP / IMAP
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            (Gmail, Outlook, custom mail server)
+                          </span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="emailProvider"
+                            value="sendgrid"
+                            checked={config.emailProvider === "sendgrid"}
+                            onChange={() =>
+                              handleSMTPChange("emailProvider", "sendgrid")
+                            }
+                            className="h-4 w-4 text-blue-600 border-gray-300"
+                          />
+                          <span className="text-sm font-medium text-gray-800">
+                            SendGrid
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            (Email delivery partner — API-based)
+                          </span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* SendGrid Configuration */}
+                    {config.emailProvider === "sendgrid" && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+                        <div className="md:col-span-2">
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            SendGrid API Key *
+                          </label>
+                          <div className="relative">
+                            <input
+                              type={showSendgridKey ? "text" : "password"}
+                              value={config.sendgridApiKey || ""}
+                              onChange={(e) =>
+                                handleSMTPChange(
+                                  "sendgridApiKey",
+                                  e.target.value,
+                                )
+                              }
+                              placeholder="SG.xxxxxxxxxxxxxxxxxx"
+                              className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
+                            />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setShowSendgridKey(!showSendgridKey)
+                              }
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                            >
+                              {showSendgridKey ? (
+                                <EyeSlashIcon className="h-5 w-5" />
+                              ) : (
+                                <EyeIcon className="h-5 w-5" />
+                              )}
+                            </button>
+                          </div>
+                          <p className="mt-1 text-xs text-gray-500">
+                            Get your API key from{" "}
+                            <a
+                              href="https://app.sendgrid.com/settings/api_keys"
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-blue-600 underline"
+                            >
+                              SendGrid Dashboard → API Keys
+                            </a>
+                            . Requires <strong>Mail Send</strong> permission.
+                          </p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            From Email *
+                          </label>
+                          <input
+                            type="email"
+                            value={config.fromEmail}
+                            onChange={(e) =>
+                              handleSMTPChange("fromEmail", e.target.value)
+                            }
+                            placeholder="noreply@yourdomain.com"
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                          <p className="mt-1 text-xs text-gray-500">
+                            Must be a verified sender or domain in SendGrid.
+                          </p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            From Name
+                          </label>
+                          <input
+                            type="text"
+                            value={config.fromName}
+                            onChange={(e) =>
+                              handleSMTPChange("fromName", e.target.value)
+                            }
+                            placeholder="SAC Helpdesk"
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
                         </div>
                       </div>
+                    )}
 
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          From Email *
-                        </label>
-                        <input
-                          type="email"
-                          value={config.fromEmail}
-                          onChange={(e) =>
-                            handleSMTPChange("fromEmail", e.target.value)
-                          }
-                          placeholder="noreply@example.com"
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        />
+                    {/* SMTP Configuration Grid */}
+                    {(config.emailProvider || "smtp") === "smtp" && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            SMTP Host *
+                          </label>
+                          <input
+                            type="text"
+                            value={config.smtpHost}
+                            onChange={(e) =>
+                              handleSMTPChange("smtpHost", e.target.value)
+                            }
+                            placeholder="smtp.gmail.com"
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            SMTP Port *
+                          </label>
+                          <input
+                            type="number"
+                            value={config.smtpPort}
+                            onChange={(e) =>
+                              handleSMTPChange(
+                                "smtpPort",
+                                parseInt(e.target.value),
+                              )
+                            }
+                            placeholder="587"
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            SMTP Username *
+                          </label>
+                          <input
+                            type="text"
+                            value={config.smtpUser}
+                            onChange={(e) =>
+                              handleSMTPChange("smtpUser", e.target.value)
+                            }
+                            placeholder="your_email@gmail.com"
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            SMTP Password *
+                          </label>
+                          <div className="relative">
+                            <input
+                              type={showPassword ? "text" : "password"}
+                              value={config.smtpPassword}
+                              onChange={(e) =>
+                                handleSMTPChange("smtpPassword", e.target.value)
+                              }
+                              placeholder="********"
+                              className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            />
+                            <button
+                              type="button"
+                              onClick={togglePasswordVisibility}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                            >
+                              {showPassword ? (
+                                <EyeSlashIcon className="h-5 w-5" />
+                              ) : (
+                                <EyeIcon className="h-5 w-5" />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            From Email *
+                          </label>
+                          <input
+                            type="email"
+                            value={config.fromEmail}
+                            onChange={(e) =>
+                              handleSMTPChange("fromEmail", e.target.value)
+                            }
+                            placeholder="noreply@example.com"
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            From Name
+                          </label>
+                          <input
+                            type="text"
+                            value={config.fromName}
+                            onChange={(e) =>
+                              handleSMTPChange("fromName", e.target.value)
+                            }
+                            placeholder="SAC Helpdesk"
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
                       </div>
+                    )}
 
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          From Name
-                        </label>
+                    {(config.emailProvider || "smtp") === "smtp" && (
+                      <div className="flex items-center">
                         <input
-                          type="text"
-                          value={config.fromName}
+                          type="checkbox"
+                          id="smtpSecure"
+                          checked={config.smtpSecure}
                           onChange={(e) =>
-                            handleSMTPChange("fromName", e.target.value)
+                            handleSMTPChange("smtpSecure", e.target.checked)
                           }
-                          placeholder="SAC Helpdesk"
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                         />
+                        <label
+                          htmlFor="smtpSecure"
+                          className="ml-2 block text-sm text-gray-700"
+                        >
+                          Use SSL/TLS (Port 465)
+                        </label>
                       </div>
-                    </div>
-
-                    <div className="flex items-center">
-                      <input
-                        type="checkbox"
-                        id="smtpSecure"
-                        checked={config.smtpSecure}
-                        onChange={(e) =>
-                          handleSMTPChange("smtpSecure", e.target.checked)
-                        }
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <label
-                        htmlFor="smtpSecure"
-                        className="ml-2 block text-sm text-gray-700"
-                      >
-                        Use SSL/TLS (Port 465)
-                      </label>
-                    </div>
+                    )}
 
                     {/* Test Email */}
                     <div className="border-t pt-6">

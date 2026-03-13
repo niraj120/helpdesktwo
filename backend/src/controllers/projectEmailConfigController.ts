@@ -1,18 +1,24 @@
-import { Request, Response } from 'express';
-import mongoose from 'mongoose';
-import ProjectEmailConfig, { detectEmailProvider, detectProviderFromHost, getProviderDefaults, EmailProvider, AuthMethod } from '../models/ProjectEmailConfig';
-import { Project } from '../models/Project';
-import { Ticket } from '../models/Ticket';
-import Imap from 'imap';
-import nodemailer from 'nodemailer';
-import { google } from 'googleapis';
+import { Request, Response } from "express";
+import mongoose from "mongoose";
+import ProjectEmailConfig, {
+  detectEmailProvider,
+  detectProviderFromHost,
+  getProviderDefaults,
+  EmailProvider,
+  AuthMethod,
+} from "../models/ProjectEmailConfig";
+import { Project } from "../models/Project";
+import { Ticket } from "../models/Ticket";
+import Imap from "imap";
+import nodemailer from "nodemailer";
+import { google } from "googleapis";
 
 /**
  * Generate XOAUTH2 token for IMAP/SMTP authentication
  */
 const generateXOAuth2Token = (user: string, accessToken: string): string => {
   const authString = `user=${user}\x01auth=Bearer ${accessToken}\x01\x01`;
-  return Buffer.from(authString).toString('base64');
+  return Buffer.from(authString).toString("base64");
 };
 
 /**
@@ -21,18 +27,20 @@ const generateXOAuth2Token = (user: string, accessToken: string): string => {
 const refreshGoogleAccessToken = async (
   clientId: string,
   clientSecret: string,
-  refreshToken: string
+  refreshToken: string,
 ): Promise<{ accessToken: string; expiresIn: number } | null> => {
   try {
     const oauth2Client = new google.auth.OAuth2(clientId, clientSecret);
     oauth2Client.setCredentials({ refresh_token: refreshToken });
     const { credentials } = await oauth2Client.refreshAccessToken();
     return {
-      accessToken: credentials.access_token || '',
-      expiresIn: credentials.expiry_date ? Math.floor((credentials.expiry_date - Date.now()) / 1000) : 3600,
+      accessToken: credentials.access_token || "",
+      expiresIn: credentials.expiry_date
+        ? Math.floor((credentials.expiry_date - Date.now()) / 1000)
+        : 3600,
     };
   } catch (error) {
-    console.error('Failed to refresh Google access token:', error);
+    console.error("Failed to refresh Google access token:", error);
     return null;
   }
 };
@@ -43,36 +51,41 @@ const refreshGoogleAccessToken = async (
 const refreshMicrosoftAccessToken = async (
   clientId: string,
   clientSecret: string,
-  refreshToken: string
+  refreshToken: string,
 ): Promise<{ accessToken: string; expiresIn: number } | null> => {
   try {
-    const tokenEndpoint = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
+    const tokenEndpoint =
+      "https://login.microsoftonline.com/common/oauth2/v2.0/token";
     const params = new URLSearchParams({
       client_id: clientId,
       client_secret: clientSecret,
       refresh_token: refreshToken,
-      grant_type: 'refresh_token',
-      scope: 'https://outlook.office365.com/IMAP.AccessAsUser.All https://outlook.office365.com/SMTP.Send offline_access',
+      grant_type: "refresh_token",
+      scope:
+        "https://outlook.office365.com/IMAP.AccessAsUser.All https://outlook.office365.com/SMTP.Send offline_access",
     });
 
     const response = await fetch(tokenEndpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: params.toString(),
     });
 
     if (!response.ok) {
-      console.error('Microsoft token refresh failed:', await response.text());
+      console.error("Microsoft token refresh failed:", await response.text());
       return null;
     }
 
     const data = await response.json();
     return {
-      accessToken: (data as { access_token: string; expires_in?: number }).access_token,
-      expiresIn: (data as { access_token: string; expires_in?: number }).expires_in || 3600,
+      accessToken: (data as { access_token: string; expires_in?: number })
+        .access_token,
+      expiresIn:
+        (data as { access_token: string; expires_in?: number }).expires_in ||
+        3600,
     };
   } catch (error) {
-    console.error('Failed to refresh Microsoft access token:', error);
+    console.error("Failed to refresh Microsoft access token:", error);
     return null;
   }
 };
@@ -94,59 +107,65 @@ const testImapConnection = async (
   port: number,
   username: string,
   password: string,
-  authMethod: AuthMethod = 'basic',
-  oauth2Options?: OAuth2Options
+  authMethod: AuthMethod = "basic",
+  oauth2Options?: OAuth2Options,
 ): Promise<{ success: boolean; error?: string }> => {
   // Get access token for OAuth2
   let accessToken: string | undefined;
-  if (authMethod === 'oauth2' && oauth2Options) {
+  if (authMethod === "oauth2" && oauth2Options) {
     accessToken = oauth2Options.accessToken;
-    
+
     // If no access token, try to refresh
     if (!accessToken && oauth2Options.refreshToken) {
-      if (oauth2Options.provider === 'google' && oauth2Options.clientSecret) {
+      if (oauth2Options.provider === "google" && oauth2Options.clientSecret) {
         const result = await refreshGoogleAccessToken(
           oauth2Options.clientId,
           oauth2Options.clientSecret,
-          oauth2Options.refreshToken
+          oauth2Options.refreshToken,
         );
         if (result) {
           accessToken = result.accessToken;
         }
-      } else if (oauth2Options.provider === 'microsoft' && oauth2Options.clientSecret) {
+      } else if (
+        oauth2Options.provider === "microsoft" &&
+        oauth2Options.clientSecret
+      ) {
         const result = await refreshMicrosoftAccessToken(
           oauth2Options.clientId,
           oauth2Options.clientSecret,
-          oauth2Options.refreshToken
+          oauth2Options.refreshToken,
         );
         if (result) {
           accessToken = result.accessToken;
         }
       }
     }
-    
+
     if (!accessToken) {
-      return { success: false, error: 'Failed to obtain access token for OAuth2' };
+      return {
+        success: false,
+        error: "Failed to obtain access token for OAuth2",
+      };
     }
   }
-  
+
   return new Promise((resolve) => {
     const imapConfig: any = {
       user: username,
       host: host,
       port: port,
       tls: true,
-      tlsOptions: { 
+      tlsOptions: {
         rejectUnauthorized: false,
         servername: host, // Required for Microsoft 365 SNI
-        minVersion: 'TLSv1.2', // Microsoft 365 requires TLS 1.2+
+        minVersion: "TLSv1.2", // Microsoft 365 requires TLS 1.2+
       },
       connTimeout: 15000,
       authTimeout: 15000, // Increased for Microsoft 365
     };
 
     // Use XOAUTH2 for OAuth2 authentication
-    if (authMethod === 'oauth2' && accessToken) {
+    if (authMethod === "oauth2" && accessToken) {
       imapConfig.xoauth2 = generateXOAuth2Token(username, accessToken);
     } else {
       imapConfig.password = password;
@@ -156,35 +175,44 @@ const testImapConnection = async (
 
     const timeout = setTimeout(() => {
       imap.end();
-      resolve({ success: false, error: 'Connection timeout (15s)' });
+      resolve({ success: false, error: "Connection timeout (15s)" });
     }, 15000);
 
-    imap.once('ready', () => {
+    imap.once("ready", () => {
       clearTimeout(timeout);
       imap.end();
       resolve({ success: true });
     });
 
-    imap.once('error', (err: Error) => {
+    imap.once("error", (err: Error) => {
       clearTimeout(timeout);
       let errorMessage = err.message;
-      
+
       // Provide helpful error messages
-      if (errorMessage.includes('Invalid credentials') || 
-          errorMessage.includes('Authentication failed') ||
-          errorMessage.includes('AUTHENTICATE failed')) {
-        if (authMethod === 'basic' || authMethod === 'app_password') {
+      if (
+        errorMessage.includes("Invalid credentials") ||
+        errorMessage.includes("Authentication failed") ||
+        errorMessage.includes("AUTHENTICATE failed")
+      ) {
+        if (authMethod === "basic" || authMethod === "app_password") {
           // Check if it's a Microsoft host
-          if (host.includes('office365') || host.includes('outlook') || host.includes('microsoft')) {
-            errorMessage += ' - Microsoft 365 has disabled basic IMAP authentication. Please use an App Password (enable 2FA first at https://myaccount.microsoft.com, then create an App Password).';
-          } else if (host.includes('gmail') || host.includes('google')) {
-            errorMessage += ' - For Google accounts, please use an App Password (enable 2FA first at https://myaccount.google.com/apppasswords).';
+          if (
+            host.includes("office365") ||
+            host.includes("outlook") ||
+            host.includes("microsoft")
+          ) {
+            errorMessage +=
+              " - Microsoft 365 has disabled basic IMAP authentication. Please use an App Password (enable 2FA first at https://myaccount.microsoft.com, then create an App Password).";
+          } else if (host.includes("gmail") || host.includes("google")) {
+            errorMessage +=
+              " - For Google accounts, please use an App Password (enable 2FA first at https://myaccount.google.com/apppasswords).";
           } else {
-            errorMessage += ' - For Google/Microsoft accounts, please use App Password or OAuth2 authentication.';
+            errorMessage +=
+              " - For Google/Microsoft accounts, please use App Password or OAuth2 authentication.";
           }
         }
       }
-      
+
       resolve({ success: false, error: errorMessage });
     });
 
@@ -205,49 +233,55 @@ const testSmtpConnection = async (
   port: number,
   username: string,
   password: string,
-  authMethod: AuthMethod = 'basic',
-  oauth2Options?: OAuth2Options
+  authMethod: AuthMethod = "basic",
+  oauth2Options?: OAuth2Options,
 ): Promise<{ success: boolean; error?: string }> => {
   // Get access token for OAuth2
   let accessToken: string | undefined;
-  if (authMethod === 'oauth2' && oauth2Options) {
+  if (authMethod === "oauth2" && oauth2Options) {
     accessToken = oauth2Options.accessToken;
-    
+
     // If no access token, try to refresh
     if (!accessToken && oauth2Options.refreshToken) {
-      if (oauth2Options.provider === 'google' && oauth2Options.clientSecret) {
+      if (oauth2Options.provider === "google" && oauth2Options.clientSecret) {
         const result = await refreshGoogleAccessToken(
           oauth2Options.clientId,
           oauth2Options.clientSecret,
-          oauth2Options.refreshToken
+          oauth2Options.refreshToken,
         );
         if (result) {
           accessToken = result.accessToken;
         }
-      } else if (oauth2Options.provider === 'microsoft' && oauth2Options.clientSecret) {
+      } else if (
+        oauth2Options.provider === "microsoft" &&
+        oauth2Options.clientSecret
+      ) {
         const result = await refreshMicrosoftAccessToken(
           oauth2Options.clientId,
           oauth2Options.clientSecret,
-          oauth2Options.refreshToken
+          oauth2Options.refreshToken,
         );
         if (result) {
           accessToken = result.accessToken;
         }
       }
     }
-    
+
     if (!accessToken) {
-      return { success: false, error: 'Failed to obtain access token for OAuth2' };
+      return {
+        success: false,
+        error: "Failed to obtain access token for OAuth2",
+      };
     }
   }
-  
+
   return new Promise((resolve) => {
     let authConfig: any;
 
     // Configure authentication based on method
-    if (authMethod === 'oauth2' && accessToken) {
+    if (authMethod === "oauth2" && accessToken) {
       authConfig = {
-        type: 'OAuth2',
+        type: "OAuth2",
         user: username,
         accessToken: accessToken,
       };
@@ -269,23 +303,30 @@ const testSmtpConnection = async (
     });
 
     const timeout = setTimeout(() => {
-      resolve({ success: false, error: 'Connection timeout (15s)' });
+      resolve({ success: false, error: "Connection timeout (15s)" });
     }, 15000);
 
     transporter.verify((error, success) => {
       clearTimeout(timeout);
       if (error) {
         let errorMessage = error.message;
-        
+
         // Provide helpful error messages
-        if (errorMessage.includes('Invalid login') || errorMessage.includes('Authentication') || errorMessage.includes('BadCredentials')) {
-          if (authMethod === 'basic') {
-            errorMessage += ' - For Google/Microsoft accounts, please use App Password or OAuth2 authentication. ';
-            errorMessage += 'For Google: Enable 2FA and create an App Password at https://myaccount.google.com/apppasswords. ';
-            errorMessage += 'For Microsoft: Create an App Password in security settings or use OAuth2.';
+        if (
+          errorMessage.includes("Invalid login") ||
+          errorMessage.includes("Authentication") ||
+          errorMessage.includes("BadCredentials")
+        ) {
+          if (authMethod === "basic") {
+            errorMessage +=
+              " - For Google/Microsoft accounts, please use App Password or OAuth2 authentication. ";
+            errorMessage +=
+              "For Google: Enable 2FA and create an App Password at https://myaccount.google.com/apppasswords. ";
+            errorMessage +=
+              "For Microsoft: Create an App Password in security settings or use OAuth2.";
           }
         }
-        
+
         resolve({ success: false, error: errorMessage });
       } else {
         resolve({ success: true });
@@ -314,31 +355,49 @@ export const addEmailConfig = async (req: Request, res: Response) => {
       smtp_password,
       // New OAuth2 fields
       provider,
-      authMethod = 'basic',
+      authMethod = "basic",
+      inboundMethod = "imap",
       oauth2,
     } = req.body;
 
     // Auto-detect provider from email if not specified
-    const detectedProvider = provider || detectEmailProvider(email_address || '');
+    const detectedProvider =
+      provider || detectEmailProvider(email_address || "");
     const authType = authMethod as AuthMethod;
+    const inboundType = inboundMethod as "imap" | "sendgrid";
 
-    // Validate based on auth method
-    if (authType === 'oauth2') {
+    // Validate based on auth method and inbound method
+    if (authType === "oauth2") {
       // OAuth2 requires oauth2 object with tokens
       if (!oauth2?.clientId || !oauth2?.refreshToken) {
         return res.status(400).json({
           success: false,
-          message: 'OAuth2 authentication requires clientId and refreshToken',
+          message: "OAuth2 authentication requires clientId and refreshToken",
         });
       }
       if (!email_address) {
         return res.status(400).json({
           success: false,
-          message: 'Email address is required',
+          message: "Email address is required",
+        });
+      }
+    } else if (inboundType === "sendgrid") {
+      // SendGrid inbound: only email_address, smtp fields, and sendgrid API key needed
+      if (
+        !email_address ||
+        !smtp_host ||
+        !smtp_port ||
+        !smtp_username ||
+        !smtp_password
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Email address and SMTP settings are required for SendGrid inbound",
         });
       }
     } else {
-      // Basic and app_password require all fields
+      // Basic and app_password (IMAP) require all fields
       if (
         !email_address ||
         !imap_host ||
@@ -352,7 +411,8 @@ export const addEmailConfig = async (req: Request, res: Response) => {
       ) {
         return res.status(400).json({
           success: false,
-          message: 'All fields are required for basic/app_password authentication',
+          message:
+            "All fields are required for basic/app_password authentication",
         });
       }
     }
@@ -361,7 +421,7 @@ export const addEmailConfig = async (req: Request, res: Response) => {
     if (!mongoose.Types.ObjectId.isValid(projectId)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid project ID',
+        message: "Invalid project ID",
       });
     }
 
@@ -370,7 +430,7 @@ export const addEmailConfig = async (req: Request, res: Response) => {
     if (!project) {
       return res.status(404).json({
         success: false,
-        message: 'Project not found',
+        message: "Project not found",
       });
     }
 
@@ -379,7 +439,7 @@ export const addEmailConfig = async (req: Request, res: Response) => {
     if (!emailRegex.test(email_address)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid email format',
+        message: "Invalid email format",
       });
     }
 
@@ -392,49 +452,63 @@ export const addEmailConfig = async (req: Request, res: Response) => {
     if (existingConfig) {
       return res.status(409).json({
         success: false,
-        message: 'Email address already configured for this project',
+        message: "Email address already configured for this project",
       });
     }
 
     // Validate port numbers
-    if (imap_port < 1 || imap_port > 65535 || smtp_port < 1 || smtp_port > 65535) {
+    if (
+      imap_port < 1 ||
+      imap_port > 65535 ||
+      smtp_port < 1 ||
+      smtp_port > 65535
+    ) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid port number (must be between 1 and 65535)',
+        message: "Invalid port number (must be between 1 and 65535)",
       });
     }
 
-    // Test IMAP connection
-    console.log(`Testing IMAP connection for ${email_address} (auth: ${authType})...`);
-    
-    // Prepare defaults for OAuth2 connections
+    // Prepare defaults for OAuth2/sendgrid connections
     const defaults = getProviderDefaults(detectedProvider);
     const imapHostToUse = imap_host || defaults.imapHost;
     const imapPortToUse = imap_port || defaults.imapPort;
     const smtpHostToUse = smtp_host || defaults.smtpHost;
     const smtpPortToUse = smtp_port || defaults.smtpPort;
-    
-    const imapTest = await testImapConnection(
-      imapHostToUse,
-      imapPortToUse,
-      imap_username || email_address,
-      imap_password || '',
-      authType,
-      authType === 'oauth2' ? {
-        clientId: oauth2?.clientId,
-        clientSecret: oauth2?.clientSecret,
-        accessToken: oauth2?.accessToken,
-        refreshToken: oauth2?.refreshToken,
-        provider: detectedProvider,
-      } : undefined
-    );
 
-    if (!imapTest.success) {
-      return res.status(400).json({
-        success: false,
-        message: 'IMAP connection failed',
-        error: imapTest.error,
-      });
+    // Test IMAP connection only when using IMAP inbound
+    if (inboundType !== "sendgrid") {
+      console.log(
+        `Testing IMAP connection for ${email_address} (auth: ${authType})...`,
+      );
+      const imapTest = await testImapConnection(
+        imapHostToUse,
+        imapPortToUse,
+        imap_username || email_address,
+        imap_password || "",
+        authType,
+        authType === "oauth2"
+          ? {
+              clientId: oauth2?.clientId,
+              clientSecret: oauth2?.clientSecret,
+              accessToken: oauth2?.accessToken,
+              refreshToken: oauth2?.refreshToken,
+              provider: detectedProvider,
+            }
+          : undefined,
+      );
+
+      if (!imapTest.success) {
+        return res.status(400).json({
+          success: false,
+          message: "IMAP connection failed",
+          error: imapTest.error,
+        });
+      }
+    } else {
+      console.log(
+        `Skipping IMAP test — inbound method is SendGrid (webhook-based)`,
+      );
     }
 
     // Test SMTP connection
@@ -443,21 +517,23 @@ export const addEmailConfig = async (req: Request, res: Response) => {
       smtpHostToUse,
       smtpPortToUse,
       smtp_username || email_address,
-      smtp_password || '',
+      smtp_password || "",
       authType,
-      authType === 'oauth2' ? {
-        clientId: oauth2?.clientId,
-        clientSecret: oauth2?.clientSecret,
-        accessToken: oauth2?.accessToken,
-        refreshToken: oauth2?.refreshToken,
-        provider: detectedProvider,
-      } : undefined
+      authType === "oauth2"
+        ? {
+            clientId: oauth2?.clientId,
+            clientSecret: oauth2?.clientSecret,
+            accessToken: oauth2?.accessToken,
+            refreshToken: oauth2?.refreshToken,
+            provider: detectedProvider,
+          }
+        : undefined,
     );
 
     if (!smtpTest.success) {
       return res.status(400).json({
         success: false,
-        message: 'SMTP connection failed',
+        message: "SMTP connection failed",
         error: smtpTest.error,
       });
     }
@@ -469,36 +545,44 @@ export const addEmailConfig = async (req: Request, res: Response) => {
       emailAddress: email_address.toLowerCase(),
       provider: detectedProvider,
       authMethod: authType,
-      imapHost: imapHostToUse,
-      imapPort: imapPortToUse,
-      imapUsername: imap_username || email_address,
-      imapPassword: imap_password || '', // Will be encrypted by pre-save hook
+      inboundMethod: inboundType,
+      imapHost: inboundType === "sendgrid" ? "" : imapHostToUse,
+      imapPort: inboundType === "sendgrid" ? 993 : imapPortToUse,
+      imapUsername:
+        inboundType === "sendgrid" ? "" : imap_username || email_address,
+      imapPassword: inboundType === "sendgrid" ? "" : imap_password || "", // Will be encrypted by pre-save hook
       smtpHost: smtpHostToUse,
       smtpPort: smtpPortToUse,
       smtpUsername: smtp_username || email_address,
-      smtpPassword: smtp_password || '', // Will be encrypted by pre-save hook
+      smtpPassword: smtp_password || "", // Will be encrypted by pre-save hook
       // OAuth2 fields (will be encrypted by pre-save hook)
-      ...(authType === 'oauth2' && oauth2 ? {
-        oauth2: {
-          clientId: oauth2.clientId,
-          clientSecret: oauth2.clientSecret,
-          refreshToken: oauth2.refreshToken,
-          accessToken: oauth2.accessToken,
-          tokenExpiry: oauth2.tokenExpiry ? new Date(oauth2.tokenExpiry) : undefined,
-          scope: oauth2.scope,
-        },
-      } : {}),
+      ...(authType === "oauth2" && oauth2
+        ? {
+            oauth2: {
+              clientId: oauth2.clientId,
+              clientSecret: oauth2.clientSecret,
+              refreshToken: oauth2.refreshToken,
+              accessToken: oauth2.accessToken,
+              tokenExpiry: oauth2.tokenExpiry
+                ? new Date(oauth2.tokenExpiry)
+                : undefined,
+              scope: oauth2.scope,
+            },
+          }
+        : {}),
       lastCheckedAt: new Date(),
-      lastCheckStatus: 'success',
+      lastCheckStatus: "success",
     });
 
     await emailConfig.save();
 
-    console.log(`✅ Email configuration added for ${email_address} (provider: ${detectedProvider}, auth: ${authType})`);
+    console.log(
+      `✅ Email configuration added for ${email_address} (provider: ${detectedProvider}, auth: ${authType})`,
+    );
 
     return res.status(201).json({
       success: true,
-      message: 'Email configuration added successfully',
+      message: "Email configuration added successfully",
       data: {
         id: emailConfig._id,
         projectId: emailConfig.projectId,
@@ -515,10 +599,10 @@ export const addEmailConfig = async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
-    console.error('Error adding email configuration:', error);
+    console.error("Error adding email configuration:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to add email configuration',
+      message: "Failed to add email configuration",
       error: error.message,
     });
   }
@@ -532,13 +616,13 @@ export const addEmailConfig = async (req: Request, res: Response) => {
 export const getEmailConfigs = async (req: Request, res: Response) => {
   try {
     const { projectId } = req.params;
-    const { page = '1', limit = '10', includeDisabled = 'true' } = req.query;
+    const { page = "1", limit = "10", includeDisabled = "true" } = req.query;
 
     // Validate project ID format
     if (!mongoose.Types.ObjectId.isValid(projectId)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid project ID',
+        message: "Invalid project ID",
       });
     }
 
@@ -547,13 +631,13 @@ export const getEmailConfigs = async (req: Request, res: Response) => {
     if (!project) {
       return res.status(404).json({
         success: false,
-        message: 'Project not found',
+        message: "Project not found",
       });
     }
 
     // Build query
     const query: any = { projectId };
-    if (includeDisabled === 'false') {
+    if (includeDisabled === "false") {
       query.isEnabled = true;
     }
 
@@ -567,7 +651,7 @@ export const getEmailConfigs = async (req: Request, res: Response) => {
 
     // Get configs with pagination
     const configs = await ProjectEmailConfig.find(query)
-      .select('-imapPassword -smtpPassword') // Exclude passwords
+      .select("-imapPassword -smtpPassword") // Exclude passwords
       .sort({ createdAt: -1 }) // Newest first
       .skip(skip)
       .limit(limitNum)
@@ -575,7 +659,7 @@ export const getEmailConfigs = async (req: Request, res: Response) => {
 
     // Transform data to include connection status
     const transformedConfigs = configs.map((config: any) => ({
-      _id: config._id,  // Changed from 'id' to '_id' for frontend compatibility
+      _id: config._id, // Changed from 'id' to '_id' for frontend compatibility
       projectId: config.projectId,
       emailAddress: config.emailAddress,
       isEnabled: config.isEnabled,
@@ -586,7 +670,7 @@ export const getEmailConfigs = async (req: Request, res: Response) => {
       smtpPort: config.smtpPort,
       smtpUsername: config.smtpUsername,
       // Task 8.2: Connection status tracking (flat structure for frontend)
-      connectionStatus: config.connectionStatus || 'untested',
+      connectionStatus: config.connectionStatus || "untested",
       lastConnectionTest: config.lastConnectionTest || null,
       lastConnectionError: config.lastConnectionError || null,
       failedAttempts: config.failedAttempts || 0,
@@ -594,7 +678,7 @@ export const getEmailConfigs = async (req: Request, res: Response) => {
       lastSuccessfulConnection: config.lastSuccessfulConnection || null,
       // Legacy status fields (for backward compatibility)
       lastCheckedAt: config.lastCheckedAt || null,
-      lastCheckStatus: config.lastCheckStatus || 'unknown',
+      lastCheckStatus: config.lastCheckStatus || "unknown",
       lastCheckError: config.lastCheckError || null,
       createdAt: config.createdAt,
       updatedAt: config.updatedAt,
@@ -618,10 +702,10 @@ export const getEmailConfigs = async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
-    console.error('Error fetching email configurations:', error);
+    console.error("Error fetching email configurations:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to fetch email configurations',
+      message: "Failed to fetch email configurations",
       error: error.message,
     });
   }
@@ -647,17 +731,20 @@ export const updateEmailConfig = async (req: Request, res: Response) => {
       isEnabled,
     } = req.body;
 
-    console.log('📝 Update email config request:');
-    console.log('   Project ID:', projectId);
-    console.log('   Config ID:', configId);
-    console.log('   Email address:', email_address);
+    console.log("📝 Update email config request:");
+    console.log("   Project ID:", projectId);
+    console.log("   Config ID:", configId);
+    console.log("   Email address:", email_address);
 
     // Validate IDs
-    if (!mongoose.Types.ObjectId.isValid(projectId) || !mongoose.Types.ObjectId.isValid(configId)) {
-      console.log('   ❌ Invalid ID format');
+    if (
+      !mongoose.Types.ObjectId.isValid(projectId) ||
+      !mongoose.Types.ObjectId.isValid(configId)
+    ) {
+      console.log("   ❌ Invalid ID format");
       return res.status(400).json({
         success: false,
-        message: 'Invalid project ID or config ID',
+        message: "Invalid project ID or config ID",
       });
     }
 
@@ -668,10 +755,10 @@ export const updateEmailConfig = async (req: Request, res: Response) => {
     });
 
     if (!config) {
-      console.log('   ❌ Config not found');
+      console.log("   ❌ Config not found");
       return res.status(404).json({
         success: false,
-        message: 'Email configuration not found',
+        message: "Email configuration not found",
       });
     }
 
@@ -684,23 +771,26 @@ export const updateEmailConfig = async (req: Request, res: Response) => {
       });
 
       if (existingConfig) {
-        console.log('   ❌ Email already in use');
+        console.log("   ❌ Email already in use");
         return res.status(400).json({
           success: false,
-          message: 'Email address is already configured for this project',
+          message: "Email address is already configured for this project",
         });
       }
     }
 
     // Update fields if provided
-    if (email_address !== undefined) config.emailAddress = email_address.toLowerCase();
+    if (email_address !== undefined)
+      config.emailAddress = email_address.toLowerCase();
+    if (req.body.inbound_method !== undefined)
+      (config as any).inboundMethod = req.body.inbound_method;
     if (imap_host !== undefined) config.imapHost = imap_host;
     if (imap_port !== undefined) config.imapPort = Number(imap_port);
     if (imap_username !== undefined) config.imapUsername = imap_username;
     if (smtp_host !== undefined) config.smtpHost = smtp_host;
     if (smtp_port !== undefined) config.smtpPort = Number(smtp_port);
     if (smtp_username !== undefined) config.smtpUsername = smtp_username;
-    if (typeof isEnabled === 'boolean') config.isEnabled = isEnabled;
+    if (typeof isEnabled === "boolean") config.isEnabled = isEnabled;
 
     // Only update passwords if provided (they are optional in updates)
     // Passwords will be encrypted by pre-save hook in the model
@@ -717,7 +807,7 @@ export const updateEmailConfig = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       success: true,
-      message: 'Email configuration updated successfully',
+      message: "Email configuration updated successfully",
       data: {
         id: config._id,
         emailAddress: config.emailAddress,
@@ -732,10 +822,10 @@ export const updateEmailConfig = async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
-    console.error('Error updating email configuration:', error);
+    console.error("Error updating email configuration:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to update email configuration',
+      message: "Failed to update email configuration",
       error: error.message,
     });
   }
@@ -754,7 +844,7 @@ export const toggleEmailConfig = async (req: Request, res: Response) => {
     if (!mongoose.Types.ObjectId.isValid(configId)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid configuration ID',
+        message: "Invalid configuration ID",
       });
     }
 
@@ -764,7 +854,7 @@ export const toggleEmailConfig = async (req: Request, res: Response) => {
     if (!config) {
       return res.status(404).json({
         success: false,
-        message: 'Email configuration not found',
+        message: "Email configuration not found",
       });
     }
 
@@ -776,12 +866,12 @@ export const toggleEmailConfig = async (req: Request, res: Response) => {
     await config.save();
 
     console.log(
-      `🔄 Toggled email config ${config.emailAddress}: ${oldValue} → ${config.isEnabled}`
+      `🔄 Toggled email config ${config.emailAddress}: ${oldValue} → ${config.isEnabled}`,
     );
 
     return res.status(200).json({
       success: true,
-      message: `Email configuration ${config.isEnabled ? 'enabled' : 'disabled'} successfully`,
+      message: `Email configuration ${config.isEnabled ? "enabled" : "disabled"} successfully`,
       data: {
         id: config._id,
         projectId: config.projectId,
@@ -795,10 +885,10 @@ export const toggleEmailConfig = async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
-    console.error('Error toggling email configuration:', error);
+    console.error("Error toggling email configuration:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to toggle email configuration',
+      message: "Failed to toggle email configuration",
       error: error.message,
     });
   }
@@ -813,10 +903,13 @@ export const deleteEmailConfig = async (req: Request, res: Response) => {
     const { projectId, configId } = req.params;
 
     // Validate IDs
-    if (!mongoose.Types.ObjectId.isValid(projectId) || !mongoose.Types.ObjectId.isValid(configId)) {
+    if (
+      !mongoose.Types.ObjectId.isValid(projectId) ||
+      !mongoose.Types.ObjectId.isValid(configId)
+    ) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid project ID or config ID',
+        message: "Invalid project ID or config ID",
       });
     }
 
@@ -830,7 +923,7 @@ export const deleteEmailConfig = async (req: Request, res: Response) => {
     if (!config) {
       return res.status(404).json({
         success: false,
-        message: 'Email configuration not found',
+        message: "Email configuration not found",
       });
     }
 
@@ -846,13 +939,13 @@ export const deleteEmailConfig = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       success: true,
-      message: 'Email configuration deleted successfully',
+      message: "Email configuration deleted successfully",
     });
   } catch (error: any) {
-    console.error('Error deleting email configuration:', error);
+    console.error("Error deleting email configuration:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to delete email configuration',
+      message: "Failed to delete email configuration",
       error: error.message,
     });
   }
@@ -865,13 +958,13 @@ export const deleteEmailConfig = async (req: Request, res: Response) => {
 export const deleteEmailConfigById = async (req: Request, res: Response) => {
   try {
     const { configId } = req.params;
-    const { force = 'false' } = req.query;
+    const { force = "false" } = req.query;
 
     // Validate config ID format
     if (!mongoose.Types.ObjectId.isValid(configId)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid configuration ID',
+        message: "Invalid configuration ID",
       });
     }
 
@@ -881,7 +974,7 @@ export const deleteEmailConfigById = async (req: Request, res: Response) => {
     if (!config) {
       return res.status(404).json({
         success: false,
-        message: 'Email configuration not found',
+        message: "Email configuration not found",
       });
     }
 
@@ -890,14 +983,15 @@ export const deleteEmailConfigById = async (req: Request, res: Response) => {
       sourceEmail: config.emailAddress.toLowerCase(),
     });
 
-    if (ticketCount > 0 && force !== 'true') {
+    if (ticketCount > 0 && force !== "true") {
       return res.status(409).json({
         success: false,
         message: `Cannot delete email configuration. ${ticketCount} ticket(s) were created using this email.`,
         data: {
           ticketCount,
           emailAddress: config.emailAddress,
-          suggestion: 'Consider disabling instead, or use ?force=true to delete anyway',
+          suggestion:
+            "Consider disabling instead, or use ?force=true to delete anyway",
         },
       });
     }
@@ -910,12 +1004,12 @@ export const deleteEmailConfigById = async (req: Request, res: Response) => {
     await ProjectEmailConfig.findByIdAndDelete(configId);
 
     console.log(
-      `🗑️ Deleted email configuration: ${emailAddress} (${ticketCount} related tickets)`
+      `🗑️ Deleted email configuration: ${emailAddress} (${ticketCount} related tickets)`,
     );
 
     return res.status(200).json({
       success: true,
-      message: 'Email configuration deleted successfully',
+      message: "Email configuration deleted successfully",
       data: {
         deletedEmail: emailAddress,
         projectId,
@@ -923,10 +1017,10 @@ export const deleteEmailConfigById = async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
-    console.error('Error deleting email configuration:', error);
+    console.error("Error deleting email configuration:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to delete email configuration',
+      message: "Failed to delete email configuration",
       error: error.message,
     });
   }
@@ -936,21 +1030,27 @@ export const deleteEmailConfigById = async (req: Request, res: Response) => {
  * POST /api/email-configs/:configId/test
  * Test email configuration connection (Task 2.5)
  */
-export const testEmailConfigConnection = async (req: Request, res: Response) => {
+export const testEmailConfigConnection = async (
+  req: Request,
+  res: Response,
+) => {
   try {
     const { configId } = req.params;
 
-    console.log('🔍 Test connection request received');
-    console.log('   Config ID:', configId);
-    console.log('   Config ID type:', typeof configId);
-    console.log('   Is valid ObjectId:', mongoose.Types.ObjectId.isValid(configId));
+    console.log("🔍 Test connection request received");
+    console.log("   Config ID:", configId);
+    console.log("   Config ID type:", typeof configId);
+    console.log(
+      "   Is valid ObjectId:",
+      mongoose.Types.ObjectId.isValid(configId),
+    );
 
     // Validate config ID format
     if (!configId || !mongoose.Types.ObjectId.isValid(configId)) {
-      console.log('   ❌ Invalid config ID format');
+      console.log("   ❌ Invalid config ID format");
       return res.status(400).json({
         success: false,
-        message: 'Invalid configuration ID',
+        message: "Invalid configuration ID",
       });
     }
 
@@ -960,7 +1060,7 @@ export const testEmailConfigConnection = async (req: Request, res: Response) => 
     if (!config) {
       return res.status(404).json({
         success: false,
-        message: 'Email configuration not found',
+        message: "Email configuration not found",
       });
     }
 
@@ -971,21 +1071,21 @@ export const testEmailConfigConnection = async (req: Request, res: Response) => 
     const smtpPassword = config.getDecryptedSmtpPassword();
 
     // Test IMAP connection
-    console.log('  📥 Testing IMAP connection...');
+    console.log("  📥 Testing IMAP connection...");
     const imapResult = await testImapConnection(
       config.imapHost,
       config.imapPort,
       config.imapUsername,
-      imapPassword
+      imapPassword,
     );
 
     // Test SMTP connection
-    console.log('  📤 Testing SMTP connection...');
+    console.log("  📤 Testing SMTP connection...");
     const smtpResult = await testSmtpConnection(
       config.smtpHost,
       config.smtpPort,
       config.smtpUsername,
-      smtpPassword
+      smtpPassword,
     );
 
     // Determine overall success
@@ -994,38 +1094,38 @@ export const testEmailConfigConnection = async (req: Request, res: Response) => 
     // Update connection status in database (Task 8.2)
     config.lastCheckedAt = new Date();
     config.lastConnectionTest = new Date();
-    
+
     if (overallSuccess) {
-      config.lastCheckStatus = 'success';
+      config.lastCheckStatus = "success";
       config.lastCheckError = undefined;
-      config.connectionStatus = 'connected'; // Task 8.2: Update connection status
+      config.connectionStatus = "connected"; // Task 8.2: Update connection status
       config.lastSuccessfulConnection = new Date();
       config.failedAttempts = 0;
       config.nextRetryAt = undefined;
       config.lastConnectionError = undefined;
     } else {
-      config.lastCheckStatus = 'failed';
+      config.lastCheckStatus = "failed";
       const errors = [];
       if (!imapResult.success) errors.push(`IMAP: ${imapResult.error}`);
       if (!smtpResult.success) errors.push(`SMTP: ${smtpResult.error}`);
-      config.lastCheckError = errors.join('; ');
-      config.connectionStatus = 'error'; // Task 8.2: Update connection status
-      config.lastConnectionError = errors.join('; ');
+      config.lastCheckError = errors.join("; ");
+      config.connectionStatus = "error"; // Task 8.2: Update connection status
+      config.lastConnectionError = errors.join("; ");
       config.failedAttempts = (config.failedAttempts || 0) + 1;
     }
     await config.save();
 
     console.log(
-      `  ${overallSuccess ? '✅' : '❌'} Connection test ${
-        overallSuccess ? 'passed' : 'failed'
-      }`
+      `  ${overallSuccess ? "✅" : "❌"} Connection test ${
+        overallSuccess ? "passed" : "failed"
+      }`,
     );
 
     return res.status(200).json({
       success: overallSuccess,
       message: overallSuccess
-        ? 'Email connection test successful'
-        : 'Email connection test failed',
+        ? "Email connection test successful"
+        : "Email connection test failed",
       data: {
         emailAddress: config.emailAddress,
         imap: {
@@ -1044,10 +1144,10 @@ export const testEmailConfigConnection = async (req: Request, res: Response) => 
       },
     });
   } catch (error: any) {
-    console.error('Error testing email configuration:', error);
+    console.error("Error testing email configuration:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to test email configuration',
+      message: "Failed to test email configuration",
       error: error.message,
     });
   }
@@ -1072,25 +1172,26 @@ export const testEmailCredentials = async (req: Request, res: Response) => {
       // New OAuth2 fields
       emailAddress,
       provider,
-      authMethod = 'basic',
+      authMethod = "basic",
       oauth2,
     } = req.body;
 
     const authType = authMethod as AuthMethod;
     // Detect provider from email first, then fall back to host detection
-    let detectedProvider = provider || detectEmailProvider(emailAddress || imapUsername || '');
-    if (detectedProvider === 'other') {
+    let detectedProvider =
+      provider || detectEmailProvider(emailAddress || imapUsername || "");
+    if (detectedProvider === "other") {
       // Try to detect from IMAP/SMTP hosts (helps with custom domains using Google/Microsoft)
       detectedProvider = detectProviderFromHost(imapHost, smtpHost);
     }
     const defaults = getProviderDefaults(detectedProvider);
 
     // Validate based on auth method
-    if (authType === 'oauth2') {
+    if (authType === "oauth2") {
       if (!oauth2?.clientId || !oauth2?.refreshToken) {
         return res.status(400).json({
           success: false,
-          message: 'OAuth2 authentication requires clientId and refreshToken',
+          message: "OAuth2 authentication requires clientId and refreshToken",
         });
       }
     } else {
@@ -1098,14 +1199,14 @@ export const testEmailCredentials = async (req: Request, res: Response) => {
       if (!imapHost || !imapPort || !imapUsername || !imapPassword) {
         return res.status(400).json({
           success: false,
-          message: 'Missing required IMAP credentials',
+          message: "Missing required IMAP credentials",
         });
       }
 
       if (!smtpHost || !smtpPort || !smtpUsername || !smtpPassword) {
         return res.status(400).json({
           success: false,
-          message: 'Missing required SMTP credentials',
+          message: "Missing required SMTP credentials",
         });
       }
     }
@@ -1116,53 +1217,63 @@ export const testEmailCredentials = async (req: Request, res: Response) => {
     const smtpHostToUse = smtpHost || defaults.smtpHost;
     const smtpPortToUse = smtpPort || defaults.smtpPort;
 
-    console.log(`🔌 Testing email credentials (auth: ${authType}, provider: ${detectedProvider})`);
-    console.log(`   IMAP: ${imapHostToUse}:${imapPortToUse}, SMTP: ${smtpHostToUse}:${smtpPortToUse}`);
+    console.log(
+      `🔌 Testing email credentials (auth: ${authType}, provider: ${detectedProvider})`,
+    );
+    console.log(
+      `   IMAP: ${imapHostToUse}:${imapPortToUse}, SMTP: ${smtpHostToUse}:${smtpPortToUse}`,
+    );
 
     // Test IMAP connection
-    console.log('  📥 Testing IMAP connection...');
+    console.log("  📥 Testing IMAP connection...");
     const imapResult = await testImapConnection(
       imapHostToUse,
       Number(imapPortToUse),
       imapUsername || emailAddress,
-      imapPassword || '',
+      imapPassword || "",
       authType,
-      authType === 'oauth2' ? {
-        clientId: oauth2?.clientId,
-        clientSecret: oauth2?.clientSecret,
-        accessToken: oauth2?.accessToken,
-        refreshToken: oauth2?.refreshToken,
-        provider: detectedProvider,
-      } : undefined
+      authType === "oauth2"
+        ? {
+            clientId: oauth2?.clientId,
+            clientSecret: oauth2?.clientSecret,
+            accessToken: oauth2?.accessToken,
+            refreshToken: oauth2?.refreshToken,
+            provider: detectedProvider,
+          }
+        : undefined,
     );
 
     // Test SMTP connection
-    console.log('  📤 Testing SMTP connection...');
+    console.log("  📤 Testing SMTP connection...");
     const smtpResult = await testSmtpConnection(
       smtpHostToUse,
       Number(smtpPortToUse),
       smtpUsername || emailAddress,
-      smtpPassword || '',
+      smtpPassword || "",
       authType,
-      authType === 'oauth2' ? {
-        clientId: oauth2?.clientId,
-        clientSecret: oauth2?.clientSecret,
-        accessToken: oauth2?.accessToken,
-        refreshToken: oauth2?.refreshToken,
-        provider: detectedProvider,
-      } : undefined
+      authType === "oauth2"
+        ? {
+            clientId: oauth2?.clientId,
+            clientSecret: oauth2?.clientSecret,
+            accessToken: oauth2?.accessToken,
+            refreshToken: oauth2?.refreshToken,
+            provider: detectedProvider,
+          }
+        : undefined,
     );
 
     // Determine overall status
     const overallSuccess = imapResult.success && smtpResult.success;
 
-    console.log(`  ${overallSuccess ? '✅' : '❌'} Test result: ${overallSuccess ? 'Success' : 'Failed'}`);
+    console.log(
+      `  ${overallSuccess ? "✅" : "❌"} Test result: ${overallSuccess ? "Success" : "Failed"}`,
+    );
 
     return res.status(200).json({
       success: overallSuccess,
       message: overallSuccess
-        ? 'Both IMAP and SMTP connections successful'
-        : 'One or more connections failed',
+        ? "Both IMAP and SMTP connections successful"
+        : "One or more connections failed",
       data: {
         imap: {
           success: imapResult.success,
@@ -1182,10 +1293,10 @@ export const testEmailCredentials = async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
-    console.error('Error testing email credentials:', error);
+    console.error("Error testing email credentials:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to test email credentials',
+      message: "Failed to test email credentials",
       error: error.message,
     });
   }
@@ -1203,56 +1314,60 @@ export const getOAuth2AuthUrl = async (req: Request, res: Response) => {
     if (!provider || !clientId || !redirectUri) {
       return res.status(400).json({
         success: false,
-        message: 'Provider, clientId, and redirectUri are required',
+        message: "Provider, clientId, and redirectUri are required",
       });
     }
 
     let authUrl: string;
 
-    if (provider === 'google') {
+    if (provider === "google") {
       if (!clientSecret) {
         return res.status(400).json({
           success: false,
-          message: 'clientSecret is required for Google OAuth2',
+          message: "clientSecret is required for Google OAuth2",
         });
       }
 
-      const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
-      
+      const oauth2Client = new google.auth.OAuth2(
+        clientId,
+        clientSecret,
+        redirectUri,
+      );
+
       authUrl = oauth2Client.generateAuthUrl({
-        access_type: 'offline',
-        prompt: 'consent', // Force consent to get refresh token
+        access_type: "offline",
+        prompt: "consent", // Force consent to get refresh token
         scope: [
-          'https://mail.google.com/', // Full Gmail access for IMAP/SMTP
-          'https://www.googleapis.com/auth/userinfo.email',
+          "https://mail.google.com/", // Full Gmail access for IMAP/SMTP
+          "https://www.googleapis.com/auth/userinfo.email",
         ],
-        state: JSON.stringify({ projectId, provider: 'google' }),
+        state: JSON.stringify({ projectId, provider: "google" }),
       });
-    } else if (provider === 'microsoft') {
+    } else if (provider === "microsoft") {
       // Microsoft OAuth2 endpoint
       const scopes = [
-        'https://outlook.office365.com/IMAP.AccessAsUser.All',
-        'https://outlook.office365.com/SMTP.Send',
-        'offline_access',
-        'openid',
-        'email',
+        "https://outlook.office365.com/IMAP.AccessAsUser.All",
+        "https://outlook.office365.com/SMTP.Send",
+        "offline_access",
+        "openid",
+        "email",
       ];
 
       const params = new URLSearchParams({
         client_id: clientId,
-        response_type: 'code',
+        response_type: "code",
         redirect_uri: redirectUri,
-        response_mode: 'query',
-        scope: scopes.join(' '),
-        state: JSON.stringify({ projectId, provider: 'microsoft' }),
-        prompt: 'consent',
+        response_mode: "query",
+        scope: scopes.join(" "),
+        state: JSON.stringify({ projectId, provider: "microsoft" }),
+        prompt: "consent",
       });
 
       authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?${params.toString()}`;
     } else {
       return res.status(400).json({
         success: false,
-        message: 'Invalid provider. Supported: google, microsoft',
+        message: "Invalid provider. Supported: google, microsoft",
       });
     }
 
@@ -1261,10 +1376,10 @@ export const getOAuth2AuthUrl = async (req: Request, res: Response) => {
       data: { authUrl },
     });
   } catch (error: any) {
-    console.error('Error generating OAuth2 auth URL:', error);
+    console.error("Error generating OAuth2 auth URL:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to generate OAuth2 authorization URL',
+      message: "Failed to generate OAuth2 authorization URL",
       error: error.message,
     });
   }
@@ -1282,7 +1397,8 @@ export const handleOAuth2Callback = async (req: Request, res: Response) => {
     if (!code || !provider || !clientId || !clientSecret || !redirectUri) {
       return res.status(400).json({
         success: false,
-        message: 'code, provider, clientId, clientSecret, and redirectUri are required',
+        message:
+          "code, provider, clientId, clientSecret, and redirectUri are required",
       });
     }
 
@@ -1293,61 +1409,67 @@ export const handleOAuth2Callback = async (req: Request, res: Response) => {
       email?: string;
     };
 
-    if (provider === 'google') {
-      const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
-      
+    if (provider === "google") {
+      const oauth2Client = new google.auth.OAuth2(
+        clientId,
+        clientSecret,
+        redirectUri,
+      );
+
       const { tokens: googleTokens } = await oauth2Client.getToken(code);
-      
+
       if (!googleTokens.access_token) {
         return res.status(400).json({
           success: false,
-          message: 'Failed to obtain access token from Google',
+          message: "Failed to obtain access token from Google",
         });
       }
 
       // Get user email
       oauth2Client.setCredentials(googleTokens);
-      const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
+      const oauth2 = google.oauth2({ version: "v2", auth: oauth2Client });
       const { data: userInfo } = await oauth2.userinfo.get();
 
       tokens = {
         accessToken: googleTokens.access_token,
         refreshToken: googleTokens.refresh_token || undefined,
-        expiresIn: googleTokens.expiry_date 
-          ? Math.floor((googleTokens.expiry_date - Date.now()) / 1000) 
+        expiresIn: googleTokens.expiry_date
+          ? Math.floor((googleTokens.expiry_date - Date.now()) / 1000)
           : 3600,
         email: userInfo.email || undefined,
       };
-    } else if (provider === 'microsoft') {
+    } else if (provider === "microsoft") {
       // Exchange code for tokens using Microsoft endpoint
-      const tokenEndpoint = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
-      
+      const tokenEndpoint =
+        "https://login.microsoftonline.com/common/oauth2/v2.0/token";
+
       const params = new URLSearchParams({
         client_id: clientId,
         client_secret: clientSecret,
         code: code,
         redirect_uri: redirectUri,
-        grant_type: 'authorization_code',
-        scope: 'https://outlook.office365.com/IMAP.AccessAsUser.All https://outlook.office365.com/SMTP.Send offline_access openid email',
+        grant_type: "authorization_code",
+        scope:
+          "https://outlook.office365.com/IMAP.AccessAsUser.All https://outlook.office365.com/SMTP.Send offline_access openid email",
       });
 
       const response = await fetch(tokenEndpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: params.toString(),
       });
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Microsoft token exchange failed:', errorText);
+        console.error("Microsoft token exchange failed:", errorText);
         return res.status(400).json({
           success: false,
-          message: 'Failed to exchange code for tokens with Microsoft',
+          message: "Failed to exchange code for tokens with Microsoft",
           error: errorText,
         });
       }
 
-      const tokenData = await response.json() as {
+      const tokenData = (await response.json()) as {
         access_token: string;
         refresh_token?: string;
         expires_in?: number;
@@ -1358,10 +1480,12 @@ export const handleOAuth2Callback = async (req: Request, res: Response) => {
       let email: string | undefined;
       if (tokenData.id_token) {
         try {
-          const payload = JSON.parse(Buffer.from(tokenData.id_token.split('.')[1], 'base64').toString());
+          const payload = JSON.parse(
+            Buffer.from(tokenData.id_token.split(".")[1], "base64").toString(),
+          );
           email = payload.email || payload.preferred_username;
         } catch (e) {
-          console.warn('Failed to decode Microsoft id_token:', e);
+          console.warn("Failed to decode Microsoft id_token:", e);
         }
       }
 
@@ -1374,14 +1498,14 @@ export const handleOAuth2Callback = async (req: Request, res: Response) => {
     } else {
       return res.status(400).json({
         success: false,
-        message: 'Invalid provider. Supported: google, microsoft',
+        message: "Invalid provider. Supported: google, microsoft",
       });
     }
 
     // Return tokens to frontend (they should be saved securely)
     return res.status(200).json({
       success: true,
-      message: 'OAuth2 authorization successful',
+      message: "OAuth2 authorization successful",
       data: {
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
@@ -1391,10 +1515,10 @@ export const handleOAuth2Callback = async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
-    console.error('Error handling OAuth2 callback:', error);
+    console.error("Error handling OAuth2 callback:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to complete OAuth2 authorization',
+      message: "Failed to complete OAuth2 authorization",
       error: error.message,
     });
   }
