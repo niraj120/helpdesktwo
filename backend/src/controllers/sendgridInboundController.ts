@@ -17,6 +17,17 @@ import { logError, ErrorContext, ErrorSeverity } from "../utils/errorLogger";
  *   leave unticked for the parsed form fields used below.
  */
 export const handleSendgridInbound = async (req: Request, res: Response) => {
+  // Validate shared secret token if SENDGRID_INBOUND_TOKEN is configured
+  const expectedToken = process.env.SENDGRID_INBOUND_TOKEN;
+  if (expectedToken) {
+    const providedToken = req.query.token as string | undefined;
+    if (!providedToken || providedToken !== expectedToken) {
+      // Return 403 but do NOT expose details to the caller
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+  }
+
   // Acknowledge immediately so SendGrid doesn't retry
   res.status(200).json({ received: true });
 

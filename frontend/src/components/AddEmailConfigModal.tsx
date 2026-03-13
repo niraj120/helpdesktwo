@@ -588,11 +588,7 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                 </ol>
                 <div className="flex items-center gap-2 bg-white border border-green-300 rounded px-3 py-2">
                   <code className="text-xs text-green-900 flex-1 break-all">
-                    {import.meta.env.VITE_API_BASE_URL ||
-                      window.location.origin
-                        .replace(":3000", ":3003")
-                        .replace(":3001", ":3003")}
-                    /api/email/inbound/sendgrid
+                    {window.location.origin}/api/email/inbound/sendgrid
                   </code>
                 </div>
                 <p className="text-xs text-green-700">
