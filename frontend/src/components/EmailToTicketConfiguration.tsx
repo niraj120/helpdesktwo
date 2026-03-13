@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import { API_CONFIG } from '../config/constants';
-import { usePermissions } from '../hooks/usePermissions';
-import { PERMISSIONS } from '../constants/permissions';
-import DashboardLayout from './DashboardLayout';
-import ModuleHeader from './ModuleHeader';
-import EmailConfigModal from './AddEmailConfigModal';
-import EmailConnectionStatus from './EmailConnectionStatus'; // Task 8.2
+import React, { useState, useEffect } from "react";
+import axios from "axios";
+import { API_CONFIG } from "../config/constants";
+import { usePermissions } from "../hooks/usePermissions";
+import { PERMISSIONS } from "../constants/permissions";
+import DashboardLayout from "./DashboardLayout";
+import ModuleHeader from "./ModuleHeader";
+import EmailConfigModal from "./AddEmailConfigModal";
+import EmailConnectionStatus from "./EmailConnectionStatus"; // Task 8.2
 import {
   PlusIcon,
   EnvelopeIcon,
@@ -16,8 +16,8 @@ import {
   ExclamationCircleIcon,
   TrashIcon,
   PencilIcon,
-  SignalIcon
-} from '@heroicons/react/24/outline';
+  SignalIcon,
+} from "@heroicons/react/24/outline";
 
 interface Project {
   _id: string;
@@ -37,12 +37,14 @@ interface EmailConfig {
   smtpUsername: string;
   isEnabled: boolean;
   lastCheckedAt?: string;
-  lastCheckStatus?: 'success' | 'failed';
+  lastCheckStatus?: "success" | "failed";
   lastCheckError?: string;
   createdAt: string;
   updatedAt: string;
+  inboundMethod?: "imap" | "webhook" | "sendgrid";
+  webhookProvider?: string;
   // Task 8.2: Connection status tracking
-  connectionStatus?: 'connected' | 'disconnected' | 'error' | 'untested';
+  connectionStatus?: "connected" | "disconnected" | "error" | "untested";
   lastConnectionTest?: string;
   lastConnectionError?: string;
   failedAttempts?: number;
@@ -52,14 +54,14 @@ interface EmailConfig {
 
 const EmailToTicketConfiguration: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [emailConfigs, setEmailConfigs] = useState<EmailConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [testingConfig, setTestingConfig] = useState<string | null>(null);
   const [togglingConfig, setTogglingConfig] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingConfig, setEditingConfig] = useState<EmailConfig | null>(null);
-  
+
   const { hasPermission } = usePermissions();
   const canView = hasPermission(PERMISSIONS.EMAIL_CONFIG_VIEW);
   const canCreate = hasPermission(PERMISSIONS.EMAIL_CONFIG_EDIT); // Using EDIT permission for create
@@ -80,27 +82,26 @@ const EmailToTicketConfiguration: React.FC = () => {
 
   const fetchProjects = async () => {
     try {
-      const token = localStorage.getItem('authToken');
-      const response = await axios.get(
-        `${API_CONFIG.API_URL}/projects`,
-        {
-          headers: { Authorization: `Bearer ${token}` }
-        }
-      );
+      const token = localStorage.getItem("authToken");
+      const response = await axios.get(`${API_CONFIG.API_URL}/projects`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
       if (response.data.success) {
         const projectsArray = Array.isArray(response.data.data?.projects)
           ? response.data.data.projects
-          : (Array.isArray(response.data.data) ? response.data.data : []);
+          : Array.isArray(response.data.data)
+            ? response.data.data
+            : [];
         setProjects(projectsArray);
-        
+
         // Auto-select first project if available
         if (projectsArray.length > 0) {
           setSelectedProjectId(projectsArray[0]._id);
         }
       }
     } catch (error: any) {
-      console.error('Error fetching projects:', error);
+      console.error("Error fetching projects:", error);
     } finally {
       setLoading(false);
     }
@@ -108,22 +109,22 @@ const EmailToTicketConfiguration: React.FC = () => {
 
   const fetchEmailConfigs = async () => {
     if (!selectedProjectId) return;
-    
+
     try {
       setLoading(true);
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const response = await axios.get(
         `${API_CONFIG.API_URL}/projects/${selectedProjectId}/email-configs`,
         {
-          headers: { Authorization: `Bearer ${token}` }
-        }
+          headers: { Authorization: `Bearer ${token}` },
+        },
       );
 
       if (response.data.success) {
         setEmailConfigs(response.data.data || []);
       }
     } catch (error: any) {
-      console.error('Error fetching email configs:', error);
+      console.error("Error fetching email configs:", error);
       setEmailConfigs([]);
     } finally {
       setLoading(false);
@@ -132,38 +133,42 @@ const EmailToTicketConfiguration: React.FC = () => {
 
   const handleTestConnection = async (configId: string) => {
     try {
-      console.log('Testing connection for config:', configId);
+      console.log("Testing connection for config:", configId);
       setTestingConfig(configId);
-      const token = localStorage.getItem('authToken');
-      
+      const token = localStorage.getItem("authToken");
+
       if (!token) {
-        alert('❌ Authentication token not found. Please log in again.');
+        alert("❌ Authentication token not found. Please log in again.");
         return;
       }
-      
-      console.log('Making request to:', `${API_CONFIG.API_URL}/email-configs/${configId}/test`);
-      
+
+      console.log(
+        "Making request to:",
+        `${API_CONFIG.API_URL}/email-configs/${configId}/test`,
+      );
+
       const response = await axios.post(
         `${API_CONFIG.API_URL}/email-configs/${configId}/test`,
         {},
         {
-          headers: { Authorization: `Bearer ${token}` }
-        }
+          headers: { Authorization: `Bearer ${token}` },
+        },
       );
 
-      console.log('Test response:', response.data);
+      console.log("Test response:", response.data);
 
       if (response.data.success) {
-        alert('✅ Connection test successful!');
+        alert("✅ Connection test successful!");
       } else {
         alert(`❌ Connection test failed:\n${response.data.message}`);
       }
-      
+
       // Refresh the list to get updated status
       fetchEmailConfigs();
     } catch (error: any) {
-      console.error('Error testing connection:', error);
-      const errorMessage = error.response?.data?.message || error.message || 'Unknown error';
+      console.error("Error testing connection:", error);
+      const errorMessage =
+        error.response?.data?.message || error.message || "Unknown error";
       alert(`❌ Connection test failed:\n${errorMessage}`);
     } finally {
       setTestingConfig(null);
@@ -172,31 +177,31 @@ const EmailToTicketConfiguration: React.FC = () => {
 
   const handleToggleEnabled = async (configId: string) => {
     // Find current config to get current state
-    const currentConfig = emailConfigs.find(c => c._id === configId);
+    const currentConfig = emailConfigs.find((c) => c._id === configId);
     if (!currentConfig) return;
 
     const previousState = currentConfig.isEnabled;
-    
+
     try {
       // Set loading state
       setTogglingConfig(configId);
 
       // Optimistic UI update - update state immediately
-      setEmailConfigs(prevConfigs =>
-        prevConfigs.map(config =>
+      setEmailConfigs((prevConfigs) =>
+        prevConfigs.map((config) =>
           config._id === configId
             ? { ...config, isEnabled: !config.isEnabled }
-            : config
-        )
+            : config,
+        ),
       );
 
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const response = await axios.patch(
         `${API_CONFIG.API_URL}/email-configs/${configId}/toggle`,
         {},
         {
-          headers: { Authorization: `Bearer ${token}` }
-        }
+          headers: { Authorization: `Bearer ${token}` },
+        },
       );
 
       // If successful, fetch fresh data to ensure sync
@@ -204,19 +209,22 @@ const EmailToTicketConfiguration: React.FC = () => {
         await fetchEmailConfigs();
       }
     } catch (error: any) {
-      console.error('Error toggling config:', error);
-      
+      console.error("Error toggling config:", error);
+
       // Revert optimistic update on error
-      setEmailConfigs(prevConfigs =>
-        prevConfigs.map(config =>
+      setEmailConfigs((prevConfigs) =>
+        prevConfigs.map((config) =>
           config._id === configId
             ? { ...config, isEnabled: previousState }
-            : config
-        )
+            : config,
+        ),
       );
-      
+
       // Show error message
-      const errorMsg = error.response?.data?.message || error.message || 'Failed to toggle configuration';
+      const errorMsg =
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to toggle configuration";
       alert(`❌ Error: ${errorMsg}`);
     } finally {
       setTogglingConfig(null);
@@ -224,25 +232,24 @@ const EmailToTicketConfiguration: React.FC = () => {
   };
 
   const handleDelete = async (configId: string) => {
-    if (!confirm('Are you sure you want to delete this email configuration?')) {
+    if (!confirm("Are you sure you want to delete this email configuration?")) {
       return;
     }
 
     try {
-      const token = localStorage.getItem('authToken');
-      await axios.delete(
-        `${API_CONFIG.API_URL}/email-configs/${configId}`,
-        {
-          headers: { Authorization: `Bearer ${token}` }
-        }
-      );
-      
-      alert('✅ Email configuration deleted successfully');
+      const token = localStorage.getItem("authToken");
+      await axios.delete(`${API_CONFIG.API_URL}/email-configs/${configId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      alert("✅ Email configuration deleted successfully");
       fetchEmailConfigs();
     } catch (error: any) {
-      console.error('Error deleting config:', error);
+      console.error("Error deleting config:", error);
       if (error.response?.status === 409) {
-        alert(`Cannot delete: ${error.response.data.message}\n\nThis email has created ${error.response.data.data?.ticketCount || 0} ticket(s).`);
+        alert(
+          `Cannot delete: ${error.response.data.message}\n\nThis email has created ${error.response.data.data?.ticketCount || 0} ticket(s).`,
+        );
       } else {
         alert(`Error: ${error.response?.data?.message || error.message}`);
       }
@@ -250,7 +257,7 @@ const EmailToTicketConfiguration: React.FC = () => {
   };
 
   const formatDate = (dateString?: string) => {
-    if (!dateString) return 'Never';
+    if (!dateString) return "Never";
     const date = new Date(dateString);
     return date.toLocaleString();
   };
@@ -265,7 +272,7 @@ const EmailToTicketConfiguration: React.FC = () => {
       );
     }
 
-    if (config.lastCheckStatus === 'success') {
+    if (config.lastCheckStatus === "success") {
       return (
         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
           <CheckCircleIcon className="w-4 h-4 mr-1" />
@@ -287,7 +294,9 @@ const EmailToTicketConfiguration: React.FC = () => {
       <DashboardLayout>
         <div className="p-6">
           <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-            <p className="text-red-800">You don't have permission to view email configurations.</p>
+            <p className="text-red-800">
+              You don't have permission to view email configurations.
+            </p>
           </div>
         </div>
       </DashboardLayout>
@@ -304,7 +313,10 @@ const EmailToTicketConfiguration: React.FC = () => {
       <div className="p-6">
         {/* Project Selector */}
         <div className="mb-6">
-          <label htmlFor="project-select" className="block text-sm font-medium text-gray-700 mb-2">
+          <label
+            htmlFor="project-select"
+            className="block text-sm font-medium text-gray-700 mb-2"
+          >
             Select Project
           </label>
           <select
@@ -316,7 +328,7 @@ const EmailToTicketConfiguration: React.FC = () => {
             <option value="">-- Select a Project --</option>
             {projects.map((project) => (
               <option key={project._id} value={project._id}>
-                {project.name} {project.code ? `(${project.code})` : ''}
+                {project.name} {project.code ? `(${project.code})` : ""}
               </option>
             ))}
           </select>
@@ -325,7 +337,9 @@ const EmailToTicketConfiguration: React.FC = () => {
         {!selectedProjectId ? (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 text-center">
             <EnvelopeIcon className="w-12 h-12 text-blue-400 mx-auto mb-3" />
-            <p className="text-blue-800 font-medium">Please select a project to manage email configurations</p>
+            <p className="text-blue-800 font-medium">
+              Please select a project to manage email configurations
+            </p>
           </div>
         ) : (
           <>
@@ -355,9 +369,12 @@ const EmailToTicketConfiguration: React.FC = () => {
               /* Empty State */
               <div className="bg-white border-2 border-dashed border-gray-300 rounded-lg p-12 text-center">
                 <EnvelopeIcon className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No Email Configurations</h3>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                  No Email Configurations
+                </h3>
                 <p className="text-gray-500 mb-6">
-                  Get started by adding an email account to convert incoming emails into support tickets.
+                  Get started by adding an email account to convert incoming
+                  emails into support tickets.
                 </p>
                 {canCreate && (
                   <button
@@ -392,11 +409,11 @@ const EmailToTicketConfiguration: React.FC = () => {
                             <span
                               className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                                 config.isEnabled
-                                  ? 'bg-green-100 text-green-800'
-                                  : 'bg-gray-100 text-gray-800'
+                                  ? "bg-green-100 text-green-800"
+                                  : "bg-gray-100 text-gray-800"
                               }`}
                             >
-                              {config.isEnabled ? 'Enabled' : 'Disabled'}
+                              {config.isEnabled ? "Enabled" : "Disabled"}
                             </span>
                           </div>
                         </div>
@@ -407,13 +424,29 @@ const EmailToTicketConfiguration: React.FC = () => {
                     <div className="p-4 space-y-3">
                       {/* Connection Details */}
                       <div className="text-xs space-y-1">
-                        <div className="flex items-center text-gray-600">
-                          <span className="font-medium w-16">IMAP:</span>
-                          <span className="truncate">{config.imapHost}:{config.imapPort}</span>
-                        </div>
+                        {config.inboundMethod === "webhook" ? (
+                          <div className="flex items-center text-gray-600">
+                            <span className="font-medium w-16">Inbound:</span>
+                            <span className="truncate">
+                              Webhook
+                              {config.webhookProvider
+                                ? ` (${config.webhookProvider})`
+                                : ""}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center text-gray-600">
+                            <span className="font-medium w-16">IMAP:</span>
+                            <span className="truncate">
+                              {config.imapHost}:{config.imapPort}
+                            </span>
+                          </div>
+                        )}
                         <div className="flex items-center text-gray-600">
                           <span className="font-medium w-16">SMTP:</span>
-                          <span className="truncate">{config.smtpHost}:{config.smtpPort}</span>
+                          <span className="truncate">
+                            {config.smtpHost}:{config.smtpPort}
+                          </span>
                         </div>
                       </div>
 
@@ -423,10 +456,18 @@ const EmailToTicketConfiguration: React.FC = () => {
                           <EmailConnectionStatus
                             configId={config._id}
                             status={config.connectionStatus}
-                            lastConnectionTest={config.lastConnectionTest ? new Date(config.lastConnectionTest) : undefined}
+                            lastConnectionTest={
+                              config.lastConnectionTest
+                                ? new Date(config.lastConnectionTest)
+                                : undefined
+                            }
                             lastConnectionError={config.lastConnectionError}
                             failedAttempts={config.failedAttempts}
-                            nextRetryAt={config.nextRetryAt ? new Date(config.nextRetryAt) : undefined}
+                            nextRetryAt={
+                              config.nextRetryAt
+                                ? new Date(config.nextRetryAt)
+                                : undefined
+                            }
                             onStatusChange={() => fetchEmailConfigs()}
                           />
                         </div>
@@ -435,9 +476,14 @@ const EmailToTicketConfiguration: React.FC = () => {
                       {/* Last Check Status */}
                       {config.lastCheckedAt && (
                         <div className="text-xs text-gray-500 pt-2 border-t border-gray-100">
-                          <div>Last tested: {formatDate(config.lastCheckedAt)}</div>
+                          <div>
+                            Last tested: {formatDate(config.lastCheckedAt)}
+                          </div>
                           {config.lastCheckError && (
-                            <div className="text-red-600 mt-1 truncate" title={config.lastCheckError}>
+                            <div
+                              className="text-red-600 mt-1 truncate"
+                              title={config.lastCheckError}
+                            >
                               Error: {config.lastCheckError}
                             </div>
                           )}
@@ -470,10 +516,10 @@ const EmailToTicketConfiguration: React.FC = () => {
                             disabled={togglingConfig === config._id}
                             className={`inline-flex items-center px-3 py-1.5 text-xs font-medium rounded border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                               config.isEnabled
-                                ? 'text-gray-700 bg-gray-50 hover:bg-gray-100 border-gray-200'
-                                : 'text-green-700 bg-green-50 hover:bg-green-100 border-green-200'
+                                ? "text-gray-700 bg-gray-50 hover:bg-gray-100 border-gray-200"
+                                : "text-green-700 bg-green-50 hover:bg-green-100 border-green-200"
                             }`}
-                            title={config.isEnabled ? 'Disable' : 'Enable'}
+                            title={config.isEnabled ? "Disable" : "Enable"}
                           >
                             {togglingConfig === config._id ? (
                               <>
@@ -481,7 +527,9 @@ const EmailToTicketConfiguration: React.FC = () => {
                                 <span>...</span>
                               </>
                             ) : (
-                              <span>{config.isEnabled ? 'Disable' : 'Enable'}</span>
+                              <span>
+                                {config.isEnabled ? "Disable" : "Enable"}
+                              </span>
                             )}
                           </button>
                         )}

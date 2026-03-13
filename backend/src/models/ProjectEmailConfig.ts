@@ -20,8 +20,17 @@ export interface IProjectEmailConfig extends Document {
   provider: EmailProvider;
   authMethod: AuthMethod;
   inboundMethod: InboundMethod;
+  webhookProvider?: string;
+  webhookPayloadMap?: {
+    to: string;
+    from: string;
+    subject: string;
+    text: string;
+    html: string;
+    messageId: string;
+  };
 
-  // IMAP settings (not used when inboundMethod === 'sendgrid')
+  // IMAP settings (not used when inboundMethod === 'sendgrid' or 'webhook')
   imapHost: string;
   imapPort: number;
   imapUsername: string;
@@ -98,13 +107,28 @@ const ProjectEmailConfigSchema: Schema = new Schema(
     },
     inboundMethod: {
       type: String,
-      enum: ["imap", "sendgrid"],
+      enum: ["imap", "sendgrid", "webhook"],
       default: "imap",
+    },
+    webhookProvider: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    webhookPayloadMap: {
+      to: { type: String, default: "" },
+      from: { type: String, default: "" },
+      subject: { type: String, default: "" },
+      text: { type: String, default: "" },
+      html: { type: String, default: "" },
+      messageId: { type: String, default: "" },
     },
     imapHost: {
       type: String,
       required: function (this: any) {
-        return this.inboundMethod !== "sendgrid";
+        return (
+          this.inboundMethod !== "sendgrid" && this.inboundMethod !== "webhook"
+        );
       },
       trim: true,
       default: "",
@@ -112,7 +136,9 @@ const ProjectEmailConfigSchema: Schema = new Schema(
     imapPort: {
       type: Number,
       required: function (this: any) {
-        return this.inboundMethod !== "sendgrid";
+        return (
+          this.inboundMethod !== "sendgrid" && this.inboundMethod !== "webhook"
+        );
       },
       min: 1,
       max: 65535,
@@ -121,7 +147,9 @@ const ProjectEmailConfigSchema: Schema = new Schema(
     imapUsername: {
       type: String,
       required: function (this: any) {
-        return this.inboundMethod !== "sendgrid";
+        return (
+          this.inboundMethod !== "sendgrid" && this.inboundMethod !== "webhook"
+        );
       },
       trim: true,
       default: "",
@@ -130,7 +158,9 @@ const ProjectEmailConfigSchema: Schema = new Schema(
       type: String,
       required: function (this: any) {
         return (
-          this.inboundMethod !== "sendgrid" && this.authMethod !== "oauth2"
+          this.inboundMethod !== "sendgrid" &&
+          this.inboundMethod !== "webhook" &&
+          this.authMethod !== "oauth2"
         );
       },
       default: "",

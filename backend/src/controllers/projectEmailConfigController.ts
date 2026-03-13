@@ -356,15 +356,17 @@ export const addEmailConfig = async (req: Request, res: Response) => {
       // New OAuth2 fields
       provider,
       authMethod = "basic",
-      inboundMethod = "imap",
+      inbound_method = "imap",
       oauth2,
+      webhook_provider,
+      webhook_payload_map,
     } = req.body;
 
     // Auto-detect provider from email if not specified
     const detectedProvider =
       provider || detectEmailProvider(email_address || "");
     const authType = authMethod as AuthMethod;
-    const inboundType = inboundMethod as "imap" | "sendgrid";
+    const inboundType = inbound_method as "imap" | "sendgrid" | "webhook";
 
     // Validate based on auth method and inbound method
     if (authType === "oauth2") {
@@ -381,8 +383,8 @@ export const addEmailConfig = async (req: Request, res: Response) => {
           message: "Email address is required",
         });
       }
-    } else if (inboundType === "sendgrid") {
-      // SendGrid inbound: only email_address, smtp fields, and sendgrid API key needed
+    } else if (inboundType === "sendgrid" || inboundType === "webhook") {
+      // Webhook inbound: only email_address + smtp fields needed
       if (
         !email_address ||
         !smtp_host ||
@@ -477,7 +479,7 @@ export const addEmailConfig = async (req: Request, res: Response) => {
     const smtpPortToUse = smtp_port || defaults.smtpPort;
 
     // Test IMAP connection only when using IMAP inbound
-    if (inboundType !== "sendgrid") {
+    if (inboundType !== "sendgrid" && inboundType !== "webhook") {
       console.log(
         `Testing IMAP connection for ${email_address} (auth: ${authType})...`,
       );
@@ -507,7 +509,7 @@ export const addEmailConfig = async (req: Request, res: Response) => {
       }
     } else {
       console.log(
-        `Skipping IMAP test — inbound method is SendGrid (webhook-based)`,
+        `Skipping IMAP test — inbound method is ${inboundType} (webhook-based)`,
       );
     }
 
@@ -546,11 +548,15 @@ export const addEmailConfig = async (req: Request, res: Response) => {
       provider: detectedProvider,
       authMethod: authType,
       inboundMethod: inboundType,
-      imapHost: inboundType === "sendgrid" ? "" : imapHostToUse,
-      imapPort: inboundType === "sendgrid" ? 993 : imapPortToUse,
+      imapHost: inboundType === "imap" ? imapHostToUse : "",
+      imapPort: inboundType === "imap" ? imapPortToUse : 993,
       imapUsername:
-        inboundType === "sendgrid" ? "" : imap_username || email_address,
-      imapPassword: inboundType === "sendgrid" ? "" : imap_password || "", // Will be encrypted by pre-save hook
+        inboundType === "imap" ? imap_username || email_address : "",
+      imapPassword: inboundType === "imap" ? imap_password || "" : "",
+      // Webhook fields
+      webhookProvider: inboundType === "webhook" ? webhook_provider || "" : "",
+      webhookPayloadMap:
+        inboundType === "webhook" ? webhook_payload_map || {} : {},
       smtpHost: smtpHostToUse,
       smtpPort: smtpPortToUse,
       smtpUsername: smtp_username || email_address,
@@ -594,6 +600,9 @@ export const addEmailConfig = async (req: Request, res: Response) => {
         smtpHost: emailConfig.smtpHost,
         smtpPort: emailConfig.smtpPort,
         isEnabled: emailConfig.isEnabled,
+        inboundMethod: emailConfig.inboundMethod,
+        webhookProvider: (emailConfig as any).webhookProvider || "",
+        webhookPayloadMap: (emailConfig as any).webhookPayloadMap || null,
         lastCheckedAt: emailConfig.lastCheckedAt,
         lastCheckStatus: emailConfig.lastCheckStatus,
       },
@@ -680,6 +689,10 @@ export const getEmailConfigs = async (req: Request, res: Response) => {
       lastCheckedAt: config.lastCheckedAt || null,
       lastCheckStatus: config.lastCheckStatus || "unknown",
       lastCheckError: config.lastCheckError || null,
+      // Inbound method details
+      inboundMethod: config.inboundMethod || "imap",
+      webhookProvider: (config as any).webhookProvider || "",
+      webhookPayloadMap: (config as any).webhookPayloadMap || null,
       createdAt: config.createdAt,
       updatedAt: config.updatedAt,
     }));
@@ -784,6 +797,10 @@ export const updateEmailConfig = async (req: Request, res: Response) => {
       config.emailAddress = email_address.toLowerCase();
     if (req.body.inbound_method !== undefined)
       (config as any).inboundMethod = req.body.inbound_method;
+    if (req.body.webhook_provider !== undefined)
+      (config as any).webhookProvider = req.body.webhook_provider;
+    if (req.body.webhook_payload_map !== undefined)
+      (config as any).webhookPayloadMap = req.body.webhook_payload_map;
     if (imap_host !== undefined) config.imapHost = imap_host;
     if (imap_port !== undefined) config.imapPort = Number(imap_port);
     if (imap_username !== undefined) config.imapUsername = imap_username;
