@@ -86,23 +86,23 @@ export const config = {
   // CORS & URLs - Auto-selected based on NODE_ENV from .env
   cors: {
     allowedOrigins: (isProduction
-      ? process.env.ALLOWED_ORIGINS_PRODUCTION || 'https://helpdesk-uat.hubblehox.ai'
+      ? process.env.ALLOWED_ORIGINS_PRODUCTION || 'https://helpdesk.hubblehox.ai'
       : process.env.ALLOWED_ORIGINS_LOCAL || 'http://localhost:3001,http://localhost:3000'
     ).split(',').map(o => o.trim()),
   },
   
   urls: {
     frontend: isProduction
-      ? process.env.FRONTEND_URL_PRODUCTION || 'https://helpdesk-uat.hubblehox.ai'
+      ? process.env.FRONTEND_URL_PRODUCTION || 'https://helpdesk.hubblehox.ai'
       : process.env.FRONTEND_URL_LOCAL || 'http://localhost:3001',
     backend: isProduction
-      ? process.env.BACKEND_URL_PRODUCTION || 'https://helpdesk-uat.hubblehox.ai'
+      ? process.env.BACKEND_URL_PRODUCTION || 'https://helpdesk.hubblehox.ai'
       : process.env.BACKEND_URL_LOCAL || 'http://localhost:3003',
     api: isProduction
-      ? process.env.API_URL_PRODUCTION || 'https://helpdesk-uat.hubblehox.ai/api'
+      ? process.env.API_URL_PRODUCTION || 'https://helpdesk.hubblehox.ai/api'
       : process.env.API_URL_LOCAL || 'http://localhost:3003/api',
     socketCors: isProduction
-      ? process.env.SOCKET_CORS_ORIGIN_PRODUCTION || 'https://helpdesk-uat.hubblehox.ai'
+      ? process.env.SOCKET_CORS_ORIGIN_PRODUCTION || 'https://helpdesk.hubblehox.ai'
       : process.env.SOCKET_CORS_ORIGIN_LOCAL || 'http://localhost:3001',
   },
   
