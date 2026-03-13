@@ -1083,18 +1083,28 @@ export const testEmailConfigConnection = async (
 
     console.log(`🔌 Testing email configuration: ${config.emailAddress}`);
 
+    const inboundMethodRaw = config.inboundMethod as string;
+    const isWebhookInbound =
+      inboundMethodRaw === "webhook" || inboundMethodRaw === "sendgrid";
+
     // Get decrypted passwords
     const imapPassword = config.getDecryptedImapPassword();
     const smtpPassword = config.getDecryptedSmtpPassword();
 
-    // Test IMAP connection
-    console.log("  📥 Testing IMAP connection...");
-    const imapResult = await testImapConnection(
-      config.imapHost,
-      config.imapPort,
-      config.imapUsername,
-      imapPassword,
-    );
+    // Test IMAP connection — skip for webhook-based inbound
+    let imapResult: { success: boolean; error?: string };
+    if (isWebhookInbound) {
+      console.log("  📥 Skipping IMAP test — inbound method is webhook-based");
+      imapResult = { success: true };
+    } else {
+      console.log("  📥 Testing IMAP connection...");
+      imapResult = await testImapConnection(
+        config.imapHost,
+        config.imapPort,
+        config.imapUsername,
+        imapPassword,
+      );
+    }
 
     // Test SMTP connection
     console.log("  📤 Testing SMTP connection...");
@@ -1145,12 +1155,18 @@ export const testEmailConfigConnection = async (
         : "Email connection test failed",
       data: {
         emailAddress: config.emailAddress,
-        imap: {
-          success: imapResult.success,
-          error: imapResult.error,
-          host: config.imapHost,
-          port: config.imapPort,
-        },
+        imap: isWebhookInbound
+          ? {
+              success: true,
+              skipped: true,
+              reason: "Webhook inbound — no IMAP needed",
+            }
+          : {
+              success: imapResult.success,
+              error: imapResult.error,
+              host: config.imapHost,
+              port: config.imapPort,
+            },
         smtp: {
           success: smtpResult.success,
           error: smtpResult.error,

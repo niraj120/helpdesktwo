@@ -9,7 +9,7 @@ const ALGORITHM = "aes-256-cbc";
 export type EmailProvider = "google" | "microsoft" | "other";
 export type AuthMethod = "basic" | "oauth2" | "app_password";
 
-export type InboundMethod = "imap" | "sendgrid";
+export type InboundMethod = "imap" | "sendgrid" | "webhook";
 
 export interface IProjectEmailConfig extends Document {
   projectId: mongoose.Types.ObjectId;
