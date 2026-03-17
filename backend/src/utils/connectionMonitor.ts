@@ -5,6 +5,7 @@
 
 import nodemailer from 'nodemailer';
 import EmailConfig from '../models/EmailConfig';
+import ProjectEmailConfig from '../models/ProjectEmailConfig';
 import { logEmailError, ErrorContext, ErrorSeverity, logError } from './errorLogger';
 import { decrypt, isEncrypted } from './encryption';
 
@@ -29,16 +30,24 @@ export async function testSmtpConnection(emailConfig: any): Promise<{
   try {
     console.log(`🔍 Testing SMTP connection for project: ${emailConfig.projectId}`);
 
-    if (!emailConfig.smtpHost || !emailConfig.smtpUser) {
+    // Support both ProjectEmailConfig (smtpUsername) and EmailConfig (smtpUser) field names
+    const smtpUser = emailConfig.smtpUsername || emailConfig.smtpUser;
+    if (!emailConfig.smtpHost || !smtpUser) {
       return {
         success: false,
         error: 'Missing SMTP configuration (host or user)'
       };
     }
 
-    // Decrypt password if needed
+    // Decrypt password — use model method if available (ProjectEmailConfig), else decrypt manually
     let password = emailConfig.smtpPassword;
-    if (isEncrypted(password)) {
+    if (typeof emailConfig.getDecryptedSmtpPassword === 'function') {
+      try {
+        password = emailConfig.getDecryptedSmtpPassword();
+      } catch (_) {
+        if (isEncrypted(password)) password = decrypt(password);
+      }
+    } else if (isEncrypted(password)) {
       password = decrypt(password);
     }
 
@@ -48,7 +57,7 @@ export async function testSmtpConnection(emailConfig: any): Promise<{
       port: emailConfig.smtpPort || 587,
       secure: emailConfig.smtpSecure || false,
       auth: {
-        user: emailConfig.smtpUser,
+        user: smtpUser,
         pass: password
       },
       connectionTimeout: 10000, // 10 seconds
@@ -99,7 +108,7 @@ export async function updateConnectionStatus(
       updateData.$inc = { failedAttempts: 1 };
 
       // Calculate next retry time with exponential backoff
-      const config = await EmailConfig.findById(configId);
+      const config = await EmailConfig.findById(configId) || await ProjectEmailConfig.findById(configId);
       if (config) {
         const attempts = (config.failedAttempts || 0) + 1;
         const delay = Math.min(
@@ -112,7 +121,11 @@ export async function updateConnectionStatus(
       }
     }
 
-    await EmailConfig.findByIdAndUpdate(configId, updateData);
+    // Try both collections — configId may belong to EmailConfig or ProjectEmailConfig
+    const emailUpdated = await EmailConfig.findByIdAndUpdate(configId, updateData);
+    if (!emailUpdated) {
+      await ProjectEmailConfig.findByIdAndUpdate(configId, updateData);
+    }
     
     console.log(`📝 Connection status updated to: ${status}`);
   } catch (error) {
@@ -156,7 +169,7 @@ export async function handleConnectionFailure(
   await updateConnectionStatus(configId, 'disconnected', errorMessage);
 
   // Check if this is a critical failure (multiple failed attempts)
-  const config = await EmailConfig.findById(configId);
+  const config = await EmailConfig.findById(configId) || await ProjectEmailConfig.findById(configId);
   if (config && config.failedAttempts >= 3) {
     // Send critical alert
     await sendConnectionFailureAlert(config, errorMessage);
