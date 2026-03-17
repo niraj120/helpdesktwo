@@ -65,6 +65,30 @@ interface TicketSettings {
   allowStudentToCloseTicket?: boolean;
 }
 
+/** Opens an attachment URL in a new tab, fetching a fresh signed URL if needed.
+ * The tab is opened BEFORE the async call so browsers don't block it as a popup. */
+const openAttachment = async (pathOrUrl: string | undefined) => {
+  if (!pathOrUrl) return;
+  // If the path is already a full URL (e.g. GCS signed URL), open it directly.
+  if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://')) {
+    window.open(pathOrUrl, '_blank', 'noopener,noreferrer');
+    return;
+  }
+  // Otherwise it's a relative backend path — open the tab first, then fetch a signed URL.
+  const newTab = window.open('', '_blank', 'noopener,noreferrer');
+  const token = localStorage.getItem('authToken');
+  try {
+    const res = await axios.get(
+      `${API_CONFIG.BASE_URL}/api/tickets/attachment-signed-url?path=${encodeURIComponent(pathOrUrl)}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    const url: string = res.data?.url || `${API_CONFIG.BASE_URL}${pathOrUrl}`;
+    if (newTab) newTab.location.href = url;
+  } catch {
+    if (newTab) newTab.location.href = `${API_CONFIG.BASE_URL}${pathOrUrl}`;
+  }
+};
+
 const StudentTicketDetail: React.FC = () => {
   const { customUrlPath, ticketId } = useParams();
   const navigate = useNavigate();
@@ -392,17 +416,16 @@ const StudentTicketDetail: React.FC = () => {
                   <h3 className="text-sm font-medium text-gray-700 mb-2">Attachments:</h3>
                   <div className="space-y-2">
                     {ticket.attachments.map((file, idx) => (
-                      <a
+                      <button
                         key={idx}
-                        href={`${API_CONFIG.BASE_URL}${file.path}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                        type="button"
+                        onClick={() => openAttachment(file.path)}
                         className="flex items-center space-x-2 text-sm text-blue-600 hover:text-blue-700"
                       >
                         <PaperClipIcon className="h-4 w-4" />
                         <span>{file.filename}</span>
                         <span className="text-gray-400">({formatFileSize(file.size)})</span>
-                      </a>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -441,17 +464,16 @@ const StudentTicketDetail: React.FC = () => {
                         {thread.attachments && thread.attachments.length > 0 && (
                           <div className="mt-3 space-y-2">
                             {thread.attachments.map((file, idx) => (
-                              <a
+                              <button
                                 key={idx}
-                                href={`${API_CONFIG.BASE_URL}${file.path}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
+                                type="button"
+                                onClick={() => openAttachment(file.path)}
                                 className="flex items-center space-x-2 text-sm text-blue-600 hover:text-blue-700"
                               >
                                 <PaperClipIcon className="h-4 w-4" />
                                 <span>{file.filename}</span>
                                 <span className="text-gray-400">({formatFileSize(file.size)})</span>
-                              </a>
+                              </button>
                             ))}
                           </div>
                         )}

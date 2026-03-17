@@ -284,9 +284,12 @@ interface AgentTicketDetailProps {
   wrapWithLayout?: boolean;
 }
 
-/** Opens an attachment — fetches a signed URL from the backend (with auth) then opens it in a new tab. */
+/** Opens an attachment — fetches a signed URL from the backend (with auth) then opens it in a new tab.
+ * The tab is opened BEFORE the async call so browsers don't block it as a popup. */
 const openAttachment = async (pathOrUrl: string | undefined) => {
   if (!pathOrUrl) return;
+  // Open the tab immediately (within the user gesture) then navigate it once we have the URL.
+  const newTab = window.open("", "_blank", "noopener,noreferrer");
   const token = localStorage.getItem("authToken");
   try {
     const res = await axios.get(
@@ -294,10 +297,10 @@ const openAttachment = async (pathOrUrl: string | undefined) => {
       { headers: { Authorization: `Bearer ${token}` } },
     );
     const url: string = res.data?.url || pathOrUrl;
-    window.open(url, "_blank", "noopener,noreferrer");
+    if (newTab) newTab.location.href = url;
   } catch {
-    // Fallback: open directly (works for non-GCS local paths)
-    window.open(pathOrUrl, "_blank", "noopener,noreferrer");
+    // Fallback: navigate directly (works for non-GCS local paths)
+    if (newTab) newTab.location.href = pathOrUrl;
   }
 };
 
