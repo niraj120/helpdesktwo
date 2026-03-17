@@ -870,6 +870,41 @@ const AgentStudentWorkflow: React.FC = () => {
         return;
       }
 
+      // Validate mandatory hierarchy levels (Subcategory / Topic)
+      if (hierarchyConfig && hierarchyConfig.levelCount > 1) {
+        const offlineVisibleLevels = new Set(
+          hierarchyConfig.visibilitySettings?.showInOfflineForm ?? [],
+        );
+        const hierarchyFieldValue = offlineSettings?.ticketFields
+          .map((f) => ticketForm[f.fieldName])
+          .find((v) => v && typeof v === "object" && "level1" in v) as
+          | CategoryHierarchyValue
+          | undefined;
+        if (hierarchyFieldValue) {
+          const missingLevels = hierarchyConfig.levels
+            .filter(
+              (l) =>
+                l.isMandatory &&
+                l.isActive &&
+                (offlineVisibleLevels.size === 0 ||
+                  offlineVisibleLevels.has(l.levelNumber)),
+            )
+            .filter(
+              (l) =>
+                !hierarchyFieldValue[
+                  `level${l.levelNumber}` as keyof CategoryHierarchyValue
+                ],
+            );
+          if (missingLevels.length > 0) {
+            setTicketMessage(
+              `Please select: ${missingLevels.map((l) => l.displayName).join(", ")}`,
+            );
+            setCreatingTicket(false);
+            return;
+          }
+        }
+      }
+
       formData.append("userId", currentStudent._id);
       formData.append("studentId", currentStudent._id);
       formData.append("projectId", projectId);

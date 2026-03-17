@@ -709,6 +709,33 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
       return;
     }
 
+    // Validate mandatory hierarchy levels (Category / Subcategory / Topic)
+    if (hierarchyConfig && hierarchyConfig.levelCount > 1) {
+      const offlineVisibleLevels = new Set(
+        hierarchyConfig.visibilitySettings?.showInOfflineForm ?? [],
+      );
+      const missingLevels = hierarchyConfig.levels
+        .filter(
+          (l) =>
+            l.isMandatory &&
+            l.isActive &&
+            (offlineVisibleLevels.size === 0 ||
+              offlineVisibleLevels.has(l.levelNumber)),
+        )
+        .filter(
+          (l) =>
+            !categoryHierarchy[
+              `level${l.levelNumber}` as keyof CategoryHierarchyValue
+            ],
+        );
+      if (missingLevels.length > 0) {
+        alert(
+          `Please select: ${missingLevels.map((l) => l.displayName).join(", ")}`,
+        );
+        return;
+      }
+    }
+
     setCreatingTicket(true);
     setTicketSuccess(false);
 
