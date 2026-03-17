@@ -9,6 +9,7 @@ import { sendOTPSMS } from '../utils/smsService';
 import { User } from '../models/User';
 import { Role } from '../models/Role';
 import { Project } from '../models/Project';
+import { validatePasswordPolicy } from '../utils/passwordPolicyUtils';
 import EulaAcceptance from '../models/EulaAcceptance';
 import { logLogin, logLogout } from '../utils/logger';
 import { AuthRequest } from '../middleware/auth';
@@ -565,11 +566,17 @@ export const resetPassword = async (req: Request<{}, {}, ResetPasswordRequest>, 
       });
     }
 
-    if (newPassword.length < 6) {
-      return res.status(400).json({
-        success: false,
-        error: 'Password must be at least 6 characters long'
-      });
+    // Validate password against the user's project policy (if any)
+    const userForPolicy = await User.findOne({ email: email.toLowerCase().trim() });
+    if (userForPolicy && (userForPolicy as any).projects?.length > 0) {
+      const policyProject = await Project.findById((userForPolicy as any).projects[0]);
+      const policyResult = validatePasswordPolicy(
+        newPassword,
+        (policyProject as any)?.configuration?.securitySettings?.passwordPolicy,
+      );
+      if (!policyResult.valid) {
+        return res.status(400).json({ success: false, error: policyResult.errors[0] });
+      }
     }
 
     // Check if OTP exists for this email (simplified check similar to previous behavior)

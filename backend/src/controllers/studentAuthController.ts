@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { User } from '../models/User';
 import { Role } from '../models/Role';
 import { Project } from '../models/Project';
+import { validatePasswordPolicy } from '../utils/passwordPolicyUtils';
 import { generateProjectJWT, generateUserJWT } from '../utils/jwtUtils';
 import { sendOTPEmail } from '../utils/emailService';
 import { sendOTPWhatsApp } from '../utils/whatsappService';
@@ -252,10 +253,18 @@ export const setPassword = async (req: Request, res: Response) => {
       });
     }
 
-    if (password.length < 8) {
+    // Validate password against project policy
+    const projectForPolicy = customUrlPath
+      ? await Project.findOne({ 'branding.customUrlPath': customUrlPath })
+      : null;
+    const policyResult = validatePasswordPolicy(
+      password,
+      (projectForPolicy as any)?.configuration?.securitySettings?.passwordPolicy,
+    );
+    if (!policyResult.valid) {
       return res.status(400).json({
         success: false,
-        message: 'Password must be at least 8 characters long',
+        message: policyResult.errors[0],
       });
     }
 
