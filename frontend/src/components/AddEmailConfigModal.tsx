@@ -93,6 +93,8 @@ interface EmailConfig {
   inboundMethod?: InboundMethod | "sendgrid";
   webhookProvider?: string;
   webhookPayloadMap?: WebhookPayloadMap;
+  isForwardedMailbox?: boolean;
+  originalEmailAddress?: string;
 }
 
 interface EmailConfigModalProps {
@@ -108,6 +110,8 @@ interface FormData {
   inboundMethod: InboundMethod;
   webhookProvider: string;
   webhookPayloadMap: WebhookPayloadMap;
+  isForwardedMailbox: boolean;
+  originalEmailAddress: string;
   imapHost: string;
   imapPort: number | string;
   imapUsername: string;
@@ -201,6 +205,8 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
         inboundMethod,
         webhookProvider: webhookVendor,
         webhookPayloadMap: webhookMap,
+        isForwardedMailbox: (editingConfig as any).isForwardedMailbox ?? false,
+        originalEmailAddress: (editingConfig as any).originalEmailAddress ?? "",
         imapHost: editingConfig.imapHost,
         imapPort: editingConfig.imapPort,
         imapUsername: editingConfig.imapUsername,
@@ -220,6 +226,8 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
       inboundMethod: "imap" as InboundMethod,
       webhookProvider: DEFAULT_WEBHOOK_VENDOR,
       webhookPayloadMap: { ...WEBHOOK_PRESETS.sendgrid.payloadMap },
+      isForwardedMailbox: false,
+      originalEmailAddress: "",
       imapHost: "",
       imapPort: 993,
       imapUsername: "",
@@ -288,6 +296,15 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
       }
       if (!editingConfig && !formData.imapPassword.trim()) {
         newErrors.imapPassword = "IMAP password is required";
+      }
+    }
+
+    // Forwarded mailbox validation
+    if (formData.inboundMethod === "imap" && formData.isForwardedMailbox) {
+      if (!formData.originalEmailAddress.trim()) {
+        newErrors.originalEmailAddress = "Original email address is required";
+      } else if (!validateEmail(formData.originalEmailAddress)) {
+        newErrors.originalEmailAddress = "Invalid email format";
       }
     }
 
@@ -513,6 +530,14 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
         webhook_payload_map:
           formData.inboundMethod === "webhook"
             ? formData.webhookPayloadMap
+            : undefined,
+        is_forwarded_mailbox:
+          formData.inboundMethod === "imap"
+            ? formData.isForwardedMailbox
+            : false,
+        original_email_address:
+          formData.inboundMethod === "imap" && formData.isForwardedMailbox
+            ? formData.originalEmailAddress
             : undefined,
       };
 
@@ -1066,6 +1091,72 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                       <p className="mt-1 text-xs text-gray-500">
                         Leave blank to keep existing password
                       </p>
+                    )}
+                  </div>
+
+                  {/* ── Forwarded Mailbox Toggle ── */}
+                  <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.isForwardedMailbox}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            isForwardedMailbox: e.target.checked,
+                            originalEmailAddress: e.target.checked
+                              ? prev.originalEmailAddress
+                              : "",
+                          }))
+                        }
+                        className="mt-0.5 w-4 h-4 text-yellow-600 border-gray-300 rounded focus:ring-yellow-500"
+                      />
+                      <div>
+                        <span className="text-sm font-medium text-yellow-900">
+                          This mailbox receives forwarded emails
+                        </span>
+                        <p className="text-xs text-yellow-700 mt-0.5">
+                          Enable if the IMAP mailbox is a relay — emails from
+                          another address are auto-forwarded here (e.g. support
+                          forwards to Gmail). The original Message-ID and To
+                          address will be preserved for correct email threading.
+                        </p>
+                      </div>
+                    </label>
+
+                    {formData.isForwardedMailbox && (
+                      <div className="mt-3">
+                        <label className="block text-xs font-medium text-yellow-900 mb-1">
+                          Original Email Address{" "}
+                          <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="email"
+                          value={formData.originalEmailAddress}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              originalEmailAddress: e.target.value,
+                            }))
+                          }
+                          className={`block w-full px-3 py-2 text-sm border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 ${
+                            errors.originalEmailAddress
+                              ? "border-red-300"
+                              : "border-yellow-300"
+                          }`}
+                          placeholder="hubblestar.support@hubblehox.com"
+                        />
+                        {errors.originalEmailAddress && (
+                          <p className="mt-1 text-xs text-red-600">
+                            {errors.originalEmailAddress}
+                          </p>
+                        )}
+                        <p className="mt-1 text-xs text-yellow-700">
+                          The public address emails are originally sent to.
+                          Outgoing replies will use this as the From/Reply-To
+                          address.
+                        </p>
+                      </div>
                     )}
                   </div>
                 </div>

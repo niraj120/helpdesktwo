@@ -437,6 +437,48 @@ class EmailPollingService {
                           : new Date(),
                     };
 
+                    // ── Forwarded mailbox mode ─────────────────────────────
+                    // When the config is flagged as a forwarded mailbox, the
+                    // IMAP inbox is just a relay (e.g. Gmail forwarding from
+                    // hubblestar.support@hubblehox.com).  We need to:
+                    //  1. Use the *original* Message-ID for dedup + threading
+                    //     so replies correlate with what the customer sent.
+                    //  2. Set `to` to the *original* public address so the
+                    //     ticket / outgoing email shows the right address.
+                    if (config.isForwardedMailbox) {
+                      const headers = parsed.headers;
+
+                      // Extract original Message-ID from forwarding headers
+                      // Gmail uses X-Forwarded-Message-Id; other forwarders
+                      // may use X-Original-Message-Id or simply repeat it in
+                      // the Resent-Message-ID header.
+                      const originalMsgId =
+                        (headers?.get("x-forwarded-message-id") as string) ||
+                        (headers?.get("x-original-message-id") as string) ||
+                        (headers?.get("resent-message-id") as string) ||
+                        null;
+                      if (originalMsgId) {
+                        emailData.messageId = originalMsgId
+                          .trim()
+                          .replace(/^<|>$/g, "");
+                        console.log(
+                          `   🔄 Forwarded mail - using original Message-ID: ${emailData.messageId}`,
+                        );
+                      }
+
+                      // Set `to` to the configured original address so the
+                      // ticket shows hubblestar.support@hubblehox.com, not Gmail.
+                      if (config.originalEmailAddress) {
+                        emailData.to = [
+                          { address: config.originalEmailAddress },
+                        ];
+                        console.log(
+                          `   🔄 Forwarded mail - overriding To: ${config.originalEmailAddress}`,
+                        );
+                      }
+                    }
+                    // ─────────────────────────────────────────────────────
+
                     // Task 8.3: Log warnings for unusual emails
                     const warnings: string[] = [];
 

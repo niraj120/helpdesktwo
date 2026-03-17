@@ -341,7 +341,8 @@ export const getAllIncomingEmails = async (
       .populate({
         path: "ticketId",
         select: "ticketNumber title status projectId",
-        populate: { path: "projectId", select: "name" },
+        strictPopulate: false,
+        populate: { path: "projectId", select: "name", strictPopulate: false },
       })
       .sort({ receivedAt: -1, createdAt: -1 })
       .limit(limit)

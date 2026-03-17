@@ -122,7 +122,7 @@ class AutoEscalationService {
             context: ErrorContext.EMAIL_POLLING, // Reusing context
             severity: ErrorSeverity.MEDIUM,
             details: {
-              ticketId: tracking.ticketId?.toString() ?? 'null',
+              ticketId: tracking.ticketId?.toString() ?? "null",
               currentLevel: tracking.currentEscalationLevel,
               error: error.message,
             },

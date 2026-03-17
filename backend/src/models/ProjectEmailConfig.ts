@@ -52,6 +52,10 @@ export interface IProjectEmailConfig extends Document {
     scope?: string;
   };
 
+  // Forwarding mode: IMAP mailbox receives forwarded mail from another address
+  isForwardedMailbox?: boolean;
+  originalEmailAddress?: string; // The original address emails are forwarded FROM
+
   lastCheckedAt?: Date;
   lastCheckStatus?: "success" | "failed";
   lastCheckError?: string;
@@ -122,6 +126,17 @@ const ProjectEmailConfigSchema: Schema = new Schema(
       text: { type: String, default: "" },
       html: { type: String, default: "" },
       messageId: { type: String, default: "" },
+    },
+    // Forwarding mode
+    isForwardedMailbox: {
+      type: Boolean,
+      default: false,
+    },
+    originalEmailAddress: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      default: "",
     },
     imapHost: {
       type: String,

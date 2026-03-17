@@ -938,7 +938,9 @@ const EmailLogsPage = () => {
                           <td
                             style={{ padding: "12px 16px", fontSize: "14px" }}
                           >
-                            {email.projectName || email.ticketId?.projectId?.name || "-"}
+                            {email.projectName ||
+                              email.ticketId?.projectId?.name ||
+                              "-"}
                           </td>
                           {/* TICKET # column */}
                           <td
