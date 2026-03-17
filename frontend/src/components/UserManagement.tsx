@@ -107,6 +107,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
   const [resetPasswordUser, setResetPasswordUser] = useState<User | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [resetPasswordError, setResetPasswordError] = useState("");
+  const [resetPasswordPolicy, setResetPasswordPolicy] = useState<any>(null);
+  const [loadingResetPolicy, setLoadingResetPolicy] = useState(false);
 
   // Inline errors for name fields
   const [nameFieldErrors, setNameFieldErrors] = useState<{
@@ -234,6 +237,29 @@ const UserManagement: React.FC<UserManagementProps> = ({
     // In production, passwords are generated randomly and sent via email
     // This is just for display purposes during user creation
     return generateSecurePassword();
+  };
+
+  const fetchResetPasswordPolicy = async (user: User) => {
+    const projectId = user.projects?.[0]?._id;
+    if (!projectId) {
+      setResetPasswordPolicy(null);
+      return;
+    }
+    try {
+      setLoadingResetPolicy(true);
+      const token = localStorage.getItem("authToken");
+      const res = await fetch(`${API_CONFIG.API_URL}/projects/${projectId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      setResetPasswordPolicy(
+        data?.data?.configuration?.securitySettings?.passwordPolicy || null,
+      );
+    } catch {
+      setResetPasswordPolicy(null);
+    } finally {
+      setLoadingResetPolicy(false);
+    }
   };
 
   // Fetch users
@@ -1099,28 +1125,36 @@ const UserManagement: React.FC<UserManagementProps> = ({
   const handleResetPassword = async () => {
     if (!resetPasswordUser) return;
 
-    // Validation
-    if (!newPassword || newPassword.length < 6) {
-      alert(
-        getText(
-          "Password must be at least 6 characters long",
-          "पासवर्ड किमान 6 वर्णांचा असणे आवश्यक आहे",
-          "पासवर्ड किमान 6 वर्णांचा असणे आवश्यक आहे",
-        ),
+    // Client-side policy validation
+    const policy = resetPasswordPolicy;
+    const minLen = policy?.minLength ?? 6;
+    const policyErrors: string[] = [];
+    if (!newPassword || newPassword.length < minLen)
+      policyErrors.push(`Password must be at least ${minLen} characters long`);
+    if (policy?.requireUppercase && !/[A-Z]/.test(newPassword))
+      policyErrors.push("Must contain at least one uppercase letter (A-Z)");
+    if (policy?.requireLowercase && !/[a-z]/.test(newPassword))
+      policyErrors.push("Must contain at least one lowercase letter (a-z)");
+    if (policy?.requireNumbers && !/[0-9]/.test(newPassword))
+      policyErrors.push("Must contain at least one number (0-9)");
+    if (
+      policy?.requireSpecialChars &&
+      !/[@!%*?"#$\[\]^~_\-+=]/.test(newPassword)
+    )
+      policyErrors.push(
+        'Must contain at least one special character (@!%*?"#$[]^~_-+=)',
       );
+    if (policyErrors.length > 0) {
+      setResetPasswordError(policyErrors[0]);
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      alert(
-        getText(
-          "Passwords do not match",
-          "पासवर्ड जुळत नाहीत",
-          "पासवर्ड जुळत नाहीत",
-        ),
-      );
+      setResetPasswordError("Passwords do not match");
       return;
     }
+
+    setResetPasswordError("");
 
     try {
       const token = localStorage.getItem("authToken");
@@ -1133,7 +1167,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
             Authorization: `Bearer ${token}`,
           },
           credentials: "include",
-          body: JSON.stringify({ newPassword }),
+          body: JSON.stringify({
+            newPassword,
+            projectId: resetPasswordUser.projects?.[0]?._id,
+          }),
         },
       );
 
@@ -1151,12 +1188,14 @@ const UserManagement: React.FC<UserManagementProps> = ({
         setResetPasswordUser(null);
         setNewPassword("");
         setConfirmPassword("");
+        setResetPasswordError("");
+        setResetPasswordPolicy(null);
       } else {
-        alert(data.error || "Failed to reset password");
+        setResetPasswordError(data.error || "Failed to reset password");
       }
     } catch (error) {
       console.error("Error resetting password:", error);
-      alert("Failed to reset password");
+      setResetPasswordError("Failed to reset password");
     }
   };
 
@@ -5040,6 +5079,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       setSelectedUserForCredentials(null);
                       setNewPassword("");
                       setConfirmPassword("");
+                      setResetPasswordError("");
+                      setResetPasswordPolicy(null);
+                      if (selectedUserForCredentials)
+                        fetchResetPasswordPolicy(selectedUserForCredentials);
                     }}
                     style={{
                       flex: 1,
@@ -5133,6 +5176,67 @@ const UserManagement: React.FC<UserManagementProps> = ({
 
             {/* Form */}
             <div style={{ padding: "24px" }}>
+              {/* Password policy requirements */}
+              {loadingResetPolicy && (
+                <p
+                  style={{
+                    fontSize: "13px",
+                    color: "#6B7280",
+                    marginBottom: "12px",
+                  }}
+                >
+                  Loading password requirements…
+                </p>
+              )}
+              {!loadingResetPolicy && resetPasswordPolicy && (
+                <div
+                  style={{
+                    background: "#f0f9ff",
+                    border: "1px solid #bae6fd",
+                    borderRadius: "8px",
+                    padding: "12px 16px",
+                    marginBottom: "16px",
+                    fontSize: "13px",
+                  }}
+                >
+                  <p
+                    style={{
+                      fontWeight: 600,
+                      color: "#0369a1",
+                      margin: "0 0 6px 0",
+                    }}
+                  >
+                    Password Requirements:
+                  </p>
+                  <ul
+                    style={{
+                      margin: 0,
+                      paddingLeft: "18px",
+                      color: "#374151",
+                      lineHeight: "1.8",
+                    }}
+                  >
+                    <li>
+                      Minimum {resetPasswordPolicy.minLength || 6} characters
+                    </li>
+                    {resetPasswordPolicy.requireUppercase && (
+                      <li>At least one uppercase letter (A-Z)</li>
+                    )}
+                    {resetPasswordPolicy.requireLowercase && (
+                      <li>At least one lowercase letter (a-z)</li>
+                    )}
+                    {resetPasswordPolicy.requireNumbers && (
+                      <li>At least one number (0-9)</li>
+                    )}
+                    {resetPasswordPolicy.requireSpecialChars && (
+                      <li>
+                        At least one special character (@!%*?"#$[]^~_-+=)
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              )}
+
               <div style={{ marginBottom: "16px" }}>
                 <label
                   style={{
@@ -5149,11 +5253,16 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 <input
                   type="password"
                   value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
+                  onChange={(e) => {
+                    setNewPassword(e.target.value);
+                    setResetPasswordError("");
+                  }}
                   placeholder={getText(
-                    "Enter new password (min. 6 characters)",
-                    "नवीन पासवर्ड एंटर करा (किमान 6 वर्ण)",
-                    "नवीन पासवर्ड एंटर करा (किमान 6 वर्ण)",
+                    resetPasswordPolicy
+                      ? `Enter new password (min. ${resetPasswordPolicy.minLength || 6} characters)`
+                      : "Enter new password (min. 6 characters)",
+                    "नवीन पासवर्ड एंटर करा",
+                    "नवीन पासवर्ड एंटर करा",
                   )}
                   style={{
                     width: "100%",
@@ -5167,7 +5276,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 />
               </div>
 
-              <div style={{ marginBottom: "20px" }}>
+              <div style={{ marginBottom: "8px" }}>
                 <label
                   style={{
                     display: "block",
@@ -5187,7 +5296,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 <input
                   type="password"
                   value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  onChange={(e) => {
+                    setConfirmPassword(e.target.value);
+                    setResetPasswordError("");
+                  }}
                   placeholder={getText(
                     "Re-enter new password",
                     "नवीन पासवर्ड पुन्हा एंटर करा",
@@ -5205,6 +5317,20 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 />
               </div>
 
+              {/* Inline error message */}
+              {resetPasswordError && (
+                <p
+                  style={{
+                    color: "#ef4444",
+                    fontSize: "13px",
+                    margin: "6px 0 16px 0",
+                  }}
+                >
+                  {resetPasswordError}
+                </p>
+              )}
+              {!resetPasswordError && <div style={{ marginBottom: "16px" }} />}
+
               {/* Action Buttons */}
               <div style={{ display: "flex", gap: "12px" }}>
                 <button
@@ -5213,6 +5339,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     setResetPasswordUser(null);
                     setNewPassword("");
                     setConfirmPassword("");
+                    setResetPasswordError("");
+                    setResetPasswordPolicy(null);
                   }}
                   style={{
                     flex: 1,
