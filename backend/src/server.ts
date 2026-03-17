@@ -79,6 +79,7 @@ import emailActivityRoutes from "./routes/emailActivity";
 import projectEmailConfigRoutes from "./routes/projectEmailConfigRoutes";
 import emailConfigToggleRoutes from "./routes/emailConfigToggleRoutes";
 import emailInboundRoutes from "./routes/emailInboundRoutes";
+import emailCommunicationsRoutes from "./routes/emailCommunications";
 import whatsappConfigRoutes from "./routes/whatsappConfig";
 import smsConfigRoutes from "./routes/smsConfig";
 import dpdpRoutes from "./routes/dpdp.routes";
@@ -305,6 +306,9 @@ app.use("/api/email-configs", emailConfigToggleRoutes);
 
 // SendGrid / inbound email webhook (public, no auth required)
 app.use("/api/email", emailInboundRoutes);
+
+// Email Communications Routes (incoming/outgoing email logs)
+app.use("/api/email-communications", emailCommunicationsRoutes);
 
 // WhatsApp Configuration Routes
 app.use("/api/whatsapp-config", whatsappConfigRoutes);

@@ -14,7 +14,70 @@ import {
 // Provider and auth method types
 type EmailProvider = "google" | "microsoft" | "other";
 type AuthMethod = "basic" | "app_password";
-type InboundMethod = "imap" | "sendgrid";
+type InboundMethod = "imap" | "webhook";
+
+type WebhookPayloadMap = {
+  to: string;
+  from: string;
+  subject: string;
+  text: string;
+  html: string;
+  messageId: string;
+};
+
+// Vendor presets — auto-fill webhookPayloadMap from known provider schemas.
+// Add new vendors here; zero backend changes needed.
+const WEBHOOK_PRESETS: Record<
+  string,
+  { label: string; payloadMap: WebhookPayloadMap }
+> = {
+  sendgrid: {
+    label: "SendGrid",
+    payloadMap: {
+      to: "envelope.to[0]",
+      from: "from",
+      subject: "subject",
+      text: "text",
+      html: "html",
+      messageId: "headers.message-id",
+    },
+  },
+  mailgun: {
+    label: "Mailgun",
+    payloadMap: {
+      to: "recipient",
+      from: "sender",
+      subject: "subject",
+      text: "body-plain",
+      html: "body-html",
+      messageId: "Message-Id",
+    },
+  },
+  postmark: {
+    label: "Postmark",
+    payloadMap: {
+      to: "To",
+      from: "From",
+      subject: "Subject",
+      text: "TextBody",
+      html: "HtmlBody",
+      messageId: "MessageID",
+    },
+  },
+  custom: {
+    label: "Custom / Other",
+    payloadMap: {
+      to: "",
+      from: "",
+      subject: "",
+      text: "",
+      html: "",
+      messageId: "",
+    },
+  },
+};
+
+const DEFAULT_WEBHOOK_VENDOR = "sendgrid";
 
 interface EmailConfig {
   _id: string;
@@ -27,6 +90,12 @@ interface EmailConfig {
   smtpUsername: string;
   provider?: EmailProvider;
   authMethod?: AuthMethod;
+  inboundMethod?: InboundMethod | "sendgrid";
+  webhookProvider?: string;
+  webhookPayloadMap?: WebhookPayloadMap;
+  isForwardedMailbox?: boolean;
+  originalEmailAddress?: string;
+  replySignature?: string;
 }
 
 interface EmailConfigModalProps {
@@ -40,6 +109,10 @@ interface EmailConfigModalProps {
 interface FormData {
   emailAddress: string;
   inboundMethod: InboundMethod;
+  webhookProvider: string;
+  webhookPayloadMap: WebhookPayloadMap;
+  isForwardedMailbox: boolean;
+  originalEmailAddress: string;
   imapHost: string;
   imapPort: number | string;
   imapUsername: string;
@@ -48,6 +121,7 @@ interface FormData {
   smtpPort: number | string;
   smtpUsername: string;
   smtpPassword: string;
+  replySignature: string;
   provider: EmailProvider;
   authMethod: AuthMethod;
 }
@@ -114,17 +188,36 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
   // Initialize form data based on edit mode
   const getInitialFormData = (): FormData => {
     if (editingConfig) {
+      // Normalise legacy "sendgrid" inboundMethod → "webhook"
+      const rawMethod = (editingConfig as any).inboundMethod || "imap";
+      const inboundMethod: InboundMethod =
+        rawMethod === "sendgrid" || rawMethod === "webhook"
+          ? "webhook"
+          : "imap";
+      const webhookVendor =
+        rawMethod === "sendgrid"
+          ? "sendgrid"
+          : (editingConfig as any).webhookProvider || DEFAULT_WEBHOOK_VENDOR;
+      const webhookMap: WebhookPayloadMap =
+        (editingConfig as any).webhookPayloadMap ||
+        WEBHOOK_PRESETS[webhookVendor]?.payloadMap ||
+        WEBHOOK_PRESETS.sendgrid.payloadMap;
       return {
         emailAddress: editingConfig.emailAddress,
-        inboundMethod: (editingConfig as any).inboundMethod || "imap",
+        inboundMethod,
+        webhookProvider: webhookVendor,
+        webhookPayloadMap: webhookMap,
+        isForwardedMailbox: (editingConfig as any).isForwardedMailbox ?? false,
+        originalEmailAddress: (editingConfig as any).originalEmailAddress ?? "",
         imapHost: editingConfig.imapHost,
         imapPort: editingConfig.imapPort,
         imapUsername: editingConfig.imapUsername,
-        imapPassword: "", // Don't pre-fill passwords for security
+        imapPassword: "",
         smtpHost: editingConfig.smtpHost,
         smtpPort: editingConfig.smtpPort,
         smtpUsername: editingConfig.smtpUsername,
-        smtpPassword: "", // Don't pre-fill passwords for security
+        smtpPassword: "",
+        replySignature: (editingConfig as any).replySignature ?? "",
         provider:
           editingConfig.provider ||
           detectEmailProvider(editingConfig.emailAddress),
@@ -134,6 +227,10 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
     return {
       emailAddress: "",
       inboundMethod: "imap" as InboundMethod,
+      webhookProvider: DEFAULT_WEBHOOK_VENDOR,
+      webhookPayloadMap: { ...WEBHOOK_PRESETS.sendgrid.payloadMap },
+      isForwardedMailbox: false,
+      originalEmailAddress: "",
       imapHost: "",
       imapPort: 993,
       imapUsername: "",
@@ -142,6 +239,7 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
       smtpPort: 587,
       smtpUsername: "",
       smtpPassword: "",
+      replySignature: "",
       provider: "other",
       authMethod: "basic",
     };
@@ -205,6 +303,33 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
       }
     }
 
+    // Forwarded mailbox validation
+    if (formData.inboundMethod === "imap" && formData.isForwardedMailbox) {
+      if (!formData.originalEmailAddress.trim()) {
+        newErrors.originalEmailAddress = "Original email address is required";
+      } else if (!validateEmail(formData.originalEmailAddress)) {
+        newErrors.originalEmailAddress = "Invalid email format";
+      }
+    }
+
+    // Webhook validations — only when using webhook inbound
+    if (formData.inboundMethod === "webhook") {
+      if (!formData.webhookProvider.trim()) {
+        newErrors.webhookProvider = "Please select a vendor";
+      }
+      const requiredMapFields: (keyof WebhookPayloadMap)[] = [
+        "to",
+        "from",
+        "subject",
+        "text",
+      ];
+      for (const f of requiredMapFields) {
+        if (!formData.webhookPayloadMap[f].trim()) {
+          newErrors[`webhookMap_${f}`] = `"${f}" path is required`;
+        }
+      }
+    }
+
     // SMTP validations
     if (!formData.smtpHost.trim()) {
       newErrors.smtpHost = "SMTP host is required";
@@ -247,11 +372,33 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
           smtpPort: defaults.smtpPort,
           imapUsername: value,
           smtpUsername: value,
-          // Recommend app_password for Google/Microsoft
           authMethod:
             provider === "google" || provider === "microsoft"
               ? "app_password"
               : "basic",
+        };
+      }
+    }
+
+    // When switching to webhook, ensure vendor + map are populated
+    if (field === "inboundMethod" && value === "webhook") {
+      const vendor = formData.webhookProvider || DEFAULT_WEBHOOK_VENDOR;
+      updatedData = {
+        ...updatedData,
+        webhookProvider: vendor,
+        webhookPayloadMap:
+          WEBHOOK_PRESETS[vendor]?.payloadMap ||
+          WEBHOOK_PRESETS.sendgrid.payloadMap,
+      };
+    }
+
+    // When changing vendor, auto-fill the payload map from preset
+    if (field === "webhookProvider" && typeof value === "string") {
+      const preset = WEBHOOK_PRESETS[value];
+      if (preset) {
+        updatedData = {
+          ...updatedData,
+          webhookPayloadMap: { ...preset.payloadMap },
         };
       }
     }
@@ -266,6 +413,22 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
       });
     }
     // Clear test result when any field changes
+    setTestResult(null);
+  };
+
+  const handleWebhookMapChange = (
+    field: keyof WebhookPayloadMap,
+    value: string,
+  ) => {
+    setFormData((prev) => ({
+      ...prev,
+      webhookPayloadMap: { ...prev.webhookPayloadMap, [field]: value },
+    }));
+    setErrors((prev) => {
+      const newErrors = { ...prev };
+      delete newErrors[`webhookMap_${field}`];
+      return newErrors;
+    });
     setTestResult(null);
   };
 
@@ -364,6 +527,23 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
         smtp_username: formData.smtpUsername,
         provider: formData.provider,
         authMethod: formData.authMethod,
+        webhook_provider:
+          formData.inboundMethod === "webhook"
+            ? formData.webhookProvider
+            : undefined,
+        webhook_payload_map:
+          formData.inboundMethod === "webhook"
+            ? formData.webhookPayloadMap
+            : undefined,
+        is_forwarded_mailbox:
+          formData.inboundMethod === "imap"
+            ? formData.isForwardedMailbox
+            : false,
+        original_email_address:
+          formData.inboundMethod === "imap" && formData.isForwardedMailbox
+            ? formData.originalEmailAddress
+            : undefined,
+        reply_signature: formData.replySignature,
       };
 
       // Only include passwords if provided
@@ -531,70 +711,141 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                   <input
                     type="radio"
                     name="inboundMethod"
-                    value="sendgrid"
-                    checked={formData.inboundMethod === "sendgrid"}
+                    value="webhook"
+                    checked={formData.inboundMethod === "webhook"}
                     onChange={() =>
-                      handleInputChange("inboundMethod", "sendgrid")
+                      handleInputChange("inboundMethod", "webhook")
                     }
                     className="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                   />
                   <div>
                     <span className="text-sm font-medium text-gray-800">
-                      SendGrid Inbound Parse
+                      Webhook (Push from vendor)
                     </span>
                     <span className="ml-2 text-xs text-green-700 font-medium bg-green-100 px-1.5 py-0.5 rounded">
                       No IMAP needed
                     </span>
                     <p className="text-xs text-gray-500 mt-0.5">
-                      SendGrid receives email and pushes it to this system via
-                      webhook — no IMAP credentials required
+                      Your email vendor pushes incoming mail via webhook — works
+                      with SendGrid, Mailgun, Postmark, Gupshup or any custom
+                      provider
                     </p>
                   </div>
                 </label>
               </div>
             </div>
 
-            {/* SendGrid Inbound Parse setup instructions */}
-            {formData.inboundMethod === "sendgrid" && (
-              <div className="p-4 bg-green-50 border border-green-200 rounded-lg space-y-3">
+            {/* Webhook vendor config (shown when webhook inbound selected) */}
+            {formData.inboundMethod === "webhook" && (
+              <div className="p-4 bg-green-50 border border-green-200 rounded-lg space-y-4">
                 <div className="flex items-center gap-2">
                   <InformationCircleIcon className="w-5 h-5 text-green-700 flex-shrink-0" />
                   <h4 className="text-sm font-semibold text-green-900">
-                    SendGrid Inbound Parse Setup
+                    Webhook Inbound Setup
                   </h4>
                 </div>
-                <ol className="text-xs text-green-800 space-y-1.5 list-decimal list-inside">
-                  <li>
-                    Go to{" "}
-                    <a
-                      href="https://app.sendgrid.com/settings/parse"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="underline font-medium"
-                    >
-                      SendGrid → Settings → Inbound Parse
-                    </a>
-                  </li>
-                  <li>
-                    Click <strong>Add Host &amp; URL</strong>
-                  </li>
-                  <li>
-                    Set the receiving domain/subdomain that matches this email
-                    address
-                  </li>
-                  <li>
-                    Set the <strong>Destination URL</strong> to:
-                  </li>
-                </ol>
-                <div className="flex items-center gap-2 bg-white border border-green-300 rounded px-3 py-2">
-                  <code className="text-xs text-green-900 flex-1 break-all">
-                    {window.location.origin}/api/email/inbound/sendgrid
-                  </code>
+
+                {/* Vendor selector */}
+                <div>
+                  <label className="block text-xs font-medium text-green-900 mb-1">
+                    Email Vendor
+                  </label>
+                  <select
+                    value={formData.webhookProvider}
+                    onChange={(e) =>
+                      handleInputChange("webhookProvider", e.target.value)
+                    }
+                    className="block w-full px-3 py-2 text-sm border border-green-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                  >
+                    {Object.entries(WEBHOOK_PRESETS).map(([key, preset]) => (
+                      <option key={key} value={key}>
+                        {preset.label}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.webhookProvider && (
+                    <p className="mt-1 text-xs text-red-600">
+                      {errors.webhookProvider}
+                    </p>
+                  )}
+                  <p className="mt-1 text-xs text-green-700">
+                    Selecting a vendor auto-fills the field mappings below.
+                    Choose “Custom / Other” to enter paths manually for any
+                    provider (e.g. Gupshup, Sparkpost, etc.).
+                  </p>
                 </div>
+
+                {/* Webhook URL */}
+                <div>
+                  <label className="block text-xs font-medium text-green-900 mb-1">
+                    Destination URL — paste this into your vendor’s webhook
+                    settings
+                  </label>
+                  <div className="flex items-center gap-2 bg-white border border-green-300 rounded px-3 py-2">
+                    <code className="text-xs text-green-900 flex-1 break-all">
+                      {window.location.origin}/api/email/inbound/webhook
+                    </code>
+                  </div>
+                </div>
+
+                {/* Payload field path mapping */}
+                <div>
+                  <p className="text-xs font-medium text-green-900 mb-1">
+                    Field Path Mapping
+                  </p>
+                  <p className="text-xs text-green-700 mb-2">
+                    Dot-notation paths into your vendor’s POST body (e.g.{" "}
+                    <code className="bg-white px-1 rounded border border-green-200">
+                      envelope.to[0]
+                    </code>
+                    ). Fields marked <span className="text-red-500">*</span> are
+                    required.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(
+                      [
+                        "to",
+                        "from",
+                        "subject",
+                        "text",
+                        "html",
+                        "messageId",
+                      ] as const
+                    ).map((field) => (
+                      <div key={field}>
+                        <label className="block text-xs text-green-800 mb-0.5 capitalize">
+                          {field === "messageId" ? "Message-ID" : field}
+                          {field !== "html" && field !== "messageId" && (
+                            <span className="text-red-500 ml-0.5">*</span>
+                          )}
+                        </label>
+                        <input
+                          type="text"
+                          value={formData.webhookPayloadMap[field]}
+                          onChange={(e) =>
+                            handleWebhookMapChange(field, e.target.value)
+                          }
+                          className={`block w-full px-2 py-1.5 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-green-500 bg-white ${
+                            errors[`webhookMap_${field}`]
+                              ? "border-red-300"
+                              : "border-green-300"
+                          }`}
+                          placeholder={`path.to.${field}`}
+                        />
+                        {errors[`webhookMap_${field}`] && (
+                          <p className="text-xs text-red-600 mt-0.5">
+                            {errors[`webhookMap_${field}`]}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
                 <p className="text-xs text-green-700">
-                  Emails sent to{" "}
+                  Emails arriving at{" "}
                   <strong>{formData.emailAddress || "this address"}</strong>{" "}
-                  will be delivered to SAC Helpdesk automatically.
+                  will be pushed to SAC Helpdesk via webhook automatically.
                 </p>
               </div>
             )}
@@ -847,6 +1098,72 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                       </p>
                     )}
                   </div>
+
+                  {/* ── Forwarded Mailbox Toggle ── */}
+                  <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.isForwardedMailbox}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            isForwardedMailbox: e.target.checked,
+                            originalEmailAddress: e.target.checked
+                              ? prev.originalEmailAddress
+                              : "",
+                          }))
+                        }
+                        className="mt-0.5 w-4 h-4 text-yellow-600 border-gray-300 rounded focus:ring-yellow-500"
+                      />
+                      <div>
+                        <span className="text-sm font-medium text-yellow-900">
+                          This mailbox receives forwarded emails
+                        </span>
+                        <p className="text-xs text-yellow-700 mt-0.5">
+                          Enable if the IMAP mailbox is a relay — emails from
+                          another address are auto-forwarded here (e.g. support
+                          forwards to Gmail). The original Message-ID and To
+                          address will be preserved for correct email threading.
+                        </p>
+                      </div>
+                    </label>
+
+                    {formData.isForwardedMailbox && (
+                      <div className="mt-3">
+                        <label className="block text-xs font-medium text-yellow-900 mb-1">
+                          Original Email Address{" "}
+                          <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="email"
+                          value={formData.originalEmailAddress}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              originalEmailAddress: e.target.value,
+                            }))
+                          }
+                          className={`block w-full px-3 py-2 text-sm border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 ${
+                            errors.originalEmailAddress
+                              ? "border-red-300"
+                              : "border-yellow-300"
+                          }`}
+                          placeholder="hubblestar.support@hubblehox.com"
+                        />
+                        {errors.originalEmailAddress && (
+                          <p className="mt-1 text-xs text-red-600">
+                            {errors.originalEmailAddress}
+                          </p>
+                        )}
+                        <p className="mt-1 text-xs text-yellow-700">
+                          The public address emails are originally sent to.
+                          Outgoing replies will use this as the From/Reply-To
+                          address.
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -970,6 +1287,25 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                       Leave blank to keep existing password
                     </p>
                   )}
+                </div>
+
+                {/* Reply Signature */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Reply Signature
+                  </label>
+                  <textarea
+                    value={formData.replySignature}
+                    onChange={(e) =>
+                      handleInputChange("replySignature", e.target.value)
+                    }
+                    rows={3}
+                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y"
+                    placeholder={`Regards,\nSupport Team`}
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Automatically appended when an agent clicks &quot;Reply via Email&quot;
+                  </p>
                 </div>
               </div>
             </div>

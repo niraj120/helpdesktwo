@@ -100,9 +100,11 @@ class AutoEscalationService {
           const ticket = tracking.ticketId as any;
 
           if (!ticket || ticket.status === 4 || ticket.status === 5) {
-            // Ticket is resolved or closed, skip
-            tracking.nextEscalationDue = undefined;
-            await tracking.save();
+            // Ticket is resolved or closed (or deleted) — clear next escalation
+            await SLATracking.updateOne(
+              { _id: tracking._id },
+              { $unset: { nextEscalationDue: 1 } },
+            );
             continue;
           }
 
@@ -120,7 +122,7 @@ class AutoEscalationService {
             context: ErrorContext.EMAIL_POLLING, // Reusing context
             severity: ErrorSeverity.MEDIUM,
             details: {
-              ticketId: tracking.ticketId.toString(),
+              ticketId: tracking.ticketId?.toString() ?? "null",
               currentLevel: tracking.currentEscalationLevel,
               error: error.message,
             },
@@ -183,8 +185,10 @@ class AutoEscalationService {
       console.log(
         `ℹ️  Ticket ${ticket.ticketNumber} reached max escalation level`,
       );
-      tracking.nextEscalationDue = undefined;
-      await tracking.save();
+      await SLATracking.updateOne(
+        { _id: tracking._id },
+        { $unset: { nextEscalationDue: 1 } },
+      );
       return;
     }
 
@@ -193,8 +197,10 @@ class AutoEscalationService {
       console.log(
         `⏭️  Level ${nextLevel} is manual escalation, skipping auto-escalation`,
       );
-      tracking.nextEscalationDue = undefined;
-      await tracking.save();
+      await SLATracking.updateOne(
+        { _id: tracking._id },
+        { $unset: { nextEscalationDue: 1 } },
+      );
       return;
     }
 
@@ -277,27 +283,31 @@ class AutoEscalationService {
       await ticket.save();
 
       // Update SLA tracking
-      tracking.currentEscalationLevel = nextLevel;
-      tracking.lastEscalationAt = new Date();
-
-      tracking.escalationHistory.push({
+      // Use atomic updateOne + $push so Mongoose does NOT re-validate
+      // pre-existing escalationHistory entries that may be missing required fields
+      const newHistoryEntry = {
         level: nextLevel,
         fromLevel: currentLevel,
         escalatedAt: new Date(),
         escalatedTo: escalatedToUser._id,
-        escalatedBy: previousAssigneeId || escalatedToUser._id, // Use PREVIOUS assignee
+        escalatedBy: previousAssigneeId || escalatedToUser._id,
         mode: "auto",
         reason: `SLA breach - Auto-escalated from L${currentLevel} to L${nextLevel}`,
-      });
+      };
+
+      const setFields: any = {
+        currentEscalationLevel: nextLevel,
+        lastEscalationAt: new Date(),
+      };
+      const unsetFields: any = {};
 
       // Update resolution deadline based on the new level's SLA time
-      // The new deadline is calculated from NOW + the new level's escalateAfter time
       if (levelConfig.escalateAfter) {
-        const escalationTime = new Date(); // Time when escalation happens
+        const escalationTime = new Date();
         const newResolutionDeadline = this.calculateEscalationDeadline(
           levelConfig.escalateAfter,
         );
-        tracking.resolutionDeadline = newResolutionDeadline;
+        setFields.resolutionDeadline = newResolutionDeadline;
 
         const slaHours =
           levelConfig.escalateAfter.unit === "hours"
@@ -316,23 +326,31 @@ class AutoEscalationService {
           `   ↳ Calculation: NOW (${escalationTime.toISOString()}) + ${slaHours}h = ${newResolutionDeadline.toISOString()}`,
         );
 
-        // If there's another level and current level is auto-escalation, set next escalation to same as resolution deadline
+        // If there's a subsequent level and current mode is auto, set next escalation trigger
         const subsequentLevel = policy.levels.find(
           (l: any) => l.level === nextLevel + 1,
         );
         if (subsequentLevel && levelConfig.escalationMode === "auto") {
-          tracking.nextEscalationDue = newResolutionDeadline; // Same as resolution deadline - when current level expires
+          setFields.nextEscalationDue = newResolutionDeadline;
           console.log(
             `   ↳ Next escalation due: ${newResolutionDeadline.toISOString()} (when L${nextLevel} SLA expires)`,
           );
         } else {
-          tracking.nextEscalationDue = undefined;
+          unsetFields.nextEscalationDue = 1;
         }
       } else {
-        tracking.nextEscalationDue = undefined;
+        unsetFields.nextEscalationDue = 1;
       }
 
-      await tracking.save();
+      const updateOp: any = {
+        $set: setFields,
+        $push: { escalationHistory: newHistoryEntry },
+      };
+      if (Object.keys(unsetFields).length) updateOp.$unset = unsetFields;
+      await SLATracking.updateOne({ _id: tracking._id }, updateOp);
+
+      // Keep in-memory tracking object in sync for subsequent reads in this cycle
+      tracking.currentEscalationLevel = nextLevel;
 
       console.log(
         `✅ Ticket ${ticket.ticketNumber} escalated to ${escalatedToUser.firstName} ${escalatedToUser.lastName}`,

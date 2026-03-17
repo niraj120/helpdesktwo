@@ -38,7 +38,9 @@ interface IncomingEmail {
     ticketNumber: string;
     title: string;
     status: string;
+    projectId?: { _id: string; name: string };
   };
+  projectName?: string;
   direction: string;
   fromEmail: string;
   toEmail: string;
@@ -783,7 +785,29 @@ const EmailLogsPage = () => {
                             color: "#6b7280",
                           }}
                         >
-                          TICKET
+                          TO
+                        </th>
+                        <th
+                          style={{
+                            padding: "12px 16px",
+                            textAlign: "left",
+                            fontSize: "12px",
+                            fontWeight: "600",
+                            color: "#6b7280",
+                          }}
+                        >
+                          PROJECT NAME
+                        </th>
+                        <th
+                          style={{
+                            padding: "12px 16px",
+                            textAlign: "left",
+                            fontSize: "12px",
+                            fontWeight: "600",
+                            color: "#6b7280",
+                          }}
+                        >
+                          TICKET #
                         </th>
                         <th
                           style={{
@@ -896,7 +920,7 @@ const EmailLogsPage = () => {
                             style={{
                               padding: "12px 16px",
                               fontSize: "14px",
-                              maxWidth: "300px",
+                              maxWidth: "200px",
                               overflow: "hidden",
                               textOverflow: "ellipsis",
                               whiteSpace: "nowrap",
@@ -904,6 +928,21 @@ const EmailLogsPage = () => {
                           >
                             {email.subject}
                           </td>
+                          {/* TO column */}
+                          <td
+                            style={{ padding: "12px 16px", fontSize: "14px" }}
+                          >
+                            {email.toEmail || "-"}
+                          </td>
+                          {/* PROJECT NAME column */}
+                          <td
+                            style={{ padding: "12px 16px", fontSize: "14px" }}
+                          >
+                            {email.projectName ||
+                              email.ticketId?.projectId?.name ||
+                              "-"}
+                          </td>
+                          {/* TICKET # column */}
                           <td
                             style={{ padding: "12px 16px", fontSize: "14px" }}
                           >

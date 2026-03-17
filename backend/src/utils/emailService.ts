@@ -2069,7 +2069,14 @@ export const sendTicketReplyEmail = async (params: {
     const subject = `Re: ${params.ticketSubject || params.ticketNumber}`;
 
     // Send reply as raw text (no formatting, no headers, no footers)
-    const htmlBody = params.replyContentHtml || params.replyContent;
+    // Convert plain-text newlines to <br> so line breaks render correctly in HTML email clients
+    const htmlBody =
+      params.replyContentHtml ||
+      params.replyContent
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\n/g, "<br>");
 
     // Generate Message-ID for this reply
     const replyMessageId = `<ticket-${params.ticketNumber}-reply-${Date.now()}@sac-helpdesk.com>`;
