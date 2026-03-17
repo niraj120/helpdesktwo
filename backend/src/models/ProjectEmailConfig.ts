@@ -56,6 +56,9 @@ export interface IProjectEmailConfig extends Document {
   isForwardedMailbox?: boolean;
   originalEmailAddress?: string; // The original address emails are forwarded FROM
 
+  // Signature appended to outgoing email replies
+  replySignature?: string;
+
   lastCheckedAt?: Date;
   lastCheckStatus?: "success" | "failed";
   lastCheckError?: string;
@@ -136,6 +139,10 @@ const ProjectEmailConfigSchema: Schema = new Schema(
       type: String,
       trim: true,
       lowercase: true,
+      default: "",
+    },
+    replySignature: {
+      type: String,
       default: "",
     },
     imapHost: {

@@ -417,6 +417,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
   const [replySuccess, setReplySuccess] = useState("");
   const [replyError, setReplyError] = useState("");
   const [showReplyForm, setShowReplyForm] = useState(false);
+  const [emailSignature, setEmailSignature] = useState("");
 
   // Task 6.4: Source badge helper function
   const getSourceBadge = (source?: "online" | "offline" | "email") => {
@@ -961,6 +962,32 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
   };
 
   // Task 7.1: Send email reply
+  const handleOpenReplyForm = async () => {
+    // Fetch project email signature if not already loaded
+    let sig = emailSignature;
+    if (!sig && ticketProjectId) {
+      try {
+        const token = localStorage.getItem("authToken");
+        const res = await fetch(
+          `/api/projects/${ticketProjectId}/email-configs`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        if (res.ok) {
+          const json = await res.json();
+          const configs: any[] = json.data || [];
+          // Use the first enabled config's signature
+          const activeConfig = configs.find((c) => c.isEnabled) || configs[0];
+          sig = activeConfig?.replySignature || "";
+          setEmailSignature(sig);
+        }
+      } catch {
+        // Signature fetch failure is non-critical; proceed without one
+      }
+    }
+    setReplyContent(sig ? `\n\n${sig}` : "");
+    setShowReplyForm(true);
+  };
+
   const handleSendReply = async () => {
     if (!replyContent.trim() || !ticket) {
       setReplyError("Reply content is required");
@@ -2720,7 +2747,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                     {/* Reply Button or Form */}
                     {!showReplyForm ? (
                       <button
-                        onClick={() => setShowReplyForm(true)}
+                        onClick={handleOpenReplyForm}
                         className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center justify-center gap-2 transition-colors"
                       >
                         <span>📧</span>

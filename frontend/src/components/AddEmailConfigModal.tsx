@@ -95,6 +95,7 @@ interface EmailConfig {
   webhookPayloadMap?: WebhookPayloadMap;
   isForwardedMailbox?: boolean;
   originalEmailAddress?: string;
+  replySignature?: string;
 }
 
 interface EmailConfigModalProps {
@@ -120,6 +121,7 @@ interface FormData {
   smtpPort: number | string;
   smtpUsername: string;
   smtpPassword: string;
+  replySignature: string;
   provider: EmailProvider;
   authMethod: AuthMethod;
 }
@@ -215,6 +217,7 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
         smtpPort: editingConfig.smtpPort,
         smtpUsername: editingConfig.smtpUsername,
         smtpPassword: "",
+        replySignature: (editingConfig as any).replySignature ?? "",
         provider:
           editingConfig.provider ||
           detectEmailProvider(editingConfig.emailAddress),
@@ -236,6 +239,7 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
       smtpPort: 587,
       smtpUsername: "",
       smtpPassword: "",
+      replySignature: "",
       provider: "other",
       authMethod: "basic",
     };
@@ -539,6 +543,7 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
           formData.inboundMethod === "imap" && formData.isForwardedMailbox
             ? formData.originalEmailAddress
             : undefined,
+        reply_signature: formData.replySignature,
       };
 
       // Only include passwords if provided
@@ -1282,6 +1287,25 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                       Leave blank to keep existing password
                     </p>
                   )}
+                </div>
+
+                {/* Reply Signature */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Reply Signature
+                  </label>
+                  <textarea
+                    value={formData.replySignature}
+                    onChange={(e) =>
+                      handleInputChange("replySignature", e.target.value)
+                    }
+                    rows={3}
+                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y"
+                    placeholder={`Regards,\nSupport Team`}
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Automatically appended when an agent clicks &quot;Reply via Email&quot;
+                  </p>
                 </div>
               </div>
             </div>

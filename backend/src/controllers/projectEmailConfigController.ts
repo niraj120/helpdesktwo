@@ -563,6 +563,7 @@ export const addEmailConfig = async (req: Request, res: Response) => {
         req.body.is_forwarded_mailbox === "true",
       originalEmailAddress:
         req.body.original_email_address?.toLowerCase() || "",
+      replySignature: req.body.reply_signature || "",
       smtpHost: smtpHostToUse,
       smtpPort: smtpPortToUse,
       smtpUsername: smtp_username || email_address,
@@ -699,6 +700,9 @@ export const getEmailConfigs = async (req: Request, res: Response) => {
       inboundMethod: config.inboundMethod || "imap",
       webhookProvider: (config as any).webhookProvider || "",
       webhookPayloadMap: (config as any).webhookPayloadMap || null,
+      isForwardedMailbox: (config as any).isForwardedMailbox ?? false,
+      originalEmailAddress: (config as any).originalEmailAddress || "",
+      replySignature: (config as any).replySignature || "",
       createdAt: config.createdAt,
       updatedAt: config.updatedAt,
     }));
@@ -814,6 +818,8 @@ export const updateEmailConfig = async (req: Request, res: Response) => {
     if (req.body.original_email_address !== undefined)
       (config as any).originalEmailAddress =
         req.body.original_email_address?.toLowerCase() || "";
+    if (req.body.reply_signature !== undefined)
+      (config as any).replySignature = req.body.reply_signature;
     if (imap_host !== undefined) config.imapHost = imap_host;
     if (imap_port !== undefined) config.imapPort = Number(imap_port);
     if (imap_username !== undefined) config.imapUsername = imap_username;
