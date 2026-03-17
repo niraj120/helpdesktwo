@@ -1,9 +1,11 @@
 import { Request, Response } from "express";
 import { User } from "../models/User";
 import { Role } from "../models/Role";
+import { Project } from "../models/Project";
 import { hrmsService } from "../services/hrmsService";
 import mongoose from "mongoose";
 import { logActivity } from "../utils/logger";
+import { validatePasswordPolicy } from "../utils/passwordPolicyUtils";
 
 /**
  * Get all users with filters and pagination
@@ -1078,12 +1080,12 @@ export const resetUserPassword = async (
 ): Promise<void> => {
   try {
     const { id } = req.params;
-    const { newPassword } = req.body;
+    const { newPassword, projectId } = req.body;
 
-    if (!newPassword || newPassword.length < 8) {
+    if (!newPassword) {
       res.status(400).json({
         success: false,
-        error: "Password must be at least 8 characters long",
+        error: "New password is required",
       });
       return;
     }
@@ -1093,6 +1095,23 @@ export const resetUserPassword = async (
       res.status(404).json({
         success: false,
         error: "User not found",
+      });
+      return;
+    }
+
+    // Validate against project password policy
+    const policyProjectId = projectId || (user as any).projects?.[0];
+    const policyProject = policyProjectId
+      ? await Project.findById(policyProjectId)
+      : null;
+    const policyResult = validatePasswordPolicy(
+      newPassword,
+      (policyProject as any)?.configuration?.securitySettings?.passwordPolicy,
+    );
+    if (!policyResult.valid) {
+      res.status(400).json({
+        success: false,
+        error: policyResult.errors[0],
       });
       return;
     }

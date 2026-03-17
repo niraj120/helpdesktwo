@@ -3,6 +3,7 @@ import jwt, { SignOptions } from 'jsonwebtoken';
 import crypto from 'crypto';
 import { User } from '../models/User';
 import { Project } from '../models/Project';
+import { validatePasswordPolicy } from '../utils/passwordPolicyUtils';
 import { logLogin } from '../utils/logger';
 import { sendOTPEmail } from '../utils/emailService';
 import { sendOTPWhatsApp } from '../utils/whatsappService';
@@ -638,13 +639,6 @@ export const projectResetPassword = async (req: Request, res: Response) => {
       });
     }
 
-    if (newPassword.length < 6) {
-      return res.status(400).json({
-        success: false,
-        error: 'Password must be at least 6 characters long'
-      });
-    }
-
     // Find project by custom URL path
     const project = await Project.findOne({
       'branding.customUrlPath': customUrlPath.toLowerCase(),
@@ -656,6 +650,18 @@ export const projectResetPassword = async (req: Request, res: Response) => {
       return res.status(404).json({
         success: false,
         error: 'Project not found'
+      });
+    }
+
+    // Validate password against project policy
+    const policyResult = validatePasswordPolicy(
+      newPassword,
+      (project as any).configuration?.securitySettings?.passwordPolicy,
+    );
+    if (!policyResult.valid) {
+      return res.status(400).json({
+        success: false,
+        error: policyResult.errors[0],
       });
     }
 
