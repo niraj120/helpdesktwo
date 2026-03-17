@@ -240,7 +240,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
   };
 
   const fetchResetPasswordPolicy = async (user: User) => {
-    const projectId = user.projects?.[0]?._id;
+    const projectId = user.projects?.[0]?._id || currentProjectId;
     if (!projectId) {
       setResetPasswordPolicy(null);
       return;
@@ -253,7 +253,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
       });
       const data = await res.json();
       setResetPasswordPolicy(
-        data?.data?.configuration?.securitySettings?.passwordPolicy || null,
+        data?.data?.project?.configuration?.securitySettings?.passwordPolicy ||
+          null,
       );
     } catch {
       setResetPasswordPolicy(null);
@@ -1169,7 +1170,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
           credentials: "include",
           body: JSON.stringify({
             newPassword,
-            projectId: resetPasswordUser.projects?.[0]?._id,
+            projectId:
+              resetPasswordUser.projects?.[0]?._id || currentProjectId,
           }),
         },
       );
