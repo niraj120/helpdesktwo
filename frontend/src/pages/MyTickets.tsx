@@ -131,10 +131,19 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
       const token = localStorage.getItem("authToken");
       if (!token) return;
 
+      // Resolve projectId: agent portal sets 'projectContext'; student login sets 'projectId'
+      let projectId = "";
       const projectContext = localStorage.getItem("projectContext");
-      if (!projectContext) return;
-
-      const { projectId } = JSON.parse(projectContext);
+      if (projectContext) {
+        try {
+          projectId = JSON.parse(projectContext).projectId || "";
+        } catch {
+          projectId = "";
+        }
+      }
+      if (!projectId) projectId = localStorage.getItem("projectId") || "";
+      if (!projectId && currentProjectId) projectId = currentProjectId;
+      if (!projectId) return;
 
       // Fetch statuses using existing API: /api/statuses/project/:projectId
       const statusResponse = await axios.get(
@@ -178,25 +187,46 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
         ]);
       }
 
-      // Fetch priorities from SLA rules (use SLA rule priority field)
-      const slaResponse = await axios.get(
-        `${API_BASE_URL}/sla-rules?projectId=${projectId}&isActive=true`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
+      // Fetch priorities from SLA rules (independent — failure falls back to defaults)
+      try {
+        const slaResponse = await axios.get(
+          `${API_BASE_URL}/sla-rules?projectId=${projectId}&isActive=true`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
 
-      if (slaResponse.data.success && Array.isArray(slaResponse.data.data)) {
-        // Use SLA priority field (LOW, MEDIUM, HIGH) to match ticket.priority
-        const priorityList = slaResponse.data.data.map((sla: any) => ({
-          code: sla.priority, // Use priority field (e.g., "LOW", "MEDIUM", "HIGH")
-          name: sla.name, // Display name (e.g., "Low", "Medium", "High")
-        }));
-        setPriorities(priorityList);
+        if (
+          slaResponse.data.success &&
+          Array.isArray(slaResponse.data.data) &&
+          slaResponse.data.data.length > 0
+        ) {
+          const priorityList = slaResponse.data.data.map((sla: any) => ({
+            code: sla.priority,
+            name: sla.name,
+          }));
+          setPriorities(priorityList);
+        } else {
+          setPriorities([
+            { code: "Low", name: "Low" },
+            { code: "Normal", name: "Normal" },
+            { code: "High", name: "High" },
+            { code: "Urgent", name: "Urgent" },
+            { code: "Critical", name: "Critical" },
+          ]);
+        }
+      } catch {
+        setPriorities([
+          { code: "Low", name: "Low" },
+          { code: "Normal", name: "Normal" },
+          { code: "High", name: "High" },
+          { code: "Urgent", name: "Urgent" },
+          { code: "Critical", name: "Critical" },
+        ]);
       }
     } catch (err) {
       console.error("Error fetching master data:", err);
-      // On error, set default statuses so filtering still works
+      // On error, set defaults so filtering still works
       setStatuses([
         { code: 1, name: "Open" },
         { code: 2, name: "In Progress" },
@@ -204,8 +234,15 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
         { code: 4, name: "Resolved" },
         { code: 5, name: "Closed" },
       ]);
+      setPriorities([
+        { code: "Low", name: "Low" },
+        { code: "Normal", name: "Normal" },
+        { code: "High", name: "High" },
+        { code: "Urgent", name: "Urgent" },
+        { code: "Critical", name: "Critical" },
+      ]);
     }
-  }, []);
+  }, [currentProjectId]);
 
   const fetchMyTickets = useCallback(async () => {
     console.log("🎯 fetchMyTickets called");

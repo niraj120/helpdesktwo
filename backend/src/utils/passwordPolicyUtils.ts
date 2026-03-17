@@ -33,10 +33,7 @@ export function validatePasswordPolicy(
     errors.push("Password must contain at least one number (0-9)");
   }
 
-  if (
-    policy?.requireSpecialChars &&
-    !/[@!%*?"#$\[\]^~_\-+=]/.test(password)
-  ) {
+  if (policy?.requireSpecialChars && !/[@!%*?"#$\[\]^~_\-+=]/.test(password)) {
     errors.push(
       'Password must contain at least one special character (@!%*?"#$?[]^~_-+=)',
     );

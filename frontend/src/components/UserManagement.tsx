@@ -1170,8 +1170,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
           credentials: "include",
           body: JSON.stringify({
             newPassword,
-            projectId:
-              resetPasswordUser.projects?.[0]?._id || currentProjectId,
+            projectId: resetPasswordUser.projects?.[0]?._id || currentProjectId,
           }),
         },
       );
@@ -5231,9 +5230,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       <li>At least one number (0-9)</li>
                     )}
                     {resetPasswordPolicy.requireSpecialChars && (
-                      <li>
-                        At least one special character (@!%*?"#$[]^~_-+=)
-                      </li>
+                      <li>At least one special character (@!%*?"#$[]^~_-+=)</li>
                     )}
                   </ul>
                 </div>

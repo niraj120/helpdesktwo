@@ -1304,7 +1304,8 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                     placeholder={`Regards,\nSupport Team`}
                   />
                   <p className="mt-1 text-xs text-gray-500">
-                    Automatically appended when an agent clicks &quot;Reply via Email&quot;
+                    Automatically appended when an agent clicks &quot;Reply via
+                    Email&quot;
                   </p>
                 </div>
               </div>

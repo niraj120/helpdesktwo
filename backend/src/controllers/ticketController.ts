@@ -1024,6 +1024,8 @@ export const getMyTickets = async (req: Request, res: Response) => {
 
       if (allUserProjectIds.length > 0) {
         // Convert string IDs to ObjectIds for proper comparison
+        // Include BOTH ObjectId and string forms to handle mixed storage (some tickets store
+        // metadata.projectId as ObjectId, others as string)
         const projectObjectIds = allUserProjectIds.map((id) => {
           try {
             return new mongoose.Types.ObjectId(id);
@@ -1031,7 +1033,9 @@ export const getMyTickets = async (req: Request, res: Response) => {
             return id; // Keep as string if not valid ObjectId
           }
         });
-        query["metadata.projectId"] = { $in: projectObjectIds };
+        query["metadata.projectId"] = {
+          $in: [...projectObjectIds, ...allUserProjectIds],
+        };
         console.log(
           `🏢 [PROJECT FILTER] No projectId provided - filtering by user's ${allUserProjectIds.length} assigned project(s):`,
           allUserProjectIds,
