@@ -10,6 +10,7 @@ export type EmailProvider = "google" | "microsoft" | "other";
 export type AuthMethod = "basic" | "oauth2" | "app_password";
 
 export type InboundMethod = "imap" | "sendgrid" | "webhook";
+export type OutboundMethod = "smtp" | "sendgrid";
 
 export interface IProjectEmailConfig extends Document {
   projectId: mongoose.Types.ObjectId;
@@ -20,6 +21,8 @@ export interface IProjectEmailConfig extends Document {
   provider: EmailProvider;
   authMethod: AuthMethod;
   inboundMethod: InboundMethod;
+  outboundMethod: OutboundMethod;
+  sendgridApiKey?: string;
   webhookProvider?: string;
   webhookPayloadMap?: {
     to: string;
@@ -75,6 +78,7 @@ export interface IProjectEmailConfig extends Document {
   // Method to decrypt passwords
   getDecryptedImapPassword(): string;
   getDecryptedSmtpPassword(): string;
+  getDecryptedSendgridApiKey(): string;
   getDecryptedOAuth2ClientSecret(): string;
   getDecryptedOAuth2RefreshToken(): string;
   getDecryptedOAuth2AccessToken(): string;
@@ -116,6 +120,15 @@ const ProjectEmailConfigSchema: Schema = new Schema(
       type: String,
       enum: ["imap", "sendgrid", "webhook"],
       default: "imap",
+    },
+    outboundMethod: {
+      type: String,
+      enum: ["smtp", "sendgrid"],
+      default: "smtp",
+    },
+    sendgridApiKey: {
+      type: String,
+      default: "",
     },
     webhookProvider: {
       type: String,
@@ -189,25 +202,37 @@ const ProjectEmailConfigSchema: Schema = new Schema(
     },
     smtpHost: {
       type: String,
-      required: true,
+      required: function (this: any) {
+        return this.outboundMethod !== "sendgrid";
+      },
       trim: true,
+      default: "",
     },
     smtpPort: {
       type: Number,
-      required: true,
+      required: function (this: any) {
+        return this.outboundMethod !== "sendgrid";
+      },
       min: 1,
       max: 65535,
+      default: 587,
     },
     smtpUsername: {
       type: String,
-      required: true,
+      required: function (this: any) {
+        return this.outboundMethod !== "sendgrid";
+      },
       trim: true,
+      default: "",
     },
     smtpPassword: {
       type: String,
       required: function (this: any) {
-        return this.authMethod !== "oauth2";
+        return (
+          this.outboundMethod !== "sendgrid" && this.authMethod !== "oauth2"
+        );
       },
+      default: "",
     },
     // OAuth2 settings
     oauth2: {
@@ -299,6 +324,13 @@ ProjectEmailConfigSchema.pre("save", function (next) {
   ) {
     this.smtpPassword = encrypt(this.smtpPassword);
   }
+  if (
+    this.isModified("sendgridApiKey") &&
+    this.sendgridApiKey &&
+    !this.sendgridApiKey.includes(":")
+  ) {
+    this.sendgridApiKey = encrypt(this.sendgridApiKey);
+  }
   // Encrypt OAuth2 tokens
   if (this.oauth2) {
     if (
@@ -344,6 +376,16 @@ ProjectEmailConfigSchema.methods.getDecryptedSmtpPassword =
       return decrypt(this.smtpPassword);
     } catch {
       return this.smtpPassword;
+    }
+  };
+
+ProjectEmailConfigSchema.methods.getDecryptedSendgridApiKey =
+  function (): string {
+    if (!this.sendgridApiKey) return "";
+    try {
+      return decrypt(this.sendgridApiKey);
+    } catch {
+      return this.sendgridApiKey;
     }
   };
 

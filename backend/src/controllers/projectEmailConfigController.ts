@@ -194,7 +194,7 @@ const testImapConnection = async (
         errorMessage.includes("Authentication failed") ||
         errorMessage.includes("AUTHENTICATE failed")
       ) {
-        if (authMethod === "basic" || authMethod === "app_password") {
+        if (authMethod === "basic") {
           // Check if it's a Microsoft host
           if (
             host.includes("office365") ||
@@ -202,13 +202,29 @@ const testImapConnection = async (
             host.includes("microsoft")
           ) {
             errorMessage +=
-              " - Microsoft 365 has disabled basic IMAP authentication. Please use an App Password (enable 2FA first at https://myaccount.microsoft.com, then create an App Password).";
+              " - Microsoft 365 has disabled basic IMAP authentication. Please switch to App Password (enable 2FA first at https://myaccount.microsoft.com, then create an App Password) or use OAuth2.";
           } else if (host.includes("gmail") || host.includes("google")) {
             errorMessage +=
               " - For Google accounts, please use an App Password (enable 2FA first at https://myaccount.google.com/apppasswords).";
           } else {
             errorMessage +=
               " - For Google/Microsoft accounts, please use App Password or OAuth2 authentication.";
+          }
+        } else if (authMethod === "app_password") {
+          // User is already using an App Password — point to admin settings
+          if (
+            host.includes("office365") ||
+            host.includes("outlook") ||
+            host.includes("microsoft")
+          ) {
+            errorMessage +=
+              " - App Password rejected by Microsoft 365. Microsoft deprecated Basic/Legacy Authentication for IMAP in October 2022. Even with a valid App Password, this will fail if your tenant has Security Defaults enabled (Azure Portal → Microsoft Entra ID → Properties → Manage Security Defaults). The only supported solution is OAuth2. Please switch the Authentication Method to OAuth2 in the email configuration, or ask your IT admin to create a Conditional Access exclusion for this service account.";
+          } else if (host.includes("gmail") || host.includes("google")) {
+            errorMessage +=
+              " - App Password rejected by Google. Ensure 2FA is active and the App Password was generated at https://myaccount.google.com/apppasswords. Also check that IMAP access is enabled in Gmail settings.";
+          } else {
+            errorMessage +=
+              " - App Password authentication failed. Verify the password is correct and that IMAP access is enabled for this account.";
           }
         }
       }
@@ -357,6 +373,8 @@ export const addEmailConfig = async (req: Request, res: Response) => {
       provider,
       authMethod = "basic",
       inbound_method = "imap",
+      outbound_method = "smtp",
+      sendgrid_api_key,
       oauth2,
       webhook_provider,
       webhook_payload_map,
@@ -367,6 +385,7 @@ export const addEmailConfig = async (req: Request, res: Response) => {
       provider || detectEmailProvider(email_address || "");
     const authType = authMethod as AuthMethod;
     const inboundType = inbound_method as "imap" | "sendgrid" | "webhook";
+    const outboundType = (outbound_method || "smtp") as "smtp" | "sendgrid";
 
     // Validate based on auth method and inbound method
     if (authType === "oauth2") {
@@ -384,13 +403,16 @@ export const addEmailConfig = async (req: Request, res: Response) => {
         });
       }
     } else if (inboundType === "sendgrid" || inboundType === "webhook") {
-      // Webhook inbound: only email_address + smtp fields needed
+      // Webhook inbound: only email_address + smtp/sendgrid fields needed
+      if (!email_address) {
+        return res.status(400).json({
+          success: false,
+          message: "Email address is required for webhook inbound",
+        });
+      }
       if (
-        !email_address ||
-        !smtp_host ||
-        !smtp_port ||
-        !smtp_username ||
-        !smtp_password
+        outboundType !== "sendgrid" &&
+        (!smtp_host || !smtp_port || !smtp_username || !smtp_password)
       ) {
         return res.status(400).json({
           success: false,
@@ -406,17 +428,26 @@ export const addEmailConfig = async (req: Request, res: Response) => {
         !imap_port ||
         !imap_username ||
         !imap_password ||
-        !smtp_host ||
-        !smtp_port ||
-        !smtp_username ||
-        !smtp_password
+        (outboundType !== "sendgrid" &&
+          (!smtp_host || !smtp_port || !smtp_username || !smtp_password))
       ) {
         return res.status(400).json({
           success: false,
           message:
-            "All fields are required for basic/app_password authentication",
+            outboundType === "sendgrid"
+              ? "IMAP credentials are required"
+              : "All fields are required for basic/app_password authentication",
         });
       }
+    }
+
+    // When using SendGrid for outbound, require the API key
+    if (outboundType === "sendgrid" && !sendgrid_api_key) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "SendGrid API key is required when outbound method is SendGrid",
+      });
     }
 
     // Validate project ID format
@@ -513,31 +544,35 @@ export const addEmailConfig = async (req: Request, res: Response) => {
       );
     }
 
-    // Test SMTP connection
-    console.log(`Testing SMTP connection for ${email_address}...`);
-    const smtpTest = await testSmtpConnection(
-      smtpHostToUse,
-      smtpPortToUse,
-      smtp_username || email_address,
-      smtp_password || "",
-      authType,
-      authType === "oauth2"
-        ? {
-            clientId: oauth2?.clientId,
-            clientSecret: oauth2?.clientSecret,
-            accessToken: oauth2?.accessToken,
-            refreshToken: oauth2?.refreshToken,
-            provider: detectedProvider,
-          }
-        : undefined,
-    );
+    // Test SMTP connection (skip when using SendGrid for outbound)
+    if (outboundType !== "sendgrid") {
+      console.log(`Testing SMTP connection for ${email_address}...`);
+      const smtpTest = await testSmtpConnection(
+        smtpHostToUse,
+        smtpPortToUse,
+        smtp_username || email_address,
+        smtp_password || "",
+        authType,
+        authType === "oauth2"
+          ? {
+              clientId: oauth2?.clientId,
+              clientSecret: oauth2?.clientSecret,
+              accessToken: oauth2?.accessToken,
+              refreshToken: oauth2?.refreshToken,
+              provider: detectedProvider,
+            }
+          : undefined,
+      );
 
-    if (!smtpTest.success) {
-      return res.status(400).json({
-        success: false,
-        message: "SMTP connection failed",
-        error: smtpTest.error,
-      });
+      if (!smtpTest.success) {
+        return res.status(400).json({
+          success: false,
+          message: "SMTP connection failed",
+          error: smtpTest.error,
+        });
+      }
+    } else {
+      console.log(`Skipping SMTP test — outbound method is SendGrid`);
     }
 
     // Create email configuration
@@ -564,10 +599,13 @@ export const addEmailConfig = async (req: Request, res: Response) => {
       originalEmailAddress:
         req.body.original_email_address?.toLowerCase() || "",
       replySignature: req.body.reply_signature || "",
-      smtpHost: smtpHostToUse,
-      smtpPort: smtpPortToUse,
-      smtpUsername: smtp_username || email_address,
-      smtpPassword: smtp_password || "", // Will be encrypted by pre-save hook
+      outboundMethod: outboundType,
+      sendgridApiKey: outboundType === "sendgrid" ? sendgrid_api_key || "" : "",
+      smtpHost: outboundType === "sendgrid" ? "" : smtpHostToUse,
+      smtpPort: outboundType === "sendgrid" ? 587 : smtpPortToUse,
+      smtpUsername:
+        outboundType === "sendgrid" ? "" : smtp_username || email_address,
+      smtpPassword: outboundType === "sendgrid" ? "" : smtp_password || "", // Will be encrypted by pre-save hook
       // OAuth2 fields (will be encrypted by pre-save hook)
       ...(authType === "oauth2" && oauth2
         ? {
@@ -827,6 +865,8 @@ export const updateEmailConfig = async (req: Request, res: Response) => {
     if (smtp_port !== undefined) config.smtpPort = Number(smtp_port);
     if (smtp_username !== undefined) config.smtpUsername = smtp_username;
     if (typeof isEnabled === "boolean") config.isEnabled = isEnabled;
+    if (req.body.outbound_method !== undefined)
+      (config as any).outboundMethod = req.body.outbound_method;
 
     // Only update passwords if provided (they are optional in updates)
     // Passwords will be encrypted by pre-save hook in the model
@@ -835,6 +875,10 @@ export const updateEmailConfig = async (req: Request, res: Response) => {
     }
     if (smtp_password) {
       config.smtpPassword = smtp_password;
+    }
+    // Update SendGrid API key if provided
+    if (req.body.sendgrid_api_key) {
+      (config as any).sendgridApiKey = req.body.sendgrid_api_key;
     }
 
     await config.save();
@@ -1122,6 +1166,7 @@ export const testEmailConfigConnection = async (
         config.imapPort,
         config.imapUsername,
         imapPassword,
+        (config.authMethod as AuthMethod) || "basic",
       );
     }
 
@@ -1132,6 +1177,7 @@ export const testEmailConfigConnection = async (
       config.smtpPort,
       config.smtpUsername,
       smtpPassword,
+      (config.authMethod as AuthMethod) || "basic",
     );
 
     // Determine overall success

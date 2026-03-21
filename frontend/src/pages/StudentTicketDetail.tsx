@@ -51,6 +51,10 @@ interface Ticket {
     }>;
     createdAt: string;
   }>;
+  isMerged?: boolean;
+  mergedInto?:
+    | string
+    | { _id: string; ticketNumber: string; subject?: string; title?: string };
 }
 
 interface ProjectBranding {
@@ -384,6 +388,38 @@ const StudentTicketDetail: React.FC = () => {
             <div>
               <h3 className="text-sm font-semibold text-red-900">Error</h3>
               <p className="text-sm text-red-700">{submitError}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Merged-into banner — shown when this is a secondary/merged ticket */}
+        {ticket.isMerged && ticket.mergedInto && (
+          <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 mb-6 flex items-start space-x-3">
+            <ExclamationCircleIcon className="w-6 h-6 text-amber-500 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-amber-900">
+                This query has been merged
+              </h3>
+              <p className="text-sm text-amber-800 mt-1">
+                This query was merged into{" "}
+                <button
+                  className="font-bold underline hover:text-amber-900"
+                  onClick={() => {
+                    const primary = ticket.mergedInto;
+                    if (primary && typeof primary === "object") {
+                      navigate(
+                        `/${customUrlPath}/student/ticket/${primary._id}`,
+                      );
+                    }
+                  }}
+                >
+                  {typeof ticket.mergedInto === "object"
+                    ? ticket.mergedInto.ticketNumber
+                    : ticket.mergedInto}
+                </button>
+                . All updates are tracked there. Please click to view the active
+                query.
+              </p>
             </div>
           </div>
         )}
