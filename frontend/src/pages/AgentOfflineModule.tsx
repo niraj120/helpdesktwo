@@ -153,6 +153,8 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [centers, setCenters] = useState<Center[]>([]);
   const [selectedCenter, setSelectedCenter] = useState<string>("");
+  const [userPriorTickets, setUserPriorTickets] = useState<any[]>([]);
+  const [loadingPriorTickets, setLoadingPriorTickets] = useState(false);
   const [creatingTicket, setCreatingTicket] = useState(false);
   const [ticketSuccess, setTicketSuccess] = useState(false);
   const [createdTicketNumber, setCreatedTicketNumber] = useState("");
@@ -667,6 +669,22 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
           userId: response.data.data._id,
         }));
         setTicketUserSearched(true);
+
+        // Fetch all tickets raised by this user in the project (duplicate check)
+        setLoadingPriorTickets(true);
+        setUserPriorTickets([]);
+        try {
+          const tRes = await axios.get(
+            `${API_CONFIG.API_URL}/tickets/student-history?studentId=${response.data.data._id}&projectId=${projectId}`,
+            { headers: { Authorization: `Bearer ${token}` } },
+          );
+          setUserPriorTickets(tRes.data.data?.tickets || []);
+        } catch (err) {
+          console.error("Error fetching prior tickets:", err);
+          setUserPriorTickets([]);
+        } finally {
+          setLoadingPriorTickets(false);
+        }
       } else {
         alert("User not found. Please register them first.");
         setSelectedUser(null);
@@ -1321,6 +1339,7 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                       });
                       setTicketUserSearched(false);
                       setSelectedUser(null);
+                      setUserPriorTickets([]);
                     }}
                     onKeyPress={(e) =>
                       e.key === "Enter" &&
@@ -1365,6 +1384,151 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                 </div>
               )}
             </div>
+
+            {/* Prior Tickets Panel — shows all queries raised by this user in the project */}
+            {selectedUser && (
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                  <span className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                    <TicketIcon className="h-4 w-4 text-gray-500" />
+                    Previously Raised Queries by This User
+                  </span>
+                  {loadingPriorTickets ? (
+                    <span className="text-xs text-gray-500">Loading…</span>
+                  ) : (
+                    <span className="text-xs text-gray-500">
+                      {userPriorTickets.length} ticket(s) found
+                    </span>
+                  )}
+                </div>
+                {loadingPriorTickets ? (
+                  <div className="px-4 py-3 text-sm text-gray-500 text-center">
+                    Fetching prior queries…
+                  </div>
+                ) : userPriorTickets.length === 0 ? (
+                  <div className="px-4 py-3 text-sm text-gray-500 text-center">
+                    No prior queries found for this user in this project.
+                  </div>
+                ) : (
+                  <>
+                    {userPriorTickets.some(
+                      (t) => t.status === 1 || t.status === 2 || t.status === 3,
+                    ) && (
+                      <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 flex items-center gap-2">
+                        <ExclamationCircleIcon className="h-4 w-4 text-amber-600 flex-shrink-0" />
+                        <span className="text-xs font-medium text-amber-800">
+                          {
+                            userPriorTickets.filter(
+                              (t) =>
+                                t.status === 1 ||
+                                t.status === 2 ||
+                                t.status === 3,
+                            ).length
+                          }{" "}
+                          open / in-progress ticket(s) already exist. Review
+                          before creating a new one.
+                        </span>
+                      </div>
+                    )}
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="bg-gray-50 text-left text-gray-600 uppercase tracking-wide">
+                            <th className="px-3 py-2 font-semibold whitespace-nowrap w-32">
+                              Ticket #
+                            </th>
+                            <th className="px-3 py-2 font-semibold w-52">Subject</th>
+                            <th className="px-3 py-2 font-semibold w-64">
+                              Category
+                            </th>
+                            <th className="px-3 py-2 font-semibold whitespace-nowrap w-36">
+                              Center
+                            </th>
+                            <th className="px-3 py-2 font-semibold whitespace-nowrap w-28">
+                              Assigned To
+                            </th>
+                            <th className="px-3 py-2 font-semibold w-20">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {userPriorTickets.map((t) => {
+                            const statusMap: Record<
+                              number,
+                              { label: string; className: string }
+                            > = {
+                              1: {
+                                label: "Open",
+                                className: "bg-blue-100 text-blue-800",
+                              },
+                              2: {
+                                label: "In Progress",
+                                className: "bg-yellow-100 text-yellow-800",
+                              },
+                              3: {
+                                label: "On Hold",
+                                className: "bg-orange-100 text-orange-800",
+                              },
+                              4: {
+                                label: "Resolved",
+                                className: "bg-green-100 text-green-800",
+                              },
+                              5: {
+                                label: "Closed",
+                                className: "bg-gray-100 text-gray-700",
+                              },
+                            };
+                            const st = statusMap[t.status] || {
+                              label: "Unknown",
+                              className: "bg-gray-100 text-gray-700",
+                            };
+                            const centerDisplay = t.metadata?.centerId
+                              ? typeof t.metadata.centerId === "object"
+                                ? t.metadata.centerId.centerName
+                                : t.metadata.centerId === "online"
+                                  ? "Online"
+                                  : t.metadata.centerId
+                              : "—";
+                            const assignedDisplay = t.assignedTo
+                              ? `${t.assignedTo.firstName} ${t.assignedTo.lastName}`
+                              : "Unassigned";
+                            const categoryDisplay =
+                              t.categoryHierarchy?.displayPath ||
+                              t.category?.name ||
+                              "—";
+                            return (
+                              <tr key={t._id} className="hover:bg-gray-50">
+                                <td className="px-3 py-2 font-mono text-gray-700 whitespace-nowrap w-32">
+                                  {t.ticketNumber}
+                                </td>
+                                <td className="px-3 py-2 text-gray-800 w-52">
+                                  {t.subject}
+                                </td>
+                                <td className="px-3 py-2 text-gray-600 w-64">
+                                  {categoryDisplay}
+                                </td>
+                                <td className="px-3 py-2 text-gray-600 whitespace-nowrap w-36">
+                                  {centerDisplay}
+                                </td>
+                                <td className="px-3 py-2 text-gray-600 whitespace-nowrap w-28">
+                                  {assignedDisplay}
+                                </td>
+                                <td className="px-3 py-2 w-20">
+                                  <span
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap ${st.className}`}
+                                  >
+                                    {st.label}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
 
             {/* Center Selection */}
             <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-3">

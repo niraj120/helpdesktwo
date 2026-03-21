@@ -857,6 +857,78 @@ export const submitTicket = async (req: Request, res: Response) => {
 };
 
 /**
+ * Get all tickets created by a specific student within a project.
+ * Used by agents for duplicate-check display ONLY — no center/assignment filters applied.
+ * Requires caller to be authenticated; any agent role may call this.
+ */
+export const getStudentTicketHistory = async (req: Request, res: Response) => {
+  try {
+    const callerId = (req as any).user?.userId;
+    if (!callerId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const studentId = req.query.studentId as string;
+    const projectId = req.query.projectId as string;
+
+    if (!studentId || !mongoose.Types.ObjectId.isValid(studentId)) {
+      return res.status(400).json({ success: false, message: "Invalid studentId" });
+    }
+
+    const query: any = {
+      createdBy: new mongoose.Types.ObjectId(studentId),
+      isMerged: { $ne: true },
+    };
+
+    if (projectId && mongoose.Types.ObjectId.isValid(projectId)) {
+      query["metadata.projectId"] = {
+        $in: [projectId, new mongoose.Types.ObjectId(projectId)],
+      };
+    }
+
+    const tickets = await Ticket.find(query)
+      .select("ticketNumber subject status categoryHierarchy category assignedTo metadata createdAt")
+      .populate("assignedTo", "firstName lastName")
+      .populate("category", "name")
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .lean();
+
+    // Populate center names
+    const centerIds = [
+      ...new Set(
+        tickets
+          .map((t: any) => {
+            const c = t.metadata?.centerId;
+            return c && c !== "online" ? c.toString() : null;
+          })
+          .filter(Boolean),
+      ),
+    ];
+    const centers = centerIds.length > 0
+      ? await Center.find({ _id: { $in: centerIds } }).select("centerName").lean()
+      : [];
+    const centerMap = new Map(centers.map((c: any) => [c._id.toString(), c.centerName]));
+
+    const result = tickets.map((t: any) => {
+      if (t.metadata?.centerId && t.metadata.centerId !== "online") {
+        const name = centerMap.get(t.metadata.centerId.toString());
+        if (name) t.metadata.centerId = { centerName: name };
+      }
+      return t;
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: { tickets: result },
+    });
+  } catch (error) {
+    console.error("getStudentTicketHistory error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch student ticket history" });
+  }
+};
+
+/**
  * Get tickets for logged-in student user
  */
 export const getMyTickets = async (req: Request, res: Response) => {
@@ -1703,6 +1775,15 @@ export const getAllTickets = async (req: Request, res: Response) => {
       }
     }
 
+    // Created-by student filter (for prior-ticket lookup in offline module)
+    if (req.query.createdBy) {
+      const createdByStr = req.query.createdBy as string;
+      if (mongoose.Types.ObjectId.isValid(createdByStr)) {
+        query.createdBy = new mongoose.Types.ObjectId(createdByStr);
+        console.log(`🔍 [VIEW_TICKETS] Filtering by createdBy: ${createdByStr}`);
+      }
+    }
+
     // Submission source filter (online/offline/email/whatsapp)
     if (req.query.submissionSource) {
       query.submissionSource = req.query.submissionSource;
@@ -1765,6 +1846,15 @@ export const getAllTickets = async (req: Request, res: Response) => {
       }
     }
 
+    // Exclude merged (secondary) tickets from listing unless caller explicitly opts in
+    if (req.query.includeMerged !== "true") {
+      if (query.$and) {
+        query.$and.push({ isMerged: { $ne: true } });
+      } else {
+        query.isMerged = { $ne: true };
+      }
+    }
+
     // ============================================
     // RBAC: TICKET_VIEW_OWN vs TICKET_VIEW_ALL
     // ============================================
@@ -1792,6 +1882,15 @@ export const getAllTickets = async (req: Request, res: Response) => {
         success: true,
         data: { tickets: [], pagination: { total: 0, page, limit, pages: 0 } },
       });
+    }
+
+    // Exclude merged (secondary) tickets from getAllTickets listing unless caller explicitly opts in
+    if (req.query.includeMerged !== "true") {
+      if (query.$and) {
+        query.$and.push({ isMerged: { $ne: true } });
+      } else {
+        query.isMerged = { $ne: true };
+      }
     }
 
     console.log(
@@ -2297,7 +2396,13 @@ export const getTicketById = async (req: Request, res: Response) => {
       })
       .populate("escalationHistory.escalatedTo", "firstName lastName email")
       .populate("escalationHistory.escalatedBy", "firstName lastName email")
-      .populate("changeHistory.changedBy", "firstName lastName email");
+      .populate("changeHistory.changedBy", "firstName lastName email")
+      .populate({
+        path: "mergedTickets",
+        select: "ticketNumber subject title status priority category assignedTo createdAt mergedAt metadata threads",
+        populate: { path: "category", select: "name" },
+      })
+      .populate("mergedInto", "ticketNumber subject title status");
 
     if (!ticket) {
       return res.status(404).json({
@@ -4087,6 +4192,13 @@ export const getDashboardStats = async (req: Request, res: Response) => {
         ? { "metadata.projectId": query["metadata.projectId"] }
         : {};
       query = { ...projectFilter, "metadata.studentEmail": user.email };
+    }
+
+    // Always exclude merged secondary tickets from dashboard counts
+    if (query.$and) {
+      query.$and.push({ isMerged: { $ne: true } });
+    } else {
+      query.isMerged = { $ne: true };
     }
 
     console.log(`📊 [DASHBOARD] Final query:`, JSON.stringify(query));
@@ -6276,6 +6388,82 @@ export const resumeSLA = async (req: Request, res: Response) => {
     return res.status(500).json({
       success: false,
       message: "Failed to resume SLA",
+      error: error.message,
+    });
+  }
+};
+
+// ============================================================
+// Bulk delete tickets
+// @route   DELETE /api/tickets/bulk
+// @access  Private (TICKET_VIEW_ALL or Super Admin)
+// ============================================================
+export const bulkDeleteTickets = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.userId;
+    const userName =
+      (req as any).user?.userName || (req as any).user?.name || "Unknown";
+    const userEmail = (req as any).user?.email || "unknown@email.com";
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const { ticketIds } = req.body as { ticketIds?: string[] };
+
+    if (!Array.isArray(ticketIds) || ticketIds.length === 0) {
+      return res
+        .status(400)
+        .json({ success: false, message: "ticketIds array is required" });
+    }
+
+    if (ticketIds.length > 100) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Cannot delete more than 100 tickets at once" });
+    }
+
+    // Validate all IDs are valid ObjectIds
+    const validIds = ticketIds.filter((id) =>
+      mongoose.Types.ObjectId.isValid(id),
+    );
+    if (validIds.length !== ticketIds.length) {
+      return res
+        .status(400)
+        .json({ success: false, message: "One or more ticket IDs are invalid" });
+    }
+
+    // Fetch tickets to log activity (limit fields for performance)
+    const tickets = await Ticket.find(
+      { _id: { $in: validIds } },
+      { ticketNumber: 1 },
+    ).lean();
+
+    const result = await Ticket.deleteMany({ _id: { $in: validIds } });
+
+    // Log activity for each deleted ticket
+    for (const t of tickets) {
+      await logActivity({
+        action: "delete",
+        entity: "Ticket",
+        entityId: (t._id as any).toString(),
+        userId,
+        userName,
+        userEmail,
+        description: `Ticket ${t.ticketNumber} deleted in bulk by ${userEmail}`,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `${result.deletedCount} ticket(s) deleted successfully`,
+      data: { deletedCount: result.deletedCount },
+    });
+  } catch (error: any) {
+    console.error("Bulk delete tickets error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to delete tickets",
       error: error.message,
     });
   }

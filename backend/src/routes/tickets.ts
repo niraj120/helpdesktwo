@@ -27,6 +27,8 @@ import {
   getSLAStatus,
   pauseSLA,
   resumeSLA,
+  bulkDeleteTickets,
+  getStudentTicketHistory,
 } from "../controllers/ticketController";
 import { authMiddleware } from "../middleware/auth";
 import { checkPermission } from "../middleware/permissions";
@@ -61,7 +63,10 @@ import {
 import { exportTickets } from "../controllers/ticketExportController";
 
 // Merge controller
-import { mergeTickets } from "../controllers/ticketMergeController";
+import {
+  mergeTickets,
+  getMergeCandidates,
+} from "../controllers/ticketMergeController";
 
 // Escalation Matrix controller
 import {
@@ -89,10 +94,25 @@ router.post(
   createOfflineTicket,
 );
 
+// @desc    Bulk delete tickets
+// @route   DELETE /api/tickets/bulk
+// @access  Private (TICKET_VIEW_ALL)
+router.delete(
+  "/bulk",
+  authMiddleware,
+  checkPermission("TICKET_VIEW_ALL"),
+  bulkDeleteTickets,
+);
+
 // @desc    Get tickets for logged-in user (own tickets or all if they have VIEW_ALL)
 // @route   GET /api/tickets/my-tickets
 // @access  Private (Student or Agent) - No permission check needed, controller handles filtering
 router.get("/my-tickets", authMiddleware, getMyTickets);
+
+// @desc    Get all tickets created by a specific student (duplicate-check for agents)
+// @route   GET /api/tickets/student-history?studentId=X&projectId=Y
+// @access  Private (any authenticated agent)
+router.get("/student-history", authMiddleware, getStudentTicketHistory);
 
 // @desc    Get tickets assigned to logged-in agent
 // @route   GET /api/tickets/agent/assigned
@@ -471,6 +491,16 @@ router.post(
   authMiddleware,
   checkPermission("TICKET_MERGE"),
   mergeTickets,
+);
+
+// @desc    Get merge candidate tickets (same student, open/in-progress)
+// @route   GET /api/tickets/:id/merge-candidates
+// @access  Private (TICKET_MERGE permission)
+router.get(
+  "/:id/merge-candidates",
+  authMiddleware,
+  checkPermission("TICKET_MERGE"),
+  getMergeCandidates,
 );
 
 // @desc    Get SLA status for ticket

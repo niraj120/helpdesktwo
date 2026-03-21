@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import axios from "axios";
 import { useNavigate, useLocation } from "react-router-dom";
 import DashboardLayout from "../components/DashboardLayout";
+import ModuleHeader from "../components/ModuleHeader";
 import API_BASE_URL from "../config/api";
 import { TicketExportModal } from "../components/tickets/TicketExportModal";
 import { TicketMergeModal } from "../components/tickets/TicketMergeModal";
@@ -53,6 +54,9 @@ interface Ticket {
   };
   createdAt: string;
   updatedAt: string;
+  isMerged?: boolean;
+  mergedInto?: string | { _id: string; ticketNumber: string };
+  mergedTickets?: string[];
 }
 
 interface MyTicketsProps {
@@ -107,6 +111,18 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
   const [showExportModal, setShowExportModal] = useState(false);
   const [showMergeModal, setShowMergeModal] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
+  // Multi-select (same pattern as ViewTickets)
+  const [selectedTicketIds, setSelectedTicketIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [bulkMergeStep, setBulkMergeStep] = useState<"idle" | "pick-primary">(
+    "idle",
+  );
+  const [bulkMergePrimaryId, setBulkMergePrimaryId] = useState("");
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkError, setBulkError] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20;
   const [statuses, setStatuses] = useState<
     Array<{ code: number; name: string }>
   >([]);
@@ -164,7 +180,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
 
         // If no statuses found, use default standard statuses
         if (statusData.length === 0) {
-          console.warn("⚠️ No statuses found for project, using defaults");
+          console.warn("âš ï¸ No statuses found for project, using defaults");
           setStatuses([
             { code: 1, name: "Open" },
             { code: 2, name: "In Progress" },
@@ -177,7 +193,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
         }
       } else {
         // API failed, use defaults
-        console.warn("⚠️ Status API failed, using defaults");
+        console.warn("âš ï¸ Status API failed, using defaults");
         setStatuses([
           { code: 1, name: "Open" },
           { code: 2, name: "In Progress" },
@@ -187,7 +203,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
         ]);
       }
 
-      // Fetch priorities from SLA rules (independent — failure falls back to defaults)
+      // Fetch priorities from SLA rules (independent â€” failure falls back to defaults)
       try {
         const slaResponse = await axios.get(
           `${API_BASE_URL}/sla-rules?projectId=${projectId}&isActive=true`,
@@ -301,7 +317,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
           : [];
         console.log("🎯 Sample ticket data:", ticketsData[0]);
         console.log(
-          "🏢 Center data check:",
+          "🎢 Center data check:",
           ticketsData[0]?.metadata?.centerId,
         );
         setTickets(ticketsData.filter((ticket: any) => ticket && ticket._id));
@@ -551,23 +567,57 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
     return "View and manage queries assigned to you or created by you";
   };
 
+  // â”€â”€ Multi-select helpers (same as ViewTickets) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const toggleTicketSelect = (id: string) => {
+    setBulkError("");
+    setSelectedTicketIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    setBulkError("");
+    if (selectedTicketIds.size === filteredTickets.length) {
+      setSelectedTicketIds(new Set());
+    } else {
+      setSelectedTicketIds(new Set(filteredTickets.map((t) => t._id)));
+    }
+  };
+
+  const handleConfirmBulkMerge = async () => {
+    if (!bulkMergePrimaryId) return;
+    const secondaryIds = Array.from(selectedTicketIds).filter(
+      (id) => id !== bulkMergePrimaryId,
+    );
+    setBulkLoading(true);
+    setBulkError("");
+    try {
+      const token = localStorage.getItem("authToken");
+      await axios.post(
+        `${API_BASE_URL}/tickets/${bulkMergePrimaryId}/merge`,
+        { ticketIds: secondaryIds },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      setSelectedTicketIds(new Set());
+      setBulkMergeStep("idle");
+      setBulkMergePrimaryId("");
+      fetchMyTickets();
+    } catch (err: any) {
+      setBulkError(err.response?.data?.message || "Failed to merge tickets");
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const selectedTickets = filteredTickets.filter((t) =>
+    selectedTicketIds.has(t._id),
+  );
+
   const content = (
     <div style={{ padding: "24px", maxWidth: "1400px", margin: "0 auto" }}>
-      <div style={{ marginBottom: "32px" }}>
-        <h1
-          style={{
-            fontSize: "28px",
-            fontWeight: 700,
-            color: "#111827",
-            marginBottom: "8px",
-          }}
-        >
-          {getPageTitle()}
-        </h1>
-        <p style={{ color: "#6B7280", fontSize: "14px" }}>
-          {getPageSubtitle()}
-        </p>
-      </div>
+      <ModuleHeader title={getPageTitle()} subtitle={getPageSubtitle()} />
 
       {error && !error.includes("Not Found") && (
         <div
@@ -576,7 +626,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
             border: "1px solid #EF4444",
             borderRadius: "8px",
             padding: "12px 16px",
-            marginBottom: "24px",
+            marginBottom: "16px",
             color: "#991B1B",
           }}
         >
@@ -591,618 +641,935 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
           borderRadius: "12px",
           padding: "20px",
           boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-          marginBottom: "24px",
+          marginBottom: "16px",
         }}
       >
+        {/* Row 1: Search + Status + Priority + Source + Export */}
         <div
           style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-            gap: "16px",
+            display: "flex",
+            gap: "12px",
+            flexWrap: "wrap",
+            alignItems: "center",
+            marginBottom:
+              viewMode === "unified" && userProjects.length > 1 ? "12px" : "0",
           }}
         >
-          <div>
-            <label
-              style={{
-                display: "block",
-                marginBottom: "8px",
-                fontSize: "14px",
-                fontWeight: 500,
-                color: "#374151",
-              }}
-            >
-              Search Queries
-            </label>
+          <div style={{ flex: 1, minWidth: "200px" }}>
             <input
               type="text"
+              placeholder="Search queries..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search by query number or subject"
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
               style={{
                 width: "100%",
                 padding: "10px 12px",
                 border: "1px solid #D1D5DB",
                 borderRadius: "8px",
                 fontSize: "14px",
+                boxSizing: "border-box",
               }}
             />
           </div>
-          {/* Project Filter - Only show in All Projects mode */}
-          {viewMode === "unified" && userProjects.length > 1 && (
-            <div>
-              <label
-                style={{
-                  display: "block",
-                  marginBottom: "8px",
-                  fontSize: "14px",
-                  fontWeight: 500,
-                  color: "#374151",
-                }}
-              >
-                Project
-              </label>
-              <select
-                value={projectFilter}
-                onChange={(e) => setProjectFilter(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  border: "1px solid #D1D5DB",
-                  borderRadius: "8px",
-                  fontSize: "14px",
-                  background: "white",
-                }}
-              >
-                <option value="all">All Projects</option>
-                {userProjects.map((project) => (
-                  <option key={project._id} value={project._id}>
-                    {project.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <select
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setCurrentPage(1);
+            }}
+            style={{
+              padding: "10px 12px",
+              border: "1px solid #D1D5DB",
+              borderRadius: "8px",
+              fontSize: "14px",
+              minWidth: "130px",
+            }}
+          >
+            <option value="all">All Status</option>
+            {statuses.map((s, i) => (
+              <option key={`s-${s.code}-${i}`} value={s.code}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={priorityFilter}
+            onChange={(e) => {
+              setPriorityFilter(e.target.value);
+              setCurrentPage(1);
+            }}
+            style={{
+              padding: "10px 12px",
+              border: "1px solid #D1D5DB",
+              borderRadius: "8px",
+              fontSize: "14px",
+              minWidth: "130px",
+            }}
+          >
+            <option value="all">All Priority</option>
+            {priorities.map((p, i) => (
+              <option key={`p-${p.code}-${i}`} value={p.code}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={sourceFilter}
+            onChange={(e) => {
+              setSourceFilter(e.target.value);
+              setCurrentPage(1);
+            }}
+            style={{
+              padding: "10px 12px",
+              border: "1px solid #D1D5DB",
+              borderRadius: "8px",
+              fontSize: "14px",
+              minWidth: "130px",
+            }}
+          >
+            <option value="all">All Sources</option>
+            <option value="online">🌐 Online</option>
+            <option value="offline">📍 Offline</option>
+            <option value="email">📧 Email</option>
+          </select>
+          {canExport && (
+            <button
+              onClick={() => setShowExportModal(true)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "10px 16px",
+                background: "#059669",
+                color: "white",
+                border: "none",
+                borderRadius: "8px",
+                fontSize: "14px",
+                fontWeight: 600,
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.background = "#047857")
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.background = "#059669")
+              }
+            >
+              <ArrowDownTrayIcon style={{ width: "16px", height: "16px" }} />
+              Export
+            </button>
           )}
-          <div>
-            <label
-              style={{
-                display: "block",
-                marginBottom: "8px",
-                fontSize: "14px",
-                fontWeight: 500,
-                color: "#374151",
-              }}
-            >
-              Status
-            </label>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                border: "1px solid #D1D5DB",
-                borderRadius: "8px",
-                fontSize: "14px",
-                background: "white",
-              }}
-            >
-              <option value="all">All</option>
-              {statuses.map((status, index) => (
-                <option
-                  key={`status-${status.code}-${index}`}
-                  value={status.code}
-                >
-                  {status.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label
-              style={{
-                display: "block",
-                marginBottom: "8px",
-                fontSize: "14px",
-                fontWeight: 500,
-                color: "#374151",
-              }}
-            >
-              Priority
-            </label>
-            <select
-              value={priorityFilter}
-              onChange={(e) => setPriorityFilter(e.target.value)}
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                border: "1px solid #D1D5DB",
-                borderRadius: "8px",
-                fontSize: "14px",
-                background: "white",
-              }}
-            >
-              <option value="all">All</option>
-              {priorities.map((priority, index) => (
-                <option
-                  key={`priority-${priority.code}-${index}`}
-                  value={priority.code}
-                >
-                  {priority.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          {/* Task 6.1: Source Filter */}
-          <div>
-            <label
-              style={{
-                display: "block",
-                marginBottom: "8px",
-                fontSize: "14px",
-                fontWeight: 500,
-                color: "#374151",
-              }}
-            >
-              Source
-            </label>
-            <select
-              value={sourceFilter}
-              onChange={(e) => setSourceFilter(e.target.value)}
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                border: "1px solid #D1D5DB",
-                borderRadius: "8px",
-                fontSize: "14px",
-                background: "white",
-              }}
-            >
-              <option value="all">All Sources</option>
-              <option value="online">Online</option>
-              <option value="offline">Offline</option>
-              <option value="email">Email</option>
-            </select>
-          </div>
         </div>
+        {/* Row 2: Project filter (unified mode) */}
+        {viewMode === "unified" && userProjects.length > 1 && (
+          <div
+            style={{
+              display: "flex",
+              gap: "12px",
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
+            <select
+              value={projectFilter}
+              onChange={(e) => {
+                setProjectFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              style={{
+                padding: "9px 12px",
+                border: "1px solid #D1D5DB",
+                borderRadius: "8px",
+                fontSize: "14px",
+                minWidth: "180px",
+                maxWidth: "280px",
+              }}
+            >
+              <option value="all">All Projects</option>
+              {userProjects.map((p) => (
+                <option key={p._id} value={p._id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            {projectFilter !== "all" && (
+              <button
+                onClick={() => {
+                  setProjectFilter("all");
+                  setCurrentPage(1);
+                }}
+                style={{
+                  padding: "9px 14px",
+                  border: "1px solid #E5E7EB",
+                  borderRadius: "8px",
+                  background: "#F9FAFB",
+                  color: "#6B7280",
+                  fontSize: "13px",
+                  cursor: "pointer",
+                }}
+              >
+                Clear Filters
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Tickets Table */}
-      {filteredTickets.length === 0 ? (
-        <div
-          style={{
-            background: "white",
-            borderRadius: "12px",
-            padding: "40px 20px",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-            textAlign: "center",
-          }}
-        >
-          <p style={{ color: "#6B7280", fontSize: "16px" }}>No queries found</p>
-        </div>
-      ) : (
-        <div
-          style={{
-            background: "white",
-            borderRadius: "12px",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-            overflow: "hidden",
-          }}
-        >
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr
-                  style={{
-                    background: "#F9FAFB",
-                    borderBottom: "1px solid #E5E7EB",
-                  }}
-                >
-                  <th
-                    style={{
-                      padding: "12px 16px",
-                      textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: "#6B7280",
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    Query #
-                  </th>
-                  <th
-                    style={{
-                      padding: "12px 16px",
-                      textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: "#6B7280",
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    Subject
-                  </th>
-                  {/* Show Project column only in All Projects mode */}
-                  {viewMode === "unified" && (
-                    <th
+      {/* Bulk action bar */}
+      {canMerge && selectedTicketIds.size > 0 && (
+        <>
+          <div
+            style={{
+              background: "#1E40AF",
+              color: "white",
+              borderRadius: "10px",
+              padding: "12px 20px",
+              marginBottom: "12px",
+              display: "flex",
+              alignItems: "center",
+              gap: "16px",
+              flexWrap: "wrap",
+            }}
+          >
+            <span style={{ fontWeight: 600, fontSize: "14px" }}>
+              {selectedTicketIds.size} ticket
+              {selectedTicketIds.size !== 1 ? "s" : ""} selected
+            </span>
+            {selectedTicketIds.size >= 2 && (
+              <button
+                onClick={() => {
+                  const sel = filteredTickets.filter((t) =>
+                    selectedTicketIds.has(t._id),
+                  );
+                  const getKey = (t: Ticket) =>
+                    t.metadata?.studentEmail ||
+                    t.metadata?.createdByName ||
+                    t.metadata?.studentName ||
+                    "";
+                  const keys = new Set(sel.map(getKey));
+                  if (keys.size > 1) {
+                    setBulkError(
+                      "Cannot merge tickets from different requestors. Please select tickets raised by the same person.",
+                    );
+                    return;
+                  }
+                  setBulkMergeStep("pick-primary");
+                  setBulkMergePrimaryId("");
+                  setBulkError("");
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "7px 14px",
+                  background: "rgba(255,255,255,0.2)",
+                  border: "1px solid rgba(255,255,255,0.4)",
+                  color: "white",
+                  borderRadius: "6px",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                <ArrowsPointingInIcon
+                  style={{ width: "15px", height: "15px" }}
+                />
+                Merge Selected
+              </button>
+            )}
+            <button
+              onClick={() => {
+                setSelectedTicketIds(new Set());
+                setBulkError("");
+              }}
+              style={{
+                marginLeft: "auto",
+                background: "transparent",
+                border: "none",
+                color: "rgba(255,255,255,0.7)",
+                cursor: "pointer",
+                fontSize: "13px",
+              }}
+            >
+              Clear selection
+            </button>
+          </div>
+          {bulkMergeStep === "idle" && bulkError && (
+            <div
+              style={{
+                background: "#FEF2F2",
+                border: "1px solid #FECACA",
+                borderRadius: "8px",
+                padding: "10px 14px",
+                color: "#B91C1C",
+                fontSize: "13px",
+                marginBottom: "12px",
+              }}
+            >
+              {bulkError}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Ticket Cards */}
+      {(() => {
+        const totalPages = Math.ceil(filteredTickets.length / pageSize);
+        const paginatedTickets = filteredTickets.slice(
+          (currentPage - 1) * pageSize,
+          currentPage * pageSize,
+        );
+        return (
+          <div style={{ display: "grid", gap: "16px" }}>
+            {/* Select-all row */}
+            {filteredTickets.length > 0 && canMerge && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  padding: "8px 12px",
+                  background: "#F8FAFC",
+                  borderRadius: "8px",
+                  border: "1px solid #E5E7EB",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={
+                    filteredTickets.length > 0 &&
+                    selectedTicketIds.size === filteredTickets.length
+                  }
+                  onChange={toggleSelectAll}
+                  style={{ width: "16px", height: "16px", cursor: "pointer" }}
+                />
+                <span style={{ fontSize: "13px", color: "#6B7280" }}>
+                  Select all on this page ({filteredTickets.length})
+                </span>
+              </div>
+            )}
+
+            {filteredTickets.length === 0 ? (
+              <div
+                style={{
+                  background: "white",
+                  borderRadius: "12px",
+                  padding: "48px",
+                  textAlign: "center",
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                }}
+              >
+                <p style={{ color: "#6B7280" }}>No queries found</p>
+              </div>
+            ) : (
+              <>
+                {paginatedTickets.map((ticket) => {
+                  const sourceBadge = getSourceBadge(ticket.submissionSource);
+                  const projectName =
+                    typeof ticket.metadata?.projectId === "object"
+                      ? ticket.metadata.projectId.name ||
+                        ticket.metadata.projectId.code
+                      : null;
+                  const centerName =
+                    !ticket.metadata?.centerId ||
+                    ticket.metadata.centerId === "online"
+                      ? "Online"
+                      : typeof ticket.metadata.centerId === "object"
+                        ? ticket.metadata.centerId.centerName
+                        : ticket.metadata?.centerName || "Online";
+                  const requestedBy =
+                    ticket.metadata?.createdByName ||
+                    ticket.metadata?.studentName ||
+                    (ticket.submissionSource === "email"
+                      ? ticket.sourceEmail
+                      : null) ||
+                    null;
+
+                  return (
+                    <div
+                      key={ticket._id}
                       style={{
-                        padding: "12px 16px",
-                        textAlign: "left",
-                        fontSize: "12px",
-                        fontWeight: 600,
-                        color: "#6B7280",
-                        textTransform: "uppercase",
+                        background: selectedTicketIds.has(ticket._id)
+                          ? "#EFF6FF"
+                          : "white",
+                        borderRadius: "12px",
+                        padding: "20px",
+                        boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                        transition: "all 0.2s",
+                        border: selectedTicketIds.has(ticket._id)
+                          ? "1.5px solid #3B82F6"
+                          : "1.5px solid transparent",
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!selectedTicketIds.has(ticket._id)) {
+                          e.currentTarget.style.boxShadow =
+                            "0 4px 12px rgba(0,0,0,0.15)";
+                          e.currentTarget.style.transform = "translateY(-2px)";
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.boxShadow =
+                          "0 1px 3px rgba(0,0,0,0.1)";
+                        e.currentTarget.style.transform = "translateY(0)";
                       }}
                     >
-                      Project
-                    </th>
-                  )}
-                  <th
-                    style={{
-                      padding: "12px 16px",
-                      textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: "#6B7280",
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    Source
-                  </th>
-                  {hasEmailSource && (
-                    <th
-                      style={{
-                        padding: "12px 16px",
-                        textAlign: "left",
-                        fontSize: "12px",
-                        fontWeight: 600,
-                        color: "#6B7280",
-                        textTransform: "uppercase",
-                      }}
-                    >
-                      Sender Email
-                    </th>
-                  )}
-                  <th
-                    style={{
-                      padding: "12px 16px",
-                      textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: "#6B7280",
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    Priority
-                  </th>
-                  <th
-                    style={{
-                      padding: "12px 16px",
-                      textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: "#6B7280",
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    Center
-                  </th>
-                  <th
-                    style={{
-                      padding: "12px 16px",
-                      textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: "#6B7280",
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    Requested By
-                  </th>
-                  <th
-                    style={{
-                      padding: "12px 16px",
-                      textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: "#6B7280",
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    Assigned To
-                  </th>
-                  <th
-                    style={{
-                      padding: "12px 16px",
-                      textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: "#6B7280",
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    Status
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredTickets.map((ticket) => (
-                  <tr
-                    key={ticket._id}
-                    onClick={() => handleTicketClick(ticket._id)}
-                    style={{
-                      borderBottom: "1px solid #E5E7EB",
-                      cursor: "pointer",
-                      transition: "background-color 0.15s",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = "#F9FAFB";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = "transparent";
-                    }}
-                  >
-                    <td
-                      style={{
-                        padding: "12px 16px",
-                        fontSize: "14px",
-                        color: "#111827",
-                        fontWeight: 500,
-                      }}
-                    >
-                      {ticket.ticketNumber}
-                    </td>
-                    <td
-                      style={{
-                        padding: "12px 16px",
-                        fontSize: "14px",
-                        color: "#111827",
-                        maxWidth: "300px",
-                      }}
-                    >
+                      {/* Top row: checkbox + ticket info | status + actions */}
                       <div
                         style={{
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "flex-start",
+                          marginBottom: "12px",
                         }}
                       >
-                        {ticket.subject}
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "flex-start",
+                            gap: "12px",
+                            flex: 1,
+                          }}
+                        >
+                          {canMerge && (
+                            <input
+                              type="checkbox"
+                              checked={selectedTicketIds.has(ticket._id)}
+                              onChange={() => toggleTicketSelect(ticket._id)}
+                              onClick={(e) => e.stopPropagation()}
+                              style={{
+                                width: "16px",
+                                height: "16px",
+                                cursor: "pointer",
+                                marginTop: "4px",
+                                flexShrink: 0,
+                              }}
+                            />
+                          )}
+                          <div
+                            style={{ flex: 1, cursor: "pointer" }}
+                            onClick={() => handleTicketClick(ticket._id)}
+                          >
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "6px",
+                                flexWrap: "wrap",
+                                marginBottom: "4px",
+                              }}
+                            >
+                              <span
+                                style={{
+                                  fontSize: "14px",
+                                  fontWeight: 600,
+                                  color: "#2563EB",
+                                }}
+                              >
+                                #{ticket.ticketNumber}
+                              </span>
+                              {ticket.mergedTickets &&
+                                ticket.mergedTickets.length > 0 && (
+                                  <span
+                                    style={{
+                                      fontSize: "11px",
+                                      fontWeight: 500,
+                                      color: "#7C3AED",
+                                      background: "#F3E8FF",
+                                      padding: "1px 6px",
+                                      borderRadius: "8px",
+                                      whiteSpace: "nowrap",
+                                    }}
+                                  >
+                                    {ticket.mergedTickets.length} ticket
+                                    {ticket.mergedTickets.length > 1 ? "s" : ""}{" "}
+                                    merged
+                                  </span>
+                                )}
+                              {ticket.isMerged && (
+                                <span
+                                  style={{
+                                    fontSize: "11px",
+                                    fontWeight: 500,
+                                    color: "#9CA3AF",
+                                    background: "#F3F4F6",
+                                    padding: "1px 6px",
+                                    borderRadius: "8px",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  merged
+                                </span>
+                              )}
+                            </div>
+                            <h3
+                              style={{
+                                fontSize: "16px",
+                                fontWeight: 600,
+                                color: "#111827",
+                                margin: 0,
+                              }}
+                            >
+                              {ticket.subject || "No subject"}
+                            </h3>
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: "8px",
+                            alignItems: "center",
+                            flexShrink: 0,
+                            marginLeft: "12px",
+                          }}
+                        >
+                          <span
+                            style={{
+                              padding: "4px 12px",
+                              borderRadius: "12px",
+                              fontSize: "12px",
+                              fontWeight: 600,
+                              background: getStatusColor(ticket.status) + "20",
+                              color: getStatusColor(ticket.status),
+                            }}
+                          >
+                            {getStatusName(ticket.status)}
+                          </span>
+                          {canMerge && !ticket.isMerged && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedTicket(ticket);
+                                setShowMergeModal(true);
+                              }}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "4px",
+                                padding: "6px 12px",
+                                background: "#3B82F6",
+                                color: "white",
+                                border: "none",
+                                borderRadius: "6px",
+                                fontSize: "12px",
+                                fontWeight: 600,
+                                cursor: "pointer",
+                              }}
+                              onMouseEnter={(e) =>
+                                (e.currentTarget.style.background = "#2563EB")
+                              }
+                              onMouseLeave={(e) =>
+                                (e.currentTarget.style.background = "#3B82F6")
+                              }
+                            >
+                              <ArrowsPointingInIcon
+                                style={{ width: "14px", height: "14px" }}
+                              />
+                              Merge
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    </td>
-                    {/* Show Project column only in All Projects mode */}
-                    {viewMode === "unified" && (
-                      <td
+
+                      {/* Bottom metadata row */}
+                      <div
                         style={{
-                          padding: "12px 16px",
-                          fontSize: "14px",
-                          color: "#111827",
+                          display: "flex",
+                          gap: "20px",
+                          fontSize: "13px",
+                          color: "#6B7280",
+                          flexWrap: "wrap",
+                          alignItems: "center",
                         }}
                       >
                         <span
                           style={{
                             display: "inline-flex",
                             alignItems: "center",
-                            gap: "6px",
-                            padding: "4px 10px",
-                            borderRadius: "12px",
+                            gap: "4px",
+                            padding: "2px 8px",
+                            borderRadius: "10px",
                             fontSize: "12px",
                             fontWeight: 500,
-                            color: "#6366F1",
-                            backgroundColor: "#EEF2FF",
-                            border: "1px solid #6366F120",
+                            color: sourceBadge.color,
+                            backgroundColor: sourceBadge.bgColor,
                           }}
                         >
-                          {typeof ticket.metadata?.projectId === "object"
-                            ? ticket.metadata.projectId.name ||
-                              ticket.metadata.projectId.code
-                            : "Unknown"}
+                          {sourceBadge.icon} {sourceBadge.label}
                         </span>
-                      </td>
-                    )}
-                    {/* Task 6.2: Source indicator badge */}
-                    <td style={{ padding: "12px 16px" }}>
-                      {(() => {
-                        const sourceBadge = getSourceBadge(
-                          ticket.submissionSource,
-                        );
-                        return (
+                        <div>
+                          <span style={{ fontWeight: 600 }}>Priority:</span>{" "}
+                          <span
+                            style={{
+                              padding: "2px 8px",
+                              borderRadius: "10px",
+                              fontSize: "12px",
+                              fontWeight: 500,
+                              color: "white",
+                              backgroundColor: getPriorityColor(
+                                ticket.priority,
+                              ),
+                            }}
+                          >
+                            {ticket.priority
+                              ? ticket.priority.charAt(0).toUpperCase() +
+                                ticket.priority.slice(1).toLowerCase()
+                              : "N/A"}
+                          </span>
+                        </div>
+                        <div>
+                          <span style={{ fontWeight: 600 }}>Center:</span>{" "}
+                          <span
+                            style={{
+                              padding: "2px 8px",
+                              background:
+                                centerName === "Online" ? "#DBEAFE" : "#FEF3C7",
+                              color:
+                                centerName === "Online" ? "#1E40AF" : "#92400E",
+                              borderRadius: "4px",
+                              fontSize: "12px",
+                              fontWeight: 600,
+                            }}
+                          >
+                            {centerName}
+                          </span>
+                        </div>
+                        {requestedBy && (
+                          <div>
+                            <span style={{ fontWeight: 600 }}>
+                              Requested By:
+                            </span>{" "}
+                            {requestedBy}
+                          </div>
+                        )}
+                        {ticket.submissionSource === "email" &&
+                          ticket.sourceEmail && (
+                            <div>
+                              <span style={{ fontWeight: 600 }}>Email:</span>{" "}
+                              <a
+                                href={`mailto:${ticket.sourceEmail}`}
+                                onClick={(e) => e.stopPropagation()}
+                                style={{
+                                  color: "#3B82F6",
+                                  textDecoration: "none",
+                                }}
+                              >
+                                {ticket.sourceEmail}
+                              </a>
+                            </div>
+                          )}
+                        <div>
+                          <span style={{ fontWeight: 600 }}>Assigned To:</span>{" "}
+                          {ticket.assignedTo
+                            ? `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}`
+                            : "Unassigned"}
+                        </div>
+                        {ticket.category && (
+                          <div>
+                            <span style={{ fontWeight: 600 }}>Category:</span>{" "}
+                            {ticket.category.name}
+                          </div>
+                        )}
+                        {viewMode === "unified" && projectName && (
                           <span
                             style={{
                               display: "inline-flex",
                               alignItems: "center",
-                              gap: "6px",
-                              padding: "4px 10px",
-                              borderRadius: "12px",
+                              padding: "2px 8px",
+                              borderRadius: "10px",
                               fontSize: "12px",
                               fontWeight: 500,
-                              color: sourceBadge.color,
-                              backgroundColor: sourceBadge.bgColor,
-                              border: `1px solid ${sourceBadge.color}20`,
+                              color: "#6366F1",
+                              backgroundColor: "#EEF2FF",
                             }}
-                            title={sourceBadge.tooltip}
                           >
-                            <span style={{ fontSize: "14px" }}>
-                              {sourceBadge.icon}
-                            </span>
-                            <span>{sourceBadge.label}</span>
+                            {projectName}
                           </span>
-                        );
-                      })()}
-                    </td>
-                    {/* Task 6.3: Source email cell - only shown when email tickets exist */}
-                    {hasEmailSource && (
-                      <td
-                        style={{
-                          padding: "12px 16px",
-                          fontSize: "14px",
-                          color: "#6B7280",
-                          maxWidth: "200px",
-                        }}
-                        onClick={(e) => {
-                          if (
-                            ticket.submissionSource === "email" &&
-                            ticket.sourceEmail
-                          ) {
-                            e.stopPropagation();
-                          }
-                        }}
-                      >
-                        {ticket.submissionSource === "email" &&
-                        ticket.sourceEmail ? (
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "8px",
-                            }}
-                          >
-                            <a
-                              href={`mailto:${ticket.sourceEmail}`}
-                              onClick={(e) => e.stopPropagation()}
-                              style={{
-                                color: "#3B82F6",
-                                textDecoration: "none",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                whiteSpace: "nowrap",
-                                flex: 1,
-                              }}
-                              title={ticket.sourceEmail}
-                              onMouseEnter={(e) => {
-                                (
-                                  e.target as HTMLAnchorElement
-                                ).style.textDecoration = "underline";
-                              }}
-                              onMouseLeave={(e) => {
-                                (
-                                  e.target as HTMLAnchorElement
-                                ).style.textDecoration = "none";
-                              }}
-                            >
-                              {ticket.sourceEmail}
-                            </a>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                navigator.clipboard.writeText(
-                                  ticket.sourceEmail || "",
-                                );
-                                // Optional: Show toast notification
-                              }}
-                              style={{
-                                padding: "4px 6px",
-                                borderRadius: "4px",
-                                border: "1px solid #D1D5DB",
-                                background: "white",
-                                cursor: "pointer",
-                                fontSize: "11px",
-                                color: "#6B7280",
-                              }}
-                              title="Copy email"
-                              onMouseEnter={(e) => {
-                                (
-                                  e.target as HTMLButtonElement
-                                ).style.background = "#F3F4F6";
-                              }}
-                              onMouseLeave={(e) => {
-                                (
-                                  e.target as HTMLButtonElement
-                                ).style.background = "white";
-                              }}
-                            >
-                              📋
-                            </button>
-                          </div>
-                        ) : (
-                          <span style={{ color: "#D1D5DB" }}>-</span>
                         )}
-                      </td>
-                    )}
-                    <td style={{ padding: "12px 16px" }}>
-                      <span
-                        style={{
-                          display: "inline-block",
-                          padding: "4px 12px",
-                          borderRadius: "12px",
-                          fontSize: "12px",
-                          fontWeight: 500,
-                          color: "white",
-                          backgroundColor: getPriorityColor(ticket.priority),
-                        }}
-                      >
-                        {ticket.priority
-                          ? ticket.priority.charAt(0).toUpperCase() +
-                            ticket.priority.slice(1).toLowerCase()
-                          : "N/A"}
-                      </span>
-                    </td>
-                    <td
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Pagination */}
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    fontSize: "14px",
+                    color: "#6B7280",
+                    marginTop: "4px",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <button
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      disabled={currentPage <= 1}
                       style={{
-                        padding: "12px 16px",
-                        fontSize: "14px",
-                        color: "#6B7280",
+                        padding: "6px 12px",
+                        borderRadius: "6px",
+                        border: "1px solid #D1D5DB",
+                        background: currentPage <= 1 ? "#F3F4F6" : "white",
+                        color: currentPage <= 1 ? "#9CA3AF" : "#374151",
+                        cursor: currentPage <= 1 ? "not-allowed" : "pointer",
+                        fontSize: "13px",
                       }}
                     >
-                      {!ticket.metadata?.centerId ||
-                      ticket.metadata?.centerId === "online"
-                        ? "Online"
-                        : typeof ticket.metadata?.centerId === "object"
-                          ? ticket.metadata.centerId.centerName
-                          : ticket.metadata?.centerName || "Online"}
-                    </td>
-                    <td
+                      {"<"} Previous
+                    </button>
+                    <span style={{ padding: "0 12px" }}>
+                      Page {currentPage} of {Math.max(1, totalPages)}
+                    </span>
+                    <button
+                      onClick={() =>
+                        setCurrentPage((p) => Math.min(totalPages, p + 1))
+                      }
+                      disabled={currentPage >= totalPages}
                       style={{
-                        padding: "12px 16px",
-                        fontSize: "14px",
-                        color: "#6B7280",
+                        padding: "6px 12px",
+                        borderRadius: "6px",
+                        border: "1px solid #D1D5DB",
+                        background:
+                          currentPage >= totalPages ? "#F3F4F6" : "white",
+                        color:
+                          currentPage >= totalPages ? "#9CA3AF" : "#374151",
+                        cursor:
+                          currentPage >= totalPages ? "not-allowed" : "pointer",
+                        fontSize: "13px",
                       }}
                     >
-                      {ticket.metadata?.createdByName ||
-                        ticket.metadata?.studentName ||
-                        (ticket.submissionSource === "email" &&
-                          ticket.sourceEmail) ||
-                        "N/A"}
-                    </td>
-                    <td
+                      Next {">"}
+                    </button>
+                  </div>
+                  <div>
+                    Showing{" "}
+                    {filteredTickets.length > 0
+                      ? (currentPage - 1) * pageSize + 1
+                      : 0}
+                    -{Math.min(currentPage * pageSize, filteredTickets.length)}{" "}
+                    of {filteredTickets.length}{" "}
+                    {filteredTickets.length === 1 ? "query" : "queries"}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Export Modal */}
+      {canExport && showExportModal && (
+        <TicketExportModal
+          isOpen={showExportModal}
+          onClose={() => setShowExportModal(false)}
+          filters={{
+            status: statusFilter !== "all" ? statusFilter : undefined,
+          }}
+        />
+      )}
+
+      {/* Single-ticket Merge Modal */}
+      {canMerge && showMergeModal && selectedTicket && (
+        <TicketMergeModal
+          isOpen={showMergeModal}
+          onClose={() => {
+            setShowMergeModal(false);
+            setSelectedTicket(null);
+          }}
+          primaryTicket={{
+            _id: selectedTicket._id,
+            ticketNumber: selectedTicket.ticketNumber,
+            subject: selectedTicket.subject,
+            status: selectedTicket.status,
+            priority: selectedTicket.priority,
+          }}
+          onMergeComplete={() => {
+            setShowMergeModal(false);
+            setSelectedTicket(null);
+            fetchMyTickets();
+          }}
+        />
+      )}
+
+      {/* Bulk Merge â€” Pick Primary Dialog */}
+      {bulkMergeStep === "pick-primary" && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            zIndex: 1000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "16px",
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setBulkMergeStep("idle");
+          }}
+        >
+          <div
+            style={{
+              background: "white",
+              borderRadius: "16px",
+              padding: "28px",
+              width: "100%",
+              maxWidth: "520px",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+            }}
+          >
+            <h2
+              style={{ margin: "0 0 8px", fontSize: "18px", fontWeight: 700 }}
+            >
+              Select Primary Ticket
+            </h2>
+            <p
+              style={{ margin: "0 0 20px", color: "#6B7280", fontSize: "14px" }}
+            >
+              The primary ticket will be kept. All other selected tickets will
+              be merged into it.
+            </p>
+            {bulkError && (
+              <div
+                style={{
+                  padding: "10px 14px",
+                  background: "#FEF2F2",
+                  border: "1px solid #FECACA",
+                  borderRadius: "8px",
+                  color: "#B91C1C",
+                  fontSize: "13px",
+                  marginBottom: "16px",
+                }}
+              >
+                {bulkError}
+              </div>
+            )}
+            <div
+              style={{
+                display: "grid",
+                gap: "8px",
+                maxHeight: "320px",
+                overflowY: "auto",
+                marginBottom: "20px",
+              }}
+            >
+              {selectedTickets.map((t) => (
+                <label
+                  key={t._id}
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "12px",
+                    padding: "12px 14px",
+                    border: `2px solid ${bulkMergePrimaryId === t._id ? "#3B82F6" : "#E5E7EB"}`,
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    background:
+                      bulkMergePrimaryId === t._id ? "#EFF6FF" : "white",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="primaryTicket"
+                    value={t._id}
+                    checked={bulkMergePrimaryId === t._id}
+                    onChange={() => setBulkMergePrimaryId(t._id)}
+                    style={{ marginTop: "2px", flexShrink: 0 }}
+                  />
+                  <div>
+                    <div
                       style={{
-                        padding: "12px 16px",
-                        fontSize: "14px",
-                        color: "#6B7280",
+                        fontWeight: 600,
+                        color: "#2563EB",
+                        fontSize: "13px",
                       }}
                     >
-                      {ticket.assignedTo
-                        ? `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}`
-                        : "Unassigned"}
-                    </td>
-                    <td style={{ padding: "12px 16px" }}>
-                      <span
-                        style={{
-                          display: "inline-block",
-                          padding: "4px 12px",
-                          borderRadius: "12px",
-                          fontSize: "12px",
-                          fontWeight: 500,
-                          color: "white",
-                          backgroundColor: getStatusColor(ticket.status),
-                        }}
-                      >
-                        {getStatusName(ticket.status)}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      #{t.ticketNumber}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "14px",
+                        color: "#111827",
+                        marginTop: "2px",
+                      }}
+                    >
+                      {t.subject || "No subject"}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        color: "#9CA3AF",
+                        marginTop: "2px",
+                      }}
+                    >
+                      {getStatusName(t.status)} · Priority: {t.priority}
+                    </div>
+                  </div>
+                </label>
+              ))}
+            </div>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "12px",
+              }}
+            >
+              <button
+                onClick={() => {
+                  setBulkMergeStep("idle");
+                  setBulkError("");
+                }}
+                style={{
+                  padding: "9px 18px",
+                  border: "1px solid #D1D5DB",
+                  borderRadius: "8px",
+                  background: "white",
+                  fontSize: "14px",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmBulkMerge}
+                disabled={!bulkMergePrimaryId || bulkLoading}
+                style={{
+                  padding: "9px 18px",
+                  background: bulkMergePrimaryId ? "#2563EB" : "#93C5FD",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "8px",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  cursor: bulkMergePrimaryId ? "pointer" : "not-allowed",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                }}
+              >
+                <ArrowsPointingInIcon
+                  style={{ width: "15px", height: "15px" }}
+                />
+                {bulkLoading
+                  ? "Merging..."
+                  : `Merge ${selectedTicketIds.size} Tickets`}
+              </button>
+            </div>
           </div>
         </div>
       )}
-
-      <div style={{ marginTop: "16px" }}>
-        <p style={{ color: "#6B7280", fontSize: "14px" }}>
-          Showing {filteredTickets.length} of {tickets.length} quer
-          {tickets.length === 1 ? "y" : "ies"}
-        </p>
-      </div>
     </div>
   );
 
