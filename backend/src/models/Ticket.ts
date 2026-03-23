@@ -138,6 +138,8 @@ export interface ITicket extends Document {
   };
   createdAt: Date;
   updatedAt: Date;
+  /** Snapshot of the form schema at the time the ticket was submitted (US-7) */
+  formSchemaSnapshot?: any;
 }
 
 const AttachmentSchema = new Schema({
@@ -403,6 +405,9 @@ const TicketSchema: Schema = new Schema(
     ],
     mergedAt: {
       type: Date,
+    },
+    formSchemaSnapshot: {
+      type: Schema.Types.Mixed,
     },
   },
   {

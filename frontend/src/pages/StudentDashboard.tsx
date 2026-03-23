@@ -6,6 +6,11 @@ import DOMPurify from "dompurify";
 import { API_CONFIG } from "../config/constants";
 import { PERMISSIONS } from "../constants/permissions";
 import { usePermissions } from "../hooks/usePermissions";
+import {
+  FormRenderer,
+  filterFormDataToVisible,
+} from "../components/FormRenderer";
+import { FormFieldSchema, conditionEngine } from "../utils/conditionEngine";
 import { LanguageToggle } from "../components/LanguageToggle";
 import FAQViewer from "../components/FAQViewer";
 import {
@@ -81,28 +86,8 @@ interface User {
   lastName: string;
 }
 
-interface OnlineFormField {
-  fieldName: string;
-  fieldType:
-    | "text"
-    | "number"
-    | "date"
-    | "email"
-    | "phone"
-    | "url"
-    | "textarea"
-    | "dropdown"
-    | "multiselect"
-    | "radio"
-    | "checkbox"
-    | "file";
-  required: boolean;
-  placeholder: string;
-  options?: string[];
-  allowedFileTypes?: string[];
-  maxFileSizeMB?: number;
-  allowMultiple?: boolean;
-}
+// OnlineFormField is now FormFieldSchema (backward-compatible superset)
+type OnlineFormField = FormFieldSchema;
 
 interface OfflineCenter {
   _id?: string;
@@ -679,15 +664,31 @@ const StudentDashboard: React.FC = () => {
     setSubmitSuccess(false);
 
     try {
+      // Validate required fields — respects conditional visibility
+      const allFields = ticketSettings?.onlineFormFields || [];
+      const { visibleFields, requiredFields } = conditionEngine(
+        allFields,
+        formData,
+      );
+      const missing = Array.from(requiredFields).filter(
+        (name) => !formData[name] && !(fieldFiles[name]?.length > 0),
+      );
+      if (missing.length > 0) {
+        setSubmitError("Please fill in all required fields");
+        setSubmitting(false);
+        return;
+      }
+
       const formDataToSend = new FormData();
 
       // Add metadata
       formDataToSend.append("projectId", projectBranding.projectId);
       formDataToSend.append("customUrlPath", customUrlPath || "");
 
-      // Add form fields
-      Object.keys(formData).forEach((key) => {
-        const value = formData[key];
+      // Add only visible form fields
+      const visibleData = filterFormDataToVisible(formData, visibleFields);
+      Object.keys(visibleData).forEach((key) => {
+        const value = visibleData[key];
         if (Array.isArray(value)) {
           formDataToSend.append(key, JSON.stringify(value));
         } else {
@@ -695,8 +696,9 @@ const StudentDashboard: React.FC = () => {
         }
       });
 
-      // Add files
+      // Add files for visible fields only
       Object.keys(fieldFiles).forEach((fieldName) => {
+        if (!visibleFields.has(fieldName)) return;
         fieldFiles[fieldName].forEach((file) => {
           formDataToSend.append("attachments", file);
         });
@@ -1610,17 +1612,21 @@ const StudentDashboard: React.FC = () => {
 
                 <div className="bg-white rounded-xl shadow-md p-8">
                   <form onSubmit={handleSubmitTicket} className="space-y-6">
-                    {ticketSettings.onlineFormFields.map((field) => (
-                      <div key={field.fieldName}>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          {field.fieldName}
-                          {field.required && (
-                            <span className="text-red-500 ml-1">*</span>
-                          )}
-                        </label>
-                        {renderFormField(field)}
-                      </div>
-                    ))}
+                    <FormRenderer
+                      fields={ticketSettings.onlineFormFields}
+                      formData={formData}
+                      onChange={handleInputChange}
+                      onFileChange={(fieldName, files) => {
+                        const field = ticketSettings.onlineFormFields.find(
+                          (f) => f.fieldName === fieldName,
+                        );
+                        if (field)
+                          handleFieldFileChange(fieldName, files, field);
+                      }}
+                      fieldFiles={fieldFiles}
+                      onRemoveFile={removeFieldFile}
+                      branding={{ primaryColor: projectBranding.primaryColor }}
+                    />
 
                     {/* Submit Button */}
                     <button

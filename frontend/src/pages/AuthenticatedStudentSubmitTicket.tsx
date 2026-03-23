@@ -1,15 +1,23 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
-import axios from 'axios';
+import React, { useState, useEffect } from "react";
+import { useParams, useNavigate, Link } from "react-router-dom";
+import axios from "axios";
 import {
   DocumentArrowUpIcon,
   CheckCircleIcon,
   ExclamationCircleIcon,
   XMarkIcon,
   BookOpenIcon,
-} from '@heroicons/react/24/outline';
-import { API_CONFIG } from '../config/constants';
-import HierarchyCategorySelector, { CategoryHierarchyValue, useHierarchyConfig } from '../components/HierarchyCategorySelector';
+} from "@heroicons/react/24/outline";
+import { API_CONFIG } from "../config/constants";
+import HierarchyCategorySelector, {
+  CategoryHierarchyValue,
+  useHierarchyConfig,
+} from "../components/HierarchyCategorySelector";
+import {
+  FormRenderer,
+  filterFormDataToVisible,
+} from "../components/FormRenderer";
+import { FormFieldSchema, conditionEngine } from "../utils/conditionEngine";
 
 interface ProjectBranding {
   projectId: string;
@@ -24,7 +32,19 @@ interface ProjectBranding {
 
 interface OnlineFormField {
   fieldName: string;
-  fieldType: 'text' | 'number' | 'date' | 'email' | 'phone' | 'url' | 'textarea' | 'dropdown' | 'multiselect' | 'radio' | 'checkbox' | 'file';
+  fieldType:
+    | "text"
+    | "number"
+    | "date"
+    | "email"
+    | "phone"
+    | "url"
+    | "textarea"
+    | "dropdown"
+    | "multiselect"
+    | "radio"
+    | "checkbox"
+    | "file";
   required: boolean;
   placeholder: string;
   options?: string[];
@@ -34,29 +54,35 @@ interface OnlineFormField {
 }
 
 interface TicketSubmissionSettings {
-  onlineFormFields: OnlineFormField[];
+  onlineFormFields: FormFieldSchema[];
   welcomeMessage?: string;
   successMessage?: string;
   announcement?: string;
 }
 
-const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ hideHeader }) => {
+const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
+  hideHeader,
+}) => {
   const { customUrlPath } = useParams<{ customUrlPath: string }>();
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
   const [branding, setBranding] = useState<ProjectBranding | null>(null);
-  const [ticketSettings, setTicketSettings] = useState<TicketSubmissionSettings | null>(null);
+  const [ticketSettings, setTicketSettings] =
+    useState<TicketSubmissionSettings | null>(null);
   const [formData, setFormData] = useState<Record<string, any>>({});
   const [fieldFiles, setFieldFiles] = useState<Record<string, File[]>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [categories, setCategories] = useState<string[]>([]);
-  const [categoryHierarchy, setCategoryHierarchy] = useState<CategoryHierarchyValue>({});
-  
+  const [categoryHierarchy, setCategoryHierarchy] =
+    useState<CategoryHierarchyValue>({});
+
   // Fetch hierarchy config to determine if multi-level categories are enabled
-  const { config: hierarchyConfig } = useHierarchyConfig(branding?.projectId || '');
+  const { config: hierarchyConfig } = useHierarchyConfig(
+    branding?.projectId || "",
+  );
 
   useEffect(() => {
     fetchData();
@@ -64,7 +90,7 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
 
   const fetchData = async () => {
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       if (!token) {
         // No token - component will show login prompt or handle accordingly
         // Don't redirect, let the parent route handle it
@@ -74,70 +100,113 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
 
       // Fetch branding
       const brandingRes = await axios.get(
-        `${API_CONFIG.API_URL}/projects/branding/${customUrlPath}`
+        `${API_CONFIG.API_URL}/projects/branding/${customUrlPath}`,
       );
-      const brandingData = brandingRes.data.success ? brandingRes.data.data : brandingRes.data;
+      const brandingData = brandingRes.data.success
+        ? brandingRes.data.data
+        : brandingRes.data;
       setBranding(brandingData);
 
       // Fetch categories from master
       const categoriesRes = await axios.get(
-        `${API_CONFIG.API_URL}/categories/project/${brandingData.projectId}`
+        `${API_CONFIG.API_URL}/categories/project/${brandingData.projectId}`,
       );
-      const categoryList = categoriesRes.data.success ? categoriesRes.data.data : categoriesRes.data;
+      const categoryList = categoriesRes.data.success
+        ? categoriesRes.data.data
+        : categoriesRes.data;
       const activeCategoryNames = categoryList
         .filter((cat: any) => cat.isActive)
         .map((cat: any) => cat.name);
-      
-      console.log('📁 Categories fetched from master:', activeCategoryNames);
-      console.log('📁 Total categories:', activeCategoryNames.length);
+
+      console.log("📁 Categories fetched from master:", activeCategoryNames);
+      console.log("📁 Total categories:", activeCategoryNames.length);
 
       // Fetch ticket settings
       const cacheBuster = `?t=${Date.now()}`;
       const settingsRes = await axios.get(
-        `${API_CONFIG.API_URL}/projects/${brandingData.projectId}/ticket-settings${cacheBuster}`
+        `${API_CONFIG.API_URL}/projects/${brandingData.projectId}/ticket-settings${cacheBuster}`,
       );
-      const settings = settingsRes.data.success ? settingsRes.data.data : settingsRes.data;
-      
-      console.log('📋 Ticket settings received:', settings);
-      console.log('📝 Online form fields:', settings.ticketSubmissionSettings?.onlineFormFields);
-      
+      const settings = settingsRes.data.success
+        ? settingsRes.data.data
+        : settingsRes.data;
+
+      console.log("📋 Ticket settings received:", settings);
+      console.log(
+        "📝 Online form fields:",
+        settings.ticketSubmissionSettings?.onlineFormFields,
+      );
+
       // Filter out student profile fields (Name, Email, Phone/Mobile Number) and Priority
-      const excludeFields = ['name', 'email', 'phone', 'mobile', 'mobile number', 'phone number', 'student name', 'student email', 'contact number', 'email address', 'full name', 'priority'];
-      let formFields = settings.ticketSubmissionSettings?.onlineFormFields || [];
-      
+      const excludeFields = [
+        "name",
+        "email",
+        "phone",
+        "mobile",
+        "mobile number",
+        "phone number",
+        "student name",
+        "student email",
+        "contact number",
+        "email address",
+        "full name",
+        "priority",
+      ];
+      let formFields =
+        settings.ticketSubmissionSettings?.onlineFormFields || [];
+
       // If no fields configured, use default fields (excluding profile fields)
       if (formFields.length === 0) {
         formFields = [
-          { fieldName: 'Subject', fieldType: 'text', required: true, placeholder: 'Enter query subject' },
-          { fieldName: 'Description', fieldType: 'textarea', required: true, placeholder: 'Describe your issue in detail' },
-          { fieldName: 'Category', fieldType: 'dropdown', required: false, placeholder: 'Select category', options: activeCategoryNames },
+          {
+            fieldName: "Subject",
+            fieldType: "text",
+            required: true,
+            placeholder: "Enter query subject",
+          },
+          {
+            fieldName: "Description",
+            fieldType: "textarea",
+            required: true,
+            placeholder: "Describe your issue in detail",
+          },
+          {
+            fieldName: "Category",
+            fieldType: "dropdown",
+            required: false,
+            placeholder: "Select category",
+            options: activeCategoryNames,
+          },
         ];
       } else {
         // Update category field options with fetched categories
         formFields = formFields.map((field: OnlineFormField) => {
-          if (field.fieldName.toLowerCase() === 'category' && field.fieldType === 'dropdown') {
+          if (
+            field.fieldName.toLowerCase() === "category" &&
+            field.fieldType === "dropdown"
+          ) {
             return { ...field, options: activeCategoryNames };
           }
           return field;
         });
       }
-      
+
       // Set categories AFTER processing fields
       setCategories(activeCategoryNames);
-      
+
       const filteredFields = formFields.filter(
-        (field: OnlineFormField) => !excludeFields.includes(field.fieldName.toLowerCase())
+        (field: OnlineFormField) =>
+          !excludeFields.includes(field.fieldName.toLowerCase()),
       );
-      
-      console.log('✅ Filtered fields (without profile):', filteredFields);
+
+      console.log("✅ Filtered fields (without profile):", filteredFields);
 
       setTicketSettings({
         ...settings.ticketSubmissionSettings,
         onlineFormFields: filteredFields,
       });
     } catch (error) {
-      console.error('Error fetching data:', error);
-      setSubmitError('Failed to load form. Please try again.');
+      console.error("Error fetching data:", error);
+      setSubmitError("Failed to load form. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -160,7 +229,9 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
   const removeFieldFile = (fieldName: string, fileIndex: number) => {
     setFieldFiles((prev) => {
       const updated = { ...prev };
-      updated[fieldName] = (updated[fieldName] || []).filter((_, i) => i !== fileIndex);
+      updated[fieldName] = (updated[fieldName] || []).filter(
+        (_, i) => i !== fileIndex,
+      );
       if (updated[fieldName].length === 0) delete updated[fieldName];
       return updated;
     });
@@ -173,46 +244,65 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
     setSubmitSuccess(false);
 
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       if (!token) {
-        setSubmitError('Please log in to submit a ticket');
+        setSubmitError("Please log in to submit a ticket");
         setSubmitting(false);
         return;
       }
 
-      // Validate required fields
-      const requiredFields = ticketSettings?.onlineFormFields.filter((f) => f.required) || [];
-      const missingFields = requiredFields.filter((field) => !formData[field.fieldName]);
+      // Validate required fields — respects conditional visibility
+      const allFields = ticketSettings?.onlineFormFields || [];
+      const { visibleFields, requiredFields } = conditionEngine(
+        allFields,
+        formData,
+      );
+      const missingFields = Array.from(requiredFields).filter(
+        (fieldName) =>
+          !formData[fieldName] && !(fieldFiles[fieldName]?.length > 0),
+      );
 
       if (missingFields.length > 0) {
-        setSubmitError('Please fill in all required fields');
+        setSubmitError("Please fill in all required fields");
         setSubmitting(false);
         return;
       }
 
-      // Prepare form data
+      // Prepare form data — only send values from visible fields
       const submitData = new FormData();
-      submitData.append('projectId', branding?.projectId || '');
-      submitData.append('formData', JSON.stringify(formData));
-      
+      submitData.append("projectId", branding?.projectId || "");
+      submitData.append(
+        "formData",
+        JSON.stringify(filterFormDataToVisible(formData, visibleFields)),
+      );
+
       // Add hierarchical category data if configured
-      if (hierarchyConfig && hierarchyConfig.levelCount > 1 && categoryHierarchy && categoryHierarchy.level1) {
-        submitData.append('categoryHierarchy', JSON.stringify(categoryHierarchy));
+      if (
+        hierarchyConfig &&
+        hierarchyConfig.levelCount > 1 &&
+        categoryHierarchy &&
+        categoryHierarchy.level1
+      ) {
+        submitData.append(
+          "categoryHierarchy",
+          JSON.stringify(categoryHierarchy),
+        );
         // Also set the primary category from level1 for backward compatibility
-        submitData.append('category', categoryHierarchy.level1);
+        submitData.append("category", categoryHierarchy.level1);
       }
 
-      // Add file attachments with their field names
+      // Add file attachments — only for visible fields
       Object.entries(fieldFiles).forEach(([fieldName, files]) => {
+        if (!visibleFields.has(fieldName)) return;
         files.forEach((file) => {
           submitData.append(fieldName, file);
         });
       });
 
-      console.log('📤 Submitting ticket with data:', {
+      console.log("📤 Submitting ticket with data:", {
         projectId: branding?.projectId,
         formData: formData,
-        fileCount: Object.values(fieldFiles).flat().length
+        fileCount: Object.values(fieldFiles).flat().length,
       });
 
       // Submit ticket
@@ -221,39 +311,43 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
         submitData,
         {
           headers: {
-            'Content-Type': 'multipart/form-data',
+            "Content-Type": "multipart/form-data",
             ...(token && { Authorization: `Bearer ${token}` }), // Add auth header if logged in
           },
-        }
+        },
       );
 
-      console.log('✅ Ticket submitted successfully:', response.data);
+      console.log("✅ Ticket submitted successfully:", response.data);
 
       setSubmitSuccess(true);
       setFormData({});
       setFieldFiles({});
 
       // Scroll to top to show success message
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      window.scrollTo({ top: 0, behavior: "smooth" });
 
       // Redirect to my tickets after 3 seconds
       setTimeout(() => {
         navigate(`/${customUrlPath}/student/my-tickets`);
       }, 3000);
     } catch (error: any) {
-      console.error('Error submitting ticket:', error);
-      setSubmitError(error.response?.data?.message || 'Failed to submit ticket. Please try again.');
+      console.error("Error submitting ticket:", error);
+      setSubmitError(
+        error.response?.data?.message ||
+          "Failed to submit ticket. Please try again.",
+      );
     } finally {
       setSubmitting(false);
     }
   };
 
   const renderFormField = (field: OnlineFormField) => {
-    const value = formData[field.fieldName] || '';
-    const commonClasses = 'w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2';
+    const value = formData[field.fieldName] || "";
+    const commonClasses =
+      "w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2";
 
     switch (field.fieldType) {
-      case 'textarea':
+      case "textarea":
         return (
           <textarea
             placeholder={field.placeholder}
@@ -262,13 +356,18 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
             required={field.required}
             rows={4}
             className={commonClasses}
-            style={{ ['--tw-ring-color' as any]: branding?.primaryColor }}
+            style={{ ["--tw-ring-color" as any]: branding?.primaryColor }}
           />
         );
-      
-      case 'dropdown':
+
+      case "dropdown":
         // Use hierarchical category selector if this is the Category field and multi-level hierarchy is configured
-        if (field.fieldName.toLowerCase() === 'category' && hierarchyConfig && hierarchyConfig.levelCount > 1 && branding?.projectId) {
+        if (
+          field.fieldName.toLowerCase() === "category" &&
+          hierarchyConfig &&
+          hierarchyConfig.levelCount > 1 &&
+          branding?.projectId
+        ) {
           return (
             <HierarchyCategorySelector
               projectId={branding.projectId}
@@ -290,9 +389,11 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
             onChange={(e) => handleInputChange(field.fieldName, e.target.value)}
             required={field.required}
             className={commonClasses}
-            style={{ ['--tw-ring-color' as any]: branding?.primaryColor }}
+            style={{ ["--tw-ring-color" as any]: branding?.primaryColor }}
           >
-            <option value="">{field.placeholder || `Select ${field.fieldName}`}</option>
+            <option value="">
+              {field.placeholder || `Select ${field.fieldName}`}
+            </option>
             {field.options?.map((option) => (
               <option key={option} value={option}>
                 {option}
@@ -300,19 +401,22 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
             ))}
           </select>
         );
-      
-      case 'multiselect':
+
+      case "multiselect":
         return (
           <select
             multiple
             value={value}
             onChange={(e) => {
-              const selected = Array.from(e.target.selectedOptions, (option) => option.value);
+              const selected = Array.from(
+                e.target.selectedOptions,
+                (option) => option.value,
+              );
               handleInputChange(field.fieldName, selected);
             }}
             required={field.required}
             className={`${commonClasses} min-h-[120px]`}
-            style={{ ['--tw-ring-color' as any]: branding?.primaryColor }}
+            style={{ ["--tw-ring-color" as any]: branding?.primaryColor }}
           >
             {field.options?.map((option) => (
               <option key={option} value={option}>
@@ -321,18 +425,23 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
             ))}
           </select>
         );
-      
-      case 'radio':
+
+      case "radio":
         return (
           <div className="space-y-2">
             {field.options?.map((option) => (
-              <label key={option} className="flex items-center space-x-2 cursor-pointer">
+              <label
+                key={option}
+                className="flex items-center space-x-2 cursor-pointer"
+              >
                 <input
                   type="radio"
                   name={field.fieldName}
                   value={option}
                   checked={value === option}
-                  onChange={(e) => handleInputChange(field.fieldName, e.target.value)}
+                  onChange={(e) =>
+                    handleInputChange(field.fieldName, e.target.value)
+                  }
                   required={field.required}
                   className="w-4 h-4 cursor-pointer"
                   style={{ accentColor: branding?.primaryColor }}
@@ -342,12 +451,15 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
             ))}
           </div>
         );
-      
-      case 'checkbox':
+
+      case "checkbox":
         return (
           <div className="space-y-2">
             {field.options?.map((option) => (
-              <label key={option} className="flex items-center space-x-2 cursor-pointer">
+              <label
+                key={option}
+                className="flex items-center space-x-2 cursor-pointer"
+              >
                 <input
                   type="checkbox"
                   value={option}
@@ -367,19 +479,22 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
             ))}
           </div>
         );
-      
-      case 'file':
+
+      case "file":
         return (
           <div className="space-y-3">
             <label className="flex items-center justify-center w-full px-4 py-6 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-gray-400 transition-colors">
               <div className="text-center">
                 <DocumentArrowUpIcon className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                <span className="text-sm text-gray-600">Click to upload file(s)</span>
-                {field.allowedFileTypes && field.allowedFileTypes.length > 0 && (
-                  <span className="block text-xs text-gray-500 mt-1">
-                    Allowed: {field.allowedFileTypes.join(', ')}
-                  </span>
-                )}
+                <span className="text-sm text-gray-600">
+                  Click to upload file(s)
+                </span>
+                {field.allowedFileTypes &&
+                  field.allowedFileTypes.length > 0 && (
+                    <span className="block text-xs text-gray-500 mt-1">
+                      Allowed: {field.allowedFileTypes.join(", ")}
+                    </span>
+                  )}
                 {field.maxFileSizeMB && (
                   <span className="block text-xs text-gray-500">
                     Max size: {field.maxFileSizeMB}MB
@@ -388,36 +503,45 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
               </div>
               <input
                 type="file"
-                onChange={(e) => handleFileChange(field.fieldName, e.target.files)}
+                onChange={(e) =>
+                  handleFileChange(field.fieldName, e.target.files)
+                }
                 multiple={field.allowMultiple}
-                accept={field.allowedFileTypes?.join(',')}
-                required={field.required && (!fieldFiles[field.fieldName] || fieldFiles[field.fieldName].length === 0)}
+                accept={field.allowedFileTypes?.join(",")}
+                required={
+                  field.required &&
+                  (!fieldFiles[field.fieldName] ||
+                    fieldFiles[field.fieldName].length === 0)
+                }
                 className="hidden"
               />
             </label>
-            
-            {fieldFiles[field.fieldName] && fieldFiles[field.fieldName].length > 0 && (
-              <div className="space-y-2">
-                {fieldFiles[field.fieldName].map((file, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                  >
-                    <span className="text-sm text-gray-700 truncate flex-1">{file.name}</span>
-                    <button
-                      type="button"
-                      onClick={() => removeFieldFile(field.fieldName, index)}
-                      className="ml-2 p-1 hover:bg-gray-200 rounded-full transition-colors"
+
+            {fieldFiles[field.fieldName] &&
+              fieldFiles[field.fieldName].length > 0 && (
+                <div className="space-y-2">
+                  {fieldFiles[field.fieldName].map((file, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
                     >
-                      <XMarkIcon className="h-4 w-4 text-gray-500" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+                      <span className="text-sm text-gray-700 truncate flex-1">
+                        {file.name}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeFieldFile(field.fieldName, index)}
+                        className="ml-2 p-1 hover:bg-gray-200 rounded-full transition-colors"
+                      >
+                        <XMarkIcon className="h-4 w-4 text-gray-500" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
           </div>
         );
-      
+
       default:
         return (
           <input
@@ -427,7 +551,7 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
             onChange={(e) => handleInputChange(field.fieldName, e.target.value)}
             required={field.required}
             className={commonClasses}
-            style={{ ['--tw-ring-color' as any]: branding?.primaryColor }}
+            style={{ ["--tw-ring-color" as any]: branding?.primaryColor }}
           />
         );
     }
@@ -436,7 +560,10 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2" style={{ borderColor: branding?.primaryColor || '#3b82f6' }}></div>
+        <div
+          className="animate-spin rounded-full h-12 w-12 border-b-2"
+          style={{ borderColor: branding?.primaryColor || "#3b82f6" }}
+        ></div>
       </div>
     );
   }
@@ -447,7 +574,9 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
         {/* Header */}
         {!hideHeader && (
           <div className="mb-8 text-center">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Submit a Query</h1>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+              Submit a Query
+            </h1>
             {ticketSettings?.welcomeMessage && (
               <p className="text-gray-600">{ticketSettings.welcomeMessage}</p>
             )}
@@ -464,11 +593,17 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
               <div className="flex items-center space-x-3">
                 <BookOpenIcon className="w-6 h-6 text-blue-600" />
                 <div>
-                  <h3 className="text-sm font-semibold text-blue-900">Need help?</h3>
-                  <p className="text-xs text-blue-700">Check our Knowledge Base for quick answers</p>
+                  <h3 className="text-sm font-semibold text-blue-900">
+                    Need help?
+                  </h3>
+                  <p className="text-xs text-blue-700">
+                    Check our Knowledge Base for quick answers
+                  </p>
                 </div>
               </div>
-              <span className="text-blue-600 text-sm font-medium">View KB →</span>
+              <span className="text-blue-600 text-sm font-medium">
+                View KB →
+              </span>
             </div>
           </Link>
         )}
@@ -476,7 +611,9 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
         {/* Announcement */}
         {ticketSettings?.announcement && (
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
-            <p className="text-blue-900 text-sm">{ticketSettings.announcement}</p>
+            <p className="text-blue-900 text-sm">
+              {ticketSettings.announcement}
+            </p>
           </div>
         )}
 
@@ -490,9 +627,11 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
               </h3>
               <p className="text-green-700">
                 {ticketSettings?.successMessage ||
-                  'Your query has been submitted. Our team will get back to you soon.'}
+                  "Your query has been submitted. Our team will get back to you soon."}
               </p>
-              <p className="text-green-600 text-sm mt-2">Redirecting to My Queries...</p>
+              <p className="text-green-600 text-sm mt-2">
+                Redirecting to My Queries...
+              </p>
             </div>
           </div>
         )}
@@ -502,7 +641,9 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
           <div className="bg-red-50 border border-red-200 rounded-xl p-6 mb-6 flex items-start space-x-4">
             <ExclamationCircleIcon className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" />
             <div>
-              <h3 className="text-lg font-semibold text-red-900 mb-1">Submission Error</h3>
+              <h3 className="text-lg font-semibold text-red-900 mb-1">
+                Submission Error
+              </h3>
               <p className="text-red-700">{submitError}</p>
             </div>
           </div>
@@ -511,19 +652,38 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
         {/* Form */}
         <div className="bg-white rounded-xl shadow-md p-8">
           <form onSubmit={handleSubmit} className="space-y-6">
-            {ticketSettings?.onlineFormFields && ticketSettings.onlineFormFields.length > 0 ? (
-              ticketSettings.onlineFormFields.map((field) => (
-                <div key={field.fieldName}>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {field.fieldName}
-                    {field.required && <span className="text-red-500 ml-1">*</span>}
-                  </label>
-                  {renderFormField(field)}
-                </div>
-              ))
+            {ticketSettings?.onlineFormFields &&
+            ticketSettings.onlineFormFields.length > 0 ? (
+              <FormRenderer
+                fields={ticketSettings.onlineFormFields}
+                formData={formData}
+                onChange={handleInputChange}
+                onFileChange={handleFileChange}
+                fieldFiles={fieldFiles}
+                onRemoveFile={removeFieldFile}
+                branding={branding || undefined}
+                categoryFieldOverride={
+                  hierarchyConfig &&
+                  hierarchyConfig.levelCount > 1 &&
+                  branding?.projectId ? (
+                    <HierarchyCategorySelector
+                      projectId={branding.projectId}
+                      value={categoryHierarchy}
+                      onChange={(newValue) => {
+                        setCategoryHierarchy(newValue);
+                        handleInputChange("category", newValue);
+                      }}
+                      mode="online"
+                      showValidation={false}
+                    />
+                  ) : undefined
+                }
+              />
             ) : (
               <div className="text-center py-8 text-gray-500">
-                <p>No form fields configured. Please contact the administrator.</p>
+                <p>
+                  No form fields configured. Please contact the administrator.
+                </p>
               </div>
             )}
 
@@ -535,10 +695,14 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({ 
               style={{
                 background: branding?.primaryColor
                   ? `linear-gradient(135deg, ${branding.primaryColor} 0%, ${branding.secondaryColor} 100%)`
-                  : 'linear-gradient(135deg, #3b82f6 0%, #1e40af 100%)',
+                  : "linear-gradient(135deg, #3b82f6 0%, #1e40af 100%)",
               }}
             >
-              {submitting ? 'Submitting...' : submitSuccess ? 'Submitted!' : 'Submit Query'}
+              {submitting
+                ? "Submitting..."
+                : submitSuccess
+                  ? "Submitted!"
+                  : "Submit Query"}
             </button>
           </form>
         </div>

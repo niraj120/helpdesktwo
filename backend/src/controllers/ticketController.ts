@@ -588,6 +588,10 @@ export const submitTicket = async (req: Request, res: Response) => {
       /* non-critical - ticket still saves without slaRuleId */
     }
 
+    // Snapshot the form schema at the moment of submission (US-7)
+    const formSchemaSnapshot =
+      project.configuration?.ticketSubmissionSettings?.onlineFormFields || [];
+
     const ticket = new Ticket({
       ticketNumber,
       title: ticketData.Subject || "New Ticket",
@@ -601,6 +605,7 @@ export const submitTicket = async (req: Request, res: Response) => {
       submissionSource: "online", // Mark as online submission
       attachments,
       tags: [`student-submission`, `project-${projectId}`, "online"], // Add 'online' tag for online submissions
+      formSchemaSnapshot,
       // Store student contact info in custom metadata
       metadata: {
         studentName: ticketData.Name,
@@ -872,7 +877,9 @@ export const getStudentTicketHistory = async (req: Request, res: Response) => {
     const projectId = req.query.projectId as string;
 
     if (!studentId || !mongoose.Types.ObjectId.isValid(studentId)) {
-      return res.status(400).json({ success: false, message: "Invalid studentId" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid studentId" });
     }
 
     const query: any = {
@@ -887,7 +894,9 @@ export const getStudentTicketHistory = async (req: Request, res: Response) => {
     }
 
     const tickets = await Ticket.find(query)
-      .select("ticketNumber subject status categoryHierarchy category assignedTo metadata createdAt")
+      .select(
+        "ticketNumber subject status categoryHierarchy category assignedTo metadata createdAt",
+      )
       .populate("assignedTo", "firstName lastName")
       .populate("category", "name")
       .sort({ createdAt: -1 })
@@ -905,10 +914,15 @@ export const getStudentTicketHistory = async (req: Request, res: Response) => {
           .filter(Boolean),
       ),
     ];
-    const centers = centerIds.length > 0
-      ? await Center.find({ _id: { $in: centerIds } }).select("centerName").lean()
-      : [];
-    const centerMap = new Map(centers.map((c: any) => [c._id.toString(), c.centerName]));
+    const centers =
+      centerIds.length > 0
+        ? await Center.find({ _id: { $in: centerIds } })
+            .select("centerName")
+            .lean()
+        : [];
+    const centerMap = new Map(
+      centers.map((c: any) => [c._id.toString(), c.centerName]),
+    );
 
     const result = tickets.map((t: any) => {
       if (t.metadata?.centerId && t.metadata.centerId !== "online") {
@@ -924,7 +938,12 @@ export const getStudentTicketHistory = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error("getStudentTicketHistory error:", error);
-    return res.status(500).json({ success: false, message: "Failed to fetch student ticket history" });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Failed to fetch student ticket history",
+      });
   }
 };
 
@@ -1780,7 +1799,9 @@ export const getAllTickets = async (req: Request, res: Response) => {
       const createdByStr = req.query.createdBy as string;
       if (mongoose.Types.ObjectId.isValid(createdByStr)) {
         query.createdBy = new mongoose.Types.ObjectId(createdByStr);
-        console.log(`🔍 [VIEW_TICKETS] Filtering by createdBy: ${createdByStr}`);
+        console.log(
+          `🔍 [VIEW_TICKETS] Filtering by createdBy: ${createdByStr}`,
+        );
       }
     }
 
@@ -2399,7 +2420,8 @@ export const getTicketById = async (req: Request, res: Response) => {
       .populate("changeHistory.changedBy", "firstName lastName email")
       .populate({
         path: "mergedTickets",
-        select: "ticketNumber subject title status priority category assignedTo createdAt mergedAt metadata threads",
+        select:
+          "ticketNumber subject title status priority category assignedTo createdAt mergedAt metadata threads",
         populate: { path: "category", select: "name" },
       })
       .populate("mergedInto", "ticketNumber subject title status");
@@ -6420,7 +6442,10 @@ export const bulkDeleteTickets = async (req: Request, res: Response) => {
     if (ticketIds.length > 100) {
       return res
         .status(400)
-        .json({ success: false, message: "Cannot delete more than 100 tickets at once" });
+        .json({
+          success: false,
+          message: "Cannot delete more than 100 tickets at once",
+        });
     }
 
     // Validate all IDs are valid ObjectIds
@@ -6430,7 +6455,10 @@ export const bulkDeleteTickets = async (req: Request, res: Response) => {
     if (validIds.length !== ticketIds.length) {
       return res
         .status(400)
-        .json({ success: false, message: "One or more ticket IDs are invalid" });
+        .json({
+          success: false,
+          message: "One or more ticket IDs are invalid",
+        });
     }
 
     // Fetch tickets to log activity (limit fields for performance)
