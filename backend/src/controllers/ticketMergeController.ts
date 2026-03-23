@@ -156,7 +156,7 @@ export const mergeTickets = async (req: Request, res: Response) => {
       // Attachments
       for (const att of secondary.attachments ?? []) {
         primaryTicket.attachments.push({
-          ...(att.toObject?.() ?? att),
+          ...((att as any).toObject?.() ?? att),
           mergedFrom: secondary.ticketNumber,
         } as any);
       }
