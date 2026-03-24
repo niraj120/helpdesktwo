@@ -475,12 +475,15 @@ const DashboardLayout = ({
           {/* Logo at Top */}
           <div
             style={{
-              padding: isSidebarCollapsed ? "16px 12px" : "20px 16px",
+              height: "64px",
+              boxSizing: "border-box",
+              padding: isSidebarCollapsed ? "0 12px" : "0 16px",
               borderBottom: "1px solid var(--border-light)",
               display: "flex",
               alignItems: "center",
               justifyContent: isSidebarCollapsed ? "center" : "flex-start",
               gap: "12px",
+              flexShrink: 0,
               transition: "all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)",
             }}
           >
@@ -550,23 +553,28 @@ const DashboardLayout = ({
             )}
           </div>
 
-          {/* Language Toggle */}
+          {/* Language Toggle — own section so the dropdown can overflow freely */}
           {!isSidebarCollapsed && (
             <div
               style={{
-                padding: "12px",
+                padding: "10px 12px",
                 borderBottom: "1px solid var(--border-light)",
+                position: "relative",
+                zIndex: 200,
+                overflow: "visible",
+                flexShrink: 0,
               }}
             >
               <LanguageToggle />
             </div>
           )}
 
-          {/* Toggle Button */}
+          {/* Collapse Button */}
           <div
             style={{
-              padding: "12px",
+              padding: "6px 12px",
               borderBottom: "1px solid var(--border-light)",
+              flexShrink: 0,
             }}
           >
             <button
@@ -574,7 +582,7 @@ const DashboardLayout = ({
               className="btn btn-icon"
               style={{
                 width: "100%",
-                height: "36px",
+                height: "32px",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",

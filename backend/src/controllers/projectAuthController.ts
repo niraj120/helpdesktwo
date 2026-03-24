@@ -1,15 +1,15 @@
-import { Request, Response } from 'express';
-import jwt, { SignOptions } from 'jsonwebtoken';
-import crypto from 'crypto';
-import { User } from '../models/User';
-import { Project } from '../models/Project';
-import { validatePasswordPolicy } from '../utils/passwordPolicyUtils';
-import { logLogin } from '../utils/logger';
-import { sendOTPEmail } from '../utils/emailService';
-import { sendOTPWhatsApp } from '../utils/whatsappService';
-import { sendOTPSMS } from '../utils/smsService';
-import otpStore from '../utils/otpStore';
-import { generateProjectJWT } from '../utils/jwtUtils';
+import { Request, Response } from "express";
+import jwt, { SignOptions } from "jsonwebtoken";
+import crypto from "crypto";
+import { User } from "../models/User";
+import { Project } from "../models/Project";
+import { validatePasswordPolicy } from "../utils/passwordPolicyUtils";
+import { logLogin } from "../utils/logger";
+import { sendOTPEmail } from "../utils/emailService";
+import { sendOTPWhatsApp } from "../utils/whatsappService";
+import { sendOTPSMS } from "../utils/smsService";
+import otpStore from "../utils/otpStore";
+import { generateProjectJWT } from "../utils/jwtUtils";
 
 // projectOtpStore replaced by centralized otpStore (hashed + optional Redis)
 
@@ -18,27 +18,29 @@ export const getProjectBrandingByUrl = async (req: Request, res: Response) => {
   try {
     const { urlPath } = req.params;
 
-    console.log('🎨 Fetching project branding for:', urlPath);
+    console.log("🎨 Fetching project branding for:", urlPath);
 
     // Try to find project by customUrlPath first, then by domain
     let project = await Project.findOne({
       $or: [
-        { 'branding.customUrlPath': urlPath.toLowerCase() },
-        { 'branding.domainUrl': { $regex: new RegExp(urlPath, 'i') } }
+        { "branding.customUrlPath": urlPath.toLowerCase() },
+        { "branding.domainUrl": { $regex: new RegExp(urlPath, "i") } },
       ],
       isActive: true,
-      status: 'active'
-    }).select('name code branding settings configuration.customizationSettings');
+      status: "active",
+    }).select(
+      "name code branding settings configuration.customizationSettings",
+    );
 
     if (!project) {
-      console.log('❌ Project not found for URL:', urlPath);
+      console.log("❌ Project not found for URL:", urlPath);
       return res.status(404).json({
         success: false,
-        error: 'Project not found'
+        error: "Project not found",
       });
     }
 
-    console.log('✅ Project found:', project.name);
+    console.log("✅ Project found:", project.name);
 
     // Return branding information
     return res.json({
@@ -50,35 +52,39 @@ export const getProjectBrandingByUrl = async (req: Request, res: Response) => {
         branding: {
           logo: project.branding?.logo,
           colorTheme: project.branding?.colorTheme || {
-            primary: '#7c3aed',
-            secondary: '#1f2937',
-            accent: '#3b82f6',
-            background: '#ffffff'
+            primary: "#7c3aed",
+            secondary: "#1f2937",
+            accent: "#3b82f6",
+            background: "#ffffff",
           },
           headerText: project.branding?.headerText || project.name,
           footerText: project.branding?.footerText,
           favicon: project.branding?.favicon,
           customUrlPath: project.branding?.customUrlPath,
-          domainUrl: project.branding?.domainUrl
+          domainUrl: project.branding?.domainUrl,
         },
         settings: {
-          defaultLanguage: project.settings?.defaultLanguage || 'en',
-          timezone: project.settings?.timezone || 'Asia/Kolkata',
-          dateFormat: project.settings?.dateFormat || 'DD/MM/YYYY'
+          defaultLanguage: project.settings?.defaultLanguage || "en",
+          timezone: project.settings?.timezone || "Asia/Kolkata",
+          dateFormat: project.settings?.dateFormat || "DD/MM/YYYY",
         },
         customization: {
-          loginPageBackgroundImage: project.configuration?.customizationSettings?.loginPageBackgroundImage,
-          themeMode: project.configuration?.customizationSettings?.themeMode || 'light',
-          themeColor: project.configuration?.customizationSettings?.themeColor || '#444ce7'
-        }
-      }
+          loginPageBackgroundImage:
+            project.configuration?.customizationSettings
+              ?.loginPageBackgroundImage,
+          themeMode:
+            project.configuration?.customizationSettings?.themeMode || "light",
+          themeColor:
+            project.configuration?.customizationSettings?.themeColor ||
+            "#444ce7",
+        },
+      },
     });
-
   } catch (error) {
-    console.error('Error fetching project branding:', error);
+    console.error("Error fetching project branding:", error);
     return res.status(500).json({
       success: false,
-      error: 'Internal server error'
+      error: "Internal server error",
     });
   }
 };
@@ -89,101 +95,99 @@ export const projectLoginByUrl = async (req: Request, res: Response) => {
     const { customUrlPath } = req.params;
     const { email, password } = req.body;
 
-    console.log('🔐 Project login attempt by URL:', email, 'Path:', customUrlPath);
+    console.log(
+      "🔐 Project login attempt by URL:",
+      email,
+      "Path:",
+      customUrlPath,
+    );
 
     // Validate input
     if (!email || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Email and password are required'
+        message: "Email and password are required",
       });
     }
 
     // Find project by custom URL path
     const project = await Project.findOne({
-      'branding.customUrlPath': customUrlPath.toLowerCase(),
+      "branding.customUrlPath": customUrlPath.toLowerCase(),
       isActive: true,
-      status: 'active'
+      status: "active",
     });
 
     if (!project) {
-      console.log('❌ Project not found for URL:', customUrlPath);
+      console.log("❌ Project not found for URL:", customUrlPath);
       return res.status(404).json({
         success: false,
-        message: 'Project not found'
+        message: "Project not found",
       });
     }
 
     // Find user in database and populate role with permissions
     const user = await User.findOne({
       email: email.toLowerCase(),
-      isActive: true
+      isActive: true,
     }).populate({
-      path: 'role',
+      path: "role",
       populate: {
-        path: 'permissions',
-        select: 'code name category'
-      }
+        path: "permissions",
+        select: "code name category",
+      },
     });
 
     if (!user) {
-      console.log('❌ User not found:', email);
+      console.log("❌ User not found:", email);
 
-      await logLogin(
-        '',
-        '',
-        email,
-        req,
-        'failure',
-        'User not found'
-      );
+      await logLogin("", "", email, req, "failure", "User not found");
 
       return res.status(401).json({
         success: false,
-        message: 'Invalid credentials'
+        message: "Invalid credentials",
       });
     }
 
     // Verify user is mapped to this project
     const isAuthorized = user.projects?.some(
-      (pid) => pid.toString() === project._id.toString()
+      (pid) => pid.toString() === project._id.toString(),
     );
 
     if (!isAuthorized) {
-      console.log('❌ User not authorized for project:', project.name);
+      console.log("❌ User not authorized for project:", project.name);
 
       await logLogin(
         user._id.toString(),
         `${user.firstName} ${user.lastName}`,
         user.email,
         req,
-        'failure',
-        'User not authorized for this project'
+        "failure",
+        "User not authorized for this project",
       );
 
       return res.status(403).json({
         success: false,
-        message: 'You are not authorized to access this project'
+        message: "You are not authorized to access this project",
       });
     }
 
     // Verify password
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
-      console.log('❌ Invalid password for:', email);
+      console.log("❌ Invalid password for:", email);
 
       await logLogin(
         user._id.toString(),
         `${user.firstName} ${user.lastName}`,
         user.email,
         req,
-        'failure',
-        'Invalid password'
+        "failure",
+        "Invalid password",
       );
 
       return res.status(401).json({
         success: false,
-        message: 'Invalid credentials'
+        message: "Invalid credentials",
       });
     }
 
@@ -191,36 +195,42 @@ export const projectLoginByUrl = async (req: Request, res: Response) => {
     const token = await generateProjectJWT(user, project);
 
     // Set HTTP-only cookie
-    res.cookie('authToken', token, {
+    res.cookie("authToken", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
-    console.log('✅ Project login successful:', email, 'Project:', project.name);
+    console.log(
+      "✅ Project login successful:",
+      email,
+      "Project:",
+      project.name,
+    );
 
     // Get role information and permissions
-    const roleData = user.role && typeof user.role === 'object'
-      ? user.role as any
-      : { name: 'User', code: 'USER', permissions: [] };
+    const roleData =
+      user.role && typeof user.role === "object"
+        ? (user.role as any)
+        : { name: "User", code: "USER", permissions: [] };
 
     // Extract permission codes from populated permissions
     const permissions = roleData.permissions
       ? roleData.permissions.map((p: any) => p.code || p).filter(Boolean)
       : [];
 
-    console.log('✅ User permissions:', permissions);
+    console.log("✅ User permissions:", permissions);
 
     await logLogin(
       user._id.toString(),
       `${user.firstName} ${user.lastName}`,
       user.email,
       req,
-      'success',
+      "success",
       undefined,
       project.name,
-      roleData.name
+      roleData.name,
     );
 
     return res.json({
@@ -235,24 +245,23 @@ export const projectLoginByUrl = async (req: Request, res: Response) => {
           role: {
             name: roleData.name,
             code: roleData.code,
-            permissions: permissions // Include permissions array
+            permissions: permissions, // Include permissions array
           },
           project: {
             id: project._id,
             name: project.name,
-            code: project.code
-          }
+            code: project.code,
+          },
         },
-        token
+        token,
       },
-      message: 'Login successful'
+      message: "Login successful",
     });
-
   } catch (error) {
-    console.error('Project login by URL error:', error);
+    console.error("Project login by URL error:", error);
     return res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: "Internal server error",
     });
   }
 };
@@ -262,86 +271,79 @@ export const projectLogin = async (req: Request, res: Response) => {
   try {
     const { email, password, projectId } = req.body;
 
-    console.log('🔐 Project login attempt:', email, 'Project:', projectId);
+    console.log("🔐 Project login attempt:", email, "Project:", projectId);
 
     // Validate input
     if (!email || !password || !projectId) {
       return res.status(400).json({
         success: false,
-        error: 'Email, password, and project ID are required'
+        error: "Email, password, and project ID are required",
       });
     }
 
     // Find user in database and populate role with permissions
     const user = await User.findOne({
       email: email.toLowerCase(),
-      isActive: true
+      isActive: true,
     }).populate({
-      path: 'role',
+      path: "role",
       populate: {
-        path: 'permissions',
-        select: 'code name category'
-      }
+        path: "permissions",
+        select: "code name category",
+      },
     });
 
     if (!user) {
-      console.log('❌ User not found:', email);
+      console.log("❌ User not found:", email);
 
-      await logLogin(
-        '',
-        '',
-        email,
-        req,
-        'failure',
-        'User not found'
-      );
+      await logLogin("", "", email, req, "failure", "User not found");
 
       return res.status(401).json({
         success: false,
-        error: 'Invalid credentials'
+        error: "Invalid credentials",
       });
     }
 
     // Verify user is mapped to this project
     const isAuthorized = user.projects?.some(
-      (pid) => pid.toString() === projectId.toString()
+      (pid) => pid.toString() === projectId.toString(),
     );
 
     if (!isAuthorized) {
-      console.log('❌ User not authorized for project:', projectId);
+      console.log("❌ User not authorized for project:", projectId);
 
       await logLogin(
         user._id.toString(),
         `${user.firstName} ${user.lastName}`,
         user.email,
         req,
-        'failure',
-        'User not authorized for this project'
+        "failure",
+        "User not authorized for this project",
       );
 
       return res.status(403).json({
         success: false,
-        error: 'You are not authorized to access this project'
+        error: "You are not authorized to access this project",
       });
     }
 
     // Verify password
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
-      console.log('❌ Invalid password for:', email);
+      console.log("❌ Invalid password for:", email);
 
       await logLogin(
         user._id.toString(),
         `${user.firstName} ${user.lastName}`,
         user.email,
         req,
-        'failure',
-        'Invalid password'
+        "failure",
+        "Invalid password",
       );
 
       return res.status(401).json({
         success: false,
-        error: 'Invalid credentials'
+        error: "Invalid credentials",
       });
     }
 
@@ -350,7 +352,7 @@ export const projectLogin = async (req: Request, res: Response) => {
     if (!project) {
       return res.status(404).json({
         success: false,
-        error: 'Project not found'
+        error: "Project not found",
       });
     }
 
@@ -358,18 +360,23 @@ export const projectLogin = async (req: Request, res: Response) => {
     const token = await generateProjectJWT(user, project);
 
     // Set HTTP-only cookie
-    res.cookie('authToken', token, {
+    res.cookie("authToken", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
-    console.log('✅ Project login successful:', email, 'Project:', project.name);
+    console.log(
+      "✅ Project login successful:",
+      email,
+      "Project:",
+      project.name,
+    );
 
     // Get role name
-    let roleName = 'User';
-    if (user.role && typeof user.role === 'object' && 'name' in user.role) {
+    let roleName = "User";
+    if (user.role && typeof user.role === "object" && "name" in user.role) {
       roleName = (user.role as any).name;
     }
 
@@ -378,10 +385,10 @@ export const projectLogin = async (req: Request, res: Response) => {
       `${user.firstName} ${user.lastName}`,
       user.email,
       req,
-      'success',
+      "success",
       undefined,
       project.name,
-      roleName
+      roleName,
     );
 
     return res.json({
@@ -396,19 +403,18 @@ export const projectLogin = async (req: Request, res: Response) => {
           project: {
             id: project._id,
             name: project.name,
-            code: project.code
-          }
+            code: project.code,
+          },
         },
-        token
+        token,
       },
-      message: 'Login successful'
+      message: "Login successful",
     });
-
   } catch (error) {
-    console.error('Project login error:', error);
+    console.error("Project login error:", error);
     return res.status(500).json({
       success: false,
-      error: 'Internal server error'
+      error: "Internal server error",
     });
   }
 };
@@ -419,54 +425,59 @@ export const projectForgotPassword = async (req: Request, res: Response) => {
     const { customUrlPath } = req.params;
     const { email } = req.body;
 
-    console.log('🔑 Project forgot password attempt:', email, 'for project:', customUrlPath);
+    console.log(
+      "🔑 Project forgot password attempt:",
+      email,
+      "for project:",
+      customUrlPath,
+    );
 
     if (!email) {
       return res.status(400).json({
         success: false,
-        error: 'Email is required'
+        error: "Email is required",
       });
     }
 
     // Find project by custom URL path
     const project = await Project.findOne({
-      'branding.customUrlPath': customUrlPath.toLowerCase(),
+      "branding.customUrlPath": customUrlPath.toLowerCase(),
       isActive: true,
-      status: 'active'
+      status: "active",
     });
 
     if (!project) {
-      console.log('❌ Project not found for URL:', customUrlPath);
+      console.log("❌ Project not found for URL:", customUrlPath);
       return res.status(404).json({
         success: false,
-        error: 'Project not found'
+        error: "Project not found",
       });
     }
 
     // Find user by email and check if they're assigned to this project
     const user = await User.findOne({
       email: email.toLowerCase(),
-      isActive: true
-    }).populate('role');
+      isActive: true,
+    }).populate("role");
 
     if (!user) {
-      console.log('❌ User not found:', email);
+      console.log("❌ User not found:", email);
       return res.status(404).json({
         success: false,
-        error: 'Email address not found in our records'
+        error: "Email address not found in our records",
       });
     }
 
     // Check if user is assigned to this project
     const isUserInProject = user.projects?.some(
-      (projectId: any) => projectId.toString() === project._id.toString()
+      (projectId: any) => projectId.toString() === project._id.toString(),
     );
 
     if (!isUserInProject) {
-      console.log('❌ User not authorized for project:', email, project.name);
+      console.log("❌ User not authorized for project:", email, project.name);
       return res.status(403).json({
         success: false,
-        error: 'You are not authorized to access this project'
+        error: "You are not authorized to access this project",
       });
     }
 
@@ -474,7 +485,7 @@ export const projectForgotPassword = async (req: Request, res: Response) => {
     if (user.isResetPasswordLocked && user.isResetPasswordLocked()) {
       return res.status(429).json({
         success: false,
-        error: 'Too many password reset attempts. Please try again later.'
+        error: "Too many password reset attempts. Please try again later.",
       });
     }
 
@@ -482,7 +493,10 @@ export const projectForgotPassword = async (req: Request, res: Response) => {
     const otp = crypto.randomInt(100000, 999999).toString();
 
     // Store OTP using central otpStore (stores hashed value, optional Redis)
-    const otpId = await otpStore.createOtp(email.toLowerCase(), otp, 10 * 60, { customUrlPath: customUrlPath.toLowerCase(), purpose: 'project_forgot_password' });
+    const otpId = await otpStore.createOtp(email.toLowerCase(), otp, 10 * 60, {
+      customUrlPath: customUrlPath.toLowerCase(),
+      purpose: "project_forgot_password",
+    });
 
     // Send OTP via Email and WhatsApp concurrently
     const promises = [];
@@ -493,7 +507,7 @@ export const projectForgotPassword = async (req: Request, res: Response) => {
         await sendOTPEmail(email, otp);
         console.log(`✅ OTP email dispatch initiated for ${email}`);
       } catch (emailError) {
-        console.error('Email sending failed:', emailError);
+        console.error("Email sending failed:", emailError);
         // Continue without failing the request
       }
     })();
@@ -503,58 +517,67 @@ export const projectForgotPassword = async (req: Request, res: Response) => {
     if (user.phone) {
       const whatsappPromise = (async () => {
         try {
-          const result = await sendOTPWhatsApp(project._id.toString(), user.phone!, otp);
+          const result = await sendOTPWhatsApp(
+            project._id.toString(),
+            user.phone!,
+            otp,
+          );
           if (result.success) {
             console.log(`✅ OTP WhatsApp sent to ${user.phone}`);
-            return 'whatsapp_sent';
+            return "whatsapp_sent";
           } else {
             console.log(`⚠️  OTP WhatsApp failed: ${result.error}`);
-            return 'whatsapp_failed';
+            return "whatsapp_failed";
           }
         } catch (waError) {
-          console.error('WhatsApp sending failed:', waError);
-          return 'whatsapp_failed';
+          console.error("WhatsApp sending failed:", waError);
+          return "whatsapp_failed";
         }
       })();
       promises.push(whatsappPromise);
     }
-    
+
     // 3. SMS Promise (same conditions)
     if (user.phone) {
       const smsPromise = (async () => {
         try {
-          const result = await sendOTPSMS(project._id.toString(), user.phone!, otp);
+          const result = await sendOTPSMS(
+            project._id.toString(),
+            user.phone!,
+            otp,
+          );
           if (result.success) {
             console.log(`✅ OTP SMS sent to ${user.phone}`);
-            return 'sms_sent';
+            return "sms_sent";
           } else {
             console.log(`⚠️  OTP SMS failed: ${result.error}`);
-            return 'sms_failed';
+            return "sms_failed";
           }
         } catch (smsError) {
-          console.error('Failed to send OTP SMS:', smsError);
-          return 'sms_failed';
+          console.error("Failed to send OTP SMS:", smsError);
+          return "sms_failed";
         }
       })();
       promises.push(smsPromise);
     }
-    
+
     // Wait for all to settle
     await Promise.allSettled(promises);
-    
-    console.log(`✅ Password reset OTP generated and dispatched for ${email} in project ${project.name}`);
+
+    console.log(
+      `✅ Password reset OTP generated and dispatched for ${email} in project ${project.name}`,
+    );
 
     return res.json({
       success: true,
       data: { otpId }, // For testing purposes
-      message: 'Password reset OTP has been sent to your email address'
+      message: "Password reset OTP has been sent to your email address",
     });
-
   } catch (error) {
-    console.error('Project forgot password error:', error);
+    console.error("Project forgot password error:", error);
     return res.status(500).json({
       success: false,
-      error: 'Internal server error'
+      error: "Internal server error",
     });
   }
 };
@@ -565,26 +588,31 @@ export const projectVerifyOTP = async (req: Request, res: Response) => {
     const { customUrlPath } = req.params;
     const { email, otp } = req.body;
 
-    console.log('🔍 Project verify OTP attempt:', email, 'for project:', customUrlPath);
+    console.log(
+      "🔍 Project verify OTP attempt:",
+      email,
+      "for project:",
+      customUrlPath,
+    );
 
     if (!email || !otp) {
       return res.status(400).json({
         success: false,
-        error: 'Email and OTP are required'
+        error: "Email and OTP are required",
       });
     }
 
     // Find project by custom URL path
     const project = await Project.findOne({
-      'branding.customUrlPath': customUrlPath.toLowerCase(),
+      "branding.customUrlPath": customUrlPath.toLowerCase(),
       isActive: true,
-      status: 'active'
+      status: "active",
     });
 
     if (!project) {
       return res.status(404).json({
         success: false,
-        error: 'Project not found'
+        error: "Project not found",
       });
     }
 
@@ -603,23 +631,22 @@ export const projectVerifyOTP = async (req: Request, res: Response) => {
     if (!verified) {
       return res.status(400).json({
         success: false,
-        error: 'Invalid or expired OTP'
+        error: "Invalid or expired OTP",
       });
     }
 
-    console.log('✅ OTP verified successfully for:', email);
+    console.log("✅ OTP verified successfully for:", email);
 
     return res.json({
       success: true,
       data: { verified: true },
-      message: 'OTP verified successfully'
+      message: "OTP verified successfully",
     });
-
   } catch (error) {
-    console.error('Project verify OTP error:', error);
+    console.error("Project verify OTP error:", error);
     return res.status(500).json({
       success: false,
-      error: 'Internal server error'
+      error: "Internal server error",
     });
   }
 };
@@ -630,26 +657,31 @@ export const projectResetPassword = async (req: Request, res: Response) => {
     const { customUrlPath } = req.params;
     const { email, newPassword } = req.body;
 
-    console.log('🔒 Project reset password attempt:', email, 'for project:', customUrlPath);
+    console.log(
+      "🔒 Project reset password attempt:",
+      email,
+      "for project:",
+      customUrlPath,
+    );
 
     if (!email || !newPassword) {
       return res.status(400).json({
         success: false,
-        error: 'Email and new password are required'
+        error: "Email and new password are required",
       });
     }
 
     // Find project by custom URL path
     const project = await Project.findOne({
-      'branding.customUrlPath': customUrlPath.toLowerCase(),
+      "branding.customUrlPath": customUrlPath.toLowerCase(),
       isActive: true,
-      status: 'active'
+      status: "active",
     });
 
     if (!project) {
       return res.status(404).json({
         success: false,
-        error: 'Project not found'
+        error: "Project not found",
       });
     }
 
@@ -670,20 +702,20 @@ export const projectResetPassword = async (req: Request, res: Response) => {
     if (!keys || keys.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'OTP verification required before password reset'
+        error: "OTP verification required before password reset",
       });
     }
 
     // Find user and update password
     const user = await User.findOne({
       email: email.toLowerCase(),
-      isActive: true
+      isActive: true,
     });
 
     if (!user) {
       return res.status(404).json({
         success: false,
-        error: 'User not found'
+        error: "User not found",
       });
     }
 
@@ -700,19 +732,23 @@ export const projectResetPassword = async (req: Request, res: Response) => {
     // eslint-disable-next-line no-await-in-loop
     await otpStore.consumeOtpsForEmail(email.toLowerCase());
 
-    console.log('✅ Password reset successful for:', email, 'in project:', project.name);
+    console.log(
+      "✅ Password reset successful for:",
+      email,
+      "in project:",
+      project.name,
+    );
 
     return res.json({
       success: true,
       data: { updated: true },
-      message: 'Password has been reset successfully'
+      message: "Password has been reset successfully",
     });
-
   } catch (error) {
-    console.error('Project reset password error:', error);
+    console.error("Project reset password error:", error);
     return res.status(500).json({
       success: false,
-      error: 'Internal server error'
+      error: "Internal server error",
     });
   }
 };

@@ -3,9 +3,9 @@
  * Content component for managing working calendars (no DashboardLayout wrapper)
  * Can be embedded in SLARulesPage tabs for smooth transitions
  */
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import { API_CONFIG } from '../../config/constants';
+import React, { useState, useEffect } from "react";
+import axios from "axios";
+import { API_CONFIG } from "../../config/constants";
 import {
   Calendar,
   Clock,
@@ -15,7 +15,7 @@ import {
   Save,
   X,
   Star,
-} from 'lucide-react';
+} from "lucide-react";
 
 interface WorkingDay {
   dayOfWeek: number;
@@ -53,42 +53,53 @@ interface Project {
   code?: string;
 }
 
-const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const daysOfWeek = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
 
 const WorkingCalendarContent: React.FC = () => {
   const [calendars, setCalendars] = useState<WorkingCalendar[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [editingCalendar, setEditingCalendar] = useState<WorkingCalendar | null>(null);
-  const [projectId, setProjectId] = useState<string>('');
+  const [editingCalendar, setEditingCalendar] =
+    useState<WorkingCalendar | null>(null);
+  const [projectId, setProjectId] = useState<string>("");
   const [projects, setProjects] = useState<Project[]>([]);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
-    name: '',
-    description: '',
-    timezone: 'Asia/Kolkata',
-    selectedProjectId: '',
+    name: "",
+    description: "",
+    timezone: "Asia/Kolkata",
+    selectedProjectId: "",
     workingHours: Array.from({ length: 7 }, (_, i) => ({
       dayOfWeek: i,
       isWorkingDay: i >= 1 && i <= 5,
-      startTime: '09:00',
-      endTime: '18:00',
+      startTime: "09:00",
+      endTime: "18:00",
       breaks: [] as Array<{ startTime: string; endTime: string }>,
     })),
     holidays: [] as Holiday[],
   });
 
   const [newHoliday, setNewHoliday] = useState({
-    date: '',
-    name: '',
-    description: '',
+    date: "",
+    name: "",
+    description: "",
     isRecurring: false,
   });
 
   useEffect(() => {
-    const projectContext = JSON.parse(localStorage.getItem('projectContext') || '{}');
+    const projectContext = JSON.parse(
+      localStorage.getItem("projectContext") || "{}",
+    );
     if (projectContext.projectId) {
       setProjectId(projectContext.projectId);
       setIsSuperAdmin(false);
@@ -102,27 +113,25 @@ const WorkingCalendarContent: React.FC = () => {
 
   const fetchProjects = async () => {
     try {
-      const token = localStorage.getItem('authToken');
-      const response = await axios.get(
-        `${API_CONFIG.API_URL}/projects`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
+      const token = localStorage.getItem("authToken");
+      const response = await axios.get(`${API_CONFIG.API_URL}/projects`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
       if (response.data.success) {
-        const projectsData = response.data.data?.projects || response.data.data || [];
+        const projectsData =
+          response.data.data?.projects || response.data.data || [];
         setProjects(projectsData);
       }
     } catch (error: any) {
-      console.error('Error fetching projects:', error);
+      console.error("Error fetching projects:", error);
     }
   };
 
   const fetchCalendars = async (projectIdParam?: string) => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const url = projectIdParam
         ? `${API_CONFIG.API_URL}/working-calendars?projectId=${projectIdParam}`
         : `${API_CONFIG.API_URL}/working-calendars`;
@@ -135,7 +144,7 @@ const WorkingCalendarContent: React.FC = () => {
         setCalendars(response.data.data || []);
       }
     } catch (error: any) {
-      console.error('Error fetching calendars:', error);
+      console.error("Error fetching calendars:", error);
     } finally {
       setLoading(false);
     }
@@ -144,19 +153,19 @@ const WorkingCalendarContent: React.FC = () => {
   const fetchAllCalendars = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const response = await axios.get(
         `${API_CONFIG.API_URL}/working-calendars`,
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
 
       if (response.data.success) {
         setCalendars(response.data.data || []);
       }
     } catch (error: any) {
-      console.error('Error fetching all calendars:', error);
+      console.error("Error fetching all calendars:", error);
     } finally {
       setLoading(false);
     }
@@ -165,15 +174,15 @@ const WorkingCalendarContent: React.FC = () => {
   const handleCreate = () => {
     setEditingCalendar(null);
     setFormData({
-      name: '',
-      description: '',
-      timezone: 'Asia/Kolkata',
-      selectedProjectId: projectId || '',
+      name: "",
+      description: "",
+      timezone: "Asia/Kolkata",
+      selectedProjectId: projectId || "",
       workingHours: Array.from({ length: 7 }, (_, i) => ({
         dayOfWeek: i,
         isWorkingDay: i >= 1 && i <= 5,
-        startTime: '09:00',
-        endTime: '18:00',
+        startTime: "09:00",
+        endTime: "18:00",
         breaks: [],
       })),
       holidays: [],
@@ -183,35 +192,39 @@ const WorkingCalendarContent: React.FC = () => {
 
   const handleEdit = (calendar: WorkingCalendar) => {
     setEditingCalendar(calendar);
-    const calendarProjectId = typeof calendar.projectId === 'object' 
-      ? calendar.projectId._id 
-      : calendar.projectId;
-    
+    const calendarProjectId =
+      typeof calendar.projectId === "object"
+        ? calendar.projectId._id
+        : calendar.projectId;
+
     // Normalize workingHours to ensure breaks is always an array
-    const normalizedWorkingHours = (calendar.workingHours || []).map(day => ({
+    const normalizedWorkingHours = (calendar.workingHours || []).map((day) => ({
       dayOfWeek: day.dayOfWeek,
       isWorkingDay: day.isWorkingDay,
       startTime: day.startTime,
       endTime: day.endTime,
       breaks: day.breaks || [],
     }));
-    
+
     // Fill in missing days if needed
-    const workingHours = normalizedWorkingHours.length === 7 
-      ? normalizedWorkingHours
-      : Array.from({ length: 7 }, (_, i) => 
-          normalizedWorkingHours.find(d => d.dayOfWeek === i) || {
-            dayOfWeek: i,
-            isWorkingDay: i >= 1 && i <= 5,
-            startTime: '09:00',
-            endTime: '18:00',
-            breaks: [],
-          }
-        );
-    
+    const workingHours =
+      normalizedWorkingHours.length === 7
+        ? normalizedWorkingHours
+        : Array.from(
+            { length: 7 },
+            (_, i) =>
+              normalizedWorkingHours.find((d) => d.dayOfWeek === i) || {
+                dayOfWeek: i,
+                isWorkingDay: i >= 1 && i <= 5,
+                startTime: "09:00",
+                endTime: "18:00",
+                breaks: [],
+              },
+          );
+
     setFormData({
       name: calendar.name,
-      description: calendar.description || '',
+      description: calendar.description || "",
       timezone: calendar.timezone,
       selectedProjectId: calendarProjectId,
       workingHours,
@@ -222,9 +235,11 @@ const WorkingCalendarContent: React.FC = () => {
 
   const handleSave = async () => {
     try {
-      const token = localStorage.getItem('authToken');
-      const effectiveProjectId = isSuperAdmin ? formData.selectedProjectId : projectId;
-      
+      const token = localStorage.getItem("authToken");
+      const effectiveProjectId = isSuperAdmin
+        ? formData.selectedProjectId
+        : projectId;
+
       const data = {
         name: formData.name,
         description: formData.description,
@@ -238,14 +253,12 @@ const WorkingCalendarContent: React.FC = () => {
         await axios.put(
           `${API_CONFIG.API_URL}/working-calendars/${editingCalendar._id}`,
           data,
-          { headers: { Authorization: `Bearer ${token}` } }
+          { headers: { Authorization: `Bearer ${token}` } },
         );
       } else {
-        await axios.post(
-          `${API_CONFIG.API_URL}/working-calendars`,
-          data,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
+        await axios.post(`${API_CONFIG.API_URL}/working-calendars`, data, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
       }
 
       setShowModal(false);
@@ -255,38 +268,21 @@ const WorkingCalendarContent: React.FC = () => {
         fetchCalendars(projectId);
       }
     } catch (error: any) {
-      console.error('Error saving calendar:', error);
-      alert(error.response?.data?.message || 'Error saving calendar');
+      console.error("Error saving calendar:", error);
+      alert(error.response?.data?.message || "Error saving calendar");
     }
   };
 
   const handleDelete = async (calendarId: string) => {
-    if (!confirm('Are you sure you want to delete this calendar?')) return;
+    if (!confirm("Are you sure you want to delete this calendar?")) return;
 
     try {
-      const token = localStorage.getItem('authToken');
-      await axios.delete(`${API_CONFIG.API_URL}/working-calendars/${calendarId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (isSuperAdmin) {
-        fetchAllCalendars();
-      } else {
-        fetchCalendars(projectId);
-      }
-    } catch (error: any) {
-      console.error('Error deleting calendar:', error);
-      alert(error.response?.data?.message || 'Error deleting calendar');
-    }
-  };
-
-  const handleSetDefault = async (calendarId: string) => {
-    try {
-      const token = localStorage.getItem('authToken');
-      await axios.patch(
-        `${API_CONFIG.API_URL}/working-calendars/${calendarId}/set-default`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
+      const token = localStorage.getItem("authToken");
+      await axios.delete(
+        `${API_CONFIG.API_URL}/working-calendars/${calendarId}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
       );
 
       if (isSuperAdmin) {
@@ -295,8 +291,28 @@ const WorkingCalendarContent: React.FC = () => {
         fetchCalendars(projectId);
       }
     } catch (error: any) {
-      console.error('Error setting default calendar:', error);
-      alert(error.response?.data?.message || 'Error setting default');
+      console.error("Error deleting calendar:", error);
+      alert(error.response?.data?.message || "Error deleting calendar");
+    }
+  };
+
+  const handleSetDefault = async (calendarId: string) => {
+    try {
+      const token = localStorage.getItem("authToken");
+      await axios.patch(
+        `${API_CONFIG.API_URL}/working-calendars/${calendarId}/set-default`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+
+      if (isSuperAdmin) {
+        fetchAllCalendars();
+      } else {
+        fetchCalendars(projectId);
+      }
+    } catch (error: any) {
+      console.error("Error setting default calendar:", error);
+      alert(error.response?.data?.message || "Error setting default");
     }
   };
 
@@ -317,9 +333,9 @@ const WorkingCalendarContent: React.FC = () => {
     });
 
     setNewHoliday({
-      date: '',
-      name: '',
-      description: '',
+      date: "",
+      name: "",
+      description: "",
       isRecurring: false,
     });
   };
@@ -335,7 +351,7 @@ const WorkingCalendarContent: React.FC = () => {
     setFormData({
       ...formData,
       workingHours: formData.workingHours.map((day, i) =>
-        i === dayIndex ? { ...day, [field]: value } : day
+        i === dayIndex ? { ...day, [field]: value } : day,
       ),
     });
   };
@@ -370,9 +386,12 @@ const WorkingCalendarContent: React.FC = () => {
       {calendars.length === 0 ? (
         <div className="bg-white rounded-lg shadow p-12 text-center">
           <Calendar className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No Working Calendars</h3>
+          <h3 className="text-lg font-medium text-gray-900 mb-2">
+            No Working Calendars
+          </h3>
           <p className="text-gray-600 mb-4">
-            Create a working calendar to manage SLA calculations with business hours and holidays.
+            Create a working calendar to manage SLA calculations with business
+            hours and holidays.
           </p>
           <button
             onClick={handleCreate}
@@ -403,13 +422,17 @@ const WorkingCalendarContent: React.FC = () => {
                         </span>
                       )}
                     </div>
-                    {isSuperAdmin && typeof calendar.projectId === 'object' && (
-                      <p className="text-xs text-gray-500 mt-1">
-                        Project: {calendar.projectId.name}
-                      </p>
-                    )}
+                    {isSuperAdmin &&
+                      calendar.projectId !== null &&
+                      typeof calendar.projectId === "object" && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          Project: {calendar.projectId.name}
+                        </p>
+                      )}
                     {calendar.description && (
-                      <p className="text-sm text-gray-600 mt-1">{calendar.description}</p>
+                      <p className="text-sm text-gray-600 mt-1">
+                        {calendar.description}
+                      </p>
                     )}
                   </div>
                 </div>
@@ -418,7 +441,11 @@ const WorkingCalendarContent: React.FC = () => {
                   <div className="flex items-center gap-2 text-sm text-gray-700">
                     <Clock className="w-4 h-4 text-gray-400" />
                     <span>
-                      {calendar.workingHours.filter((d) => d.isWorkingDay).length} working days
+                      {
+                        calendar.workingHours.filter((d) => d.isWorkingDay)
+                          .length
+                      }{" "}
+                      working days
                     </span>
                   </div>
                   <div className="flex items-center gap-2 text-sm text-gray-700">
@@ -468,7 +495,9 @@ const WorkingCalendarContent: React.FC = () => {
           <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
               <h2 className="text-xl font-bold text-gray-900">
-                {editingCalendar ? 'Edit Working Calendar' : 'New Working Calendar'}
+                {editingCalendar
+                  ? "Edit Working Calendar"
+                  : "New Working Calendar"}
               </h2>
               <button
                 onClick={() => setShowModal(false)}
@@ -488,7 +517,9 @@ const WorkingCalendarContent: React.FC = () => {
                   <input
                     type="text"
                     value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, name: e.target.value })
+                    }
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="e.g., Standard Business Hours"
                   />
@@ -499,14 +530,20 @@ const WorkingCalendarContent: React.FC = () => {
                   </label>
                   <select
                     value={formData.timezone}
-                    onChange={(e) => setFormData({ ...formData, timezone: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, timezone: e.target.value })
+                    }
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
-                    <option value="America/New_York">America/New_York (EST)</option>
+                    <option value="America/New_York">
+                      America/New_York (EST)
+                    </option>
                     <option value="Europe/London">Europe/London (GMT)</option>
                     <option value="Asia/Dubai">Asia/Dubai (GST)</option>
-                    <option value="Australia/Sydney">Australia/Sydney (AEDT)</option>
+                    <option value="Australia/Sydney">
+                      Australia/Sydney (AEDT)
+                    </option>
                   </select>
                 </div>
               </div>
@@ -519,7 +556,12 @@ const WorkingCalendarContent: React.FC = () => {
                   </label>
                   <select
                     value={formData.selectedProjectId}
-                    onChange={(e) => setFormData({ ...formData, selectedProjectId: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        selectedProjectId: e.target.value,
+                      })
+                    }
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     disabled={!!editingCalendar}
                   >
@@ -544,7 +586,9 @@ const WorkingCalendarContent: React.FC = () => {
                 </label>
                 <textarea
                   value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, description: e.target.value })
+                  }
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   rows={2}
                   placeholder="Optional description"
@@ -553,7 +597,9 @@ const WorkingCalendarContent: React.FC = () => {
 
               {/* Working Hours */}
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">Working Hours</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                  Working Hours
+                </h3>
                 <div className="space-y-2">
                   {formData.workingHours.map((day, index) => (
                     <div
@@ -564,7 +610,11 @@ const WorkingCalendarContent: React.FC = () => {
                         type="checkbox"
                         checked={day.isWorkingDay}
                         onChange={(e) =>
-                          updateWorkingDay(index, 'isWorkingDay', e.target.checked)
+                          updateWorkingDay(
+                            index,
+                            "isWorkingDay",
+                            e.target.checked,
+                          )
                         }
                         className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
                       />
@@ -577,7 +627,11 @@ const WorkingCalendarContent: React.FC = () => {
                             type="time"
                             value={day.startTime}
                             onChange={(e) =>
-                              updateWorkingDay(index, 'startTime', e.target.value)
+                              updateWorkingDay(
+                                index,
+                                "startTime",
+                                e.target.value,
+                              )
                             }
                             className="px-3 py-1 border border-gray-300 rounded text-sm"
                           />
@@ -586,13 +640,15 @@ const WorkingCalendarContent: React.FC = () => {
                             type="time"
                             value={day.endTime}
                             onChange={(e) =>
-                              updateWorkingDay(index, 'endTime', e.target.value)
+                              updateWorkingDay(index, "endTime", e.target.value)
                             }
                             className="px-3 py-1 border border-gray-300 rounded text-sm"
                           />
                         </div>
                       ) : (
-                        <span className="text-sm text-gray-500">Non-working day</span>
+                        <span className="text-sm text-gray-500">
+                          Non-working day
+                        </span>
                       )}
                     </div>
                   ))}
@@ -601,8 +657,10 @@ const WorkingCalendarContent: React.FC = () => {
 
               {/* Holidays */}
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">Holidays</h3>
-                
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                  Holidays
+                </h3>
+
                 {/* Add Holiday Form */}
                 <div className="bg-blue-50 rounded-lg p-4 mb-3">
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
@@ -627,7 +685,10 @@ const WorkingCalendarContent: React.FC = () => {
                       type="text"
                       value={newHoliday.description}
                       onChange={(e) =>
-                        setNewHoliday({ ...newHoliday, description: e.target.value })
+                        setNewHoliday({
+                          ...newHoliday,
+                          description: e.target.value,
+                        })
                       }
                       placeholder="Description (optional)"
                       className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
@@ -645,7 +706,10 @@ const WorkingCalendarContent: React.FC = () => {
                       type="checkbox"
                       checked={newHoliday.isRecurring}
                       onChange={(e) =>
-                        setNewHoliday({ ...newHoliday, isRecurring: e.target.checked })
+                        setNewHoliday({
+                          ...newHoliday,
+                          isRecurring: e.target.checked,
+                        })
                       }
                       className="w-4 h-4 text-blue-600 rounded"
                     />
@@ -667,7 +731,7 @@ const WorkingCalendarContent: React.FC = () => {
                           </div>
                           <div className="text-xs text-gray-600">
                             {new Date(holiday.date).toLocaleDateString()}
-                            {holiday.isRecurring && ' (Recurring)'}
+                            {holiday.isRecurring && " (Recurring)"}
                           </div>
                           {holiday.description && (
                             <div className="text-xs text-gray-500 mt-1">
@@ -705,7 +769,7 @@ const WorkingCalendarContent: React.FC = () => {
                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
               >
                 <Save className="w-4 h-4" />
-                {editingCalendar ? 'Update Calendar' : 'Create Calendar'}
+                {editingCalendar ? "Update Calendar" : "Create Calendar"}
               </button>
             </div>
           </div>

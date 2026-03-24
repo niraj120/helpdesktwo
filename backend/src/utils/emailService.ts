@@ -138,7 +138,50 @@ const getEmailTransporter = async (configIdOrProjectId?: string) => {
     const smtpSecure = emailConfig?.smtpSecure;
 
     if (!emailConfig || !smtpHost || !smtpUser || !smtpPasswordField) {
-      // Check if SendGrid provider is configured (doesn't need SMTP)
+      // Check if ProjectEmailConfig uses SendGrid for outbound (no SMTP needed)
+      if (
+        isProjectEmailConfig &&
+        emailConfig?.outboundMethod === "sendgrid" &&
+        emailConfig?.sendgridApiKey
+      ) {
+        const apiKey = emailConfig.getDecryptedSendgridApiKey
+          ? emailConfig.getDecryptedSendgridApiKey()
+          : emailConfig.sendgridApiKey;
+        const fromEmail =
+          emailConfig.emailAddress || emailConfig.smtpUsername || "";
+        const fromName = emailConfig.fromName || "SAC Helpdesk";
+        sgMail.setApiKey(apiKey);
+        console.log(
+          `📧 Using SendGrid (ProjectEmailConfig) for delivery (from: ${fromEmail})`,
+        );
+        return {
+          sendMail: async (options: any) => {
+            const msg: any = {
+              to: options.to,
+              from: { email: fromEmail, name: fromName },
+              subject: options.subject,
+              text: options.text,
+              html: options.html,
+            };
+            if (options.cc) msg.cc = options.cc;
+            if (options.bcc) msg.bcc = options.bcc;
+            if (options.replyTo) msg.replyTo = options.replyTo;
+            if (options.attachments?.length) {
+              msg.attachments = options.attachments.map((a: any) => ({
+                content: a.content,
+                filename: a.filename,
+                type: a.contentType || "application/octet-stream",
+                disposition: "attachment",
+              }));
+            }
+            const [res] = await sgMail.send(msg);
+            return {
+              messageId: res.headers["x-message-id"] || `sg-${Date.now()}`,
+            };
+          },
+        } as any;
+      }
+      // Check if legacy EmailConfig uses SendGrid provider (doesn't need SMTP)
       const provider = emailConfig?.emailProvider || "smtp";
       if (provider === "sendgrid" && emailConfig?.sendgridApiKey) {
         const apiKey = emailConfig.sendgridApiKey;

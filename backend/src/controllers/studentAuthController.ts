@@ -1,21 +1,21 @@
-import { Request, Response } from 'express';
-import { User } from '../models/User';
-import { Role } from '../models/Role';
-import { Project } from '../models/Project';
-import { validatePasswordPolicy } from '../utils/passwordPolicyUtils';
-import { generateProjectJWT, generateUserJWT } from '../utils/jwtUtils';
-import { sendOTPEmail } from '../utils/emailService';
-import { sendOTPWhatsApp } from '../utils/whatsappService';
-import { sendOTPSMS } from '../utils/smsService';
-import otpStore from '../utils/otpStore';
-import crypto from 'crypto';
-import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
-import { config } from '../config';
+import { Request, Response } from "express";
+import { User } from "../models/User";
+import { Role } from "../models/Role";
+import { Project } from "../models/Project";
+import { validatePasswordPolicy } from "../utils/passwordPolicyUtils";
+import { generateProjectJWT, generateUserJWT } from "../utils/jwtUtils";
+import { sendOTPEmail } from "../utils/emailService";
+import { sendOTPWhatsApp } from "../utils/whatsappService";
+import { sendOTPSMS } from "../utils/smsService";
+import otpStore from "../utils/otpStore";
+import crypto from "crypto";
+import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
+import { config } from "../config";
 
 // Use centralized config for JWT secret
 const getJwtSecret = () => config.jwt.secret;
-const JWT_EXPIRY = '7d';
+const JWT_EXPIRY = "7d";
 
 /**
  * Send OTP to student email for first-time login
@@ -27,26 +27,29 @@ export const sendOTP = async (req: Request, res: Response) => {
     if (!email) {
       return res.status(400).json({
         success: false,
-        message: 'Email is required',
+        message: "Email is required",
       });
     }
 
     // Find student user
-    const user = await User.findOne({ email: email.toLowerCase() }).populate('role');
+    const user = await User.findOne({ email: email.toLowerCase() }).populate(
+      "role",
+    );
 
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'No account found with this email. Please submit a ticket first to create an account.',
+        message:
+          "No account found with this email. Please submit a ticket first to create an account.",
       });
     }
 
     // Check if user is a student
     const role = user.role as any;
-    if (role.code !== 'STUDENT') {
+    if (role.code !== "STUDENT") {
       return res.status(403).json({
         success: false,
-        message: 'This login is for students only. Please use the admin login.',
+        message: "This login is for students only. Please use the admin login.",
       });
     }
 
@@ -54,7 +57,7 @@ export const sendOTP = async (req: Request, res: Response) => {
     if (user.isResetPasswordLocked()) {
       return res.status(429).json({
         success: false,
-        message: 'Too many OTP attempts. Please try again later.',
+        message: "Too many OTP attempts. Please try again later.",
       });
     }
 
@@ -62,8 +65,14 @@ export const sendOTP = async (req: Request, res: Response) => {
     const otp = crypto.randomInt(100000, 999999).toString();
 
     // Store OTP using centralized otpStore (hashed, optional Redis)
-    const projectId = user.projects && user.projects.length > 0 ? user.projects[0].toString() : undefined;
-    await otpStore.createOtp(email.toLowerCase(), otp, 10 * 60, { projectId, purpose: 'student_password_setup' });
+    const projectId =
+      user.projects && user.projects.length > 0
+        ? user.projects[0].toString()
+        : undefined;
+    await otpStore.createOtp(email.toLowerCase(), otp, 10 * 60, {
+      projectId,
+      purpose: "student_password_setup",
+    });
 
     // Do not log OTP plaintext in production; indicate generation only
     console.log(`📧 OTP generated for ${email} (dispatched)`);
@@ -77,13 +86,15 @@ export const sendOTP = async (req: Request, res: Response) => {
         const emailSent = await sendOTPEmail(email, otp, projectId);
         if (emailSent) {
           console.log(`✅ OTP email sent to ${email}`);
-          return 'email_sent';
+          return "email_sent";
         } else {
-          console.log(`⚠️  OTP email not sent (email config might be disabled)`);
-          return 'email_disabled';
+          console.log(
+            `⚠️  OTP email not sent (email config might be disabled)`,
+          );
+          return "email_disabled";
         }
       } catch (emailError) {
-        console.error('Failed to send OTP email:', emailError);
+        console.error("Failed to send OTP email:", emailError);
         throw emailError;
       }
     })();
@@ -96,14 +107,14 @@ export const sendOTP = async (req: Request, res: Response) => {
           const result = await sendOTPWhatsApp(projectId, user.phone!, otp);
           if (result.success) {
             console.log(`✅ OTP WhatsApp sent to ${user.phone}`);
-            return 'whatsapp_sent';
+            return "whatsapp_sent";
           } else {
             console.log(`⚠️  OTP WhatsApp failed: ${result.error}`);
-            return 'whatsapp_failed';
+            return "whatsapp_failed";
           }
         } catch (waError) {
-          console.error('Failed to send OTP WhatsApp:', waError);
-          return 'whatsapp_failed';
+          console.error("Failed to send OTP WhatsApp:", waError);
+          return "whatsapp_failed";
         }
       })();
       promises.push(whatsappPromise);
@@ -116,14 +127,14 @@ export const sendOTP = async (req: Request, res: Response) => {
           const result = await sendOTPSMS(projectId, user.phone!, otp);
           if (result.success) {
             console.log(`✅ OTP SMS sent to ${user.phone}`);
-            return 'sms_sent';
+            return "sms_sent";
           } else {
             console.log(`⚠️  OTP SMS failed: ${result.error}`);
-            return 'sms_failed';
+            return "sms_failed";
           }
         } catch (smsError) {
-          console.error('Failed to send OTP SMS:', smsError);
-          return 'sms_failed';
+          console.error("Failed to send OTP SMS:", smsError);
+          return "sms_failed";
         }
       })();
       promises.push(smsPromise);
@@ -134,15 +145,14 @@ export const sendOTP = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       success: true,
-      message: 'OTP sent to your email. Please check your inbox.',
+      message: "OTP sent to your email. Please check your inbox.",
     });
-
   } catch (error) {
-    console.error('Send OTP error:', error);
+    console.error("Send OTP error:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to send OTP',
-      error: error instanceof Error ? error.message : 'Unknown error',
+      message: "Failed to send OTP",
+      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
@@ -157,7 +167,7 @@ export const verifyOTP = async (req: Request, res: Response) => {
     if (!email || !otp) {
       return res.status(400).json({
         success: false,
-        message: 'Email and OTP are required',
+        message: "Email and OTP are required",
       });
     }
 
@@ -165,12 +175,12 @@ export const verifyOTP = async (req: Request, res: Response) => {
     const user = await User.findOne({
       email: email.toLowerCase(),
       isActive: true,
-    }).populate('role');
+    }).populate("role");
 
     if (!user) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid or expired OTP',
+        message: "Invalid or expired OTP",
       });
     }
 
@@ -189,7 +199,7 @@ export const verifyOTP = async (req: Request, res: Response) => {
     if (!verified) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid or expired OTP',
+        message: "Invalid or expired OTP",
       });
     }
 
@@ -204,28 +214,27 @@ export const verifyOTP = async (req: Request, res: Response) => {
       {
         userId: user._id,
         email: user.email,
-        type: 'password-setup'
+        type: "password-setup",
       },
       getJwtSecret(),
-      { expiresIn: '15m' }
+      { expiresIn: "15m" },
     );
 
     return res.status(200).json({
       success: true,
-      message: 'OTP verified successfully',
+      message: "OTP verified successfully",
       data: {
         tempToken,
         requirePasswordSetup: user.requirePasswordSetup,
         firstName: user.firstName,
       },
     });
-
   } catch (error) {
-    console.error('Verify OTP error:', error);
+    console.error("Verify OTP error:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to verify OTP',
-      error: error instanceof Error ? error.message : 'Unknown error',
+      message: "Failed to verify OTP",
+      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
@@ -242,24 +251,25 @@ export const setPassword = async (req: Request, res: Response) => {
     if (!password || !confirmPassword) {
       return res.status(400).json({
         success: false,
-        message: 'Password and confirmation are required',
+        message: "Password and confirmation are required",
       });
     }
 
     if (password !== confirmPassword) {
       return res.status(400).json({
         success: false,
-        message: 'Passwords do not match',
+        message: "Passwords do not match",
       });
     }
 
     // Validate password against project policy
     const projectForPolicy = customUrlPath
-      ? await Project.findOne({ 'branding.customUrlPath': customUrlPath })
+      ? await Project.findOne({ "branding.customUrlPath": customUrlPath })
       : null;
     const policyResult = validatePasswordPolicy(
       password,
-      (projectForPolicy as any)?.configuration?.securitySettings?.passwordPolicy,
+      (projectForPolicy as any)?.configuration?.securitySettings
+        ?.passwordPolicy,
     );
     if (!policyResult.valid) {
       return res.status(400).json({
@@ -268,10 +278,10 @@ export const setPassword = async (req: Request, res: Response) => {
       });
     }
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({
         success: false,
-        message: 'Temporary token required',
+        message: "Temporary token required",
       });
     }
 
@@ -284,24 +294,24 @@ export const setPassword = async (req: Request, res: Response) => {
     } catch (err) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid or expired token',
+        message: "Invalid or expired token",
       });
     }
 
-    if (decoded.type !== 'password-setup') {
+    if (decoded.type !== "password-setup") {
       return res.status(401).json({
         success: false,
-        message: 'Invalid token type',
+        message: "Invalid token type",
       });
     }
 
     // Find user and set password
-    const user = await User.findById(decoded.userId).populate('role');
+    const user = await User.findById(decoded.userId).populate("role");
 
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'User not found',
+        message: "User not found",
       });
     }
 
@@ -317,15 +327,15 @@ export const setPassword = async (req: Request, res: Response) => {
 
     // Generate JWT token with dynamic permissions using utility
     const project = await Project.findOne({
-      'branding.customUrlPath': customUrlPath
+      "branding.customUrlPath": customUrlPath,
     });
-    const token = project ?
-      await generateProjectJWT(user, project) :
-      await generateUserJWT(user);
+    const token = project
+      ? await generateProjectJWT(user, project)
+      : await generateUserJWT(user);
 
     return res.status(200).json({
       success: true,
-      message: 'Password set successfully',
+      message: "Password set successfully",
       data: {
         token,
         user: {
@@ -341,13 +351,12 @@ export const setPassword = async (req: Request, res: Response) => {
         },
       },
     });
-
   } catch (error) {
-    console.error('Set password error:', error);
+    console.error("Set password error:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to set password',
-      error: error instanceof Error ? error.message : 'Unknown error',
+      message: "Failed to set password",
+      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
@@ -362,7 +371,7 @@ export const login = async (req: Request, res: Response) => {
     if (!email || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Email and password are required',
+        message: "Email and password are required",
       });
     }
 
@@ -371,25 +380,25 @@ export const login = async (req: Request, res: Response) => {
       email: email.toLowerCase(),
       isActive: true,
     }).populate({
-      path: 'role',
+      path: "role",
       populate: {
-        path: 'permissions'
-      }
+        path: "permissions",
+      },
     });
 
     if (!user) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid email or password',
+        message: "Invalid email or password",
       });
     }
 
     // Check if user is a student
     const role = user.role as any;
-    if (role.code !== 'STUDENT') {
+    if (role.code !== "STUDENT") {
       return res.status(403).json({
         success: false,
-        message: 'This login is for students only. Please use the admin login.',
+        message: "This login is for students only. Please use the admin login.",
       });
     }
 
@@ -397,7 +406,7 @@ export const login = async (req: Request, res: Response) => {
     if (user.requirePasswordSetup) {
       return res.status(403).json({
         success: false,
-        message: 'Please set up your password first using OTP verification',
+        message: "Please set up your password first using OTP verification",
         requirePasswordSetup: true,
       });
     }
@@ -408,7 +417,7 @@ export const login = async (req: Request, res: Response) => {
     if (!isMatch) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid email or password',
+        message: "Invalid email or password",
       });
     }
 
@@ -426,11 +435,11 @@ export const login = async (req: Request, res: Response) => {
       ? role.permissions.map((p: any) => p.code || p).filter(Boolean)
       : [];
 
-    console.log(`📋 Student permissions: ${permissions.join(', ')}`);
+    console.log(`📋 Student permissions: ${permissions.join(", ")}`);
 
     return res.status(200).json({
       success: true,
-      message: 'Login successful',
+      message: "Login successful",
       data: {
         token,
         user: {
@@ -447,13 +456,12 @@ export const login = async (req: Request, res: Response) => {
         },
       },
     });
-
   } catch (error) {
-    console.error('Student login error:', error);
+    console.error("Student login error:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to login',
-      error: error instanceof Error ? error.message : 'Unknown error',
+      message: "Failed to login",
+      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
@@ -468,25 +476,27 @@ export const checkUser = async (req: Request, res: Response) => {
     if (!email) {
       return res.status(400).json({
         success: false,
-        message: 'Email is required',
+        message: "Email is required",
       });
     }
 
-    const user = await User.findOne({ email: email.toLowerCase() }).populate('role');
+    const user = await User.findOne({ email: email.toLowerCase() }).populate(
+      "role",
+    );
 
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'No account found. Please submit a ticket first.',
+        message: "No account found. Please submit a ticket first.",
         userExists: false,
       });
     }
 
     const role = user.role as any;
-    if (!role || role.code !== 'STUDENT') {
+    if (!role || role.code !== "STUDENT") {
       return res.status(403).json({
         success: false,
-        message: 'This is not a student account.',
+        message: "This is not a student account.",
       });
     }
 
@@ -498,13 +508,12 @@ export const checkUser = async (req: Request, res: Response) => {
         firstName: user.firstName,
       },
     });
-
   } catch (error) {
-    console.error('Check user error:', error);
+    console.error("Check user error:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to check user',
-      error: error instanceof Error ? error.message : 'Unknown error',
+      message: "Failed to check user",
+      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };

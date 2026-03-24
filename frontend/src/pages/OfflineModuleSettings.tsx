@@ -4,6 +4,8 @@ import { useParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import ModuleHeader from '../components/ModuleHeader';
 import { API_CONFIG } from '../config/constants';
+import FormFieldBuilder from '../components/FormFieldBuilder';
+import { FormFieldSchema } from '../utils/conditionEngine';
 import {
   PlusIcon,
   TrashIcon,
@@ -797,8 +799,8 @@ const OfflineModuleSettings: React.FC = () => {
 
         {/* Main Content - Two Column Layout */}
         <div className="grid grid-cols-12 gap-6">
-          {/* Left Column - Configuration Forms */}
-          <div className="col-span-7">
+          {/* Left Column - Configuration Forms (full-width on ticket tab which has its own live preview) */}
+          <div className={activeTab === 'ticket' ? 'col-span-12' : 'col-span-7'}>
             {/* Tab Navigation */}
             <div className="flex space-x-4 border-b border-gray-200 mb-6">
               <button
@@ -1420,270 +1422,30 @@ const OfflineModuleSettings: React.FC = () => {
         </div>
       )}
 
-      {/* Ticket Form Tab */}
+      {/* Ticket Form Tab — uses FormFieldBuilder (DnD, conditions, live preview, all 8 US) */}
       {activeTab === 'ticket' && (
-        <div className="space-y-6">
-          <div className="bg-white rounded-xl shadow-md p-6">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">Query Creation Form Fields</h3>
-                <p className="text-sm text-gray-600 mt-1">
-                  Configure what information agents collect when creating queries
-                </p>
-              </div>
-              <button
-                onClick={addTicketField}
-                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                <PlusIcon className="h-5 w-5" />
-                <span>Add Field</span>
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              {settings.ticketFields.map((field, index) => (
-                <div key={field.id} className={`border rounded-lg p-4 ${field.isFixed ? 'border-blue-300 bg-blue-50' : 'border-gray-200'}`}>
-                  {field.isFixed && (
-                    <div className="mb-3 flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <span className="px-2 py-1 bg-blue-600 text-white text-xs font-semibold rounded">FIXED FIELD</span>
-                        <span className="text-sm text-gray-700">
-                          {field.hierarchyLevel 
-                            ? `${field.fieldName} (Hierarchy Level ${field.hierarchyLevel}) - loaded from Category Master` 
-                            : 'Category field from category master (cannot be removed)'}
-                        </span>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <label htmlFor={`category-enabled-${field.id}`} className="text-sm font-medium text-gray-700">
-                          Enabled
-                        </label>
-                        <input
-                          type="checkbox"
-                          id={`category-enabled-${field.id}`}
-                          checked={field.isEnabled !== false}
-                          onChange={(e) => updateTicketField(field.id, { isEnabled: e.target.checked })}
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                        />
-                      </div>
-                    </div>
-                  )}
-                  <div className="grid grid-cols-12 gap-4">
-                    {/* Field Name */}
-                    <div className="col-span-3">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Field Name
-                      </label>
-                      <input
-                        type="text"
-                        value={field.fieldName}
-                        onChange={(e) => updateTicketField(field.id, { fieldName: e.target.value })}
-                        disabled={field.isFixed}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
-                      />
-                    </div>
-
-                    {/* Field Type */}
-                    <div className="col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Type
-                      </label>
-                      <select
-                        value={field.fieldType}
-                        onChange={(e) => updateTicketField(field.id, { fieldType: e.target.value as any })}
-                        disabled={field.isFixed}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
-                      >
-                        {(field.fieldType === 'category' || field.fieldType === 'category-select') && <option value={field.fieldType}>Category (Master)</option>}
-                        {field.fieldType.startsWith('hierarchy-level-') && <option value={field.fieldType}>Hierarchy Level</option>}
-                        <option value="text">Text</option>
-                        <option value="textarea">Textarea</option>
-                        <option value="dropdown">Dropdown</option>
-                        <option value="number">Number</option>
-                        <option value="date">Date</option>
-                        <option value="phone">Phone</option>
-                        <option value="email">Email</option>
-                        <option value="file">File Upload</option>
-                      </select>
-                    </div>
-
-                    {/* Placeholder */}
-                    <div className="col-span-3">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Placeholder
-                      </label>
-                      <input
-                        type="text"
-                        value={field.placeholder}
-                        onChange={(e) => updateTicketField(field.id, { placeholder: e.target.value })}
-                        disabled={field.isFixed}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
-                      />
-                    </div>
-
-                    {/* Required */}
-                    <div className="col-span-1">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Required
-                      </label>
-                      <input
-                        type="checkbox"
-                        checked={field.required}
-                        onChange={(e) => updateTicketField(field.id, { required: e.target.checked })}
-                        disabled={field.isFixed}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mt-2 disabled:cursor-not-allowed"
-                      />
-                    </div>
-
-                    {/* Actions */}
-                    <div className="col-span-3 flex items-end space-x-2">
-                      <button
-                        onClick={() => moveTicketField(field.id, 'up')}
-                        disabled={index === 0}
-                        className="p-2 text-gray-600 hover:bg-gray-100 rounded disabled:opacity-50"
-                        title="Move up"
-                      >
-                        <ArrowUpIcon className="h-5 w-5" />
-                      </button>
-                      <button
-                        onClick={() => moveTicketField(field.id, 'down')}
-                        disabled={index === settings.ticketFields.length - 1}
-                        className="p-2 text-gray-600 hover:bg-gray-100 rounded disabled:opacity-50"
-                        title="Move down"
-                      >
-                        <ArrowDownIcon className="h-5 w-5" />
-                      </button>
-                      {!field.isFixed && (
-                        <button
-                          onClick={() => removeTicketField(field.id)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded"
-                          title="Delete field"
-                        >
-                          <TrashIcon className="h-5 w-5" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Category Info */}
-                  {(field.fieldType === 'category' || field.fieldType.startsWith('hierarchy-level-')) && (
-                    <div className="mt-4 p-3 bg-blue-100 border border-blue-200 rounded-lg">
-                      <p className="text-sm text-blue-900">
-                        <strong>Categories loaded from Category Master:</strong>{' '}
-                        {field.hierarchyLevel 
-                          ? `${categories.filter(c => c.level === field.hierarchyLevel).length} ${field.fieldName.toLowerCase()}(s) available`
-                          : `${categories.length} categories available`
-                        }
-                        {categories.length > 0 && !field.hierarchyLevel && (
-                          <span className="ml-2">({categories.slice(0, 3).map(c => c.name).join(', ')}{categories.length > 3 && '...'})</span>
-                        )}
-                        {field.hierarchyLevel && categories.filter(c => c.level === field.hierarchyLevel).length > 0 && (
-                          <span className="ml-2">
-                            ({categories.filter(c => c.level === field.hierarchyLevel).slice(0, 3).map(c => c.name).join(', ')}
-                            {categories.filter(c => c.level === field.hierarchyLevel).length > 3 && '...'})
-                          </span>
-                        )}
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Dropdown Options */}
-                  {field.fieldType === 'dropdown' && (
-                    <div className="mt-4">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Dropdown Options (comma-separated)
-                      </label>
-                      <input
-                        type="text"
-                        value={field.options?.join(', ') || ''}
-                        onChange={(e) => updateTicketField(field.id, {
-                          options: e.target.value.split(',').map(o => o.trim()).filter(Boolean)
-                        })}
-                        placeholder="Option 1, Option 2, Option 3"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                    </div>
-                  )}
-
-                  {/* File Upload Settings */}
-                  {field.fieldType === 'file' && (
-                    <div className="mt-4 grid grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Allow Multiple Files
-                        </label>
-                        <input
-                          type="checkbox"
-                          checked={field.allowMultiple || false}
-                          onChange={(e) => updateTicketField(field.id, { allowMultiple: e.target.checked })}
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Max Files
-                        </label>
-                        <input
-                          type="number"
-                          value={field.maxFiles || 5}
-                          onChange={(e) => updateTicketField(field.id, { maxFiles: parseInt(e.target.value) })}
-                          min="1"
-                          max="10"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Allowed File Types
-                        </label>
-                        <div className="grid grid-cols-2 gap-2">
-                          {['pdf', 'jpg', 'jpeg', 'png', 'gif', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'zip', 'rar'].map((fileType) => (
-                            <label key={fileType} className="flex items-center space-x-2 p-2 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={(field.allowedFileTypes || []).includes(fileType)}
-                                onChange={(e) => {
-                                  const currentTypes = field.allowedFileTypes || [];
-                                  const newTypes = e.target.checked
-                                    ? [...currentTypes, fileType]
-                                    : currentTypes.filter(t => t !== fileType);
-                                  updateTicketField(field.id, { allowedFileTypes: newTypes });
-                                }}
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                              />
-                              <span className="text-sm text-gray-700">.{fileType}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* OTP Verification Checkbox for Phone/Email Fields */}
-                  {(field.fieldType === 'phone' || field.fieldType === 'email') && (
-                    <div className="mt-4">
-                      <div className="flex items-start space-x-3">
-                        <input
-                          type="checkbox"
-                          id={`ticket-otp-verification-${field.id}`}
-                          checked={field.requireOtpVerification || false}
-                          onChange={(e) => updateTicketField(field.id, { requireOtpVerification: e.target.checked })}
-                          className="mt-1 h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
-                        />
-                        <label htmlFor={`ticket-otp-verification-${field.id}`} className="flex-1">
-                          <span className="font-medium text-gray-900">Require OTP Verification</span>
-                          <p className="text-sm text-gray-600 mt-1">
-                            {field.fieldType === 'phone' 
-                              ? 'Send OTP to this phone number and verify before proceeding'
-                              : 'Send OTP to this email address and verify before proceeding'}
-                          </p>
-                        </label>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
+        <div>
+          <FormFieldBuilder
+            fields={settings.ticketFields
+              .filter(f => !f.isFixed)
+              .map(f => ({
+                ...f,
+                fieldLabel: (f as any).fieldLabel || f.fieldName,
+                requiredMode: (f as any).requiredMode || (f.required ? 'always' : 'optional'),
+              } as FormFieldSchema))}
+            onChange={(newCustomFields) => {
+              setSettings(prev => ({
+                ...prev,
+                ticketFields: [
+                  ...prev.ticketFields.filter(f => f.isFixed),
+                  ...(newCustomFields as any[]),
+                ],
+              }));
+              setHasUnsavedChanges(true);
+            }}
+            projectId={projectId}
+            hierarchyConfig={hierarchyConfig || undefined}
+          />
         </div>
       )}
 
@@ -1815,8 +1577,8 @@ const OfflineModuleSettings: React.FC = () => {
 
           </div>
 
-          {/* Right Column - Preview Panel */}
-          <div className="col-span-5">
+          {/* Right Column - Config Preview (hidden on ticket tab which has its own live preview) */}
+          <div className="col-span-5" style={{ display: activeTab === 'ticket' ? 'none' : undefined }}>
             <div className="sticky top-6" style={{ zIndex: 1 }}>
               <div className="bg-white rounded-xl shadow-md p-6">
                 <div className="flex items-center space-x-2 mb-4">

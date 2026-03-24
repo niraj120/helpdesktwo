@@ -107,6 +107,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
   const [resetPasswordUser, setResetPasswordUser] = useState<User | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [resetPasswordError, setResetPasswordError] = useState("");
+  const [resetPasswordPolicy, setResetPasswordPolicy] = useState<any>(null);
+  const [loadingResetPolicy, setLoadingResetPolicy] = useState(false);
 
   // Inline errors for name fields
   const [nameFieldErrors, setNameFieldErrors] = useState<{
@@ -191,6 +194,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
 
   const [saving, setSaving] = useState(false);
 
+  // Multi-select state for bulk delete
+  const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
   // Ref to prevent duplicate API calls from React.StrictMode
   const hasFetchedInitialData = useRef(false);
 
@@ -234,6 +244,30 @@ const UserManagement: React.FC<UserManagementProps> = ({
     // In production, passwords are generated randomly and sent via email
     // This is just for display purposes during user creation
     return generateSecurePassword();
+  };
+
+  const fetchResetPasswordPolicy = async (user: User) => {
+    const projectId = user.projects?.[0]?._id || currentProjectId;
+    if (!projectId) {
+      setResetPasswordPolicy(null);
+      return;
+    }
+    try {
+      setLoadingResetPolicy(true);
+      const token = localStorage.getItem("authToken");
+      const res = await fetch(`${API_CONFIG.API_URL}/projects/${projectId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      setResetPasswordPolicy(
+        data?.data?.project?.configuration?.securitySettings?.passwordPolicy ||
+          null,
+      );
+    } catch {
+      setResetPasswordPolicy(null);
+    } finally {
+      setLoadingResetPolicy(false);
+    }
   };
 
   // Fetch users
@@ -1067,6 +1101,47 @@ const UserManagement: React.FC<UserManagementProps> = ({
     }
   };
 
+  const handleBulkDeleteUsers = async () => {
+    const ids = Array.from(selectedUserIds);
+    if (ids.length === 0) return;
+    setBulkDeleting(true);
+    try {
+      const token = localStorage.getItem("authToken");
+      for (const id of ids) {
+        await fetch(`${API_CONFIG.API_URL}/users/${id}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "include",
+        });
+      }
+      setSelectedUserIds(new Set());
+      setShowBulkDeleteConfirm(false);
+      fetchUsers();
+    } catch (error) {
+      console.error("Error during bulk delete:", error);
+      alert("Failed to delete some users. Please try again.");
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
+  const toggleUserSelection = (userId: string) => {
+    setSelectedUserIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  };
+
+  const toggleSelectAllUsers = () => {
+    if (filteredUsers.every((u) => selectedUserIds.has(u._id))) {
+      setSelectedUserIds(new Set());
+    } else {
+      setSelectedUserIds(new Set(filteredUsers.map((u) => u._id)));
+    }
+  };
+
   // Handle toggle status
   const handleToggleStatus = async (userId: string) => {
     try {
@@ -1099,28 +1174,36 @@ const UserManagement: React.FC<UserManagementProps> = ({
   const handleResetPassword = async () => {
     if (!resetPasswordUser) return;
 
-    // Validation
-    if (!newPassword || newPassword.length < 6) {
-      alert(
-        getText(
-          "Password must be at least 6 characters long",
-          "पासवर्ड किमान 6 वर्णांचा असणे आवश्यक आहे",
-          "पासवर्ड किमान 6 वर्णांचा असणे आवश्यक आहे",
-        ),
+    // Client-side policy validation
+    const policy = resetPasswordPolicy;
+    const minLen = policy?.minLength ?? 6;
+    const policyErrors: string[] = [];
+    if (!newPassword || newPassword.length < minLen)
+      policyErrors.push(`Password must be at least ${minLen} characters long`);
+    if (policy?.requireUppercase && !/[A-Z]/.test(newPassword))
+      policyErrors.push("Must contain at least one uppercase letter (A-Z)");
+    if (policy?.requireLowercase && !/[a-z]/.test(newPassword))
+      policyErrors.push("Must contain at least one lowercase letter (a-z)");
+    if (policy?.requireNumbers && !/[0-9]/.test(newPassword))
+      policyErrors.push("Must contain at least one number (0-9)");
+    if (
+      policy?.requireSpecialChars &&
+      !/[@!%*?"#$\[\]^~_\-+=]/.test(newPassword)
+    )
+      policyErrors.push(
+        'Must contain at least one special character (@!%*?"#$[]^~_-+=)',
       );
+    if (policyErrors.length > 0) {
+      setResetPasswordError(policyErrors[0]);
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      alert(
-        getText(
-          "Passwords do not match",
-          "पासवर्ड जुळत नाहीत",
-          "पासवर्ड जुळत नाहीत",
-        ),
-      );
+      setResetPasswordError("Passwords do not match");
       return;
     }
+
+    setResetPasswordError("");
 
     try {
       const token = localStorage.getItem("authToken");
@@ -1133,7 +1216,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
             Authorization: `Bearer ${token}`,
           },
           credentials: "include",
-          body: JSON.stringify({ newPassword }),
+          body: JSON.stringify({
+            newPassword,
+            projectId: resetPasswordUser.projects?.[0]?._id || currentProjectId,
+          }),
         },
       );
 
@@ -1151,12 +1237,14 @@ const UserManagement: React.FC<UserManagementProps> = ({
         setResetPasswordUser(null);
         setNewPassword("");
         setConfirmPassword("");
+        setResetPasswordError("");
+        setResetPasswordPolicy(null);
       } else {
-        alert(data.error || "Failed to reset password");
+        setResetPasswordError(data.error || "Failed to reset password");
       }
     } catch (error) {
       console.error("Error resetting password:", error);
-      alert("Failed to reset password");
+      setResetPasswordError("Failed to reset password");
     }
   };
 
@@ -1684,6 +1772,43 @@ const UserManagement: React.FC<UserManagementProps> = ({
               )}
             </button>
           )}
+          {hasPermission("USER_DELETE") && selectedUserIds.size > 0 && (
+            <button
+              onClick={() => setShowBulkDeleteConfirm(true)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "10px 16px",
+                background: "#DC2626",
+                color: "white",
+                border: "none",
+                borderRadius: "8px",
+                fontSize: "14px",
+                fontWeight: 600,
+                cursor: "pointer",
+                boxShadow: "0 2px 6px rgba(220, 38, 38, 0.3)",
+                fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+              }}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M3 6h18" />
+                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+              </svg>
+              {getText("Delete Selected", "निवडलेले हटवा", "निवडलेले हटवा")} (
+              {selectedUserIds.size})
+            </button>
+          )}
         </div>
       </div>
 
@@ -1781,6 +1906,30 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   borderBottom: "1px solid #E5E7EB",
                 }}
               >
+                {hasPermission("USER_DELETE") && (
+                  <th
+                    style={{
+                      padding: "12px 16px",
+                      width: "48px",
+                      textAlign: "center",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      title="Select all users"
+                      checked={
+                        filteredUsers.length > 0 &&
+                        filteredUsers.every((u) => selectedUserIds.has(u._id))
+                      }
+                      onChange={toggleSelectAllUsers}
+                      style={{
+                        cursor: "pointer",
+                        width: "16px",
+                        height: "16px",
+                      }}
+                    />
+                  </th>
+                )}
                 <th
                   style={{
                     padding: "12px 24px",
@@ -1912,16 +2061,43 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       index < filteredUsers.length - 1
                         ? "1px solid #E5E7EB"
                         : "none",
-                    background: "white",
+                    background: selectedUserIds.has(user._id)
+                      ? "#FEF2F2"
+                      : "white",
                     transition: "background 0.15s ease",
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.background = "#F9FAFB";
+                    if (!selectedUserIds.has(user._id))
+                      e.currentTarget.style.background = "#F9FAFB";
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.background = "white";
+                    e.currentTarget.style.background = selectedUserIds.has(
+                      user._id,
+                    )
+                      ? "#FEF2F2"
+                      : "white";
                   }}
                 >
+                  {hasPermission("USER_DELETE") && (
+                    <td
+                      style={{
+                        padding: "16px",
+                        textAlign: "center",
+                        width: "48px",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedUserIds.has(user._id)}
+                        onChange={() => toggleUserSelection(user._id)}
+                        style={{
+                          cursor: "pointer",
+                          width: "16px",
+                          height: "16px",
+                        }}
+                      />
+                    </td>
+                  )}
                   <td style={{ padding: "16px 24px" }}>
                     <div>
                       <div
@@ -5040,6 +5216,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       setSelectedUserForCredentials(null);
                       setNewPassword("");
                       setConfirmPassword("");
+                      setResetPasswordError("");
+                      setResetPasswordPolicy(null);
+                      if (selectedUserForCredentials)
+                        fetchResetPasswordPolicy(selectedUserForCredentials);
                     }}
                     style={{
                       flex: 1,
@@ -5133,6 +5313,65 @@ const UserManagement: React.FC<UserManagementProps> = ({
 
             {/* Form */}
             <div style={{ padding: "24px" }}>
+              {/* Password policy requirements */}
+              {loadingResetPolicy && (
+                <p
+                  style={{
+                    fontSize: "13px",
+                    color: "#6B7280",
+                    marginBottom: "12px",
+                  }}
+                >
+                  Loading password requirements…
+                </p>
+              )}
+              {!loadingResetPolicy && resetPasswordPolicy && (
+                <div
+                  style={{
+                    background: "#f0f9ff",
+                    border: "1px solid #bae6fd",
+                    borderRadius: "8px",
+                    padding: "12px 16px",
+                    marginBottom: "16px",
+                    fontSize: "13px",
+                  }}
+                >
+                  <p
+                    style={{
+                      fontWeight: 600,
+                      color: "#0369a1",
+                      margin: "0 0 6px 0",
+                    }}
+                  >
+                    Password Requirements:
+                  </p>
+                  <ul
+                    style={{
+                      margin: 0,
+                      paddingLeft: "18px",
+                      color: "#374151",
+                      lineHeight: "1.8",
+                    }}
+                  >
+                    <li>
+                      Minimum {resetPasswordPolicy.minLength || 6} characters
+                    </li>
+                    {resetPasswordPolicy.requireUppercase && (
+                      <li>At least one uppercase letter (A-Z)</li>
+                    )}
+                    {resetPasswordPolicy.requireLowercase && (
+                      <li>At least one lowercase letter (a-z)</li>
+                    )}
+                    {resetPasswordPolicy.requireNumbers && (
+                      <li>At least one number (0-9)</li>
+                    )}
+                    {resetPasswordPolicy.requireSpecialChars && (
+                      <li>At least one special character (@!%*?"#$[]^~_-+=)</li>
+                    )}
+                  </ul>
+                </div>
+              )}
+
               <div style={{ marginBottom: "16px" }}>
                 <label
                   style={{
@@ -5149,11 +5388,16 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 <input
                   type="password"
                   value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
+                  onChange={(e) => {
+                    setNewPassword(e.target.value);
+                    setResetPasswordError("");
+                  }}
                   placeholder={getText(
-                    "Enter new password (min. 6 characters)",
-                    "नवीन पासवर्ड एंटर करा (किमान 6 वर्ण)",
-                    "नवीन पासवर्ड एंटर करा (किमान 6 वर्ण)",
+                    resetPasswordPolicy
+                      ? `Enter new password (min. ${resetPasswordPolicy.minLength || 6} characters)`
+                      : "Enter new password (min. 6 characters)",
+                    "नवीन पासवर्ड एंटर करा",
+                    "नवीन पासवर्ड एंटर करा",
                   )}
                   style={{
                     width: "100%",
@@ -5167,7 +5411,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 />
               </div>
 
-              <div style={{ marginBottom: "20px" }}>
+              <div style={{ marginBottom: "8px" }}>
                 <label
                   style={{
                     display: "block",
@@ -5187,7 +5431,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 <input
                   type="password"
                   value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  onChange={(e) => {
+                    setConfirmPassword(e.target.value);
+                    setResetPasswordError("");
+                  }}
                   placeholder={getText(
                     "Re-enter new password",
                     "नवीन पासवर्ड पुन्हा एंटर करा",
@@ -5205,6 +5452,20 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 />
               </div>
 
+              {/* Inline error message */}
+              {resetPasswordError && (
+                <p
+                  style={{
+                    color: "#ef4444",
+                    fontSize: "13px",
+                    margin: "6px 0 16px 0",
+                  }}
+                >
+                  {resetPasswordError}
+                </p>
+              )}
+              {!resetPasswordError && <div style={{ marginBottom: "16px" }} />}
+
               {/* Action Buttons */}
               <div style={{ display: "flex", gap: "12px" }}>
                 <button
@@ -5213,6 +5474,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     setResetPasswordUser(null);
                     setNewPassword("");
                     setConfirmPassword("");
+                    setResetPasswordError("");
+                    setResetPasswordPolicy(null);
                   }}
                   style={{
                     flex: 1,
@@ -5250,6 +5513,182 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   )}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Delete Confirmation Modal */}
+      {showBulkDeleteConfirm && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            zIndex: 1000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <div
+            style={{
+              background: "white",
+              borderRadius: "12px",
+              padding: "28px",
+              width: "520px",
+              maxWidth: "90vw",
+              maxHeight: "80vh",
+              overflowY: "auto",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+            }}
+          >
+            <h3
+              style={{
+                margin: "0 0 8px 0",
+                fontSize: "18px",
+                fontWeight: 700,
+                color: "#111827",
+              }}
+            >
+              Delete {selectedUserIds.size} User
+              {selectedUserIds.size > 1 ? "s" : ""}?
+            </h3>
+            <p
+              style={{
+                margin: "0 0 16px 0",
+                fontSize: "14px",
+                color: "#6B7280",
+              }}
+            >
+              This action cannot be undone. The following user
+              {selectedUserIds.size > 1 ? "s" : ""} will be permanently deleted:
+            </p>
+            <div
+              style={{
+                border: "1px solid #FCA5A5",
+                borderRadius: "8px",
+                background: "#FFF5F5",
+                padding: "12px",
+                marginBottom: "20px",
+                maxHeight: "260px",
+                overflowY: "auto",
+              }}
+            >
+              {users
+                .filter((u) => selectedUserIds.has(u._id))
+                .map((u) => (
+                  <div
+                    key={u._id}
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: "10px",
+                      padding: "8px 0",
+                      borderBottom: "1px solid #FECACA",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "36px",
+                        height: "36px",
+                        borderRadius: "50%",
+                        background: "#EF4444",
+                        color: "white",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "14px",
+                        fontWeight: 700,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {(u.firstName?.[0] || "?").toUpperCase()}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontWeight: 600,
+                          fontSize: "14px",
+                          color: "#111827",
+                        }}
+                      >
+                        {u.firstName} {u.lastName}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          color: "#6B7280",
+                          marginTop: "2px",
+                        }}
+                      >
+                        {u.email}
+                      </div>
+                      {u.role && (
+                        <div
+                          style={{
+                            display: "inline-block",
+                            marginTop: "4px",
+                            padding: "1px 8px",
+                            borderRadius: "12px",
+                            background: "#FEE2E2",
+                            color: "#B91C1C",
+                            fontSize: "11px",
+                            fontWeight: 600,
+                          }}
+                        >
+                          {typeof u.role === "object"
+                            ? (u.role as any).name
+                            : u.role}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+            </div>
+            <div
+              style={{
+                display: "flex",
+                gap: "12px",
+                justifyContent: "flex-end",
+              }}
+            >
+              <button
+                onClick={() => setShowBulkDeleteConfirm(false)}
+                disabled={bulkDeleting}
+                style={{
+                  padding: "10px 20px",
+                  border: "1px solid #D1D5DB",
+                  borderRadius: "8px",
+                  background: "white",
+                  color: "#374151",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  cursor: bulkDeleting ? "not-allowed" : "pointer",
+                  opacity: bulkDeleting ? 0.6 : 1,
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkDeleteUsers}
+                disabled={bulkDeleting}
+                style={{
+                  padding: "10px 20px",
+                  border: "none",
+                  borderRadius: "8px",
+                  background: "#DC2626",
+                  color: "white",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  cursor: bulkDeleting ? "not-allowed" : "pointer",
+                  opacity: bulkDeleting ? 0.7 : 1,
+                }}
+              >
+                {bulkDeleting
+                  ? "Deleting..."
+                  : `Delete ${selectedUserIds.size} User${selectedUserIds.size > 1 ? "s" : ""}`}
+              </button>
             </div>
           </div>
         </div>

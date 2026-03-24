@@ -1,4 +1,4 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Document, Schema } from "mongoose";
 
 export interface IProject extends Document {
   // Basic Information
@@ -6,7 +6,7 @@ export interface IProject extends Document {
   name: string;
   code: string; // Short code for project
   description?: string;
-  
+
   // Contact Information
   address?: {
     street?: string;
@@ -27,7 +27,7 @@ export interface IProject extends Document {
     phone?: string;
     designation?: string;
   };
-  
+
   // Branding Configuration
   branding?: {
     logo?: string; // URL or base64
@@ -45,7 +45,7 @@ export interface IProject extends Document {
     favicon?: string;
     customUrlPath?: string; // Custom URL path for project login (e.g., 'studentassistcenter')
   };
-  
+
   // Module Configuration
   modules?: {
     tickets?: boolean;
@@ -59,7 +59,7 @@ export interface IProject extends Document {
     approvals?: boolean;
     notifications?: boolean;
   };
-  
+
   // Regional Settings
   settings?: {
     defaultLanguage?: string; // 'en', 'mr', 'hi', etc.
@@ -69,7 +69,7 @@ export interface IProject extends Document {
     currency?: string; // 'INR', 'USD', etc.
     firstDayOfWeek?: number; // 0=Sunday, 1=Monday
   };
-  
+
   // Additional Configuration
   configuration?: {
     maxUsers?: number;
@@ -90,11 +90,15 @@ export interface IProject extends Document {
       prefix?: string; // e.g., 'TKT', 'HELP', 'SUP'
       format?: string; // e.g., '{PREFIX}-{YYYY}{MM}{DD}-{NNNN}', '{PREFIX}-{NNNN}'
       startingNumber?: number; // Starting sequence number (default: 1)
-      resetPeriod?: 'never' | 'daily' | 'monthly' | 'yearly'; // When to reset counter
+      resetPeriod?: "never" | "daily" | "monthly" | "yearly"; // When to reset counter
     };
     ticketAssignmentSettings?: {
       enabled: boolean;
-      assignmentType: 'round-robin' | 'load-balanced' | 'manual' | 'condition-based';
+      assignmentType:
+        | "round-robin"
+        | "load-balanced"
+        | "manual"
+        | "condition-based";
       assignToUsers?: mongoose.Types.ObjectId[]; // Pool of agents for auto-assignment
       assignToRoles?: string[]; // Roles eligible for assignment (e.g., 'Agent', 'Support')
       reassignOnEscalation?: boolean;
@@ -150,24 +154,53 @@ export interface IProject extends Document {
     };
     customizationSettings?: {
       loginPageBackgroundImage?: string;
-      themeMode?: 'light' | 'dark';
+      themeMode?: "light" | "dark";
       themeColor?: string;
       customCSS?: string;
       customJS?: string;
     };
     ticketSubmissionSettings?: {
-      mode?: 'online' | 'offline' | 'both'; // How students can submit tickets
+      mode?: "online" | "offline" | "both"; // How students can submit tickets
       enableOnlineForm?: boolean;
       enableOfflineCenter?: boolean;
       onlineFormFields?: Array<{
         id?: string;
         fieldName: string;
         fieldLabel: string;
-        fieldType: 'text' | 'email' | 'phone' | 'textarea' | 'dropdown' | 'file' | 'number' | 'date';
+        fieldType:
+          | "text"
+          | "email"
+          | "phone"
+          | "textarea"
+          | "dropdown"
+          | "file"
+          | "number"
+          | "date"
+          | "url"
+          | "multiselect"
+          | "radio"
+          | "checkbox";
         required: boolean;
         placeholder?: string;
         options?: string[];
         order?: number;
+        allowedFileTypes?: string[];
+        maxFileSizeMB?: number;
+        allowMultiple?: boolean;
+        isFixed?: boolean;
+        /** Conditions controlling visibility of this field */
+        conditions?: Array<{
+          triggerField: string;
+          operator: string;
+          value: any;
+        }>;
+        conditionAction?: "show" | "hide";
+        requiredMode?: "always" | "conditional" | "optional";
+        requiredConditions?: Array<{
+          triggerField: string;
+          operator: string;
+          value: any;
+        }>;
         validation?: {
           minLength?: number;
           maxLength?: number;
@@ -207,7 +240,14 @@ export interface IProject extends Document {
       registrationFields?: Array<{
         id: string;
         fieldName: string;
-        fieldType: 'text' | 'email' | 'phone' | 'number' | 'textarea' | 'dropdown' | 'date';
+        fieldType:
+          | "text"
+          | "email"
+          | "phone"
+          | "number"
+          | "textarea"
+          | "dropdown"
+          | "date";
         required: boolean;
         placeholder: string;
         options?: string[];
@@ -222,7 +262,14 @@ export interface IProject extends Document {
       ticketFields?: Array<{
         id: string;
         fieldName: string;
-        fieldType: 'text' | 'textarea' | 'dropdown' | 'number' | 'date' | 'file' | 'category';
+        fieldType:
+          | "text"
+          | "textarea"
+          | "dropdown"
+          | "number"
+          | "date"
+          | "file"
+          | "category";
         required: boolean;
         placeholder: string;
         options?: string[];
@@ -243,7 +290,7 @@ export interface IProject extends Document {
         separator?: string;
         includeYear?: boolean;
         includeMonth?: boolean;
-        resetFrequency?: 'never' | 'yearly' | 'monthly';
+        resetFrequency?: "never" | "yearly" | "monthly";
       };
       notificationSettings?: {
         notifyStudentOnRegistration?: boolean;
@@ -252,9 +299,9 @@ export interface IProject extends Document {
       };
     };
   };
-  
+
   // Status and Metadata
-  status: 'active' | 'inactive' | 'suspended';
+  status: "active" | "inactive" | "suspended";
   isActive: boolean;
   users: number; // Count of users in this project
   createdBy?: mongoose.Types.ObjectId;
@@ -263,325 +310,420 @@ export interface IProject extends Document {
   updatedAt: Date;
 }
 
-const projectSchema = new Schema<IProject>({
-  projectId: {
-    type: String,
-    required: false, // Auto-generated by pre-save hook
-    unique: true,
-    uppercase: true,
-  },
-  name: {
-    type: String,
-    required: false, // Auto-generated from portal name
-    trim: true,
-  },
-  code: {
-    type: String,
-    required: false, // Auto-generated from portal name
-    unique: true,
-    uppercase: true,
-    trim: true,
-  },
-  description: {
-    type: String,
-    trim: true,
-  },
-  
-  // Contact Information
-  address: {
-    street: String,
-    city: String,
-    state: String,
-    country: { type: String, default: 'India' },
-    pincode: String,
-  },
-  contactInfo: {
-    phone: String,
-    email: {
+const projectSchema = new Schema<IProject>(
+  {
+    projectId: {
       type: String,
-      lowercase: true,
-      trim: true,
-    },
-    website: String,
-  },
-  region: String,
-  primaryContact: {
-    name: String,
-    email: {
-      type: String,
-      lowercase: true,
-      trim: true,
-    },
-    phone: String,
-    designation: String,
-  },
-  
-  // Branding Configuration
-  branding: {
-    logo: String,
-    logoLinkbackUrl: String, // URL to navigate when logo is clicked
-    colorTheme: {
-      primary: { type: String, default: '#f97316' },
-      secondary: { type: String, default: '#1f2937' },
-      accent: { type: String, default: '#3b82f6' },
-      background: { type: String, default: '#ffffff' },
-    },
-    headerText: String,
-    browserTitle: String,
-    footerText: String,
-    domainUrl: String,
-    favicon: String,
-    customUrlPath: { 
-      type: String, 
+      required: false, // Auto-generated by pre-save hook
       unique: true,
-      sparse: true, // Allows null/undefined values while maintaining uniqueness for non-null values
-      trim: true,
-      lowercase: true
+      uppercase: true,
     },
-  },
-  
-  // Module Configuration
-  modules: {
-    tickets: { type: Boolean, default: true },
-    knowledgeBase: { type: Boolean, default: true },
-    reports: { type: Boolean, default: true },
-    assets: { type: Boolean, default: false },
-    communication: { type: Boolean, default: true },
-    analytics: { type: Boolean, default: true },
-    userManagement: { type: Boolean, default: true },
-    workflows: { type: Boolean, default: false },
-    approvals: { type: Boolean, default: false },
-    notifications: { type: Boolean, default: true },
-  },
-  
-  // Regional Settings
-  settings: {
-    defaultLanguage: { type: String, default: 'en' },
-    timezone: { type: String, default: 'Asia/Kolkata' },
-    dateFormat: { type: String, default: 'DD/MM/YYYY' },
-    timeFormat: { type: String, default: '12h' },
-    currency: { type: String, default: 'INR' },
-    firstDayOfWeek: { type: Number, default: 0 },
-  },
-  
-  // Additional Configuration
-  configuration: {
-    maxUsers: { type: Number, default: 100 },
-    maxStorage: { type: Number, default: 10 }, // GB
-    allowedDomains: [String],
-    customFields: [{
-      name: String,
+    name: {
       type: String,
-      required: Boolean,
-      options: [String],
-    }],
-    slaSettings: {
-      enabled: { type: Boolean, default: false },
-      defaultResponseTime: Number,
-      defaultResolutionTime: Number,
+      required: false, // Auto-generated from portal name
+      trim: true,
     },
-    ticketNumberSettings: {
-      prefix: { type: String },
-      format: { type: String },
-      startingNumber: { type: Number },
-      resetPeriod: { type: String, enum: ['never', 'daily', 'monthly', 'yearly'] },
+    code: {
+      type: String,
+      required: false, // Auto-generated from portal name
+      unique: true,
+      uppercase: true,
+      trim: true,
     },
-    ticketAssignmentSettings: {
-      enabled: { type: Boolean, default: false },
-      assignmentType: { type: String, enum: ['round-robin', 'load-balanced', 'manual', 'condition-based'], default: 'manual' },
-      assignToUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
-      assignToRoles: [{ type: String }],
-      reassignOnEscalation: { type: Boolean, default: false },
-      notifyOnAssignment: { type: Boolean, default: true },
-      conditionRules: [{
-        field: { type: String },
-        operator: { type: String },
-        categories: [{ type: String }],
-        assignToAgents: [{ type: String }]
-      }],
-      manualAssignmentPermissions: [{
-        roleId: { type: String },
-        canAssignToRoles: [{ type: String }]
-      }]
+    description: {
+      type: String,
+      trim: true,
     },
-    securitySettings: {
-      mfaRequired: { type: Boolean, default: false },
-      passwordPolicy: {
-        minLength: { type: Number, default: 8 },
-        requireUppercase: { type: Boolean, default: true },
-        requireLowercase: { type: Boolean, default: true },
-        requireNumbers: { type: Boolean, default: true },
-        requireSpecialChars: { type: Boolean, default: false },
-        expiryDays: { type: Number, default: 90 },
+
+    // Contact Information
+    address: {
+      street: String,
+      city: String,
+      state: String,
+      country: { type: String, default: "India" },
+      pincode: String,
+    },
+    contactInfo: {
+      phone: String,
+      email: {
+        type: String,
+        lowercase: true,
+        trim: true,
       },
-      sessionTimeout: { type: Number, default: 30 },
-      ipWhitelist: [String],
-      allowUserSignup: { type: Boolean, default: true },
-      restrictSignupViaSocial: { type: Boolean, default: false },
+      website: String,
     },
-    loginSettings: {
-      enableFormLogin: { type: Boolean, default: true },
-      enableGoogleRecaptcha: { type: Boolean, default: false },
-      socialLogins: {
-        google: { type: Boolean, default: false },
-        facebook: { type: Boolean, default: false },
-        microsoft: { type: Boolean, default: false },
+    region: String,
+    primaryContact: {
+      name: String,
+      email: {
+        type: String,
+        lowercase: true,
+        trim: true,
       },
-      ssoSettings: {
-        oauth20: { type: Boolean, default: false },
-        openIdConnect: { type: Boolean, default: false },
-        jwt: { type: Boolean, default: false },
+      phone: String,
+      designation: String,
+    },
+
+    // Branding Configuration
+    branding: {
+      logo: String,
+      logoLinkbackUrl: String, // URL to navigate when logo is clicked
+      colorTheme: {
+        primary: { type: String, default: "#f97316" },
+        secondary: { type: String, default: "#1f2937" },
+        accent: { type: String, default: "#3b82f6" },
+        background: { type: String, default: "#ffffff" },
+      },
+      headerText: String,
+      browserTitle: String,
+      footerText: String,
+      domainUrl: String,
+      favicon: String,
+      customUrlPath: {
+        type: String,
+        unique: true,
+        sparse: true, // Allows null/undefined values while maintaining uniqueness for non-null values
+        trim: true,
+        lowercase: true,
       },
     },
-    knowledgeBaseSettings: {
-      enabled: { type: Boolean, default: false },
-      kbHomeConfiguration: Schema.Types.Mixed,
-      articleConfiguration: Schema.Types.Mixed,
-      enableAIAssistance: { type: Boolean, default: false },
-      enableSatisfactionFeedback: { type: Boolean, default: false },
-      satisfactionFeedback: Schema.Types.Mixed,
-      seoSettings: Schema.Types.Mixed,
+
+    // Module Configuration
+    modules: {
+      tickets: { type: Boolean, default: true },
+      knowledgeBase: { type: Boolean, default: true },
+      reports: { type: Boolean, default: true },
+      assets: { type: Boolean, default: false },
+      communication: { type: Boolean, default: true },
+      analytics: { type: Boolean, default: true },
+      userManagement: { type: Boolean, default: true },
+      workflows: { type: Boolean, default: false },
+      approvals: { type: Boolean, default: false },
+      notifications: { type: Boolean, default: true },
     },
-    customizationSettings: {
-      loginPageBackgroundImage: { type: String },
-      themeMode: { type: String, enum: ['light', 'dark'], default: 'light' },
-      themeColor: { type: String, default: '#444ce7' },
-      customCSS: { type: String },
-      customJS: { type: String },
+
+    // Regional Settings
+    settings: {
+      defaultLanguage: { type: String, default: "en" },
+      timezone: { type: String, default: "Asia/Kolkata" },
+      dateFormat: { type: String, default: "DD/MM/YYYY" },
+      timeFormat: { type: String, default: "12h" },
+      currency: { type: String, default: "INR" },
+      firstDayOfWeek: { type: Number, default: 0 },
     },
-    // Footer Links for policy URLs
-    footerLinks: {
-      copyright: { type: String },
-      termsOfUse: { type: String },
-      privacyPolicy: { type: String },
-      cookiePolicy: { type: String },
-    },
-    // Announcement Banner for login page
-    announcementBanner: {
-      message: { type: String },
-      type: { type: String, enum: ['plain', 'rich'], default: 'plain' },
-    },
-    ticketSubmissionSettings: {
-      mode: { type: String, enum: ['online', 'offline', 'both'], default: 'both' },
-      enableOnlineForm: { type: Boolean, default: true },
-      enableOfflineCenter: { type: Boolean, default: true },
-      onlineFormFields: [{
-        fieldName: { type: String },
-        fieldType: { type: String, enum: ['text', 'email', 'phone', 'textarea', 'dropdown', 'file', 'number', 'date', 'url', 'multiselect', 'radio', 'checkbox'] },
-        required: { type: Boolean, default: false },
-        placeholder: { type: String },
-        options: [{ type: String }],
-        allowedFileTypes: [{ type: String }],
-        maxFileSizeMB: { type: Number },
-        allowMultiple: { type: Boolean },
-        _id: false  // Disable auto _id generation for subdocuments
-      }],
-      offlineCenters: [{
-        centerName: { type: String },
-        address: { type: String },
-        city: { type: String },
-        state: { type: String },
-        pincode: { type: String },
-        phone: { type: String },
-        email: { type: String },
-        workingHours: { type: String },
-        latitude: { type: Number },
-        longitude: { type: Number },
-        features: [{ type: String }],
-        mapLink: { type: String },
-        googleMapLink: { type: String },
-        contacts: [{
-          name: { type: String },
-          role: { type: String },
-          mobile: { type: String },
-          email: { type: String },
-        }],
-      }],
-      welcomeMessage: { type: String },
-      successMessage: { type: String },
-      announcement: { type: String },
-      allowAttachments: { type: Boolean, default: true },
-      maxAttachmentSize: { type: Number, default: 10 }, // 10 MB
-      allowedFileTypes: [{ type: String }],
-    },
-    offlineModuleSettings: {
-      registrationFields: [{
-        id: { type: String },
-        fieldName: { type: String },
-        fieldType: { type: String, enum: ['text', 'email', 'phone', 'number', 'textarea', 'dropdown', 'date'] },
-        required: { type: Boolean, default: false },
-        placeholder: { type: String },
-        options: [{ type: String }],
-        validation: {
-          minLength: { type: Number },
-          maxLength: { type: Number },
-          pattern: { type: String },
+
+    // Additional Configuration
+    configuration: {
+      maxUsers: { type: Number, default: 100 },
+      maxStorage: { type: Number, default: 10 }, // GB
+      allowedDomains: [String],
+      customFields: [
+        {
+          name: String,
+          type: String,
+          required: Boolean,
+          options: [String],
         },
-        isParentMobile: { type: Boolean, default: false },
-        requireOtpVerification: { type: Boolean, default: false }, // For phone/email OTP verification
-        order: { type: Number },
-      }],
-      ticketFields: [{
-        id: { type: String },
-        fieldName: { type: String },
-        fieldType: { type: String, enum: ['text', 'textarea', 'dropdown', 'number', 'date', 'file', 'category', 'category-select', 'phone', 'email', 'hierarchy-level-1', 'hierarchy-level-2', 'hierarchy-level-3', 'hierarchy-level-4'] },
-        required: { type: Boolean, default: false },
-        placeholder: { type: String },
-        options: [{ type: String }],
-        allowMultiple: { type: Boolean },
-        maxFiles: { type: Number },
-        allowedFileTypes: [{ type: String }],
-        isFixed: { type: Boolean, default: false },
-        isEnabled: { type: Boolean, default: true },
-        order: { type: Number },
-        hierarchyLevel: { type: Number }, // For hierarchy level fields (1-4)
-        requireOtpVerification: { type: Boolean, default: false }, // For phone/email OTP verification
-      }],
-      allowAgentToMarkResolved: { type: Boolean, default: true },
-      allowAgentToEscalate: { type: Boolean, default: true },
-      autoAssignToCreatingAgent: { type: Boolean, default: false },
-      requireStudentVerification: { type: Boolean, default: false },
-      offlineTicketNumbering: {
-        prefix: { type: String, default: 'OFF' },
-        startingNumber: { type: Number, default: 1 },
-        separator: { type: String, default: '-' },
-        includeYear: { type: Boolean, default: true },
-        includeMonth: { type: Boolean, default: false },
-        resetFrequency: { type: String, enum: ['never', 'yearly', 'monthly'], default: 'yearly' },
+      ],
+      slaSettings: {
+        enabled: { type: Boolean, default: false },
+        defaultResponseTime: Number,
+        defaultResolutionTime: Number,
       },
-      notificationSettings: {
-        notifyStudentOnRegistration: { type: Boolean, default: true },
-        notifyStudentOnTicketCreation: { type: Boolean, default: true },
-        sendWelcomeEmail: { type: Boolean, default: true },
+      ticketNumberSettings: {
+        prefix: { type: String },
+        format: { type: String },
+        startingNumber: { type: Number },
+        resetPeriod: {
+          type: String,
+          enum: ["never", "daily", "monthly", "yearly"],
+        },
+      },
+      ticketAssignmentSettings: {
+        enabled: { type: Boolean, default: false },
+        assignmentType: {
+          type: String,
+          enum: ["round-robin", "load-balanced", "manual", "condition-based"],
+          default: "manual",
+        },
+        assignToUsers: [{ type: Schema.Types.ObjectId, ref: "User" }],
+        assignToRoles: [{ type: String }],
+        reassignOnEscalation: { type: Boolean, default: false },
+        notifyOnAssignment: { type: Boolean, default: true },
+        conditionRules: [
+          {
+            field: { type: String },
+            operator: { type: String },
+            categories: [{ type: String }],
+            assignToAgents: [{ type: String }],
+          },
+        ],
+        manualAssignmentPermissions: [
+          {
+            roleId: { type: String },
+            canAssignToRoles: [{ type: String }],
+          },
+        ],
+      },
+      securitySettings: {
+        mfaRequired: { type: Boolean, default: false },
+        passwordPolicy: {
+          minLength: { type: Number, default: 8 },
+          requireUppercase: { type: Boolean, default: true },
+          requireLowercase: { type: Boolean, default: true },
+          requireNumbers: { type: Boolean, default: true },
+          requireSpecialChars: { type: Boolean, default: false },
+          expiryDays: { type: Number, default: 90 },
+        },
+        sessionTimeout: { type: Number, default: 30 },
+        ipWhitelist: [String],
+        allowUserSignup: { type: Boolean, default: true },
+        restrictSignupViaSocial: { type: Boolean, default: false },
+      },
+      loginSettings: {
+        enableFormLogin: { type: Boolean, default: true },
+        enableGoogleRecaptcha: { type: Boolean, default: false },
+        socialLogins: {
+          google: { type: Boolean, default: false },
+          facebook: { type: Boolean, default: false },
+          microsoft: { type: Boolean, default: false },
+        },
+        ssoSettings: {
+          oauth20: { type: Boolean, default: false },
+          openIdConnect: { type: Boolean, default: false },
+          jwt: { type: Boolean, default: false },
+        },
+      },
+      knowledgeBaseSettings: {
+        enabled: { type: Boolean, default: false },
+        kbHomeConfiguration: Schema.Types.Mixed,
+        articleConfiguration: Schema.Types.Mixed,
+        enableAIAssistance: { type: Boolean, default: false },
+        enableSatisfactionFeedback: { type: Boolean, default: false },
+        satisfactionFeedback: Schema.Types.Mixed,
+        seoSettings: Schema.Types.Mixed,
+      },
+      customizationSettings: {
+        loginPageBackgroundImage: { type: String },
+        themeMode: { type: String, enum: ["light", "dark"], default: "light" },
+        themeColor: { type: String, default: "#444ce7" },
+        customCSS: { type: String },
+        customJS: { type: String },
+      },
+      // Footer Links for policy URLs
+      footerLinks: {
+        copyright: { type: String },
+        termsOfUse: { type: String },
+        privacyPolicy: { type: String },
+        cookiePolicy: { type: String },
+      },
+      // Announcement Banner for login page
+      announcementBanner: {
+        message: { type: String },
+        type: { type: String, enum: ["plain", "rich"], default: "plain" },
+      },
+      ticketSubmissionSettings: {
+        mode: {
+          type: String,
+          enum: ["online", "offline", "both"],
+          default: "both",
+        },
+        enableOnlineForm: { type: Boolean, default: true },
+        enableOfflineCenter: { type: Boolean, default: true },
+        onlineFormFields: [
+          {
+            id: { type: String },
+            fieldName: { type: String },
+            fieldLabel: { type: String },
+            fieldType: {
+              type: String,
+              enum: [
+                "text",
+                "email",
+                "phone",
+                "textarea",
+                "dropdown",
+                "file",
+                "number",
+                "date",
+                "url",
+                "multiselect",
+                "radio",
+                "checkbox",
+              ],
+            },
+            required: { type: Boolean, default: false },
+            placeholder: { type: String },
+            options: [{ type: String }],
+            order: { type: Number },
+            allowedFileTypes: [{ type: String }],
+            maxFileSizeMB: { type: Number },
+            allowMultiple: { type: Boolean },
+            isFixed: { type: Boolean, default: false },
+            conditions: [{ type: Schema.Types.Mixed }],
+            conditionAction: {
+              type: String,
+              enum: ["show", "hide"],
+              default: "show",
+            },
+            requiredMode: {
+              type: String,
+              enum: ["always", "conditional", "optional"],
+              default: "optional",
+            },
+            requiredConditions: [{ type: Schema.Types.Mixed }],
+            _id: false, // Disable auto _id generation for subdocuments
+          },
+        ],
+        offlineCenters: [
+          {
+            centerName: { type: String },
+            address: { type: String },
+            city: { type: String },
+            state: { type: String },
+            pincode: { type: String },
+            phone: { type: String },
+            email: { type: String },
+            workingHours: { type: String },
+            latitude: { type: Number },
+            longitude: { type: Number },
+            features: [{ type: String }],
+            mapLink: { type: String },
+            googleMapLink: { type: String },
+            contacts: [
+              {
+                name: { type: String },
+                role: { type: String },
+                mobile: { type: String },
+                email: { type: String },
+              },
+            ],
+          },
+        ],
+        welcomeMessage: { type: String },
+        successMessage: { type: String },
+        announcement: { type: String },
+        allowAttachments: { type: Boolean, default: true },
+        maxAttachmentSize: { type: Number, default: 10 }, // 10 MB
+        allowedFileTypes: [{ type: String }],
+      },
+      offlineModuleSettings: {
+        registrationFields: [
+          {
+            id: { type: String },
+            fieldName: { type: String },
+            fieldType: {
+              type: String,
+              enum: [
+                "text",
+                "email",
+                "phone",
+                "number",
+                "textarea",
+                "dropdown",
+                "date",
+              ],
+            },
+            required: { type: Boolean, default: false },
+            placeholder: { type: String },
+            options: [{ type: String }],
+            validation: {
+              minLength: { type: Number },
+              maxLength: { type: Number },
+              pattern: { type: String },
+            },
+            isParentMobile: { type: Boolean, default: false },
+            requireOtpVerification: { type: Boolean, default: false }, // For phone/email OTP verification
+            order: { type: Number },
+          },
+        ],
+        ticketFields: [
+          {
+            id: { type: String },
+            fieldName: { type: String },
+            fieldType: {
+              type: String,
+              enum: [
+                "text",
+                "textarea",
+                "dropdown",
+                "number",
+                "date",
+                "file",
+                "category",
+                "category-select",
+                "phone",
+                "email",
+                "hierarchy-level-1",
+                "hierarchy-level-2",
+                "hierarchy-level-3",
+                "hierarchy-level-4",
+              ],
+            },
+            required: { type: Boolean, default: false },
+            placeholder: { type: String },
+            options: [{ type: String }],
+            allowMultiple: { type: Boolean },
+            maxFiles: { type: Number },
+            allowedFileTypes: [{ type: String }],
+            isFixed: { type: Boolean, default: false },
+            isEnabled: { type: Boolean, default: true },
+            order: { type: Number },
+            hierarchyLevel: { type: Number }, // For hierarchy level fields (1-4)
+            requireOtpVerification: { type: Boolean, default: false }, // For phone/email OTP verification
+          },
+        ],
+        allowAgentToMarkResolved: { type: Boolean, default: true },
+        allowAgentToEscalate: { type: Boolean, default: true },
+        autoAssignToCreatingAgent: { type: Boolean, default: false },
+        requireStudentVerification: { type: Boolean, default: false },
+        offlineTicketNumbering: {
+          prefix: { type: String, default: "OFF" },
+          startingNumber: { type: Number, default: 1 },
+          separator: { type: String, default: "-" },
+          includeYear: { type: Boolean, default: true },
+          includeMonth: { type: Boolean, default: false },
+          resetFrequency: {
+            type: String,
+            enum: ["never", "yearly", "monthly"],
+            default: "yearly",
+          },
+        },
+        notificationSettings: {
+          notifyStudentOnRegistration: { type: Boolean, default: true },
+          notifyStudentOnTicketCreation: { type: Boolean, default: true },
+          sendWelcomeEmail: { type: Boolean, default: true },
+        },
       },
     },
+
+    // Status and Metadata
+    status: {
+      type: String,
+      enum: ["active", "inactive", "suspended"],
+      default: "active",
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+    users: {
+      type: Number,
+      default: 0,
+    },
+    createdBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+    },
+    updatedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+    },
   },
-  
-  // Status and Metadata
-  status: {
-    type: String,
-    enum: ['active', 'inactive', 'suspended'],
-    default: 'active',
+  {
+    timestamps: true,
   },
-  isActive: {
-    type: Boolean,
-    default: true,
-  },
-  users: {
-    type: Number,
-    default: 0,
-  },
-  createdBy: {
-    type: Schema.Types.ObjectId,
-    ref: 'User',
-  },
-  updatedBy: {
-    type: Schema.Types.ObjectId,
-    ref: 'User',
-  },
-}, {
-  timestamps: true,
-});
+);
 
 // Indexes for better query performance
 projectSchema.index({ projectId: 1 });
@@ -592,25 +734,28 @@ projectSchema.index({ isActive: 1 });
 projectSchema.index({ createdAt: -1 });
 
 // Auto-generate projectId before saving
-projectSchema.pre('save', async function(next) {
+projectSchema.pre("save", async function (next) {
   if (this.isNew) {
     // Auto-generate projectId
     if (!this.projectId) {
       const count = await mongoose.models.Project.countDocuments();
-      this.projectId = `P${String(count + 1).padStart(3, '0')}`;
+      this.projectId = `P${String(count + 1).padStart(3, "0")}`;
     }
-    
+
     // Auto-generate name from portal name if not provided
     if (!this.name && this.branding?.headerText) {
       this.name = this.branding.headerText;
     }
-    
+
     // Auto-generate code from portal name if not provided
     if (!this.code && this.branding?.headerText) {
-      this.code = this.branding.headerText.replace(/\s+/g, '').toUpperCase().substring(0, 10);
+      this.code = this.branding.headerText
+        .replace(/\s+/g, "")
+        .toUpperCase()
+        .substring(0, 10);
     }
   }
   next();
 });
 
-export const Project = mongoose.model<IProject>('Project', projectSchema);
+export const Project = mongoose.model<IProject>("Project", projectSchema);

@@ -8,6 +8,7 @@ import HierarchyCategorySelector, {
   useHierarchyConfig,
   CategoryHierarchyDisplay,
 } from "../components/HierarchyCategorySelector";
+import { TicketMergeModal } from "../components/tickets/TicketMergeModal";
 import { API_CONFIG } from "../config/constants";
 import {
   ArrowLeftIcon,
@@ -23,6 +24,7 @@ import {
   XCircleIcon,
   ArrowUpIcon,
   TicketIcon,
+  ArrowsPointingInIcon,
 } from "@heroicons/react/24/outline";
 
 // SLA Tracking interface for resolution time calculation
@@ -114,6 +116,25 @@ interface Ticket {
   escalationMatrixId?: string;
   escalationMatrixName?: string;
   currentEscalationLevelNumber?: number;
+  // Merge tracking fields
+  isMerged?: boolean;
+  mergedInto?:
+    | string
+    | { _id: string; ticketNumber: string; subject?: string; title?: string };
+  mergedTickets?: Array<{
+    _id: string;
+    ticketNumber: string;
+    subject?: string;
+    title?: string;
+    status: number | string;
+    priority?: string;
+    mergedAt?: string;
+    createdAt?: string;
+    assignedTo?: { firstName: string; lastName: string };
+    category?: { name: string } | string;
+    threads?: Array<{ _id: string }>;
+  }>;
+  mergedAt?: string;
 }
 
 interface Thread {
@@ -135,6 +156,7 @@ interface Thread {
     size: number;
   }>;
   isSystemMessage?: boolean;
+  mergedFrom?: string;
 }
 
 interface InternalNote {
@@ -160,6 +182,7 @@ interface Comment {
   createdAt: string;
   updatedAt?: string;
   isSystemComment?: boolean;
+  mergedFrom?: string;
 }
 
 interface Attachment {
@@ -284,9 +307,12 @@ interface AgentTicketDetailProps {
   wrapWithLayout?: boolean;
 }
 
-/** Opens an attachment — fetches a signed URL from the backend (with auth) then opens it in a new tab. */
+/** Opens an attachment — fetches a signed URL from the backend (with auth) then opens it in a new tab.
+ * The tab is opened BEFORE the async call so browsers don't block it as a popup. */
 const openAttachment = async (pathOrUrl: string | undefined) => {
   if (!pathOrUrl) return;
+  // Open the tab immediately (within the user gesture) then navigate it once we have the URL.
+  const newTab = window.open("", "_blank", "noopener,noreferrer");
   const token = localStorage.getItem("authToken");
   try {
     const res = await axios.get(
@@ -294,10 +320,10 @@ const openAttachment = async (pathOrUrl: string | undefined) => {
       { headers: { Authorization: `Bearer ${token}` } },
     );
     const url: string = res.data?.url || pathOrUrl;
-    window.open(url, "_blank", "noopener,noreferrer");
+    if (newTab) newTab.location.href = url;
   } catch {
-    // Fallback: open directly (works for non-GCS local paths)
-    window.open(pathOrUrl, "_blank", "noopener,noreferrer");
+    // Fallback: navigate directly (works for non-GCS local paths)
+    if (newTab) newTab.location.href = pathOrUrl;
   }
 };
 
@@ -418,6 +444,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
   const [replyError, setReplyError] = useState("");
   const [showReplyForm, setShowReplyForm] = useState(false);
   const [emailSignature, setEmailSignature] = useState("");
+
+  // Merge state
+  const [showMergeModal, setShowMergeModal] = useState(false);
+  const [mergedPanelExpanded, setMergedPanelExpanded] = useState(false);
 
   // Task 6.4: Source badge helper function
   const getSourceBadge = (source?: "online" | "offline" | "email") => {
@@ -1434,69 +1464,80 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
   }
 
   const content = (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between py-4">
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => navigate(-1)}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <ArrowLeftIcon className="h-6 w-6 text-gray-600" />
-              </button>
-              <div>
-                <div className="flex items-center space-x-3">
-                  <h1 className="text-2xl font-bold text-gray-900">
-                    #{ticket.ticketNumber}
-                  </h1>
-                  <span
-                    className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(ticket.status)}`}
-                  >
-                    {getStatusDisplayName(ticket.status)}
-                  </span>
-                  <span
-                    className={`px-3 py-1 rounded-full text-xs font-medium ${getPriorityColor(ticket.priority)}`}
-                  >
-                    {ticket.priority.charAt(0).toUpperCase() +
-                      ticket.priority.slice(1).toLowerCase()}
-                  </span>
-                  {/* Task 6.4: Source badge */}
-                  {(() => {
-                    const sourceBadge = getSourceBadge(ticket.submissionSource);
-                    return (
-                      <span
-                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium"
-                        style={{
-                          color: sourceBadge.color,
-                          backgroundColor: sourceBadge.bgColor,
-                          border: `1px solid ${sourceBadge.color}40`,
-                        }}
-                        title={sourceBadge.tooltip}
-                      >
-                        <span>{sourceBadge.icon}</span>
-                        <span>{sourceBadge.label}</span>
-                      </span>
-                    );
-                  })()}
-                </div>
-                <div className="flex items-center gap-3 mt-1">
-                  <p className="text-sm text-gray-600">
-                    Created {new Date(ticket.createdAt).toLocaleString()}
-                  </p>
-                  {/* Task 6.4: Show sender email for email tickets */}
-                  {ticket.submissionSource === "email" &&
-                    ticket.sourceEmail && (
-                      <>
-                        <span className="text-gray-400">•</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm text-gray-600">From:</span>
+    <>
+      <div className="min-h-screen bg-gray-50">
+        {/* Header — stacks directly below the 64px DashboardLayout top bar */}
+        <div className="bg-white border-b border-gray-200 sticky top-16 z-40">
+          <div className="px-6">
+            <div className="flex items-center justify-between py-3 gap-4">
+              {/* Left: back button + ticket info */}
+              <div className="flex items-start gap-4 min-w-0">
+                {/* Back button — top-aligned, nudged down to sit level with the h1 */}
+                <button
+                  onClick={() => navigate(-1)}
+                  className="flex-shrink-0 mt-1 p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                  title="Go back"
+                >
+                  <ArrowLeftIcon className="h-5 w-5 text-gray-500" />
+                </button>
+
+                {/* Divider */}
+                <div className="hidden sm:block mt-0.5 h-8 w-px bg-gray-200 flex-shrink-0" />
+
+                {/* Ticket number + badges + created date */}
+                <div className="min-w-0">
+                  {/* Row 1: number + status + priority + source */}
+                  <div className="flex items-center flex-wrap gap-2">
+                    <h1 className="text-xl font-bold text-gray-900 whitespace-nowrap">
+                      #{ticket.ticketNumber}
+                    </h1>
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${getStatusColor(ticket.status)}`}
+                    >
+                      {getStatusDisplayName(ticket.status)}
+                    </span>
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${getPriorityColor(ticket.priority)}`}
+                    >
+                      {ticket.priority.charAt(0).toUpperCase() +
+                        ticket.priority.slice(1).toLowerCase()}
+                    </span>
+                    {/* Source badge */}
+                    {(() => {
+                      const sourceBadge = getSourceBadge(
+                        ticket.submissionSource,
+                      );
+                      return (
+                        <span
+                          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold"
+                          style={{
+                            color: sourceBadge.color,
+                            backgroundColor: sourceBadge.bgColor,
+                            border: `1px solid ${sourceBadge.color}40`,
+                          }}
+                          title={sourceBadge.tooltip}
+                        >
+                          <span>{sourceBadge.icon}</span>
+                          <span>{sourceBadge.label}</span>
+                        </span>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Row 2: created date + optional sender email */}
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    <p className="text-xs text-gray-500">
+                      Created {new Date(ticket.createdAt).toLocaleString()}
+                    </p>
+                    {ticket.submissionSource === "email" &&
+                      ticket.sourceEmail && (
+                        <>
+                          <span className="text-gray-300">•</span>
+                          <span className="text-xs text-gray-500">From:</span>
                           <a
                             href={`mailto:${ticket.sourceEmail}`}
-                            className="text-sm text-blue-600 hover:text-blue-700 hover:underline"
+                            className="text-xs text-blue-600 hover:underline"
                             onClick={(e) => e.stopPropagation()}
-                            title={ticket.sourceEmail}
                           >
                             {ticket.sourceEmail}
                           </a>
@@ -1507,442 +1548,728 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                                 ticket.sourceEmail || "",
                               );
                             }}
-                            className="text-xs px-2 py-0.5 border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+                            className="text-xs px-1.5 py-0.5 border border-gray-300 rounded hover:bg-gray-50 transition-colors"
                             title="Copy email"
                           >
                             📋
                           </button>
-                        </div>
-                      </>
-                    )}
+                        </>
+                      )}
+                  </div>
                 </div>
               </div>
+
+              {/* Right: Merge button */}
+              {permissions.includes("TICKET_MERGE") && !ticket.isMerged && (
+                <button
+                  onClick={() => setShowMergeModal(true)}
+                  className="flex-shrink-0 flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition-colors"
+                >
+                  <ArrowsPointingInIcon className="h-4 w-4" />
+                  Merge Ticket
+                </button>
+              )}
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column - Main Content */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Ticket Details Card */}
-            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-              <div className="p-6 border-b border-gray-100">
-                <div className="flex items-center space-x-2 mb-3">
-                  <div className="p-1.5 bg-blue-100 rounded-lg">
-                    <TicketIcon className="h-4 w-4 text-blue-600" />
-                  </div>
-                  <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
-                    Subject
-                  </span>
-                </div>
-                <h2 className="text-lg font-semibold text-gray-900 leading-tight">
-                  {ticket.title || ticket.subject || "No Subject"}
-                </h2>
-              </div>
-
-              <div className="p-6">
-                <div className="flex items-center space-x-2 mb-3">
-                  <div className="p-1.5 bg-purple-100 rounded-lg">
-                    <DocumentTextIcon className="h-4 w-4 text-purple-600" />
-                  </div>
-                  <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
-                    Description
-                  </span>
-                </div>
-                <div className="prose max-w-none">
-                  <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">
-                    {ticket.description}
-                  </p>
-                </div>
-              </div>
-
-              {ticket.attachments && ticket.attachments.length > 0 && (
-                <div className="mt-6 pt-6 border-t border-gray-200">
-                  <h3 className="text-sm font-medium text-gray-900 mb-3">
-                    Attachments
-                  </h3>
-                  <div className="grid grid-cols-2 gap-3">
-                    {ticket.attachments.map((attachment, index) => (
-                      <button
-                        key={index}
-                        type="button"
-                        onClick={() => openAttachment(attachment.path)}
-                        className="flex items-center space-x-2 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left w-full"
-                      >
-                        <PaperClipIcon className="h-5 w-5 text-gray-400 flex-shrink-0" />
-                        <span className="text-sm text-gray-700 truncate">
-                          {attachment.filename}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
+        {/* Merged-into banner — shown when this ticket is a secondary merged ticket */}
+        {ticket.isMerged && ticket.mergedInto && (
+          <div className="bg-amber-50 border-b border-amber-200 px-4 py-3">
+            <div className="max-w-7xl mx-auto flex items-center gap-3">
+              <span className="text-amber-600 font-bold text-lg">⚠</span>
+              <p className="text-sm text-amber-800">
+                This ticket has been merged into{" "}
+                <button
+                  onClick={() => {
+                    const primary = ticket.mergedInto;
+                    const primaryId =
+                      typeof primary === "object" ? primary._id : primary;
+                    navigate(`/tickets/${primaryId}`);
+                  }}
+                  className="font-bold underline hover:text-amber-900"
+                >
+                  {typeof ticket.mergedInto === "object"
+                    ? ticket.mergedInto.ticketNumber
+                    : "the primary ticket"}
+                </button>
+                . All further updates are tracked there. Actions on this ticket
+                are disabled.
+              </p>
             </div>
+          </div>
+        )}
 
-            {/* Latest Reply and Internal Note - Always Visible */}
-            {(ticket.threads && ticket.threads.length > 0) ||
-            (ticket.internalNotes && ticket.internalNotes.length > 0) ? (
-              <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                  Recent Activity
-                </h3>
-
-                {/* Latest Reply */}
-                {ticket.threads &&
-                  ticket.threads.length > 0 &&
-                  (() => {
-                    const latestReply = [...ticket.threads].sort(
-                      (a, b) =>
-                        new Date(b.createdAt).getTime() -
-                        new Date(a.createdAt).getTime(),
-                    )[0];
-
-                    return (
-                      <div className="border-l-4 border-blue-500 pl-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center space-x-2">
-                            <ChatBubbleLeftRightIcon className="h-5 w-5 text-blue-600" />
-                            <span className="text-sm font-semibold text-gray-900">
-                              Latest Reply
-                            </span>
-                          </div>
-                          <span className="text-xs text-gray-500">
-                            {new Date(latestReply.createdAt).toLocaleString()}
-                          </span>
-                        </div>
-                        <div className="bg-blue-50 rounded-lg p-3">
-                          <p className="text-xs font-medium text-gray-700 mb-1">
-                            {latestReply.createdBy.firstName}{" "}
-                            {latestReply.createdBy.lastName}
-                            {latestReply.createdBy.role && (
-                              <span className="text-gray-500">
-                                {" "}
-                                •{" "}
-                                {typeof latestReply.createdBy.role === "string"
-                                  ? latestReply.createdBy.role
-                                  : (latestReply.createdBy.role as any).name}
-                              </span>
-                            )}
-                          </p>
-                          <p className="text-sm text-gray-800 whitespace-pre-wrap line-clamp-3">
-                            {latestReply.message}
-                          </p>
-                          {latestReply.attachments &&
-                            latestReply.attachments.length > 0 && (
-                              <div className="mt-2 flex items-center space-x-1 text-xs text-blue-600">
-                                <PaperClipIcon className="h-3 w-3" />
-                                <span>
-                                  {latestReply.attachments.length} attachment(s)
-                                </span>
-                              </div>
-                            )}
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                {/* Latest Internal Note */}
-                {ticket.internalNotes &&
-                  ticket.internalNotes.length > 0 &&
-                  (() => {
-                    const latestNote = [...ticket.internalNotes].sort(
-                      (a, b) =>
-                        new Date(b.createdAt).getTime() -
-                        new Date(a.createdAt).getTime(),
-                    )[0];
-
-                    return (
-                      <div className="border-l-4 border-yellow-500 pl-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center space-x-2">
-                            <DocumentTextIcon className="h-5 w-5 text-yellow-600" />
-                            <span className="text-sm font-semibold text-gray-900">
-                              Latest Internal Note
-                            </span>
-                            <span className="text-xs text-gray-500 italic">
-                              (Staff only)
-                            </span>
-                          </div>
-                          <span className="text-xs text-gray-500">
-                            {new Date(latestNote.createdAt).toLocaleString()}
-                          </span>
-                        </div>
-                        <div className="bg-yellow-50 rounded-lg p-3">
-                          <p className="text-xs font-medium text-gray-700 mb-1">
-                            {latestNote.createdBy.firstName}{" "}
-                            {latestNote.createdBy.lastName}
-                          </p>
-                          <p className="text-sm text-gray-800 whitespace-pre-wrap line-clamp-3">
-                            {latestNote.note}
-                          </p>
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                <div className="pt-2 border-t border-gray-200">
-                  <p className="text-xs text-gray-500 text-center">
-                    View all replies and notes in the tabs below
-                  </p>
-                </div>
-              </div>
-            ) : null}
-
-            {/* Tabs */}
-            <div className="bg-white rounded-xl shadow-sm">
-              <div className="border-b border-gray-200">
-                <div className="flex space-x-8 px-6">
-                  <button
-                    onClick={() => setActiveTab("replies")}
-                    className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                      activeTab === "replies"
-                        ? "border-blue-500 text-blue-600"
-                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                    }`}
-                  >
-                    <ChatBubbleLeftRightIcon className="h-5 w-5 inline-block mr-2" />
-                    Replies
-                  </button>
-                  <button
-                    onClick={() => setActiveTab("notes")}
-                    className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                      activeTab === "notes"
-                        ? "border-blue-500 text-blue-600"
-                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                    }`}
-                  >
-                    <DocumentTextIcon className="h-5 w-5 inline-block mr-2" />
-                    Internal Notes
-                  </button>
-                  <button
-                    onClick={() => setActiveTab("history")}
-                    className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                      activeTab === "history"
-                        ? "border-blue-500 text-blue-600"
-                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                    }`}
-                  >
-                    <ClockIcon className="h-5 w-5 inline-block mr-2" />
-                    History
-                  </button>
-                  {/* Task 6.5: Emails tab - only show for email tickets */}
-                  {ticket.submissionSource === "email" && (
+        {/* Main Content */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Left Column - Main Content */}
+            <div className="lg:col-span-2 space-y-6">
+              {/* Merged tickets panel — shown on the primary ticket */}
+              {!ticket.isMerged &&
+                ticket.mergedTickets &&
+                ticket.mergedTickets.length > 0 && (
+                  <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-purple-100">
                     <button
-                      onClick={() => setActiveTab("emails")}
+                      className="w-full flex items-center justify-between px-6 py-4 text-left"
+                      onClick={() => setMergedPanelExpanded((e) => !e)}
+                    >
+                      <div className="flex items-center gap-2">
+                        <ArrowsPointingInIcon className="h-5 w-5 text-purple-600" />
+                        <span className="font-semibold text-gray-900">
+                          Merged Tickets ({ticket.mergedTickets.length})
+                        </span>
+                      </div>
+                      <span className="text-gray-400 text-sm">
+                        {mergedPanelExpanded ? "▲" : "▼"}
+                      </span>
+                    </button>
+                    {mergedPanelExpanded && (
+                      <div className="border-t border-gray-100 divide-y divide-gray-100">
+                        {ticket.mergedTickets.map((m) => {
+                          const statusLabels: Record<number, string> = {
+                            1: "Open",
+                            2: "In Progress",
+                            3: "Pending",
+                            4: "Resolved",
+                            5: "Closed",
+                          };
+                          const statusNum =
+                            typeof m.status === "string"
+                              ? Number(m.status)
+                              : (m.status as number);
+                          const statusLabel =
+                            statusLabels[statusNum] ?? String(m.status);
+                          const statusColors: Record<number, string> = {
+                            1: "bg-blue-100 text-blue-700",
+                            2: "bg-yellow-100 text-yellow-700",
+                            3: "bg-orange-100 text-orange-700",
+                            4: "bg-green-100 text-green-700",
+                            5: "bg-gray-100 text-gray-600",
+                          };
+                          const statusColor =
+                            statusColors[statusNum] ??
+                            "bg-gray-100 text-gray-600";
+                          const priorityColor: Record<string, string> = {
+                            LOW: "bg-slate-100 text-slate-600",
+                            MEDIUM: "bg-yellow-100 text-yellow-700",
+                            HIGH: "bg-orange-100 text-orange-700",
+                            CRITICAL: "bg-red-100 text-red-700",
+                          };
+                          const catName = m.category
+                            ? typeof m.category === "string"
+                              ? m.category
+                              : (m.category as any).name
+                            : null;
+                          return (
+                            <div key={m._id} className="px-6 py-4">
+                              {/* Header row */}
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="flex-1 min-w-0">
+                                  <button
+                                    onClick={() =>
+                                      navigate(`/tickets/${m._id}`)
+                                    }
+                                    className="font-semibold text-purple-700 hover:underline text-sm"
+                                  >
+                                    #{m.ticketNumber}
+                                  </button>
+                                  <p className="text-sm font-medium text-gray-900 mt-0.5 line-clamp-2">
+                                    {m.subject ?? m.title ?? "—"}
+                                  </p>
+                                </div>
+                                <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                                  <span
+                                    className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusColor}`}
+                                  >
+                                    {statusLabel}
+                                  </span>
+                                  {m.priority && (
+                                    <span
+                                      className={`text-xs px-2 py-0.5 rounded-full font-medium ${priorityColor[m.priority.toUpperCase()] ?? "bg-gray-100 text-gray-600"}`}
+                                    >
+                                      {m.priority}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              {/* Meta row */}
+                              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+                                {m.assignedTo && (
+                                  <span>
+                                    <span className="font-medium text-gray-600">
+                                      Assigned:
+                                    </span>{" "}
+                                    {m.assignedTo.firstName}{" "}
+                                    {m.assignedTo.lastName}
+                                  </span>
+                                )}
+                                {catName && (
+                                  <span>
+                                    <span className="font-medium text-gray-600">
+                                      Category:
+                                    </span>{" "}
+                                    {catName}
+                                  </span>
+                                )}
+                                {m.createdAt && (
+                                  <span>
+                                    <span className="font-medium text-gray-600">
+                                      Created:
+                                    </span>{" "}
+                                    {new Date(m.createdAt).toLocaleDateString()}
+                                  </span>
+                                )}
+                                {m.mergedAt && (
+                                  <span>
+                                    <span className="font-medium text-gray-600">
+                                      Merged:
+                                    </span>{" "}
+                                    {new Date(m.mergedAt).toLocaleDateString()}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+              {/* Ticket Details Card */}
+              <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+                <div className="p-6 border-b border-gray-100">
+                  <div className="flex items-center space-x-2 mb-3">
+                    <div className="p-1.5 bg-blue-100 rounded-lg">
+                      <TicketIcon className="h-4 w-4 text-blue-600" />
+                    </div>
+                    <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                      Subject
+                    </span>
+                  </div>
+                  <h2 className="text-lg font-semibold text-gray-900 leading-tight">
+                    {ticket.title || ticket.subject || "No Subject"}
+                  </h2>
+                </div>
+
+                <div className="p-6">
+                  <div className="flex items-center space-x-2 mb-3">
+                    <div className="p-1.5 bg-purple-100 rounded-lg">
+                      <DocumentTextIcon className="h-4 w-4 text-purple-600" />
+                    </div>
+                    <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                      Description
+                    </span>
+                  </div>
+                  <div className="prose max-w-none">
+                    <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">
+                      {ticket.description}
+                    </p>
+                  </div>
+                </div>
+
+                {ticket.attachments && ticket.attachments.length > 0 && (
+                  <div className="mt-6 pt-6 border-t border-gray-200">
+                    <h3 className="text-sm font-medium text-gray-900 mb-3">
+                      Attachments
+                    </h3>
+                    <div className="grid grid-cols-2 gap-3">
+                      {ticket.attachments.map((attachment, index) => (
+                        <button
+                          key={index}
+                          type="button"
+                          onClick={() => openAttachment(attachment.path)}
+                          className="flex items-center space-x-2 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left w-full"
+                        >
+                          <PaperClipIcon className="h-5 w-5 text-gray-400 flex-shrink-0" />
+                          <span className="text-sm text-gray-700 truncate">
+                            {attachment.filename}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Latest Reply and Internal Note - Always Visible */}
+              {(ticket.threads && ticket.threads.length > 0) ||
+              (ticket.internalNotes && ticket.internalNotes.length > 0) ? (
+                <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                    Recent Activity
+                  </h3>
+
+                  {/* Latest Reply */}
+                  {ticket.threads &&
+                    ticket.threads.length > 0 &&
+                    (() => {
+                      const latestReply = [...ticket.threads].sort(
+                        (a, b) =>
+                          new Date(b.createdAt).getTime() -
+                          new Date(a.createdAt).getTime(),
+                      )[0];
+
+                      return (
+                        <div className="border-l-4 border-blue-500 pl-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center space-x-2">
+                              <ChatBubbleLeftRightIcon className="h-5 w-5 text-blue-600" />
+                              <span className="text-sm font-semibold text-gray-900">
+                                Latest Reply
+                              </span>
+                            </div>
+                            <span className="text-xs text-gray-500">
+                              {new Date(latestReply.createdAt).toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="bg-blue-50 rounded-lg p-3">
+                            <p className="text-xs font-medium text-gray-700 mb-1">
+                              {latestReply.createdBy.firstName}{" "}
+                              {latestReply.createdBy.lastName}
+                              {latestReply.createdBy.role && (
+                                <span className="text-gray-500">
+                                  {" "}
+                                  •{" "}
+                                  {typeof latestReply.createdBy.role ===
+                                  "string"
+                                    ? latestReply.createdBy.role
+                                    : (latestReply.createdBy.role as any).name}
+                                </span>
+                              )}
+                            </p>
+                            <p className="text-sm text-gray-800 whitespace-pre-wrap line-clamp-3">
+                              {latestReply.message}
+                            </p>
+                            {latestReply.attachments &&
+                              latestReply.attachments.length > 0 && (
+                                <div className="mt-2 flex items-center space-x-1 text-xs text-blue-600">
+                                  <PaperClipIcon className="h-3 w-3" />
+                                  <span>
+                                    {latestReply.attachments.length}{" "}
+                                    attachment(s)
+                                  </span>
+                                </div>
+                              )}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                  {/* Latest Internal Note */}
+                  {ticket.internalNotes &&
+                    ticket.internalNotes.length > 0 &&
+                    (() => {
+                      const latestNote = [...ticket.internalNotes].sort(
+                        (a, b) =>
+                          new Date(b.createdAt).getTime() -
+                          new Date(a.createdAt).getTime(),
+                      )[0];
+
+                      return (
+                        <div className="border-l-4 border-yellow-500 pl-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center space-x-2">
+                              <DocumentTextIcon className="h-5 w-5 text-yellow-600" />
+                              <span className="text-sm font-semibold text-gray-900">
+                                Latest Internal Note
+                              </span>
+                              <span className="text-xs text-gray-500 italic">
+                                (Staff only)
+                              </span>
+                            </div>
+                            <span className="text-xs text-gray-500">
+                              {new Date(latestNote.createdAt).toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="bg-yellow-50 rounded-lg p-3">
+                            <p className="text-xs font-medium text-gray-700 mb-1">
+                              {latestNote.createdBy.firstName}{" "}
+                              {latestNote.createdBy.lastName}
+                            </p>
+                            <p className="text-sm text-gray-800 whitespace-pre-wrap line-clamp-3">
+                              {latestNote.note}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                  <div className="pt-2 border-t border-gray-200">
+                    <p className="text-xs text-gray-500 text-center">
+                      View all replies and notes in the tabs below
+                    </p>
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Tabs */}
+              <div className="bg-white rounded-xl shadow-sm">
+                <div className="border-b border-gray-200">
+                  <div className="flex space-x-8 px-6">
+                    <button
+                      onClick={() => setActiveTab("replies")}
                       className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                        activeTab === "emails"
+                        activeTab === "replies"
                           ? "border-blue-500 text-blue-600"
                           : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                       }`}
                     >
-                      <svg
-                        className="h-5 w-5 inline-block mr-2"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                        />
-                      </svg>
-                      Email Thread (
-                      {
-                        emailCommunications.filter((e) => {
-                          const isOut =
-                            e.direction === "outgoing" ||
-                            e.direction === "outbound";
-                          const isConf = e.subject
-                            ?.toLowerCase()
-                            .includes("ticket created:");
-                          return !(isOut && isConf);
-                        }).length
-                      }
-                      )
+                      <ChatBubbleLeftRightIcon className="h-5 w-5 inline-block mr-2" />
+                      Replies
                     </button>
-                  )}
+                    <button
+                      onClick={() => setActiveTab("notes")}
+                      className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                        activeTab === "notes"
+                          ? "border-blue-500 text-blue-600"
+                          : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                      }`}
+                    >
+                      <DocumentTextIcon className="h-5 w-5 inline-block mr-2" />
+                      Internal Notes
+                    </button>
+                    <button
+                      onClick={() => setActiveTab("history")}
+                      className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                        activeTab === "history"
+                          ? "border-blue-500 text-blue-600"
+                          : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                      }`}
+                    >
+                      <ClockIcon className="h-5 w-5 inline-block mr-2" />
+                      History
+                    </button>
+                    {/* Task 6.5: Emails tab - only show for email tickets */}
+                    {ticket.submissionSource === "email" && (
+                      <button
+                        onClick={() => setActiveTab("emails")}
+                        className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                          activeTab === "emails"
+                            ? "border-blue-500 text-blue-600"
+                            : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                        }`}
+                      >
+                        <svg
+                          className="h-5 w-5 inline-block mr-2"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                          />
+                        </svg>
+                        Email Thread (
+                        {
+                          emailCommunications.filter((e) => {
+                            const isOut =
+                              e.direction === "outgoing" ||
+                              e.direction === "outbound";
+                            const isConf = e.subject
+                              ?.toLowerCase()
+                              .includes("ticket created:");
+                            return !(isOut && isConf);
+                          }).length
+                        }
+                        )
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              <div className="p-6">
-                {/* Replies Tab */}
-                {activeTab === "replies" && (
-                  <div className="space-y-6">
-                    {/* Closed Ticket Notice */}
-                    {(String(ticket.status) === "5" ||
-                      String(ticket.status).toLowerCase() === "closed") && (
-                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                        <div className="flex items-start">
-                          <ExclamationTriangleIcon className="h-5 w-5 text-yellow-600 mr-2 flex-shrink-0" />
-                          <div>
-                            <h4 className="text-sm font-semibold text-yellow-900">
-                              Query is Closed
-                            </h4>
-                            <p className="text-sm text-yellow-700 mt-1">
-                              This query is closed. To add a reply, please
-                              change the status to "Open" first.
-                            </p>
+                <div className="p-6">
+                  {/* Replies Tab */}
+                  {activeTab === "replies" && (
+                    <div className="space-y-6">
+                      {/* Closed Ticket Notice */}
+                      {(String(ticket.status) === "5" ||
+                        String(ticket.status).toLowerCase() === "closed") && (
+                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                          <div className="flex items-start">
+                            <ExclamationTriangleIcon className="h-5 w-5 text-yellow-600 mr-2 flex-shrink-0" />
+                            <div>
+                              <h4 className="text-sm font-semibold text-yellow-900">
+                                Query is Closed
+                              </h4>
+                              <p className="text-sm text-yellow-700 mt-1">
+                                This query is closed. To add a reply, please
+                                change the status to "Open" first.
+                              </p>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    )}
+                      )}
 
-                    {/* Reply Form (only if ticket is not closed) */}
-                    {!(
-                      String(ticket.status) === "5" ||
-                      String(ticket.status).toLowerCase() === "closed"
-                    ) && (
-                      <form onSubmit={handleSubmitReply} className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Add Reply
-                          </label>
-                          <textarea
-                            value={replyMessage}
-                            onChange={(e) => setReplyMessage(e.target.value)}
-                            rows={4}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            placeholder="Type your reply here..."
-                            required
-                          />
-                        </div>
+                      {/* Reply Form (only if ticket is not closed) */}
+                      {!(
+                        String(ticket.status) === "5" ||
+                        String(ticket.status).toLowerCase() === "closed"
+                      ) && (
+                        <form
+                          onSubmit={handleSubmitReply}
+                          className="space-y-4"
+                        >
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Add Reply
+                            </label>
+                            <textarea
+                              value={replyMessage}
+                              onChange={(e) => setReplyMessage(e.target.value)}
+                              rows={4}
+                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              placeholder="Type your reply here..."
+                              required
+                            />
+                          </div>
 
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Attachments (optional)
-                          </label>
-                          <input
-                            type="file"
-                            multiple
-                            onChange={(e) => {
-                              setReplyFiles(e.target.files);
-                              showFileUploadToast(e.target.files);
-                            }}
-                            className="w-full"
-                          />
-                        </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Attachments (optional)
+                            </label>
+                            <input
+                              type="file"
+                              multiple
+                              onChange={(e) => {
+                                setReplyFiles(e.target.files);
+                                showFileUploadToast(e.target.files);
+                              }}
+                              className="w-full"
+                            />
+                          </div>
 
-                        <div className="flex justify-end">
-                          <button
-                            type="submit"
-                            disabled={isSubmittingReply}
-                            className="flex items-center space-x-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            {isSubmittingReply ? (
-                              <>
-                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                                <span>Sending...</span>
-                              </>
-                            ) : (
-                              <>
-                                <PaperAirplaneIcon className="h-5 w-5" />
-                                <span>Send Reply</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      </form>
-                    )}
+                          <div className="flex justify-end">
+                            <button
+                              type="submit"
+                              disabled={isSubmittingReply}
+                              className="flex items-center space-x-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {isSubmittingReply ? (
+                                <>
+                                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                  <span>Sending...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <PaperAirplaneIcon className="h-5 w-5" />
+                                  <span>Send Reply</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </form>
+                      )}
 
-                    {/* Task 7.5: Combined Timeline - Comments (Email Replies) + Threads */}
-                    {((ticket.comments && ticket.comments.length > 0) ||
-                      (ticket.threads && ticket.threads.length > 0)) && (
-                      <div className="space-y-4 mt-8">
-                        <h4 className="text-base font-semibold text-gray-900 border-b pb-2">
-                          Full Conversation (
-                          {(ticket.comments?.length || 0) +
-                            (ticket.threads?.length || 0)}{" "}
-                          messages)
-                        </h4>
+                      {/* Combined Timeline - bifurcated: primary first, then merged secondary sections */}
+                      {((ticket.comments && ticket.comments.length > 0) ||
+                        (ticket.threads && ticket.threads.length > 0)) &&
+                        (() => {
+                          // Merge all items into a unified list with type tag
+                          type ConvItem =
+                            | {
+                                kind: "comment";
+                                data: Comment;
+                                resolvedFrom: string | null;
+                              }
+                            | {
+                                kind: "thread";
+                                data: Thread;
+                                resolvedFrom: string | null;
+                              };
 
-                        {/* Task 7.5: Display Email Replies (from comments) */}
-                        {ticket.comments &&
-                          ticket.comments.length > 0 &&
-                          ticket.comments
-                            .filter((comment) => comment.text?.startsWith("📧"))
+                          // Build a lookup: threadId → ticketNumber from merged (secondary) tickets.
+                          // Thread _id values are preserved during merge (via toObject() spread),
+                          // so any primary thread whose _id appears in a secondary ticket came from there.
+                          const mergedThreadIdMap = new Map<string, string>();
+                          (ticket.mergedTickets ?? []).forEach((mt) => {
+                            (mt.threads ?? []).forEach((t) => {
+                              if (t._id)
+                                mergedThreadIdMap.set(t._id, mt.ticketNumber);
+                            });
+                          });
+
+                          // Helper: detect which ticket an item came from.
+                          // 1. Use mergedFrom field (new merges after schema fix)
+                          // 2. Fallback for threads: cross-reference _id against merged tickets' thread lists
+                          // 3. Fallback for comments: "[From MHCET-XXXX]" text prefix (existing data)
+                          const getResolvedFrom = (
+                            item: Comment | Thread,
+                          ): string | null => {
+                            if ((item as any).mergedFrom)
+                              return (item as any).mergedFrom as string;
+                            if ("message" in item) {
+                              // Thread: use ID cross-reference against secondary tickets
+                              const fromId = (item as Thread)._id
+                                ? mergedThreadIdMap.get((item as Thread)._id!)
+                                : undefined;
+                              if (fromId) return fromId;
+                              // Also check message prefix as last resort
+                              const m = (item as Thread).message?.match(
+                                /^\[From ([^\]]+)\]/,
+                              );
+                              return m ? m[1] : null;
+                            }
+                            if ("text" in item) {
+                              // Comment: use text prefix
+                              const m = item.text?.match(/^\[From ([^\]]+)\]/);
+                              return m ? m[1] : null;
+                            }
+                            return null;
+                          };
+
+                          const allItems: ConvItem[] = [
+                            ...(ticket.comments ?? []).map((c) => ({
+                              kind: "comment" as const,
+                              data: c,
+                              resolvedFrom: getResolvedFrom(c),
+                            })),
+                            ...(ticket.threads ?? []).map((t) => ({
+                              kind: "thread" as const,
+                              data: t,
+                              resolvedFrom: getResolvedFrom(t),
+                            })),
+                          ];
+
+                          // Primary items: no resolvedFrom, and skip the system merge-summary comment
+                          const primaryItems = allItems
+                            .filter((i) => {
+                              if (i.resolvedFrom) return false;
+                              if (
+                                i.kind === "comment" &&
+                                i.data.isSystemComment
+                              )
+                                return false;
+                              return true;
+                            })
                             .sort(
                               (a, b) =>
-                                new Date(b.createdAt).getTime() -
-                                new Date(a.createdAt).getTime(),
-                            )
-                            .map((comment) => {
-                              // Extract email and content from comment text
-                              const emailMatch = comment.text.match(
-                                /📧 Email reply sent to ([^:]+):\n\n(.+)/s,
-                              );
-                              const recipientEmail = emailMatch
-                                ? emailMatch[1].trim()
-                                : "";
-                              const replyContent = emailMatch
-                                ? emailMatch[2].trim()
-                                : comment.text;
+                                new Date(a.data.createdAt).getTime() -
+                                new Date(b.data.createdAt).getTime(),
+                            );
 
-                              return (
-                                <div
-                                  key={comment._id}
-                                  className="bg-blue-50 rounded-lg p-4 border-l-4 border-blue-500"
-                                >
-                                  <div className="flex items-start space-x-3">
-                                    <div className="flex-shrink-0">
-                                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-blue-400 flex items-center justify-center text-white font-semibold">
-                                        {comment.createdBy?.firstName?.charAt(
-                                          0,
-                                        ) || "A"}
-                                      </div>
+                          // Group secondary items by source ticket number
+                          const secondaryMap = new Map<string, ConvItem[]>();
+                          allItems
+                            .filter((i) => !!i.resolvedFrom)
+                            .forEach((i) => {
+                              const key = i.resolvedFrom!;
+                              if (!secondaryMap.has(key))
+                                secondaryMap.set(key, []);
+                              secondaryMap.get(key)!.push(i);
+                            });
+                          // Sort each group by date ascending
+                          secondaryMap.forEach((items, key) => {
+                            secondaryMap.set(
+                              key,
+                              items.sort(
+                                (a, b) =>
+                                  new Date(a.data.createdAt).getTime() -
+                                  new Date(b.data.createdAt).getTime(),
+                              ),
+                            );
+                          });
+
+                          // Count visible items only (exclude system comments)
+                          const visibleCount =
+                            primaryItems.length +
+                            Array.from(secondaryMap.values()).reduce(
+                              (s, arr) => s + arr.length,
+                              0,
+                            );
+
+                          const renderCommentItem = (
+                            comment: Comment,
+                            resolvedFrom: string | null,
+                          ) => {
+                            const emailMatch = comment.text.match(
+                              /📧 Email reply sent to ([^:]+):\n\n(.+)/s,
+                            );
+                            const recipientEmail = emailMatch
+                              ? emailMatch[1].trim()
+                              : "";
+                            // For legacy merged comments, strip the "[From TICKET] " prefix from display
+                            let displayText = emailMatch
+                              ? emailMatch[2].trim()
+                              : comment.text;
+                            if (!emailMatch && resolvedFrom) {
+                              displayText = displayText.replace(
+                                /^\[From [^\]]+\]\s*/,
+                                "",
+                              );
+                            }
+                            const isEmail = comment.text?.startsWith("📧");
+                            return (
+                              <div
+                                key={comment._id}
+                                className={`rounded-lg p-4 border-l-4 ${isEmail ? "bg-blue-50 border-blue-500" : "bg-gray-50 border-gray-300"}`}
+                              >
+                                <div className="flex items-start space-x-3">
+                                  <div className="flex-shrink-0">
+                                    <div
+                                      className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold ${isEmail ? "bg-gradient-to-br from-blue-600 to-blue-400" : "bg-gradient-to-br from-gray-500 to-gray-600"}`}
+                                    >
+                                      {comment.createdBy?.firstName?.charAt(
+                                        0,
+                                      ) || "A"}
                                     </div>
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center justify-between mb-2">
-                                        <div className="flex items-center gap-2">
-                                          <p className="text-sm font-medium text-gray-900">
-                                            {comment.createdBy?.firstName}{" "}
-                                            {comment.createdBy?.lastName}
-                                          </p>
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <div className="flex items-center gap-2">
+                                        <p className="text-sm font-medium text-gray-900">
+                                          {comment.createdBy?.firstName}{" "}
+                                          {comment.createdBy?.lastName}
+                                        </p>
+                                        {isEmail && (
                                           <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
                                             📧 Sent via Email
                                           </span>
-                                        </div>
-                                        <p className="text-xs text-gray-500">
-                                          {new Date(
-                                            comment.createdAt,
-                                          ).toLocaleString("en-US", {
-                                            year: "numeric",
-                                            month: "short",
-                                            day: "numeric",
-                                            hour: "2-digit",
-                                            minute: "2-digit",
-                                          })}
-                                        </p>
+                                        )}
                                       </div>
-                                      {recipientEmail && (
-                                        <p className="text-xs text-blue-700 mb-2">
-                                          To: {recipientEmail}
-                                        </p>
-                                      )}
-                                      <div className="text-sm text-gray-700 whitespace-pre-wrap break-words">
-                                        {replyContent}
-                                      </div>
+                                      <p className="text-xs text-gray-500">
+                                        {new Date(
+                                          comment.createdAt,
+                                        ).toLocaleString("en-US", {
+                                          year: "numeric",
+                                          month: "short",
+                                          day: "numeric",
+                                          hour: "2-digit",
+                                          minute: "2-digit",
+                                        })}
+                                      </p>
+                                    </div>
+                                    {recipientEmail && (
+                                      <p className="text-xs text-blue-700 mb-2">
+                                        To: {recipientEmail}
+                                      </p>
+                                    )}
+                                    <div className="text-sm text-gray-700 whitespace-pre-wrap break-words">
+                                      {displayText}
                                     </div>
                                   </div>
                                 </div>
-                              );
-                            })}
+                              </div>
+                            );
+                          };
 
-                        {/* Original Threads/Replies */}
-                        {ticket.threads &&
-                          ticket.threads.length > 0 &&
-                          ticket.threads
-                            .sort(
-                              (a, b) =>
-                                new Date(b.createdAt).getTime() -
-                                new Date(a.createdAt).getTime(),
-                            )
-                            .map((thread) => (
+                          const renderThreadItem = (
+                            thread: Thread,
+                            resolvedFrom: string | null,
+                          ) => {
+                            // Strip "[From TICKET] " prefix for legacy threads displayed under their section
+                            let displayMessage = thread.message;
+                            if (resolvedFrom) {
+                              displayMessage = displayMessage?.replace(
+                                /^\[From [^\]]+\]\s*/,
+                                "",
+                              );
+                            }
+                            return (
                               <div
                                 key={thread._id}
                                 className="bg-gray-50 rounded-lg p-4 border border-gray-200"
@@ -1979,10 +2306,8 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                                       </div>
                                     </div>
                                     <p className="text-gray-700 whitespace-pre-wrap text-sm">
-                                      {thread.message}
+                                      {displayMessage}
                                     </p>
-
-                                    {/* Thread Attachments */}
                                     {thread.attachments &&
                                       thread.attachments.length > 0 && (
                                         <div className="mt-3 space-y-2">
@@ -2006,223 +2331,600 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                                   </div>
                                 </div>
                               </div>
-                            ))}
-                      </div>
-                    )}
-                  </div>
-                )}
+                            );
+                          };
 
-                {/* Internal Notes Tab */}
-                {activeTab === "notes" && (
-                  <div className="space-y-6">
-                    {/* Add Note Form */}
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Add Internal Note
-                          <span className="text-xs text-gray-500 ml-2">
-                            (Not visible to students)
-                          </span>
-                        </label>
-                        <textarea
-                          value={noteText}
-                          onChange={(e) => setNoteText(e.target.value)}
-                          rows={3}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          placeholder="Add internal notes for your team..."
-                        />
-                      </div>
+                          const renderItem = (item: ConvItem) =>
+                            item.kind === "comment"
+                              ? renderCommentItem(item.data, item.resolvedFrom)
+                              : renderThreadItem(item.data, item.resolvedFrom);
 
-                      <div className="flex justify-end">
-                        <button
-                          onClick={handleAddNote}
-                          disabled={isAddingNote || !noteText.trim()}
-                          className="flex items-center space-x-2 px-6 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {isAddingNote ? (
-                            <>
-                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                              <span>Adding...</span>
-                            </>
-                          ) : (
-                            <>
-                              <DocumentTextIcon className="h-5 w-5" />
-                              <span>Add Note</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </div>
+                          return (
+                            <div className="space-y-4 mt-8">
+                              <h4 className="text-base font-semibold text-gray-900 border-b pb-2">
+                                Full Conversation ({visibleCount} message
+                                {visibleCount !== 1 ? "s" : ""})
+                              </h4>
 
-                    {/* Full Internal Notes List */}
-                    {ticket.internalNotes &&
-                      ticket.internalNotes.length > 0 && (
-                        <div className="space-y-4 mt-8">
-                          <h4 className="text-base font-semibold text-gray-900 border-b pb-2">
-                            All Internal Notes ({ticket.internalNotes.length}{" "}
-                            {ticket.internalNotes.length === 1
-                              ? "note"
-                              : "notes"}
-                            )
-                          </h4>
-                          {ticket.internalNotes
-                            .sort(
-                              (a, b) =>
-                                new Date(b.createdAt).getTime() -
-                                new Date(a.createdAt).getTime(),
-                            )
-                            .map((note) => (
-                              <div
-                                key={note._id}
-                                className="bg-yellow-50 rounded-lg p-4 border border-yellow-200"
-                              >
-                                <div className="flex items-start space-x-3">
-                                  <div className="flex-shrink-0">
-                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-yellow-500 to-orange-600 flex items-center justify-center text-white font-semibold">
-                                      {note.createdBy?.firstName?.charAt(0) ||
-                                        "?"}
+                              {/* Primary ticket conversation */}
+                              {primaryItems.length > 0 && (
+                                <div className="space-y-3">
+                                  {secondaryMap.size > 0 && (
+                                    <div className="flex items-center gap-3 mb-1">
+                                      <div className="h-px flex-1 bg-gray-200" />
+                                      <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-2">
+                                        #{ticket.ticketNumber} — Primary Ticket
+                                      </span>
+                                      <div className="h-px flex-1 bg-gray-200" />
                                     </div>
+                                  )}
+                                  {primaryItems.map(renderItem)}
+                                </div>
+                              )}
+
+                              {/* Secondary ticket conversations — one section per source ticket */}
+                              {Array.from(secondaryMap.entries()).map(
+                                ([ticketNum, items]) => (
+                                  <div key={ticketNum} className="space-y-3">
+                                    <div className="flex items-center gap-3 my-2">
+                                      <div className="h-px flex-1 bg-purple-200" />
+                                      <div className="flex items-center gap-1.5 px-3 py-1 bg-purple-50 border border-purple-200 rounded-full">
+                                        <ArrowsPointingInIcon className="h-3.5 w-3.5 text-purple-600" />
+                                        <span className="text-xs font-semibold text-purple-700">
+                                          Merged from #{ticketNum}
+                                        </span>
+                                      </div>
+                                      <div className="h-px flex-1 bg-purple-200" />
+                                    </div>
+                                    {items.map(renderItem)}
                                   </div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center justify-between mb-2">
-                                      <div>
-                                        <p className="text-sm font-medium text-gray-900">
-                                          {note.createdBy?.firstName}{" "}
-                                          {note.createdBy?.lastName}
-                                          <span className="ml-2 text-xs text-yellow-700 font-semibold">
-                                            (STAFF ONLY)
-                                          </span>
-                                        </p>
-                                        <p className="text-xs text-gray-600">
-                                          {new Date(
-                                            note.createdAt,
-                                          ).toLocaleString()}
-                                        </p>
+                                ),
+                              )}
+                            </div>
+                          );
+                        })()}
+                    </div>
+                  )}
+
+                  {/* Internal Notes Tab */}
+                  {activeTab === "notes" && (
+                    <div className="space-y-6">
+                      {/* Add Note Form */}
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Add Internal Note
+                            <span className="text-xs text-gray-500 ml-2">
+                              (Not visible to students)
+                            </span>
+                          </label>
+                          <textarea
+                            value={noteText}
+                            onChange={(e) => setNoteText(e.target.value)}
+                            rows={3}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="Add internal notes for your team..."
+                          />
+                        </div>
+
+                        <div className="flex justify-end">
+                          <button
+                            onClick={handleAddNote}
+                            disabled={isAddingNote || !noteText.trim()}
+                            className="flex items-center space-x-2 px-6 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {isAddingNote ? (
+                              <>
+                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                <span>Adding...</span>
+                              </>
+                            ) : (
+                              <>
+                                <DocumentTextIcon className="h-5 w-5" />
+                                <span>Add Note</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Full Internal Notes List */}
+                      {ticket.internalNotes &&
+                        ticket.internalNotes.length > 0 && (
+                          <div className="space-y-4 mt-8">
+                            <h4 className="text-base font-semibold text-gray-900 border-b pb-2">
+                              All Internal Notes ({ticket.internalNotes.length}{" "}
+                              {ticket.internalNotes.length === 1
+                                ? "note"
+                                : "notes"}
+                              )
+                            </h4>
+                            {ticket.internalNotes
+                              .sort(
+                                (a, b) =>
+                                  new Date(b.createdAt).getTime() -
+                                  new Date(a.createdAt).getTime(),
+                              )
+                              .map((note) => (
+                                <div
+                                  key={note._id}
+                                  className="bg-yellow-50 rounded-lg p-4 border border-yellow-200"
+                                >
+                                  <div className="flex items-start space-x-3">
+                                    <div className="flex-shrink-0">
+                                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-yellow-500 to-orange-600 flex items-center justify-center text-white font-semibold">
+                                        {note.createdBy?.firstName?.charAt(0) ||
+                                          "?"}
                                       </div>
                                     </div>
-                                    <p className="text-gray-700 whitespace-pre-wrap text-sm">
-                                      {note.note}
-                                    </p>
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                        </div>
-                      )}
-                  </div>
-                )}
-
-                {/* History Tab */}
-                {activeTab === "history" && (
-                  <div className="space-y-6">
-                    {/* Change History */}
-                    {(ticket as any).changeHistory &&
-                    (ticket as any).changeHistory.length > 0 ? (
-                      <div className="space-y-3">
-                        <h3 className="text-sm font-medium text-gray-900">
-                          Change History
-                        </h3>
-                        {[...(ticket as any).changeHistory]
-                          .reverse()
-                          .map((change: any) => (
-                            <div
-                              key={change._id}
-                              className="p-4 bg-gray-50 border border-gray-200 rounded-lg"
-                            >
-                              <div className="flex items-start space-x-3">
-                                <ClockIcon className="h-5 w-5 text-gray-600 flex-shrink-0 mt-1" />
-                                <div className="flex-1">
-                                  <div className="flex items-start justify-between">
-                                    <div>
-                                      <p className="text-sm font-medium text-gray-900">
-                                        {change.field}{" "}
-                                        {change.changeType === "add"
-                                          ? "Added"
-                                          : change.changeType === "remove"
-                                            ? "Removed"
-                                            : "Updated"}
-                                      </p>
-                                      <p className="text-xs text-gray-600 mt-1">
-                                        By {change.changedBy?.firstName}{" "}
-                                        {change.changedBy?.lastName}
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center justify-between mb-2">
+                                        <div>
+                                          <p className="text-sm font-medium text-gray-900">
+                                            {note.createdBy?.firstName}{" "}
+                                            {note.createdBy?.lastName}
+                                            <span className="ml-2 text-xs text-yellow-700 font-semibold">
+                                              (STAFF ONLY)
+                                            </span>
+                                          </p>
+                                          <p className="text-xs text-gray-600">
+                                            {new Date(
+                                              note.createdAt,
+                                            ).toLocaleString()}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <p className="text-gray-700 whitespace-pre-wrap text-sm">
+                                        {note.note}
                                       </p>
                                     </div>
-                                    <p className="text-xs text-gray-500">
-                                      {new Date(
-                                        change.changedAt,
-                                      ).toLocaleString()}
-                                    </p>
                                   </div>
-                                  <div className="mt-2 text-sm">
-                                    {change.changeType === "add" ? (
-                                      <span className="text-green-700">
-                                        +{" "}
-                                        {formatChangeValue(
-                                          change.field,
-                                          change.newValue,
-                                        )}
-                                      </span>
-                                    ) : change.changeType === "remove" ? (
-                                      <span className="text-red-700">
-                                        -{" "}
-                                        {formatChangeValue(
-                                          change.field,
-                                          change.oldValue,
-                                        )}
-                                      </span>
-                                    ) : (
-                                      <div className="space-y-1">
-                                        <span className="text-red-700 line-through">
-                                          {formatChangeValue(
-                                            change.field,
-                                            change.oldValue,
-                                          )}
-                                        </span>
-                                        <span className="mx-2">→</span>
+                                </div>
+                              ))}
+                          </div>
+                        )}
+                    </div>
+                  )}
+
+                  {/* History Tab */}
+                  {activeTab === "history" && (
+                    <div className="space-y-6">
+                      {/* Change History */}
+                      {(ticket as any).changeHistory &&
+                      (ticket as any).changeHistory.length > 0 ? (
+                        <div className="space-y-3">
+                          <h3 className="text-sm font-medium text-gray-900">
+                            Change History
+                          </h3>
+                          {[...(ticket as any).changeHistory]
+                            .reverse()
+                            .map((change: any) => (
+                              <div
+                                key={change._id}
+                                className="p-4 bg-gray-50 border border-gray-200 rounded-lg"
+                              >
+                                <div className="flex items-start space-x-3">
+                                  <ClockIcon className="h-5 w-5 text-gray-600 flex-shrink-0 mt-1" />
+                                  <div className="flex-1">
+                                    <div className="flex items-start justify-between">
+                                      <div>
+                                        <p className="text-sm font-medium text-gray-900">
+                                          {change.field}{" "}
+                                          {change.changeType === "add"
+                                            ? "Added"
+                                            : change.changeType === "remove"
+                                              ? "Removed"
+                                              : "Updated"}
+                                        </p>
+                                        <p className="text-xs text-gray-600 mt-1">
+                                          By {change.changedBy?.firstName}{" "}
+                                          {change.changedBy?.lastName}
+                                        </p>
+                                      </div>
+                                      <p className="text-xs text-gray-500">
+                                        {new Date(
+                                          change.changedAt,
+                                        ).toLocaleString()}
+                                      </p>
+                                    </div>
+                                    <div className="mt-2 text-sm">
+                                      {change.changeType === "add" ? (
                                         <span className="text-green-700">
+                                          +{" "}
                                           {formatChangeValue(
                                             change.field,
                                             change.newValue,
                                           )}
                                         </span>
-                                      </div>
-                                    )}
+                                      ) : change.changeType === "remove" ? (
+                                        <span className="text-red-700">
+                                          -{" "}
+                                          {formatChangeValue(
+                                            change.field,
+                                            change.oldValue,
+                                          )}
+                                        </span>
+                                      ) : (
+                                        <div className="space-y-1">
+                                          <span className="text-red-700 line-through">
+                                            {formatChangeValue(
+                                              change.field,
+                                              change.oldValue,
+                                            )}
+                                          </span>
+                                          <span className="mx-2">→</span>
+                                          <span className="text-green-700">
+                                            {formatChangeValue(
+                                              change.field,
+                                              change.newValue,
+                                            )}
+                                          </span>
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
                               </div>
-                            </div>
-                          ))}
-                      </div>
-                    ) : null}
+                            ))}
+                        </div>
+                      ) : null}
 
-                    {/* Escalation History */}
-                    {ticket.escalationHistory &&
-                    ticket.escalationHistory.length > 0 ? (
-                      <div className="space-y-3">
-                        <h3 className="text-sm font-medium text-gray-900">
-                          Escalation Timeline
+                      {/* Escalation History */}
+                      {ticket.escalationHistory &&
+                      ticket.escalationHistory.length > 0 ? (
+                        <div className="space-y-3">
+                          <h3 className="text-sm font-medium text-gray-900">
+                            Escalation Timeline
+                          </h3>
+
+                          {/* Initial Creation Record */}
+                          {(() => {
+                            const createdAt = new Date(ticket.createdAt);
+                            const firstEscalation = ticket.escalationHistory[0];
+                            const firstEscalationTime = new Date(
+                              firstEscalation.escalatedAt,
+                            );
+
+                            const timeAtL0 =
+                              firstEscalationTime.getTime() -
+                              createdAt.getTime();
+                            const hours = Math.floor(
+                              timeAtL0 / (1000 * 60 * 60),
+                            );
+                            const minutes = Math.floor(
+                              (timeAtL0 % (1000 * 60 * 60)) / (1000 * 60),
+                            );
+
+                            return (
+                              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                <div className="flex items-start space-x-3">
+                                  <svg
+                                    className="h-5 w-5 text-blue-600 flex-shrink-0 mt-1"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M12 4v16m8-8H4"
+                                    />
+                                  </svg>
+                                  <div className="flex-1">
+                                    <div className="flex items-center justify-between">
+                                      <p className="text-sm font-medium text-gray-900">
+                                        Ticket Created
+                                      </p>
+                                      <span className="text-xs font-medium text-blue-600 bg-blue-100 px-2 py-1 rounded">
+                                        Initial Level
+                                      </span>
+                                    </div>
+                                    <p className="text-xs text-gray-600 mt-1">
+                                      Created by {ticket.createdBy?.firstName}{" "}
+                                      {ticket.createdBy?.lastName}
+                                    </p>
+                                    <div className="mt-3 grid grid-cols-2 gap-4 text-xs">
+                                      <div>
+                                        <p className="text-gray-500">
+                                          Created At:
+                                        </p>
+                                        <p className="font-medium text-gray-900">
+                                          {createdAt.toLocaleDateString()}{" "}
+                                          {createdAt.toLocaleTimeString()}
+                                        </p>
+                                      </div>
+                                      <div>
+                                        <p className="text-gray-500">
+                                          Time Before Escalation:
+                                        </p>
+                                        <p className="font-medium text-gray-900">
+                                          {hours > 0 ? `${hours}h ` : ""}
+                                          {minutes}m
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })()}
+
+                          {/* Escalation Records */}
+                          {ticket.escalationHistory?.map((record, index) => {
+                            // Calculate time at this level (time until next escalation or now)
+                            const escalatedAt = new Date(record.escalatedAt);
+                            const nextEscalation =
+                              ticket.escalationHistory?.[index + 1];
+                            const endTime = nextEscalation
+                              ? new Date(nextEscalation.escalatedAt)
+                              : new Date();
+
+                            const timeAtLevel =
+                              endTime.getTime() - escalatedAt.getTime();
+                            const hours = Math.floor(
+                              timeAtLevel / (1000 * 60 * 60),
+                            );
+                            const minutes = Math.floor(
+                              (timeAtLevel % (1000 * 60 * 60)) / (1000 * 60),
+                            );
+
+                            const isAutoEscalation =
+                              record.escalatedBy === null ||
+                              record.escalatedBy === undefined;
+
+                            return (
+                              <div
+                                key={record._id}
+                                className="p-4 bg-orange-50 border border-orange-200 rounded-lg"
+                              >
+                                <div className="flex items-start space-x-3">
+                                  <ArrowUpIcon className="h-5 w-5 text-orange-600 flex-shrink-0 mt-1" />
+                                  <div className="flex-1">
+                                    <div className="flex items-center justify-between">
+                                      <p className="text-sm font-medium text-gray-900">
+                                        Escalated to{" "}
+                                        <span className="text-orange-700">
+                                          {record.escalatedTo.firstName}{" "}
+                                          {record.escalatedTo.lastName}
+                                        </span>
+                                      </p>
+                                      <span className="text-xs font-medium text-orange-600 bg-orange-100 px-2 py-1 rounded">
+                                        Level {index + 1}
+                                      </span>
+                                    </div>
+                                    <p className="text-xs text-gray-600 mt-1">
+                                      {isAutoEscalation ? (
+                                        <span className="inline-flex items-center">
+                                          🤖{" "}
+                                          <span className="ml-1">
+                                            Auto-escalated by system
+                                          </span>
+                                        </span>
+                                      ) : (
+                                        <>
+                                          By {record.escalatedBy.firstName}{" "}
+                                          {record.escalatedBy.lastName}
+                                        </>
+                                      )}
+                                    </p>
+                                    <p className="text-sm text-gray-700 mt-2">
+                                      {record.reason}
+                                    </p>
+                                    <div className="mt-3 grid grid-cols-2 gap-4 text-xs">
+                                      <div>
+                                        <p className="text-gray-500">
+                                          Escalated At:
+                                        </p>
+                                        <p className="font-medium text-gray-900">
+                                          {escalatedAt.toLocaleDateString()}{" "}
+                                          {escalatedAt.toLocaleTimeString()}
+                                        </p>
+                                      </div>
+                                      <div>
+                                        <p className="text-gray-500">
+                                          Time at this Level:
+                                        </p>
+                                        <p className="font-medium text-gray-900">
+                                          {hours > 0 ? `${hours}h ` : ""}
+                                          {minutes}m
+                                          {!nextEscalation && (
+                                            <span className="text-orange-600 ml-1">
+                                              (ongoing)
+                                            </span>
+                                          )}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+
+                      {/* Change History */}
+                      {ticket.changeHistory &&
+                      ticket.changeHistory.length > 0 ? (
+                        <div className="space-y-3 mt-6">
+                          <h3 className="text-sm font-medium text-gray-900">
+                            Change History
+                          </h3>
+
+                          {ticket.changeHistory.map((change) => {
+                            const changedAt = new Date(change.changedAt);
+
+                            // Format field name for display
+                            const fieldDisplayNames: Record<string, string> = {
+                              status: "Status",
+                              priority: "Priority",
+                              assignedTo: "Assigned Agent",
+                              category: "Category",
+                              tags: "Tags",
+                              subject: "Subject",
+                              description: "Description",
+                            };
+
+                            const fieldDisplay =
+                              fieldDisplayNames[change.field] || change.field;
+
+                            // Choose icon and color based on field
+                            let iconColor = "text-gray-600";
+                            let bgColor = "bg-gray-50";
+                            let borderColor = "border-gray-200";
+                            let icon = null;
+
+                            if (change.field === "status") {
+                              iconColor = "text-green-600";
+                              bgColor = "bg-green-50";
+                              borderColor = "border-green-200";
+                              icon = (
+                                <CheckCircleIcon className="h-5 w-5 text-green-600 flex-shrink-0 mt-1" />
+                              );
+                            } else if (change.field === "priority") {
+                              iconColor = "text-red-600";
+                              bgColor = "bg-red-50";
+                              borderColor = "border-red-200";
+                              icon = (
+                                <ExclamationTriangleIcon className="h-5 w-5 text-red-600 flex-shrink-0 mt-1" />
+                              );
+                            } else if (change.field === "assignedTo") {
+                              iconColor = "text-blue-600";
+                              bgColor = "bg-blue-50";
+                              borderColor = "border-blue-200";
+                              icon = (
+                                <UserIcon className="h-5 w-5 text-blue-600 flex-shrink-0 mt-1" />
+                              );
+                            } else if (
+                              change.field === "tags" ||
+                              change.field === "category"
+                            ) {
+                              iconColor = "text-purple-600";
+                              bgColor = "bg-purple-50";
+                              borderColor = "border-purple-200";
+                              icon = (
+                                <TagIcon className="h-5 w-5 text-purple-600 flex-shrink-0 mt-1" />
+                              );
+                            } else {
+                              icon = (
+                                <DocumentTextIcon className="h-5 w-5 text-gray-600 flex-shrink-0 mt-1" />
+                              );
+                            }
+
+                            return (
+                              <div
+                                key={change._id}
+                                className={`p-4 ${bgColor} border ${borderColor} rounded-lg`}
+                              >
+                                <div className="flex items-start space-x-3">
+                                  {icon}
+                                  <div className="flex-1">
+                                    <div className="flex items-center justify-between">
+                                      <p className="text-sm font-medium text-gray-900">
+                                        {fieldDisplay}{" "}
+                                        {change.changeType === "update"
+                                          ? "Updated"
+                                          : change.changeType === "add"
+                                            ? "Added"
+                                            : "Removed"}
+                                      </p>
+                                      <span
+                                        className={`text-xs font-medium ${iconColor} px-2 py-1 rounded`}
+                                      >
+                                        {change.changeType}
+                                      </span>
+                                    </div>
+                                    <p className="text-xs text-gray-600 mt-1">
+                                      By {change.changedBy.firstName}{" "}
+                                      {change.changedBy.lastName}
+                                    </p>
+                                    <div className="mt-3 grid grid-cols-2 gap-4 text-xs">
+                                      <div>
+                                        <p className="text-gray-500">From:</p>
+                                        <p className="font-medium text-gray-900">
+                                          {change.oldValue || (
+                                            <span className="text-gray-400 italic">
+                                              Empty
+                                            </span>
+                                          )}
+                                        </p>
+                                      </div>
+                                      <div>
+                                        <p className="text-gray-500">To:</p>
+                                        <p className="font-medium text-gray-900">
+                                          {change.newValue || (
+                                            <span className="text-gray-400 italic">
+                                              Empty
+                                            </span>
+                                          )}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <div className="mt-2">
+                                      <p className="text-gray-500 text-xs">
+                                        Changed At:
+                                      </p>
+                                      <p className="font-medium text-gray-900 text-xs">
+                                        {changedAt.toLocaleDateString()}{" "}
+                                        {changedAt.toLocaleTimeString()}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+
+                      {/* No history message */}
+                      {(!ticket.changeHistory ||
+                        ticket.changeHistory.length === 0) &&
+                        (!ticket.escalationHistory ||
+                          ticket.escalationHistory.length === 0) && (
+                          <p className="text-center text-gray-500 py-8">
+                            No history yet
+                          </p>
+                        )}
+                    </div>
+                  )}
+
+                  {/* Task 6.5: Email Communications Tab */}
+                  {activeTab === "emails" && (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-semibold text-gray-900">
+                          Email Communication Thread
                         </h3>
+                        {loadingEmails && (
+                          <span className="text-sm text-gray-500">
+                            Loading...
+                          </span>
+                        )}
+                      </div>
 
-                        {/* Initial Creation Record */}
-                        {(() => {
-                          const createdAt = new Date(ticket.createdAt);
-                          const firstEscalation = ticket.escalationHistory[0];
-                          const firstEscalationTime = new Date(
-                            firstEscalation.escalatedAt,
-                          );
+                      {/* Filter out automatic ticket confirmation emails (outgoing with "Ticket Created:" subject) */}
+                      {(() => {
+                        const filteredEmails = emailCommunications.filter(
+                          (email) => {
+                            // Exclude automatic outgoing confirmation emails
+                            const isOutgoing =
+                              email.direction === "outgoing" ||
+                              email.direction === "outbound";
+                            const isConfirmationEmail = email.subject
+                              ?.toLowerCase()
+                              .includes("ticket created:");
+                            return !(isOutgoing && isConfirmationEmail);
+                          },
+                        );
 
-                          const timeAtL0 =
-                            firstEscalationTime.getTime() - createdAt.getTime();
-                          const hours = Math.floor(timeAtL0 / (1000 * 60 * 60));
-                          const minutes = Math.floor(
-                            (timeAtL0 % (1000 * 60 * 60)) / (1000 * 60),
-                          );
-
-                          return (
-                            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                              <div className="flex items-start space-x-3">
+                        return (
+                          <>
+                            {!loadingEmails && filteredEmails.length === 0 && (
+                              <div className="text-center py-12 bg-gray-50 rounded-lg">
                                 <svg
-                                  className="h-5 w-5 text-blue-600 flex-shrink-0 mt-1"
+                                  className="mx-auto h-12 w-12 text-gray-400"
                                   fill="none"
                                   viewBox="0 0 24 24"
                                   stroke="currentColor"
@@ -2231,845 +2933,781 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
                                     strokeWidth={2}
-                                    d="M12 4v16m8-8H4"
+                                    d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
                                   />
                                 </svg>
-                                <div className="flex-1">
-                                  <div className="flex items-center justify-between">
-                                    <p className="text-sm font-medium text-gray-900">
-                                      Ticket Created
-                                    </p>
-                                    <span className="text-xs font-medium text-blue-600 bg-blue-100 px-2 py-1 rounded">
-                                      Initial Level
-                                    </span>
-                                  </div>
-                                  <p className="text-xs text-gray-600 mt-1">
-                                    Created by {ticket.createdBy?.firstName}{" "}
-                                    {ticket.createdBy?.lastName}
-                                  </p>
-                                  <div className="mt-3 grid grid-cols-2 gap-4 text-xs">
-                                    <div>
-                                      <p className="text-gray-500">
-                                        Created At:
-                                      </p>
-                                      <p className="font-medium text-gray-900">
-                                        {createdAt.toLocaleDateString()}{" "}
-                                        {createdAt.toLocaleTimeString()}
-                                      </p>
-                                    </div>
-                                    <div>
-                                      <p className="text-gray-500">
-                                        Time Before Escalation:
-                                      </p>
-                                      <p className="font-medium text-gray-900">
-                                        {hours > 0 ? `${hours}h ` : ""}
-                                        {minutes}m
-                                      </p>
-                                    </div>
-                                  </div>
-                                </div>
+                                <p className="mt-4 text-sm text-gray-600">
+                                  No email communications found
+                                </p>
+                                <p className="mt-1 text-xs text-gray-500">
+                                  Email thread will appear here once messages
+                                  are exchanged
+                                </p>
                               </div>
-                            </div>
-                          );
-                        })()}
+                            )}
 
-                        {/* Escalation Records */}
-                        {ticket.escalationHistory?.map((record, index) => {
-                          // Calculate time at this level (time until next escalation or now)
-                          const escalatedAt = new Date(record.escalatedAt);
-                          const nextEscalation =
-                            ticket.escalationHistory?.[index + 1];
-                          const endTime = nextEscalation
-                            ? new Date(nextEscalation.escalatedAt)
-                            : new Date();
+                            {filteredEmails.map((email, index) => {
+                              const isIncoming =
+                                email.direction === "incoming" ||
+                                email.direction === "inbound";
+                              const isExpanded = expandedEmails.has(email._id);
+                              const emailBody =
+                                email.htmlBody || email.bodyHtml || email.body;
+                              const isLongEmail = emailBody.length > 500;
+                              const displayBody =
+                                !isExpanded && isLongEmail
+                                  ? emailBody.substring(0, 500) + "..."
+                                  : emailBody;
 
-                          const timeAtLevel =
-                            endTime.getTime() - escalatedAt.getTime();
-                          const hours = Math.floor(
-                            timeAtLevel / (1000 * 60 * 60),
-                          );
-                          const minutes = Math.floor(
-                            (timeAtLevel % (1000 * 60 * 60)) / (1000 * 60),
-                          );
-
-                          const isAutoEscalation =
-                            record.escalatedBy === null ||
-                            record.escalatedBy === undefined;
-
-                          return (
-                            <div
-                              key={record._id}
-                              className="p-4 bg-orange-50 border border-orange-200 rounded-lg"
-                            >
-                              <div className="flex items-start space-x-3">
-                                <ArrowUpIcon className="h-5 w-5 text-orange-600 flex-shrink-0 mt-1" />
-                                <div className="flex-1">
-                                  <div className="flex items-center justify-between">
-                                    <p className="text-sm font-medium text-gray-900">
-                                      Escalated to{" "}
-                                      <span className="text-orange-700">
-                                        {record.escalatedTo.firstName}{" "}
-                                        {record.escalatedTo.lastName}
-                                      </span>
-                                    </p>
-                                    <span className="text-xs font-medium text-orange-600 bg-orange-100 px-2 py-1 rounded">
-                                      Level {index + 1}
-                                    </span>
-                                  </div>
-                                  <p className="text-xs text-gray-600 mt-1">
-                                    {isAutoEscalation ? (
-                                      <span className="inline-flex items-center">
-                                        🤖{" "}
-                                        <span className="ml-1">
-                                          Auto-escalated by system
-                                        </span>
-                                      </span>
-                                    ) : (
-                                      <>
-                                        By {record.escalatedBy.firstName}{" "}
-                                        {record.escalatedBy.lastName}
-                                      </>
-                                    )}
-                                  </p>
-                                  <p className="text-sm text-gray-700 mt-2">
-                                    {record.reason}
-                                  </p>
-                                  <div className="mt-3 grid grid-cols-2 gap-4 text-xs">
-                                    <div>
-                                      <p className="text-gray-500">
-                                        Escalated At:
-                                      </p>
-                                      <p className="font-medium text-gray-900">
-                                        {escalatedAt.toLocaleDateString()}{" "}
-                                        {escalatedAt.toLocaleTimeString()}
-                                      </p>
-                                    </div>
-                                    <div>
-                                      <p className="text-gray-500">
-                                        Time at this Level:
-                                      </p>
-                                      <p className="font-medium text-gray-900">
-                                        {hours > 0 ? `${hours}h ` : ""}
-                                        {minutes}m
-                                        {!nextEscalation && (
-                                          <span className="text-orange-600 ml-1">
-                                            (ongoing)
-                                          </span>
-                                        )}
-                                      </p>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-
-                    {/* Change History */}
-                    {ticket.changeHistory && ticket.changeHistory.length > 0 ? (
-                      <div className="space-y-3 mt-6">
-                        <h3 className="text-sm font-medium text-gray-900">
-                          Change History
-                        </h3>
-
-                        {ticket.changeHistory.map((change) => {
-                          const changedAt = new Date(change.changedAt);
-
-                          // Format field name for display
-                          const fieldDisplayNames: Record<string, string> = {
-                            status: "Status",
-                            priority: "Priority",
-                            assignedTo: "Assigned Agent",
-                            category: "Category",
-                            tags: "Tags",
-                            subject: "Subject",
-                            description: "Description",
-                          };
-
-                          const fieldDisplay =
-                            fieldDisplayNames[change.field] || change.field;
-
-                          // Choose icon and color based on field
-                          let iconColor = "text-gray-600";
-                          let bgColor = "bg-gray-50";
-                          let borderColor = "border-gray-200";
-                          let icon = null;
-
-                          if (change.field === "status") {
-                            iconColor = "text-green-600";
-                            bgColor = "bg-green-50";
-                            borderColor = "border-green-200";
-                            icon = (
-                              <CheckCircleIcon className="h-5 w-5 text-green-600 flex-shrink-0 mt-1" />
-                            );
-                          } else if (change.field === "priority") {
-                            iconColor = "text-red-600";
-                            bgColor = "bg-red-50";
-                            borderColor = "border-red-200";
-                            icon = (
-                              <ExclamationTriangleIcon className="h-5 w-5 text-red-600 flex-shrink-0 mt-1" />
-                            );
-                          } else if (change.field === "assignedTo") {
-                            iconColor = "text-blue-600";
-                            bgColor = "bg-blue-50";
-                            borderColor = "border-blue-200";
-                            icon = (
-                              <UserIcon className="h-5 w-5 text-blue-600 flex-shrink-0 mt-1" />
-                            );
-                          } else if (
-                            change.field === "tags" ||
-                            change.field === "category"
-                          ) {
-                            iconColor = "text-purple-600";
-                            bgColor = "bg-purple-50";
-                            borderColor = "border-purple-200";
-                            icon = (
-                              <TagIcon className="h-5 w-5 text-purple-600 flex-shrink-0 mt-1" />
-                            );
-                          } else {
-                            icon = (
-                              <DocumentTextIcon className="h-5 w-5 text-gray-600 flex-shrink-0 mt-1" />
-                            );
-                          }
-
-                          return (
-                            <div
-                              key={change._id}
-                              className={`p-4 ${bgColor} border ${borderColor} rounded-lg`}
-                            >
-                              <div className="flex items-start space-x-3">
-                                {icon}
-                                <div className="flex-1">
-                                  <div className="flex items-center justify-between">
-                                    <p className="text-sm font-medium text-gray-900">
-                                      {fieldDisplay}{" "}
-                                      {change.changeType === "update"
-                                        ? "Updated"
-                                        : change.changeType === "add"
-                                          ? "Added"
-                                          : "Removed"}
-                                    </p>
-                                    <span
-                                      className={`text-xs font-medium ${iconColor} px-2 py-1 rounded`}
-                                    >
-                                      {change.changeType}
-                                    </span>
-                                  </div>
-                                  <p className="text-xs text-gray-600 mt-1">
-                                    By {change.changedBy.firstName}{" "}
-                                    {change.changedBy.lastName}
-                                  </p>
-                                  <div className="mt-3 grid grid-cols-2 gap-4 text-xs">
-                                    <div>
-                                      <p className="text-gray-500">From:</p>
-                                      <p className="font-medium text-gray-900">
-                                        {change.oldValue || (
-                                          <span className="text-gray-400 italic">
-                                            Empty
-                                          </span>
-                                        )}
-                                      </p>
-                                    </div>
-                                    <div>
-                                      <p className="text-gray-500">To:</p>
-                                      <p className="font-medium text-gray-900">
-                                        {change.newValue || (
-                                          <span className="text-gray-400 italic">
-                                            Empty
-                                          </span>
-                                        )}
-                                      </p>
-                                    </div>
-                                  </div>
-                                  <div className="mt-2">
-                                    <p className="text-gray-500 text-xs">
-                                      Changed At:
-                                    </p>
-                                    <p className="font-medium text-gray-900 text-xs">
-                                      {changedAt.toLocaleDateString()}{" "}
-                                      {changedAt.toLocaleTimeString()}
-                                    </p>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-
-                    {/* No history message */}
-                    {(!ticket.changeHistory ||
-                      ticket.changeHistory.length === 0) &&
-                      (!ticket.escalationHistory ||
-                        ticket.escalationHistory.length === 0) && (
-                        <p className="text-center text-gray-500 py-8">
-                          No history yet
-                        </p>
-                      )}
-                  </div>
-                )}
-
-                {/* Task 6.5: Email Communications Tab */}
-                {activeTab === "emails" && (
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-semibold text-gray-900">
-                        Email Communication Thread
-                      </h3>
-                      {loadingEmails && (
-                        <span className="text-sm text-gray-500">
-                          Loading...
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Filter out automatic ticket confirmation emails (outgoing with "Ticket Created:" subject) */}
-                    {(() => {
-                      const filteredEmails = emailCommunications.filter(
-                        (email) => {
-                          // Exclude automatic outgoing confirmation emails
-                          const isOutgoing =
-                            email.direction === "outgoing" ||
-                            email.direction === "outbound";
-                          const isConfirmationEmail = email.subject
-                            ?.toLowerCase()
-                            .includes("ticket created:");
-                          return !(isOutgoing && isConfirmationEmail);
-                        },
-                      );
-
-                      return (
-                        <>
-                          {!loadingEmails && filteredEmails.length === 0 && (
-                            <div className="text-center py-12 bg-gray-50 rounded-lg">
-                              <svg
-                                className="mx-auto h-12 w-12 text-gray-400"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                                />
-                              </svg>
-                              <p className="mt-4 text-sm text-gray-600">
-                                No email communications found
-                              </p>
-                              <p className="mt-1 text-xs text-gray-500">
-                                Email thread will appear here once messages are
-                                exchanged
-                              </p>
-                            </div>
-                          )}
-
-                          {filteredEmails.map((email, index) => {
-                            const isIncoming =
-                              email.direction === "incoming" ||
-                              email.direction === "inbound";
-                            const isExpanded = expandedEmails.has(email._id);
-                            const emailBody =
-                              email.htmlBody || email.bodyHtml || email.body;
-                            const isLongEmail = emailBody.length > 500;
-                            const displayBody =
-                              !isExpanded && isLongEmail
-                                ? emailBody.substring(0, 500) + "..."
-                                : emailBody;
-
-                            return (
-                              <div
-                                key={email._id}
-                                className={`relative border-l-4 pl-6 pr-4 py-4 rounded-r-lg ${
-                                  isIncoming
-                                    ? "bg-blue-50 border-blue-500"
-                                    : "bg-green-50 border-green-500"
-                                }`}
-                              >
-                                {/* Thread indicator line */}
-                                {index > 0 && (
-                                  <div
-                                    className="absolute left-0 -top-4 w-0.5 h-4 bg-gray-300"
-                                    style={{ marginLeft: "-2px" }}
-                                  />
-                                )}
-
-                                {/* Email header */}
-                                <div className="flex items-start justify-between mb-3">
-                                  <div className="flex-1">
-                                    <div className="flex items-center gap-2 mb-1">
-                                      <span
-                                        className={`text-xs font-semibold px-2 py-1 rounded ${
-                                          isIncoming
-                                            ? "bg-blue-100 text-blue-700"
-                                            : "bg-green-100 text-green-700"
-                                        }`}
-                                      >
-                                        {isIncoming
-                                          ? "📥 INCOMING"
-                                          : "📤 OUTGOING"}
-                                      </span>
-                                      <span className="text-xs text-gray-500">
-                                        {new Date(
-                                          email.createdAt,
-                                        ).toLocaleString()}
-                                      </span>
-                                    </div>
-                                    <div className="text-sm">
-                                      <p className="font-medium text-gray-900">
-                                        <span className="text-gray-600">
-                                          From:
-                                        </span>{" "}
-                                        {email.fromEmail}
-                                      </p>
-                                      <p className="text-gray-700">
-                                        <span className="text-gray-600">
-                                          To:
-                                        </span>{" "}
-                                        {email.toEmail}
-                                      </p>
-                                      {email.ccEmails &&
-                                        email.ccEmails.length > 0 && (
-                                          <p className="text-gray-600 text-xs">
-                                            CC: {email.ccEmails.join(", ")}
-                                          </p>
-                                        )}
-                                    </div>
-                                  </div>
-                                </div>
-
-                                {/* Email subject */}
-                                <div className="mb-3">
-                                  <p className="text-sm font-semibold text-gray-900">
-                                    Subject: {email.subject}
-                                  </p>
-                                </div>
-
-                                {/* Email body */}
-                                <div className="mb-3">
-                                  {email.htmlBody || email.bodyHtml ? (
+                              return (
+                                <div
+                                  key={email._id}
+                                  className={`relative border-l-4 pl-6 pr-4 py-4 rounded-r-lg ${
+                                    isIncoming
+                                      ? "bg-blue-50 border-blue-500"
+                                      : "bg-green-50 border-green-500"
+                                  }`}
+                                >
+                                  {/* Thread indicator line */}
+                                  {index > 0 && (
                                     <div
-                                      className="prose prose-sm max-w-none text-gray-700 bg-white p-3 rounded border border-gray-200"
-                                      dangerouslySetInnerHTML={{
-                                        __html: displayBody,
-                                      }}
+                                      className="absolute left-0 -top-4 w-0.5 h-4 bg-gray-300"
+                                      style={{ marginLeft: "-2px" }}
                                     />
-                                  ) : (
-                                    <div className="text-sm text-gray-700 bg-white p-3 rounded border border-gray-200 whitespace-pre-wrap">
-                                      {displayBody}
-                                    </div>
                                   )}
-                                </div>
 
-                                {/* Expand/Collapse button for long emails */}
-                                {isLongEmail && (
-                                  <button
-                                    onClick={() =>
-                                      toggleEmailExpanded(email._id)
-                                    }
-                                    className="text-xs text-blue-600 hover:text-blue-700 font-medium"
-                                  >
-                                    {isExpanded ? "▲ Show less" : "▼ Show more"}
-                                  </button>
-                                )}
-
-                                {/* Attachments */}
-                                {email.attachments &&
-                                  email.attachments.length > 0 && (
-                                    <div className="mt-3 pt-3 border-t border-gray-200">
-                                      <p className="text-xs font-medium text-gray-700 mb-2">
-                                        📎 Attachments (
-                                        {email.attachments.length})
-                                      </p>
-                                      <div className="flex flex-wrap gap-2">
-                                        {email.attachments.map((att, i) => (
-                                          <span
-                                            key={i}
-                                            className="text-xs bg-white px-2 py-1 rounded border border-gray-300 text-gray-700"
-                                          >
-                                            {att.originalName || att.filename} (
-                                            {(att.size / 1024).toFixed(1)} KB)
-                                          </span>
-                                        ))}
+                                  {/* Email header */}
+                                  <div className="flex items-start justify-between mb-3">
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <span
+                                          className={`text-xs font-semibold px-2 py-1 rounded ${
+                                            isIncoming
+                                              ? "bg-blue-100 text-blue-700"
+                                              : "bg-green-100 text-green-700"
+                                          }`}
+                                        >
+                                          {isIncoming
+                                            ? "📥 INCOMING"
+                                            : "📤 OUTGOING"}
+                                        </span>
+                                        <span className="text-xs text-gray-500">
+                                          {new Date(
+                                            email.createdAt,
+                                          ).toLocaleString()}
+                                        </span>
+                                      </div>
+                                      <div className="text-sm">
+                                        <p className="font-medium text-gray-900">
+                                          <span className="text-gray-600">
+                                            From:
+                                          </span>{" "}
+                                          {email.fromEmail}
+                                        </p>
+                                        <p className="text-gray-700">
+                                          <span className="text-gray-600">
+                                            To:
+                                          </span>{" "}
+                                          {email.toEmail}
+                                        </p>
+                                        {email.ccEmails &&
+                                          email.ccEmails.length > 0 && (
+                                            <p className="text-gray-600 text-xs">
+                                              CC: {email.ccEmails.join(", ")}
+                                            </p>
+                                          )}
                                       </div>
                                     </div>
-                                  )}
+                                  </div>
 
-                                {/* Email metadata */}
-                                <div className="mt-3 pt-3 border-t border-gray-200 text-xs text-gray-500">
-                                  <div className="flex items-center gap-4">
-                                    <span>
-                                      Message ID:{" "}
-                                      {email.messageId.substring(0, 20)}...
-                                    </span>
-                                    {email.inReplyTo && (
-                                      <span>
-                                        ↩️ Reply to:{" "}
-                                        {email.inReplyTo.substring(0, 20)}...
-                                      </span>
+                                  {/* Email subject */}
+                                  <div className="mb-3">
+                                    <p className="text-sm font-semibold text-gray-900">
+                                      Subject: {email.subject}
+                                    </p>
+                                  </div>
+
+                                  {/* Email body */}
+                                  <div className="mb-3">
+                                    {email.htmlBody || email.bodyHtml ? (
+                                      <div
+                                        className="prose prose-sm max-w-none text-gray-700 bg-white p-3 rounded border border-gray-200"
+                                        dangerouslySetInnerHTML={{
+                                          __html: displayBody,
+                                        }}
+                                      />
+                                    ) : (
+                                      <div className="text-sm text-gray-700 bg-white p-3 rounded border border-gray-200 whitespace-pre-wrap">
+                                        {displayBody}
+                                      </div>
                                     )}
                                   </div>
+
+                                  {/* Expand/Collapse button for long emails */}
+                                  {isLongEmail && (
+                                    <button
+                                      onClick={() =>
+                                        toggleEmailExpanded(email._id)
+                                      }
+                                      className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                                    >
+                                      {isExpanded
+                                        ? "▲ Show less"
+                                        : "▼ Show more"}
+                                    </button>
+                                  )}
+
+                                  {/* Attachments */}
+                                  {email.attachments &&
+                                    email.attachments.length > 0 && (
+                                      <div className="mt-3 pt-3 border-t border-gray-200">
+                                        <p className="text-xs font-medium text-gray-700 mb-2">
+                                          📎 Attachments (
+                                          {email.attachments.length})
+                                        </p>
+                                        <div className="flex flex-wrap gap-2">
+                                          {email.attachments.map((att, i) => (
+                                            <span
+                                              key={i}
+                                              className="text-xs bg-white px-2 py-1 rounded border border-gray-300 text-gray-700"
+                                            >
+                                              {att.originalName || att.filename}{" "}
+                                              ({(att.size / 1024).toFixed(1)}{" "}
+                                              KB)
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                  {/* Email metadata */}
+                                  <div className="mt-3 pt-3 border-t border-gray-200 text-xs text-gray-500">
+                                    <div className="flex items-center gap-4">
+                                      <span>
+                                        Message ID:{" "}
+                                        {email.messageId.substring(0, 20)}...
+                                      </span>
+                                      {email.inReplyTo && (
+                                        <span>
+                                          ↩️ Reply to:{" "}
+                                          {email.inReplyTo.substring(0, 20)}...
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
                                 </div>
-                              </div>
-                            );
-                          })}
-                        </>
-                      );
-                    })()}
-                  </div>
-                )}
+                              );
+                            })}
+                          </>
+                        );
+                      })()}
+                    </div>
+                  )}
 
-                {/* Task 7.1: Email Reply Form */}
-                {!loadingEmails && ticket.sourceEmail && (
-                  <div className="mt-6">
-                    {/* Success/Error Messages */}
-                    {replySuccess && (
-                      <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
-                        <span className="text-green-600">✅</span>
-                        <span className="text-sm text-green-700">
-                          {replySuccess}
-                        </span>
-                      </div>
-                    )}
-                    {replyError && (
-                      <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
-                        <span className="text-red-600">❌</span>
-                        <span className="text-sm text-red-700">
-                          {replyError}
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Reply Button or Form */}
-                    {!showReplyForm ? (
-                      <button
-                        onClick={handleOpenReplyForm}
-                        className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center justify-center gap-2 transition-colors"
-                      >
-                        <span>📧</span>
-                        <span>Reply via Email</span>
-                      </button>
-                    ) : (
-                      <div className="bg-white border border-gray-200 rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <h4 className="text-sm font-semibold text-gray-900">
-                            Reply to: {ticket.sourceEmail}
-                          </h4>
-                          <button
-                            onClick={() => {
-                              setShowReplyForm(false);
-                              setReplyContent("");
-                              setReplyError("");
-                            }}
-                            className="text-gray-400 hover:text-gray-600 transition-colors"
-                            disabled={sendingReply}
-                          >
-                            ✕
-                          </button>
-                        </div>
-
-                        {/* Reply Textarea */}
-                        <textarea
-                          value={replyContent}
-                          onChange={(e) => setReplyContent(e.target.value)}
-                          placeholder="Type your reply here..."
-                          rows={6}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y"
-                          disabled={sendingReply}
-                        />
-
-                        {/* Action Buttons */}
-                        <div className="flex items-center justify-between mt-3">
-                          <span className="text-xs text-gray-500">
-                            {replyContent.length} characters
+                  {/* Task 7.1: Email Reply Form */}
+                  {!loadingEmails && ticket.sourceEmail && (
+                    <div className="mt-6">
+                      {/* Success/Error Messages */}
+                      {replySuccess && (
+                        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
+                          <span className="text-green-600">✅</span>
+                          <span className="text-sm text-green-700">
+                            {replySuccess}
                           </span>
-                          <div className="flex gap-2">
+                        </div>
+                      )}
+                      {replyError && (
+                        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
+                          <span className="text-red-600">❌</span>
+                          <span className="text-sm text-red-700">
+                            {replyError}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Reply Button or Form */}
+                      {!showReplyForm ? (
+                        <button
+                          onClick={handleOpenReplyForm}
+                          className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center justify-center gap-2 transition-colors"
+                        >
+                          <span>📧</span>
+                          <span>Reply via Email</span>
+                        </button>
+                      ) : (
+                        <div className="bg-white border border-gray-200 rounded-lg p-4">
+                          <div className="flex items-center justify-between mb-3">
+                            <h4 className="text-sm font-semibold text-gray-900">
+                              Reply to: {ticket.sourceEmail}
+                            </h4>
                             <button
                               onClick={() => {
                                 setShowReplyForm(false);
                                 setReplyContent("");
                                 setReplyError("");
                               }}
-                              className="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                              className="text-gray-400 hover:text-gray-600 transition-colors"
                               disabled={sendingReply}
                             >
-                              Cancel
+                              ✕
                             </button>
-                            <button
-                              onClick={handleSendReply}
-                              disabled={sendingReply || !replyContent.trim()}
-                              className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2"
+                          </div>
+
+                          {/* Reply Textarea */}
+                          <textarea
+                            value={replyContent}
+                            onChange={(e) => setReplyContent(e.target.value)}
+                            placeholder="Type your reply here..."
+                            rows={6}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y"
+                            disabled={sendingReply}
+                          />
+
+                          {/* Action Buttons */}
+                          <div className="flex items-center justify-between mt-3">
+                            <span className="text-xs text-gray-500">
+                              {replyContent.length} characters
+                            </span>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => {
+                                  setShowReplyForm(false);
+                                  setReplyContent("");
+                                  setReplyError("");
+                                }}
+                                className="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                                disabled={sendingReply}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={handleSendReply}
+                                disabled={sendingReply || !replyContent.trim()}
+                                className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2"
+                              >
+                                {sendingReply ? (
+                                  <>
+                                    <span className="animate-spin">⏳</span>
+                                    <span>Sending...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span>📤</span>
+                                    <span>Send Reply</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column - Sidebar */}
+            <div className="space-y-6">
+              {/* Ticket Info Card */}
+              <div className="bg-white rounded-xl shadow-sm p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                  Query Information
+                </h3>
+
+                <div className="space-y-4">
+                  {/* Status */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Status
+                    </label>
+                    <select
+                      value={ticket.status || ""}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (!value) return; // Don't update if no value selected
+
+                        const newStatusCode = Number(value);
+                        if (isNaN(newStatusCode)) {
+                          console.error(
+                            "❌ Invalid status value from dropdown:",
+                            value,
+                          );
+                          return;
+                        }
+
+                        console.log(
+                          "✅ Status dropdown changed:",
+                          value,
+                          "→",
+                          newStatusCode,
+                        );
+                        setNewStatus(newStatusCode);
+                        // Show confirmation modal before saving
+                        const fromLabel = getStatusDisplayName(
+                          Number(ticket.status),
+                        );
+                        const toLabel = getStatusDisplayName(newStatusCode);
+                        setConfirmModal({
+                          open: true,
+                          field: "Status",
+                          from: fromLabel,
+                          to: toLabel,
+                          onConfirm: () => handleUpdateStatus(newStatusCode),
+                        });
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      {statusOptions.map((status: any) => (
+                        <option key={status.code} value={status.code}>
+                          {status.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Priority */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Priority
+                    </label>
+                    <select
+                      value={ticket.priority.toUpperCase()}
+                      onChange={(e) => {
+                        const newPriorityValue = e.target.value;
+                        setNewPriority(newPriorityValue);
+                        // Show confirmation modal before saving
+                        setConfirmModal({
+                          open: true,
+                          field: "Priority",
+                          from: ticket.priority,
+                          to: newPriorityValue,
+                          onConfirm: () =>
+                            handleUpdatePriority(newPriorityValue),
+                        });
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      {priorityOptions.map((priority) => (
+                        <option key={priority} value={priority.toUpperCase()}>
+                          {priority}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Priority Resolution Timer - Shows overall priority-level resolution time */}
+                  {(() => {
+                    // Check if ticket is resolved or closed
+                    const statusLower = String(ticket.status).toLowerCase();
+                    const isResolved =
+                      String(ticket.status) === "4" ||
+                      statusLower === "resolved";
+                    const isClosed =
+                      String(ticket.status) === "5" ||
+                      statusLower === "closed" ||
+                      statusLower === "close";
+                    const isComplete = isResolved || isClosed;
+
+                    // Get priority resolution time from SLA rules
+                    // Match by: 1) rule.priority field, 2) rule.name field (fallback)
+                    // Priority can be either a string "MEDIUM" or object { name: "MEDIUM" }
+                    const ticketPriorityUpper = ticket.priority.toUpperCase();
+                    const matchingSlaRule = slaRules.find((rule: any) => {
+                      // Try matching by priority field first
+                      const rulePriority =
+                        typeof rule.priority === "string"
+                          ? rule.priority.toUpperCase()
+                          : rule.priority?.name?.toUpperCase();
+                      if (
+                        rulePriority &&
+                        rulePriority === ticketPriorityUpper
+                      ) {
+                        return true;
+                      }
+                      // Fallback: match by rule name (e.g., rule.name = "Normal" matches ticket.priority = "NORMAL")
+                      if (
+                        rule.name &&
+                        rule.name.toUpperCase() === ticketPriorityUpper
+                      ) {
+                        return true;
+                      }
+                      return false;
+                    });
+
+                    console.log("🎯 Priority SLA Debug:", {
+                      ticketPriority: ticket.priority,
+                      slaRulesCount: slaRules.length,
+                      slaRuleNames: slaRules.map((r: any) => ({
+                        name: r.name,
+                        priority: r.priority,
+                      })),
+                      matchingSlaRule: matchingSlaRule
+                        ? {
+                            name: matchingSlaRule.name,
+                            priority: matchingSlaRule.priority,
+                            resolutionTime: matchingSlaRule.resolutionTime,
+                          }
+                        : null,
+                    });
+
+                    if (!matchingSlaRule?.resolutionTime) {
+                      return null; // No SLA rule found for this priority
+                    }
+
+                    // Use roleLevelSLA.startedAt (adjusted for working hours) if available, otherwise createdAt
+                    const slaStartedAt = (ticket as any).roleLevelSLA?.startedAt
+                      ? new Date((ticket as any).roleLevelSLA.startedAt)
+                      : new Date(ticket.createdAt);
+                    const { value, unit } = matchingSlaRule.resolutionTime;
+
+                    // Convert resolution time to milliseconds
+                    let resolutionMs = 0;
+                    switch (unit?.toLowerCase()) {
+                      case "minutes":
+                        resolutionMs = value * 60 * 1000;
+                        break;
+                      case "hours":
+                        resolutionMs = value * 60 * 60 * 1000;
+                        break;
+                      case "days":
+                        resolutionMs = value * 24 * 60 * 60 * 1000;
+                        break;
+                      default:
+                        resolutionMs = value * 60 * 60 * 1000; // default to hours
+                    }
+
+                    const priorityDeadline = new Date(
+                      slaStartedAt.getTime() + resolutionMs,
+                    );
+                    // Extract priority name from string or object
+                    const priorityName =
+                      typeof matchingSlaRule.priority === "string"
+                        ? matchingSlaRule.priority
+                        : matchingSlaRule.priority?.name || ticket.priority;
+
+                    // Format the total resolution time for display
+                    const totalResolutionDisplay =
+                      unit?.toLowerCase() === "days"
+                        ? `${value}d`
+                        : unit?.toLowerCase() === "minutes"
+                          ? `${value}m`
+                          : `${value}h`;
+
+                    let displayText = "";
+                    let isBreached = false;
+                    let bgColor = "";
+                    let textColor = "";
+                    let borderColor = "";
+                    let iconColor = "";
+                    let waitingForWorkingHours = false;
+
+                    if (isComplete) {
+                      // Ticket is resolved - show time taken vs allowed
+                      const completedAt = new Date(
+                        ticket.resolvedAt ||
+                          ticket.closedAt ||
+                          ticket.updatedAt,
+                      );
+                      const timeTakenMs =
+                        completedAt.getTime() - slaStartedAt.getTime();
+                      isBreached = timeTakenMs > resolutionMs;
+
+                      const totalHours = Math.floor(
+                        timeTakenMs / (1000 * 60 * 60),
+                      );
+                      const minutes = Math.floor(
+                        (timeTakenMs % (1000 * 60 * 60)) / (1000 * 60),
+                      );
+
+                      displayText = isBreached
+                        ? `Resolved in ${totalHours}h ${minutes}m (exceeded ${totalResolutionDisplay})`
+                        : `Resolved in ${totalHours}h ${minutes}m (within ${totalResolutionDisplay})`;
+
+                      bgColor = isBreached ? "bg-red-50" : "bg-green-50";
+                      borderColor = isBreached
+                        ? "border-red-300"
+                        : "border-green-300";
+                      textColor = isBreached
+                        ? "text-red-600"
+                        : "text-green-600";
+                      iconColor = isBreached
+                        ? "text-red-500"
+                        : "text-green-500";
+                    } else {
+                      // Ticket is open - check if SLA has started (working hours)
+                      const now = new Date();
+                      const slaNotStartedYet = now < slaStartedAt;
+
+                      if (slaNotStartedYet) {
+                        // SLA hasn't started yet - show "Starts in X" with blue styling
+                        const startsInMs =
+                          slaStartedAt.getTime() - now.getTime();
+                        const totalHours = Math.floor(
+                          startsInMs / (1000 * 60 * 60),
+                        );
+                        const minutes = Math.floor(
+                          (startsInMs % (1000 * 60 * 60)) / (1000 * 60),
+                        );
+
+                        displayText =
+                          totalHours > 0
+                            ? `Starts in ${totalHours}h ${minutes}m`
+                            : `Starts in ${minutes}m`;
+
+                        bgColor = "bg-blue-50";
+                        borderColor = "border-blue-300";
+                        textColor = "text-blue-600";
+                        iconColor = "text-blue-500";
+                        waitingForWorkingHours = true;
+                      } else {
+                        // SLA is running - show remaining time
+                        const diffMs =
+                          priorityDeadline.getTime() - now.getTime();
+                        isBreached = diffMs < 0;
+
+                        const absDiffMs = Math.abs(diffMs);
+                        const totalHours = Math.floor(
+                          absDiffMs / (1000 * 60 * 60),
+                        );
+                        const minutes = Math.floor(
+                          (absDiffMs % (1000 * 60 * 60)) / (1000 * 60),
+                        );
+
+                        displayText = isBreached
+                          ? `Overdue by ${totalHours}h ${minutes}m`
+                          : `${totalHours}h ${minutes}m remaining`;
+
+                        bgColor = isBreached ? "bg-red-50" : "bg-purple-50";
+                        borderColor = isBreached
+                          ? "border-red-300"
+                          : "border-purple-300";
+                        textColor = isBreached
+                          ? "text-red-600"
+                          : "text-purple-600";
+                        iconColor = isBreached
+                          ? "text-red-500"
+                          : "text-purple-500";
+                      }
+                    }
+
+                    return (
+                      <div
+                        className={`p-3 rounded-lg border ${bgColor} ${borderColor}`}
+                      >
+                        <div className="flex items-center space-x-2">
+                          <div className={`flex-shrink-0 ${iconColor}`}>
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              className="h-5 w-5"
+                              viewBox="0 0 20 20"
+                              fill="currentColor"
                             >
-                              {sendingReply ? (
-                                <>
-                                  <span className="animate-spin">⏳</span>
-                                  <span>Sending...</span>
-                                </>
-                              ) : (
-                                <>
-                                  <span>📤</span>
-                                  <span>Send Reply</span>
-                                </>
-                              )}
-                            </button>
+                              <path
+                                fillRule="evenodd"
+                                d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-xs font-medium text-gray-700">
+                              {priorityName} Priority SLA (
+                              {totalResolutionDisplay})
+                            </p>
+                            <p className={`text-lg font-bold ${textColor}`}>
+                              {displayText}
+                            </p>
+                            {waitingForWorkingHours && (
+                              <p className="text-xs text-blue-500 mt-1">
+                                <span className="inline-block w-2 h-2 bg-blue-400 rounded-full mr-1"></span>
+                                Waiting for working hours
+                              </p>
+                            )}
                           </div>
                         </div>
                       </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+                    );
+                  })()}
 
-          {/* Right Column - Sidebar */}
-          <div className="space-y-6">
-            {/* Ticket Info Card */}
-            <div className="bg-white rounded-xl shadow-sm p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                Query Information
-              </h3>
+                  {/* Escalation Level Countdown - Uses fetched escalation matrix */}
+                  {(() => {
+                    // Check if ticket is resolved or closed (handle both numeric and string values)
+                    const statusLower = String(ticket.status).toLowerCase();
+                    const isResolved =
+                      String(ticket.status) === "4" ||
+                      statusLower === "resolved";
+                    const isClosed =
+                      String(ticket.status) === "5" ||
+                      statusLower === "closed" ||
+                      statusLower === "close";
+                    const isComplete = isResolved || isClosed;
 
-              <div className="space-y-4">
-                {/* Status */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Status
-                  </label>
-                  <select
-                    value={ticket.status || ""}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      if (!value) return; // Don't update if no value selected
-
-                      const newStatusCode = Number(value);
-                      if (isNaN(newStatusCode)) {
-                        console.error(
-                          "❌ Invalid status value from dropdown:",
-                          value,
-                        );
-                        return;
-                      }
-
-                      console.log(
-                        "✅ Status dropdown changed:",
-                        value,
-                        "→",
-                        newStatusCode,
-                      );
-                      setNewStatus(newStatusCode);
-                      // Show confirmation modal before saving
-                      const fromLabel = getStatusDisplayName(
-                        Number(ticket.status),
-                      );
-                      const toLabel = getStatusDisplayName(newStatusCode);
-                      setConfirmModal({
-                        open: true,
-                        field: "Status",
-                        from: fromLabel,
-                        to: toLabel,
-                        onConfirm: () => handleUpdateStatus(newStatusCode),
-                      });
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    {statusOptions.map((status: any) => (
-                      <option key={status.code} value={status.code}>
-                        {status.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Priority */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Priority
-                  </label>
-                  <select
-                    value={ticket.priority.toUpperCase()}
-                    onChange={(e) => {
-                      const newPriorityValue = e.target.value;
-                      setNewPriority(newPriorityValue);
-                      // Show confirmation modal before saving
-                      setConfirmModal({
-                        open: true,
-                        field: "Priority",
-                        from: ticket.priority,
-                        to: newPriorityValue,
-                        onConfirm: () => handleUpdatePriority(newPriorityValue),
-                      });
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    {priorityOptions.map((priority) => (
-                      <option key={priority} value={priority.toUpperCase()}>
-                        {priority}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Priority Resolution Timer - Shows overall priority-level resolution time */}
-                {(() => {
-                  // Check if ticket is resolved or closed
-                  const statusLower = String(ticket.status).toLowerCase();
-                  const isResolved =
-                    String(ticket.status) === "4" || statusLower === "resolved";
-                  const isClosed =
-                    String(ticket.status) === "5" ||
-                    statusLower === "closed" ||
-                    statusLower === "close";
-                  const isComplete = isResolved || isClosed;
-
-                  // Get priority resolution time from SLA rules
-                  // Match by: 1) rule.priority field, 2) rule.name field (fallback)
-                  // Priority can be either a string "MEDIUM" or object { name: "MEDIUM" }
-                  const ticketPriorityUpper = ticket.priority.toUpperCase();
-                  const matchingSlaRule = slaRules.find((rule: any) => {
-                    // Try matching by priority field first
-                    const rulePriority =
-                      typeof rule.priority === "string"
-                        ? rule.priority.toUpperCase()
-                        : rule.priority?.name?.toUpperCase();
-                    if (rulePriority && rulePriority === ticketPriorityUpper) {
-                      return true;
-                    }
-                    // Fallback: match by rule name (e.g., rule.name = "Normal" matches ticket.priority = "NORMAL")
+                    // Use escalation matrix from state (fetched via ticket.escalationMatrixId)
                     if (
-                      rule.name &&
-                      rule.name.toUpperCase() === ticketPriorityUpper
+                      !escalationMatrix ||
+                      !escalationMatrix.levels ||
+                      escalationMatrix.levels.length === 0
                     ) {
-                      return true;
+                      console.log(
+                        "⚠️ No escalation matrix available for timer",
+                      );
+                      return null;
                     }
-                    return false;
-                  });
 
-                  console.log("🎯 Priority SLA Debug:", {
-                    ticketPriority: ticket.priority,
-                    slaRulesCount: slaRules.length,
-                    slaRuleNames: slaRules.map((r: any) => ({
-                      name: r.name,
-                      priority: r.priority,
-                    })),
-                    matchingSlaRule: matchingSlaRule
-                      ? {
-                          name: matchingSlaRule.name,
-                          priority: matchingSlaRule.priority,
-                          resolutionTime: matchingSlaRule.resolutionTime,
+                    console.log(
+                      "📋 Using Escalation Matrix:",
+                      escalationMatrix.name,
+                    );
+                    console.log(
+                      "📋 Escalation Matrix Levels:",
+                      escalationMatrix.levels,
+                    );
+
+                    // Get current escalation level (0-based index, default to first level)
+                    const currentLevelIndex =
+                      ticket.currentEscalationLevelNumber
+                        ? ticket.currentEscalationLevelNumber - 1
+                        : 0;
+
+                    // Get the current level configuration
+                    const currentLevelConfig =
+                      escalationMatrix.levels[currentLevelIndex] ||
+                      escalationMatrix.levels[0];
+
+                    // Determine the level label
+                    const timeLabel =
+                      currentLevelConfig.levelName ||
+                      `Level ${currentLevelConfig.levelNumber || currentLevelIndex + 1} SLA`;
+
+                    // Calculate SLA time for current level
+                    let levelSlaMs = 0;
+                    const slaHours = currentLevelConfig.slaHours || 0;
+                    const slaUnit =
+                      currentLevelConfig.slaUnit?.toLowerCase() || "hrs";
+
+                    switch (slaUnit) {
+                      case "mins":
+                      case "min":
+                      case "minutes":
+                        levelSlaMs = slaHours * 60 * 1000;
+                        break;
+                      case "hrs":
+                      case "hr":
+                      case "hours":
+                        levelSlaMs = slaHours * 60 * 60 * 1000;
+                        break;
+                      case "days":
+                      case "day":
+                        levelSlaMs = slaHours * 24 * 60 * 60 * 1000;
+                        break;
+                      default:
+                        levelSlaMs = slaHours * 60 * 60 * 1000; // default to hours
+                    }
+
+                    // Calculate deadline from ticket creation
+                    // For levels > 1, need to add previous levels' time
+                    let totalPreviousLevelsMs = 0;
+                    for (let i = 0; i < currentLevelIndex; i++) {
+                      const prevLevel = escalationMatrix.levels[i];
+                      if (prevLevel) {
+                        const prevHours = prevLevel.slaHours || 0;
+                        const prevUnit =
+                          prevLevel.slaUnit?.toLowerCase() || "hrs";
+                        switch (prevUnit) {
+                          case "mins":
+                          case "min":
+                          case "minutes":
+                            totalPreviousLevelsMs += prevHours * 60 * 1000;
+                            break;
+                          case "days":
+                          case "day":
+                            totalPreviousLevelsMs +=
+                              prevHours * 24 * 60 * 60 * 1000;
+                            break;
+                          default: // hours
+                            totalPreviousLevelsMs += prevHours * 60 * 60 * 1000;
                         }
-                      : null,
-                  });
+                      }
+                    }
 
-                  if (!matchingSlaRule?.resolutionTime) {
-                    return null; // No SLA rule found for this priority
-                  }
-
-                  // Use roleLevelSLA.startedAt (adjusted for working hours) if available, otherwise createdAt
-                  const slaStartedAt = (ticket as any).roleLevelSLA?.startedAt
-                    ? new Date((ticket as any).roleLevelSLA.startedAt)
-                    : new Date(ticket.createdAt);
-                  const { value, unit } = matchingSlaRule.resolutionTime;
-
-                  // Convert resolution time to milliseconds
-                  let resolutionMs = 0;
-                  switch (unit?.toLowerCase()) {
-                    case "minutes":
-                      resolutionMs = value * 60 * 1000;
-                      break;
-                    case "hours":
-                      resolutionMs = value * 60 * 60 * 1000;
-                      break;
-                    case "days":
-                      resolutionMs = value * 24 * 60 * 60 * 1000;
-                      break;
-                    default:
-                      resolutionMs = value * 60 * 60 * 1000; // default to hours
-                  }
-
-                  const priorityDeadline = new Date(
-                    slaStartedAt.getTime() + resolutionMs,
-                  );
-                  // Extract priority name from string or object
-                  const priorityName =
-                    typeof matchingSlaRule.priority === "string"
-                      ? matchingSlaRule.priority
-                      : matchingSlaRule.priority?.name || ticket.priority;
-
-                  // Format the total resolution time for display
-                  const totalResolutionDisplay =
-                    unit?.toLowerCase() === "days"
-                      ? `${value}d`
-                      : unit?.toLowerCase() === "minutes"
-                        ? `${value}m`
-                        : `${value}h`;
-
-                  let displayText = "";
-                  let isBreached = false;
-                  let bgColor = "";
-                  let textColor = "";
-                  let borderColor = "";
-                  let iconColor = "";
-                  let waitingForWorkingHours = false;
-
-                  if (isComplete) {
-                    // Ticket is resolved - show time taken vs allowed
-                    const completedAt = new Date(
-                      ticket.resolvedAt || ticket.closedAt || ticket.updatedAt,
-                    );
-                    const timeTakenMs =
-                      completedAt.getTime() - slaStartedAt.getTime();
-                    isBreached = timeTakenMs > resolutionMs;
-
-                    const totalHours = Math.floor(
-                      timeTakenMs / (1000 * 60 * 60),
-                    );
-                    const minutes = Math.floor(
-                      (timeTakenMs % (1000 * 60 * 60)) / (1000 * 60),
+                    // Use roleLevelSLA.startedAt if available (respects working calendar)
+                    // Otherwise fall back to ticket.createdAt + previous levels time
+                    const createdAt = new Date(ticket.createdAt);
+                    const slaStartTime = (ticket as any).roleLevelSLA?.startedAt
+                      ? new Date((ticket as any).roleLevelSLA.startedAt)
+                      : new Date(createdAt.getTime() + totalPreviousLevelsMs);
+                    const levelStartTime = slaStartTime;
+                    const levelDeadline = new Date(
+                      levelStartTime.getTime() + levelSlaMs,
                     );
 
-                    displayText = isBreached
-                      ? `Resolved in ${totalHours}h ${minutes}m (exceeded ${totalResolutionDisplay})`
-                      : `Resolved in ${totalHours}h ${minutes}m (within ${totalResolutionDisplay})`;
-
-                    bgColor = isBreached ? "bg-red-50" : "bg-green-50";
-                    borderColor = isBreached
-                      ? "border-red-300"
-                      : "border-green-300";
-                    textColor = isBreached ? "text-red-600" : "text-green-600";
-                    iconColor = isBreached ? "text-red-500" : "text-green-500";
-                  } else {
-                    // Ticket is open - check if SLA has started (working hours)
+                    // Check if SLA hasn't started yet (outside working hours)
                     const now = new Date();
-                    const slaNotStartedYet = now < slaStartedAt;
+                    const slaNotStartedYet = now < slaStartTime;
 
-                    if (slaNotStartedYet) {
-                      // SLA hasn't started yet - show "Starts in X" with blue styling
-                      const startsInMs = slaStartedAt.getTime() - now.getTime();
+                    // Format SLA time for display
+                    const slaDisplay = slaUnit.startsWith("min")
+                      ? `${slaHours}m`
+                      : slaUnit.startsWith("day")
+                        ? `${slaHours}d`
+                        : `${slaHours}h`;
+
+                    let displayText = "";
+                    let isBreached = false;
+                    let bgColor = "";
+                    let textColor = "";
+                    let borderColor = "";
+                    let nextEscalationInfo = "";
+
+                    if (isComplete) {
+                      // Ticket is resolved or closed - show time taken
+                      const completedAt = new Date(
+                        ticket.resolvedAt ||
+                          ticket.closedAt ||
+                          ticket.updatedAt,
+                      );
+                      const timeTakenMs =
+                        completedAt.getTime() - levelStartTime.getTime();
                       const totalHours = Math.floor(
-                        startsInMs / (1000 * 60 * 60),
+                        Math.abs(timeTakenMs) / (1000 * 60 * 60),
                       );
                       const minutes = Math.floor(
-                        (startsInMs % (1000 * 60 * 60)) / (1000 * 60),
+                        (Math.abs(timeTakenMs) % (1000 * 60 * 60)) /
+                          (1000 * 60),
                       );
 
+                      isBreached = timeTakenMs > levelSlaMs;
+                      displayText = `Resolved in ${totalHours}h ${minutes}m`;
+
+                      bgColor = isBreached ? "bg-red-50" : "bg-green-50";
+                      borderColor = isBreached
+                        ? "border-red-300"
+                        : "border-green-300";
+                      textColor = isBreached
+                        ? "text-red-600"
+                        : "text-green-600";
+                    } else if (slaNotStartedYet) {
+                      // SLA hasn't started yet (outside working hours)
+                      const startsInMs = slaStartTime.getTime() - now.getTime();
+                      const startsInMinutes = Math.ceil(
+                        startsInMs / (1000 * 60),
+                      );
+                      const startsInHours = Math.floor(startsInMinutes / 60);
+                      const startsInMins = startsInMinutes % 60;
+
                       displayText =
-                        totalHours > 0
-                          ? `Starts in ${totalHours}h ${minutes}m`
-                          : `Starts in ${minutes}m`;
+                        startsInHours > 0
+                          ? `Starts in ${startsInHours}h ${startsInMins}m`
+                          : `Starts in ${startsInMins}m`;
 
                       bgColor = "bg-blue-50";
                       borderColor = "border-blue-300";
                       textColor = "text-blue-600";
-                      iconColor = "text-blue-500";
-                      waitingForWorkingHours = true;
+                      nextEscalationInfo = "Waiting for working hours";
                     } else {
-                      // SLA is running - show remaining time
-                      const diffMs = priorityDeadline.getTime() - now.getTime();
+                      // Ticket is still open and SLA has started - show remaining time for this level
+                      const diffMs = levelDeadline.getTime() - now.getTime();
                       isBreached = diffMs < 0;
 
                       const absDiffMs = Math.abs(diffMs);
@@ -3084,775 +3722,582 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                         ? `Overdue by ${totalHours}h ${minutes}m`
                         : `${totalHours}h ${minutes}m remaining`;
 
-                      bgColor = isBreached ? "bg-red-50" : "bg-purple-50";
+                      bgColor = isBreached ? "bg-red-50" : "bg-blue-50";
                       borderColor = isBreached
                         ? "border-red-300"
-                        : "border-purple-300";
-                      textColor = isBreached
-                        ? "text-red-600"
-                        : "text-purple-600";
-                      iconColor = isBreached
-                        ? "text-red-500"
-                        : "text-purple-500";
-                    }
-                  }
+                        : "border-blue-300";
+                      textColor = isBreached ? "text-red-600" : "text-blue-600";
 
-                  return (
-                    <div
-                      className={`p-3 rounded-lg border ${bgColor} ${borderColor}`}
-                    >
-                      <div className="flex items-center space-x-2">
-                        <div className={`flex-shrink-0 ${iconColor}`}>
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            className="h-5 w-5"
-                            viewBox="0 0 20 20"
-                            fill="currentColor"
-                          >
-                            <path
-                              fillRule="evenodd"
-                              d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z"
-                              clipRule="evenodd"
-                            />
-                          </svg>
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-xs font-medium text-gray-700">
-                            {priorityName} Priority SLA (
-                            {totalResolutionDisplay})
-                          </p>
-                          <p className={`text-lg font-bold ${textColor}`}>
-                            {displayText}
-                          </p>
-                          {waitingForWorkingHours && (
-                            <p className="text-xs text-blue-500 mt-1">
-                              <span className="inline-block w-2 h-2 bg-blue-400 rounded-full mr-1"></span>
-                              Waiting for working hours
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* Escalation Level Countdown - Uses fetched escalation matrix */}
-                {(() => {
-                  // Check if ticket is resolved or closed (handle both numeric and string values)
-                  const statusLower = String(ticket.status).toLowerCase();
-                  const isResolved =
-                    String(ticket.status) === "4" || statusLower === "resolved";
-                  const isClosed =
-                    String(ticket.status) === "5" ||
-                    statusLower === "closed" ||
-                    statusLower === "close";
-                  const isComplete = isResolved || isClosed;
-
-                  // Use escalation matrix from state (fetched via ticket.escalationMatrixId)
-                  if (
-                    !escalationMatrix ||
-                    !escalationMatrix.levels ||
-                    escalationMatrix.levels.length === 0
-                  ) {
-                    console.log("⚠️ No escalation matrix available for timer");
-                    return null;
-                  }
-
-                  console.log(
-                    "📋 Using Escalation Matrix:",
-                    escalationMatrix.name,
-                  );
-                  console.log(
-                    "📋 Escalation Matrix Levels:",
-                    escalationMatrix.levels,
-                  );
-
-                  // Get current escalation level (0-based index, default to first level)
-                  const currentLevelIndex = ticket.currentEscalationLevelNumber
-                    ? ticket.currentEscalationLevelNumber - 1
-                    : 0;
-
-                  // Get the current level configuration
-                  const currentLevelConfig =
-                    escalationMatrix.levels[currentLevelIndex] ||
-                    escalationMatrix.levels[0];
-
-                  // Determine the level label
-                  const timeLabel =
-                    currentLevelConfig.levelName ||
-                    `Level ${currentLevelConfig.levelNumber || currentLevelIndex + 1} SLA`;
-
-                  // Calculate SLA time for current level
-                  let levelSlaMs = 0;
-                  const slaHours = currentLevelConfig.slaHours || 0;
-                  const slaUnit =
-                    currentLevelConfig.slaUnit?.toLowerCase() || "hrs";
-
-                  switch (slaUnit) {
-                    case "mins":
-                    case "min":
-                    case "minutes":
-                      levelSlaMs = slaHours * 60 * 1000;
-                      break;
-                    case "hrs":
-                    case "hr":
-                    case "hours":
-                      levelSlaMs = slaHours * 60 * 60 * 1000;
-                      break;
-                    case "days":
-                    case "day":
-                      levelSlaMs = slaHours * 24 * 60 * 60 * 1000;
-                      break;
-                    default:
-                      levelSlaMs = slaHours * 60 * 60 * 1000; // default to hours
-                  }
-
-                  // Calculate deadline from ticket creation
-                  // For levels > 1, need to add previous levels' time
-                  let totalPreviousLevelsMs = 0;
-                  for (let i = 0; i < currentLevelIndex; i++) {
-                    const prevLevel = escalationMatrix.levels[i];
-                    if (prevLevel) {
-                      const prevHours = prevLevel.slaHours || 0;
-                      const prevUnit =
-                        prevLevel.slaUnit?.toLowerCase() || "hrs";
-                      switch (prevUnit) {
-                        case "mins":
-                        case "min":
-                        case "minutes":
-                          totalPreviousLevelsMs += prevHours * 60 * 1000;
-                          break;
-                        case "days":
-                        case "day":
-                          totalPreviousLevelsMs +=
-                            prevHours * 24 * 60 * 60 * 1000;
-                          break;
-                        default: // hours
-                          totalPreviousLevelsMs += prevHours * 60 * 60 * 1000;
+                      // Show auto-escalation info if not on last level
+                      if (
+                        !isBreached &&
+                        currentLevelIndex < escalationMatrix.levels.length - 1
+                      ) {
+                        nextEscalationInfo = `Auto-escalates in ${totalHours}h ${minutes}m`;
                       }
                     }
-                  }
 
-                  // Use roleLevelSLA.startedAt if available (respects working calendar)
-                  // Otherwise fall back to ticket.createdAt + previous levels time
-                  const createdAt = new Date(ticket.createdAt);
-                  const slaStartTime = (ticket as any).roleLevelSLA?.startedAt
-                    ? new Date((ticket as any).roleLevelSLA.startedAt)
-                    : new Date(createdAt.getTime() + totalPreviousLevelsMs);
-                  const levelStartTime = slaStartTime;
-                  const levelDeadline = new Date(
-                    levelStartTime.getTime() + levelSlaMs,
-                  );
-
-                  // Check if SLA hasn't started yet (outside working hours)
-                  const now = new Date();
-                  const slaNotStartedYet = now < slaStartTime;
-
-                  // Format SLA time for display
-                  const slaDisplay = slaUnit.startsWith("min")
-                    ? `${slaHours}m`
-                    : slaUnit.startsWith("day")
-                      ? `${slaHours}d`
-                      : `${slaHours}h`;
-
-                  let displayText = "";
-                  let isBreached = false;
-                  let bgColor = "";
-                  let textColor = "";
-                  let borderColor = "";
-                  let nextEscalationInfo = "";
-
-                  if (isComplete) {
-                    // Ticket is resolved or closed - show time taken
-                    const completedAt = new Date(
-                      ticket.resolvedAt || ticket.closedAt || ticket.updatedAt,
-                    );
-                    const timeTakenMs =
-                      completedAt.getTime() - levelStartTime.getTime();
-                    const totalHours = Math.floor(
-                      Math.abs(timeTakenMs) / (1000 * 60 * 60),
-                    );
-                    const minutes = Math.floor(
-                      (Math.abs(timeTakenMs) % (1000 * 60 * 60)) / (1000 * 60),
-                    );
-
-                    isBreached = timeTakenMs > levelSlaMs;
-                    displayText = `Resolved in ${totalHours}h ${minutes}m`;
-
-                    bgColor = isBreached ? "bg-red-50" : "bg-green-50";
-                    borderColor = isBreached
-                      ? "border-red-300"
-                      : "border-green-300";
-                    textColor = isBreached ? "text-red-600" : "text-green-600";
-                  } else if (slaNotStartedYet) {
-                    // SLA hasn't started yet (outside working hours)
-                    const startsInMs = slaStartTime.getTime() - now.getTime();
-                    const startsInMinutes = Math.ceil(startsInMs / (1000 * 60));
-                    const startsInHours = Math.floor(startsInMinutes / 60);
-                    const startsInMins = startsInMinutes % 60;
-
-                    displayText =
-                      startsInHours > 0
-                        ? `Starts in ${startsInHours}h ${startsInMins}m`
-                        : `Starts in ${startsInMins}m`;
-
-                    bgColor = "bg-blue-50";
-                    borderColor = "border-blue-300";
-                    textColor = "text-blue-600";
-                    nextEscalationInfo = "Waiting for working hours";
-                  } else {
-                    // Ticket is still open and SLA has started - show remaining time for this level
-                    const diffMs = levelDeadline.getTime() - now.getTime();
-                    isBreached = diffMs < 0;
-
-                    const absDiffMs = Math.abs(diffMs);
-                    const totalHours = Math.floor(absDiffMs / (1000 * 60 * 60));
-                    const minutes = Math.floor(
-                      (absDiffMs % (1000 * 60 * 60)) / (1000 * 60),
-                    );
-
-                    displayText = isBreached
-                      ? `Overdue by ${totalHours}h ${minutes}m`
-                      : `${totalHours}h ${minutes}m remaining`;
-
-                    bgColor = isBreached ? "bg-red-50" : "bg-blue-50";
-                    borderColor = isBreached
-                      ? "border-red-300"
-                      : "border-blue-300";
-                    textColor = isBreached ? "text-red-600" : "text-blue-600";
-
-                    // Show auto-escalation info if not on last level
-                    if (
-                      !isBreached &&
-                      currentLevelIndex < escalationMatrix.levels.length - 1
-                    ) {
-                      nextEscalationInfo = `Auto-escalates in ${totalHours}h ${minutes}m`;
-                    }
-                  }
-
-                  return (
-                    <div
-                      className={`p-3 rounded-lg border ${bgColor} ${borderColor}`}
-                    >
-                      <div className="flex items-center space-x-2">
-                        <ClockIcon className={`h-5 w-5 ${textColor}`} />
-                        <div className="flex-1">
-                          <p className="text-xs font-medium text-gray-700">
-                            {timeLabel} ({slaDisplay})
-                          </p>
-                          <p className={`text-lg font-bold ${textColor}`}>
-                            {displayText}
-                          </p>
-                          {nextEscalationInfo && (
-                            <p className="text-xs text-orange-600 mt-1">
-                              ⬆️ {nextEscalationInfo}
+                    return (
+                      <div
+                        className={`p-3 rounded-lg border ${bgColor} ${borderColor}`}
+                      >
+                        <div className="flex items-center space-x-2">
+                          <ClockIcon className={`h-5 w-5 ${textColor}`} />
+                          <div className="flex-1">
+                            <p className="text-xs font-medium text-gray-700">
+                              {timeLabel} ({slaDisplay})
                             </p>
-                          )}
-                          {currentLevelIndex > 0 && (
-                            <p className="text-xs text-gray-500 mt-1">
-                              Escalated {currentLevelIndex} time
-                              {currentLevelIndex > 1 ? "s" : ""}
+                            <p className={`text-lg font-bold ${textColor}`}>
+                              {displayText}
                             </p>
-                          )}
+                            {nextEscalationInfo && (
+                              <p className="text-xs text-orange-600 mt-1">
+                                ⬆️ {nextEscalationInfo}
+                              </p>
+                            )}
+                            {currentLevelIndex > 0 && (
+                              <p className="text-xs text-gray-500 mt-1">
+                                Escalated {currentLevelIndex} time
+                                {currentLevelIndex > 1 ? "s" : ""}
+                              </p>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })()}
+                    );
+                  })()}
 
-                {/* Category */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Category
-                  </label>
-                  {/* Use hierarchical category selector if multi-level hierarchy is configured */}
-                  {hierarchyConfig &&
-                  hierarchyConfig.levelCount > 1 &&
-                  ticketProjectId ? (
-                    <div>
-                      {/* Display current hierarchy if set */}
-                      {ticket.categoryHierarchy?.displayPath && (
-                        <div className="mb-2 p-2 bg-gray-50 rounded-lg text-sm">
-                          <span className="text-gray-500">Current: </span>
-                          <span>{ticket.categoryHierarchy.displayPath}</span>
-                        </div>
-                      )}
-                      {!permissions.includes("TICKET_CHANGE_CATEGORY") ? (
-                        <div className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed">
-                          {ticket.categoryHierarchy?.displayPath ||
-                            "No category selected"}
-                          <span className="ml-2 text-xs text-gray-400">
-                            (read-only)
-                          </span>
-                        </div>
-                      ) : (
-                        <HierarchyCategorySelector
-                          projectId={ticketProjectId}
-                          value={
-                            categoryHierarchy.level1
-                              ? categoryHierarchy
-                              : ticket.categoryHierarchy || {}
-                          }
-                          onChange={(newValue) => {
-                            setCategoryHierarchy(newValue);
-                            // Show confirmation modal before saving
-                            const fromPath =
-                              ticket.categoryHierarchy?.displayPath ||
-                              "current category";
-                            const toPath =
-                              newValue.displayPath || "new category";
-                            setConfirmModal({
-                              open: true,
-                              field: "Category",
-                              from: fromPath,
-                              to: toPath,
-                              onConfirm: () =>
-                                handleUpdateCategoryHierarchy(
-                                  newValue,
-                                  fromPath,
-                                  toPath,
-                                ),
-                            });
-                          }}
-                          mode="display"
-                          showValidation={false}
-                        />
-                      )}
-                    </div>
-                  ) : (
-                    <select
-                      disabled={!permissions.includes("TICKET_CHANGE_CATEGORY")}
-                      value={
-                        typeof ticket.category === "object" &&
-                        ticket.category !== null
-                          ? (ticket.category as any)._id
-                          : String(ticket.category || "")
-                      }
-                      onChange={(e) => {
-                        const newCategoryId = e.target.value;
-                        setNewCategory(newCategoryId);
-                        // Show confirmation modal before saving
-                        const fromCatName =
+                  {/* Category */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Category
+                    </label>
+                    {/* Use hierarchical category selector if multi-level hierarchy is configured */}
+                    {hierarchyConfig &&
+                    hierarchyConfig.levelCount > 1 &&
+                    ticketProjectId ? (
+                      <div>
+                        {/* Display current hierarchy if set */}
+                        {ticket.categoryHierarchy?.displayPath && (
+                          <div className="mb-2 p-2 bg-gray-50 rounded-lg text-sm">
+                            <span className="text-gray-500">Current: </span>
+                            <span>{ticket.categoryHierarchy.displayPath}</span>
+                          </div>
+                        )}
+                        {!permissions.includes("TICKET_CHANGE_CATEGORY") ? (
+                          <div className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed">
+                            {ticket.categoryHierarchy?.displayPath ||
+                              "No category selected"}
+                            <span className="ml-2 text-xs text-gray-400">
+                              (read-only)
+                            </span>
+                          </div>
+                        ) : (
+                          <HierarchyCategorySelector
+                            projectId={ticketProjectId}
+                            value={
+                              categoryHierarchy.level1
+                                ? categoryHierarchy
+                                : ticket.categoryHierarchy || {}
+                            }
+                            onChange={(newValue) => {
+                              setCategoryHierarchy(newValue);
+                              // Show confirmation modal before saving
+                              const fromPath =
+                                ticket.categoryHierarchy?.displayPath ||
+                                "current category";
+                              const toPath =
+                                newValue.displayPath || "new category";
+                              setConfirmModal({
+                                open: true,
+                                field: "Category",
+                                from: fromPath,
+                                to: toPath,
+                                onConfirm: () =>
+                                  handleUpdateCategoryHierarchy(
+                                    newValue,
+                                    fromPath,
+                                    toPath,
+                                  ),
+                              });
+                            }}
+                            mode="display"
+                            showValidation={false}
+                          />
+                        )}
+                      </div>
+                    ) : (
+                      <select
+                        disabled={
+                          !permissions.includes("TICKET_CHANGE_CATEGORY")
+                        }
+                        value={
                           typeof ticket.category === "object" &&
                           ticket.category !== null
-                            ? (ticket.category as any).name
-                            : categories.find(
-                                (c) =>
-                                  String(c._id) === String(ticket.category),
-                              )?.name || String(ticket.category);
-                        const toCatName =
-                          categories.find((c) => c._id === newCategoryId)
-                            ?.name || newCategoryId;
-                        setConfirmModal({
-                          open: true,
-                          field: "Category",
-                          from: fromCatName,
-                          to: toCatName,
-                          onConfirm: () =>
-                            handleUpdateCategory(
-                              newCategoryId,
-                              fromCatName,
-                              toCatName,
-                            ),
-                        });
-                      }}
-                      className={`w-full px-3 py-2 border rounded-lg ${
-                        permissions.includes("TICKET_CHANGE_CATEGORY")
-                          ? "border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          : "border-gray-200 bg-gray-50 text-gray-500 cursor-not-allowed"
-                      }`}
-                    >
-                      {categories.map((cat) => (
-                        <option key={cat._id} value={cat._id}>
-                          {cat.name}
-                        </option>
+                            ? (ticket.category as any)._id
+                            : String(ticket.category || "")
+                        }
+                        onChange={(e) => {
+                          const newCategoryId = e.target.value;
+                          setNewCategory(newCategoryId);
+                          // Show confirmation modal before saving
+                          const fromCatName =
+                            typeof ticket.category === "object" &&
+                            ticket.category !== null
+                              ? (ticket.category as any).name
+                              : categories.find(
+                                  (c) =>
+                                    String(c._id) === String(ticket.category),
+                                )?.name || String(ticket.category);
+                          const toCatName =
+                            categories.find((c) => c._id === newCategoryId)
+                              ?.name || newCategoryId;
+                          setConfirmModal({
+                            open: true,
+                            field: "Category",
+                            from: fromCatName,
+                            to: toCatName,
+                            onConfirm: () =>
+                              handleUpdateCategory(
+                                newCategoryId,
+                                fromCatName,
+                                toCatName,
+                              ),
+                          });
+                        }}
+                        className={`w-full px-3 py-2 border rounded-lg ${
+                          permissions.includes("TICKET_CHANGE_CATEGORY")
+                            ? "border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            : "border-gray-200 bg-gray-50 text-gray-500 cursor-not-allowed"
+                        }`}
+                      >
+                        {categories.map((cat) => (
+                          <option key={cat._id} value={cat._id}>
+                            {cat.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  {/* Assigned To */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Assigned To
+                    </label>
+                    <div className="flex items-center space-x-2">
+                      <UserIcon className="h-5 w-5 text-gray-400" />
+                      <span className="text-sm text-gray-900">
+                        {ticket.assignedTo
+                          ? `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}`
+                          : "Unassigned"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Requester */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Requester
+                    </label>
+                    <div className="space-y-1">
+                      {ticket.metadata?.studentName && (
+                        <p className="text-sm text-gray-900">
+                          {ticket.metadata.studentName}
+                        </p>
+                      )}
+                      {ticket.metadata?.studentEmail && (
+                        <p className="text-sm text-gray-600">
+                          {ticket.metadata.studentEmail}
+                        </p>
+                      )}
+                      {ticket.metadata?.studentPhone && (
+                        <p className="text-sm text-gray-600">
+                          {ticket.metadata.studentPhone}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tags Card */}
+              <div className="bg-white rounded-xl shadow-sm p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900">Tags</h3>
+                  <button
+                    onClick={() => setIsAddingTag(true)}
+                    className="text-sm text-blue-600 hover:text-blue-700"
+                  >
+                    + Add
+                  </button>
+                </div>
+
+                {isAddingTag && (
+                  <div className="mb-4 space-y-2">
+                    <input
+                      type="text"
+                      value={newTag}
+                      onChange={(e) => setNewTag(e.target.value)}
+                      placeholder="Enter tag name"
+                      list="available-tags"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                    <datalist id="available-tags">
+                      {availableTags.map((tag, index) => (
+                        <option key={index} value={tag} />
                       ))}
-                    </select>
+                    </datalist>
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={handleAddTag}
+                        className="flex-1 px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+                      >
+                        Add
+                      </button>
+                      <button
+                        onClick={() => {
+                          setIsAddingTag(false);
+                          setNewTag("");
+                        }}
+                        className="flex-1 px-3 py-1 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-2">
+                  {ticket.tags && ticket.tags.length > 0 ? (
+                    ticket.tags.map((tag, index) => (
+                      <span
+                        key={index}
+                        className="inline-flex items-center space-x-1 px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm"
+                      >
+                        <TagIcon className="h-3 w-3" />
+                        <span>{tag}</span>
+                        <button
+                          onClick={() => handleRemoveTag(tag)}
+                          className="ml-1 hover:text-blue-900"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))
+                  ) : (
+                    <p className="text-sm text-gray-500">No tags added</p>
                   )}
                 </div>
-
-                {/* Assigned To */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Assigned To
-                  </label>
-                  <div className="flex items-center space-x-2">
-                    <UserIcon className="h-5 w-5 text-gray-400" />
-                    <span className="text-sm text-gray-900">
-                      {ticket.assignedTo
-                        ? `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}`
-                        : "Unassigned"}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Requester */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Requester
-                  </label>
-                  <div className="space-y-1">
-                    {ticket.metadata?.studentName && (
-                      <p className="text-sm text-gray-900">
-                        {ticket.metadata.studentName}
-                      </p>
-                    )}
-                    {ticket.metadata?.studentEmail && (
-                      <p className="text-sm text-gray-600">
-                        {ticket.metadata.studentEmail}
-                      </p>
-                    )}
-                    {ticket.metadata?.studentPhone && (
-                      <p className="text-sm text-gray-600">
-                        {ticket.metadata.studentPhone}
-                      </p>
-                    )}
-                  </div>
-                </div>
               </div>
-            </div>
 
-            {/* Tags Card */}
-            <div className="bg-white rounded-xl shadow-sm p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900">Tags</h3>
-                <button
-                  onClick={() => setIsAddingTag(true)}
-                  className="text-sm text-blue-600 hover:text-blue-700"
+              {/* Escalate Card - hidden for resolved/closed/merged tickets */}
+              {ticket &&
+                !ticket.isMerged &&
+                Number(ticket.status) !== 4 &&
+                Number(ticket.status) !== 5 && (
+                  <EscalationMatrixCard
+                    ticketId={ticket._id}
+                    currentLevelNumber={
+                      ticket.currentEscalationLevelNumber ||
+                      ticket.slaTracking?.currentEscalationLevel
+                    }
+                    matrixName={ticket.escalationMatrixName}
+                    onEscalationComplete={fetchTicketDetails}
+                    permissions={permissions}
+                    projectSlug={customUrlPath}
+                  />
+                )}
+
+              {/* Quick Actions */}
+              {(() => {
+                const currentStatusOption = statusOptions.find(
+                  (s: any) => s.code === Number(ticket.status),
+                );
+                // Hide "Close Query" if current status already closes tickets
+                const isAlreadyClosed =
+                  currentStatusOption?.isClosed === true ||
+                  String(ticket.status) === "5";
+                // Hide "Mark as Resolved" if already resolved or already in a closing status
+                const isAlreadyResolved =
+                  String(ticket.status) === "4" || isAlreadyClosed;
+
+                // If both buttons would be hidden, don't render the card at all
+                if (isAlreadyResolved && isAlreadyClosed) return null;
+
+                return (
+                  <div className="bg-white rounded-xl shadow-sm p-6">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                      Quick Actions
+                    </h3>
+                    <div className="space-y-2">
+                      {!isAlreadyResolved && (
+                        <button
+                          onClick={() => {
+                            setConfirmModal({
+                              open: true,
+                              field: "Status",
+                              from: getStatusDisplayName(
+                                Number(ticket!.status),
+                              ),
+                              to: "Resolved",
+                              onConfirm: () => handleUpdateStatus(4),
+                            });
+                          }}
+                          className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100"
+                        >
+                          <CheckCircleIcon className="h-5 w-5" />
+                          <span>Mark as Resolved</span>
+                        </button>
+                      )}
+
+                      {!isAlreadyClosed && (
+                        <button
+                          onClick={() => {
+                            setConfirmModal({
+                              open: true,
+                              field: "Status",
+                              from: getStatusDisplayName(
+                                Number(ticket!.status),
+                              ),
+                              to: "Closed",
+                              onConfirm: () => handleUpdateStatus(5),
+                            });
+                          }}
+                          className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-gray-50 text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-100"
+                        >
+                          <XCircleIcon className="h-5 w-5" />
+                          <span>Close Query</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+
+        {/* ── Field-Update Spinner Overlay ──────────────────────────────── */}
+        {isFieldUpdating && (
+          <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl shadow-2xl px-10 py-8 flex flex-col items-center gap-4">
+              {/* Spinner */}
+              <svg
+                className="animate-spin h-10 w-10 text-blue-600"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                />
+              </svg>
+              <p className="text-sm font-medium text-gray-700">
+                Saving changes…
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* ── Confirmation Modal ─────────────────────────────────────────── */}
+        {confirmModal.open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            {/* Backdrop */}
+            <div
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+              onClick={() => setConfirmModal((m) => ({ ...m, open: false }))}
+            />
+            {/* Dialog */}
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
+              {/* Icon */}
+              <div className="flex items-center justify-center w-12 h-12 rounded-full bg-amber-100 mx-auto mb-4">
+                <svg
+                  className="h-6 w-6 text-amber-600"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
                 >
-                  + Add
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+                  />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 text-center mb-2">
+                Confirm Change
+              </h3>
+              <p className="text-sm text-gray-600 text-center mb-6">
+                Are you sure you want to change{" "}
+                <span className="font-medium text-gray-800">
+                  {confirmModal.field}
+                </span>{" "}
+                from{" "}
+                <span className="inline-flex items-center px-2 py-0.5 rounded bg-gray-100 text-gray-800 font-medium">
+                  {confirmModal.from}
+                </span>{" "}
+                to{" "}
+                <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-medium">
+                  {confirmModal.to}
+                </span>
+                ?
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() =>
+                    setConfirmModal((m) => ({ ...m, open: false }))
+                  }
+                  className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setConfirmModal((m) => ({ ...m, open: false }));
+                    confirmModal.onConfirm();
+                  }}
+                  className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Yes, Change
                 </button>
               </div>
-
-              {isAddingTag && (
-                <div className="mb-4 space-y-2">
-                  <input
-                    type="text"
-                    value={newTag}
-                    onChange={(e) => setNewTag(e.target.value)}
-                    placeholder="Enter tag name"
-                    list="available-tags"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                  <datalist id="available-tags">
-                    {availableTags.map((tag, index) => (
-                      <option key={index} value={tag} />
-                    ))}
-                  </datalist>
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={handleAddTag}
-                      className="flex-1 px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
-                    >
-                      Add
-                    </button>
-                    <button
-                      onClick={() => {
-                        setIsAddingTag(false);
-                        setNewTag("");
-                      }}
-                      className="flex-1 px-3 py-1 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex flex-wrap gap-2">
-                {ticket.tags && ticket.tags.length > 0 ? (
-                  ticket.tags.map((tag, index) => (
-                    <span
-                      key={index}
-                      className="inline-flex items-center space-x-1 px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm"
-                    >
-                      <TagIcon className="h-3 w-3" />
-                      <span>{tag}</span>
-                      <button
-                        onClick={() => handleRemoveTag(tag)}
-                        className="ml-1 hover:text-blue-900"
-                      >
-                        ×
-                      </button>
-                    </span>
-                  ))
-                ) : (
-                  <p className="text-sm text-gray-500">No tags added</p>
-                )}
-              </div>
             </div>
-
-            {/* Escalate Card - Using Matrix-Based Escalation */}
-            {ticket && (
-              <EscalationMatrixCard
-                ticketId={ticket._id}
-                currentLevelNumber={
-                  ticket.currentEscalationLevelNumber ||
-                  ticket.slaTracking?.currentEscalationLevel
-                }
-                matrixName={ticket.escalationMatrixName}
-                onEscalationComplete={fetchTicketDetails}
-                permissions={permissions}
-                projectSlug={customUrlPath}
-              />
-            )}
-
-            {/* Quick Actions */}
-            {(() => {
-              const currentStatusOption = statusOptions.find(
-                (s: any) => s.code === Number(ticket.status),
-              );
-              // Hide "Close Query" if current status already closes tickets
-              const isAlreadyClosed =
-                currentStatusOption?.isClosed === true ||
-                String(ticket.status) === "5";
-              // Hide "Mark as Resolved" if already resolved or already in a closing status
-              const isAlreadyResolved =
-                String(ticket.status) === "4" || isAlreadyClosed;
-
-              // If both buttons would be hidden, don't render the card at all
-              if (isAlreadyResolved && isAlreadyClosed) return null;
-
-              return (
-                <div className="bg-white rounded-xl shadow-sm p-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                    Quick Actions
-                  </h3>
-                  <div className="space-y-2">
-                    {!isAlreadyResolved && (
-                      <button
-                        onClick={() => {
-                          setConfirmModal({
-                            open: true,
-                            field: "Status",
-                            from: getStatusDisplayName(Number(ticket!.status)),
-                            to: "Resolved",
-                            onConfirm: () => handleUpdateStatus(4),
-                          });
-                        }}
-                        className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100"
-                      >
-                        <CheckCircleIcon className="h-5 w-5" />
-                        <span>Mark as Resolved</span>
-                      </button>
-                    )}
-
-                    {!isAlreadyClosed && (
-                      <button
-                        onClick={() => {
-                          setConfirmModal({
-                            open: true,
-                            field: "Status",
-                            from: getStatusDisplayName(Number(ticket!.status)),
-                            to: "Closed",
-                            onConfirm: () => handleUpdateStatus(5),
-                          });
-                        }}
-                        className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-gray-50 text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-100"
-                      >
-                        <XCircleIcon className="h-5 w-5" />
-                        <span>Close Query</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
           </div>
-        </div>
+        )}
+
+        {/* ── Success Modal ──────────────────────────────────────────────── */}
+        {successModal.open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            {/* Backdrop */}
+            <div
+              className="absolute inset-0 bg-black/30 backdrop-blur-sm"
+              onClick={() => setSuccessModal({ open: false, message: "" })}
+            />
+            {/* Dialog */}
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6 text-center">
+              {/* Green check */}
+              <div className="flex items-center justify-center w-14 h-14 rounded-full bg-green-100 mx-auto mb-4">
+                <svg
+                  className="h-7 w-7 text-green-600"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                Done!
+              </h3>
+              <p className="text-sm text-gray-600 mb-6">
+                {successModal.message}
+              </p>
+              <button
+                onClick={() => setSuccessModal({ open: false, message: "" })}
+                className="w-full px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── File Upload Toast ──────────────────────────────────────────── */}
+        {fileUploadToast && (
+          <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-top-4 fade-in duration-300">
+            <div className="flex items-start gap-3 bg-white border border-green-200 shadow-xl rounded-xl px-5 py-4 min-w-[280px] max-w-sm">
+              {/* Green check circle */}
+              <div className="flex-shrink-0 mt-0.5 bg-green-100 rounded-full p-1.5">
+                <svg
+                  className="h-5 w-5 text-green-600"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+              </div>
+              {/* Text */}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-900">
+                  {fileUploadToast.names.length === 1
+                    ? "Document attached"
+                    : `${fileUploadToast.names.length} documents attached`}
+                </p>
+                <ul className="mt-1 space-y-0.5">
+                  {fileUploadToast.names.map((name, i) => (
+                    <li key={i} className="text-xs text-gray-500 truncate">
+                      {name}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              {/* Close button */}
+              <button
+                onClick={() => setFileUploadToast(null)}
+                className="flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* ── Field-Update Spinner Overlay ──────────────────────────────── */}
-      {isFieldUpdating && (
-        <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl px-10 py-8 flex flex-col items-center gap-4">
-            {/* Spinner */}
-            <svg
-              className="animate-spin h-10 w-10 text-blue-600"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              />
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-              />
-            </svg>
-            <p className="text-sm font-medium text-gray-700">Saving changes…</p>
-          </div>
-        </div>
+      {/* Merge Modal */}
+      {showMergeModal && ticket && (
+        <TicketMergeModal
+          isOpen={showMergeModal}
+          onClose={() => setShowMergeModal(false)}
+          primaryTicket={{
+            _id: ticket._id || (ticket as any).id || "",
+            ticketNumber: ticket.ticketNumber,
+            subject: ticket.subject ?? ticket.title,
+            status: Number(ticket.status) || 1,
+            priority: ticket.priority,
+          }}
+          onMergeComplete={() => {
+            setShowMergeModal(false);
+            // Re-fetch ticket to show updated mergedTickets list
+            window.location.reload();
+          }}
+        />
       )}
-
-      {/* ── Confirmation Modal ─────────────────────────────────────────── */}
-      {confirmModal.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          {/* Backdrop */}
-          <div
-            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-            onClick={() => setConfirmModal((m) => ({ ...m, open: false }))}
-          />
-          {/* Dialog */}
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
-            {/* Icon */}
-            <div className="flex items-center justify-center w-12 h-12 rounded-full bg-amber-100 mx-auto mb-4">
-              <svg
-                className="h-6 w-6 text-amber-600"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
-                />
-              </svg>
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 text-center mb-2">
-              Confirm Change
-            </h3>
-            <p className="text-sm text-gray-600 text-center mb-6">
-              Are you sure you want to change{" "}
-              <span className="font-medium text-gray-800">
-                {confirmModal.field}
-              </span>{" "}
-              from{" "}
-              <span className="inline-flex items-center px-2 py-0.5 rounded bg-gray-100 text-gray-800 font-medium">
-                {confirmModal.from}
-              </span>{" "}
-              to{" "}
-              <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-medium">
-                {confirmModal.to}
-              </span>
-              ?
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setConfirmModal((m) => ({ ...m, open: false }))}
-                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setConfirmModal((m) => ({ ...m, open: false }));
-                  confirmModal.onConfirm();
-                }}
-                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Yes, Change
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Success Modal ──────────────────────────────────────────────── */}
-      {successModal.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          {/* Backdrop */}
-          <div
-            className="absolute inset-0 bg-black/30 backdrop-blur-sm"
-            onClick={() => setSuccessModal({ open: false, message: "" })}
-          />
-          {/* Dialog */}
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6 text-center">
-            {/* Green check */}
-            <div className="flex items-center justify-center w-14 h-14 rounded-full bg-green-100 mx-auto mb-4">
-              <svg
-                className="h-7 w-7 text-green-600"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2.5}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M5 13l4 4L19 7"
-                />
-              </svg>
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Done!</h3>
-            <p className="text-sm text-gray-600 mb-6">{successModal.message}</p>
-            <button
-              onClick={() => setSuccessModal({ open: false, message: "" })}
-              className="w-full px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors"
-            >
-              OK
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── File Upload Toast ──────────────────────────────────────────── */}
-      {fileUploadToast && (
-        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-top-4 fade-in duration-300">
-          <div className="flex items-start gap-3 bg-white border border-green-200 shadow-xl rounded-xl px-5 py-4 min-w-[280px] max-w-sm">
-            {/* Green check circle */}
-            <div className="flex-shrink-0 mt-0.5 bg-green-100 rounded-full p-1.5">
-              <svg
-                className="h-5 w-5 text-green-600"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2.5}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M5 13l4 4L19 7"
-                />
-              </svg>
-            </div>
-            {/* Text */}
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-gray-900">
-                {fileUploadToast.names.length === 1
-                  ? "Document attached"
-                  : `${fileUploadToast.names.length} documents attached`}
-              </p>
-              <ul className="mt-1 space-y-0.5">
-                {fileUploadToast.names.map((name, i) => (
-                  <li key={i} className="text-xs text-gray-500 truncate">
-                    {name}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            {/* Close button */}
-            <button
-              onClick={() => setFileUploadToast(null)}
-              className="flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors"
-            >
-              <svg
-                className="h-4 w-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
+    </>
   );
 
   return wrapWithLayout ? (

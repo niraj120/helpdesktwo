@@ -110,6 +110,11 @@ export interface ITicket extends Document {
   metadata?: any;
   resolvedAt?: Date; // Timestamp when status changed to Resolved (4)
   closedAt?: Date; // Timestamp when status changed to Closed (5)
+  // Merge tracking fields
+  isMerged?: boolean; // true for secondary tickets that have been absorbed into a primary
+  mergedInto?: mongoose.Types.ObjectId; // Primary ticket's _id (set on secondary)
+  mergedTickets?: mongoose.Types.ObjectId[]; // List of secondary ticket _ids (set on primary)
+  mergedAt?: Date; // Timestamp when this ticket was merged
   resolutionTime?: string; // Calculated field for reporting (e.g., "2d 5h")
   slaStatus?: string; // Calculated field for reporting (e.g., "Within SLA", "Outside SLA")
   // Escalation Matrix fields
@@ -133,6 +138,8 @@ export interface ITicket extends Document {
   };
   createdAt: Date;
   updatedAt: Date;
+  /** Snapshot of the form schema at the time the ticket was submitted (US-7) */
+  formSchemaSnapshot?: any;
 }
 
 const AttachmentSchema = new Schema({
@@ -159,6 +166,7 @@ const ThreadSchema = new Schema({
   attachments: [ThreadAttachmentSchema],
   isSystemMessage: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
+  mergedFrom: { type: String }, // Ticket number if thread was merged from another ticket
 });
 
 const CommentSchema = new Schema({
@@ -378,6 +386,28 @@ const TicketSchema: Schema = new Schema(
       breachedAt: { type: Date },
       pausedAt: { type: Date },
       pausedDuration: { type: Number, default: 0 },
+    },
+    // Merge tracking fields
+    isMerged: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    mergedInto: {
+      type: Schema.Types.ObjectId,
+      ref: "Ticket",
+    },
+    mergedTickets: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "Ticket",
+      },
+    ],
+    mergedAt: {
+      type: Date,
+    },
+    formSchemaSnapshot: {
+      type: Schema.Types.Mixed,
     },
   },
   {

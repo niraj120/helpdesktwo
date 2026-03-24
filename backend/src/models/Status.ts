@@ -1,4 +1,4 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Document, Schema } from "mongoose";
 
 export interface IStatus extends Document {
   name: string;
@@ -30,11 +30,11 @@ const StatusSchema = new Schema<IStatus>(
     color: {
       type: String,
       required: true,
-      default: '#3b82f6',
+      default: "#3b82f6",
     },
     projectId: {
       type: Schema.Types.ObjectId,
-      ref: 'Project',
+      ref: "Project",
       required: true,
       index: true,
     },
@@ -60,17 +60,17 @@ const StatusSchema = new Schema<IStatus>(
     },
     createdBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
     },
     updatedBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
     },
   },
   {
     timestamps: true,
-    collection: 'status', // Explicitly set collection name to match database
-  }
+    collection: "status", // Explicitly set collection name to match database
+  },
 );
 
 // Compound index for unique status code per project
@@ -80,4 +80,4 @@ StatusSchema.index({ code: 1, projectId: 1 }, { unique: true });
 StatusSchema.index({ projectId: 1, isActive: 1 });
 StatusSchema.index({ projectId: 1, displayOrder: 1 });
 
-export const Status = mongoose.model<IStatus>('Status', StatusSchema);
+export const Status = mongoose.model<IStatus>("Status", StatusSchema, "status");

@@ -14,6 +14,7 @@ interface TicketExportModalProps {
     assignedTo?: string;
     dateFrom?: string;
     dateTo?: string;
+    projectId?: string;
   };
 }
 

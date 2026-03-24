@@ -1728,12 +1728,10 @@ export const checkDuplicate = async (
     const { type, value } = req.query;
 
     if (!type || !value || typeof value !== "string") {
-      res
-        .status(400)
-        .json({
-          success: false,
-          error: "type and value query parameters are required",
-        });
+      res.status(400).json({
+        success: false,
+        error: "type and value query parameters are required",
+      });
       return;
     }
 
