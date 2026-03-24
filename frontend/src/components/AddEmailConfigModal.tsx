@@ -14,7 +14,7 @@ import {
 // Provider and auth method types
 type EmailProvider = "google" | "microsoft" | "other";
 type AuthMethod = "basic" | "app_password" | "oauth2";
-type InboundMethod = "imap" | "webhook";
+type InboundMethod = "imap" | "webhook" | "graph";
 
 type WebhookPayloadMap = {
   to: string;
@@ -127,7 +127,8 @@ interface FormData {
   oauth2ClientId: string;
   oauth2ClientSecret: string;
   oauth2RefreshToken: string;
-  outboundMethod: "smtp" | "sendgrid";
+  oauth2TenantId: string;    // Microsoft Tenant ID for Graph API
+  outboundMethod: "smtp" | "sendgrid" | "graph";
   sendgridApiKey: string;
 }
 
@@ -198,7 +199,9 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
       const inboundMethod: InboundMethod =
         rawMethod === "sendgrid" || rawMethod === "webhook"
           ? "webhook"
-          : "imap";
+          : rawMethod === "graph"
+            ? "graph"
+            : "imap";
       const webhookVendor =
         rawMethod === "sendgrid"
           ? "sendgrid"
@@ -230,6 +233,7 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
         oauth2ClientId: (editingConfig as any).oauth2?.clientId || "",
         oauth2ClientSecret: "",
         oauth2RefreshToken: (editingConfig as any).oauth2?.refreshToken || "",
+        oauth2TenantId: (editingConfig as any).oauth2?.tenantId || "",
         outboundMethod: (editingConfig as any).outboundMethod || "smtp",
         sendgridApiKey: "", // never pre-fill API key
       };
@@ -255,6 +259,7 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
       oauth2ClientId: "",
       oauth2ClientSecret: "",
       oauth2RefreshToken: "",
+      oauth2TenantId: "",
       outboundMethod: "smtp",
       sendgridApiKey: "",
     };
@@ -328,8 +333,19 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
       if (!formData.oauth2ClientId.trim()) {
         newErrors.oauth2ClientId = "Client ID is required";
       }
-      if (!formData.oauth2RefreshToken.trim()) {
-        newErrors.oauth2RefreshToken = "Refresh Token is required";
+      if (formData.inboundMethod === "graph") {
+        // Graph API uses client_credentials — tenant ID required, no refresh token needed
+        if (!formData.oauth2TenantId.trim()) {
+          newErrors.oauth2TenantId = "Tenant ID is required for Graph API";
+        }
+        if (!editingConfig && !formData.oauth2ClientSecret.trim()) {
+          newErrors.oauth2ClientSecret =
+            "Client Secret is required for Graph API";
+        }
+      } else {
+        if (!formData.oauth2RefreshToken.trim()) {
+          newErrors.oauth2RefreshToken = "Refresh Token is required";
+        }
       }
     }
 
@@ -360,30 +376,39 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
       }
     }
 
-    // SMTP validations
-    if (!formData.smtpHost.trim()) {
-      newErrors.smtpHost = "SMTP host is required";
-    }
-    const smtpPort = Number(formData.smtpPort);
-    if (
-      !formData.smtpPort ||
-      isNaN(smtpPort) ||
-      smtpPort < 1 ||
-      smtpPort > 65535
-    ) {
-      newErrors.smtpPort = "Valid SMTP port is required (1-65535)";
-    }
-    if (!formData.smtpUsername.trim()) {
-      newErrors.smtpUsername = "SMTP username is required";
-    }
-    // In edit mode password is optional; OAuth2 doesn't need SMTP password
-    if (
-      formData.outboundMethod !== "sendgrid" &&
-      formData.authMethod !== "oauth2" &&
-      !editingConfig &&
-      !formData.smtpPassword.trim()
-    ) {
-      newErrors.smtpPassword = "SMTP password is required";
+    // SMTP validations — skip entirely for Graph API (no SMTP needed)
+    if (formData.outboundMethod !== "graph") {
+      if (
+        formData.outboundMethod !== "sendgrid" &&
+        !formData.smtpHost.trim()
+      ) {
+        newErrors.smtpHost = "SMTP host is required";
+      }
+      const smtpPort = Number(formData.smtpPort);
+      if (
+        formData.outboundMethod !== "sendgrid" &&
+        (!formData.smtpPort ||
+          isNaN(smtpPort) ||
+          smtpPort < 1 ||
+          smtpPort > 65535)
+      ) {
+        newErrors.smtpPort = "Valid SMTP port is required (1-65535)";
+      }
+      if (
+        formData.outboundMethod !== "sendgrid" &&
+        !formData.smtpUsername.trim()
+      ) {
+        newErrors.smtpUsername = "SMTP username is required";
+      }
+      // In edit mode password is optional; OAuth2 doesn't need SMTP password
+      if (
+        formData.outboundMethod !== "sendgrid" &&
+        formData.authMethod !== "oauth2" &&
+        !editingConfig &&
+        !formData.smtpPassword.trim()
+      ) {
+        newErrors.smtpPassword = "SMTP password is required";
+      }
     }
 
     // SendGrid outbound requires API key
@@ -437,6 +462,24 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
           WEBHOOK_PRESETS[vendor]?.payloadMap ||
           WEBHOOK_PRESETS.sendgrid.payloadMap,
       };
+    }
+
+    // When switching to Graph API, auto-set oauth2 + outbound=graph
+    if (field === "inboundMethod" && value === "graph") {
+      updatedData = {
+        ...updatedData,
+        authMethod: "oauth2",
+        outboundMethod: "graph",
+      };
+    }
+
+    // When switching away from Graph, reset outbound if it was "graph"
+    if (
+      field === "inboundMethod" &&
+      value !== "graph" &&
+      formData.outboundMethod === "graph"
+    ) {
+      updatedData = { ...updatedData, outboundMethod: "smtp" };
     }
 
     // When changing vendor, auto-fill the payload map from preset
@@ -576,9 +619,12 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
       const token = localStorage.getItem("authToken");
 
       // Prepare payload - only include passwords if provided
+      const isGraphInbound = formData.inboundMethod === "graph";
+      const isGraphOutbound = formData.outboundMethod === "graph";
       const payload: any = {
         email_address: formData.emailAddress,
         inbound_method: formData.inboundMethod,
+        outbound_method: formData.outboundMethod,
         imap_host:
           formData.inboundMethod === "imap" ? formData.imapHost : undefined,
         imap_port:
@@ -587,9 +633,9 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
             : undefined,
         imap_username:
           formData.inboundMethod === "imap" ? formData.imapUsername : undefined,
-        smtp_host: formData.smtpHost,
-        smtp_port: Number(formData.smtpPort),
-        smtp_username: formData.smtpUsername,
+        smtp_host: isGraphOutbound ? undefined : formData.smtpHost,
+        smtp_port: isGraphOutbound ? undefined : Number(formData.smtpPort),
+        smtp_username: isGraphOutbound ? undefined : formData.smtpUsername,
         provider: formData.provider,
         authMethod: formData.authMethod,
         webhook_provider:
@@ -628,7 +674,15 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
           ...(formData.oauth2ClientSecret.trim() && {
             clientSecret: formData.oauth2ClientSecret,
           }),
-          refreshToken: formData.oauth2RefreshToken,
+          // Include tenantId for Graph API
+          ...(formData.oauth2TenantId.trim() && {
+            tenantId: formData.oauth2TenantId,
+          }),
+          // Include refreshToken for standard OAuth2 (not needed for Graph)
+          ...(!isGraphInbound &&
+            formData.oauth2RefreshToken.trim() && {
+              refreshToken: formData.oauth2RefreshToken,
+            }),
         };
       }
 
@@ -810,6 +864,35 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                     </p>
                   </div>
                 </label>
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="inboundMethod"
+                    value="graph"
+                    checked={formData.inboundMethod === "graph"}
+                    onChange={() =>
+                      handleInputChange("inboundMethod", "graph")
+                    }
+                    className="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                  />
+                  <div>
+                    <span className="text-sm font-medium text-gray-800">
+                      Microsoft Graph API
+                    </span>
+                    <span className="ml-2 text-xs text-blue-700 font-medium bg-blue-100 px-1.5 py-0.5 rounded">
+                      No IMAP / SMTP needed
+                    </span>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Uses Microsoft Graph API with client credentials — only
+                      requires App Registration (clientId + clientSecret +
+                      tenantId). Needs{" "}
+                      <code className="bg-gray-100 px-1 rounded">
+                        Mail.ReadWrite
+                      </code>{" "}
+                      Application permission in Azure.
+                    </p>
+                  </div>
+                </label>
               </div>
             </div>
 
@@ -924,6 +1007,62 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                   Emails arriving at{" "}
                   <strong>{formData.emailAddress || "this address"}</strong>{" "}
                   will be pushed to SAC Helpdesk via webhook automatically.
+                </p>
+              </div>
+            )}
+
+            {/* Microsoft Graph API config panel */}
+            {formData.inboundMethod === "graph" && (
+              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-4">
+                <div className="flex items-center gap-2">
+                  <InformationCircleIcon className="w-5 h-5 text-blue-700 flex-shrink-0" />
+                  <h4 className="text-sm font-semibold text-blue-900">
+                    Microsoft Graph API Setup
+                  </h4>
+                </div>
+                <p className="text-xs text-blue-800">
+                  Uses{" "}
+                  <strong>client credentials (app-only)</strong> flow — no user
+                  sign-in or refresh token required. The Azure App Registration
+                  must have{" "}
+                  <code className="bg-white px-1 rounded border border-blue-200">
+                    Mail.ReadWrite
+                  </code>{" "}
+                  as an <strong>Application</strong> permission (not Delegated).
+                </p>
+
+                {/* Tenant ID */}
+                <div>
+                  <label className="block text-xs font-medium text-blue-900 mb-1">
+                    Tenant ID (Directory ID){" "}
+                    <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.oauth2TenantId}
+                    onChange={(e) =>
+                      handleInputChange("oauth2TenantId", e.target.value)
+                    }
+                    placeholder="e.g. 15025a36-9c10-4300-8462-4fe1970f0a64"
+                    className={`block w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                      errors.oauth2TenantId
+                        ? "border-red-300 bg-red-50"
+                        : "border-blue-300 bg-white"
+                    }`}
+                  />
+                  {errors.oauth2TenantId && (
+                    <p className="mt-1 text-xs text-red-600">
+                      {errors.oauth2TenantId}
+                    </p>
+                  )}
+                </div>
+
+                {/* How emails are matched */}
+                <p className="text-xs text-blue-700">
+                  Unread emails addressed to{" "}
+                  <strong>{formData.emailAddress || "this mailbox"}</strong>{" "}
+                  will be polled every 30 seconds and converted to helpdesk
+                  tickets automatically.
                 </p>
               </div>
             )}
@@ -1161,7 +1300,10 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                   {/* Client Secret */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Client Secret
+                      Client Secret{" "}
+                      {formData.inboundMethod === "graph" && (
+                        <span className="text-red-500">*</span>
+                      )}
                     </label>
                     <input
                       type="password"
@@ -1169,43 +1311,57 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                       onChange={(e) =>
                         handleInputChange("oauth2ClientSecret", e.target.value)
                       }
-                      className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                      placeholder={
-                        editingConfig
-                          ? "Leave blank to keep existing"
-                          : "Paste client secret value"
-                      }
-                    />
-                  </div>
-
-                  {/* Refresh Token */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Refresh Token <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="password"
-                      value={formData.oauth2RefreshToken}
-                      onChange={(e) =>
-                        handleInputChange("oauth2RefreshToken", e.target.value)
-                      }
                       className={`block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm ${
-                        (errors as any).oauth2RefreshToken
+                        (errors as any).oauth2ClientSecret
                           ? "border-red-300"
                           : "border-gray-300 focus:border-blue-500"
                       }`}
                       placeholder={
                         editingConfig
                           ? "Leave blank to keep existing"
-                          : "Paste OAuth2 refresh token"
+                          : "Paste client secret value"
                       }
                     />
-                    {(errors as any).oauth2RefreshToken && (
+                    {(errors as any).oauth2ClientSecret && (
                       <p className="mt-1 text-sm text-red-600">
-                        {(errors as any).oauth2RefreshToken}
+                        {(errors as any).oauth2ClientSecret}
                       </p>
                     )}
                   </div>
+
+                  {/* Refresh Token — not needed for Graph API (client credentials flow) */}
+                  {formData.inboundMethod !== "graph" && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Refresh Token <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="password"
+                        value={formData.oauth2RefreshToken}
+                        onChange={(e) =>
+                          handleInputChange(
+                            "oauth2RefreshToken",
+                            e.target.value,
+                          )
+                        }
+                        className={`block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm ${
+                          (errors as any).oauth2RefreshToken
+                            ? "border-red-300"
+                            : "border-gray-300 focus:border-blue-500"
+                        }`}
+                        placeholder={
+                          editingConfig
+                            ? "Leave blank to keep existing"
+                            : "Paste OAuth2 refresh token"
+                        }
+                      />
+                      {(errors as any).oauth2RefreshToken && (
+                        <p className="mt-1 text-sm text-red-600">
+                          {(errors as any).oauth2RefreshToken}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1418,7 +1574,8 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
               </div>
             )}
 
-            {/* SMTP Settings Section */}
+            {/* SMTP Settings Section — hidden when Graph API handles outbound */}
+            {formData.outboundMethod !== "graph" && (
             <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
               <div className="flex items-center mb-4">
                 <ServerIcon className="w-5 h-5 text-gray-600 mr-2" />
@@ -1654,6 +1811,7 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                 </div>
               )}
             </div>
+            )} {/* end outboundMethod !== "graph" */}
 
             {/* Test Result */}
             {testResult && (

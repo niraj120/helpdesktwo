@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import sgMail from "@sendgrid/mail";
+import axios from "axios";
 import EmailConfig from "../models/EmailConfig";
 import ProjectEmailConfig from "../models/ProjectEmailConfig";
 import EmailLog from "../models/EmailLog";
@@ -178,6 +179,113 @@ const getEmailTransporter = async (configIdOrProjectId?: string) => {
             return {
               messageId: res.headers["x-message-id"] || `sg-${Date.now()}`,
             };
+          },
+        } as any;
+      }
+      // Check if ProjectEmailConfig uses Microsoft Graph API for outbound (no SMTP settings needed)
+      if (
+        isProjectEmailConfig &&
+        emailConfig?.outboundMethod === "graph" &&
+        emailConfig?.oauth2?.clientId &&
+        emailConfig?.oauth2?.tenantId
+      ) {
+        const graphClientId: string = emailConfig.oauth2.clientId;
+        const graphTenantId: string = emailConfig.oauth2.tenantId;
+        const fromEmail =
+          emailConfig.emailAddress || emailConfig.smtpUsername || "";
+        const fromName = emailConfig.fromName || "SAC Helpdesk";
+
+        const graphClientSecret: string = emailConfig.getDecryptedOAuth2ClientSecret
+          ? emailConfig.getDecryptedOAuth2ClientSecret()
+          : emailConfig.oauth2?.clientSecret || "";
+
+        console.log(
+          `📧 Using Microsoft Graph API for delivery (from: ${fromEmail})`,
+        );
+
+        return {
+          sendMail: async (options: any) => {
+            // Obtain a fresh access token via client_credentials grant
+            const tokenUrl = `https://login.microsoftonline.com/${graphTenantId}/oauth2/v2.0/token`;
+            const tokenPayload = new URLSearchParams({
+              grant_type: "client_credentials",
+              client_id: graphClientId,
+              client_secret: graphClientSecret,
+              scope: "https://graph.microsoft.com/.default",
+            });
+            const tokenResponse = await axios.post(
+              tokenUrl,
+              tokenPayload.toString(),
+              {
+                headers: {
+                  "Content-Type": "application/x-www-form-urlencoded",
+                },
+                timeout: 15000,
+              },
+            );
+            const accessToken: string = tokenResponse.data.access_token;
+
+            // Normalise address fields into Graph recipients format
+            const parseAddresses = (raw: string | string[]) => {
+              const addrs = Array.isArray(raw)
+                ? raw
+                : (raw || "")
+                    .split(",")
+                    .map((a: string) => a.trim())
+                    .filter(Boolean);
+              return addrs.map((addr: string) => {
+                const m = addr.match(/^(.*?)\s*<(.+?)>$/);
+                return m
+                  ? { emailAddress: { address: m[2].trim(), name: m[1].trim() || undefined } }
+                  : { emailAddress: { address: addr } };
+              });
+            };
+
+            const toRecipients = parseAddresses(options.to);
+            const ccRecipients = options.cc ? parseAddresses(options.cc) : [];
+            const bccRecipients = options.bcc ? parseAddresses(options.bcc) : [];
+
+            const messageBody: any = {
+              subject: options.subject || "",
+              body: {
+                contentType: options.html ? "html" : "text",
+                content: options.html || options.text || "",
+              },
+              from: { emailAddress: { address: fromEmail, name: fromName } },
+              toRecipients,
+              ...(ccRecipients.length && { ccRecipients }),
+              ...(bccRecipients.length && { bccRecipients }),
+            };
+
+            if (options.replyTo) {
+              const [rt] = parseAddresses(options.replyTo);
+              if (rt) messageBody.replyTo = [rt];
+            }
+
+            if (options.attachments?.length) {
+              messageBody.attachments = options.attachments.map((a: any) => ({
+                "@odata.type": "#microsoft.graph.fileAttachment",
+                name: a.filename,
+                contentType: a.contentType || "application/octet-stream",
+                contentBytes: Buffer.isBuffer(a.content)
+                  ? a.content.toString("base64")
+                  : a.content,
+              }));
+            }
+
+            await axios.post(
+              `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(fromEmail)}/sendMail`,
+              { message: messageBody, saveToSentItems: true },
+              {
+                headers: {
+                  Authorization: `Bearer ${accessToken}`,
+                  "Content-Type": "application/json",
+                },
+                timeout: 30000,
+              },
+            );
+
+            return { messageId: `graph-${Date.now()}` };
           },
         } as any;
       }
