@@ -9,8 +9,8 @@ const ALGORITHM = "aes-256-cbc";
 export type EmailProvider = "google" | "microsoft" | "other";
 export type AuthMethod = "basic" | "oauth2" | "app_password";
 
-export type InboundMethod = "imap" | "sendgrid" | "webhook";
-export type OutboundMethod = "smtp" | "sendgrid";
+export type InboundMethod = "imap" | "sendgrid" | "webhook" | "graph";
+export type OutboundMethod = "smtp" | "sendgrid" | "graph";
 
 export interface IProjectEmailConfig extends Document {
   projectId: mongoose.Types.ObjectId;
@@ -49,6 +49,7 @@ export interface IProjectEmailConfig extends Document {
   oauth2?: {
     clientId?: string;
     clientSecret?: string;
+    tenantId?: string;       // Microsoft tenant ID for Graph API client-credentials flow
     refreshToken?: string;
     accessToken?: string;
     tokenExpiry?: Date;
@@ -118,12 +119,12 @@ const ProjectEmailConfigSchema: Schema = new Schema(
     },
     inboundMethod: {
       type: String,
-      enum: ["imap", "sendgrid", "webhook"],
+      enum: ["imap", "sendgrid", "webhook", "graph"],
       default: "imap",
     },
     outboundMethod: {
       type: String,
-      enum: ["smtp", "sendgrid"],
+      enum: ["smtp", "sendgrid", "graph"],
       default: "smtp",
     },
     sendgridApiKey: {
@@ -162,7 +163,9 @@ const ProjectEmailConfigSchema: Schema = new Schema(
       type: String,
       required: function (this: any) {
         return (
-          this.inboundMethod !== "sendgrid" && this.inboundMethod !== "webhook"
+          this.inboundMethod !== "sendgrid" &&
+          this.inboundMethod !== "webhook" &&
+          this.inboundMethod !== "graph"
         );
       },
       trim: true,
@@ -172,7 +175,9 @@ const ProjectEmailConfigSchema: Schema = new Schema(
       type: Number,
       required: function (this: any) {
         return (
-          this.inboundMethod !== "sendgrid" && this.inboundMethod !== "webhook"
+          this.inboundMethod !== "sendgrid" &&
+          this.inboundMethod !== "webhook" &&
+          this.inboundMethod !== "graph"
         );
       },
       min: 1,
@@ -183,7 +188,9 @@ const ProjectEmailConfigSchema: Schema = new Schema(
       type: String,
       required: function (this: any) {
         return (
-          this.inboundMethod !== "sendgrid" && this.inboundMethod !== "webhook"
+          this.inboundMethod !== "sendgrid" &&
+          this.inboundMethod !== "webhook" &&
+          this.inboundMethod !== "graph"
         );
       },
       trim: true,
@@ -195,6 +202,7 @@ const ProjectEmailConfigSchema: Schema = new Schema(
         return (
           this.inboundMethod !== "sendgrid" &&
           this.inboundMethod !== "webhook" &&
+          this.inboundMethod !== "graph" &&
           this.authMethod !== "oauth2"
         );
       },
@@ -203,7 +211,9 @@ const ProjectEmailConfigSchema: Schema = new Schema(
     smtpHost: {
       type: String,
       required: function (this: any) {
-        return this.outboundMethod !== "sendgrid";
+        return (
+          this.outboundMethod !== "sendgrid" && this.outboundMethod !== "graph"
+        );
       },
       trim: true,
       default: "",
@@ -211,7 +221,9 @@ const ProjectEmailConfigSchema: Schema = new Schema(
     smtpPort: {
       type: Number,
       required: function (this: any) {
-        return this.outboundMethod !== "sendgrid";
+        return (
+          this.outboundMethod !== "sendgrid" && this.outboundMethod !== "graph"
+        );
       },
       min: 1,
       max: 65535,
@@ -220,7 +232,9 @@ const ProjectEmailConfigSchema: Schema = new Schema(
     smtpUsername: {
       type: String,
       required: function (this: any) {
-        return this.outboundMethod !== "sendgrid";
+        return (
+          this.outboundMethod !== "sendgrid" && this.outboundMethod !== "graph"
+        );
       },
       trim: true,
       default: "",
@@ -229,7 +243,9 @@ const ProjectEmailConfigSchema: Schema = new Schema(
       type: String,
       required: function (this: any) {
         return (
-          this.outboundMethod !== "sendgrid" && this.authMethod !== "oauth2"
+          this.outboundMethod !== "sendgrid" &&
+          this.outboundMethod !== "graph" &&
+          this.authMethod !== "oauth2"
         );
       },
       default: "",
@@ -238,6 +254,7 @@ const ProjectEmailConfigSchema: Schema = new Schema(
     oauth2: {
       clientId: { type: String },
       clientSecret: { type: String },
+      tenantId: { type: String },    // Microsoft Tenant ID for Graph API client-credentials flow
       refreshToken: { type: String },
       accessToken: { type: String },
       tokenExpiry: { type: Date },

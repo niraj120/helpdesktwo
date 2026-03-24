@@ -1,6 +1,7 @@
 import Imap from "imap";
 import { simpleParser, ParsedMail, Attachment } from "mailparser";
 import * as cron from "node-cron";
+import axios from "axios";
 import ProjectEmailConfig from "../models/ProjectEmailConfig";
 import EmailProcessingQueue from "../models/EmailProcessingQueue";
 import { IEmailProcessingQueue } from "../models/EmailProcessingQueue";
@@ -181,13 +182,17 @@ class EmailPollingService {
       );
       console.log("=".repeat(60));
 
-      // Fetch all enabled email configurations (IMAP only — SendGrid comes via webhook)
+      // Fetch all enabled email configurations (IMAP + Graph API — SendGrid/Webhook come via inbound route)
       const enabledConfigs = await ProjectEmailConfig.find({
         isEnabled: true,
         isDeleted: { $ne: true },
-        $or: [{ inboundMethod: "imap" }, { inboundMethod: { $exists: false } }],
+        $or: [
+          { inboundMethod: "imap" },
+          { inboundMethod: "graph" },
+          { inboundMethod: { $exists: false } },
+        ],
       }).select(
-        "projectId emailAddress imapHost imapPort imapUsername imapPassword inboundMethod lastCheckedAt",
+        "projectId emailAddress imapHost imapPort imapUsername imapPassword inboundMethod lastCheckedAt oauth2",
       );
 
       if (enabledConfigs.length === 0) {
@@ -206,11 +211,18 @@ class EmailPollingService {
       // Process each email configuration
       for (const config of enabledConfigs) {
         try {
+          const isGraph = config.inboundMethod === "graph";
           console.log(
-            `\n📥 Processing: ${config.emailAddress} (${config.imapHost}:${config.imapPort})`,
+            `\n📥 Processing: ${config.emailAddress} ${
+              isGraph
+                ? "(Microsoft Graph API)"
+                : `(${config.imapHost}:${config.imapPort})`
+            }`,
           );
 
-          const emailCount = await this.fetchEmailsForConfig(config);
+          const emailCount = isGraph
+            ? await this.fetchEmailsViaGraph(config)
+            : await this.fetchEmailsForConfig(config);
           totalEmailsFetched += emailCount;
           successfulConfigs++;
 
@@ -243,6 +255,124 @@ class EmailPollingService {
     } finally {
       this.isRunning = false;
     }
+  }
+
+  /**
+   * Fetch emails via Microsoft Graph API (app-only / client-credentials flow).
+   * Requires:  oauth2.clientId, oauth2.clientSecret (encrypted), oauth2.tenantId
+   * Permission needed in Azure: Mail.ReadWrite (Application)
+   */
+  private async fetchEmailsViaGraph(config: any): Promise<number> {
+    const clientId: string = config.oauth2?.clientId;
+    const tenantId: string = config.oauth2?.tenantId;
+    const emailAddress: string = config.emailAddress;
+
+    if (!clientId || !tenantId) {
+      throw new Error(
+        "Microsoft Graph API requires oauth2.clientId and oauth2.tenantId to be set",
+      );
+    }
+
+    // Decrypt client secret stored in the DB
+    const clientSecret: string = config.getDecryptedOAuth2ClientSecret
+      ? config.getDecryptedOAuth2ClientSecret()
+      : config.oauth2?.clientSecret || "";
+
+    if (!clientSecret) {
+      throw new Error("Microsoft Graph API requires oauth2.clientSecret");
+    }
+
+    // 1. Obtain an access token via client_credentials grant
+    const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
+    const tokenPayload = new URLSearchParams({
+      grant_type: "client_credentials",
+      client_id: clientId,
+      client_secret: clientSecret,
+      scope: "https://graph.microsoft.com/.default",
+    });
+
+    const tokenResponse = await axios.post(tokenUrl, tokenPayload.toString(), {
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      timeout: 15000,
+    });
+
+    const accessToken: string = tokenResponse.data.access_token;
+    if (!accessToken) {
+      throw new Error("Graph API token request returned no access_token");
+    }
+
+    // 2. Fetch unread messages from the shared/service mailbox
+    const graphBase = "https://graph.microsoft.com/v1.0";
+    const mailboxUser = encodeURIComponent(emailAddress);
+    const messagesUrl =
+      `${graphBase}/users/${mailboxUser}/messages` +
+      `?$filter=isRead eq false` +
+      `&$select=id,subject,from,toRecipients,body,receivedDateTime,internetMessageId,hasAttachments` +
+      `&$top=${MAX_EMAILS_PER_FETCH}`;
+
+    const messagesResponse = await axios.get(messagesUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      timeout: 30000,
+    });
+
+    const messages: any[] = messagesResponse.data.value || [];
+    let emailCount = 0;
+
+    for (const msg of messages) {
+      try {
+        const isHtml =
+          (msg.body?.contentType || "").toLowerCase() === "html";
+        const bodyContent: string = msg.body?.content || "";
+
+        const emailData: EmailData = {
+          messageId: msg.internetMessageId || msg.id,
+          from: {
+            address: msg.from?.emailAddress?.address || "",
+            name: msg.from?.emailAddress?.name,
+          },
+          to: (msg.toRecipients || []).map((r: any) => ({
+            address: r.emailAddress?.address || "",
+            name: r.emailAddress?.name,
+          })),
+          subject: msg.subject || "(No Subject)",
+          body: isHtml ? "" : bodyContent,
+          htmlBody: isHtml ? bodyContent : undefined,
+          headers: {},
+          attachments: [],
+          receivedDate: new Date(msg.receivedDateTime),
+          uid: 0,
+          date: new Date(msg.receivedDateTime),
+        };
+
+        await this.addToQueue(config, emailData);
+        emailCount++;
+
+        // Mark message as read so it won't be picked up again next cycle
+        await axios.patch(
+          `${graphBase}/users/${mailboxUser}/messages/${msg.id}`,
+          { isRead: true },
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            timeout: 10000,
+          },
+        );
+      } catch (msgErr: any) {
+        console.error(
+          `   ❌ Failed to process Graph message ${msg.id}: ${msgErr.message}`,
+        );
+      }
+    }
+
+    // Persist last-check info
+    config.lastCheckedAt = new Date();
+    config.lastCheckStatus = "success";
+    config.lastCheckError = undefined;
+    await config.save();
+
+    return emailCount;
   }
 
   /**

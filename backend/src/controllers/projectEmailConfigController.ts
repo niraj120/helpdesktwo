@@ -384,17 +384,28 @@ export const addEmailConfig = async (req: Request, res: Response) => {
     const detectedProvider =
       provider || detectEmailProvider(email_address || "");
     const authType = authMethod as AuthMethod;
-    const inboundType = inbound_method as "imap" | "sendgrid" | "webhook";
-    const outboundType = (outbound_method || "smtp") as "smtp" | "sendgrid";
+    const inboundType = inbound_method as "imap" | "sendgrid" | "webhook" | "graph";
+    const outboundType = (outbound_method || "smtp") as "smtp" | "sendgrid" | "graph";
 
     // Validate based on auth method and inbound method
     if (authType === "oauth2") {
-      // OAuth2 requires oauth2 object with tokens
-      if (!oauth2?.clientId || !oauth2?.refreshToken) {
-        return res.status(400).json({
-          success: false,
-          message: "OAuth2 authentication requires clientId and refreshToken",
-        });
+      // Graph API only requires clientId + clientSecret (client-credentials flow, no refreshToken needed)
+      if (inboundType === "graph") {
+        if (!oauth2?.clientId || !oauth2?.clientSecret || !oauth2?.tenantId) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Microsoft Graph API requires oauth2.clientId, oauth2.clientSecret, and oauth2.tenantId",
+          });
+        }
+      } else {
+        // Standard OAuth2 requires clientId + refreshToken
+        if (!oauth2?.clientId || !oauth2?.refreshToken) {
+          return res.status(400).json({
+            success: false,
+            message: "OAuth2 authentication requires clientId and refreshToken",
+          });
+        }
       }
       if (!email_address) {
         return res.status(400).json({
@@ -510,7 +521,11 @@ export const addEmailConfig = async (req: Request, res: Response) => {
     const smtpPortToUse = smtp_port || defaults.smtpPort;
 
     // Test IMAP connection only when using IMAP inbound
-    if (inboundType !== "sendgrid" && inboundType !== "webhook") {
+    if (
+      inboundType !== "sendgrid" &&
+      inboundType !== "webhook" &&
+      inboundType !== "graph"
+    ) {
       console.log(
         `Testing IMAP connection for ${email_address} (auth: ${authType})...`,
       );
@@ -540,12 +555,12 @@ export const addEmailConfig = async (req: Request, res: Response) => {
       }
     } else {
       console.log(
-        `Skipping IMAP test — inbound method is ${inboundType} (webhook-based)`,
+        `Skipping IMAP test — inbound method is ${inboundType} (webhook-based or Graph API)`,
       );
     }
 
-    // Test SMTP connection (skip when using SendGrid for outbound)
-    if (outboundType !== "sendgrid") {
+    // Test SMTP connection (skip when using SendGrid or Graph API for outbound)
+    if (outboundType !== "sendgrid" && outboundType !== "graph") {
       console.log(`Testing SMTP connection for ${email_address}...`);
       const smtpTest = await testSmtpConnection(
         smtpHostToUse,
@@ -601,17 +616,29 @@ export const addEmailConfig = async (req: Request, res: Response) => {
       replySignature: req.body.reply_signature || "",
       outboundMethod: outboundType,
       sendgridApiKey: outboundType === "sendgrid" ? sendgrid_api_key || "" : "",
-      smtpHost: outboundType === "sendgrid" ? "" : smtpHostToUse,
-      smtpPort: outboundType === "sendgrid" ? 587 : smtpPortToUse,
+      smtpHost:
+        outboundType === "sendgrid" || outboundType === "graph"
+          ? ""
+          : smtpHostToUse,
+      smtpPort:
+        outboundType === "sendgrid" || outboundType === "graph"
+          ? 587
+          : smtpPortToUse,
       smtpUsername:
-        outboundType === "sendgrid" ? "" : smtp_username || email_address,
-      smtpPassword: outboundType === "sendgrid" ? "" : smtp_password || "", // Will be encrypted by pre-save hook
+        outboundType === "sendgrid" || outboundType === "graph"
+          ? ""
+          : smtp_username || email_address,
+      smtpPassword:
+        outboundType === "sendgrid" || outboundType === "graph"
+          ? ""
+          : smtp_password || "", // Will be encrypted by pre-save hook
       // OAuth2 fields (will be encrypted by pre-save hook)
       ...(authType === "oauth2" && oauth2
         ? {
             oauth2: {
               clientId: oauth2.clientId,
               clientSecret: oauth2.clientSecret,
+              tenantId: oauth2.tenantId,
               refreshToken: oauth2.refreshToken,
               accessToken: oauth2.accessToken,
               tokenExpiry: oauth2.tokenExpiry
@@ -879,6 +906,29 @@ export const updateEmailConfig = async (req: Request, res: Response) => {
     // Update SendGrid API key if provided
     if (req.body.sendgrid_api_key) {
       (config as any).sendgridApiKey = req.body.sendgrid_api_key;
+    }
+
+    // Update OAuth2 fields if provided (passwords encrypted by pre-save hook)
+    if (req.body.oauth2 && typeof req.body.oauth2 === "object") {
+      const existingOauth2 = (config as any).oauth2 || {};
+      (config as any).oauth2 = {
+        ...existingOauth2,
+        ...(req.body.oauth2.clientId !== undefined && {
+          clientId: req.body.oauth2.clientId,
+        }),
+        ...(req.body.oauth2.clientSecret && {
+          clientSecret: req.body.oauth2.clientSecret,
+        }),
+        ...(req.body.oauth2.tenantId !== undefined && {
+          tenantId: req.body.oauth2.tenantId,
+        }),
+        ...(req.body.oauth2.refreshToken && {
+          refreshToken: req.body.oauth2.refreshToken,
+        }),
+        ...(req.body.oauth2.scope !== undefined && {
+          scope: req.body.oauth2.scope,
+        }),
+      };
     }
 
     await config.save();
