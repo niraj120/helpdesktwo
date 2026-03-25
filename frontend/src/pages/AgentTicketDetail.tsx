@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import DOMPurify from "dompurify";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import DashboardLayout from "../components/DashboardLayout";
@@ -1763,9 +1764,18 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                     </span>
                   </div>
                   <div className="prose max-w-none">
-                    <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">
-                      {ticket.description}
-                    </p>
+                    {/<[a-z][\s\S]*>/i.test(ticket.description || "") ? (
+                      <div
+                        className="text-gray-700 text-sm leading-relaxed"
+                        dangerouslySetInnerHTML={{
+                          __html: DOMPurify.sanitize(ticket.description || ""),
+                        }}
+                      />
+                    ) : (
+                      <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">
+                        {ticket.description}
+                      </p>
+                    )}
                   </div>
                 </div>
 

@@ -21,6 +21,31 @@ import mongoose from "mongoose";
  */
 
 /**
+ * Convert HTML email body to plain text by stripping tags and decoding entities.
+ */
+function htmlToPlainText(html: string): string {
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<\/div>/gi, "\n")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<\/tr>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/**
  * Find or create user by email address
  * Returns existing user or creates a new basic user
  */
@@ -372,11 +397,11 @@ export async function createTicketFromEmail(
     const ticketNumber = await generateTicketNumber(projectId);
     console.log(`      ✓ Ticket Number: ${ticketNumber}`);
 
-    // 5. Extract description (prefer plain text, fallback to HTML)
+    // 5. Extract description (prefer plain text, fallback to HTML stripped of tags)
     let description = parsedEmail.body || "";
     if (!description && parsedEmail.htmlBody) {
-      // Use HTML body if plain text is empty
-      description = parsedEmail.htmlBody;
+      // Strip HTML tags to get clean plain text
+      description = htmlToPlainText(parsedEmail.htmlBody);
     }
 
     // Truncate very long descriptions
