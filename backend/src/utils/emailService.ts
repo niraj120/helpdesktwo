@@ -292,7 +292,9 @@ const getEmailTransporter = async (configIdOrProjectId?: string) => {
                 contentType: options.html ? "html" : "text",
                 content: options.html || options.text || "",
               },
-              from: { emailAddress: { address: fromEmail, name: fromName } },
+              // NOTE: Do NOT set 'from' here — Graph API with client_credentials
+              // (app-only auth) infers the sender from the URL path user.
+              // Setting 'from' explicitly causes a 400 ErrorInvalidRecipients.
               toRecipients,
               ...(ccRecipients.length && { ccRecipients }),
               ...(bccRecipients.length && { bccRecipients }),
@@ -315,17 +317,29 @@ const getEmailTransporter = async (configIdOrProjectId?: string) => {
               }));
             }
 
-            await axios.post(
-              `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(fromEmail)}/sendMail`,
-              { message: messageBody, saveToSentItems: true },
-              {
-                headers: {
-                  Authorization: `Bearer ${accessToken}`,
-                  "Content-Type": "application/json",
+            try {
+              await axios.post(
+                `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(fromEmail)}/sendMail`,
+                { message: messageBody, saveToSentItems: true },
+                {
+                  headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    "Content-Type": "application/json",
+                  },
+                  timeout: 30000,
                 },
-                timeout: 30000,
-              },
-            );
+              );
+            } catch (graphErr: any) {
+              // Surface the actual Graph API error message (not just "status code 400")
+              const graphErrBody = graphErr?.response?.data;
+              const graphErrMsg =
+                graphErrBody?.error?.message ||
+                graphErrBody?.error?.code ||
+                JSON.stringify(graphErrBody) ||
+                graphErr.message;
+              console.error(`   ❌ Graph sendMail failed: ${graphErrMsg}`);
+              throw new Error(`Graph API sendMail error: ${graphErrMsg}`);
+            }
 
             return { messageId: outboundMessageId };
           },
