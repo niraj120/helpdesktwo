@@ -465,6 +465,11 @@ export async function createTicketFromEmail(
       // Strip HTML tags to get clean plain text
       description = htmlToPlainText(parsedEmail.htmlBody);
     }
+    // Last-resort fallback: use the Graph API plain-text body preview when HTML stripping
+    // removes everything (e.g. very short email bodies lost to boilerplate removal).
+    if (!description.trim() && parsedEmail.bodyPreview) {
+      description = parsedEmail.bodyPreview.trim();
+    }
 
     // Truncate very long descriptions
     const MAX_DESCRIPTION_LENGTH = 10000;

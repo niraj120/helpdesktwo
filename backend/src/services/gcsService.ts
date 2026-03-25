@@ -638,6 +638,66 @@ export class GCSService {
       );
     }
   }
+
+  /**
+   * Upload an email signature image to GCS with public read access.
+   * Returns a fully-qualified public URL suitable for embedding in emails.
+   * Falls back to local disk when GCS is not configured (returns relative path).
+   */
+  static async uploadSignatureImage(
+    file: Express.Multer.File,
+  ): Promise<{ url: string; isLocal: boolean }> {
+    const ext = path.extname(file.originalname) || ".png";
+    const filename = `${uuidv4()}${ext}`;
+
+    if (bucket) {
+      const fullPath = `email-signatures/${filename}`;
+      const blob = bucket.file(fullPath);
+
+      const blobStream = blob.createWriteStream({
+        resumable: false,
+        metadata: {
+          contentType: file.mimetype,
+          cacheControl: "public, max-age=31536000",
+          metadata: {
+            uploadedBy: "SAC-Helpdesk-Signature",
+            uploadTimestamp: new Date().toISOString(),
+          },
+        },
+      });
+
+      return new Promise((resolve, reject) => {
+        blobStream.on("error", (err) => {
+          console.error("GCS signature image upload error:", err);
+          reject(new Error("Failed to upload signature image to GCS"));
+        });
+
+        blobStream.on("finish", async () => {
+          try {
+            await blob.makePublic();
+            const publicUrl = `https://storage.googleapis.com/${bucketName}/${fullPath}`;
+            console.log(`☁️ GCS: Uploaded signature image to ${fullPath}`);
+            resolve({ url: publicUrl, isLocal: false });
+          } catch (error) {
+            console.error("GCS makePublic error for signature image:", error);
+            reject(error);
+          }
+        });
+
+        blobStream.end(file.buffer);
+      });
+    } else {
+      // Local fallback — save under uploads/signature-images/
+      const localDir = path.join(__dirname, "../../uploads/signature-images");
+      if (!fs.existsSync(localDir)) {
+        fs.mkdirSync(localDir, { recursive: true });
+      }
+      fs.writeFileSync(path.join(localDir, filename), file.buffer);
+      const relativePath = `/uploads/signature-images/${filename}`;
+      console.log(`📁 Local: Saved signature image to ${relativePath}`);
+      return { url: relativePath, isLocal: true };
+    }
+  }
 }
 
 export default GCSService;

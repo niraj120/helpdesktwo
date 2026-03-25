@@ -3796,9 +3796,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                         : "border-blue-300";
                       textColor = isBreached ? "text-red-600" : "text-blue-600";
 
-                      // Show auto-escalation info if not on last level
+                      // Show auto-escalation info only if autoEscalate is enabled AND not on last level
                       if (
                         !isBreached &&
+                        escalationMatrix.autoEscalate === true &&
                         currentLevelIndex < escalationMatrix.levels.length - 1
                       ) {
                         nextEscalationInfo = `Auto-escalates in ${totalHours}h ${minutes}m`;

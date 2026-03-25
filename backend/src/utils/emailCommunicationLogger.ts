@@ -33,6 +33,7 @@ export interface EmailCommunicationData {
   messageId: string;
   inReplyTo?: string;
   references?: string[];
+  conversationId?: string; // Exchange/Graph conversation thread ID
   
   // Metadata
   date?: Date;
@@ -79,6 +80,11 @@ export async function logEmailCommunication(
       ? emailData.references.join(' ')
       : undefined;
 
+    // Normalise Message-IDs: strip surrounding angle brackets so lookups
+    // (which extract IDs from RFC headers without brackets) always match.
+    const normaliseId = (id: string | undefined) =>
+      id ? id.replace(/^<|>$/g, "").trim() : id;
+
     // Prepare raw headers JSON
     const rawEmailHeaders = emailData.rawHeaders
       ? JSON.stringify(emailData.rawHeaders)
@@ -100,9 +106,10 @@ export async function logEmailCommunication(
       body: emailData.body || '',
       htmlBody: emailData.htmlBody,
       bodyHtml: emailData.htmlBody, // Support both field names
-      messageId: emailData.messageId,
-      inReplyTo: emailData.inReplyTo,
+      messageId: normaliseId(emailData.messageId)!,
+      inReplyTo: normaliseId(emailData.inReplyTo),
       references: referencesString,
+      conversationId: emailData.conversationId || undefined,
       rawEmailHeaders,
       attachments: emailData.attachments || [],
       isProcessed: true,
@@ -158,6 +165,7 @@ export async function logIncomingEmail(
     messageId: parsedEmail.messageId,
     inReplyTo: parsedEmail.inReplyTo,
     references: parsedEmail.references,
+    conversationId: parsedEmail.conversationId,
     date: parsedEmail.date,
     rawHeaders: parsedEmail.headers,
     attachments: parsedEmail.attachments.map((att) => ({

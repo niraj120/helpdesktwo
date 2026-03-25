@@ -17,6 +17,7 @@ export interface ITicketEmailCommunication extends Document {
   messageId: string; // Unique email Message-ID for threading
   inReplyTo?: string; // Message-ID of email being replied to
   references?: string | string[]; // Chain of Message-IDs for thread
+  conversationId?: string; // Exchange/Graph conversation thread ID (same for all replies)
   rawEmailHeaders?: string; // Store all email headers as JSON string
   attachments?: {
     filename: string;
@@ -117,6 +118,11 @@ const TicketEmailCommunicationSchema: Schema = new Schema(
     references: {
       type: Schema.Types.Mixed, // Can be string or array
     },
+    conversationId: {
+      type: String,
+      trim: true,
+      index: true,
+    },
     rawEmailHeaders: {
       type: String, // Store as JSON string
     },
@@ -157,6 +163,7 @@ TicketEmailCommunicationSchema.index({ messageId: 1, ticketId: 1 });
 
 // Index for finding all emails in a thread
 TicketEmailCommunicationSchema.index({ inReplyTo: 1 });
+TicketEmailCommunicationSchema.index({ conversationId: 1 });
 
 // Index for finding unprocessed incoming emails
 TicketEmailCommunicationSchema.index({ direction: 1, isProcessed: 1 });

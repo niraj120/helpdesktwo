@@ -18,6 +18,20 @@ export async function findEmailThread(
   parsedEmail: ParsedEmailData,
 ): Promise<any | null> {
   try {
+    // Strategy 0: Check Exchange/Graph conversationId (most reliable for Graph poll)
+    // All emails in the same Exchange thread share the same conversationId.
+    if ((parsedEmail as any).conversationId) {
+      const ticketByConversation = await findByConversationId(
+        (parsedEmail as any).conversationId,
+      );
+      if (ticketByConversation) {
+        console.log(
+          `      ✓ Match found via conversationId: ${(parsedEmail as any).conversationId}`,
+        );
+        return ticketByConversation;
+      }
+    }
+
     // Strategy 1: Check In-Reply-To header (most reliable)
     if (parsedEmail.inReplyTo) {
       const ticketByInReplyTo = await findByInReplyTo(parsedEmail.inReplyTo);
@@ -55,6 +69,29 @@ export async function findEmailThread(
     return null;
   } catch (error: any) {
     console.error(`Error detecting email thread: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Find ticket by Exchange/Graph conversationId
+ * All emails in the same conversation share this ID, making it the most reliable
+ * strategy for Office 365 / Exchange-hosted mailboxes polled via Graph API.
+ */
+async function findByConversationId(conversationId: string): Promise<any | null> {
+  try {
+    const emailComm = await TicketEmailCommunication.findOne({
+      conversationId,
+    }).select("ticketId");
+
+    if (emailComm?.ticketId) {
+      const ticket = await Ticket.findById(emailComm.ticketId);
+      if (ticket) return ticket;
+    }
+
+    return null;
+  } catch (error: any) {
+    console.error(`Error in findByConversationId: ${error.message}`);
     return null;
   }
 }
