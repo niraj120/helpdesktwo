@@ -1,8 +1,8 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import mongoose, { Schema, Document } from "mongoose";
 
 export interface ITicketEmailCommunication extends Document {
   ticketId: mongoose.Types.ObjectId;
-  direction: 'incoming' | 'outgoing' | 'inbound' | 'outbound';
+  direction: "incoming" | "outgoing" | "inbound" | "outbound";
   from?: string; // Sender email (legacy field)
   fromEmail: string; // Sender email (new field)
   to?: string[]; // Recipient emails (legacy field)
@@ -39,13 +39,13 @@ const TicketEmailCommunicationSchema: Schema = new Schema(
   {
     ticketId: {
       type: Schema.Types.ObjectId,
-      ref: 'Ticket',
+      ref: "Ticket",
       required: true,
       index: true,
     },
     direction: {
       type: String,
-      enum: ['incoming', 'outgoing', 'inbound', 'outbound'],
+      enum: ["incoming", "outgoing", "inbound", "outbound"],
       required: true,
       index: true,
     },
@@ -61,11 +61,13 @@ const TicketEmailCommunicationSchema: Schema = new Schema(
       lowercase: true,
       index: true,
     },
-    to: [{
-      type: String,
-      trim: true,
-      lowercase: true,
-    }],
+    to: [
+      {
+        type: String,
+        trim: true,
+        lowercase: true,
+      },
+    ],
     toEmail: {
       type: String,
       required: true,
@@ -73,21 +75,27 @@ const TicketEmailCommunicationSchema: Schema = new Schema(
       lowercase: true,
       index: true,
     },
-    cc: [{
-      type: String,
-      trim: true,
-      lowercase: true,
-    }],
-    ccEmails: [{
-      type: String,
-      trim: true,
-      lowercase: true,
-    }],
-    bccEmails: [{
-      type: String,
-      trim: true,
-      lowercase: true,
-    }],
+    cc: [
+      {
+        type: String,
+        trim: true,
+        lowercase: true,
+      },
+    ],
+    ccEmails: [
+      {
+        type: String,
+        trim: true,
+        lowercase: true,
+      },
+    ],
+    bccEmails: [
+      {
+        type: String,
+        trim: true,
+        lowercase: true,
+      },
+    ],
     subject: {
       type: String,
       required: true,
@@ -126,13 +134,15 @@ const TicketEmailCommunicationSchema: Schema = new Schema(
     rawEmailHeaders: {
       type: String, // Store as JSON string
     },
-    attachments: [{
-      filename: { type: String, required: true },
-      originalName: { type: String, required: true },
-      mimetype: { type: String, required: true },
-      size: { type: Number, required: true },
-      path: { type: String },
-    }],
+    attachments: [
+      {
+        filename: { type: String, required: true },
+        originalName: { type: String, required: true },
+        mimetype: { type: String, required: true },
+        size: { type: Number, required: true },
+        path: { type: String },
+      },
+    ],
     isProcessed: {
       type: Boolean,
       default: false,
@@ -149,12 +159,12 @@ const TicketEmailCommunicationSchema: Schema = new Schema(
     },
     status: {
       type: String,
-      enum: ['sent', 'received', 'failed', 'pending', 'delivered'],
+      enum: ["sent", "received", "failed", "pending", "delivered"],
     },
   },
   {
     timestamps: true, // Automatically adds createdAt and updatedAt
-  }
+  },
 );
 
 // Compound index for efficient threading queries
@@ -169,33 +179,35 @@ TicketEmailCommunicationSchema.index({ conversationId: 1 });
 TicketEmailCommunicationSchema.index({ direction: 1, isProcessed: 1 });
 
 // Static method to get email thread
-TicketEmailCommunicationSchema.statics.getEmailThread = async function(ticketId: string) {
-  return this.find({ ticketId })
-    .sort({ createdAt: 1 })
-    .exec();
+TicketEmailCommunicationSchema.statics.getEmailThread = async function (
+  ticketId: string,
+) {
+  return this.find({ ticketId }).sort({ createdAt: 1 }).exec();
 };
 
 // Static method to find email by message ID
-TicketEmailCommunicationSchema.statics.findByMessageId = async function(messageId: string) {
+TicketEmailCommunicationSchema.statics.findByMessageId = async function (
+  messageId: string,
+) {
   return this.findOne({ messageId }).exec();
 };
 
 // Static method to find replies to a message
-TicketEmailCommunicationSchema.statics.findReplies = async function(messageId: string) {
-  return this.find({ inReplyTo: messageId })
-    .sort({ createdAt: 1 })
-    .exec();
+TicketEmailCommunicationSchema.statics.findReplies = async function (
+  messageId: string,
+) {
+  return this.find({ inReplyTo: messageId }).sort({ createdAt: 1 }).exec();
 };
 
 // Instance method to get full thread
-TicketEmailCommunicationSchema.methods.getFullThread = async function() {
+TicketEmailCommunicationSchema.methods.getFullThread = async function () {
   const TicketEmailCommunication = this.constructor as any;
   return TicketEmailCommunication.getEmailThread(this.ticketId.toString());
 };
 
 const TicketEmailCommunication = mongoose.model<ITicketEmailCommunication>(
-  'TicketEmailCommunication',
-  TicketEmailCommunicationSchema
+  "TicketEmailCommunication",
+  TicketEmailCommunicationSchema,
 );
 
 export default TicketEmailCommunication;

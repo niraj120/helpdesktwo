@@ -1,6 +1,6 @@
-import mongoose from 'mongoose';
-import TicketEmailCommunication from '../models/TicketEmailCommunication';
-import { ParsedEmailData } from './emailParser';
+import mongoose from "mongoose";
+import TicketEmailCommunication from "../models/TicketEmailCommunication";
+import { ParsedEmailData } from "./emailParser";
 
 /**
  * Email Communication Logger Utility
@@ -28,13 +28,13 @@ export interface EmailCommunicationData {
   subject: string;
   body?: string;
   htmlBody?: string;
-  
+
   // Threading headers
   messageId: string;
   inReplyTo?: string;
   references?: string[];
   conversationId?: string; // Exchange/Graph conversation thread ID
-  
+
   // Metadata
   date?: Date;
   rawHeaders?: any;
@@ -50,7 +50,7 @@ export interface EmailCommunicationData {
 /**
  * Log email communication for a ticket
  * Records incoming or outgoing email in the communications table
- * 
+ *
  * @param ticketId - Ticket ObjectId or string
  * @param emailData - Email data (from ParsedEmailData or manual)
  * @param direction - 'incoming' or 'outgoing'
@@ -59,26 +59,29 @@ export interface EmailCommunicationData {
 export async function logEmailCommunication(
   ticketId: string | mongoose.Types.ObjectId,
   emailData: EmailCommunicationData,
-  direction: 'incoming' | 'outgoing'
+  direction: "incoming" | "outgoing",
 ): Promise<any> {
   try {
-    console.log(`   📝 Logging ${direction} email communication for ticket: ${ticketId}`);
+    console.log(
+      `   📝 Logging ${direction} email communication for ticket: ${ticketId}`,
+    );
 
     // Validate required fields
     if (!emailData.from?.address) {
-      throw new Error('Email from address is required');
+      throw new Error("Email from address is required");
     }
     if (!emailData.to || emailData.to.length === 0) {
-      throw new Error('Email to address is required');
+      throw new Error("Email to address is required");
     }
     if (!emailData.messageId) {
-      throw new Error('Email messageId is required');
+      throw new Error("Email messageId is required");
     }
 
     // Convert references array to string (space-separated)
-    const referencesString = emailData.references && emailData.references.length > 0
-      ? emailData.references.join(' ')
-      : undefined;
+    const referencesString =
+      emailData.references && emailData.references.length > 0
+        ? emailData.references.join(" ")
+        : undefined;
 
     // Normalise Message-IDs: strip surrounding angle brackets so lookups
     // (which extract IDs from RFC headers without brackets) always match.
@@ -92,7 +95,10 @@ export async function logEmailCommunication(
 
     // Create communication record (supports both old and new field formats)
     const emailComm = new TicketEmailCommunication({
-      ticketId: typeof ticketId === 'string' ? new mongoose.Types.ObjectId(ticketId) : ticketId,
+      ticketId:
+        typeof ticketId === "string"
+          ? new mongoose.Types.ObjectId(ticketId)
+          : ticketId,
       direction,
       // Support both old and new field formats
       from: emailData.from.address.toLowerCase(),
@@ -102,8 +108,8 @@ export async function logEmailCommunication(
       cc: emailData.cc?.map((c) => c.address.toLowerCase()) || [],
       ccEmails: emailData.cc?.map((c) => c.address.toLowerCase()) || [],
       bccEmails: emailData.bcc?.map((b) => b.address.toLowerCase()) || [],
-      subject: emailData.subject || '(No Subject)',
-      body: emailData.body || '',
+      subject: emailData.subject || "(No Subject)",
+      body: emailData.body || "",
       htmlBody: emailData.htmlBody,
       bodyHtml: emailData.htmlBody, // Support both field names
       messageId: normaliseId(emailData.messageId)!,
@@ -115,24 +121,28 @@ export async function logEmailCommunication(
       isProcessed: true,
       sentAt: emailData.date || new Date(),
       receivedAt: new Date(),
-      status: direction === 'incoming' ? 'received' : 'sent',
+      status: direction === "incoming" ? "received" : "sent",
     });
 
     await emailComm.save();
 
-    console.log(`   ✅ Email communication logged (ID: ${emailComm._id}, Message-ID: ${emailComm.messageId})`);
+    console.log(
+      `   ✅ Email communication logged (ID: ${emailComm._id}, Message-ID: ${emailComm.messageId})`,
+    );
 
     return emailComm;
   } catch (error: any) {
     // Check if duplicate messageId error
     if (error.code === 11000 && error.keyPattern?.messageId) {
-      console.log(`   ⚠️ Email already logged (duplicate Message-ID: ${emailData.messageId})`);
-      
+      console.log(
+        `   ⚠️ Email already logged (duplicate Message-ID: ${emailData.messageId})`,
+      );
+
       // Return existing record
       const existingComm = await TicketEmailCommunication.findOne({
         messageId: emailData.messageId,
       });
-      
+
       if (existingComm) {
         return existingComm;
       }
@@ -146,14 +156,14 @@ export async function logEmailCommunication(
 /**
  * Log email communication from ParsedEmailData (convenience wrapper)
  * Used for incoming emails from email polling service
- * 
+ *
  * @param ticketId - Ticket ObjectId or string
  * @param parsedEmail - Parsed email data from emailParser
  * @returns Saved TicketEmailCommunication document
  */
 export async function logIncomingEmail(
   ticketId: string | mongoose.Types.ObjectId,
-  parsedEmail: ParsedEmailData
+  parsedEmail: ParsedEmailData,
 ): Promise<any> {
   const emailData: EmailCommunicationData = {
     from: parsedEmail.from,
@@ -176,44 +186,51 @@ export async function logIncomingEmail(
     })),
   };
 
-  return logEmailCommunication(ticketId, emailData, 'incoming');
+  return logEmailCommunication(ticketId, emailData, "incoming");
 }
 
 /**
  * Log outgoing email communication
  * Used when agent replies to ticket via email
- * 
+ *
  * @param ticketId - Ticket ObjectId or string
  * @param emailData - Outgoing email data
  * @returns Saved TicketEmailCommunication document
  */
 export async function logOutgoingEmail(
   ticketId: string | mongoose.Types.ObjectId,
-  emailData: EmailCommunicationData
+  emailData: EmailCommunicationData,
 ): Promise<any> {
-  return logEmailCommunication(ticketId, emailData, 'outgoing');
+  return logEmailCommunication(ticketId, emailData, "outgoing");
 }
 
 /**
  * Get all email communications for a ticket
  * Returns communications sorted by date (oldest first)
- * 
+ *
  * @param ticketId - Ticket ObjectId or string
  * @returns Array of TicketEmailCommunication documents
  */
 export async function getTicketEmailCommunications(
-  ticketId: string | mongoose.Types.ObjectId
+  ticketId: string | mongoose.Types.ObjectId,
 ): Promise<any[]> {
   try {
     const communications = await TicketEmailCommunication.find({
-      ticketId: typeof ticketId === 'string' ? new mongoose.Types.ObjectId(ticketId) : ticketId,
+      ticketId:
+        typeof ticketId === "string"
+          ? new mongoose.Types.ObjectId(ticketId)
+          : ticketId,
     }).sort({ sentAt: 1 }); // Oldest first
 
-    console.log(`   📧 Found ${communications.length} email communications for ticket: ${ticketId}`);
+    console.log(
+      `   📧 Found ${communications.length} email communications for ticket: ${ticketId}`,
+    );
 
     return communications;
   } catch (error: any) {
-    console.error(`   ❌ Error retrieving email communications: ${error.message}`);
+    console.error(
+      `   ❌ Error retrieving email communications: ${error.message}`,
+    );
     throw error;
   }
 }
@@ -221,25 +238,31 @@ export async function getTicketEmailCommunications(
 /**
  * Get email communication by Message-ID
  * Used for thread detection and duplicate prevention
- * 
+ *
  * @param messageId - Email Message-ID header
  * @returns TicketEmailCommunication document or null
  */
 export async function getEmailCommunicationByMessageId(
-  messageId: string
+  messageId: string,
 ): Promise<any | null> {
   try {
     const communication = await TicketEmailCommunication.findOne({ messageId });
-    
+
     if (communication) {
-      console.log(`   ✓ Found email communication for Message-ID: ${messageId}`);
+      console.log(
+        `   ✓ Found email communication for Message-ID: ${messageId}`,
+      );
     } else {
-      console.log(`   ℹ️ No email communication found for Message-ID: ${messageId}`);
+      console.log(
+        `   ℹ️ No email communication found for Message-ID: ${messageId}`,
+      );
     }
 
     return communication;
   } catch (error: any) {
-    console.error(`   ❌ Error retrieving email by Message-ID: ${error.message}`);
+    console.error(
+      `   ❌ Error retrieving email by Message-ID: ${error.message}`,
+    );
     throw error;
   }
 }

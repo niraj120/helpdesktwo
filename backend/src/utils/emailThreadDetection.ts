@@ -78,7 +78,9 @@ export async function findEmailThread(
  * All emails in the same conversation share this ID, making it the most reliable
  * strategy for Office 365 / Exchange-hosted mailboxes polled via Graph API.
  */
-async function findByConversationId(conversationId: string): Promise<any | null> {
+async function findByConversationId(
+  conversationId: string,
+): Promise<any | null> {
   try {
     const emailComm = await TicketEmailCommunication.findOne({
       conversationId,
