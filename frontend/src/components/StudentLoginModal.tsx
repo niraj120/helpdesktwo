@@ -9,12 +9,21 @@ import {
 } from "@heroicons/react/24/outline";
 import { API_CONFIG } from "../config/constants";
 import { LanguageToggle } from "./LanguageToggle";
+import { loginWithSSO } from "../services/ssoService";
+
+interface SsoKeycloakConfig {
+  authUrl: string;
+  clientId: string;
+  redirectUri: string;
+}
 
 interface StudentLoginModalProps {
   isOpen: boolean;
   onClose: () => void;
   primaryColor: string;
   customUrlPath: string;
+  ssoEnabled?: boolean;
+  ssoConfig?: SsoKeycloakConfig | null;
 }
 
 type Step = "email" | "otp" | "password" | "set-password" | "password-success";
@@ -24,6 +33,8 @@ export const StudentLoginModal: React.FC<StudentLoginModalProps> = ({
   onClose,
   primaryColor,
   customUrlPath,
+  ssoEnabled = false,
+  ssoConfig = null,
 }) => {
   const navigate = useNavigate();
   const { t } = useTranslation();
@@ -351,6 +362,44 @@ export const StudentLoginModal: React.FC<StudentLoginModalProps> = ({
           {/* Step 1: Email Input */}
           {step === "email" && (
             <form onSubmit={handleEmailSubmit}>
+              {/* SSO Login Button */}
+              {ssoEnabled && ssoConfig && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      loginWithSSO(
+                        ssoConfig!,
+                        customUrlPath,
+                        "student",
+                        `/${customUrlPath}/student/dashboard`,
+                      )
+                    }
+                    className="w-full py-3 rounded-lg font-semibold transition-all duration-200 hover:shadow-lg mb-3 flex items-center justify-center gap-2"
+                    style={{ background: primaryColor, color: "white" }}
+                  >
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <circle cx="12" cy="12" r="10" />
+                      <path d="M12 8v4l3 3" />
+                    </svg>
+                    Sign in with SSO
+                  </button>
+                  <div className="flex items-center gap-3 my-4">
+                    <div className="flex-1 h-px bg-gray-200" />
+                    <span className="text-xs text-gray-400 whitespace-nowrap">
+                      OR SIGN IN WITH EMAIL
+                    </span>
+                    <div className="flex-1 h-px bg-gray-200" />
+                  </div>
+                </>
+              )}
               <p className="text-gray-600 text-sm mb-4">
                 {t("enterEmailToLogin")}
               </p>

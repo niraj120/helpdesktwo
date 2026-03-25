@@ -10,8 +10,33 @@ import { sendOTPWhatsApp } from "../utils/whatsappService";
 import { sendOTPSMS } from "../utils/smsService";
 import otpStore from "../utils/otpStore";
 import { generateProjectJWT } from "../utils/jwtUtils";
+import { config } from "../config";
 
 // projectOtpStore replaced by centralized otpStore (hashed + optional Redis)
+
+/**
+ * Build the SSO config object that is safe to expose to the frontend.
+ * The clientSecret is NEVER included.
+ */
+function buildSsoResponse(project: any) {
+  const keycloak = project.configuration?.loginSettings?.ssoSettings?.keycloak;
+  if (!keycloak?.enabled) {
+    return { enabled: false, keycloak: null };
+  }
+
+  const url = keycloak.url || config.keycloak.url;
+  const realm = keycloak.realm || config.keycloak.realm;
+  const clientId = keycloak.clientId || config.keycloak.clientId;
+
+  return {
+    enabled: true,
+    keycloak: {
+      authUrl: `${url}/realms/${realm}/protocol/openid-connect/auth`,
+      clientId,
+      redirectUri: config.keycloak.redirectUri,
+    },
+  };
+}
 
 // Get project branding by custom URL path or domain
 export const getProjectBrandingByUrl = async (req: Request, res: Response) => {
@@ -29,7 +54,7 @@ export const getProjectBrandingByUrl = async (req: Request, res: Response) => {
       isActive: true,
       status: "active",
     }).select(
-      "name code branding settings configuration.customizationSettings",
+      "name code branding settings configuration.customizationSettings configuration.loginSettings.ssoSettings.keycloak",
     );
 
     if (!project) {
@@ -78,6 +103,8 @@ export const getProjectBrandingByUrl = async (req: Request, res: Response) => {
             project.configuration?.customizationSettings?.themeColor ||
             "#444ce7",
         },
+        // SSO config for frontend — clientSecret is NEVER included
+        sso: buildSsoResponse(project),
       },
     });
   } catch (error) {
