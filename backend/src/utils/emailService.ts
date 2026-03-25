@@ -263,14 +263,18 @@ const getEmailTransporter = async (configIdOrProjectId?: string) => {
               options.messageId ||
               `<graph-reply-${Date.now()}@sac-helpdesk.com>`;
 
-            // Build RFC 5322 internet message headers for threading
+            // Graph API internetMessageHeaders ONLY accepts x-prefixed custom headers.
+            // Standard RFC headers (Message-ID, In-Reply-To, References) are rejected
+            // with "should start with 'x-' or 'X-'". Exchange threads replies automatically
+            // via conversationId based on matching subject. Store threading IDs as x- headers
+            // purely for traceability; they do not affect threading behavior.
             const internetMessageHeaders: Array<{
               name: string;
               value: string;
-            }> = [{ name: "Message-ID", value: fmtMsgId(outboundMessageId) }];
+            }> = [];
             if (options.inReplyTo) {
               internetMessageHeaders.push({
-                name: "In-Reply-To",
+                name: "x-in-reply-to",
                 value: fmtMsgId(options.inReplyTo),
               });
             }
@@ -280,7 +284,7 @@ const getEmailTransporter = async (configIdOrProjectId?: string) => {
                 : [options.references];
               if (refs.length > 0) {
                 internetMessageHeaders.push({
-                  name: "References",
+                  name: "x-references",
                   value: refs.map(fmtMsgId).join(" "),
                 });
               }
@@ -298,7 +302,7 @@ const getEmailTransporter = async (configIdOrProjectId?: string) => {
               toRecipients,
               ...(ccRecipients.length && { ccRecipients }),
               ...(bccRecipients.length && { bccRecipients }),
-              internetMessageHeaders,
+              ...(internetMessageHeaders.length && { internetMessageHeaders }),
             };
 
             if (options.replyTo) {
