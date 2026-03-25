@@ -21,17 +21,71 @@ import mongoose from "mongoose";
  */
 
 /**
- * Convert HTML email body to plain text by stripping tags and decoding entities.
+ * Well-known email boilerplate line patterns to strip from descriptions.
+ * Applied after HTML-to-text conversion, line by line.
+ */
+const EMAIL_BOILERPLATE_PATTERNS: RegExp[] = [
+  // Microsoft First Contact Safety Tip
+  /you don.{0,5}t often get email from .+learn why this is important/i,
+  // External email warnings (Exchange / mail gateway transport rules)
+  /^caution\s*:?\s*external email/i,
+  /^warning\s*:?\s*external email/i,
+  /^\[external\]/i,
+  /^this email (originated|was sent) from outside (your )?organ/i,
+  /^do not click links or open attachments unless you recogni[sz]e/i,
+  /^validate sender before clicking/i,
+  /links\/attachments\.?$/i,
+  // Standard confidentiality footers
+  /^the content of this email is confidential/i,
+  /^it is strictly forbidden to share any part/i,
+  /without a written consent of the sender\.?$/i,
+  /^this (e-?mail|message) (and any attachments )?(is|are) (intended|confidential)/i,
+  /^if you (are|have) not the intended recipient/i,
+  /^please (notify|inform) the (sender|author) (immediately|and delete)/i,
+];
+
+/**
+ * Strip known email boilerplate lines from plain text.
+ * Used both in the backend (before saving) and can be imported by the frontend.
+ */
+export function stripEmailBoilerplate(text: string): string {
+  const lines = text.split("\n");
+  const filtered = lines.filter((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return true; // preserve blank lines for spacing
+    return !EMAIL_BOILERPLATE_PATTERNS.some((p) => p.test(trimmed));
+  });
+  return filtered
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/**
+ * Convert HTML email body to plain text, stripping Outlook injections and boilerplate.
  */
 function htmlToPlainText(html: string): string {
-  return html
+  // Remove Outlook appended sections (signature, org disclaimer) that follow the body separator
+  html = html.replace(
+    /<div[^>]+id="ms-outlook-mobile-body-separator-line"[\s\S]*/gi,
+    "",
+  );
+
+  // Strip style/script blocks
+  html = html
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
+
+  // Convert block-level elements to newlines before stripping tags
+  html = html
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/p>/gi, "\n")
     .replace(/<\/div>/gi, "\n")
     .replace(/<\/li>/gi, "\n")
-    .replace(/<\/tr>/gi, "\n")
+    .replace(/<\/tr>/gi, "\n");
+
+  // Strip remaining tags and decode common entities
+  let text = html
     .replace(/<[^>]+>/g, "")
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
@@ -39,10 +93,18 @@ function htmlToPlainText(html: string): string {
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
-    .replace(/&apos;/g, "'")
-    .replace(/[ \t]+/g, " ")
+    .replace(/&apos;/g, "'");
+
+  // Normalise whitespace: collapse spaces/tabs, trim each line
+  text = text
+    .split("\n")
+    .map((l) => l.replace(/[ \t]+/g, " ").trim())
+    .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+
+  // Remove known boilerplate lines injected by mail servers / Outlook
+  return stripEmailBoilerplate(text);
 }
 
 /**

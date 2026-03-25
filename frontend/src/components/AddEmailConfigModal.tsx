@@ -1,4 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
 import axios from "axios";
 import { API_CONFIG } from "../config/constants";
 import {
@@ -10,6 +16,45 @@ import {
   ExclamationCircleIcon,
   InformationCircleIcon,
 } from "@heroicons/react/24/outline";
+import ReactQuill from "react-quill";
+import "react-quill/dist/quill.snow.css";
+
+const SIGNATURE_EDITOR_STYLES = `
+  .sig-quill .ql-toolbar {
+    border: 1px solid #d1d5db;
+    border-radius: 0.375rem 0.375rem 0 0;
+    padding: 4px 8px;
+    background: #f9fafb;
+  }
+  .sig-quill .ql-container {
+    border: 1px solid #d1d5db;
+    border-radius: 0 0 0.375rem 0.375rem;
+    background: white;
+    min-height: 90px;
+    font-size: 14px;
+  }
+  .sig-quill .ql-editor {
+    min-height: 90px;
+    padding: 8px 12px;
+    line-height: 1.5;
+  }
+  .sig-quill .ql-editor.ql-blank::before {
+    font-style: normal;
+    color: #9ca3af;
+  }
+  .sig-quill .ql-editor img {
+    display: inline;
+    vertical-align: middle;
+    margin: 0;
+    max-width: 200px;
+    max-height: 80px;
+    object-fit: contain;
+  }
+  /* Quill wraps images in a <p> block — remove auto-centering */
+  .sig-quill .ql-editor p {
+    text-align: left;
+  }
+`;
 
 // Provider and auth method types
 type EmailProvider = "google" | "microsoft" | "other";
@@ -286,6 +331,45 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
       setTestResult(null);
     }
   }, [isOpen, editingConfig]);
+
+  // Rich-text signature editor — image handler embeds as base64 (no upload needed)
+  const signatureQuillRef = useRef<ReactQuill>(null);
+  const handleSignatureImageUpload = useCallback(() => {
+    const input = document.createElement("input");
+    input.setAttribute("type", "file");
+    input.setAttribute("accept", "image/*");
+    input.click();
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const quill = signatureQuillRef.current?.getEditor();
+        if (!quill) return;
+        const range = quill.getSelection(true) || {
+          index: quill.getLength(),
+          length: 0,
+        };
+        quill.insertEmbed(range.index, "image", reader.result as string);
+        quill.setSelection(range.index + 1, 0);
+      };
+      reader.readAsDataURL(file);
+    };
+  }, []);
+  const signatureModules = useMemo(
+    () => ({
+      toolbar: {
+        container: [
+          ["bold", "italic", "underline"],
+          [{ color: [] }],
+          ["link", "image"],
+          ["clean"],
+        ],
+        handlers: { image: handleSignatureImageUpload },
+      },
+    }),
+    [handleSignatureImageUpload],
+  );
 
   if (!isOpen) return null;
 
@@ -1848,22 +1932,34 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
             {/* end outboundMethod !== "graph" */}
             {/* Reply Signature — always shown regardless of outbound method */}
             <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+              <style>{SIGNATURE_EDITOR_STYLES}</style>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Reply Signature
                 </label>
-                <textarea
+                <ReactQuill
+                  ref={signatureQuillRef}
+                  theme="snow"
                   value={formData.replySignature}
-                  onChange={(e) =>
-                    handleInputChange("replySignature", e.target.value)
+                  onChange={(value) =>
+                    handleInputChange("replySignature", value)
                   }
-                  rows={3}
-                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y"
-                  placeholder={`Regards,\nSupport Team`}
+                  modules={signatureModules}
+                  formats={[
+                    "bold",
+                    "italic",
+                    "underline",
+                    "color",
+                    "link",
+                    "image",
+                  ]}
+                  placeholder="Regards, Support Team"
+                  className="sig-quill"
                 />
                 <p className="mt-1 text-xs text-gray-500">
-                  Automatically appended when an agent clicks &quot;Reply via
-                  Email&quot;
+                  Supports bold, italic, colour, links and images (paste or use
+                  the 🖼 toolbar button). Automatically appended when an agent
+                  clicks &quot;Reply via Email&quot;.
                 </p>
               </div>
             </div>

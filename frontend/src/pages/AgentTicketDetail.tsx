@@ -1,6 +1,37 @@
 import React, { useState, useEffect } from "react";
 import DOMPurify from "dompurify";
 import { useParams, useNavigate } from "react-router-dom";
+
+// Known boilerplate patterns injected by mail servers / Outlook (mirrors backend stripEmailBoilerplate)
+const EMAIL_BOILERPLATE_PATTERNS: RegExp[] = [
+  /you don.{0,5}t often get email from .+learn why this is important/i,
+  /^caution\s*:?\s*external email/i,
+  /^warning\s*:?\s*external email/i,
+  /^\[external\]/i,
+  /^this email (originated|was sent) from outside (your )?organ/i,
+  /^do not click links or open attachments unless you recogni[sz]e/i,
+  /^validate sender before clicking/i,
+  /links\/attachments\.?$/i,
+  /^the content of this email is confidential/i,
+  /^it is strictly forbidden to share any part/i,
+  /without a written consent of the sender\.?$/i,
+  /^this (e-?mail|message) (and any attachments )?(is|are) (intended|confidential)/i,
+  /^if you (are|have) not the intended recipient/i,
+  /^please (notify|inform) the (sender|author) (immediately|and delete)/i,
+];
+
+function stripEmailBoilerplateFE(text: string): string {
+  return text
+    .split("\n")
+    .filter((line) => {
+      const t = line.trim();
+      if (!t) return true;
+      return !EMAIL_BOILERPLATE_PATTERNS.some((p) => p.test(t));
+    })
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
 import axios from "axios";
 import DashboardLayout from "../components/DashboardLayout";
 import EscalationMatrixCard from "../components/EscalationMatrixCard";
@@ -1015,7 +1046,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
         // Signature fetch failure is non-critical; proceed without one
       }
     }
-    setReplyContent(sig ? `\n\n${sig}` : "");
+    setReplyContent(""); // Signature shown as separate HTML preview block below the textarea
     setShowReplyForm(true);
   };
 
@@ -1047,10 +1078,22 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
           ? emailCommunications[0].messageId
           : undefined);
 
+      // Build HTML body: agent message text + HTML signature (stored as rich HTML from editor)
+      const agentMsgHtml = replyContent
+        .trim()
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\n/g, "<br>");
+      const replyContentHtml = emailSignature
+        ? `${agentMsgHtml}<br><br>${emailSignature}`
+        : agentMsgHtml;
+
       const response = await axios.post(
         `${API_CONFIG.API_URL}/tickets/${ticket._id}/reply-email`,
         {
           replyContent: replyContent.trim(),
+          replyContentHtml,
           inReplyToMessageId: originalMessageId,
         },
         {
@@ -1773,7 +1816,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                       />
                     ) : (
                       <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">
-                        {ticket.description}
+                        {stripEmailBoilerplateFE(ticket.description || "")}
                       </p>
                     )}
                   </div>
@@ -3172,6 +3215,21 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y"
                             disabled={sendingReply}
                           />
+
+                          {/* Signature preview (HTML from rich-text editor in config) */}
+                          {emailSignature && (
+                            <div className="mt-2 border-t border-dashed border-gray-200 pt-2">
+                              <p className="text-xs text-gray-400 mb-1">
+                                Signature:
+                              </p>
+                              <div
+                                className="text-sm text-gray-600 [&_img]:inline [&_img]:align-middle [&_img]:max-w-[200px] [&_img]:max-h-[80px] [&_p]:text-left"
+                                dangerouslySetInnerHTML={{
+                                  __html: DOMPurify.sanitize(emailSignature),
+                                }}
+                              />
+                            </div>
+                          )}
 
                           {/* Action Buttons */}
                           <div className="flex items-center justify-between mt-3">
