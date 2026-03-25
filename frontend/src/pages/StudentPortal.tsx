@@ -37,6 +37,10 @@ interface ProjectBranding {
   welcomeText: string;
   footerText: string;
   knowledgeBase?: boolean;
+  sso?: {
+    enabled: boolean;
+    keycloak: { authUrl: string; clientId: string; redirectUri: string } | null;
+  };
   footerLinks?: {
     copyright?: string;
     termsOfUse?: string;
@@ -165,6 +169,12 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
   const [kbLoading, setKbLoading] = useState(false);
   const [selectedArticle, setSelectedArticle] = useState<any | null>(null);
   const [kbSearchQuery, setKbSearchQuery] = useState("");
+  const [ssoEnabled, setSsoEnabled] = useState(false);
+  const [ssoConfig, setSsoConfig] = useState<{
+    authUrl: string;
+    clientId: string;
+    redirectUri: string;
+  } | null>(null);
 
   const fetchSpecificKBArticle = async (articleId: string) => {
     try {
@@ -269,6 +279,12 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
         );
         setProjectBranding(branding);
         console.log("✅ Using branding from context (no API call)");
+        // Extract SSO from context branding
+        const ctxSso = (contextBranding as any).sso;
+        if (ctxSso?.enabled && ctxSso.keycloak) {
+          setSsoEnabled(true);
+          setSsoConfig(ctxSso.keycloak);
+        }
       }
 
       try {
@@ -327,6 +343,12 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
             branding.projectId,
           );
           setProjectBranding(branding);
+          // Extract SSO config from API branding
+          const apiSso = brandingData.sso;
+          if (apiSso?.enabled && apiSso.keycloak) {
+            setSsoEnabled(true);
+            setSsoConfig(apiSso.keycloak);
+          }
         } else {
           branding = projectBranding!;
           console.log(
@@ -2391,6 +2413,8 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
           onClose={() => setShowLoginModal(false)}
           primaryColor={projectBranding.primaryColor}
           customUrlPath={customUrlPath || ""}
+          ssoEnabled={ssoEnabled}
+          ssoConfig={ssoConfig}
         />
       )}
     </div>

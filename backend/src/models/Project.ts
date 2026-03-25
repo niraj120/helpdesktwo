@@ -141,6 +141,14 @@ export interface IProject extends Document {
         oauth20?: boolean;
         openIdConnect?: boolean;
         jwt?: boolean;
+        keycloak?: {
+          enabled: boolean;
+          url?: string; // Keycloak base URL (overrides global KEYCLOAK_URL)
+          realm?: string; // Realm name (overrides global KEYCLOAK_REALM)
+          clientId?: string; // Client ID (overrides global KEYCLOAK_CLIENT_ID)
+          clientSecret?: string; // Client secret — kept server-side only, never exposed
+          userMatchField?: "email" | "mobile"; // How to find user in helpdesk DB (default: email)
+        };
       };
     };
     knowledgeBaseSettings?: {
@@ -492,6 +500,18 @@ const projectSchema = new Schema<IProject>(
           oauth20: { type: Boolean, default: false },
           openIdConnect: { type: Boolean, default: false },
           jwt: { type: Boolean, default: false },
+          keycloak: {
+            enabled: { type: Boolean, default: false },
+            url: { type: String },
+            realm: { type: String },
+            clientId: { type: String },
+            clientSecret: { type: String, select: false }, // excluded from default queries
+            userMatchField: {
+              type: String,
+              enum: ["email", "mobile"],
+              default: "email",
+            },
+          },
         },
       },
       knowledgeBaseSettings: {

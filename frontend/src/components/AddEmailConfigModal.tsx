@@ -557,6 +557,7 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
               : formData.smtpPassword,
           provider: formData.provider,
           authMethod: formData.authMethod,
+          inboundMethod: formData.inboundMethod,
           outbound_method: formData.outboundMethod,
           ...(formData.outboundMethod === "sendgrid" &&
             formData.sendgridApiKey && {
@@ -567,6 +568,7 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
               clientId: formData.oauth2ClientId,
               clientSecret: formData.oauth2ClientSecret || undefined,
               refreshToken: formData.oauth2RefreshToken,
+              tenantId: formData.oauth2TenantId || undefined,
             },
           }),
         },
@@ -1143,8 +1145,8 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
               </div>
             )}
 
-            {/* Authentication Method */}
-            <div>
+            {/* Authentication Method — hidden when Graph API is selected (always uses OAuth2 client_credentials) */}
+            {formData.inboundMethod !== "graph" && <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Authentication Method
               </label>
@@ -1300,10 +1302,7 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                   {/* Client Secret */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Client Secret{" "}
-                      {formData.inboundMethod === "graph" && (
-                        <span className="text-red-500">*</span>
-                      )}
+                      Client Secret
                     </label>
                     <input
                       type="password"
@@ -1329,9 +1328,8 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                     )}
                   </div>
 
-                  {/* Refresh Token — not needed for Graph API (client credentials flow) */}
-                  {formData.inboundMethod !== "graph" && (
-                    <div>
+                  {/* Refresh Token (delegated OAuth2 flow) */}
+                  <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Refresh Token <span className="text-red-500">*</span>
                       </label>
@@ -1361,10 +1359,9 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                         </p>
                       )}
                     </div>
-                  )}
                 </div>
               )}
-            </div>
+            </div>}
 
             {/* IMAP Settings Section — only for IMAP inbound */}
             {formData.inboundMethod === "imap" && (

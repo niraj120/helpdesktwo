@@ -559,8 +559,10 @@ export const addEmailConfig = async (req: Request, res: Response) => {
       );
     }
 
-    // Test SMTP connection (skip when using SendGrid or Graph API for outbound)
-    if (outboundType !== "sendgrid" && outboundType !== "graph") {
+    // Test SMTP connection (skip when using SendGrid, Graph API for outbound, or Graph API for inbound)
+    // When inbound is Graph API (client_credentials), OAuth2 tokens are scoped to Graph REST only
+    // and cannot be used for SMTP XOAUTH2. SMTP relay uses separate basic credentials.
+    if (outboundType !== "sendgrid" && outboundType !== "graph" && inboundType !== "graph") {
       console.log(`Testing SMTP connection for ${email_address}...`);
       const smtpTest = await testSmtpConnection(
         smtpHostToUse,
@@ -587,7 +589,7 @@ export const addEmailConfig = async (req: Request, res: Response) => {
         });
       }
     } else {
-      console.log(`Skipping SMTP test — outbound method is SendGrid`);
+      console.log(`Skipping SMTP test — outbound method is ${outboundType}${inboundType === "graph" ? " (Graph API inbound)" : ""}`);
     }
 
     // Create email configuration
@@ -870,6 +872,10 @@ export const updateEmailConfig = async (req: Request, res: Response) => {
     // Update fields if provided
     if (email_address !== undefined)
       config.emailAddress = email_address.toLowerCase();
+    if (req.body.authMethod !== undefined)
+      (config as any).authMethod = req.body.authMethod;
+    if (req.body.provider !== undefined)
+      (config as any).provider = req.body.provider;
     if (req.body.inbound_method !== undefined)
       (config as any).inboundMethod = req.body.inbound_method;
     if (req.body.webhook_provider !== undefined)
@@ -1325,6 +1331,7 @@ export const testEmailCredentials = async (req: Request, res: Response) => {
     } = req.body;
 
     const authType = authMethod as AuthMethod;
+    const inboundMethodType = (req.body.inboundMethod || req.body.inbound_method || "imap") as string;
     // Detect provider from email first, then fall back to host detection
     let detectedProvider =
       provider || detectEmailProvider(emailAddress || imapUsername || "");
@@ -1334,13 +1341,24 @@ export const testEmailCredentials = async (req: Request, res: Response) => {
     }
     const defaults = getProviderDefaults(detectedProvider);
 
-    // Validate based on auth method
+    // Validate based on auth method and inbound method
     if (authType === "oauth2") {
-      if (!oauth2?.clientId || !oauth2?.refreshToken) {
-        return res.status(400).json({
-          success: false,
-          message: "OAuth2 authentication requires clientId and refreshToken",
-        });
+      if (inboundMethodType === "graph") {
+        // Graph API (client_credentials flow) needs clientId + clientSecret + tenantId; no refreshToken
+        if (!oauth2?.clientId || !oauth2?.clientSecret || !oauth2?.tenantId) {
+          return res.status(400).json({
+            success: false,
+            message: "Graph API requires oauth2.clientId, oauth2.clientSecret, and oauth2.tenantId",
+          });
+        }
+      } else {
+        // Standard delegated OAuth2 (IMAP/SMTP XOAUTH2) requires refreshToken
+        if (!oauth2?.clientId || !oauth2?.refreshToken) {
+          return res.status(400).json({
+            success: false,
+            message: "OAuth2 authentication requires clientId and refreshToken",
+          });
+        }
       }
     } else {
       // Validate required fields for basic/app_password
@@ -1365,12 +1383,71 @@ export const testEmailCredentials = async (req: Request, res: Response) => {
     const smtpHostToUse = smtpHost || defaults.smtpHost;
     const smtpPortToUse = smtpPort || defaults.smtpPort;
 
+    const isGraph = inboundMethodType === "graph";
+
     console.log(
-      `🔌 Testing email credentials (auth: ${authType}, provider: ${detectedProvider})`,
+      `🔌 Testing email credentials (auth: ${authType}, provider: ${detectedProvider}, inbound: ${inboundMethodType})`,
     );
-    console.log(
-      `   IMAP: ${imapHostToUse}:${imapPortToUse}, SMTP: ${smtpHostToUse}:${smtpPortToUse}`,
-    );
+
+    // For Graph API inbound, test client_credentials token fetch (no IMAP)
+    if (isGraph) {
+      console.log("  🔑 Testing Microsoft Graph API client_credentials token...");
+      try {
+        const tokenUrl = `https://login.microsoftonline.com/${oauth2.tenantId}/oauth2/v2.0/token`;
+        const params = new URLSearchParams({
+          grant_type: "client_credentials",
+          client_id: oauth2.clientId,
+          client_secret: oauth2.clientSecret,
+          scope: "https://graph.microsoft.com/.default",
+        });
+        const tokenRes = await fetch(tokenUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: params.toString(),
+        });
+        const tokenData: any = await tokenRes.json();
+        if (!tokenRes.ok || !tokenData.access_token) {
+          return res.status(200).json({
+            success: false,
+            message: "Graph API token fetch failed",
+            data: {
+              imap: { success: false, error: `Graph API: ${tokenData.error_description || tokenData.error || "Token fetch failed"}` },
+              smtp: { success: true, error: undefined },
+              provider: detectedProvider,
+              authMethod: authType,
+              testedAt: new Date(),
+            },
+          });
+        }
+        console.log("  ✅ Graph API token acquired successfully");
+        return res.status(200).json({
+          success: true,
+          message: "Microsoft Graph API credentials verified successfully",
+          data: {
+            imap: { success: true },
+            smtp: { success: true },
+            provider: detectedProvider,
+            authMethod: authType,
+            testedAt: new Date(),
+          },
+        });
+      } catch (graphError: any) {
+        return res.status(200).json({
+          success: false,
+          message: "Graph API connection test failed",
+          data: {
+            imap: { success: false, error: graphError.message },
+            smtp: { success: true },
+            provider: detectedProvider,
+            authMethod: authType,
+            testedAt: new Date(),
+          },
+        });
+      }
+    }
+
+    // Standard IMAP + SMTP test
+    console.log(`   IMAP: ${imapHostToUse}:${imapPortToUse}, SMTP: ${smtpHostToUse}:${smtpPortToUse}`);
 
     // Test IMAP connection
     console.log("  📥 Testing IMAP connection...");

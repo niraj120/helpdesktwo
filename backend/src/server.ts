@@ -42,6 +42,7 @@ import { notFound } from "./middleware/notFound";
 import authRoutes from "./routes/auth";
 import projectAuthRoutes from "./routes/projectAuth";
 import studentAuthRoutes from "./routes/studentAuth";
+import keycloakAuthRoutes from "./routes/keycloakAuth";
 import userRoutes from "./routes/users";
 import ticketRoutes from "./routes/tickets";
 import eulaRoutes from "./routes/eula";
@@ -220,6 +221,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/auth/project", projectAuthRoutes); // Agent login via /api/auth/project/:customUrlPath/login
 app.use("/api/project-auth", projectAuthRoutes);
 app.use("/api/student-auth", studentAuthRoutes);
+app.use("/api/keycloak-auth", keycloakAuthRoutes);
 app.use("/api/auth", eulaRoutes);
 app.use("/api/otp", otpRoutes); // OTP verification for fields
 app.use("/api/users", userRoutes);

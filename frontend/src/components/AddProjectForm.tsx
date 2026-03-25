@@ -133,6 +133,11 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
       openIdConnect: false,
       jwt: false
     },
+    keycloakSsoEnabled: false,
+    keycloakUrl: '',
+    keycloakRealm: '',
+    keycloakClientId: '',
+    keycloakClientSecret: '',
 
     // Security Tab Settings
     allowUserSignup: true,
@@ -516,6 +521,11 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
         // Login Settings
         enableFormLogin: project?.configuration?.loginSettings?.enableFormLogin ?? true,
         enableGoogleRecaptcha: project?.configuration?.loginSettings?.enableGoogleRecaptcha ?? false,
+        keycloakSsoEnabled: project?.configuration?.loginSettings?.ssoSettings?.keycloak?.enabled ?? false,
+        keycloakUrl: project?.configuration?.loginSettings?.ssoSettings?.keycloak?.url || '',
+        keycloakRealm: project?.configuration?.loginSettings?.ssoSettings?.keycloak?.realm || '',
+        keycloakClientId: project?.configuration?.loginSettings?.ssoSettings?.keycloak?.clientId || '',
+        keycloakClientSecret: '',  // never pre-fill secret
         
         // Security Settings
         allowUserSignup: project?.configuration?.securitySettings?.allowUserSignup ?? true,
@@ -760,7 +770,16 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
           },
           loginSettings: {
             enableFormLogin: formData.enableFormLogin,
-            enableGoogleRecaptcha: formData.enableGoogleRecaptcha
+            enableGoogleRecaptcha: formData.enableGoogleRecaptcha,
+            ssoSettings: {
+              keycloak: {
+                enabled: formData.keycloakSsoEnabled,
+                url: formData.keycloakUrl || undefined,
+                realm: formData.keycloakRealm || undefined,
+                clientId: formData.keycloakClientId || undefined,
+                ...(formData.keycloakClientSecret ? { clientSecret: formData.keycloakClientSecret } : {})
+              }
+            }
           },
           securitySettings: {
             allowUserSignup: formData.allowUserSignup,
@@ -1866,6 +1885,167 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
 
           {activeTab === 'login' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '32px', maxWidth: '900px', minHeight: '500px' }}>
+              {/* Keycloak SSO Section */}
+              <div>
+                <h3 style={{
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  color: '#1f2937',
+                  marginBottom: '16px',
+                  paddingBottom: '8px',
+                  borderBottom: '1px solid #e5e7eb'
+                }}>
+                  Single Sign-On (SSO)
+                </h3>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {/* Enable toggle */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '12px',
+                    padding: '16px',
+                    backgroundColor: '#f9fafb',
+                    borderRadius: '6px',
+                    border: '1px solid #e5e7eb'
+                  }}>
+                    <input
+                      type="checkbox"
+                      id="keycloakSsoEnabled"
+                      checked={formData.keycloakSsoEnabled}
+                      onChange={(e) => setFormData({ ...formData, keycloakSsoEnabled: e.target.checked })}
+                      style={{ width: '18px', height: '18px', marginTop: '2px', cursor: 'pointer' }}
+                    />
+                    <div style={{ flex: 1 }}>
+                      <label htmlFor="keycloakSsoEnabled" style={{
+                        display: 'block',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        color: '#1f2937',
+                        marginBottom: '4px',
+                        cursor: 'pointer'
+                      }}>
+                        Enable Keycloak SSO
+                      </label>
+                      <p style={{ fontSize: '13px', color: '#6b7280', margin: 0, lineHeight: '1.5' }}>
+                        Allow users to sign in via Keycloak OpenID Connect (PKCE). An "Sign in with SSO" button will appear on the portal login page.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Keycloak config fields — shown only when SSO is enabled */}
+                  {formData.keycloakSsoEnabled && (
+                    <div style={{
+                      padding: '20px',
+                      backgroundColor: '#f0f9ff',
+                      borderRadius: '6px',
+                      border: '1px solid #bae6fd',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '14px'
+                    }}>
+                      <p style={{ fontSize: '13px', color: '#0369a1', margin: 0 }}>
+                        Configure the Keycloak realm and client details below. Leave fields blank to use the server-wide defaults from <code>.env</code>.
+                      </p>
+
+                      {/* Row: URL + Realm */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '6px' }}>
+                            Keycloak URL
+                          </label>
+                          <input
+                            type="url"
+                            value={formData.keycloakUrl}
+                            onChange={(e) => setFormData({ ...formData, keycloakUrl: e.target.value })}
+                            placeholder="http://localhost:8080"
+                            style={{
+                              width: '100%',
+                              padding: '8px 12px',
+                              fontSize: '13px',
+                              border: '1px solid #d1d5db',
+                              borderRadius: '6px',
+                              outline: 'none',
+                              boxSizing: 'border-box'
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '6px' }}>
+                            Realm
+                          </label>
+                          <input
+                            type="text"
+                            value={formData.keycloakRealm}
+                            onChange={(e) => setFormData({ ...formData, keycloakRealm: e.target.value })}
+                            placeholder="hubblehox-dev"
+                            style={{
+                              width: '100%',
+                              padding: '8px 12px',
+                              fontSize: '13px',
+                              border: '1px solid #d1d5db',
+                              borderRadius: '6px',
+                              outline: 'none',
+                              boxSizing: 'border-box'
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Row: Client ID + Client Secret */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '6px' }}>
+                            Client ID
+                          </label>
+                          <input
+                            type="text"
+                            value={formData.keycloakClientId}
+                            onChange={(e) => setFormData({ ...formData, keycloakClientId: e.target.value })}
+                            placeholder="helpdesk-frontend"
+                            style={{
+                              width: '100%',
+                              padding: '8px 12px',
+                              fontSize: '13px',
+                              border: '1px solid #d1d5db',
+                              borderRadius: '6px',
+                              outline: 'none',
+                              boxSizing: 'border-box'
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '6px' }}>
+                            Client Secret
+                            <span style={{ fontSize: '11px', fontWeight: '400', color: '#6b7280', marginLeft: '6px' }}>(leave blank to keep existing)</span>
+                          </label>
+                          <input
+                            type="password"
+                            value={formData.keycloakClientSecret}
+                            onChange={(e) => setFormData({ ...formData, keycloakClientSecret: e.target.value })}
+                            placeholder="••••••••"
+                            autoComplete="new-password"
+                            style={{
+                              width: '100%',
+                              padding: '8px 12px',
+                              fontSize: '13px',
+                              border: '1px solid #d1d5db',
+                              borderRadius: '6px',
+                              outline: 'none',
+                              boxSizing: 'border-box'
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      <p style={{ fontSize: '12px', color: '#6b7280', margin: 0 }}>
+                        The SSO callback URL to register in Keycloak: <strong>{window.location.origin}/sso/callback</strong>
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {/* Form Login Section */}
               <div>
                 <h3 style={{
