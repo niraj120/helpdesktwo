@@ -127,7 +127,7 @@ interface FormData {
   oauth2ClientId: string;
   oauth2ClientSecret: string;
   oauth2RefreshToken: string;
-  oauth2TenantId: string;    // Microsoft Tenant ID for Graph API
+  oauth2TenantId: string; // Microsoft Tenant ID for Graph API
   outboundMethod: "smtp" | "sendgrid" | "graph";
   sendgridApiKey: string;
 }
@@ -378,10 +378,7 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
 
     // SMTP validations — skip entirely for Graph API (no SMTP needed)
     if (formData.outboundMethod !== "graph") {
-      if (
-        formData.outboundMethod !== "sendgrid" &&
-        !formData.smtpHost.trim()
-      ) {
+      if (formData.outboundMethod !== "sendgrid" && !formData.smtpHost.trim()) {
         newErrors.smtpHost = "SMTP host is required";
       }
       const smtpPort = Number(formData.smtpPort);
@@ -815,7 +812,6 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                 </p>
               )}
             </div>
-
             {/* Inbound Method Selector */}
             <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
               <h3 className="text-sm font-semibold text-blue-900 mb-3">
@@ -872,9 +868,7 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                     name="inboundMethod"
                     value="graph"
                     checked={formData.inboundMethod === "graph"}
-                    onChange={() =>
-                      handleInputChange("inboundMethod", "graph")
-                    }
+                    onChange={() => handleInputChange("inboundMethod", "graph")}
                     className="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                   />
                   <div>
@@ -897,7 +891,6 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                 </label>
               </div>
             </div>
-
             {/* Webhook vendor config (shown when webhook inbound selected) */}
             {formData.inboundMethod === "webhook" && (
               <div className="p-4 bg-green-50 border border-green-200 rounded-lg space-y-4">
@@ -1012,7 +1005,6 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                 </p>
               </div>
             )}
-
             {/* Microsoft Graph API config panel */}
             {formData.inboundMethod === "graph" && (
               <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-4">
@@ -1023,10 +1015,9 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                   </h4>
                 </div>
                 <p className="text-xs text-blue-800">
-                  Uses{" "}
-                  <strong>client credentials (app-only)</strong> flow — no user
-                  sign-in or refresh token required. The Azure App Registration
-                  must have{" "}
+                  Uses <strong>client credentials (app-only)</strong> flow — no
+                  user sign-in or refresh token required. The Azure App
+                  Registration must have{" "}
                   <code className="bg-white px-1 rounded border border-blue-200">
                     Mail.ReadWrite
                   </code>{" "}
@@ -1059,6 +1050,64 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                   )}
                 </div>
 
+                {/* Client ID */}
+                <div>
+                  <label className="block text-xs font-medium text-blue-900 mb-1">
+                    Client ID (Application ID){" "}
+                    <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.oauth2ClientId}
+                    onChange={(e) =>
+                      handleInputChange("oauth2ClientId", e.target.value)
+                    }
+                    placeholder="e.g. xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                    className={`block w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                      (errors as any).oauth2ClientId
+                        ? "border-red-300 bg-red-50"
+                        : "border-blue-300 bg-white"
+                    }`}
+                  />
+                  {(errors as any).oauth2ClientId && (
+                    <p className="mt-1 text-xs text-red-600">
+                      {(errors as any).oauth2ClientId}
+                    </p>
+                  )}
+                </div>
+
+                {/* Client Secret */}
+                <div>
+                  <label className="block text-xs font-medium text-blue-900 mb-1">
+                    Client Secret <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    value={formData.oauth2ClientSecret}
+                    onChange={(e) =>
+                      handleInputChange("oauth2ClientSecret", e.target.value)
+                    }
+                    placeholder={
+                      editingConfig
+                        ? "Leave blank to keep existing secret"
+                        : "Paste the client secret value"
+                    }
+                    className={`block w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                      (errors as any).oauth2ClientSecret
+                        ? "border-red-300 bg-red-50"
+                        : "border-blue-300 bg-white"
+                    }`}
+                  />
+                  {(errors as any).oauth2ClientSecret && (
+                    <p className="mt-1 text-xs text-red-600">
+                      {(errors as any).oauth2ClientSecret}
+                    </p>
+                  )}
+                  <p className="mt-1 text-xs text-blue-600">
+                    Found in Azure Portal → App registrations → Certificates &amp; secrets
+                  </p>
+                </div>
+
                 {/* How emails are matched */}
                 <p className="text-xs text-blue-700">
                   Unread emails addressed to{" "}
@@ -1068,7 +1117,6 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                 </p>
               </div>
             )}
-
             {/* Provider Info Banner */}
             {formData.provider !== "other" && (
               <div
@@ -1144,192 +1192,197 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                 </div>
               </div>
             )}
-
             {/* Authentication Method — hidden when Graph API is selected (always uses OAuth2 client_credentials) */}
-            {formData.inboundMethod !== "graph" && <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Authentication Method
-              </label>
-              <div className="flex flex-wrap gap-4">
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    name="authMethod"
-                    value="basic"
-                    checked={formData.authMethod === "basic"}
-                    onChange={() => handleInputChange("authMethod", "basic")}
-                    className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                  />
-                  <span className="ml-2 text-sm text-gray-700">
-                    Basic Password
-                  </span>
+            {formData.inboundMethod !== "graph" && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Authentication Method
                 </label>
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    name="authMethod"
-                    value="app_password"
-                    checked={formData.authMethod === "app_password"}
-                    onChange={() =>
-                      handleInputChange("authMethod", "app_password")
-                    }
-                    className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                  />
-                  <span className="ml-2 text-sm text-gray-700">
-                    App Password
-                  </span>
-                </label>
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    name="authMethod"
-                    value="oauth2"
-                    checked={formData.authMethod === "oauth2"}
-                    onChange={() => handleInputChange("authMethod", "oauth2")}
-                    className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                  />
-                  <span className="ml-2 text-sm text-gray-700">
-                    OAuth2 (Modern Auth)
-                  </span>
-                  {(formData.provider === "google" ||
-                    formData.provider === "microsoft") && (
-                    <span className="ml-1 text-xs text-green-600 font-medium">
-                      (Recommended)
+                <div className="flex flex-wrap gap-4">
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="authMethod"
+                      value="basic"
+                      checked={formData.authMethod === "basic"}
+                      onChange={() => handleInputChange("authMethod", "basic")}
+                      className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                    />
+                    <span className="ml-2 text-sm text-gray-700">
+                      Basic Password
                     </span>
-                  )}
-                </label>
-              </div>
-              {formData.authMethod === "app_password" && (
-                <p className="mt-1 text-xs text-gray-500">
-                  App Passwords are 16-character codes that give apps access to
-                  your email without your main password.
-                </p>
-              )}
-
-              {/* OAuth2 credential fields */}
-              {formData.authMethod === "oauth2" && (
-                <div className="mt-3 space-y-3">
-                  {/* Azure/Google setup instructions */}
-                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800">
-                    <p className="font-semibold mb-1">
-                      Microsoft 365 OAuth2 — What you need
-                    </p>
-                    <p className="mb-2 text-blue-700">
-                      OAuth2 requires an <strong>Azure App Registration</strong>
-                      . If you don't have Azure Portal access, ask your IT /
-                      Microsoft 365 admin to complete these steps and provide
-                      you the three credentials below.
-                    </p>
-                    <p className="font-medium mb-1">
-                      Steps for your Azure admin:
-                    </p>
-                    <ol className="list-decimal list-inside space-y-1">
-                      <li>
-                        Azure Portal → <strong>App registrations</strong> → New
-                        registration (any name, single-tenant or multi-tenant)
-                      </li>
-                      <li>
-                        <strong>API permissions</strong> → Add a permission →
-                        Microsoft Graph → Delegated:{" "}
-                        <code className="bg-blue-100 px-1 rounded">
-                          IMAP.AccessAsUser.All
-                        </code>
-                        {", "}
-                        <code className="bg-blue-100 px-1 rounded">
-                          SMTP.Send
-                        </code>
-                        {", "}
-                        <code className="bg-blue-100 px-1 rounded">
-                          offline_access
-                        </code>{" "}
-                        → <strong>Grant admin consent</strong>
-                      </li>
-                      <li>
-                        <strong>Certificates &amp; Secrets</strong> → New client
-                        secret → copy the <strong>Value</strong> (shown only
-                        once)
-                      </li>
-                      <li>
-                        Copy the <strong>Application (client) ID</strong> from
-                        Overview
-                      </li>
-                      <li>
-                        Use the OAuth2 authorization code flow to obtain a{" "}
-                        <strong>Refresh Token</strong> for the mailbox user —
-                        see{" "}
-                        <a
-                          href="https://learn.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-auth-code-flow"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="underline"
-                        >
-                          Microsoft docs
-                        </a>
-                      </li>
-                    </ol>
-                    <p className="mt-2 text-blue-600">
-                      The app registration only needs to be created once per
-                      organization.
-                    </p>
-                  </div>
-
-                  {/* Client ID */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Client ID (Application ID){" "}
-                      <span className="text-red-500">*</span>
-                    </label>
+                  </label>
+                  <label className="flex items-center">
                     <input
-                      type="text"
-                      value={formData.oauth2ClientId}
-                      onChange={(e) =>
-                        handleInputChange("oauth2ClientId", e.target.value)
+                      type="radio"
+                      name="authMethod"
+                      value="app_password"
+                      checked={formData.authMethod === "app_password"}
+                      onChange={() =>
+                        handleInputChange("authMethod", "app_password")
                       }
-                      className={`block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm ${
-                        (errors as any).oauth2ClientId
-                          ? "border-red-300"
-                          : "border-gray-300 focus:border-blue-500"
-                      }`}
-                      placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                      className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                     />
-                    {(errors as any).oauth2ClientId && (
-                      <p className="mt-1 text-sm text-red-600">
-                        {(errors as any).oauth2ClientId}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Client Secret */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Client Secret
-                    </label>
+                    <span className="ml-2 text-sm text-gray-700">
+                      App Password
+                    </span>
+                  </label>
+                  <label className="flex items-center">
                     <input
-                      type="password"
-                      value={formData.oauth2ClientSecret}
-                      onChange={(e) =>
-                        handleInputChange("oauth2ClientSecret", e.target.value)
-                      }
-                      className={`block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm ${
-                        (errors as any).oauth2ClientSecret
-                          ? "border-red-300"
-                          : "border-gray-300 focus:border-blue-500"
-                      }`}
-                      placeholder={
-                        editingConfig
-                          ? "Leave blank to keep existing"
-                          : "Paste client secret value"
-                      }
+                      type="radio"
+                      name="authMethod"
+                      value="oauth2"
+                      checked={formData.authMethod === "oauth2"}
+                      onChange={() => handleInputChange("authMethod", "oauth2")}
+                      className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                     />
-                    {(errors as any).oauth2ClientSecret && (
-                      <p className="mt-1 text-sm text-red-600">
-                        {(errors as any).oauth2ClientSecret}
-                      </p>
+                    <span className="ml-2 text-sm text-gray-700">
+                      OAuth2 (Modern Auth)
+                    </span>
+                    {(formData.provider === "google" ||
+                      formData.provider === "microsoft") && (
+                      <span className="ml-1 text-xs text-green-600 font-medium">
+                        (Recommended)
+                      </span>
                     )}
-                  </div>
+                  </label>
+                </div>
+                {formData.authMethod === "app_password" && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    App Passwords are 16-character codes that give apps access
+                    to your email without your main password.
+                  </p>
+                )}
 
-                  {/* Refresh Token (delegated OAuth2 flow) */}
-                  <div>
+                {/* OAuth2 credential fields */}
+                {formData.authMethod === "oauth2" && (
+                  <div className="mt-3 space-y-3">
+                    {/* Azure/Google setup instructions */}
+                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800">
+                      <p className="font-semibold mb-1">
+                        Microsoft 365 OAuth2 — What you need
+                      </p>
+                      <p className="mb-2 text-blue-700">
+                        OAuth2 requires an{" "}
+                        <strong>Azure App Registration</strong>. If you don't
+                        have Azure Portal access, ask your IT / Microsoft 365
+                        admin to complete these steps and provide you the three
+                        credentials below.
+                      </p>
+                      <p className="font-medium mb-1">
+                        Steps for your Azure admin:
+                      </p>
+                      <ol className="list-decimal list-inside space-y-1">
+                        <li>
+                          Azure Portal → <strong>App registrations</strong> →
+                          New registration (any name, single-tenant or
+                          multi-tenant)
+                        </li>
+                        <li>
+                          <strong>API permissions</strong> → Add a permission →
+                          Microsoft Graph → Delegated:{" "}
+                          <code className="bg-blue-100 px-1 rounded">
+                            IMAP.AccessAsUser.All
+                          </code>
+                          {", "}
+                          <code className="bg-blue-100 px-1 rounded">
+                            SMTP.Send
+                          </code>
+                          {", "}
+                          <code className="bg-blue-100 px-1 rounded">
+                            offline_access
+                          </code>{" "}
+                          → <strong>Grant admin consent</strong>
+                        </li>
+                        <li>
+                          <strong>Certificates &amp; Secrets</strong> → New
+                          client secret → copy the <strong>Value</strong> (shown
+                          only once)
+                        </li>
+                        <li>
+                          Copy the <strong>Application (client) ID</strong> from
+                          Overview
+                        </li>
+                        <li>
+                          Use the OAuth2 authorization code flow to obtain a{" "}
+                          <strong>Refresh Token</strong> for the mailbox user —
+                          see{" "}
+                          <a
+                            href="https://learn.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-auth-code-flow"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline"
+                          >
+                            Microsoft docs
+                          </a>
+                        </li>
+                      </ol>
+                      <p className="mt-2 text-blue-600">
+                        The app registration only needs to be created once per
+                        organization.
+                      </p>
+                    </div>
+
+                    {/* Client ID */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Client ID (Application ID){" "}
+                        <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.oauth2ClientId}
+                        onChange={(e) =>
+                          handleInputChange("oauth2ClientId", e.target.value)
+                        }
+                        className={`block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm ${
+                          (errors as any).oauth2ClientId
+                            ? "border-red-300"
+                            : "border-gray-300 focus:border-blue-500"
+                        }`}
+                        placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                      />
+                      {(errors as any).oauth2ClientId && (
+                        <p className="mt-1 text-sm text-red-600">
+                          {(errors as any).oauth2ClientId}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Client Secret */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Client Secret
+                      </label>
+                      <input
+                        type="password"
+                        value={formData.oauth2ClientSecret}
+                        onChange={(e) =>
+                          handleInputChange(
+                            "oauth2ClientSecret",
+                            e.target.value,
+                          )
+                        }
+                        className={`block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm ${
+                          (errors as any).oauth2ClientSecret
+                            ? "border-red-300"
+                            : "border-gray-300 focus:border-blue-500"
+                        }`}
+                        placeholder={
+                          editingConfig
+                            ? "Leave blank to keep existing"
+                            : "Paste client secret value"
+                        }
+                      />
+                      {(errors as any).oauth2ClientSecret && (
+                        <p className="mt-1 text-sm text-red-600">
+                          {(errors as any).oauth2ClientSecret}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Refresh Token (delegated OAuth2 flow) */}
+                    <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Refresh Token <span className="text-red-500">*</span>
                       </label>
@@ -1359,10 +1412,10 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                         </p>
                       )}
                     </div>
-                </div>
-              )}
-            </div>}
-
+                  </div>
+                )}
+              </div>
+            )}
             {/* IMAP Settings Section — only for IMAP inbound */}
             {formData.inboundMethod === "imap" && (
               <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
@@ -1570,246 +1623,245 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                 </div>
               </div>
             )}
-
             {/* SMTP Settings Section — hidden when Graph API handles outbound */}
             {formData.outboundMethod !== "graph" && (
-            <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-              <div className="flex items-center mb-4">
-                <ServerIcon className="w-5 h-5 text-gray-600 mr-2" />
-                <h3 className="text-sm font-semibold text-gray-900">
-                  Outgoing Mail (Outbound)
-                </h3>
-              </div>
-
-              {/* Outbound Method selector */}
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Outbound Method
-                </label>
-                <div className="flex gap-6">
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      name="outboundMethod"
-                      value="smtp"
-                      checked={formData.outboundMethod === "smtp"}
-                      onChange={() =>
-                        handleInputChange("outboundMethod", "smtp")
-                      }
-                      className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                    />
-                    <span className="ml-2 text-sm text-gray-700">SMTP</span>
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      name="outboundMethod"
-                      value="sendgrid"
-                      checked={formData.outboundMethod === "sendgrid"}
-                      onChange={() =>
-                        handleInputChange("outboundMethod", "sendgrid")
-                      }
-                      className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                    />
-                    <span className="ml-2 text-sm text-gray-700">
-                      SendGrid API
-                    </span>
-                    {formData.authMethod === "oauth2" && (
-                      <span className="ml-1 text-xs text-green-600 font-medium">
-                        (Recommended with OAuth2)
-                      </span>
-                    )}
-                  </label>
+              <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                <div className="flex items-center mb-4">
+                  <ServerIcon className="w-5 h-5 text-gray-600 mr-2" />
+                  <h3 className="text-sm font-semibold text-gray-900">
+                    Outgoing Mail (Outbound)
+                  </h3>
                 </div>
-              </div>
 
-              {/* ── SendGrid API key ── */}
-              {formData.outboundMethod === "sendgrid" ? (
-                <div className="space-y-3">
-                  <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-3 py-2">
-                    Emails will be sent via the SendGrid API — no SMTP
-                    credentials needed. The
-                    <strong> From address</strong> will be the Email Address
-                    above. Make sure that address is verified as a Sender in
-                    your SendGrid account.
-                  </p>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      SendGrid API Key{" "}
-                      {!editingConfig && (
-                        <span className="text-red-500">*</span>
+                {/* Outbound Method selector */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Outbound Method
+                  </label>
+                  <div className="flex gap-6">
+                    <label className="flex items-center">
+                      <input
+                        type="radio"
+                        name="outboundMethod"
+                        value="smtp"
+                        checked={formData.outboundMethod === "smtp"}
+                        onChange={() =>
+                          handleInputChange("outboundMethod", "smtp")
+                        }
+                        className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                      />
+                      <span className="ml-2 text-sm text-gray-700">SMTP</span>
+                    </label>
+                    <label className="flex items-center">
+                      <input
+                        type="radio"
+                        name="outboundMethod"
+                        value="sendgrid"
+                        checked={formData.outboundMethod === "sendgrid"}
+                        onChange={() =>
+                          handleInputChange("outboundMethod", "sendgrid")
+                        }
+                        className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                      />
+                      <span className="ml-2 text-sm text-gray-700">
+                        SendGrid API
+                      </span>
+                      {formData.authMethod === "oauth2" && (
+                        <span className="ml-1 text-xs text-green-600 font-medium">
+                          (Recommended with OAuth2)
+                        </span>
                       )}
                     </label>
-                    <input
-                      type="password"
-                      value={formData.sendgridApiKey}
-                      onChange={(e) =>
-                        handleInputChange("sendgridApiKey", e.target.value)
-                      }
-                      className={`block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm ${
-                        (errors as any).sendgridApiKey
-                          ? "border-red-300 focus:border-red-500"
-                          : "border-gray-300 focus:border-blue-500"
-                      }`}
-                      placeholder={
-                        editingConfig
-                          ? "Leave blank to keep existing"
-                          : "SG.xxxxxxxxxxxx"
-                      }
-                    />
-                    {(errors as any).sendgridApiKey && (
-                      <p className="mt-1 text-sm text-red-600">
-                        {(errors as any).sendgridApiKey}
-                      </p>
-                    )}
-                    {editingConfig && (
-                      <p className="mt-1 text-xs text-gray-500">
-                        Leave blank to keep existing API key
-                      </p>
-                    )}
                   </div>
                 </div>
-              ) : (
-                <div className="space-y-4">
-                  {/* SMTP Host */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      SMTP Host <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.smtpHost}
-                      onChange={(e) =>
-                        handleInputChange("smtpHost", e.target.value)
-                      }
-                      className={`block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                        errors.smtpHost
-                          ? "border-red-300 focus:border-red-500"
-                          : "border-gray-300 focus:border-blue-500"
-                      }`}
-                      placeholder="smtp.gmail.com"
-                    />
-                    {errors.smtpHost && (
-                      <p className="mt-1 text-sm text-red-600">
-                        {errors.smtpHost}
-                      </p>
-                    )}
-                  </div>
 
-                  {/* SMTP Port */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      SMTP Port <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      value={formData.smtpPort}
-                      onChange={(e) =>
-                        handleInputChange("smtpPort", e.target.value)
-                      }
-                      className={`block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                        errors.smtpPort
-                          ? "border-red-300 focus:border-red-500"
-                          : "border-gray-300 focus:border-blue-500"
-                      }`}
-                      placeholder="587"
-                      min="1"
-                      max="65535"
-                    />
-                    {errors.smtpPort && (
-                      <p className="mt-1 text-sm text-red-600">
-                        {errors.smtpPort}
-                      </p>
-                    )}
-                    <p className="mt-1 text-xs text-gray-500">
-                      Common: 587 (TLS) or 465 (SSL)
+                {/* ── SendGrid API key ── */}
+                {formData.outboundMethod === "sendgrid" ? (
+                  <div className="space-y-3">
+                    <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-3 py-2">
+                      Emails will be sent via the SendGrid API — no SMTP
+                      credentials needed. The
+                      <strong> From address</strong> will be the Email Address
+                      above. Make sure that address is verified as a Sender in
+                      your SendGrid account.
                     </p>
-                  </div>
-
-                  {/* SMTP Username */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      SMTP Username <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.smtpUsername}
-                      onChange={(e) =>
-                        handleInputChange("smtpUsername", e.target.value)
-                      }
-                      className={`block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                        errors.smtpUsername
-                          ? "border-red-300 focus:border-red-500"
-                          : "border-gray-300 focus:border-blue-500"
-                      }`}
-                      placeholder="support@example.com"
-                    />
-                    {errors.smtpUsername && (
-                      <p className="mt-1 text-sm text-red-600">
-                        {errors.smtpUsername}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* SMTP Password — hidden when using OAuth2 */}
-                  {formData.authMethod !== "oauth2" && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        SMTP Password{" "}
+                        SendGrid API Key{" "}
                         {!editingConfig && (
                           <span className="text-red-500">*</span>
                         )}
                       </label>
                       <input
                         type="password"
-                        value={formData.smtpPassword}
+                        value={formData.sendgridApiKey}
                         onChange={(e) =>
-                          handleInputChange("smtpPassword", e.target.value)
+                          handleInputChange("sendgridApiKey", e.target.value)
                         }
-                        className={`block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                          errors.smtpPassword
+                        className={`block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm ${
+                          (errors as any).sendgridApiKey
                             ? "border-red-300 focus:border-red-500"
                             : "border-gray-300 focus:border-blue-500"
                         }`}
-                        placeholder={editingConfig ? "••••••••" : "••••••••"}
+                        placeholder={
+                          editingConfig
+                            ? "Leave blank to keep existing"
+                            : "SG.xxxxxxxxxxxx"
+                        }
                       />
-                      {errors.smtpPassword && (
+                      {(errors as any).sendgridApiKey && (
                         <p className="mt-1 text-sm text-red-600">
-                          {errors.smtpPassword}
+                          {(errors as any).sendgridApiKey}
                         </p>
                       )}
                       {editingConfig && (
                         <p className="mt-1 text-xs text-gray-500">
-                          Leave blank to keep existing password
+                          Leave blank to keep existing API key
                         </p>
                       )}
                     </div>
-                  )}
-
-                  {/* Reply Signature */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Reply Signature
-                    </label>
-                    <textarea
-                      value={formData.replySignature}
-                      onChange={(e) =>
-                        handleInputChange("replySignature", e.target.value)
-                      }
-                      rows={3}
-                      className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y"
-                      placeholder={`Regards,\nSupport Team`}
-                    />
-                    <p className="mt-1 text-xs text-gray-500">
-                      Automatically appended when an agent clicks &quot;Reply
-                      via Email&quot;
-                    </p>
                   </div>
-                </div>
-              )}
-            </div>
-            )} {/* end outboundMethod !== "graph" */}
+                ) : (
+                  <div className="space-y-4">
+                    {/* SMTP Host */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        SMTP Host <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.smtpHost}
+                        onChange={(e) =>
+                          handleInputChange("smtpHost", e.target.value)
+                        }
+                        className={`block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                          errors.smtpHost
+                            ? "border-red-300 focus:border-red-500"
+                            : "border-gray-300 focus:border-blue-500"
+                        }`}
+                        placeholder="smtp.gmail.com"
+                      />
+                      {errors.smtpHost && (
+                        <p className="mt-1 text-sm text-red-600">
+                          {errors.smtpHost}
+                        </p>
+                      )}
+                    </div>
 
+                    {/* SMTP Port */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        SMTP Port <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        value={formData.smtpPort}
+                        onChange={(e) =>
+                          handleInputChange("smtpPort", e.target.value)
+                        }
+                        className={`block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                          errors.smtpPort
+                            ? "border-red-300 focus:border-red-500"
+                            : "border-gray-300 focus:border-blue-500"
+                        }`}
+                        placeholder="587"
+                        min="1"
+                        max="65535"
+                      />
+                      {errors.smtpPort && (
+                        <p className="mt-1 text-sm text-red-600">
+                          {errors.smtpPort}
+                        </p>
+                      )}
+                      <p className="mt-1 text-xs text-gray-500">
+                        Common: 587 (TLS) or 465 (SSL)
+                      </p>
+                    </div>
+
+                    {/* SMTP Username */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        SMTP Username <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.smtpUsername}
+                        onChange={(e) =>
+                          handleInputChange("smtpUsername", e.target.value)
+                        }
+                        className={`block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                          errors.smtpUsername
+                            ? "border-red-300 focus:border-red-500"
+                            : "border-gray-300 focus:border-blue-500"
+                        }`}
+                        placeholder="support@example.com"
+                      />
+                      {errors.smtpUsername && (
+                        <p className="mt-1 text-sm text-red-600">
+                          {errors.smtpUsername}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* SMTP Password — hidden when using OAuth2 */}
+                    {formData.authMethod !== "oauth2" && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          SMTP Password{" "}
+                          {!editingConfig && (
+                            <span className="text-red-500">*</span>
+                          )}
+                        </label>
+                        <input
+                          type="password"
+                          value={formData.smtpPassword}
+                          onChange={(e) =>
+                            handleInputChange("smtpPassword", e.target.value)
+                          }
+                          className={`block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                            errors.smtpPassword
+                              ? "border-red-300 focus:border-red-500"
+                              : "border-gray-300 focus:border-blue-500"
+                          }`}
+                          placeholder={editingConfig ? "••••••••" : "••••••••"}
+                        />
+                        {errors.smtpPassword && (
+                          <p className="mt-1 text-sm text-red-600">
+                            {errors.smtpPassword}
+                          </p>
+                        )}
+                        {editingConfig && (
+                          <p className="mt-1 text-xs text-gray-500">
+                            Leave blank to keep existing password
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Reply Signature */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Reply Signature
+                      </label>
+                      <textarea
+                        value={formData.replySignature}
+                        onChange={(e) =>
+                          handleInputChange("replySignature", e.target.value)
+                        }
+                        rows={3}
+                        className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y"
+                        placeholder={`Regards,\nSupport Team`}
+                      />
+                      <p className="mt-1 text-xs text-gray-500">
+                        Automatically appended when an agent clicks &quot;Reply
+                        via Email&quot;
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}{" "}
+            {/* end outboundMethod !== "graph" */}
             {/* Test Result */}
             {testResult && (
               <div
@@ -1833,7 +1885,6 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                 </p>
               </div>
             )}
-
             {/* Action Buttons */}
             <div className="flex items-center justify-between pt-4 border-t border-gray-200">
               {/* Test Connection Button — only for IMAP inbound */}
