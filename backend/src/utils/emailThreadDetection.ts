@@ -143,11 +143,12 @@ async function findBySubject(subject: string, senderEmail: string): Promise<any 
     }
 
     // Fallback: Try to match by EXACT subject (recent tickets only)
-    // Remove common reply prefixes (Re:, Fwd:, etc.)
-    const cleanSubject = subject
-      .replace(/^(Re:|RE:|Fwd:|FW:|Fw:)\s*/gi, '')
-      .trim()
-      .toLowerCase();
+    // Strip ALL leading Re:/Fwd: prefixes (handles 'Re: Re: ...' etc.)
+    let cleanSubject = subject.trim();
+    while (/^(Re:|Fwd:|FW:|Fw:)\s*/i.test(cleanSubject)) {
+      cleanSubject = cleanSubject.replace(/^(Re:|Fwd:|FW:|Fw:)\s*/i, "").trim();
+    }
+    cleanSubject = cleanSubject.toLowerCase();
 
     if (cleanSubject.length < 5) {
       // Subject too short, don't attempt matching
@@ -165,11 +166,12 @@ async function findBySubject(subject: string, senderEmail: string): Promise<any 
       .select('subject ticketNumber');
 
     for (const ticket of recentTickets) {
-      // Normalize ticket subject the same way
-      const ticketSubject = ticket.subject
-        .replace(/^(Re:|RE:|Fwd:|FW:|Fw:)\s*/gi, '')
-        .trim()
-        .toLowerCase();
+      // Normalize ticket subject the same way — strip ALL leading Re:/Fwd: prefixes
+      let ticketSubject = ticket.subject.trim();
+      while (/^(Re:|Fwd:|FW:|Fw:)\s*/i.test(ticketSubject)) {
+        ticketSubject = ticketSubject.replace(/^(Re:|Fwd:|FW:|Fw:)\s*/i, "").trim();
+      }
+      ticketSubject = ticketSubject.toLowerCase();
       
       // ONLY match if subject is EXACTLY the same (after normalization)
       // This ensures different subjects create NEW tickets

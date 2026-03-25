@@ -234,7 +234,7 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
         oauth2ClientSecret: "",
         oauth2RefreshToken: (editingConfig as any).oauth2?.refreshToken || "",
         oauth2TenantId: (editingConfig as any).oauth2?.tenantId || "",
-        outboundMethod: (editingConfig as any).outboundMethod || "smtp",
+        outboundMethod: inboundMethod === "graph" ? "graph" : ((editingConfig as any).outboundMethod || "smtp"),
         sendgridApiKey: "", // never pre-fill API key
       };
     }
@@ -1104,7 +1104,8 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                     </p>
                   )}
                   <p className="mt-1 text-xs text-blue-600">
-                    Found in Azure Portal → App registrations → Certificates &amp; secrets
+                    Found in Azure Portal → App registrations → Certificates
+                    &amp; secrets
                   </p>
                 </div>
 
@@ -1838,30 +1839,32 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                       </div>
                     )}
 
-                    {/* Reply Signature */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Reply Signature
-                      </label>
-                      <textarea
-                        value={formData.replySignature}
-                        onChange={(e) =>
-                          handleInputChange("replySignature", e.target.value)
-                        }
-                        rows={3}
-                        className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y"
-                        placeholder={`Regards,\nSupport Team`}
-                      />
-                      <p className="mt-1 text-xs text-gray-500">
-                        Automatically appended when an agent clicks &quot;Reply
-                        via Email&quot;
-                      </p>
-                    </div>
                   </div>
                 )}
               </div>
             )}{" "}
             {/* end outboundMethod !== "graph" */}
+            {/* Reply Signature — always shown regardless of outbound method */}
+            <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Reply Signature
+                </label>
+                <textarea
+                  value={formData.replySignature}
+                  onChange={(e) =>
+                    handleInputChange("replySignature", e.target.value)
+                  }
+                  rows={3}
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y"
+                  placeholder={`Regards,\nSupport Team`}
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Automatically appended when an agent clicks &quot;Reply
+                  via Email&quot;
+                </p>
+              </div>
+            </div>
             {/* Test Result */}
             {testResult && (
               <div

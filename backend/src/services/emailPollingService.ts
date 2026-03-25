@@ -27,6 +27,8 @@ interface EmailData {
   body: string;
   htmlBody?: string;
   headers: any;
+  inReplyTo?: string;    // RFC 5322 In-Reply-To header (for thread detection)
+  references?: string[]; // RFC 5322 References header (thread chain)
   attachments: Array<{
     filename: string;
     contentType: string;
@@ -307,7 +309,7 @@ class EmailPollingService {
     const messagesUrl =
       `${graphBase}/users/${mailboxUser}/messages` +
       `?$filter=isRead eq false` +
-      `&$select=id,subject,from,toRecipients,body,receivedDateTime,internetMessageId,hasAttachments` +
+      `&$select=id,subject,from,toRecipients,body,receivedDateTime,internetMessageId,hasAttachments,internetMessageHeaders` +
       `&$top=${MAX_EMAILS_PER_FETCH}`;
 
     const messagesResponse = await axios.get(messagesUrl, {
@@ -324,6 +326,17 @@ class EmailPollingService {
           (msg.body?.contentType || "").toLowerCase() === "html";
         const bodyContent: string = msg.body?.content || "";
 
+        // Extract RFC 5322 threading headers from Graph internetMessageHeaders
+        const graphHeaders: Array<{name: string; value: string}> = msg.internetMessageHeaders || [];
+        const getGraphHeader = (name: string) =>
+          graphHeaders.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value;
+        const rawInReplyTo = getGraphHeader("in-reply-to");
+        const rawReferences = getGraphHeader("references");
+        const inReplyTo = rawInReplyTo?.replace(/^<|>$/g, "").trim() || undefined;
+        const references = rawReferences
+          ? rawReferences.split(/\s+/).map((r) => r.replace(/^<|>$/g, "").trim()).filter(Boolean)
+          : undefined;
+
         const emailData: EmailData = {
           messageId: msg.internetMessageId || msg.id,
           from: {
@@ -338,6 +351,8 @@ class EmailPollingService {
           body: isHtml ? "" : bodyContent,
           htmlBody: isHtml ? bodyContent : undefined,
           headers: {},
+          inReplyTo,
+          references,
           attachments: [],
           receivedDate: new Date(msg.receivedDateTime),
           uid: 0,
