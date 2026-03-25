@@ -27,7 +27,7 @@ interface EmailData {
   body: string;
   htmlBody?: string;
   headers: any;
-  inReplyTo?: string;    // RFC 5322 In-Reply-To header (for thread detection)
+  inReplyTo?: string; // RFC 5322 In-Reply-To header (for thread detection)
   references?: string[]; // RFC 5322 References header (thread chain)
   attachments: Array<{
     filename: string;
@@ -322,19 +322,24 @@ class EmailPollingService {
 
     for (const msg of messages) {
       try {
-        const isHtml =
-          (msg.body?.contentType || "").toLowerCase() === "html";
+        const isHtml = (msg.body?.contentType || "").toLowerCase() === "html";
         const bodyContent: string = msg.body?.content || "";
 
         // Extract RFC 5322 threading headers from Graph internetMessageHeaders
-        const graphHeaders: Array<{name: string; value: string}> = msg.internetMessageHeaders || [];
+        const graphHeaders: Array<{ name: string; value: string }> =
+          msg.internetMessageHeaders || [];
         const getGraphHeader = (name: string) =>
-          graphHeaders.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value;
+          graphHeaders.find((h) => h.name.toLowerCase() === name.toLowerCase())
+            ?.value;
         const rawInReplyTo = getGraphHeader("in-reply-to");
         const rawReferences = getGraphHeader("references");
-        const inReplyTo = rawInReplyTo?.replace(/^<|>$/g, "").trim() || undefined;
+        const inReplyTo =
+          rawInReplyTo?.replace(/^<|>$/g, "").trim() || undefined;
         const references = rawReferences
-          ? rawReferences.split(/\s+/).map((r) => r.replace(/^<|>$/g, "").trim()).filter(Boolean)
+          ? rawReferences
+              .split(/\s+/)
+              .map((r) => r.replace(/^<|>$/g, "").trim())
+              .filter(Boolean)
           : undefined;
 
         const emailData: EmailData = {

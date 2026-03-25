@@ -234,7 +234,10 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
         oauth2ClientSecret: "",
         oauth2RefreshToken: (editingConfig as any).oauth2?.refreshToken || "",
         oauth2TenantId: (editingConfig as any).oauth2?.tenantId || "",
-        outboundMethod: inboundMethod === "graph" ? "graph" : ((editingConfig as any).outboundMethod || "smtp"),
+        outboundMethod:
+          inboundMethod === "graph"
+            ? "graph"
+            : (editingConfig as any).outboundMethod || "smtp",
         sendgridApiKey: "", // never pre-fill API key
       };
     }
@@ -1838,7 +1841,6 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                         )}
                       </div>
                     )}
-
                   </div>
                 )}
               </div>
@@ -1860,8 +1862,8 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
                   placeholder={`Regards,\nSupport Team`}
                 />
                 <p className="mt-1 text-xs text-gray-500">
-                  Automatically appended when an agent clicks &quot;Reply
-                  via Email&quot;
+                  Automatically appended when an agent clicks &quot;Reply via
+                  Email&quot;
                 </p>
               </div>
             </div>

@@ -1,6 +1,6 @@
-import { Ticket } from '../models/Ticket';
-import { ParsedEmailData } from './emailParser';
-import TicketEmailCommunication from '../models/TicketEmailCommunication';
+import { Ticket } from "../models/Ticket";
+import { ParsedEmailData } from "./emailParser";
+import TicketEmailCommunication from "../models/TicketEmailCommunication";
 
 /**
  * Email Thread Detector
@@ -10,17 +10,21 @@ import TicketEmailCommunication from '../models/TicketEmailCommunication';
 /**
  * Find existing ticket based on email thread
  * Uses In-Reply-To and References headers to detect email threads
- * 
+ *
  * @param parsedEmail - Parsed email data
  * @returns Existing ticket if found, null otherwise
  */
-export async function findEmailThread(parsedEmail: ParsedEmailData): Promise<any | null> {
+export async function findEmailThread(
+  parsedEmail: ParsedEmailData,
+): Promise<any | null> {
   try {
     // Strategy 1: Check In-Reply-To header (most reliable)
     if (parsedEmail.inReplyTo) {
       const ticketByInReplyTo = await findByInReplyTo(parsedEmail.inReplyTo);
       if (ticketByInReplyTo) {
-        console.log(`      ✓ Match found via In-Reply-To: ${parsedEmail.inReplyTo}`);
+        console.log(
+          `      ✓ Match found via In-Reply-To: ${parsedEmail.inReplyTo}`,
+        );
         return ticketByInReplyTo;
       }
     }
@@ -36,7 +40,10 @@ export async function findEmailThread(parsedEmail: ParsedEmailData): Promise<any
 
     // Strategy 3: Check subject line (fallback method)
     if (parsedEmail.subject) {
-      const ticketBySubject = await findBySubject(parsedEmail.subject, parsedEmail.from.address);
+      const ticketBySubject = await findBySubject(
+        parsedEmail.subject,
+        parsedEmail.from.address,
+      );
       if (ticketBySubject) {
         console.log(`      ✓ Match found via subject line`);
         return ticketBySubject;
@@ -61,7 +68,7 @@ async function findByInReplyTo(inReplyTo: string): Promise<any | null> {
     // First, check if the In-Reply-To message ID exists in TicketEmailCommunication
     const emailComm = await TicketEmailCommunication.findOne({
       messageId: inReplyTo,
-    }).select('ticketId');
+    }).select("ticketId");
 
     if (emailComm && emailComm.ticketId) {
       // Found the original email, get the ticket
@@ -73,7 +80,7 @@ async function findByInReplyTo(inReplyTo: string): Promise<any | null> {
 
     // Fallback: Check if In-Reply-To matches any ticket's initial message ID
     const ticket = await Ticket.findOne({
-      'metadata.emailMessageId': inReplyTo,
+      "metadata.emailMessageId": inReplyTo,
     });
 
     return ticket || null;
@@ -94,7 +101,7 @@ async function findByReferences(references: string[]): Promise<any | null> {
       // Check TicketEmailCommunication
       const emailComm = await TicketEmailCommunication.findOne({
         messageId: messageId,
-      }).select('ticketId');
+      }).select("ticketId");
 
       if (emailComm && emailComm.ticketId) {
         const ticket = await Ticket.findById(emailComm.ticketId);
@@ -105,7 +112,7 @@ async function findByReferences(references: string[]): Promise<any | null> {
 
       // Check Ticket collection
       const ticket = await Ticket.findOne({
-        'metadata.emailMessageId': messageId,
+        "metadata.emailMessageId": messageId,
       });
 
       if (ticket) {
@@ -125,11 +132,14 @@ async function findByReferences(references: string[]): Promise<any | null> {
  * Matches subject with ticket number pattern or exact subject match
  * Only matches if from the same sender (to avoid false positives)
  */
-async function findBySubject(subject: string, senderEmail: string): Promise<any | null> {
+async function findBySubject(
+  subject: string,
+  senderEmail: string,
+): Promise<any | null> {
   try {
     // Check for ticket number in subject (e.g., "Re: [Ticket #12345] Issue with...")
     const ticketNumberMatch = subject.match(/\[?(?:Ticket|TKT)?\s*#?(\d+)\]?/i);
-    
+
     if (ticketNumberMatch) {
       const ticketNumber = ticketNumberMatch[1];
       const ticket = await Ticket.findOne({
@@ -163,16 +173,18 @@ async function findBySubject(subject: string, senderEmail: string): Promise<any 
     })
       .sort({ createdAt: -1 })
       .limit(10)
-      .select('subject ticketNumber');
+      .select("subject ticketNumber");
 
     for (const ticket of recentTickets) {
       // Normalize ticket subject the same way — strip ALL leading Re:/Fwd: prefixes
       let ticketSubject = ticket.subject.trim();
       while (/^(Re:|Fwd:|FW:|Fw:)\s*/i.test(ticketSubject)) {
-        ticketSubject = ticketSubject.replace(/^(Re:|Fwd:|FW:|Fw:)\s*/i, "").trim();
+        ticketSubject = ticketSubject
+          .replace(/^(Re:|Fwd:|FW:|Fw:)\s*/i, "")
+          .trim();
       }
       ticketSubject = ticketSubject.toLowerCase();
-      
+
       // ONLY match if subject is EXACTLY the same (after normalization)
       // This ensures different subjects create NEW tickets
       if (ticketSubject === cleanSubject) {
@@ -181,9 +193,11 @@ async function findBySubject(subject: string, senderEmail: string): Promise<any 
         return await Ticket.findById(ticket._id);
       }
     }
-    
+
     // No exact match found - will create a new ticket
-    console.log(`      📝 No exact subject match for: "${cleanSubject}" - new ticket will be created`);
+    console.log(
+      `      📝 No exact subject match for: "${cleanSubject}" - new ticket will be created`,
+    );
 
     return null;
   } catch (error: any) {
@@ -205,17 +219,19 @@ export function shouldIgnoreEmail(parsedEmail: ParsedEmailData): boolean {
 
   // Ignore emails from known system addresses
   const systemAddresses = [
-    'noreply@',
-    'no-reply@',
-    'donotreply@',
-    'mailer-daemon@',
-    'postmaster@',
+    "noreply@",
+    "no-reply@",
+    "donotreply@",
+    "mailer-daemon@",
+    "postmaster@",
   ];
 
   const fromEmail = parsedEmail.from.address.toLowerCase();
   for (const systemAddr of systemAddresses) {
     if (fromEmail.includes(systemAddr)) {
-      console.log(`   ⚠️  Email from system address (${fromEmail}), should be ignored`);
+      console.log(
+        `   ⚠️  Email from system address (${fromEmail}), should be ignored`,
+      );
       return true;
     }
   }
