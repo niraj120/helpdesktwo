@@ -280,7 +280,8 @@ interface ChangeHistory {
     email: string;
   };
   changedAt: string;
-  changeType: "update" | "add" | "remove";
+  changeType: "update" | "add" | "remove" | "reassigned";
+  reassignmentReason?: string;
 }
 
 interface Category {
@@ -398,6 +399,24 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
   // Internal note states
   const [noteText, setNoteText] = useState("");
   const [isAddingNote, setIsAddingNote] = useState(false);
+
+  // Reassign states
+  const [showReassignModal, setShowReassignModal] = useState(false);
+  const [reassignDepartments, setReassignDepartments] = useState<
+    { _id: string; name: string }[]
+  >([]);
+  const [reassignDepartmentId, setReassignDepartmentId] = useState("");
+  const [reassignAgents, setReassignAgents] = useState<
+    { _id: string; firstName: string; lastName: string; email: string }[]
+  >([]);
+  const [reassignAgentId, setReassignAgentId] = useState("");
+  const [reassignReason, setReassignReason] = useState("");
+  const [reassignLoading, setReassignLoading] = useState(false);
+  const [reassignLoadingAgents, setReassignLoadingAgents] = useState(false);
+  const [deptSearch, setDeptSearch] = useState("");
+  const [deptDropdownOpen, setDeptDropdownOpen] = useState(false);
+  const [agentSearch, setAgentSearch] = useState("");
+  const [agentDropdownOpen, setAgentDropdownOpen] = useState(false);
 
   // Edit states
   const [isEditingStatus, setIsEditingStatus] = useState(false);
@@ -989,6 +1008,83 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
       }
     } catch (error) {
       console.error("Error fetching user permissions:", error);
+    }
+  };
+
+  // --- Reassign helpers ---
+  const openReassignModal = async () => {
+    setReassignDepartmentId("");
+    setReassignAgents([]);
+    setReassignAgentId("");
+    setReassignReason("");
+    setDeptSearch("");
+    setDeptDropdownOpen(false);
+    setAgentSearch("");
+    setAgentDropdownOpen(false);
+    // Fetch departments for the ticket's project
+    const projId = ticketProjectId;
+    if (projId) {
+      try {
+        const token = localStorage.getItem("authToken");
+        const res = await axios.get(
+          `${API_CONFIG.API_URL}/departments/project/${projId}`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        setReassignDepartments(res.data.data || []);
+      } catch {
+        setReassignDepartments([]);
+      }
+    } else {
+      setReassignDepartments([]);
+    }
+    setShowReassignModal(true);
+  };
+
+  const fetchReassignAgents = async (departmentId: string) => {
+    if (!departmentId) {
+      setReassignAgents([]);
+      return;
+    }
+    setReassignLoadingAgents(true);
+    try {
+      const token = localStorage.getItem("authToken");
+      const res = await axios.get(
+        `${API_CONFIG.API_URL}/tickets/assignable-agents`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          params: { departmentId },
+        },
+      );
+      setReassignAgents(res.data.data || []);
+    } catch {
+      setReassignAgents([]);
+    } finally {
+      setReassignLoadingAgents(false);
+    }
+  };
+
+  const submitReassign = async () => {
+    if (!reassignAgentId) return;
+    setReassignLoading(true);
+    try {
+      const token = localStorage.getItem("authToken");
+      const res = await axios.patch(
+        `${API_CONFIG.API_URL}/tickets/${ticketId}/reassign`,
+        { newAgentId: reassignAgentId, reason: reassignReason.trim() },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (res.data.success) {
+        setTicket(res.data.data);
+        setShowReassignModal(false);
+        setSuccessModal({
+          open: true,
+          message: "Ticket reassigned successfully.",
+        });
+      }
+    } catch (err: any) {
+      alert(err?.response?.data?.message || "Failed to reassign ticket");
+    } finally {
+      setReassignLoading(false);
     }
   };
 
@@ -2542,86 +2638,6 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                   {/* History Tab */}
                   {activeTab === "history" && (
                     <div className="space-y-6">
-                      {/* Change History */}
-                      {(ticket as any).changeHistory &&
-                      (ticket as any).changeHistory.length > 0 ? (
-                        <div className="space-y-3">
-                          <h3 className="text-sm font-medium text-gray-900">
-                            Change History
-                          </h3>
-                          {[...(ticket as any).changeHistory]
-                            .reverse()
-                            .map((change: any) => (
-                              <div
-                                key={change._id}
-                                className="p-4 bg-gray-50 border border-gray-200 rounded-lg"
-                              >
-                                <div className="flex items-start space-x-3">
-                                  <ClockIcon className="h-5 w-5 text-gray-600 flex-shrink-0 mt-1" />
-                                  <div className="flex-1">
-                                    <div className="flex items-start justify-between">
-                                      <div>
-                                        <p className="text-sm font-medium text-gray-900">
-                                          {change.field}{" "}
-                                          {change.changeType === "add"
-                                            ? "Added"
-                                            : change.changeType === "remove"
-                                              ? "Removed"
-                                              : "Updated"}
-                                        </p>
-                                        <p className="text-xs text-gray-600 mt-1">
-                                          By {change.changedBy?.firstName}{" "}
-                                          {change.changedBy?.lastName}
-                                        </p>
-                                      </div>
-                                      <p className="text-xs text-gray-500">
-                                        {new Date(
-                                          change.changedAt,
-                                        ).toLocaleString()}
-                                      </p>
-                                    </div>
-                                    <div className="mt-2 text-sm">
-                                      {change.changeType === "add" ? (
-                                        <span className="text-green-700">
-                                          +{" "}
-                                          {formatChangeValue(
-                                            change.field,
-                                            change.newValue,
-                                          )}
-                                        </span>
-                                      ) : change.changeType === "remove" ? (
-                                        <span className="text-red-700">
-                                          -{" "}
-                                          {formatChangeValue(
-                                            change.field,
-                                            change.oldValue,
-                                          )}
-                                        </span>
-                                      ) : (
-                                        <div className="space-y-1">
-                                          <span className="text-red-700 line-through">
-                                            {formatChangeValue(
-                                              change.field,
-                                              change.oldValue,
-                                            )}
-                                          </span>
-                                          <span className="mx-2">→</span>
-                                          <span className="text-green-700">
-                                            {formatChangeValue(
-                                              change.field,
-                                              change.newValue,
-                                            )}
-                                          </span>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                        </div>
-                      ) : null}
-
                       {/* Escalation History */}
                       {ticket.escalationHistory &&
                       ticket.escalationHistory.length > 0 ? (
@@ -3954,13 +3970,23 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Assigned To
                     </label>
-                    <div className="flex items-center space-x-2">
-                      <UserIcon className="h-5 w-5 text-gray-400" />
-                      <span className="text-sm text-gray-900">
-                        {ticket.assignedTo
-                          ? `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}`
-                          : "Unassigned"}
-                      </span>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <UserIcon className="h-5 w-5 text-gray-400" />
+                        <span className="text-sm text-gray-900">
+                          {ticket.assignedTo
+                            ? `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}`
+                            : "Unassigned"}
+                        </span>
+                      </div>
+                      {permissions.includes("TICKET_REASSIGN") && (
+                        <button
+                          onClick={openReassignModal}
+                          className="text-xs px-2 py-1 bg-blue-50 text-blue-600 border border-blue-200 rounded hover:bg-blue-100 transition-colors font-medium"
+                        >
+                          Reassign
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -4240,6 +4266,210 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                   className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
                 >
                   Yes, Change
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Reassign Modal ─────────────────────────────────────────────── */}
+        {showReassignModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+              onClick={() => setShowReassignModal(false)}
+            />
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                Reassign Ticket
+              </h3>
+
+              {/* Department selector */}
+              <div className="mb-4 relative">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Department
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 pr-8"
+                    placeholder={
+                      reassignDepartmentId
+                        ? (reassignDepartments.find(
+                            (d) => d._id === reassignDepartmentId,
+                          )?.name ?? "Search department...")
+                        : "Search department..."
+                    }
+                    value={
+                      deptDropdownOpen
+                        ? deptSearch
+                        : (reassignDepartments.find(
+                            (d) => d._id === reassignDepartmentId,
+                          )?.name ?? "")
+                    }
+                    onFocus={() => {
+                      setDeptDropdownOpen(true);
+                      setDeptSearch("");
+                    }}
+                    onChange={(e) => setDeptSearch(e.target.value)}
+                    onBlur={() =>
+                      setTimeout(() => setDeptDropdownOpen(false), 150)
+                    }
+                    readOnly={!deptDropdownOpen}
+                  />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-xs">
+                    ▾
+                  </span>
+                </div>
+                {deptDropdownOpen && (
+                  <ul className="absolute z-10 w-full bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto">
+                    {reassignDepartments
+                      .filter((d) =>
+                        d.name.toLowerCase().includes(deptSearch.toLowerCase()),
+                      )
+                      .map((d) => (
+                        <li
+                          key={d._id}
+                          className={`px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 ${
+                            d._id === reassignDepartmentId
+                              ? "bg-blue-100 font-medium"
+                              : ""
+                          }`}
+                          onMouseDown={() => {
+                            setReassignDepartmentId(d._id);
+                            setReassignAgentId("");
+                            setAgentSearch("");
+                            setDeptSearch("");
+                            setDeptDropdownOpen(false);
+                            fetchReassignAgents(d._id);
+                          }}
+                        >
+                          {d.name}
+                        </li>
+                      ))}
+                    {reassignDepartments.filter((d) =>
+                      d.name.toLowerCase().includes(deptSearch.toLowerCase()),
+                    ).length === 0 && (
+                      <li className="px-3 py-2 text-sm text-gray-400">
+                        No results
+                      </li>
+                    )}
+                  </ul>
+                )}
+                {reassignDepartments.length === 0 && !deptDropdownOpen && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    No departments found for this project. Please add
+                    departments under Master Data first.
+                  </p>
+                )}
+              </div>
+
+              {/* Agent selector */}
+              <div className="mb-4 relative">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Assign To
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 pr-8 disabled:bg-gray-50 disabled:text-gray-400"
+                    placeholder={
+                      reassignLoadingAgents
+                        ? "Loading..."
+                        : !reassignDepartmentId
+                          ? "Select department first"
+                          : agentDropdownOpen
+                            ? "Search team member..."
+                            : reassignAgentId
+                              ? ""
+                              : "Search team member..."
+                    }
+                    value={
+                      agentDropdownOpen
+                        ? agentSearch
+                        : reassignAgentId
+                          ? (() => {
+                              const a = reassignAgents.find(
+                                (x) => x._id === reassignAgentId,
+                              );
+                              return a ? `${a.firstName} ${a.lastName}` : "";
+                            })()
+                          : ""
+                    }
+                    disabled={!reassignDepartmentId || reassignLoadingAgents}
+                    onFocus={() => {
+                      if (reassignDepartmentId && !reassignLoadingAgents) {
+                        setAgentDropdownOpen(true);
+                        setAgentSearch("");
+                      }
+                    }}
+                    onChange={(e) => setAgentSearch(e.target.value)}
+                    onBlur={() =>
+                      setTimeout(() => setAgentDropdownOpen(false), 150)
+                    }
+                    readOnly={!agentDropdownOpen}
+                  />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-xs">
+                    ▾
+                  </span>
+                </div>
+                {agentDropdownOpen && (
+                  <ul className="absolute z-10 w-full bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto">
+                    {reassignAgents
+                      .filter((a) =>
+                        `${a.firstName} ${a.lastName} ${a.email}`
+                          .toLowerCase()
+                          .includes(agentSearch.toLowerCase()),
+                      )
+                      .map((a) => (
+                        <li
+                          key={a._id}
+                          className={`px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 ${
+                            a._id === reassignAgentId
+                              ? "bg-blue-100 font-medium"
+                              : ""
+                          }`}
+                          onMouseDown={() => {
+                            setReassignAgentId(a._id);
+                            setAgentSearch("");
+                            setAgentDropdownOpen(false);
+                          }}
+                        >
+                          <span className="font-medium">
+                            {a.firstName} {a.lastName}
+                          </span>
+                          <span className="text-gray-400 ml-1">
+                            ({a.email})
+                          </span>
+                        </li>
+                      ))}
+                    {reassignAgents.filter((a) =>
+                      `${a.firstName} ${a.lastName} ${a.email}`
+                        .toLowerCase()
+                        .includes(agentSearch.toLowerCase()),
+                    ).length === 0 && (
+                      <li className="px-3 py-2 text-sm text-gray-400">
+                        No results
+                      </li>
+                    )}
+                  </ul>
+                )}
+              </div>
+
+              {/* Buttons */}
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => setShowReassignModal(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={submitReassign}
+                  disabled={!reassignAgentId || reassignLoading}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {reassignLoading ? "Reassigning..." : "Reassign"}
                 </button>
               </div>
             </div>

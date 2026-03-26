@@ -44,6 +44,7 @@ interface User {
   hrmsId?: number;
   role: Role | null;
   department?: string;
+  departmentRef?: { _id: string; name: string } | null;
   designation?: string;
   joiningDate?: string;
   reportingManager?: User;
@@ -82,6 +83,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
   const [roles, setRoles] = useState<Role[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [centers, setCenters] = useState<Center[]>([]);
+  const [departmentOptions, setDepartmentOptions] = useState<
+    { _id: string; name: string }[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
@@ -204,10 +208,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
   // Ref to prevent duplicate API calls from React.StrictMode
   const hasFetchedInitialData = useRef(false);
 
-  // Watch for primary project changes and fetch reporting managers
+  // Watch for primary project changes and fetch reporting managers + departments
   useEffect(() => {
     if (showUserModal && formData.primaryProject) {
       fetchReportingManagers(formData.primaryProject);
+      fetchDepartments(formData.primaryProject);
     }
   }, [formData.primaryProject, showUserModal]);
 
@@ -383,6 +388,29 @@ const UserManagement: React.FC<UserManagementProps> = ({
     } catch (error: any) {
       console.error("Error fetching reporting managers:", error);
       setReportingManagersList([]);
+    }
+  };
+
+  // Fetch departments for the selected project
+  const fetchDepartments = async (projectId: string) => {
+    if (!projectId) {
+      setDepartmentOptions([]);
+      return;
+    }
+    try {
+      const token = localStorage.getItem("authToken");
+      const response = await fetch(
+        `${API_CONFIG.API_URL}/departments/project/${projectId}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      const data = await response.json();
+      if (data.success) {
+        setDepartmentOptions(data.data || []);
+      } else {
+        setDepartmentOptions([]);
+      }
+    } catch {
+      setDepartmentOptions([]);
     }
   };
 
@@ -729,7 +757,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
       employeeCode: user.employeeCode || "",
       hrmsId: user.hrmsId?.toString() || "",
       role: user.role?._id || "",
-      department: user.department || "",
+      department:
+        (user.departmentRef as any)?._id ||
+        (user as any).departmentRef ||
+        user.department ||
+        "",
       designation: user.designation || "",
       joiningDate: user.joiningDate ? user.joiningDate.split("T")[0] : "",
       reportingManager: user.reportingManager?._id || "",
@@ -764,6 +796,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
     // Fetch reporting managers for the primary project
     if (primaryProjectId) {
       fetchReportingManagers(primaryProjectId);
+      fetchDepartments(primaryProjectId);
     }
 
     setNameFieldErrors({});
@@ -838,6 +871,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
         employeeCode: formData.employeeCode,
         hrmsId: formData.hrmsId ? parseInt(formData.hrmsId) : undefined,
         department: formData.department,
+        departmentRef: formData.department || null,
         designation: formData.designation,
         joiningDate: formData.joiningDate || undefined,
         reportingManager: formData.reportingManager || undefined,
@@ -3592,8 +3626,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   >
                     {getText("Department", "विभाग", "विभाग")}
                   </label>
-                  <input
-                    type="text"
+                  <select
                     value={formData.department}
                     onChange={(e) =>
                       setFormData({ ...formData, department: e.target.value })
@@ -3606,8 +3639,36 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       fontSize: "14px",
                       outline: "none",
                       boxSizing: "border-box",
+                      background: "white",
                     }}
-                  />
+                  >
+                    <option value="">— Select Department —</option>
+                    {departmentOptions.map((d) => (
+                      <option key={d._id} value={d._id}>
+                        {d.name}
+                      </option>
+                    ))}
+                    {/* Show legacy text dept if not matched */}
+                    {formData.department &&
+                      !departmentOptions.find(
+                        (d) => d._id === formData.department,
+                      ) && (
+                        <option value={formData.department}>
+                          {formData.department} (legacy)
+                        </option>
+                      )}
+                  </select>
+                  {!formData.primaryProject && (
+                    <p
+                      style={{
+                        fontSize: "12px",
+                        color: "#9ca3af",
+                        marginTop: "4px",
+                      }}
+                    >
+                      Select a project first to see departments
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label

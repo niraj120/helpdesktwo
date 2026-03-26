@@ -22,6 +22,7 @@ import { GCSService } from "../services/gcsService";
 import {
   sendTicketCreatedEmail,
   sendStudentWelcomeEmail,
+  sendTicketAssignedEmail,
 } from "../utils/emailService";
 import { logActivity } from "../utils/logger";
 import { config } from "../config";
@@ -2383,7 +2384,7 @@ export const getTicketById = async (req: Request, res: Response) => {
     }
 
     // Get user to verify permissions
-    const user = await User.findById(userId);
+    const user = await User.findById(userId).populate("role", "code isAgent");
 
     if (!user) {
       return res.status(404).json({
@@ -2435,10 +2436,11 @@ export const getTicketById = async (req: Request, res: Response) => {
     // 1. Student can view their own ticket (email matches)
     // 2. Agent can view tickets assigned to them
     // 3. Admin/Super Admin can view any ticket
-    const isStudent = (user.role as any)?.code === "STUDENT";
-    const isAgent = ["AGENT", "ADMIN", "SUPERADMIN"].includes(
-      (user.role as any)?.code,
-    );
+    const roleObj = user.role as any;
+    const isStudent = roleObj?.code === "STUDENT";
+    const isAgent =
+      ["AGENT", "ADMIN", "SUPERADMIN"].includes(roleObj?.code) ||
+      roleObj?.isAgent === true;
     const isAssignedAgent =
       ticket.assignedTo && ticket.assignedTo._id.toString() === userId;
     const ownsTicket = ticket.metadata?.studentEmail === user.email;
@@ -2453,7 +2455,7 @@ export const getTicketById = async (req: Request, res: Response) => {
     if (
       isAgent &&
       !isAssignedAgent &&
-      !["ADMIN", "SUPERADMIN"].includes((user.role as any)?.code)
+      !["ADMIN", "SUPERADMIN"].includes(roleObj?.code)
     ) {
       return res.status(403).json({
         success: false,
@@ -3864,6 +3866,121 @@ export const assignTicket = async (req: Request, res: Response) => {
     return res.status(500).json({
       success: false,
       message: "Failed to assign ticket",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
+
+/**
+ * Reassign a ticket to a different agent (any user with TICKET_ASSIGN permission)
+ * PATCH /api/tickets/:id/reassign
+ * Body: { newAgentId: string, reason: string }
+ */
+export const reassignTicket = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { newAgentId, reason } = req.body;
+    const callerId = (req as any).user?.userId;
+
+    if (!callerId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    if (!newAgentId || !reason?.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "newAgentId and reason are required",
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(newAgentId)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid agent ID" });
+    }
+
+    const ticket = await Ticket.findById(id);
+    if (!ticket) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Ticket not found" });
+    }
+
+    const newAgent = await User.findById(newAgentId);
+    if (!newAgent || !newAgent.isActive) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Agent not found or inactive" });
+    }
+
+    // Store previous assignee for email + history
+    const oldAssignedTo = ticket.assignedTo
+      ? await User.findById(ticket.assignedTo)
+      : null;
+    const oldAssignedName = oldAssignedTo
+      ? `${oldAssignedTo.firstName} ${oldAssignedTo.lastName}`
+      : "Unassigned";
+    const newAssignedName = `${newAgent.firstName} ${newAgent.lastName}`;
+
+    // Update assignment
+    ticket.assignedTo = new mongoose.Types.ObjectId(newAgentId);
+    ticket.hasNewReply = false; // new agent starts fresh
+    ticket.updatedAt = new Date();
+
+    // Log to changeHistory with reassigned type + reason
+    const callerUser = await User.findById(callerId);
+    (ticket.changeHistory as any[]).push({
+      field: "assignedTo",
+      oldValue: oldAssignedName,
+      newValue: newAssignedName,
+      changedBy: new mongoose.Types.ObjectId(callerId),
+      changedAt: new Date(),
+      changeType: "reassigned",
+      reassignmentReason: reason.trim(),
+    });
+
+    await ticket.save();
+
+    // Notify new agent
+    const projectId =
+      (ticket.metadata?.projectId as any)?._id?.toString() ||
+      ticket.metadata?.projectId?.toString();
+    const ticketSubject = ticket.subject || "";
+    const studentName =
+      ticket.metadata?.studentName ||
+      ticket.metadata?.studentEmail ||
+      "Student";
+
+    (async () => {
+      try {
+        await sendTicketAssignedEmail(
+          newAgent.email,
+          ticket.ticketNumber,
+          ticketSubject,
+          studentName,
+          ticket.priority || "low",
+          projectId,
+        );
+      } catch (e) {
+        console.error("[reassignTicket] Failed to send email to new agent:", e);
+      }
+    })();
+
+    const updatedTicket = await Ticket.findById(id)
+      .populate("assignedTo", "firstName lastName email")
+      .populate("category", "name")
+      .populate("changeHistory.changedBy", "firstName lastName email");
+
+    return res.status(200).json({
+      success: true,
+      message: "Ticket reassigned successfully",
+      data: updatedTicket,
+    });
+  } catch (error) {
+    console.error("Reassign ticket error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to reassign ticket",
       error: error instanceof Error ? error.message : "Unknown error",
     });
   }
@@ -5923,7 +6040,27 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
 export const getAssignableAgents = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.userId;
-    const { projectId, useHierarchy } = req.query; // useHierarchy defaults to true
+    const { projectId, useHierarchy, departmentId } = req.query; // useHierarchy defaults to true
+
+    // ── DEPARTMENT-BASED SHORT CIRCUIT ──────────────────────────────────────
+    // If departmentId is provided, return all active users in that department
+    // (bypasses hierarchy / project logic — department is already project-scoped)
+    if (departmentId) {
+      const agents = await User.find({
+        departmentRef: departmentId,
+        isActive: true,
+      })
+        .populate("role", "name isAgent code")
+        .select("_id firstName lastName email role")
+        .sort({ firstName: 1, lastName: 1 });
+
+      return res.status(200).json({
+        success: true,
+        data: agents,
+        mode: "department",
+      });
+    }
+    // ────────────────────────────────────────────────────────────────────────
 
     // Get current user with their role (which contains projects)
     const currentUser = await User.findById(userId).populate("role");

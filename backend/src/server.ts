@@ -54,6 +54,7 @@ import categoryRoutes from "./routes/categories";
 import hierarchyConfigRoutes from "./routes/hierarchyConfig";
 import statusRoutes from "./routes/statuses";
 import assetCategoryRoutes from "./routes/assetCategories";
+import departmentRoutes from "./routes/departments";
 // import { ticketFieldRoutes, autoAssignmentRoutes } from './routes/ticket-module'; // TODO: Implement
 import slaRuleRoutes from "./routes/sla-module/slaRuleRoutes";
 import escalationPolicyRoutes from "./routes/sla-module/escalationPolicyRoutes";
@@ -234,6 +235,7 @@ app.use("/api/categories", categoryRoutes);
 app.use("/api/hierarchy-config", hierarchyConfigRoutes);
 app.use("/api/statuses", statusRoutes);
 app.use("/api/asset-categories", assetCategoryRoutes);
+app.use("/api/departments", departmentRoutes);
 
 // Ticket Module Routes (TODO: Implement)
 // app.use('/api/ticket-fields', ticketFieldRoutes);
