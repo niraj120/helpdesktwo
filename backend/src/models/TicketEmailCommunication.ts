@@ -103,7 +103,7 @@ const TicketEmailCommunicationSchema: Schema = new Schema(
     },
     body: {
       type: String,
-      required: true,
+      default: "",
     },
     htmlBody: {
       type: String,
