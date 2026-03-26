@@ -57,6 +57,7 @@ interface Ticket {
   isMerged?: boolean;
   mergedInto?: string | { _id: string; ticketNumber: string };
   mergedTickets?: string[];
+  hasNewReply?: boolean;
 }
 
 interface MyTicketsProps {
@@ -995,25 +996,38 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                       style={{
                         background: selectedTicketIds.has(ticket._id)
                           ? "#EFF6FF"
-                          : "white",
+                          : ticket.hasNewReply
+                            ? "#FFFBEB"
+                            : "white",
                         borderRadius: "12px",
                         padding: "20px",
-                        boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                        boxShadow: ticket.hasNewReply
+                          ? "0 2px 8px rgba(245,158,11,0.25)"
+                          : "0 1px 3px rgba(0,0,0,0.1)",
                         transition: "all 0.2s",
                         border: selectedTicketIds.has(ticket._id)
                           ? "1.5px solid #3B82F6"
-                          : "1.5px solid transparent",
+                          : ticket.hasNewReply
+                            ? "1.5px solid #F59E0B"
+                            : "1.5px solid transparent",
+                        borderLeft:
+                          ticket.hasNewReply &&
+                          !selectedTicketIds.has(ticket._id)
+                            ? "4px solid #F59E0B"
+                            : undefined,
                       }}
                       onMouseEnter={(e) => {
                         if (!selectedTicketIds.has(ticket._id)) {
-                          e.currentTarget.style.boxShadow =
-                            "0 4px 12px rgba(0,0,0,0.15)";
+                          e.currentTarget.style.boxShadow = ticket.hasNewReply
+                            ? "0 4px 12px rgba(245,158,11,0.35)"
+                            : "0 4px 12px rgba(0,0,0,0.15)";
                           e.currentTarget.style.transform = "translateY(-2px)";
                         }
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.boxShadow =
-                          "0 1px 3px rgba(0,0,0,0.1)";
+                        e.currentTarget.style.boxShadow = ticket.hasNewReply
+                          ? "0 2px 8px rgba(245,158,11,0.25)"
+                          : "0 1px 3px rgba(0,0,0,0.1)";
                         e.currentTarget.style.transform = "translateY(0)";
                       }}
                     >
@@ -1071,6 +1085,18 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                               >
                                 #{ticket.ticketNumber}
                               </span>
+                              {ticket.hasNewReply && (
+                                <span
+                                  style={{
+                                    width: "8px",
+                                    height: "8px",
+                                    borderRadius: "50%",
+                                    background: "#F59E0B",
+                                    display: "inline-block",
+                                    flexShrink: 0,
+                                  }}
+                                />
+                              )}
                               {ticket.mergedTickets &&
                                 ticket.mergedTickets.length > 0 && (
                                   <span
@@ -1085,7 +1111,9 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                                     }}
                                   >
                                     {ticket.mergedTickets.length} ticket
-                                    {ticket.mergedTickets.length > 1 ? "s" : ""}{" "}
+                                    {ticket.mergedTickets.length > 1
+                                      ? "s"
+                                      : ""}{" "}
                                     merged
                                   </span>
                                 )}
@@ -1108,8 +1136,10 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                             <h3
                               style={{
                                 fontSize: "16px",
-                                fontWeight: 600,
-                                color: "#111827",
+                                fontWeight: ticket.hasNewReply ? 700 : 600,
+                                color: ticket.hasNewReply
+                                  ? "#1F2937"
+                                  : "#111827",
                                 margin: 0,
                               }}
                             >

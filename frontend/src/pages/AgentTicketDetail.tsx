@@ -280,7 +280,8 @@ interface ChangeHistory {
     email: string;
   };
   changedAt: string;
-  changeType: "update" | "add" | "remove";
+  changeType: "update" | "add" | "remove" | "reassigned";
+  reassignmentReason?: string;
 }
 
 interface Category {
@@ -398,6 +399,16 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
   // Internal note states
   const [noteText, setNoteText] = useState("");
   const [isAddingNote, setIsAddingNote] = useState(false);
+
+  // Reassign states
+  const [showReassignModal, setShowReassignModal] = useState(false);
+  const [reassignProjects, setReassignProjects] = useState<{ _id: string; name: string }[]>([]);
+  const [reassignProjectId, setReassignProjectId] = useState("");
+  const [reassignAgents, setReassignAgents] = useState<{ _id: string; firstName: string; lastName: string; email: string }[]>([]);
+  const [reassignAgentId, setReassignAgentId] = useState("");
+  const [reassignReason, setReassignReason] = useState("");
+  const [reassignLoading, setReassignLoading] = useState(false);
+  const [reassignLoadingAgents, setReassignLoadingAgents] = useState(false);
 
   // Edit states
   const [isEditingStatus, setIsEditingStatus] = useState(false);
@@ -989,6 +1000,71 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
       }
     } catch (error) {
       console.error("Error fetching user permissions:", error);
+    }
+  };
+
+  // --- Reassign helpers ---
+  const openReassignModal = async () => {
+    setReassignProjectId("");
+    setReassignAgents([]);
+    setReassignAgentId("");
+    setReassignReason("");
+    // Fetch projects this user has access to
+    try {
+      const token = localStorage.getItem("authToken");
+      const res = await axios.get(`${API_CONFIG.API_URL}/projects`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const projects = (res.data.data || res.data || []).map((p: any) => ({
+        _id: p._id,
+        name: p.name,
+      }));
+      setReassignProjects(projects);
+    } catch {
+      setReassignProjects([]);
+    }
+    setShowReassignModal(true);
+  };
+
+  const fetchReassignAgents = async (projectId: string) => {
+    if (!projectId) { setReassignAgents([]); return; }
+    setReassignLoadingAgents(true);
+    try {
+      const token = localStorage.getItem("authToken");
+      const res = await axios.get(
+        `${API_CONFIG.API_URL}/tickets/assignable-agents`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          params: { projectId },
+        },
+      );
+      setReassignAgents(res.data.data || []);
+    } catch {
+      setReassignAgents([]);
+    } finally {
+      setReassignLoadingAgents(false);
+    }
+  };
+
+  const submitReassign = async () => {
+    if (!reassignAgentId || !reassignReason.trim()) return;
+    setReassignLoading(true);
+    try {
+      const token = localStorage.getItem("authToken");
+      const res = await axios.patch(
+        `${API_CONFIG.API_URL}/tickets/${ticketId}/reassign`,
+        { newAgentId: reassignAgentId, reason: reassignReason.trim() },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (res.data.success) {
+        setTicket(res.data.data);
+        setShowReassignModal(false);
+        setSuccessModal({ open: true, message: "Ticket reassigned successfully." });
+      }
+    } catch (err: any) {
+      alert(err?.response?.data?.message || "Failed to reassign ticket");
+    } finally {
+      setReassignLoading(false);
     }
   };
 
@@ -2581,7 +2657,24 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                                       </p>
                                     </div>
                                     <div className="mt-2 text-sm">
-                                      {change.changeType === "add" ? (
+                                      {change.changeType === "reassigned" ? (
+                                        <div className="space-y-1">
+                                          <div>
+                                            <span className="text-red-700 line-through">
+                                              {change.oldValue}
+                                            </span>
+                                            <span className="mx-2">→</span>
+                                            <span className="text-green-700">
+                                              {change.newValue}
+                                            </span>
+                                          </div>
+                                          {(change as any).reassignmentReason && (
+                                            <p className="text-xs text-gray-500 italic mt-1">
+                                              Reason: {(change as any).reassignmentReason}
+                                            </p>
+                                          )}
+                                        </div>
+                                      ) : change.changeType === "add" ? (
                                         <span className="text-green-700">
                                           +{" "}
                                           {formatChangeValue(
@@ -3954,13 +4047,23 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Assigned To
                     </label>
-                    <div className="flex items-center space-x-2">
-                      <UserIcon className="h-5 w-5 text-gray-400" />
-                      <span className="text-sm text-gray-900">
-                        {ticket.assignedTo
-                          ? `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}`
-                          : "Unassigned"}
-                      </span>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <UserIcon className="h-5 w-5 text-gray-400" />
+                        <span className="text-sm text-gray-900">
+                          {ticket.assignedTo
+                            ? `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}`
+                            : "Unassigned"}
+                        </span>
+                      </div>
+                      {permissions.includes("TICKET_ASSIGN") && (
+                        <button
+                          onClick={openReassignModal}
+                          className="text-xs px-2 py-1 bg-blue-50 text-blue-600 border border-blue-200 rounded hover:bg-blue-100 transition-colors font-medium"
+                        >
+                          Reassign
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -4240,6 +4343,101 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                   className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
                 >
                   Yes, Change
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Reassign Modal ─────────────────────────────────────────────── */}
+        {showReassignModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+              onClick={() => setShowReassignModal(false)}
+            />
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                Reassign Ticket
+              </h3>
+
+              {/* Department / Project selector */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Department (Project)
+                </label>
+                <select
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={reassignProjectId}
+                  onChange={(e) => {
+                    setReassignProjectId(e.target.value);
+                    setReassignAgentId("");
+                    fetchReassignAgents(e.target.value);
+                  }}
+                >
+                  <option value="">— Select department —</option>
+                  {reassignProjects.map((p) => (
+                    <option key={p._id} value={p._id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Agent selector */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Assign To
+                </label>
+                <select
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-400"
+                  value={reassignAgentId}
+                  onChange={(e) => setReassignAgentId(e.target.value)}
+                  disabled={!reassignProjectId || reassignLoadingAgents}
+                >
+                  <option value="">
+                    {reassignLoadingAgents
+                      ? "Loading..."
+                      : reassignProjectId
+                        ? "— Select team member —"
+                        : "— Select department first —"}
+                  </option>
+                  {reassignAgents.map((a) => (
+                    <option key={a._id} value={a._id}>
+                      {a.firstName} {a.lastName} ({a.email})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Reason */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Reason <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  rows={3}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  placeholder="Enter reason for reassignment..."
+                  value={reassignReason}
+                  onChange={(e) => setReassignReason(e.target.value)}
+                />
+              </div>
+
+              {/* Buttons */}
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => setShowReassignModal(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={submitReassign}
+                  disabled={!reassignAgentId || !reassignReason.trim() || reassignLoading}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {reassignLoading ? "Reassigning..." : "Reassign"}
                 </button>
               </div>
             </div>

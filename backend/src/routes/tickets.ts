@@ -18,6 +18,7 @@ import {
   addInternalNote,
   escalateTicket,
   assignTicket,
+  reassignTicket,
   getAllTags,
   bulkUpdateByTags,
   getDashboardStats,
@@ -361,6 +362,16 @@ router.put(
   authMiddleware,
   checkPermission("TICKET_ASSIGN"),
   assignTicket,
+);
+
+// @desc    Reassign ticket to a different agent / project
+// @route   PATCH /api/tickets/:id/reassign
+// @access  Private (TICKET_ASSIGN permission)
+router.patch(
+  "/:id/reassign",
+  authMiddleware,
+  checkPermission("TICKET_ASSIGN"),
+  reassignTicket,
 );
 
 // ============ NEW RBAC-PROTECTED ROUTES ============
