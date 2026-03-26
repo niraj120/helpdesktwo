@@ -93,6 +93,20 @@ export async function logEmailCommunication(
       ? JSON.stringify(emailData.rawHeaders)
       : undefined;
 
+    // Plain-text body: use provided body, fall back to HTML-stripped content,
+    // fall back to empty string.  This prevents Mongoose validation errors for
+    // HTML-only emails where parsedEmail.body is always "".
+    const plainBody =
+      emailData.body ||
+      (emailData.htmlBody
+        ? emailData.htmlBody
+            .replace(/<[^>]*>/g, " ")
+            .replace(/&nbsp;/gi, " ")
+            .replace(/\s+/g, " ")
+            .trim()
+            .substring(0, 5000)
+        : "");
+
     // Create communication record (supports both old and new field formats)
     const emailComm = new TicketEmailCommunication({
       ticketId:
@@ -109,7 +123,7 @@ export async function logEmailCommunication(
       ccEmails: emailData.cc?.map((c) => c.address.toLowerCase()) || [],
       bccEmails: emailData.bcc?.map((b) => b.address.toLowerCase()) || [],
       subject: emailData.subject || "(No Subject)",
-      body: emailData.body || "",
+      body: plainBody,
       htmlBody: emailData.htmlBody,
       bodyHtml: emailData.htmlBody, // Support both field names
       messageId: normaliseId(emailData.messageId)!,
