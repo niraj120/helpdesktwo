@@ -55,6 +55,8 @@ interface Ticket {
   isMerged?: boolean;
   mergedInto?: string | { _id: string; ticketNumber: string };
   mergedTickets?: string[];
+  /** True when a new ticket or student reply has not yet been viewed by an agent */
+  hasNewReply?: boolean;
 }
 
 interface Project {
@@ -719,14 +721,24 @@ const ViewTickets: React.FC = () => {
                 style={{
                   background: selectedTicketIds.has(ticket._id)
                     ? "#EFF6FF"
-                    : "white",
+                    : ticket.hasNewReply
+                      ? "#FFFBEB"
+                      : "white",
                   borderRadius: "12px",
                   padding: "20px",
-                  boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                  boxShadow: ticket.hasNewReply
+                    ? "0 1px 6px rgba(245,158,11,0.25)"
+                    : "0 1px 3px rgba(0,0,0,0.1)",
                   transition: "all 0.2s",
                   border: selectedTicketIds.has(ticket._id)
                     ? "1.5px solid #3B82F6"
-                    : "1.5px solid transparent",
+                    : ticket.hasNewReply
+                      ? "1.5px solid #F59E0B"
+                      : "1.5px solid transparent",
+                  borderLeft:
+                    ticket.hasNewReply && !selectedTicketIds.has(ticket._id)
+                      ? "4px solid #F59E0B"
+                      : undefined,
                 }}
                 onMouseEnter={(e) => {
                   if (!selectedTicketIds.has(ticket._id)) {
@@ -781,9 +793,25 @@ const ViewTickets: React.FC = () => {
                           fontSize: "14px",
                           fontWeight: 600,
                           color: "#2563EB",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "6px",
                         }}
                       >
                         #{ticket.ticketNumber}
+                        {ticket.hasNewReply && (
+                          <span
+                            title="New / unread reply"
+                            style={{
+                              display: "inline-block",
+                              width: "8px",
+                              height: "8px",
+                              borderRadius: "50%",
+                              background: "#F59E0B",
+                              flexShrink: 0,
+                            }}
+                          />
+                        )}
                         {ticket.mergedTickets &&
                           ticket.mergedTickets.length > 0 && (
                             <span
@@ -803,8 +831,8 @@ const ViewTickets: React.FC = () => {
                       <h3
                         style={{
                           fontSize: "16px",
-                          fontWeight: 600,
-                          color: "#111827",
+                          fontWeight: ticket.hasNewReply ? 700 : 600,
+                          color: ticket.hasNewReply ? "#1F2937" : "#111827",
                           margin: "4px 0",
                         }}
                       >

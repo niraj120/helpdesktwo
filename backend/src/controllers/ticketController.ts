@@ -938,12 +938,10 @@ export const getStudentTicketHistory = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error("getStudentTicketHistory error:", error);
-    return res
-      .status(500)
-      .json({
-        success: false,
-        message: "Failed to fetch student ticket history",
-      });
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch student ticket history",
+    });
   }
 };
 
@@ -2469,6 +2467,12 @@ export const getTicketById = async (req: Request, res: Response) => {
       ticketData.internalNotes = []; // Hide internal notes from students
     }
 
+    // Clear the "new / unread" flag when an agent or admin opens the ticket
+    if (isAgent && ticket.hasNewReply) {
+      await Ticket.findByIdAndUpdate(id, { hasNewReply: false });
+      ticketData.hasNewReply = false;
+    }
+
     // Add escalation matrix name if available
     if (
       ticketData.escalationMatrixId &&
@@ -2630,11 +2634,17 @@ export const replyToTicket = async (req: Request, res: Response) => {
       createdAt: new Date(),
     };
 
+    // If the replier is the ticket creator (student), flag unread for agents
+    const isStudentReply = isTicketCreator;
+
     const updatedTicket = await Ticket.findByIdAndUpdate(
       id,
       {
         $push: { threads: newThread },
-        $set: { updatedAt: new Date() },
+        $set: {
+          updatedAt: new Date(),
+          ...(isStudentReply ? { hasNewReply: true } : {}),
+        },
       },
       {
         new: true,
@@ -6440,12 +6450,10 @@ export const bulkDeleteTickets = async (req: Request, res: Response) => {
     }
 
     if (ticketIds.length > 100) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Cannot delete more than 100 tickets at once",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "Cannot delete more than 100 tickets at once",
+      });
     }
 
     // Validate all IDs are valid ObjectIds
@@ -6453,12 +6461,10 @@ export const bulkDeleteTickets = async (req: Request, res: Response) => {
       mongoose.Types.ObjectId.isValid(id),
     );
     if (validIds.length !== ticketIds.length) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "One or more ticket IDs are invalid",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "One or more ticket IDs are invalid",
+      });
     }
 
     // Fetch tickets to log activity (limit fields for performance)

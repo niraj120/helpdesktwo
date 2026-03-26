@@ -140,6 +140,12 @@ export interface ITicket extends Document {
   updatedAt: Date;
   /** Snapshot of the form schema at the time the ticket was submitted (US-7) */
   formSchemaSnapshot?: any;
+  /**
+   * True when a new ticket is created or a student/email reply arrives that the
+   * assigned agent has not yet viewed. Cleared when any agent/admin opens the
+   * ticket detail. Used to show the unread highlight & badge in ticket lists.
+   */
+  hasNewReply?: boolean;
 }
 
 const AttachmentSchema = new Schema({
@@ -408,6 +414,12 @@ const TicketSchema: Schema = new Schema(
     },
     formSchemaSnapshot: {
       type: Schema.Types.Mixed,
+    },
+    // Unread / new-reply tracking
+    hasNewReply: {
+      type: Boolean,
+      default: true, // every new ticket starts as unread
+      index: true,
     },
   },
   {
