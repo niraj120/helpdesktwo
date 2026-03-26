@@ -157,11 +157,11 @@ router.get(
 
 // @desc    Get assignable agents (MUST be before /:id route)
 // @route   GET /api/tickets/assignable-agents
-// @access  Private (requires TICKET_ASSIGN permission)
+// @access  Private (requires TICKET_ASSIGN or TICKET_REASSIGN permission)
 router.get(
   "/assignable-agents",
   authMiddleware,
-  checkPermission("TICKET_ASSIGN"),
+  checkPermission(["TICKET_ASSIGN", "TICKET_REASSIGN"]),
   getAssignableAgents,
 );
 
