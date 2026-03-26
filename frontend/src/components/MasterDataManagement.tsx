@@ -48,6 +48,7 @@ const MASTER_CATEGORIES = [
   { key: 'categories', label: 'Categories', icon: '📁', api: '/api/categories/project', requiresProject: true },
   { key: 'assetCategories', label: 'Asset Categories', icon: '📦', api: '/api/asset-categories/project', requiresProject: true },
   { key: 'statuses', label: 'Status', icon: '🏷️', api: '/api/statuses/project', requiresProject: true },
+  { key: 'departments', label: 'Departments', icon: '🏢', api: '/api/departments/project', requiresProject: true },
 ];
 
 const MasterDataManagement = () => {
@@ -274,17 +275,18 @@ const MasterDataManagement = () => {
       let url: string;
       let method: 'post' | 'put';
       
-      if (activeTab === 'categories' || activeTab === 'statuses' || activeTab === 'assetCategories') {
-        // Categories, Asset Categories, and Status have different URL patterns
+      if (activeTab === 'categories' || activeTab === 'statuses' || activeTab === 'assetCategories' || activeTab === 'departments') {
+        // Categories, Asset Categories, Status, and Departments have different URL patterns
         if (editingItem) {
-          // Update: PUT /api/categories/:id or PUT /api/statuses/:id or PUT /api/asset-categories/:id
+          // Update: PUT /api/categories/:id or PUT /api/statuses/:id or PUT /api/asset-categories/:id or PUT /api/departments/:id
           let baseApi = '/api/categories';
           if (activeTab === 'statuses') baseApi = '/api/statuses';
           if (activeTab === 'assetCategories') baseApi = '/api/asset-categories';
+          if (activeTab === 'departments') baseApi = '/api/departments';
           url = `${API_CONFIG.BASE_URL}${baseApi}/${editingItem._id}`;
           method = 'put';
         } else {
-          // Create: POST /api/categories/project/:projectId or POST /api/statuses/project/:projectId or POST /api/asset-categories/project/:projectId
+          // Create: POST /api/categories/project/:projectId or .../statuses/... or .../departments/...
           if (!selectedProjectId) {
             alert('Please select a project first');
             return;
@@ -354,6 +356,12 @@ const MasterDataManagement = () => {
           displayOrder: formData.displayOrder,
           isActive: formData.isActive,
         };
+      } else if (activeTab === 'departments') {
+        data = {
+          name: formData.name,
+          description: formData.description,
+          isActive: formData.isActive,
+        };
       }
 
       await axios[method](url, data, {
@@ -383,6 +391,8 @@ const MasterDataManagement = () => {
         url = `${API_CONFIG.API_URL}/statuses/${id}`;
       } else if (activeTab === 'assetCategories') {
         url = `${API_CONFIG.API_URL}/asset-categories/${id}`;
+      } else if (activeTab === 'departments') {
+        url = `${API_CONFIG.API_URL}/departments/${id}`;
       } else {
         url = `${API_CONFIG.BASE_URL}${currentCategory?.api}/${id}`;
       }
@@ -741,6 +751,30 @@ const MasterDataManagement = () => {
           </>
         );
 
+      case 'departments':
+        return (
+          <>
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Department Name *</label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}
+                required
+              />
+            </div>
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Description</label>
+              <textarea
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px', minHeight: '80px' }}
+              />
+            </div>
+          </>
+        );
+
       default:
         return null;
     }
@@ -907,6 +941,14 @@ const MasterDataManagement = () => {
                       <th style={{ padding: '12px', textAlign: 'center' }}>Color</th>
                       <th style={{ padding: '12px', textAlign: 'center' }}>Closed</th>
                       <th style={{ padding: '12px', textAlign: 'center' }}>Active</th>
+                      <th style={{ padding: '12px', textAlign: 'center' }}>Actions</th>
+                    </>
+                  )}
+                  {activeTab === 'departments' && (
+                    <>
+                      <th style={{ padding: '12px', textAlign: 'left' }}>Department Name</th>
+                      <th style={{ padding: '12px', textAlign: 'left' }}>Description</th>
+                      <th style={{ padding: '12px', textAlign: 'center' }}>Status</th>
                       <th style={{ padding: '12px', textAlign: 'center' }}>Actions</th>
                     </>
                   )}
@@ -1114,6 +1156,35 @@ const MasterDataManagement = () => {
                               {item.isClosed ? 'Yes' : 'No'}
                             </span>
                           </td>
+                          <td style={{ padding: '12px', textAlign: 'center' }}>
+                            <span style={{
+                              padding: '4px 12px',
+                              borderRadius: '12px',
+                              fontSize: '12px',
+                              background: item.isActive ? '#dcfce7' : '#fee2e2',
+                              color: item.isActive ? '#166534' : '#991b1b',
+                            }}>
+                              {item.isActive ? 'Active' : 'Inactive'}
+                            </span>
+                          </td>
+                          <td style={{ padding: '12px', textAlign: 'center' }}>
+                            {hasPermission(PERMISSIONS.MASTER_DATA_EDIT) && (
+                              <button onClick={() => handleEdit(item)} style={{ marginRight: '8px', padding: '6px', border: 'none', background: '#dbeafe', color: '#1e40af', borderRadius: '4px', cursor: 'pointer' }}>
+                                <MdEdit size={18} />
+                              </button>
+                            )}
+                            {hasPermission(PERMISSIONS.MASTER_DATA_DELETE) && (
+                              <button onClick={() => handleDelete(item._id)} style={{ padding: '6px', border: 'none', background: '#fee2e2', color: '#991b1b', borderRadius: '4px', cursor: 'pointer' }}>
+                                <MdDelete size={18} />
+                              </button>
+                            )}
+                          </td>
+                        </>
+                      )}
+                      {activeTab === 'departments' && (
+                        <>
+                          <td style={{ padding: '12px' }}>{item.name || 'N/A'}</td>
+                          <td style={{ padding: '12px', color: '#6b7280', fontSize: '13px' }}>{item.description || '—'}</td>
                           <td style={{ padding: '12px', textAlign: 'center' }}>
                             <span style={{
                               padding: '4px 12px',

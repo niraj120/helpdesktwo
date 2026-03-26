@@ -166,6 +166,7 @@ export const getAllUsers = async (
         .populate("projects", "name") // Only name for list view
         .populate("centers", "centerName") // Only name for list view
         .populate("reportingManager", "firstName lastName") // Reduced fields
+        .populate("departmentRef", "name")
         .sort(sortObj)
         .skip(skip)
         .limit(effectiveLimit)
@@ -208,6 +209,7 @@ export const getUserById = async (
       .populate("role", "name code permissions")
       .populate("projects", "name code")
       .populate("reportingManager", "firstName lastName email employeeCode")
+      .populate("departmentRef", "name")
       .lean();
 
     if (!user) {
@@ -331,6 +333,11 @@ export const createUser = async (
       centers: centers || [],
     };
 
+    // Store departmentRef if provided (ObjectId from dropdown)
+    if (req.body.departmentRef) {
+      userData.departmentRef = req.body.departmentRef;
+    }
+
     // Sync from HRMS if requested
     if (syncFromHRMS && employeeCode) {
       try {
@@ -419,6 +426,7 @@ export const createUser = async (
     // Populate role and projects before returning
     await user.populate("role", "name code");
     await user.populate("projects", "name code");
+    await user.populate("departmentRef", "name");
 
     const userResponse: any = user.toObject();
     delete userResponse.password;
@@ -613,6 +621,7 @@ export const updateUser = async (
     if (employeeCode !== undefined)
       user.employeeCode = employeeCode || undefined;
     if (department !== undefined) user.department = department;
+    if (req.body.departmentRef !== undefined) (user as any).departmentRef = req.body.departmentRef || null;
     if (designation !== undefined) user.designation = designation;
     if (joiningDate !== undefined) user.joiningDate = new Date(joiningDate);
     if (reportingManager !== undefined)

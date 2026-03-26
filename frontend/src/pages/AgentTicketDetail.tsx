@@ -402,8 +402,8 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
 
   // Reassign states
   const [showReassignModal, setShowReassignModal] = useState(false);
-  const [reassignProjects, setReassignProjects] = useState<{ _id: string; name: string }[]>([]);
-  const [reassignProjectId, setReassignProjectId] = useState("");
+  const [reassignDepartments, setReassignDepartments] = useState<{ _id: string; name: string }[]>([]);
+  const [reassignDepartmentId, setReassignDepartmentId] = useState("");
   const [reassignAgents, setReassignAgents] = useState<{ _id: string; firstName: string; lastName: string; email: string }[]>([]);
   const [reassignAgentId, setReassignAgentId] = useState("");
   const [reassignReason, setReassignReason] = useState("");
@@ -1005,29 +1005,31 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
 
   // --- Reassign helpers ---
   const openReassignModal = async () => {
-    setReassignProjectId("");
+    setReassignDepartmentId("");
     setReassignAgents([]);
     setReassignAgentId("");
     setReassignReason("");
-    // Fetch projects this user has access to
-    try {
-      const token = localStorage.getItem("authToken");
-      const res = await axios.get(`${API_CONFIG.API_URL}/projects`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const projects = (res.data.data || res.data || []).map((p: any) => ({
-        _id: p._id,
-        name: p.name,
-      }));
-      setReassignProjects(projects);
-    } catch {
-      setReassignProjects([]);
+    // Fetch departments for the ticket's project
+    const projId = ticketProjectId;
+    if (projId) {
+      try {
+        const token = localStorage.getItem("authToken");
+        const res = await axios.get(
+          `${API_CONFIG.API_URL}/departments/project/${projId}`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        setReassignDepartments(res.data.data || []);
+      } catch {
+        setReassignDepartments([]);
+      }
+    } else {
+      setReassignDepartments([]);
     }
     setShowReassignModal(true);
   };
 
-  const fetchReassignAgents = async (projectId: string) => {
-    if (!projectId) { setReassignAgents([]); return; }
+  const fetchReassignAgents = async (departmentId: string) => {
+    if (!departmentId) { setReassignAgents([]); return; }
     setReassignLoadingAgents(true);
     try {
       const token = localStorage.getItem("authToken");
@@ -1035,7 +1037,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
         `${API_CONFIG.API_URL}/tickets/assignable-agents`,
         {
           headers: { Authorization: `Bearer ${token}` },
-          params: { projectId },
+          params: { departmentId },
         },
       );
       setReassignAgents(res.data.data || []);
@@ -4361,27 +4363,32 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                 Reassign Ticket
               </h3>
 
-              {/* Department / Project selector */}
+              {/* Department selector */}
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Department (Project)
+                  Department
                 </label>
                 <select
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={reassignProjectId}
+                  value={reassignDepartmentId}
                   onChange={(e) => {
-                    setReassignProjectId(e.target.value);
+                    setReassignDepartmentId(e.target.value);
                     setReassignAgentId("");
                     fetchReassignAgents(e.target.value);
                   }}
                 >
                   <option value="">— Select department —</option>
-                  {reassignProjects.map((p) => (
-                    <option key={p._id} value={p._id}>
-                      {p.name}
+                  {reassignDepartments.map((d) => (
+                    <option key={d._id} value={d._id}>
+                      {d.name}
                     </option>
                   ))}
                 </select>
+                {reassignDepartments.length === 0 && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    No departments found for this project. Please add departments under Master Data first.
+                  </p>
+                )}
               </div>
 
               {/* Agent selector */}
@@ -4393,12 +4400,12 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-400"
                   value={reassignAgentId}
                   onChange={(e) => setReassignAgentId(e.target.value)}
-                  disabled={!reassignProjectId || reassignLoadingAgents}
+                  disabled={!reassignDepartmentId || reassignLoadingAgents}
                 >
                   <option value="">
                     {reassignLoadingAgents
                       ? "Loading..."
-                      : reassignProjectId
+                      : reassignDepartmentId
                         ? "— Select team member —"
                         : "— Select department first —"}
                   </option>

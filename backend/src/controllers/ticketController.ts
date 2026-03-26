@@ -6031,7 +6031,27 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
 export const getAssignableAgents = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.userId;
-    const { projectId, useHierarchy } = req.query; // useHierarchy defaults to true
+    const { projectId, useHierarchy, departmentId } = req.query; // useHierarchy defaults to true
+
+    // ── DEPARTMENT-BASED SHORT CIRCUIT ──────────────────────────────────────
+    // If departmentId is provided, return all active users in that department
+    // (bypasses hierarchy / project logic — department is already project-scoped)
+    if (departmentId) {
+      const agents = await User.find({
+        departmentRef: departmentId,
+        isActive: true,
+      })
+        .populate("role", "name isAgent code")
+        .select("_id firstName lastName email role")
+        .sort({ firstName: 1, lastName: 1 });
+
+      return res.status(200).json({
+        success: true,
+        data: agents,
+        mode: "department",
+      });
+    }
+    // ────────────────────────────────────────────────────────────────────────
 
     // Get current user with their role (which contains projects)
     const currentUser = await User.findById(userId).populate("role");
