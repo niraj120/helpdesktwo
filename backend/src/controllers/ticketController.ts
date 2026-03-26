@@ -3945,7 +3945,7 @@ export const reassignTicket = async (req: Request, res: Response) => {
     const projectId =
       (ticket.metadata?.projectId as any)?._id?.toString() ||
       ticket.metadata?.projectId?.toString();
-    const ticketSubject = ticket.subject || ticket.title || "";
+    const ticketSubject = ticket.subject || "";
     const studentName =
       ticket.metadata?.studentName ||
       ticket.metadata?.studentEmail ||
