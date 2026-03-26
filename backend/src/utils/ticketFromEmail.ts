@@ -720,7 +720,8 @@ export async function addEmailReplyToTicket(
       console.log(`      ✓ Ticket status changed: ${oldStatus} → Open`);
     }
 
-    // 5. Update ticket
+    // 5. Update ticket — mark as having a new unread reply for agents
+    ticket.hasNewReply = true;
     ticket.updatedAt = new Date();
     await ticket.save();
 
