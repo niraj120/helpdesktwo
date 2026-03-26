@@ -1062,6 +1062,13 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
   },
   {
     module: "Tickets",
+    name: "Reassign Ticket",
+    code: "TICKET_REASSIGN",
+    description: "Can reassign tickets from one agent to another",
+    category: "tickets",
+  },
+  {
+    module: "Tickets",
     name: "Change Ticket Status",
     code: "TICKET_CHANGE_STATUS",
     description:

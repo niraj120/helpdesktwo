@@ -402,13 +402,21 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
 
   // Reassign states
   const [showReassignModal, setShowReassignModal] = useState(false);
-  const [reassignDepartments, setReassignDepartments] = useState<{ _id: string; name: string }[]>([]);
+  const [reassignDepartments, setReassignDepartments] = useState<
+    { _id: string; name: string }[]
+  >([]);
   const [reassignDepartmentId, setReassignDepartmentId] = useState("");
-  const [reassignAgents, setReassignAgents] = useState<{ _id: string; firstName: string; lastName: string; email: string }[]>([]);
+  const [reassignAgents, setReassignAgents] = useState<
+    { _id: string; firstName: string; lastName: string; email: string }[]
+  >([]);
   const [reassignAgentId, setReassignAgentId] = useState("");
   const [reassignReason, setReassignReason] = useState("");
   const [reassignLoading, setReassignLoading] = useState(false);
   const [reassignLoadingAgents, setReassignLoadingAgents] = useState(false);
+  const [deptSearch, setDeptSearch] = useState("");
+  const [deptDropdownOpen, setDeptDropdownOpen] = useState(false);
+  const [agentSearch, setAgentSearch] = useState("");
+  const [agentDropdownOpen, setAgentDropdownOpen] = useState(false);
 
   // Edit states
   const [isEditingStatus, setIsEditingStatus] = useState(false);
@@ -1009,6 +1017,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
     setReassignAgents([]);
     setReassignAgentId("");
     setReassignReason("");
+    setDeptSearch("");
+    setDeptDropdownOpen(false);
+    setAgentSearch("");
+    setAgentDropdownOpen(false);
     // Fetch departments for the ticket's project
     const projId = ticketProjectId;
     if (projId) {
@@ -1029,7 +1041,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
   };
 
   const fetchReassignAgents = async (departmentId: string) => {
-    if (!departmentId) { setReassignAgents([]); return; }
+    if (!departmentId) {
+      setReassignAgents([]);
+      return;
+    }
     setReassignLoadingAgents(true);
     try {
       const token = localStorage.getItem("authToken");
@@ -1049,7 +1064,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
   };
 
   const submitReassign = async () => {
-    if (!reassignAgentId || !reassignReason.trim()) return;
+    if (!reassignAgentId) return;
     setReassignLoading(true);
     try {
       const token = localStorage.getItem("authToken");
@@ -1061,7 +1076,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
       if (res.data.success) {
         setTicket(res.data.data);
         setShowReassignModal(false);
-        setSuccessModal({ open: true, message: "Ticket reassigned successfully." });
+        setSuccessModal({
+          open: true,
+          message: "Ticket reassigned successfully.",
+        });
       }
     } catch (err: any) {
       alert(err?.response?.data?.message || "Failed to reassign ticket");
@@ -2620,103 +2638,6 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                   {/* History Tab */}
                   {activeTab === "history" && (
                     <div className="space-y-6">
-                      {/* Change History */}
-                      {(ticket as any).changeHistory &&
-                      (ticket as any).changeHistory.length > 0 ? (
-                        <div className="space-y-3">
-                          <h3 className="text-sm font-medium text-gray-900">
-                            Change History
-                          </h3>
-                          {[...(ticket as any).changeHistory]
-                            .reverse()
-                            .map((change: any) => (
-                              <div
-                                key={change._id}
-                                className="p-4 bg-gray-50 border border-gray-200 rounded-lg"
-                              >
-                                <div className="flex items-start space-x-3">
-                                  <ClockIcon className="h-5 w-5 text-gray-600 flex-shrink-0 mt-1" />
-                                  <div className="flex-1">
-                                    <div className="flex items-start justify-between">
-                                      <div>
-                                        <p className="text-sm font-medium text-gray-900">
-                                          {change.field}{" "}
-                                          {change.changeType === "add"
-                                            ? "Added"
-                                            : change.changeType === "remove"
-                                              ? "Removed"
-                                              : "Updated"}
-                                        </p>
-                                        <p className="text-xs text-gray-600 mt-1">
-                                          By {change.changedBy?.firstName}{" "}
-                                          {change.changedBy?.lastName}
-                                        </p>
-                                      </div>
-                                      <p className="text-xs text-gray-500">
-                                        {new Date(
-                                          change.changedAt,
-                                        ).toLocaleString()}
-                                      </p>
-                                    </div>
-                                    <div className="mt-2 text-sm">
-                                      {change.changeType === "reassigned" ? (
-                                        <div className="space-y-1">
-                                          <div>
-                                            <span className="text-red-700 line-through">
-                                              {change.oldValue}
-                                            </span>
-                                            <span className="mx-2">→</span>
-                                            <span className="text-green-700">
-                                              {change.newValue}
-                                            </span>
-                                          </div>
-                                          {(change as any).reassignmentReason && (
-                                            <p className="text-xs text-gray-500 italic mt-1">
-                                              Reason: {(change as any).reassignmentReason}
-                                            </p>
-                                          )}
-                                        </div>
-                                      ) : change.changeType === "add" ? (
-                                        <span className="text-green-700">
-                                          +{" "}
-                                          {formatChangeValue(
-                                            change.field,
-                                            change.newValue,
-                                          )}
-                                        </span>
-                                      ) : change.changeType === "remove" ? (
-                                        <span className="text-red-700">
-                                          -{" "}
-                                          {formatChangeValue(
-                                            change.field,
-                                            change.oldValue,
-                                          )}
-                                        </span>
-                                      ) : (
-                                        <div className="space-y-1">
-                                          <span className="text-red-700 line-through">
-                                            {formatChangeValue(
-                                              change.field,
-                                              change.oldValue,
-                                            )}
-                                          </span>
-                                          <span className="mx-2">→</span>
-                                          <span className="text-green-700">
-                                            {formatChangeValue(
-                                              change.field,
-                                              change.newValue,
-                                            )}
-                                          </span>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                        </div>
-                      ) : null}
-
                       {/* Escalation History */}
                       {ticket.escalationHistory &&
                       ticket.escalationHistory.length > 0 ? (
@@ -4058,7 +3979,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                             : "Unassigned"}
                         </span>
                       </div>
-                      {permissions.includes("TICKET_ASSIGN") && (
+                      {permissions.includes("TICKET_REASSIGN") && (
                         <button
                           onClick={openReassignModal}
                           className="text-xs px-2 py-1 bg-blue-50 text-blue-600 border border-blue-200 rounded hover:bg-blue-100 transition-colors font-medium"
@@ -4364,71 +4285,175 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
               </h3>
 
               {/* Department selector */}
-              <div className="mb-4">
+              <div className="mb-4 relative">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Department
                 </label>
-                <select
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={reassignDepartmentId}
-                  onChange={(e) => {
-                    setReassignDepartmentId(e.target.value);
-                    setReassignAgentId("");
-                    fetchReassignAgents(e.target.value);
-                  }}
-                >
-                  <option value="">— Select department —</option>
-                  {reassignDepartments.map((d) => (
-                    <option key={d._id} value={d._id}>
-                      {d.name}
-                    </option>
-                  ))}
-                </select>
-                {reassignDepartments.length === 0 && (
+                <div className="relative">
+                  <input
+                    type="text"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 pr-8"
+                    placeholder={
+                      reassignDepartmentId
+                        ? (reassignDepartments.find(
+                            (d) => d._id === reassignDepartmentId,
+                          )?.name ?? "Search department...")
+                        : "Search department..."
+                    }
+                    value={
+                      deptDropdownOpen
+                        ? deptSearch
+                        : (reassignDepartments.find(
+                            (d) => d._id === reassignDepartmentId,
+                          )?.name ?? "")
+                    }
+                    onFocus={() => {
+                      setDeptDropdownOpen(true);
+                      setDeptSearch("");
+                    }}
+                    onChange={(e) => setDeptSearch(e.target.value)}
+                    onBlur={() =>
+                      setTimeout(() => setDeptDropdownOpen(false), 150)
+                    }
+                    readOnly={!deptDropdownOpen}
+                  />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-xs">
+                    ▾
+                  </span>
+                </div>
+                {deptDropdownOpen && (
+                  <ul className="absolute z-10 w-full bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto">
+                    {reassignDepartments
+                      .filter((d) =>
+                        d.name.toLowerCase().includes(deptSearch.toLowerCase()),
+                      )
+                      .map((d) => (
+                        <li
+                          key={d._id}
+                          className={`px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 ${
+                            d._id === reassignDepartmentId
+                              ? "bg-blue-100 font-medium"
+                              : ""
+                          }`}
+                          onMouseDown={() => {
+                            setReassignDepartmentId(d._id);
+                            setReassignAgentId("");
+                            setAgentSearch("");
+                            setDeptSearch("");
+                            setDeptDropdownOpen(false);
+                            fetchReassignAgents(d._id);
+                          }}
+                        >
+                          {d.name}
+                        </li>
+                      ))}
+                    {reassignDepartments.filter((d) =>
+                      d.name.toLowerCase().includes(deptSearch.toLowerCase()),
+                    ).length === 0 && (
+                      <li className="px-3 py-2 text-sm text-gray-400">
+                        No results
+                      </li>
+                    )}
+                  </ul>
+                )}
+                {reassignDepartments.length === 0 && !deptDropdownOpen && (
                   <p className="text-xs text-gray-400 mt-1">
-                    No departments found for this project. Please add departments under Master Data first.
+                    No departments found for this project. Please add
+                    departments under Master Data first.
                   </p>
                 )}
               </div>
 
               {/* Agent selector */}
-              <div className="mb-4">
+              <div className="mb-4 relative">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Assign To
                 </label>
-                <select
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-400"
-                  value={reassignAgentId}
-                  onChange={(e) => setReassignAgentId(e.target.value)}
-                  disabled={!reassignDepartmentId || reassignLoadingAgents}
-                >
-                  <option value="">
-                    {reassignLoadingAgents
-                      ? "Loading..."
-                      : reassignDepartmentId
-                        ? "— Select team member —"
-                        : "— Select department first —"}
-                  </option>
-                  {reassignAgents.map((a) => (
-                    <option key={a._id} value={a._id}>
-                      {a.firstName} {a.lastName} ({a.email})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Reason */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Reason <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  rows={3}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                  placeholder="Enter reason for reassignment..."
-                  value={reassignReason}
-                  onChange={(e) => setReassignReason(e.target.value)}
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 pr-8 disabled:bg-gray-50 disabled:text-gray-400"
+                    placeholder={
+                      reassignLoadingAgents
+                        ? "Loading..."
+                        : !reassignDepartmentId
+                          ? "Select department first"
+                          : agentDropdownOpen
+                            ? "Search team member..."
+                            : reassignAgentId
+                              ? ""
+                              : "Search team member..."
+                    }
+                    value={
+                      agentDropdownOpen
+                        ? agentSearch
+                        : reassignAgentId
+                          ? (() => {
+                              const a = reassignAgents.find(
+                                (x) => x._id === reassignAgentId,
+                              );
+                              return a ? `${a.firstName} ${a.lastName}` : "";
+                            })()
+                          : ""
+                    }
+                    disabled={!reassignDepartmentId || reassignLoadingAgents}
+                    onFocus={() => {
+                      if (reassignDepartmentId && !reassignLoadingAgents) {
+                        setAgentDropdownOpen(true);
+                        setAgentSearch("");
+                      }
+                    }}
+                    onChange={(e) => setAgentSearch(e.target.value)}
+                    onBlur={() =>
+                      setTimeout(() => setAgentDropdownOpen(false), 150)
+                    }
+                    readOnly={!agentDropdownOpen}
+                  />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-xs">
+                    ▾
+                  </span>
+                </div>
+                {agentDropdownOpen && (
+                  <ul className="absolute z-10 w-full bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto">
+                    {reassignAgents
+                      .filter((a) =>
+                        `${a.firstName} ${a.lastName} ${a.email}`
+                          .toLowerCase()
+                          .includes(agentSearch.toLowerCase()),
+                      )
+                      .map((a) => (
+                        <li
+                          key={a._id}
+                          className={`px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 ${
+                            a._id === reassignAgentId
+                              ? "bg-blue-100 font-medium"
+                              : ""
+                          }`}
+                          onMouseDown={() => {
+                            setReassignAgentId(a._id);
+                            setAgentSearch("");
+                            setAgentDropdownOpen(false);
+                          }}
+                        >
+                          <span className="font-medium">
+                            {a.firstName} {a.lastName}
+                          </span>
+                          <span className="text-gray-400 ml-1">
+                            ({a.email})
+                          </span>
+                        </li>
+                      ))}
+                    {reassignAgents.filter((a) =>
+                      `${a.firstName} ${a.lastName} ${a.email}`
+                        .toLowerCase()
+                        .includes(agentSearch.toLowerCase()),
+                    ).length === 0 && (
+                      <li className="px-3 py-2 text-sm text-gray-400">
+                        No results
+                      </li>
+                    )}
+                  </ul>
+                )}
               </div>
 
               {/* Buttons */}
@@ -4441,7 +4466,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                 </button>
                 <button
                   onClick={submitReassign}
-                  disabled={!reassignAgentId || !reassignReason.trim() || reassignLoading}
+                  disabled={!reassignAgentId || reassignLoading}
                   className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {reassignLoading ? "Reassigning..." : "Reassign"}

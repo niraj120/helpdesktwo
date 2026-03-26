@@ -366,11 +366,11 @@ router.put(
 
 // @desc    Reassign ticket to a different agent / project
 // @route   PATCH /api/tickets/:id/reassign
-// @access  Private (TICKET_ASSIGN permission)
+// @access  Private (TICKET_REASSIGN permission)
 router.patch(
   "/:id/reassign",
   authMiddleware,
-  checkPermission("TICKET_ASSIGN"),
+  checkPermission("TICKET_REASSIGN"),
   reassignTicket,
 );
 

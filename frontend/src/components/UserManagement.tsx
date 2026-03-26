@@ -83,7 +83,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
   const [roles, setRoles] = useState<Role[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [centers, setCenters] = useState<Center[]>([]);
-  const [departmentOptions, setDepartmentOptions] = useState<{ _id: string; name: string }[]>([]);
+  const [departmentOptions, setDepartmentOptions] = useState<
+    { _id: string; name: string }[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
@@ -755,7 +757,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
       employeeCode: user.employeeCode || "",
       hrmsId: user.hrmsId?.toString() || "",
       role: user.role?._id || "",
-      department: (user.departmentRef as any)?._id || (user as any).departmentRef || user.department || "",
+      department:
+        (user.departmentRef as any)?._id ||
+        (user as any).departmentRef ||
+        user.department ||
+        "",
       designation: user.designation || "",
       joiningDate: user.joiningDate ? user.joiningDate.split("T")[0] : "",
       reportingManager: user.reportingManager?._id || "",
@@ -3644,14 +3650,22 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     ))}
                     {/* Show legacy text dept if not matched */}
                     {formData.department &&
-                      !departmentOptions.find((d) => d._id === formData.department) && (
+                      !departmentOptions.find(
+                        (d) => d._id === formData.department,
+                      ) && (
                         <option value={formData.department}>
                           {formData.department} (legacy)
                         </option>
                       )}
                   </select>
                   {!formData.primaryProject && (
-                    <p style={{ fontSize: "12px", color: "#9ca3af", marginTop: "4px" }}>
+                    <p
+                      style={{
+                        fontSize: "12px",
+                        color: "#9ca3af",
+                        marginTop: "4px",
+                      }}
+                    >
                       Select a project first to see departments
                     </p>
                   )}

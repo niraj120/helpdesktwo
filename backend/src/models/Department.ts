@@ -1,4 +1,4 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Document, Schema } from "mongoose";
 
 export interface IDepartment extends Document {
   name: string;
@@ -23,7 +23,7 @@ const DepartmentSchema = new Schema<IDepartment>(
     },
     projectId: {
       type: Schema.Types.ObjectId,
-      ref: 'Project',
+      ref: "Project",
       required: true,
       index: true,
     },
@@ -33,7 +33,7 @@ const DepartmentSchema = new Schema<IDepartment>(
     },
     createdBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
     },
   },
   { timestamps: true },
@@ -42,4 +42,4 @@ const DepartmentSchema = new Schema<IDepartment>(
 // Unique department name per project
 DepartmentSchema.index({ projectId: 1, name: 1 }, { unique: true });
 
-export default mongoose.model<IDepartment>('Department', DepartmentSchema);
+export default mongoose.model<IDepartment>("Department", DepartmentSchema);

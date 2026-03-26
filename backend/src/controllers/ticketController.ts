@@ -3894,17 +3894,23 @@ export const reassignTicket = async (req: Request, res: Response) => {
     }
 
     if (!mongoose.Types.ObjectId.isValid(newAgentId)) {
-      return res.status(400).json({ success: false, message: "Invalid agent ID" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid agent ID" });
     }
 
     const ticket = await Ticket.findById(id);
     if (!ticket) {
-      return res.status(404).json({ success: false, message: "Ticket not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Ticket not found" });
     }
 
     const newAgent = await User.findById(newAgentId);
     if (!newAgent || !newAgent.isActive) {
-      return res.status(404).json({ success: false, message: "Agent not found or inactive" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Agent not found or inactive" });
     }
 
     // Store previous assignee for email + history
@@ -3936,11 +3942,14 @@ export const reassignTicket = async (req: Request, res: Response) => {
     await ticket.save();
 
     // Notify new agent
-    const projectId = (ticket.metadata?.projectId as any)?._id?.toString()
-      || ticket.metadata?.projectId?.toString();
+    const projectId =
+      (ticket.metadata?.projectId as any)?._id?.toString() ||
+      ticket.metadata?.projectId?.toString();
     const ticketSubject = ticket.subject || ticket.title || "";
     const studentName =
-      ticket.metadata?.studentName || ticket.metadata?.studentEmail || "Student";
+      ticket.metadata?.studentName ||
+      ticket.metadata?.studentEmail ||
+      "Student";
 
     (async () => {
       try {

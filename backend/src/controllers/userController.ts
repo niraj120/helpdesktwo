@@ -621,7 +621,8 @@ export const updateUser = async (
     if (employeeCode !== undefined)
       user.employeeCode = employeeCode || undefined;
     if (department !== undefined) user.department = department;
-    if (req.body.departmentRef !== undefined) (user as any).departmentRef = req.body.departmentRef || null;
+    if (req.body.departmentRef !== undefined)
+      (user as any).departmentRef = req.body.departmentRef || null;
     if (designation !== undefined) user.designation = designation;
     if (joiningDate !== undefined) user.joiningDate = new Date(joiningDate);
     if (reportingManager !== undefined)
