@@ -332,28 +332,47 @@ const EmailConfigModal: React.FC<EmailConfigModalProps> = ({
     }
   }, [isOpen, editingConfig]);
 
-  // Rich-text signature editor — image handler embeds as base64 (no upload needed)
+  // Rich-text signature editor — image handler uploads to backend and inserts hosted URL
   const signatureQuillRef = useRef<ReactQuill>(null);
   const handleSignatureImageUpload = useCallback(() => {
     const input = document.createElement("input");
     input.setAttribute("type", "file");
     input.setAttribute("accept", "image/*");
     input.click();
-    input.onchange = () => {
+    input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        const quill = signatureQuillRef.current?.getEditor();
-        if (!quill) return;
-        const range = quill.getSelection(true) || {
-          index: quill.getLength(),
-          length: 0,
-        };
-        quill.insertEmbed(range.index, "image", reader.result as string);
-        quill.setSelection(range.index + 1, 0);
+
+      const quill = signatureQuillRef.current?.getEditor();
+      if (!quill) return;
+
+      const range = quill.getSelection(true) || {
+        index: quill.getLength(),
+        length: 0,
       };
-      reader.readAsDataURL(file);
+
+      // Show a temporary placeholder while uploading
+      quill.insertText(range.index, "⏳ Uploading image…", "silent");
+
+      try {
+        const token = localStorage.getItem("authToken");
+        const formData = new FormData();
+        formData.append("image", file);
+        const resp = await axios.post(
+          `${API_CONFIG.API_URL}/upload/signature-image`,
+          formData,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        const imageUrl: string = resp.data.url;
+
+        // Remove placeholder then insert the hosted image
+        quill.deleteText(range.index, "⏳ Uploading image…".length, "silent");
+        quill.insertEmbed(range.index, "image", imageUrl);
+        quill.setSelection(range.index + 1, 0);
+      } catch {
+        quill.deleteText(range.index, "⏳ Uploading image…".length, "silent");
+        quill.insertText(range.index, "[Image upload failed]", "silent");
+      }
     };
   }, []);
   const signatureModules = useMemo(

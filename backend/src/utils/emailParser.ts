@@ -1,7 +1,16 @@
-import { simpleParser, ParsedMail, AddressObject, Attachment } from 'mailparser';
-import * as iconv from 'iconv-lite';
-import { validateEmail, handleEncodingIssues, EmailValidationOptions } from './emailValidator'; // Task 8.3
-import { logError, ErrorContext, ErrorSeverity } from './errorLogger'; // Task 8.3
+import {
+  simpleParser,
+  ParsedMail,
+  AddressObject,
+  Attachment,
+} from "mailparser";
+import * as iconv from "iconv-lite";
+import {
+  validateEmail,
+  handleEncodingIssues,
+  EmailValidationOptions,
+} from "./emailValidator"; // Task 8.3
+import { logError, ErrorContext, ErrorSeverity } from "./errorLogger"; // Task 8.3
 
 /**
  * Parsed Email Data Structure
@@ -14,24 +23,26 @@ export interface ParsedEmailData {
   cc?: EmailAddress[];
   bcc?: EmailAddress[];
   subject: string;
-  body: string;              // Plain text body
-  htmlBody?: string;         // HTML body
-  
+  body: string; // Plain text body
+  htmlBody?: string; // HTML body
+  bodyPreview?: string; // Short plain-text preview (from Graph API)
+
   // Email metadata
   date: Date;
   headers: EmailHeaders;
-  
+
   // Attachments
   attachments: EmailAttachment[];
-  
+
   // Threading information
-  inReplyTo?: string;        // Message-ID of email being replied to
-  references?: string[];     // Array of Message-IDs in thread
-  
+  inReplyTo?: string; // Message-ID of email being replied to
+  references?: string[]; // Array of Message-IDs in thread
+  conversationId?: string; // Exchange/Graph conversation thread ID (same for all emails in a thread)
+
   // Additional metadata
-  priority?: 'high' | 'normal' | 'low';
+  priority?: "high" | "normal" | "low";
   isAutoReply?: boolean;
-  
+
   // Raw data for debugging
   rawHeaders?: any;
 }
@@ -40,8 +51,8 @@ export interface ParsedEmailData {
  * Email Address Structure
  */
 export interface EmailAddress {
-  name?: string;             // Display name (e.g., "John Doe")
-  address: string;           // Email address (e.g., "john@example.com")
+  name?: string; // Display name (e.g., "John Doe")
+  address: string; // Email address (e.g., "john@example.com")
 }
 
 /**
@@ -60,7 +71,7 @@ export interface EmailHeaders {
   returnPath?: string;
   contentType?: string;
   mimeVersion?: string;
-  [key: string]: any;        // Allow any additional headers
+  [key: string]: any; // Allow any additional headers
 }
 
 /**
@@ -71,7 +82,7 @@ export interface EmailAttachment {
   contentType: string;
   size: number;
   content: Buffer;
-  contentId?: string;        // For inline images
+  contentId?: string; // For inline images
   contentDisposition?: string;
 }
 
@@ -89,23 +100,26 @@ export class EmailParser {
    */
   public static async parse(
     rawEmail: Buffer | string,
-    encoding: string = 'utf-8',
-    validationOptions?: EmailValidationOptions
+    encoding: string = "utf-8",
+    validationOptions?: EmailValidationOptions,
   ): Promise<ParsedEmailData> {
     try {
-      console.log('📧 Parsing email...');
+      console.log("📧 Parsing email...");
 
       // Task 8.3: Handle encoding issues gracefully
       let emailBuffer: Buffer;
       let encodingWarning: string | undefined;
 
-      if (typeof rawEmail === 'string') {
+      if (typeof rawEmail === "string") {
         emailBuffer = Buffer.from(rawEmail, encoding as BufferEncoding);
       } else {
         emailBuffer = rawEmail;
-        
+
         // Check for encoding issues
-        const encodingResult = await handleEncodingIssues(emailBuffer, encoding);
+        const encodingResult = await handleEncodingIssues(
+          emailBuffer,
+          encoding,
+        );
         if (encodingResult.warning) {
           encodingWarning = encodingResult.warning;
           console.warn(`⚠️  ${encodingWarning}`);
@@ -117,15 +131,15 @@ export class EmailParser {
       try {
         parsed = await simpleParser(emailBuffer);
       } catch (parseError: any) {
-        console.error('❌ Mailparser failed:', parseError.message);
-        
+        console.error("❌ Mailparser failed:", parseError.message);
+
         // Task 8.3: Log parsing error but try to continue
         await logError({
           message: `Email parsing error: ${parseError.message}`,
           context: ErrorContext.EMAIL_PARSING,
           severity: ErrorSeverity.MEDIUM,
           details: {
-            errorType: 'mailparser_failure',
+            errorType: "mailparser_failure",
             encoding,
             bufferSize: emailBuffer.length,
           },
@@ -156,35 +170,44 @@ export class EmailParser {
       };
 
       // Task 8.3: Validate and sanitize parsed data
-      console.log('🔍 Validating email structure...');
-      const validationResult = await validateEmail(parsedData, validationOptions);
+      console.log("🔍 Validating email structure...");
+      const validationResult = await validateEmail(
+        parsedData,
+        validationOptions,
+      );
 
       if (validationResult.warnings.length > 0) {
-        console.warn(`⚠️  Email validation warnings (${validationResult.warnings.length}):`);
-        validationResult.warnings.forEach(w => console.warn(`   - ${w}`));
+        console.warn(
+          `⚠️  Email validation warnings (${validationResult.warnings.length}):`,
+        );
+        validationResult.warnings.forEach((w) => console.warn(`   - ${w}`));
       }
 
       if (validationResult.errors.length > 0) {
-        console.error(`❌ Email validation errors (${validationResult.errors.length}):`);
-        validationResult.errors.forEach(e => console.error(`   - ${e}`));
+        console.error(
+          `❌ Email validation errors (${validationResult.errors.length}):`,
+        );
+        validationResult.errors.forEach((e) => console.error(`   - ${e}`));
       }
 
       // Return sanitized data even if warnings exist
       const finalData = validationResult.sanitizedData || parsedData;
-      
-      console.log(`✅ Email parsed successfully: "${finalData.subject}" from ${finalData.from.address}`);
-      
+
+      console.log(
+        `✅ Email parsed successfully: "${finalData.subject}" from ${finalData.from.address}`,
+      );
+
       return finalData;
     } catch (error: any) {
-      console.error('❌ Email parsing failed:', error.message);
-      
+      console.error("❌ Email parsing failed:", error.message);
+
       // Task 8.3: Log critical parsing error
       await logError({
         message: `Critical email parsing failure: ${error.message}`,
         context: ErrorContext.EMAIL_PARSING,
         severity: ErrorSeverity.HIGH,
         details: {
-          errorType: 'parse_exception',
+          errorType: "parse_exception",
           errorMessage: error.message,
           errorStack: error.stack,
           encoding,
@@ -202,13 +225,15 @@ export class EmailParser {
     try {
       if (parsed.messageId) {
         // Remove angle brackets if present
-        const cleaned = parsed.messageId.replace(/^<|>$/g, '').trim();
+        const cleaned = parsed.messageId.replace(/^<|>$/g, "").trim();
         if (cleaned) return cleaned;
       }
 
       // Fallback: Generate Message-ID from date and hash
       const timestamp = parsed.date?.getTime() || Date.now();
-      const hash = this.generateHash(parsed.text || parsed.html || String(timestamp));
+      const hash = this.generateHash(
+        parsed.text || parsed.html || String(timestamp),
+      );
       const generated = `generated-${timestamp}-${hash}@helpdesk.local`;
       console.warn(`⚠️  Missing Message-ID, generated: ${generated}`);
       return generated;
@@ -229,21 +254,21 @@ export class EmailParser {
       if (from && from.address) {
         return {
           name: from.name || undefined,
-          address: from.address?.toLowerCase() || '',
+          address: from.address?.toLowerCase() || "",
         };
       }
 
       // Task 8.3: Fallback for malformed emails - use unknown sender
-      console.warn('⚠️  Missing FROM address, using fallback');
+      console.warn("⚠️  Missing FROM address, using fallback");
       return {
-        name: 'Unknown Sender',
-        address: 'unknown@invalid.local',
+        name: "Unknown Sender",
+        address: "unknown@invalid.local",
       };
     } catch (error) {
-      console.error('❌ Error extracting FROM address:', error);
+      console.error("❌ Error extracting FROM address:", error);
       return {
-        name: 'Unknown Sender',
-        address: 'unknown@invalid.local',
+        name: "Unknown Sender",
+        address: "unknown@invalid.local",
       };
     }
   }
@@ -254,23 +279,23 @@ export class EmailParser {
   private static extractTo(parsed: ParsedMail): EmailAddress[] {
     try {
       if (!parsed.to) {
-        console.warn('⚠️  Missing TO addresses, using fallback');
-        return [{ address: 'support@helpdesk.local', name: 'Support' }];
+        console.warn("⚠️  Missing TO addresses, using fallback");
+        return [{ address: "support@helpdesk.local", name: "Support" }];
       }
 
       // Handle both single AddressObject and array
       const toAddresses = Array.isArray(parsed.to) ? parsed.to[0] : parsed.to;
       const addresses = this.parseAddresses(toAddresses);
-      
+
       if (addresses.length === 0) {
-        console.warn('⚠️  No valid TO addresses, using fallback');
-        return [{ address: 'support@helpdesk.local', name: 'Support' }];
+        console.warn("⚠️  No valid TO addresses, using fallback");
+        return [{ address: "support@helpdesk.local", name: "Support" }];
       }
 
       return addresses;
     } catch (error) {
-      console.error('❌ Error extracting TO addresses:', error);
-      return [{ address: 'support@helpdesk.local', name: 'Support' }];
+      console.error("❌ Error extracting TO addresses:", error);
+      return [{ address: "support@helpdesk.local", name: "Support" }];
     }
   }
 
@@ -285,7 +310,7 @@ export class EmailParser {
       const addresses = this.parseAddresses(ccAddresses);
       return addresses.length > 0 ? addresses : undefined;
     } catch (error) {
-      console.error('❌ Error extracting CC addresses:', error);
+      console.error("❌ Error extracting CC addresses:", error);
       return undefined;
     }
   }
@@ -305,10 +330,10 @@ export class EmailParser {
    */
   private static parseAddresses(addressObj: AddressObject): EmailAddress[] {
     if (!addressObj.value) return [];
-    
+
     return addressObj.value.map((addr) => ({
       name: addr.name || undefined,
-      address: addr.address?.toLowerCase() || '',
+      address: addr.address?.toLowerCase() || "",
     }));
   }
 
@@ -317,25 +342,25 @@ export class EmailParser {
    */
   private static extractSubject(parsed: ParsedMail): string {
     try {
-      if (!parsed.subject || parsed.subject.trim() === '') {
-        console.warn('⚠️  Missing subject line, using default');
-        return '(No Subject)';
+      if (!parsed.subject || parsed.subject.trim() === "") {
+        console.warn("⚠️  Missing subject line, using default");
+        return "(No Subject)";
       }
-      
+
       // Decode encoded subjects (e.g., =?UTF-8?B?...?=)
       // mailparser already decodes, but handle edge cases
       const subject = parsed.subject.trim();
-      
+
       // Check for excessively long subjects
       if (subject.length > 998) {
         console.warn(`⚠️  Subject exceeds 998 characters, truncating`);
-        return subject.substring(0, 995) + '...';
+        return subject.substring(0, 995) + "...";
       }
-      
-      return subject || '(No Subject)';
+
+      return subject || "(No Subject)";
     } catch (error) {
-      console.error('❌ Error extracting subject:', error);
-      return '(No Subject)';
+      console.error("❌ Error extracting subject:", error);
+      return "(No Subject)";
     }
   }
 
@@ -356,36 +381,36 @@ export class EmailParser {
       if (parsed.html) {
         const html = parsed.html;
         let htmlString: string;
-        
+
         try {
-          if (typeof html === 'string') {
+          if (typeof html === "string") {
             htmlString = html;
           } else if (Buffer.isBuffer(html)) {
-            htmlString = (html as Buffer).toString('utf-8');
+            htmlString = (html as Buffer).toString("utf-8");
           } else {
             htmlString = String(html);
           }
-          
+
           const plainText = this.htmlToPlainText(htmlString);
           if (plainText && plainText.trim().length > 0) {
             return plainText;
           }
         } catch (htmlError) {
-          console.error('❌ Error converting HTML to plain text:', htmlError);
+          console.error("❌ Error converting HTML to plain text:", htmlError);
         }
       }
 
       // Task 8.3: Use subject as fallback if no body
       if (parsed.subject && parsed.subject.trim()) {
-        console.warn('⚠️  No email body, using subject as content');
+        console.warn("⚠️  No email body, using subject as content");
         return `Subject: ${parsed.subject}`;
       }
 
-      console.warn('⚠️  Email has no body content');
-      return '(Empty message)';
+      console.warn("⚠️  Email has no body content");
+      return "(Empty message)";
     } catch (error) {
-      console.error('❌ Error extracting plain text body:', error);
-      return '(Error reading message body)';
+      console.error("❌ Error extracting plain text body:", error);
+      return "(Error reading message body)";
     }
   }
 
@@ -395,28 +420,28 @@ export class EmailParser {
   private static extractHtmlBody(parsed: ParsedMail): string | undefined {
     try {
       if (!parsed.html) return undefined;
-      
+
       const html = parsed.html;
-      
+
       // Return as string (mailparser already converts Buffer to string)
-      if (typeof html === 'string') {
+      if (typeof html === "string") {
         return html;
       }
-      
+
       // Handle Buffer type with encoding error handling
       if (Buffer.isBuffer(html)) {
         try {
-          return (html as Buffer).toString('utf-8');
+          return (html as Buffer).toString("utf-8");
         } catch (encodingError) {
-          console.warn('⚠️  UTF-8 decoding failed for HTML, trying latin1');
-          return (html as Buffer).toString('latin1');
+          console.warn("⚠️  UTF-8 decoding failed for HTML, trying latin1");
+          return (html as Buffer).toString("latin1");
         }
       }
-      
+
       // Fallback to string conversion
       return String(html);
     } catch (error) {
-      console.error('❌ Error extracting HTML body:', error);
+      console.error("❌ Error extracting HTML body:", error);
       return undefined;
     }
   }
@@ -426,15 +451,19 @@ export class EmailParser {
    */
   private static extractDate(parsed: ParsedMail): Date {
     try {
-      if (parsed.date && parsed.date instanceof Date && !isNaN(parsed.date.getTime())) {
+      if (
+        parsed.date &&
+        parsed.date instanceof Date &&
+        !isNaN(parsed.date.getTime())
+      ) {
         return parsed.date;
       }
 
       // Fallback to current time
-      console.warn('⚠️  Invalid or missing date, using current time');
+      console.warn("⚠️  Invalid or missing date, using current time");
       return new Date();
     } catch (error) {
-      console.error('❌ Error extracting date:', error);
+      console.error("❌ Error extracting date:", error);
       return new Date();
     }
   }
@@ -444,18 +473,18 @@ export class EmailParser {
    */
   private static extractHeaders(parsed: ParsedMail): EmailHeaders {
     const headers: EmailHeaders = {
-      from: this.getHeaderValue(parsed.headers, 'from') || '',
-      to: this.getHeaderValue(parsed.headers, 'to'),
-      cc: this.getHeaderValue(parsed.headers, 'cc'),
-      bcc: this.getHeaderValue(parsed.headers, 'bcc'),
-      subject: this.getHeaderValue(parsed.headers, 'subject') || '(No Subject)',
-      date: this.getHeaderValue(parsed.headers, 'date'),
-      messageId: this.getHeaderValue(parsed.headers, 'message-id') || '',
-      inReplyTo: this.getHeaderValue(parsed.headers, 'in-reply-to'),
-      references: this.getHeaderValue(parsed.headers, 'references'),
-      returnPath: this.getHeaderValue(parsed.headers, 'return-path'),
-      contentType: this.getHeaderValue(parsed.headers, 'content-type'),
-      mimeVersion: this.getHeaderValue(parsed.headers, 'mime-version'),
+      from: this.getHeaderValue(parsed.headers, "from") || "",
+      to: this.getHeaderValue(parsed.headers, "to"),
+      cc: this.getHeaderValue(parsed.headers, "cc"),
+      bcc: this.getHeaderValue(parsed.headers, "bcc"),
+      subject: this.getHeaderValue(parsed.headers, "subject") || "(No Subject)",
+      date: this.getHeaderValue(parsed.headers, "date"),
+      messageId: this.getHeaderValue(parsed.headers, "message-id") || "",
+      inReplyTo: this.getHeaderValue(parsed.headers, "in-reply-to"),
+      references: this.getHeaderValue(parsed.headers, "references"),
+      returnPath: this.getHeaderValue(parsed.headers, "return-path"),
+      contentType: this.getHeaderValue(parsed.headers, "content-type"),
+      mimeVersion: this.getHeaderValue(parsed.headers, "mime-version"),
     };
 
     // Add any additional headers
@@ -463,7 +492,9 @@ export class EmailParser {
       const headerMap = parsed.headers as Map<string, any>;
       headerMap.forEach((value, key) => {
         if (!headers[key]) {
-          headers[key] = Array.isArray(value) ? value.join(', ') : String(value);
+          headers[key] = Array.isArray(value)
+            ? value.join(", ")
+            : String(value);
         }
       });
     }
@@ -479,14 +510,14 @@ export class EmailParser {
 
     // Headers can be a Map or object
     const value = headers instanceof Map ? headers.get(key) : headers[key];
-    
+
     if (!value) return undefined;
-    
+
     // Handle array values (multiple headers with same name)
     if (Array.isArray(value)) {
-      return value.join(', ');
+      return value.join(", ");
     }
-    
+
     return String(value);
   }
 
@@ -499,8 +530,8 @@ export class EmailParser {
     }
 
     return parsed.attachments.map((att: Attachment) => ({
-      filename: att.filename || 'unnamed-attachment',
-      contentType: att.contentType || 'application/octet-stream',
+      filename: att.filename || "unnamed-attachment",
+      contentType: att.contentType || "application/octet-stream",
       size: att.size || att.content?.length || 0,
       content: att.content,
       contentId: att.contentId,
@@ -512,50 +543,58 @@ export class EmailParser {
    * Extract In-Reply-To header (for threading)
    */
   private static extractInReplyTo(parsed: ParsedMail): string | undefined {
-    const inReplyTo = this.getHeaderValue(parsed.headers, 'in-reply-to');
+    const inReplyTo = this.getHeaderValue(parsed.headers, "in-reply-to");
     if (!inReplyTo) return undefined;
 
     // Remove angle brackets and trim
-    return inReplyTo.replace(/^<|>$/g, '').trim();
+    return inReplyTo.replace(/^<|>$/g, "").trim();
   }
 
   /**
    * Extract References header (for threading)
    */
   private static extractReferences(parsed: ParsedMail): string[] | undefined {
-    const references = this.getHeaderValue(parsed.headers, 'references');
+    const references = this.getHeaderValue(parsed.headers, "references");
     if (!references) return undefined;
 
     // Split by whitespace and remove angle brackets
     return references
       .split(/\s+/)
-      .map((ref) => ref.replace(/^<|>$/g, '').trim())
+      .map((ref) => ref.replace(/^<|>$/g, "").trim())
       .filter(Boolean);
   }
 
   /**
    * Extract priority from headers
    */
-  private static extractPriority(parsed: ParsedMail): 'high' | 'normal' | 'low' | undefined {
-    const priority = this.getHeaderValue(parsed.headers, 'priority')?.toLowerCase();
-    const importance = this.getHeaderValue(parsed.headers, 'importance')?.toLowerCase();
-    const xPriority = this.getHeaderValue(parsed.headers, 'x-priority');
+  private static extractPriority(
+    parsed: ParsedMail,
+  ): "high" | "normal" | "low" | undefined {
+    const priority = this.getHeaderValue(
+      parsed.headers,
+      "priority",
+    )?.toLowerCase();
+    const importance = this.getHeaderValue(
+      parsed.headers,
+      "importance",
+    )?.toLowerCase();
+    const xPriority = this.getHeaderValue(parsed.headers, "x-priority");
 
     // Check X-Priority (1-5 scale)
     if (xPriority) {
       const num = parseInt(xPriority, 10);
-      if (num === 1 || num === 2) return 'high';
-      if (num === 4 || num === 5) return 'low';
-      return 'normal';
+      if (num === 1 || num === 2) return "high";
+      if (num === 4 || num === 5) return "low";
+      return "normal";
     }
 
     // Check Importance header
-    if (importance === 'high') return 'high';
-    if (importance === 'low') return 'low';
+    if (importance === "high") return "high";
+    if (importance === "low") return "low";
 
     // Check Priority header
-    if (priority === 'urgent' || priority === 'high') return 'high';
-    if (priority === 'low' || priority === 'non-urgent') return 'low';
+    if (priority === "urgent" || priority === "high") return "high";
+    if (priority === "low" || priority === "non-urgent") return "low";
 
     return undefined; // Default to normal
   }
@@ -564,17 +603,20 @@ export class EmailParser {
    * Detect auto-reply emails
    */
   private static detectAutoReply(parsed: ParsedMail): boolean {
-    const autoSubmitted = this.getHeaderValue(parsed.headers, 'auto-submitted');
-    const precedence = this.getHeaderValue(parsed.headers, 'precedence');
-    const xAutoResponseSuppress = this.getHeaderValue(parsed.headers, 'x-auto-response-suppress');
+    const autoSubmitted = this.getHeaderValue(parsed.headers, "auto-submitted");
+    const precedence = this.getHeaderValue(parsed.headers, "precedence");
+    const xAutoResponseSuppress = this.getHeaderValue(
+      parsed.headers,
+      "x-auto-response-suppress",
+    );
 
     // Check Auto-Submitted header
-    if (autoSubmitted && autoSubmitted !== 'no') {
+    if (autoSubmitted && autoSubmitted !== "no") {
       return true;
     }
 
     // Check Precedence header
-    if (precedence === 'auto_reply' || precedence === 'bulk') {
+    if (precedence === "auto_reply" || precedence === "bulk") {
       return true;
     }
 
@@ -584,14 +626,14 @@ export class EmailParser {
     }
 
     // Check subject for auto-reply keywords
-    const subject = parsed.subject?.toLowerCase() || '';
+    const subject = parsed.subject?.toLowerCase() || "";
     const autoReplyKeywords = [
-      'automatic reply',
-      'auto-reply',
-      'out of office',
-      'away from office',
-      'vacation response',
-      'autoreply',
+      "automatic reply",
+      "auto-reply",
+      "out of office",
+      "away from office",
+      "vacation response",
+      "autoreply",
     ];
 
     return autoReplyKeywords.some((keyword) => subject.includes(keyword));
@@ -602,11 +644,11 @@ export class EmailParser {
    * Remove excessive whitespace, normalize line breaks
    */
   private static cleanTextBody(text: string): string {
-    if (!text) return '';
+    if (!text) return "";
 
     return text
-      .replace(/\r\n/g, '\n')        // Normalize line breaks
-      .replace(/\n{3,}/g, '\n\n')    // Max 2 consecutive line breaks
+      .replace(/\r\n/g, "\n") // Normalize line breaks
+      .replace(/\n{3,}/g, "\n\n") // Max 2 consecutive line breaks
       .trim();
   }
 
@@ -614,22 +656,22 @@ export class EmailParser {
    * Convert HTML to plain text (basic conversion)
    */
   private static htmlToPlainText(html: string): string {
-    if (!html) return '';
+    if (!html) return "";
 
     return html
-      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')    // Remove style tags
-      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')  // Remove script tags
-      .replace(/<br\s*\/?>/gi, '\n')                     // Convert <br> to newline
-      .replace(/<\/p>/gi, '\n\n')                        // Convert </p> to double newline
-      .replace(/<\/div>/gi, '\n')                        // Convert </div> to newline
-      .replace(/<[^>]+>/g, '')                           // Remove all HTML tags
-      .replace(/&nbsp;/g, ' ')                           // Convert &nbsp; to space
-      .replace(/&amp;/g, '&')                            // Convert &amp; to &
-      .replace(/&lt;/g, '<')                             // Convert &lt; to <
-      .replace(/&gt;/g, '>')                             // Convert &gt; to >
-      .replace(/&quot;/g, '"')                           // Convert &quot; to "
-      .replace(/&#39;/g, "'")                            // Convert &#39; to '
-      .replace(/\n{3,}/g, '\n\n')                        // Max 2 consecutive line breaks
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "") // Remove style tags
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "") // Remove script tags
+      .replace(/<br\s*\/?>/gi, "\n") // Convert <br> to newline
+      .replace(/<\/p>/gi, "\n\n") // Convert </p> to double newline
+      .replace(/<\/div>/gi, "\n") // Convert </div> to newline
+      .replace(/<[^>]+>/g, "") // Remove all HTML tags
+      .replace(/&nbsp;/g, " ") // Convert &nbsp; to space
+      .replace(/&amp;/g, "&") // Convert &amp; to &
+      .replace(/&lt;/g, "<") // Convert &lt; to <
+      .replace(/&gt;/g, ">") // Convert &gt; to >
+      .replace(/&quot;/g, '"') // Convert &quot; to "
+      .replace(/&#39;/g, "'") // Convert &#39; to '
+      .replace(/\n{3,}/g, "\n\n") // Max 2 consecutive line breaks
       .trim();
   }
 
@@ -657,26 +699,28 @@ export class EmailParser {
   /**
    * Parse email from JSON string (for emails stored in queue)
    */
-  public static async parseFromJSON(jsonString: string): Promise<ParsedEmailData> {
+  public static async parseFromJSON(
+    jsonString: string,
+  ): Promise<ParsedEmailData> {
     try {
       const data = JSON.parse(jsonString);
-      
+
       // If it's already parsed data, return it
       if (data.messageId && data.from && data.subject) {
         // Convert attachment contents back to Buffer if needed
         if (data.attachments) {
           data.attachments = data.attachments.map((att: any) => ({
             ...att,
-            content: att.content?.data 
-              ? Buffer.from(att.content.data) 
-              : Buffer.from(att.content || ''),
+            content: att.content?.data
+              ? Buffer.from(att.content.data)
+              : Buffer.from(att.content || ""),
           }));
         }
         return data as ParsedEmailData;
       }
 
       // If it's raw email, parse it
-      throw new Error('Invalid JSON format - expected parsed email data');
+      throw new Error("Invalid JSON format - expected parsed email data");
     } catch (error: any) {
       throw new Error(`Failed to parse email from JSON: ${error.message}`);
     }
@@ -694,13 +738,16 @@ export class EmailParser {
    */
   public static extractDomain(email: string): string {
     const match = email.match(/@(.+)$/);
-    return match ? match[1].toLowerCase() : '';
+    return match ? match[1].toLowerCase() : "";
   }
 
   /**
    * Check if email is from internal domain
    */
-  public static isInternalEmail(email: string, internalDomains: string[]): boolean {
+  public static isInternalEmail(
+    email: string,
+    internalDomains: string[],
+  ): boolean {
     const domain = this.extractDomain(email);
     return internalDomains.some((d) => domain.endsWith(d.toLowerCase()));
   }
@@ -709,7 +756,9 @@ export class EmailParser {
 /**
  * Helper function for quick parsing
  */
-export async function parseEmail(rawEmail: Buffer | string): Promise<ParsedEmailData> {
+export async function parseEmail(
+  rawEmail: Buffer | string,
+): Promise<ParsedEmailData> {
   return EmailParser.parse(rawEmail);
 }
 

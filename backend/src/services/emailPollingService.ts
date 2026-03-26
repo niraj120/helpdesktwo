@@ -26,9 +26,11 @@ interface EmailData {
   subject: string;
   body: string;
   htmlBody?: string;
+  bodyPreview?: string; // Plain-text preview from Graph API (used as description fallback)
   headers: any;
   inReplyTo?: string; // RFC 5322 In-Reply-To header (for thread detection)
   references?: string[]; // RFC 5322 References header (thread chain)
+  conversationId?: string; // Exchange/Graph conversation thread ID
   attachments: Array<{
     filename: string;
     contentType: string;
@@ -309,7 +311,7 @@ class EmailPollingService {
     const messagesUrl =
       `${graphBase}/users/${mailboxUser}/messages` +
       `?$filter=isRead eq false` +
-      `&$select=id,subject,from,toRecipients,body,receivedDateTime,internetMessageId,hasAttachments,internetMessageHeaders` +
+      `&$select=id,subject,from,toRecipients,body,bodyPreview,receivedDateTime,internetMessageId,hasAttachments,internetMessageHeaders,conversationId` +
       `&$top=${MAX_EMAILS_PER_FETCH}`;
 
     const messagesResponse = await axios.get(messagesUrl, {
@@ -355,9 +357,11 @@ class EmailPollingService {
           subject: msg.subject || "(No Subject)",
           body: isHtml ? "" : bodyContent,
           htmlBody: isHtml ? bodyContent : undefined,
+          bodyPreview: msg.bodyPreview || undefined,
           headers: {},
           inReplyTo,
           references,
+          conversationId: msg.conversationId || undefined,
           attachments: [],
           receivedDate: new Date(msg.receivedDateTime),
           uid: 0,
