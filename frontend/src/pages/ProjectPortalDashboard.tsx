@@ -5,6 +5,7 @@ import DashboardLayout from "../components/DashboardLayout";
 import ProtectedRoute from "../components/ProtectedRoute";
 import { PERMISSIONS } from "../constants/permissions";
 import { useBranding } from "../contexts/BrandingContext";
+import { useProjectContext } from "../contexts/ProjectContext";
 
 // Import existing super admin components
 import ActivityLogs from "../components/ActivityLogs";
@@ -1296,6 +1297,24 @@ const ProjectPortalDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const { branding: projectBranding } = useBranding();
+  const { setCurrentProjectId } = useProjectContext();
+
+  // Sync ProjectContext.currentProjectId with this portal's project whenever branding loads.
+  // initializePortal runs before branding is available (async), so this effect is the
+  // reliable place to update both localStorage and React state in ProjectContext.
+  useEffect(() => {
+    if (projectBranding?.projectId) {
+      setCurrentProjectId(projectBranding.projectId);
+      localStorage.setItem(
+        "projectContext",
+        JSON.stringify({
+          projectId: projectBranding.projectId,
+          projectName: projectBranding.name || (projectBranding as any).projectName,
+          customUrlPath: customUrlPath,
+        }),
+      );
+    }
+  }, [projectBranding?.projectId, customUrlPath, setCurrentProjectId]);
 
   useEffect(() => {
     const token = localStorage.getItem("authToken");
@@ -1318,18 +1337,8 @@ const ProjectPortalDashboard = () => {
       // Route protection will handle access control based on permissions
       setUser(userData);
 
-      // Branding is now handled by BrandingContext - no need to fetch here
-      // Just store project context
-      if (projectBranding) {
-        localStorage.setItem(
-          "projectContext",
-          JSON.stringify({
-            projectId: projectBranding.projectId,
-            projectName: projectBranding.name || projectBranding.projectName,
-            customUrlPath: customUrlPath,
-          }),
-        );
-      }
+      // Note: projectContext is now written by the projectBranding effect above,
+      // which fires after BrandingContext loads asynchronously.
 
       // Set module access based on permissions (dynamic, not hardcoded)
       const moduleAccess = getModuleAccessFromPermissions(
