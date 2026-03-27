@@ -100,7 +100,7 @@ export const createStatus = async (req: AuthRequest, res: Response) => {
     }
 
     // Check if status code already exists for this project
-    const existingStatus = await Status.findOne({ code: code.toUpperCase(), projectId });
+    const existingStatus = await Status.findOne({ code: Number(code), projectId });
     if (existingStatus) {
       return res.status(400).json({
         success: false,
@@ -118,7 +118,7 @@ export const createStatus = async (req: AuthRequest, res: Response) => {
 
     const status = new Status({
       name,
-      code: code.toUpperCase(),
+      code: Number(code),
       color: color || '#3b82f6',
       projectId,
       isDefault: isDefault || false,
@@ -192,7 +192,7 @@ export const updateStatus = async (req: AuthRequest, res: Response) => {
 
     // Update status fields
     if (name !== undefined) status.name = name;
-    if (code !== undefined) status.code = code.toUpperCase();
+    if (code !== undefined) status.code = Number(code);
     if (color !== undefined) status.color = color;
     if (isDefault !== undefined) status.isDefault = isDefault;
     if (isClosed !== undefined) status.isClosed = isClosed;
