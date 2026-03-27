@@ -3851,6 +3851,32 @@ export const assignTicket = async (req: Request, res: Response) => {
       }
     })();
 
+    // Notify assigned agent via email (non-blocking)
+    const projectId = (projectInfo as any)?._id?.toString();
+    const ticketSubject = ticket.subject || "";
+    const studentName =
+      ticket.metadata?.studentName ||
+      ticket.metadata?.studentEmail ||
+      "Student";
+
+    (async () => {
+      try {
+        await sendTicketAssignedEmail(
+          agent.email,
+          ticket.ticketNumber,
+          ticketSubject,
+          studentName,
+          ticket.priority || "low",
+          projectId,
+        );
+      } catch (e) {
+        console.error(
+          "[assignTicket] Failed to send email to assigned agent:",
+          e,
+        );
+      }
+    })();
+
     // Populate assignedTo for response
     const updatedTicket = await Ticket.findById(id)
       .populate("assignedTo", "firstName lastName email")
