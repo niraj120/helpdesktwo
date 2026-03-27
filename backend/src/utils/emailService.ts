@@ -1406,20 +1406,6 @@ export const sendTicketAssignedEmail = async (
       .replace(/\{\{priority\}\}/g, priority)
       .replace(/\{\{projectName\}\}/g, projectName);
 
-    if (!transporter) {
-      console.log("✅ Ticket assigned email sent (simulated)");
-      await logEmail({
-        projectId,
-        recipient: agentEmail,
-        subject,
-        body,
-        type: "other",
-        status: "simulated",
-        metadata: { ticketNumber, ticketTitle, studentName, priority },
-      });
-      return true;
-    }
-
     if (!trigger?.enabled) {
       console.log("⚠️  Ticket assigned email trigger is disabled");
       await logEmail({
@@ -1433,6 +1419,20 @@ export const sendTicketAssignedEmail = async (
         metadata: { ticketNumber, ticketTitle, studentName, priority },
       });
       return false;
+    }
+
+    if (!transporter) {
+      console.log("✅ Ticket assigned email sent (simulated)");
+      await logEmail({
+        projectId,
+        recipient: agentEmail,
+        subject,
+        body,
+        type: "other",
+        status: "simulated",
+        metadata: { ticketNumber, ticketTitle, studentName, priority },
+      });
+      return true;
     }
 
     await transporter.sendMail({
