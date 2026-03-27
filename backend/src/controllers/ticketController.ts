@@ -6072,8 +6072,12 @@ export const getAssignableAgents = async (req: Request, res: Response) => {
     // If departmentId is provided, return all active users in that department
     // (bypasses hierarchy / project logic — department is already project-scoped)
     if (departmentId) {
+      // Match users whose departmentRef OR any projectDepartments entry matches
       const agents = await User.find({
-        departmentRef: departmentId,
+        $or: [
+          { departmentRef: departmentId },
+          { "projectDepartments.departmentRef": departmentId },
+        ],
         isActive: true,
       })
         .populate("role", "name isAgent code")
