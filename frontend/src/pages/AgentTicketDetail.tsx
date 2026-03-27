@@ -2912,7 +2912,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                                       <div>
                                         <p className="text-gray-500">From:</p>
                                         <p className="font-medium text-gray-900">
-                                          {change.oldValue || (
+                                          {formatChangeValue(
+                                            change.field,
+                                            change.oldValue,
+                                          ) || (
                                             <span className="text-gray-400 italic">
                                               Empty
                                             </span>
@@ -2922,7 +2925,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                                       <div>
                                         <p className="text-gray-500">To:</p>
                                         <p className="font-medium text-gray-900">
-                                          {change.newValue || (
+                                          {formatChangeValue(
+                                            change.field,
+                                            change.newValue,
+                                          ) || (
                                             <span className="text-gray-400 italic">
                                               Empty
                                             </span>

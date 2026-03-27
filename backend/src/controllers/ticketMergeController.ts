@@ -58,7 +58,14 @@ export const mergeTickets = async (req: Request, res: Response) => {
   try {
     const { id } = req.params; // Primary ticket ID
     const { ticketIds } = req.body as { ticketIds?: string[] };
-    const userId = (req as any).user?.id || (req as any).user?.userId;
+    const userId =
+      (req as any).user?._id ||
+      (req as any).user?.id ||
+      (req as any).user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
 
     // ── Validation ──────────────────────────────────────────────────────────
     if (!ticketIds || !Array.isArray(ticketIds) || ticketIds.length === 0) {
@@ -136,7 +143,7 @@ export const mergeTickets = async (req: Request, res: Response) => {
     // System comment summarising the merge
     primaryTicket.comments.push({
       text: `Merged ${secondaryTickets.length} ticket(s) into this ticket: ${secondaryNumbers.join(", ")}`,
-      createdBy: new mongoose.Types.ObjectId(userId),
+      createdBy: new mongoose.Types.ObjectId(userId.toString()),
       createdAt: now,
       isSystemComment: true,
     } as any);
@@ -191,7 +198,7 @@ export const mergeTickets = async (req: Request, res: Response) => {
       field: "merge",
       oldValue: primaryTicket.ticketNumber,
       newValue: secondaryNumbers.join(", "),
-      changedBy: new mongoose.Types.ObjectId(userId),
+      changedBy: new mongoose.Types.ObjectId(userId.toString()),
       changedAt: now,
       changeType: "update",
     } as any);
@@ -211,7 +218,7 @@ export const mergeTickets = async (req: Request, res: Response) => {
       secondary.comments = secondary.comments ?? [];
       secondary.comments.push({
         text: `This ticket has been merged into ${primaryTicket.ticketNumber}. Please follow up on ${primaryTicket.ticketNumber}.`,
-        createdBy: new mongoose.Types.ObjectId(userId),
+        createdBy: new mongoose.Types.ObjectId(userId.toString()),
         createdAt: now,
         isSystemComment: true,
       } as any);
