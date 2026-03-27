@@ -17,7 +17,7 @@ import { FormFieldSchema } from "../utils/conditionEngine";
 interface TicketStatus {
   _id?: string;
   name: string;
-  code: string;
+  code: number;
   color: string;
   isDefault: boolean;
   isClosed: boolean;
@@ -373,10 +373,15 @@ const TicketSettings: React.FC = () => {
 
   // Status CRUD operations
   const handleAddStatus = () => {
+    // Auto-assign next numeric code
+    const nextCode =
+      statuses.length > 0
+        ? Math.max(...statuses.map((s) => Number(s.code))) + 1
+        : 1;
     setEditingStatus({
       _id: `temp_${Date.now()}`,
       name: "",
-      code: "",
+      code: nextCode,
       color: "#3b82f6",
       isDefault: false,
       isClosed: false,
@@ -394,8 +399,8 @@ const TicketSettings: React.FC = () => {
     if (!editingStatus || !projectId) return;
 
     // Validate required fields
-    if (!editingStatus.name || !editingStatus.code) {
-      alert("Name and code are required");
+    if (!editingStatus.name) {
+      alert("Status name is required");
       return;
     }
 
@@ -420,7 +425,7 @@ const TicketSettings: React.FC = () => {
         },
         body: JSON.stringify({
           name: editingStatus.name,
-          code: editingStatus.code.toUpperCase(),
+          code: editingStatus.code,
           color: editingStatus.color,
           isDefault: editingStatus.isDefault,
           isClosed: editingStatus.isClosed,
@@ -891,7 +896,7 @@ const TicketSettings: React.FC = () => {
                     {!loadingStatuses &&
                       statuses.map((status) => (
                         <div
-                          key={status._id || status.code}
+                          key={status._id || String(status.code)}
                           style={{
                             display: "flex",
                             alignItems: "center",
@@ -950,7 +955,7 @@ const TicketSettings: React.FC = () => {
                           </button>
                           <button
                             onClick={() =>
-                              handleDeleteStatus(status._id || status.code)
+                              handleDeleteStatus(status._id || '')
                             }
                             style={{
                               padding: "8px 12px",
@@ -1021,16 +1026,9 @@ const TicketSettings: React.FC = () => {
                               value={editingStatus.name}
                               onChange={(e) => {
                                 const name = e.target.value;
-                                // Auto-generate code from name
-                                const code = name
-                                  .toUpperCase()
-                                  .replace(/[^A-Z0-9\s]/g, "") // Remove special characters
-                                  .replace(/\s+/g, "_") // Replace spaces with underscores
-                                  .substring(0, 50); // Limit length
                                 setEditingStatus({
                                   ...editingStatus,
                                   name,
-                                  code,
                                 });
                               }}
                               style={{
@@ -1054,11 +1052,11 @@ const TicketSettings: React.FC = () => {
                               <span
                                 style={{ color: "#6b7280", fontSize: "12px" }}
                               >
-                                (Auto-generated)
+                                (Auto-assigned)
                               </span>
                             </label>
                             <input
-                              type="text"
+                              type="number"
                               value={editingStatus.code}
                               readOnly
                               style={{
