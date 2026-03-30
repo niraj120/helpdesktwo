@@ -615,6 +615,95 @@ export class GCSService {
   }
 
   /**
+   * Upload a raw Buffer as a ticket attachment (used by email-to-ticket).
+   * Same GCS / local-fallback behaviour as uploadTicketFile but accepts
+   * a Buffer instead of an Express.Multer.File.
+   */
+  static async uploadTicketAttachmentBuffer(
+    buffer: Buffer,
+    originalName: string,
+    mimetype: string,
+    subfolder: string = "ticket-attachments",
+  ): Promise<{ url: string; path: string; filename: string; size: number }> {
+    const timestamp = Date.now();
+    const random = Math.round(Math.random() * 1e9);
+    const ext = path.extname(originalName) || "";
+    const sanitized = path
+      .basename(originalName, ext)
+      .replace(/[^a-zA-Z0-9._-]/g, "_");
+    const uniqueFilename = `email-${timestamp}-${random}_${sanitized}${ext}`;
+
+    if (bucket) {
+      const gcsPath = `${subfolder}/${uniqueFilename}`;
+      const blob = bucket.file(gcsPath);
+      const blobStream = blob.createWriteStream({
+        resumable: false,
+        metadata: {
+          contentType: mimetype,
+          metadata: {
+            uploadedBy: "SAC-Helpdesk-EmailToTicket",
+            originalName,
+            uploadTimestamp: new Date().toISOString(),
+          },
+        },
+      });
+
+      return new Promise((resolve, reject) => {
+        blobStream.on("error", (err) => {
+          console.error("GCS email attachment upload error:", err);
+          reject(new Error("Failed to upload email attachment to GCS"));
+        });
+
+        blobStream.on("finish", async () => {
+          try {
+            const [signedUrl] = await blob.getSignedUrl({
+              version: "v2",
+              action: "read",
+              expires: new Date("2126-01-01T00:00:00Z"),
+            });
+            console.log(`☁️  GCS: Uploaded email attachment to ${gcsPath}`);
+            resolve({
+              url: signedUrl,
+              path: signedUrl,
+              filename: originalName,
+              size: buffer.length,
+            });
+          } catch (signErr) {
+            const rawPath = `https://storage.googleapis.com/${bucketName}/${gcsPath}`;
+            console.warn(
+              "GCS signing failed for email attachment, storing raw path:",
+              (signErr as Error).message,
+            );
+            resolve({
+              url: rawPath,
+              path: rawPath,
+              filename: originalName,
+              size: buffer.length,
+            });
+          }
+        });
+
+        blobStream.end(buffer);
+      });
+    } else {
+      // Local fallback
+      const localDir = path.join(__dirname, "../../uploads", subfolder);
+      if (!fs.existsSync(localDir)) {
+        fs.mkdirSync(localDir, { recursive: true });
+      }
+      fs.writeFileSync(path.join(localDir, uniqueFilename), buffer);
+      const relativePath = `/uploads/${subfolder}/${uniqueFilename}`;
+      console.log(`📁 Local: Saved email attachment to ${relativePath}`);
+      return {
+        url: relativePath,
+        path: relativePath,
+        filename: originalName,
+        size: buffer.length,
+      };
+    }
+  }
+
+  /**
    * Get file metadata (GCS Required)
    * Supports both old flat structure and new project folder structure
    */
