@@ -344,6 +344,45 @@ class EmailPollingService {
               .filter(Boolean)
           : undefined;
 
+        // Fetch actual attachment content from Graph API when the message has attachments
+        const graphAttachments: any[] = [];
+        if (msg.hasAttachments) {
+          try {
+            const attResponse = await axios.get(
+              `${graphBase}/users/${mailboxUser}/messages/${msg.id}/attachments`,
+              {
+                headers: { Authorization: `Bearer ${accessToken}` },
+                timeout: 30000,
+              },
+            );
+            const rawAtts: any[] = attResponse.data.value || [];
+            for (const att of rawAtts) {
+              // Skip inline images (embedded in HTML body via cid:)
+              if (att.contentId && att.isInline) continue;
+              // Only handle file attachments (not item/reference attachments)
+              if (att["@odata.type"] !== "#microsoft.graph.fileAttachment") continue;
+              const contentBuffer = att.contentBytes
+                ? Buffer.from(att.contentBytes, "base64")
+                : Buffer.alloc(0);
+              graphAttachments.push({
+                filename: att.name || "attachment",
+                contentType: att.contentType || "application/octet-stream",
+                size: att.size || contentBuffer.length,
+                content: contentBuffer,
+                contentId: att.contentId || undefined,
+                contentDisposition: att.isInline ? "inline" : "attachment",
+              });
+            }
+            console.log(
+              `   📎 Fetched ${graphAttachments.length} attachment(s) for message ${msg.id}`,
+            );
+          } catch (attErr: any) {
+            console.error(
+              `   ⚠️  Failed to fetch attachments for message ${msg.id}: ${attErr.message}`,
+            );
+          }
+        }
+
         const emailData: EmailData = {
           messageId: msg.internetMessageId || msg.id,
           from: {
@@ -362,7 +401,7 @@ class EmailPollingService {
           inReplyTo,
           references,
           conversationId: msg.conversationId || undefined,
-          attachments: [],
+          attachments: graphAttachments,
           receivedDate: new Date(msg.receivedDateTime),
           uid: 0,
           date: new Date(msg.receivedDateTime),
