@@ -3868,6 +3868,7 @@ export const assignTicket = async (req: Request, res: Response) => {
           studentName,
           ticket.priority || "low",
           projectId,
+          { agentName: `${agent.firstName} ${agent.lastName}`.trim() },
         );
       } catch (e) {
         console.error(
@@ -3979,6 +3980,9 @@ export const reassignTicket = async (req: Request, res: Response) => {
 
     (async () => {
       try {
+        const assignedByName = callerUser
+          ? `${callerUser.firstName} ${callerUser.lastName}`.trim()
+          : "Not applicable";
         await sendTicketAssignedEmail(
           newAgent.email,
           ticket.ticketNumber,
@@ -3986,6 +3990,10 @@ export const reassignTicket = async (req: Request, res: Response) => {
           studentName,
           ticket.priority || "low",
           projectId,
+          {
+            agentName: `${newAgent.firstName} ${newAgent.lastName}`.trim(),
+            assignedBy: assignedByName,
+          },
         );
       } catch (e) {
         console.error("[reassignTicket] Failed to send email to new agent:", e);

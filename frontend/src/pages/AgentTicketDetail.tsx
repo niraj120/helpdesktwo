@@ -1074,12 +1074,8 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
         { headers: { Authorization: `Bearer ${token}` } },
       );
       if (res.data.success) {
-        setTicket(res.data.data);
         setShowReassignModal(false);
-        setSuccessModal({
-          open: true,
-          message: "Ticket reassigned successfully.",
-        });
+        navigate(`/${customUrlPath}/portal/tickets`);
       }
     } catch (err: any) {
       alert(err?.response?.data?.message || "Failed to reassign ticket");
@@ -1988,9 +1984,24 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                                 </span>
                               )}
                             </p>
-                            <p className="text-sm text-gray-800 whitespace-pre-wrap line-clamp-3">
-                              {latestReply.message}
-                            </p>
+                            <div className="text-sm text-gray-800 line-clamp-3">
+                              {/<[a-z][\s\S]*>/i.test(
+                                latestReply.message || "",
+                              ) ? (
+                                <div
+                                  className="prose prose-sm max-w-none"
+                                  dangerouslySetInnerHTML={{
+                                    __html: DOMPurify.sanitize(
+                                      latestReply.message || "",
+                                    ),
+                                  }}
+                                />
+                              ) : (
+                                <p className="whitespace-pre-wrap">
+                                  {latestReply.message}
+                                </p>
+                              )}
+                            </div>
                             {latestReply.attachments &&
                               latestReply.attachments.length > 0 && (
                                 <div className="mt-2 flex items-center space-x-1 text-xs text-blue-600">
@@ -2397,8 +2408,20 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                                         To: {recipientEmail}
                                       </p>
                                     )}
-                                    <div className="text-sm text-gray-700 whitespace-pre-wrap break-words">
-                                      {displayText}
+                                    <div className="text-sm text-gray-700 break-words">
+                                      {/<[a-z][\s\S]*>/i.test(displayText) ? (
+                                        <div
+                                          className="prose prose-sm max-w-none"
+                                          dangerouslySetInnerHTML={{
+                                            __html:
+                                              DOMPurify.sanitize(displayText),
+                                          }}
+                                        />
+                                      ) : (
+                                        <p className="whitespace-pre-wrap">
+                                          {displayText}
+                                        </p>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
@@ -2454,9 +2477,24 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                                         </p>
                                       </div>
                                     </div>
-                                    <p className="text-gray-700 whitespace-pre-wrap text-sm">
-                                      {displayMessage}
-                                    </p>
+                                    <div className="text-sm text-gray-700">
+                                      {/<[a-z][\s\S]*>/i.test(
+                                        displayMessage || "",
+                                      ) ? (
+                                        <div
+                                          className="prose prose-sm max-w-none"
+                                          dangerouslySetInnerHTML={{
+                                            __html: DOMPurify.sanitize(
+                                              displayMessage || "",
+                                            ),
+                                          }}
+                                        />
+                                      ) : (
+                                        <p className="whitespace-pre-wrap">
+                                          {displayMessage}
+                                        </p>
+                                      )}
+                                    </div>
                                     {thread.attachments &&
                                       thread.attachments.length > 0 && (
                                         <div className="mt-3 space-y-2">
