@@ -23,6 +23,7 @@ import {
   sendTicketCreatedEmail,
   sendStudentWelcomeEmail,
   sendTicketAssignedEmail,
+  sendTicketCommentAddedEmail,
 } from "../utils/emailService";
 import { logActivity } from "../utils/logger";
 import { config } from "../config";
@@ -2671,6 +2672,55 @@ export const replyToTicket = async (req: Request, res: Response) => {
     console.log(
       `✅ Reply added to ticket: ${updatedTicket._id} by user: ${user.email}`,
     );
+
+    // Send "Comment Added" trigger email (non-blocking)
+    (async () => {
+      try {
+        const projectId = ticket.project ? ticket.project.toString() : undefined;
+        const replyerName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email;
+
+        if (!isStudentReply) {
+          // Agent replied → notify the student
+          const studentEmail = (ticket as any).metadata?.studentEmail;
+          if (studentEmail) {
+            await sendTicketCommentAddedEmail(
+              studentEmail,
+              ticket.ticketNumber,
+              ticket.subject,
+              message,
+              projectId,
+              {
+                studentName: (ticket as any).metadata?.studentName || "Student",
+                recipientName: (ticket as any).metadata?.studentName || "Student",
+                commentBy: replyerName,
+              },
+            );
+          }
+        } else {
+          // Student replied → notify the assigned agent
+          const assignedAgent = (ticket as any).assignedTo;
+          if (assignedAgent?.email) {
+            const agentName =
+              `${assignedAgent.firstName || ""} ${assignedAgent.lastName || ""}`.trim() ||
+              assignedAgent.email;
+            await sendTicketCommentAddedEmail(
+              assignedAgent.email,
+              ticket.ticketNumber,
+              ticket.subject,
+              message,
+              projectId,
+              {
+                recipientName: agentName,
+                studentName: agentName,
+                commentBy: `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email,
+              },
+            );
+          }
+        }
+      } catch (emailErr) {
+        console.error("Failed to send comment added email:", emailErr);
+      }
+    })();
 
     return res.status(200).json({
       success: true,

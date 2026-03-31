@@ -705,6 +705,10 @@ export const sendTicketCreatedEmail = async (
     ticketId?: string | mongoose.Types.ObjectId;
     originalMessageId?: string; // For threading - In-Reply-To header
     references?: string[]; // For threading - References header
+    agentEmail?: string;
+    agentName?: string;
+    ticketUrl?: string;
+    createdAt?: string;
   },
 ): Promise<boolean> => {
   try {
@@ -722,6 +726,9 @@ export const sendTicketCreatedEmail = async (
     const studentName = additionalData?.studentName || "Student";
     const status = additionalData?.status || "Open";
     const priority = additionalData?.priority || "Medium";
+    const agentName = additionalData?.agentName || "Support Team";
+    const ticketUrl = additionalData?.ticketUrl || "";
+    const createdAt = additionalData?.createdAt || new Date().toLocaleString();
 
     // Default templates
     const defaultSubject = `Ticket Created: {{ticketTitle}} [#{{ticketNumber}}]`;
@@ -744,24 +751,28 @@ export const sendTicketCreatedEmail = async (
       </div>
     `;
 
-    // Get the ticket created trigger settings
+    // Get the ticket created trigger settings (student notification)
     const trigger =
       emailConfig?.triggers?.ticketCreatedStudent ||
       emailConfig?.triggers?.ticketCreatedOnline;
 
-    // Use template from config or default, then replace variables
-    let subject = (trigger?.subject || defaultSubject)
-      .replace(/\{\{ticketNumber\}\}/g, ticketNumber)
-      .replace(/\{\{ticketTitle\}\}/g, ticketTitle)
-      .replace(/\{\{ticketSubject\}\}/g, ticketTitle);
+    // Helper to apply standard variable replacements
+    const applyReplacements = (text: string) =>
+      text
+        .replace(/\{\{ticketNumber\}\}/g, ticketNumber)
+        .replace(/\{\{ticketTitle\}\}/g, ticketTitle)
+        .replace(/\{\{ticketSubject\}\}/g, ticketTitle)
+        .replace(/\{\{studentName\}\}/g, studentName)
+        .replace(/\{\{agentName\}\}/g, agentName)
+        .replace(/\{\{ticketStatus\}\}/g, status)
+        .replace(/\{\{ticketPriority\}\}/g, priority)
+        .replace(/\{\{ticketUrl\}\}/g, ticketUrl)
+        .replace(/\{\{createdAt\}\}/g, createdAt)
+        .replace(/\{\{[^}]+\}\}/g, "");
 
-    let body = (trigger?.body || defaultBody)
-      .replace(/\{\{ticketNumber\}\}/g, ticketNumber)
-      .replace(/\{\{ticketTitle\}\}/g, ticketTitle)
-      .replace(/\{\{ticketSubject\}\}/g, ticketTitle)
-      .replace(/\{\{studentName\}\}/g, studentName)
-      .replace(/\{\{ticketStatus\}\}/g, status)
-      .replace(/\{\{ticketPriority\}\}/g, priority);
+    // Use template from config or default, then replace variables
+    let subject = applyReplacements(trigger?.subject || defaultSubject);
+    let body = applyReplacements(trigger?.body || defaultBody);
 
     // Convert plain text newlines to HTML if body doesn't contain HTML tags
     if (!body.includes("<") && !body.includes(">")) {
@@ -919,6 +930,50 @@ export const sendTicketCreatedEmail = async (
       } catch (logError) {
         console.error("   ⚠️ Failed to log outgoing email:", logError);
         // Don't fail the email send if logging fails
+      }
+    }
+
+    // Also send agent notification if agentEmail provided and ticketCreatedAgent trigger enabled
+    if (additionalData?.agentEmail) {
+      const agentTrigger = emailConfig?.triggers?.ticketCreatedAgent;
+      if (agentTrigger?.enabled) {
+        try {
+          const agentDefaultSubject = `New Ticket: {{ticketNumber}}`;
+          const agentDefaultBody = `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2 style="color: #2c3e50;">New Ticket Assigned to You</h2>
+              <p>Hello {{agentName}},</p>
+              <p>A new ticket has been created and assigned to you.</p>
+              <div style="background-color: #f4f4f4; padding: 20px; margin: 20px 0; border-radius: 5px;">
+                <p style="margin: 8px 0;"><strong>Ticket Number:</strong> {{ticketNumber}}</p>
+                <p style="margin: 8px 0;"><strong>Student:</strong> {{studentName}}</p>
+                <p style="margin: 8px 0;"><strong>Subject:</strong> {{ticketSubject}}</p>
+                <p style="margin: 8px 0;"><strong>Priority:</strong> {{ticketPriority}}</p>
+                <p style="margin: 8px 0;"><strong>Created:</strong> {{createdAt}}</p>
+              </div>
+              <p>Please review and respond promptly.</p>
+            </div>
+          `;
+          const agentSubject = applyReplacements(agentTrigger.subject || agentDefaultSubject);
+          let agentBody = applyReplacements(agentTrigger.body || agentDefaultBody);
+          if (!agentBody.includes("<") && !agentBody.includes(">")) {
+            agentBody = agentBody
+              .split("\n")
+              .map((l) => l.trim())
+              .filter((l) => l.length > 0)
+              .map((l) => `<p>${l}</p>`)
+              .join("");
+          }
+          await transporter.sendMail({
+            from: `"${emailConfig?.fromName || "SAC Helpdesk"}" <${fromEmail}>`,
+            to: additionalData.agentEmail,
+            subject: agentSubject,
+            html: agentBody,
+          });
+          console.log(`✅ Agent notification (ticketCreatedAgent) sent to ${additionalData.agentEmail}`);
+        } catch (agentEmailErr) {
+          console.error("⚠️ Failed to send ticketCreatedAgent notification:", agentEmailErr);
+        }
       }
     }
 
@@ -1691,7 +1746,12 @@ export const sendTicketCommentAddedEmail = async (
   ticketTitle: string,
   commentText: string,
   projectId?: string,
-  additionalData?: { studentName?: string },
+  additionalData?: {
+    studentName?: string;
+    recipientName?: string;
+    commentBy?: string;
+    ticketUrl?: string;
+  },
 ): Promise<boolean> => {
   try {
     const emailConfig = await EmailConfig.findOne(
@@ -1699,17 +1759,21 @@ export const sendTicketCommentAddedEmail = async (
     );
     const transporter = await getEmailTransporter(projectId);
     const studentName = additionalData?.studentName || "Student";
+    const recipientName = additionalData?.recipientName || studentName;
+    const commentBy = additionalData?.commentBy || "Support Team";
+    const ticketUrl = additionalData?.ticketUrl || "";
     const projectName = emailConfig?.fromName || "SAC Helpdesk";
 
     const defaultSubject = `New Comment on Ticket {{ticketNumber}}`;
     const defaultBody = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2>New Comment on Your Ticket</h2>
-        <p>Hello {{studentName}},</p>
+        <p>Hello {{recipientName}},</p>
         <p>A new comment has been added to your ticket.</p>
         <div style="background-color: #e3f2fd; padding: 20px; margin: 20px 0; border-left: 4px solid #2196f3;">
           <p><strong>Ticket Number:</strong> {{ticketNumber}}</p>
           <p><strong>Subject:</strong> {{ticketTitle}}</p>
+          <p><strong>Comment By:</strong> {{commentBy}}</p>
           <p><strong>Comment:</strong></p>
           <p style="background: #fff; padding: 10px; border-radius: 4px;">{{commentText}}</p>
         </div>
@@ -1717,16 +1781,31 @@ export const sendTicketCommentAddedEmail = async (
     `;
 
     const trigger = emailConfig?.triggers?.ticketCommentAdded;
-    let subject = (trigger?.subject || defaultSubject).replace(
-      /\{\{ticketNumber\}\}/g,
-      ticketNumber,
-    );
+    let subject = (trigger?.subject || defaultSubject)
+      .replace(/\{\{ticketNumber\}\}/g, ticketNumber)
+      .replace(/\{\{ticketTitle\}\}/g, ticketTitle)
+      .replace(/\{\{ticketSubject\}\}/g, ticketTitle);
     let body = (trigger?.body || defaultBody)
       .replace(/\{\{ticketNumber\}\}/g, ticketNumber)
       .replace(/\{\{ticketTitle\}\}/g, ticketTitle)
+      .replace(/\{\{ticketSubject\}\}/g, ticketTitle)
+      .replace(/\{\{recipientName\}\}/g, recipientName)
       .replace(/\{\{studentName\}\}/g, studentName)
+      .replace(/\{\{commentBy\}\}/g, commentBy)
       .replace(/\{\{commentText\}\}/g, commentText)
-      .replace(/\{\{projectName\}\}/g, projectName);
+      .replace(/\{\{ticketUrl\}\}/g, ticketUrl)
+      .replace(/\{\{projectName\}\}/g, projectName)
+      .replace(/\{\{[^}]+\}\}/g, "");
+
+    // Convert plain text newlines to HTML if body doesn't contain HTML tags
+    if (!body.includes("<") && !body.includes(">")) {
+      body = body
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .map((line) => `<p>${line}</p>`)
+        .join("");
+    }
 
     if (!transporter) {
       await logEmail({
