@@ -167,6 +167,7 @@ export const getAllUsers = async (
         .populate("centers", "centerName") // Only name for list view
         .populate("reportingManager", "firstName lastName") // Reduced fields
         .populate("departmentRef", "name")
+        .populate({ path: "projectDepartments.departmentRef", select: "name" })
         .sort(sortObj)
         .skip(skip)
         .limit(effectiveLimit)
@@ -210,6 +211,7 @@ export const getUserById = async (
       .populate("projects", "name code")
       .populate("reportingManager", "firstName lastName email employeeCode")
       .populate("departmentRef", "name")
+      .populate({ path: "projectDepartments.departmentRef", select: "name" })
       .lean();
 
     if (!user) {
@@ -338,6 +340,14 @@ export const createUser = async (
       userData.departmentRef = req.body.departmentRef;
     }
 
+    // Store per-project department mappings
+    if (
+      req.body.projectDepartments &&
+      Array.isArray(req.body.projectDepartments)
+    ) {
+      userData.projectDepartments = req.body.projectDepartments;
+    }
+
     // Sync from HRMS if requested
     if (syncFromHRMS && employeeCode) {
       try {
@@ -427,6 +437,10 @@ export const createUser = async (
     await user.populate("role", "name code");
     await user.populate("projects", "name code");
     await user.populate("departmentRef", "name");
+    await user.populate({
+      path: "projectDepartments.departmentRef",
+      select: "name",
+    });
 
     const userResponse: any = user.toObject();
     delete userResponse.password;
@@ -623,6 +637,8 @@ export const updateUser = async (
     if (department !== undefined) user.department = department;
     if (req.body.departmentRef !== undefined)
       (user as any).departmentRef = req.body.departmentRef || null;
+    if (req.body.projectDepartments !== undefined)
+      (user as any).projectDepartments = req.body.projectDepartments || [];
     if (designation !== undefined) user.designation = designation;
     if (joiningDate !== undefined) user.joiningDate = new Date(joiningDate);
     if (reportingManager !== undefined)
@@ -696,6 +712,11 @@ export const updateUser = async (
       "reportingManager",
       "firstName lastName email employeeCode",
     );
+    await user.populate("departmentRef", "name");
+    await user.populate({
+      path: "projectDepartments.departmentRef",
+      select: "name",
+    });
 
     const userResponse: any = user.toObject();
     delete userResponse.password;

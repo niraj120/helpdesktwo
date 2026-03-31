@@ -13,6 +13,7 @@ import {
 import { logIncomingEmail } from "./emailCommunicationLogger";
 import { initializeSLATracking } from "../services/slaHelperService";
 import { autoAssignMatrixToTicket } from "../services/escalationMatrixService";
+import { GCSService } from "../services/gcsService";
 import mongoose from "mongoose";
 
 /**
@@ -459,14 +460,27 @@ export async function createTicketFromEmail(
     const ticketNumber = await generateTicketNumber(projectId);
     console.log(`      ✓ Ticket Number: ${ticketNumber}`);
 
-    // 5. Extract description (prefer plain text, fallback to HTML stripped of tags)
-    let description = parsedEmail.body || "";
-    if (!description && parsedEmail.htmlBody) {
-      // Strip HTML tags to get clean plain text
-      description = htmlToPlainText(parsedEmail.htmlBody);
+    // 5. Extract description - prefer HTML body to preserve email formatting.
+    // The frontend detects HTML tags and renders with DOMPurify, so storing HTML
+    // gives users the same formatted view they see in their mail client.
+    let description = "";
+    if (parsedEmail.htmlBody) {
+      // Strip Outlook mobile body separator and any trailing injected sections,
+      // then strip <style>/<script> blocks — but keep all other HTML for formatting.
+      let html = parsedEmail.htmlBody;
+      html = html.replace(
+        /<div[^>]+id="ms-outlook-mobile-body-separator-line"[\s\S]*/gi,
+        "",
+      );
+      html = html
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
+      description = html.trim();
+    } else if (parsedEmail.body) {
+      // Plain-text email — keep as-is after boilerplate stripping.
+      description = stripEmailBoilerplate(parsedEmail.body);
     }
-    // Last-resort fallback: use the Graph API plain-text body preview when HTML stripping
-    // removes everything (e.g. very short email bodies lost to boilerplate removal).
+    // Last-resort fallback: Graph API body preview (short plain-text snippet).
     if (!description.trim() && parsedEmail.bodyPreview) {
       description = parsedEmail.bodyPreview.trim();
     }
@@ -479,21 +493,43 @@ export async function createTicketFromEmail(
         "\n\n[Email content truncated...]";
     }
 
-    // 6. Prepare attachments (if any)
-    // NOTE: Actual file upload to storage (GCS/S3) should be handled here
-    // For now, we'll store attachment metadata only
-    const attachments = parsedEmail.attachments.map((att) => ({
-      filename: att.filename,
-      originalName: att.filename,
-      mimetype: att.contentType,
-      size: att.size,
-      uploadedAt: new Date(),
-      // TODO: Upload att.content to storage and store path
-      // For now, attachments are just metadata
-    }));
-
-    if (attachments.length > 0) {
-      console.log(`      ℹ️ Email has ${attachments.length} attachment(s)`);
+    // 6. Upload attachments to GCS / local storage
+    const attachments: any[] = [];
+    if (parsedEmail.attachments.length > 0) {
+      console.log(
+        `      ℹ️ Email has ${parsedEmail.attachments.length} attachment(s) — uploading...`,
+      );
+      for (const att of parsedEmail.attachments) {
+        try {
+          if (!att.content || att.content.length === 0) {
+            console.warn(
+              `      ⚠️  Skipping empty attachment: ${att.filename}`,
+            );
+            continue;
+          }
+          const uploaded = await GCSService.uploadTicketAttachmentBuffer(
+            att.content,
+            att.filename || "attachment",
+            att.contentType || "application/octet-stream",
+            "ticket-attachments",
+          );
+          attachments.push({
+            filename: uploaded.filename,
+            originalName: att.filename || "attachment",
+            mimetype: att.contentType || "application/octet-stream",
+            size: uploaded.size,
+            path: uploaded.path,
+            uploadedAt: new Date(),
+          });
+          console.log(`      ✓ Uploaded: ${att.filename} → ${uploaded.path}`);
+        } catch (uploadErr) {
+          console.error(
+            `      ❌ Failed to upload attachment "${att.filename}":`,
+            uploadErr,
+          );
+          // Continue with next attachment; don't abort ticket creation
+        }
+      }
     }
 
     // 7. Get category - use project's default category for email tickets
@@ -692,6 +728,15 @@ export async function addEmailReplyToTicket(
 
     ticket.comments = ticket.comments || [];
     ticket.comments.push(comment);
+
+    // Also push to threads so it appears in the Replies tab
+    ticket.threads = ticket.threads || [];
+    ticket.threads.push({
+      message: commentText,
+      createdBy: userId,
+      createdAt: new Date(),
+      isSystemMessage: false,
+    });
 
     console.log(
       `      ✓ Comment added to ticket (${commentText.length} chars)`,

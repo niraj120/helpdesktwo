@@ -3912,10 +3912,10 @@ export const reassignTicket = async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
-    if (!newAgentId || !reason?.trim()) {
+    if (!newAgentId) {
       return res.status(400).json({
         success: false,
-        message: "newAgentId and reason are required",
+        message: "newAgentId is required",
       });
     }
 
@@ -3962,7 +3962,7 @@ export const reassignTicket = async (req: Request, res: Response) => {
       changedBy: new mongoose.Types.ObjectId(callerId),
       changedAt: new Date(),
       changeType: "reassigned",
-      reassignmentReason: reason.trim(),
+      reassignmentReason: reason?.trim() ?? "",
     });
 
     await ticket.save();
@@ -6072,8 +6072,12 @@ export const getAssignableAgents = async (req: Request, res: Response) => {
     // If departmentId is provided, return all active users in that department
     // (bypasses hierarchy / project logic — department is already project-scoped)
     if (departmentId) {
+      // Match users whose departmentRef OR any projectDepartments entry matches
       const agents = await User.find({
-        departmentRef: departmentId,
+        $or: [
+          { departmentRef: departmentId },
+          { "projectDepartments.departmentRef": departmentId },
+        ],
         isActive: true,
       })
         .populate("role", "name isAgent code")

@@ -25,7 +25,11 @@ export interface IUser extends Document {
   hrmsId?: number; // PeopleStrong employee ID
   employeeCode?: string; // Unique employee code from HRMS
   department?: string; // Legacy free-text (HRMS sync) or display name
-  departmentRef?: mongoose.Types.ObjectId; // Reference to structured Department master
+  departmentRef?: mongoose.Types.ObjectId; // Reference to structured Department master (primary project)
+  projectDepartments?: Array<{
+    projectId: mongoose.Types.ObjectId;
+    departmentRef: mongoose.Types.ObjectId;
+  }>; // Per-project department mappings for multi-project users
   designation?: string;
   joiningDate?: Date;
   reportingManager?: mongoose.Types.ObjectId; // Reference to another User
@@ -168,6 +172,20 @@ const userSchema = new Schema<IUser>(
       ref: "Department",
       default: null,
     },
+    projectDepartments: [
+      {
+        projectId: {
+          type: Schema.Types.ObjectId,
+          ref: "Project",
+          required: true,
+        },
+        departmentRef: {
+          type: Schema.Types.ObjectId,
+          ref: "Department",
+          required: true,
+        },
+      },
+    ],
     designation: {
       type: String,
       trim: true,
