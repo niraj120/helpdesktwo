@@ -773,7 +773,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
     } else if (primaryProjectId) {
       const legacyDeptId =
         (user.departmentRef as any)?._id || (user as any).departmentRef;
-      if (legacyDeptId && typeof legacyDeptId === "string" && legacyDeptId.length === 24) {
+      if (
+        legacyDeptId &&
+        typeof legacyDeptId === "string" &&
+        legacyDeptId.length === 24
+      ) {
         projectDeptMap[primaryProjectId] = legacyDeptId;
       }
     }
@@ -3673,7 +3677,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     )}
                   </label>
                   {formData.projects.length === 0 ? (
-                    <p style={{ fontSize: "12px", color: "#9ca3af", margin: 0 }}>
+                    <p
+                      style={{ fontSize: "12px", color: "#9ca3af", margin: 0 }}
+                    >
                       {getText(
                         "Select projects above to map departments",
                         "विभाग मॅप करण्यासाठी वर प्रकल्प निवडा",
@@ -3681,14 +3687,26 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       )}
                     </p>
                   ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "8px",
+                      }}
+                    >
                       {formData.projects.map((projectId) => {
-                        const project = projects.find((p) => p._id === projectId);
+                        const project = projects.find(
+                          (p) => p._id === projectId,
+                        );
                         const depts = departmentsByProject[projectId] || [];
                         return (
                           <div
                             key={projectId}
-                            style={{ display: "flex", alignItems: "center", gap: "12px" }}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "12px",
+                            }}
                           >
                             <span
                               style={{
@@ -3715,7 +3733,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               )}
                             </span>
                             <select
-                              value={formData.projectDepartments[projectId] || ""}
+                              value={
+                                formData.projectDepartments[projectId] || ""
+                              }
                               onChange={(e) =>
                                 setFormData((prev) => ({
                                   ...prev,

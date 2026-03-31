@@ -1309,7 +1309,8 @@ const ProjectPortalDashboard = () => {
         "projectContext",
         JSON.stringify({
           projectId: projectBranding.projectId,
-          projectName: projectBranding.name || (projectBranding as any).projectName,
+          projectName:
+            projectBranding.name || (projectBranding as any).projectName,
           customUrlPath: customUrlPath,
         }),
       );

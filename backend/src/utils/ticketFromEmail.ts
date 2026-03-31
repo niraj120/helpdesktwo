@@ -496,11 +496,15 @@ export async function createTicketFromEmail(
     // 6. Upload attachments to GCS / local storage
     const attachments: any[] = [];
     if (parsedEmail.attachments.length > 0) {
-      console.log(`      ℹ️ Email has ${parsedEmail.attachments.length} attachment(s) — uploading...`);
+      console.log(
+        `      ℹ️ Email has ${parsedEmail.attachments.length} attachment(s) — uploading...`,
+      );
       for (const att of parsedEmail.attachments) {
         try {
           if (!att.content || att.content.length === 0) {
-            console.warn(`      ⚠️  Skipping empty attachment: ${att.filename}`);
+            console.warn(
+              `      ⚠️  Skipping empty attachment: ${att.filename}`,
+            );
             continue;
           }
           const uploaded = await GCSService.uploadTicketAttachmentBuffer(
@@ -519,7 +523,10 @@ export async function createTicketFromEmail(
           });
           console.log(`      ✓ Uploaded: ${att.filename} → ${uploaded.path}`);
         } catch (uploadErr) {
-          console.error(`      ❌ Failed to upload attachment "${att.filename}":`, uploadErr);
+          console.error(
+            `      ❌ Failed to upload attachment "${att.filename}":`,
+            uploadErr,
+          );
           // Continue with next attachment; don't abort ticket creation
         }
       }

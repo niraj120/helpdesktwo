@@ -341,7 +341,10 @@ export const createUser = async (
     }
 
     // Store per-project department mappings
-    if (req.body.projectDepartments && Array.isArray(req.body.projectDepartments)) {
+    if (
+      req.body.projectDepartments &&
+      Array.isArray(req.body.projectDepartments)
+    ) {
       userData.projectDepartments = req.body.projectDepartments;
     }
 
@@ -434,7 +437,10 @@ export const createUser = async (
     await user.populate("role", "name code");
     await user.populate("projects", "name code");
     await user.populate("departmentRef", "name");
-    await user.populate({ path: "projectDepartments.departmentRef", select: "name" });
+    await user.populate({
+      path: "projectDepartments.departmentRef",
+      select: "name",
+    });
 
     const userResponse: any = user.toObject();
     delete userResponse.password;
@@ -707,7 +713,10 @@ export const updateUser = async (
       "firstName lastName email employeeCode",
     );
     await user.populate("departmentRef", "name");
-    await user.populate({ path: "projectDepartments.departmentRef", select: "name" });
+    await user.populate({
+      path: "projectDepartments.departmentRef",
+      select: "name",
+    });
 
     const userResponse: any = user.toObject();
     delete userResponse.password;

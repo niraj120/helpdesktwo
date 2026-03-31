@@ -954,9 +954,7 @@ const TicketSettings: React.FC = () => {
                             <MdEdit /> Edit
                           </button>
                           <button
-                            onClick={() =>
-                              handleDeleteStatus(status._id || '')
-                            }
+                            onClick={() => handleDeleteStatus(status._id || "")}
                             style={{
                               padding: "8px 12px",
                               background: "transparent",

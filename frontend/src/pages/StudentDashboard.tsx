@@ -1429,7 +1429,10 @@ const StudentDashboard: React.FC = () => {
                       </div>
 
                       <p className="text-gray-600 text-sm mb-4 line-clamp-2">
-                        {ticket.description.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()}
+                        {ticket.description
+                          .replace(/<[^>]+>/g, " ")
+                          .replace(/\s+/g, " ")
+                          .trim()}
                       </p>
 
                       <div className="flex items-center justify-between text-sm text-gray-500">
@@ -2399,14 +2402,20 @@ const StudentDashboard: React.FC = () => {
                         </div>
 
                         <div className="prose max-w-none text-gray-700 text-sm">
-                          {/<[a-z][\s\S]*>/i.test(selectedTicket.description || "") ? (
+                          {/<[a-z][\s\S]*>/i.test(
+                            selectedTicket.description || "",
+                          ) ? (
                             <div
                               dangerouslySetInnerHTML={{
-                                __html: DOMPurify.sanitize(selectedTicket.description || ""),
+                                __html: DOMPurify.sanitize(
+                                  selectedTicket.description || "",
+                                ),
                               }}
                             />
                           ) : (
-                            <p className="whitespace-pre-wrap">{selectedTicket.description}</p>
+                            <p className="whitespace-pre-wrap">
+                              {selectedTicket.description}
+                            </p>
                           )}
                         </div>
 
