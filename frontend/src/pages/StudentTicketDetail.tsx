@@ -80,7 +80,8 @@ const openAttachment = async (pathOrUrl: string | undefined) => {
     return;
   }
   // Otherwise it's a relative backend path — open the tab first, then fetch a signed URL.
-  const newTab = window.open("", "_blank", "noopener,noreferrer");
+  // NOTE: do NOT pass noopener here or window.open returns null in modern browsers.
+  const newTab = window.open("", "_blank");
   const token = localStorage.getItem("authToken");
   try {
     const res = await axios.get(

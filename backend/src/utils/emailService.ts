@@ -1421,6 +1421,12 @@ export const sendTicketAssignedEmail = async (
       // Catch-all: replace any remaining {{variable}} with "Not applicable"
       .replace(/\{\{[^}]+\}\}/g, "Not applicable");
 
+    // If the body is plain text (no HTML tags), convert newlines to <br> so
+    // line breaks entered in the admin textarea are preserved in the email.
+    if (!/<[a-z][\s\S]*>/i.test(body)) {
+      body = `<div style="font-family:Arial,sans-serif;">${body.replace(/\n/g, "<br>")}</div>`;
+    }
+
     if (!trigger?.enabled) {
       console.log("⚠️  Ticket assigned email trigger is disabled");
       await logEmail({
