@@ -8,6 +8,7 @@ import { ParsedEmailData } from "./emailParser";
 import { autoAssignTicket } from "./ticketAutoAssignment";
 import {
   sendTicketCreatedEmail,
+  sendTicketAssignedEmail,
   sendAgentNewReplyNotification,
 } from "./emailService";
 import { logIncomingEmail } from "./emailCommunicationLogger";
@@ -475,6 +476,13 @@ export async function createTicketFromEmail(
       html = html
         .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
         .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
+      // Strip massively bloated Outlook/Gmail safe-sender injected style attributes
+      // (containing revert!important) that add thousands of characters of noise.
+      // Real inline styles used by the email author are preserved.
+      html = html.replace(
+        / style="[^"]*revert!important[^"]*"/gi,
+        "",
+      );
       description = html.trim();
     } else if (parsedEmail.body) {
       // Plain-text email — keep as-is after boilerplate stripping.
@@ -485,8 +493,9 @@ export async function createTicketFromEmail(
       description = parsedEmail.bodyPreview.trim();
     }
 
-    // Truncate very long descriptions
-    const MAX_DESCRIPTION_LENGTH = 10000;
+    // Truncate only at a generous limit — 100 KB — to avoid cutting HTML mid-tag.
+    // Outlook/Gmail inline-style bloat is stripped above so real content fits easily.
+    const MAX_DESCRIPTION_LENGTH = 100000;
     if (description.length > MAX_DESCRIPTION_LENGTH) {
       description =
         description.substring(0, MAX_DESCRIPTION_LENGTH) +
@@ -626,8 +635,8 @@ export async function createTicketFromEmail(
       );
     }
 
-    // 8. Log email communication (Task 5.4)
-    const emailComm = await logIncomingEmail(ticket._id, parsedEmail);
+    // 8. Log email communication (Task 5.4) — pass uploaded attachment paths
+    const emailComm = await logIncomingEmail(ticket._id, parsedEmail, attachments);
     console.log(`   ✅ Email communication logged (ID: ${emailComm._id})`);
 
     // 9. Add system comment to ticket
@@ -642,11 +651,26 @@ export async function createTicketFromEmail(
     ticket.comments.push(systemComment as any);
     await ticket.save();
 
-    // 10. Send confirmation email to user (Task 5.5)
+    // 10. Send confirmation email to submitter + agent notifications (Task 5.5)
     try {
       console.log(
         `   📧 Sending confirmation email to: ${parsedEmail.from.address}`,
       );
+
+      // Resolve assigned agent details for notification emails
+      let agentEmail: string | undefined;
+      let agentName: string | undefined;
+      if (assignedAgent) {
+        try {
+          const agentUser = await User.findById(assignedAgent).select("email firstName lastName");
+          if (agentUser) {
+            agentEmail = agentUser.email;
+            agentName = `${agentUser.firstName || ""} ${agentUser.lastName || ""}`.trim() || agentUser.email;
+          }
+        } catch (userErr) {
+          console.error("   ⚠️ Could not fetch assigned agent for email:", userErr);
+        }
+      }
 
       const emailSent = await sendTicketCreatedEmail(
         parsedEmail.from.address,
@@ -660,6 +684,8 @@ export async function createTicketFromEmail(
           ticketId: ticket._id, // For logging to TicketEmailCommunication
           originalMessageId: parsedEmail.messageId, // Thread to original email
           references: parsedEmail.references || [parsedEmail.messageId], // Thread references
+          agentEmail, // Triggers ticketCreatedAgent notification if enabled
+          agentName,
         },
       );
 
@@ -667,6 +693,25 @@ export async function createTicketFromEmail(
         console.log(`   ✅ Confirmation email sent successfully`);
       } else {
         console.log(`   ⚠️ Confirmation email not sent (disabled or failed)`);
+      }
+
+      // Send ticketAssigned trigger to agent if one was auto-assigned
+      if (agentEmail && agentName) {
+        try {
+          console.log(`   📧 Sending ticket assigned notification to agent: ${agentEmail}`);
+          await sendTicketAssignedEmail(
+            agentEmail,
+            ticket.ticketNumber,
+            ticket.subject,
+            parsedEmail.from.name || parsedEmail.from.address,
+            ticket.priority,
+            projectId.toString(),
+            { agentName },
+          );
+          console.log(`   ✅ Agent assignment notification sent`);
+        } catch (agentEmailErr: any) {
+          console.error(`   ⚠️ Failed to send agent assignment notification: ${agentEmailErr.message}`);
+        }
       }
     } catch (emailError: any) {
       console.error(

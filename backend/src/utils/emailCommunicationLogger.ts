@@ -178,7 +178,27 @@ export async function logEmailCommunication(
 export async function logIncomingEmail(
   ticketId: string | mongoose.Types.ObjectId,
   parsedEmail: ParsedEmailData,
+  uploadedAttachments?: Array<{
+    filename: string;
+    originalName: string;
+    mimetype: string;
+    size: number;
+    path?: string;
+  }>,
 ): Promise<any> {
+  // Build attachment list: if caller provides pre-uploaded entries (with GCS paths),
+  // merge them in so the Email Thread UI can render clickable attachment links.
+  const attachments = parsedEmail.attachments.map((att, i) => {
+    const uploaded = uploadedAttachments?.[i];
+    return {
+      filename: uploaded?.filename || att.filename,
+      originalName: att.filename,
+      mimetype: att.contentType,
+      size: uploaded?.size ?? att.size,
+      path: uploaded?.path, // GCS signed URL — present when uploadedAttachments supplied
+    };
+  });
+
   const emailData: EmailCommunicationData = {
     from: parsedEmail.from,
     to: parsedEmail.to,
@@ -192,12 +212,7 @@ export async function logIncomingEmail(
     conversationId: parsedEmail.conversationId,
     date: parsedEmail.date,
     rawHeaders: parsedEmail.headers,
-    attachments: parsedEmail.attachments.map((att) => ({
-      filename: att.filename,
-      originalName: att.filename,
-      mimetype: att.contentType,
-      size: att.size,
-    })),
+    attachments,
   };
 
   return logEmailCommunication(ticketId, emailData, "incoming");
