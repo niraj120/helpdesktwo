@@ -712,8 +712,55 @@ export async function addEmailReplyToTicket(
       (parsedEmail.from as any).name ||
       parsedEmail.from.address;
 
-    // 2. Log email communication (Task 5.4)
+    // 2. Upload reply attachments to GCS / local storage
+    const replyAttachments: any[] = [];
+    if (parsedEmail.attachments && parsedEmail.attachments.length > 0) {
+      console.log(
+        `      ℹ️ Reply has ${parsedEmail.attachments.length} attachment(s) — uploading...`,
+      );
+      for (const att of parsedEmail.attachments) {
+        try {
+          if (!att.content || att.content.length === 0) {
+            console.warn(
+              `      ⚠️  Skipping empty attachment: ${att.filename}`,
+            );
+            continue;
+          }
+          const uploaded = await GCSService.uploadTicketAttachmentBuffer(
+            att.content,
+            att.filename || "attachment",
+            att.contentType || "application/octet-stream",
+            "ticket-attachments",
+          );
+          replyAttachments.push({
+            filename: uploaded.filename,
+            originalName: att.filename || "attachment",
+            mimetype: att.contentType || "application/octet-stream",
+            size: uploaded.size,
+            path: uploaded.path,
+            uploadedAt: new Date(),
+          });
+          console.log(
+            `      ✓ Uploaded reply attachment: ${att.filename} → ${uploaded.path}`,
+          );
+        } catch (uploadErr) {
+          console.error(
+            `      ❌ Failed to upload reply attachment "${att.filename}":`,
+            uploadErr,
+          );
+        }
+      }
+    }
+
+    // 2b. Log email communication with uploaded paths (Task 5.4)
     const emailComm = await logIncomingEmail(ticket._id, parsedEmail);
+    // Patch the logged email comm with real GCS paths if we uploaded attachments
+    if (replyAttachments.length > 0 && emailComm) {
+      emailComm.attachments = replyAttachments;
+      await emailComm.save().catch(() => {
+        /* non-fatal */
+      });
+    }
     console.log(`      ✓ Email communication logged (ID: ${emailComm._id})`);
 
     // 3. Add comment to ticket
@@ -724,18 +771,20 @@ export async function addEmailReplyToTicket(
       createdBy: userId,
       createdAt: new Date(),
       isSystemComment: false,
+      attachments: replyAttachments,
     };
 
     ticket.comments = ticket.comments || [];
     ticket.comments.push(comment);
 
-    // Also push to threads so it appears in the Replies tab
+    // Also push to threads so it appears in the Replies tab (with attachments)
     ticket.threads = ticket.threads || [];
     ticket.threads.push({
       message: commentText,
       createdBy: userId,
       createdAt: new Date(),
       isSystemMessage: false,
+      attachments: replyAttachments,
     });
 
     console.log(
