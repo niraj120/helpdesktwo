@@ -1074,12 +1074,8 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
         { headers: { Authorization: `Bearer ${token}` } },
       );
       if (res.data.success) {
-        setTicket(res.data.data);
         setShowReassignModal(false);
-        setSuccessModal({
-          open: true,
-          message: "Ticket reassigned successfully.",
-        });
+        navigate(`/${customUrlPath}/portal/tickets`);
       }
     } catch (err: any) {
       alert(err?.response?.data?.message || "Failed to reassign ticket");
