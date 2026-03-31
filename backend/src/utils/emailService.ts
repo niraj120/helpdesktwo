@@ -954,8 +954,12 @@ export const sendTicketCreatedEmail = async (
               <p>Please review and respond promptly.</p>
             </div>
           `;
-          const agentSubject = applyReplacements(agentTrigger.subject || agentDefaultSubject);
-          let agentBody = applyReplacements(agentTrigger.body || agentDefaultBody);
+          const agentSubject = applyReplacements(
+            agentTrigger.subject || agentDefaultSubject,
+          );
+          let agentBody = applyReplacements(
+            agentTrigger.body || agentDefaultBody,
+          );
           if (!agentBody.includes("<") && !agentBody.includes(">")) {
             agentBody = agentBody
               .split("\n")
@@ -970,9 +974,14 @@ export const sendTicketCreatedEmail = async (
             subject: agentSubject,
             html: agentBody,
           });
-          console.log(`✅ Agent notification (ticketCreatedAgent) sent to ${additionalData.agentEmail}`);
+          console.log(
+            `✅ Agent notification (ticketCreatedAgent) sent to ${additionalData.agentEmail}`,
+          );
         } catch (agentEmailErr) {
-          console.error("⚠️ Failed to send ticketCreatedAgent notification:", agentEmailErr);
+          console.error(
+            "⚠️ Failed to send ticketCreatedAgent notification:",
+            agentEmailErr,
+          );
         }
       }
     }

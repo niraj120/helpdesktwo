@@ -2676,8 +2676,11 @@ export const replyToTicket = async (req: Request, res: Response) => {
     // Send "Comment Added" trigger email (non-blocking)
     (async () => {
       try {
-        const projectId = ticket.project ? ticket.project.toString() : undefined;
-        const replyerName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email;
+        const projectId = ticket.project
+          ? ticket.project.toString()
+          : undefined;
+        const replyerName =
+          `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email;
 
         if (!isStudentReply) {
           // Agent replied → notify the student
@@ -2691,7 +2694,8 @@ export const replyToTicket = async (req: Request, res: Response) => {
               projectId,
               {
                 studentName: (ticket as any).metadata?.studentName || "Student",
-                recipientName: (ticket as any).metadata?.studentName || "Student",
+                recipientName:
+                  (ticket as any).metadata?.studentName || "Student",
                 commentBy: replyerName,
               },
             );
@@ -2712,7 +2716,9 @@ export const replyToTicket = async (req: Request, res: Response) => {
               {
                 recipientName: agentName,
                 studentName: agentName,
-                commentBy: `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email,
+                commentBy:
+                  `${user.firstName || ""} ${user.lastName || ""}`.trim() ||
+                  user.email,
               },
             );
           }
