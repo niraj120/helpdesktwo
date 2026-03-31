@@ -344,19 +344,24 @@ interface AgentTicketDetailProps {
  * The tab is opened BEFORE the async call so browsers don't block it as a popup. */
 const openAttachment = async (pathOrUrl: string | undefined) => {
   if (!pathOrUrl) return;
-  // Open the tab immediately (within the user gesture) then navigate it once we have the URL.
-  const newTab = window.open("", "_blank", "noopener,noreferrer");
+  // If already a full URL (e.g. GCS signed URL), open it directly.
+  if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")) {
+    window.open(pathOrUrl, "_blank", "noopener,noreferrer");
+    return;
+  }
+  // Relative backend path — open blank tab first (avoids popup blocker), then navigate.
+  // NOTE: do NOT pass noopener here or window.open returns null in modern browsers.
+  const newTab = window.open("", "_blank");
   const token = localStorage.getItem("authToken");
   try {
     const res = await axios.get(
       `${API_CONFIG.BASE_URL}/api/tickets/attachment-signed-url?path=${encodeURIComponent(pathOrUrl)}`,
       { headers: { Authorization: `Bearer ${token}` } },
     );
-    const url: string = res.data?.url || pathOrUrl;
+    const url: string = res.data?.url || `${API_CONFIG.BASE_URL}${pathOrUrl}`;
     if (newTab) newTab.location.href = url;
   } catch {
-    // Fallback: navigate directly (works for non-GCS local paths)
-    if (newTab) newTab.location.href = pathOrUrl;
+    if (newTab) newTab.location.href = `${API_CONFIG.BASE_URL}${pathOrUrl}`;
   }
 };
 
@@ -1075,7 +1080,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
       );
       if (res.data.success) {
         setShowReassignModal(false);
-        navigate(`/${customUrlPath}/portal/tickets`);
+        navigate(`/${customUrlPath}/portal/tickets/my-tickets`);
       }
     } catch (err: any) {
       alert(err?.response?.data?.message || "Failed to reassign ticket");
