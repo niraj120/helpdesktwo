@@ -3912,10 +3912,10 @@ export const reassignTicket = async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
-    if (!newAgentId || !reason?.trim()) {
+    if (!newAgentId) {
       return res.status(400).json({
         success: false,
-        message: "newAgentId and reason are required",
+        message: "newAgentId is required",
       });
     }
 
@@ -3962,7 +3962,7 @@ export const reassignTicket = async (req: Request, res: Response) => {
       changedBy: new mongoose.Types.ObjectId(callerId),
       changedAt: new Date(),
       changeType: "reassigned",
-      reassignmentReason: reason.trim(),
+      reassignmentReason: reason?.trim() ?? "",
     });
 
     await ticket.save();
