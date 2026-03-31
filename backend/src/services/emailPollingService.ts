@@ -360,7 +360,8 @@ class EmailPollingService {
               // Skip inline images (embedded in HTML body via cid:)
               if (att.contentId && att.isInline) continue;
               // Only handle file attachments (not item/reference attachments)
-              if (att["@odata.type"] !== "#microsoft.graph.fileAttachment") continue;
+              if (att["@odata.type"] !== "#microsoft.graph.fileAttachment")
+                continue;
               const contentBuffer = att.contentBytes
                 ? Buffer.from(att.contentBytes, "base64")
                 : Buffer.alloc(0);

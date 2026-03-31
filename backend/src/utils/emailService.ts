@@ -1362,6 +1362,11 @@ export const sendTicketAssignedEmail = async (
   studentName: string,
   priority: string,
   projectId?: string,
+  additionalData?: {
+    agentName?: string;
+    assignedBy?: string;
+    dueDate?: string;
+  },
 ): Promise<boolean> => {
   try {
     console.log(
@@ -1393,6 +1398,10 @@ export const sendTicketAssignedEmail = async (
 
     const trigger = emailConfig?.triggers?.ticketAssigned;
 
+    const agentName = additionalData?.agentName || "Agent";
+    const assignedBy = additionalData?.assignedBy || "Not applicable";
+    const dueDate = additionalData?.dueDate || "Not applicable";
+
     let subject = (trigger?.subject || defaultSubject).replace(
       /\{\{ticketNumber\}\}/g,
       ticketNumber,
@@ -1404,7 +1413,13 @@ export const sendTicketAssignedEmail = async (
       .replace(/\{\{ticketSubject\}\}/g, ticketTitle)
       .replace(/\{\{studentName\}\}/g, studentName)
       .replace(/\{\{priority\}\}/g, priority)
-      .replace(/\{\{projectName\}\}/g, projectName);
+      .replace(/\{\{ticketPriority\}\}/g, priority)
+      .replace(/\{\{agentName\}\}/g, agentName)
+      .replace(/\{\{assignedBy\}\}/g, assignedBy)
+      .replace(/\{\{dueDate\}\}/g, dueDate)
+      .replace(/\{\{projectName\}\}/g, projectName)
+      // Catch-all: replace any remaining {{variable}} with "Not applicable"
+      .replace(/\{\{[^}]+\}\}/g, "Not applicable");
 
     if (!trigger?.enabled) {
       console.log("⚠️  Ticket assigned email trigger is disabled");
