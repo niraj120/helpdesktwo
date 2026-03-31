@@ -215,6 +215,13 @@ interface Comment {
   updatedAt?: string;
   isSystemComment?: boolean;
   mergedFrom?: string;
+  attachments?: Array<{
+    filename: string;
+    originalName: string;
+    path: string;
+    mimetype: string;
+    size: number;
+  }>;
 }
 
 interface Attachment {
@@ -2428,6 +2435,36 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                                         </p>
                                       )}
                                     </div>
+                                    {comment.attachments &&
+                                      comment.attachments.length > 0 && (
+                                        <div className="mt-3 space-y-2">
+                                          {comment.attachments.map(
+                                            (file, idx) => (
+                                              <button
+                                                key={idx}
+                                                type="button"
+                                                onClick={() =>
+                                                  openAttachment(file.path)
+                                                }
+                                                className="flex items-center space-x-2 text-sm text-blue-600 hover:text-blue-700"
+                                              >
+                                                <PaperClipIcon className="h-4 w-4" />
+                                                <span>
+                                                  {file.originalName ||
+                                                    file.filename}
+                                                </span>
+                                                <span className="text-gray-400">
+                                                  (
+                                                  {(file.size / 1024).toFixed(
+                                                    1,
+                                                  )}{" "}
+                                                  KB)
+                                                </span>
+                                              </button>
+                                            ),
+                                          )}
+                                        </div>
+                                      )}
                                   </div>
                                 </div>
                               </div>
@@ -3184,16 +3221,34 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                                           {email.attachments.length})
                                         </p>
                                         <div className="flex flex-wrap gap-2">
-                                          {email.attachments.map((att, i) => (
-                                            <span
-                                              key={i}
-                                              className="text-xs bg-white px-2 py-1 rounded border border-gray-300 text-gray-700"
-                                            >
-                                              {att.originalName || att.filename}{" "}
-                                              ({(att.size / 1024).toFixed(1)}{" "}
-                                              KB)
-                                            </span>
-                                          ))}
+                                          {email.attachments.map((att, i) =>
+                                            att.path ? (
+                                              <button
+                                                key={i}
+                                                type="button"
+                                                onClick={() =>
+                                                  openAttachment(att.path)
+                                                }
+                                                className="flex items-center gap-1 text-xs bg-white px-2 py-1 rounded border border-blue-300 text-blue-600 hover:bg-blue-50"
+                                              >
+                                                <PaperClipIcon className="h-3 w-3" />
+                                                {att.originalName ||
+                                                  att.filename}{" "}
+                                                ({(att.size / 1024).toFixed(1)}{" "}
+                                                KB)
+                                              </button>
+                                            ) : (
+                                              <span
+                                                key={i}
+                                                className="text-xs bg-white px-2 py-1 rounded border border-gray-300 text-gray-500"
+                                              >
+                                                {att.originalName ||
+                                                  att.filename}{" "}
+                                                ({(att.size / 1024).toFixed(1)}{" "}
+                                                KB)
+                                              </span>
+                                            ),
+                                          )}
                                         </div>
                                       </div>
                                     )}
