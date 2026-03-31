@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
+import DOMPurify from "dompurify";
 import { API_CONFIG } from "../config/constants";
 import FeedbackSubmission from "../components/FeedbackSubmission";
 import {
@@ -466,10 +467,16 @@ const StudentTicketDetail: React.FC = () => {
                     Description
                   </span>
                 </div>
-                <div className="prose max-w-none">
-                  <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">
-                    {ticket.description}
-                  </p>
+                <div className="prose max-w-none text-gray-700 text-sm leading-relaxed">
+                  {/<[a-z][\s\S]*>/i.test(ticket.description || "") ? (
+                    <div
+                      dangerouslySetInnerHTML={{
+                        __html: DOMPurify.sanitize(ticket.description || ""),
+                      }}
+                    />
+                  ) : (
+                    <p className="whitespace-pre-wrap">{ticket.description}</p>
+                  )}
                 </div>
               </div>
 

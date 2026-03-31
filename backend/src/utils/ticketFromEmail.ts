@@ -460,14 +460,27 @@ export async function createTicketFromEmail(
     const ticketNumber = await generateTicketNumber(projectId);
     console.log(`      ✓ Ticket Number: ${ticketNumber}`);
 
-    // 5. Extract description (prefer plain text, fallback to HTML stripped of tags)
-    let description = parsedEmail.body || "";
-    if (!description && parsedEmail.htmlBody) {
-      // Strip HTML tags to get clean plain text
-      description = htmlToPlainText(parsedEmail.htmlBody);
+    // 5. Extract description - prefer HTML body to preserve email formatting.
+    // The frontend detects HTML tags and renders with DOMPurify, so storing HTML
+    // gives users the same formatted view they see in their mail client.
+    let description = "";
+    if (parsedEmail.htmlBody) {
+      // Strip Outlook mobile body separator and any trailing injected sections,
+      // then strip <style>/<script> blocks — but keep all other HTML for formatting.
+      let html = parsedEmail.htmlBody;
+      html = html.replace(
+        /<div[^>]+id="ms-outlook-mobile-body-separator-line"[\s\S]*/gi,
+        "",
+      );
+      html = html
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
+      description = html.trim();
+    } else if (parsedEmail.body) {
+      // Plain-text email — keep as-is after boilerplate stripping.
+      description = stripEmailBoilerplate(parsedEmail.body);
     }
-    // Last-resort fallback: use the Graph API plain-text body preview when HTML stripping
-    // removes everything (e.g. very short email bodies lost to boilerplate removal).
+    // Last-resort fallback: Graph API body preview (short plain-text snippet).
     if (!description.trim() && parsedEmail.bodyPreview) {
       description = parsedEmail.bodyPreview.trim();
     }
