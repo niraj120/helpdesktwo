@@ -356,17 +356,95 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
   >([]);
   const [agentRoleId, setAgentRoleId] = useState<string>("");
 
+  // Category assignment config state (US-011, US-012)
+  const [categoryList, setCategoryList] = useState<
+    Array<{
+      _id: string;
+      name: string;
+      level?: number;
+      parentId?: string | null;
+    }>
+  >([]);
+  const [categoryAssignmentConfigs, setCategoryAssignmentConfigs] = useState<
+    any[]
+  >([]);
+  const [categoryConfigLoading, setCategoryConfigLoading] = useState(false);
+  const [catAssignDrawerOpen, setCatAssignDrawerOpen] = useState(false);
+  const [catAssignEditTarget, setCatAssignEditTarget] = useState<{
+    _id: string;
+    name: string;
+    level?: number;
+    parentId?: string | null;
+  } | null>(null);
+  const [catAssignForm, setCatAssignForm] = useState<{
+    mode: string;
+    agentPool: string[];
+    rolePool: string[];
+    isActive: boolean;
+  }>({ mode: "round-robin", agentPool: [], rolePool: [], isActive: true });
+  const [catAssignSaving, setCatAssignSaving] = useState(false);
+  const [inheritFromParent, setInheritFromParent] = useState(false);
+  // US-018/022: category drawer tab state
+  const [drawerTab, setDrawerTab] = useState<
+    "assignment" | "sla" | "escalation"
+  >("assignment");
+  const [catSLAForm, setCatSLAForm] = useState({
+    responseTimeValue: "4",
+    responseTimeUnit: "hours",
+    resolutionTimeValue: "1",
+    resolutionTimeUnit: "days",
+    isActive: true,
+  });
+  const [catSLASaving, setCatSLASaving] = useState(false);
+
+  // US-022: Escalation tab state
+  const [catEscalationForm, setCatEscalationForm] = useState<{
+    escalationMatrixId: string;
+    isActive: boolean;
+  }>({ escalationMatrixId: "", isActive: true });
+  const [projectMatrices, setProjectMatrices] = useState<
+    Array<{ _id: string; name: string; levels: any[] }>
+  >([]);
+  const [catEscSaving, setCatEscSaving] = useState(false);
+
+  // US-ESC-003: Resolved (inherited) escalation config for displayed category
+  const [catResolvedEscalation, setCatResolvedEscalation] = useState<{
+    source: "direct" | "inherited" | "none";
+    matrixName: string | null;
+    matrixId: string | null;
+    inheritedFromCategoryName: string | null;
+  } | null>(null);
+
+  // Category drawer: project-scoped users & roles fetched on drawer open
+  const [drawerUsers, setDrawerUsers] = useState<any[]>([]);
+  const [drawerRoles, setDrawerRoles] = useState<any[]>([]);
+
   // Computed: Filter roles for current project
   const projectRoles = roles.filter((role) => {
+    if (role.isActive === false) return false;
+
     // Get project ID from either _id or id field
     const projectId = project?._id || project?.id;
 
     // When creating new project, show all active roles for selection
-    if (!projectId) return role.isActive !== false;
+    if (!projectId) return true;
 
-    // For existing projects, show ALL active roles (not just mapped ones)
-    // This allows mapping roles during project edit
-    return role.isActive !== false;
+    // For existing projects, only show roles actually mapped to this project
+    if (
+      role.projects &&
+      Array.isArray(role.projects) &&
+      role.projects.length > 0
+    ) {
+      return role.projects.some(
+        (p: any) => String(p?._id || p) === String(projectId),
+      );
+    }
+
+    if (role.projectId) {
+      return String(role.projectId) === String(projectId);
+    }
+
+    return false;
   });
 
   // Computed: Check which roles are actually mapped to this project
@@ -460,8 +538,15 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
     // When creating new project, show all users
     if (!project?._id) return true;
 
-    // Show users whose projects array includes this project
-    return user.projects && user.projects.includes(project._id);
+    const projectId = String(project._id);
+
+    // Show users whose projects array includes this project.
+    // projects may be populated objects {_id, name} or raw ObjectId strings.
+    return (
+      user.projects &&
+      Array.isArray(user.projects) &&
+      user.projects.some((p: any) => String(p?._id || p) === projectId)
+    );
   });
 
   // Computed: Get agents only (with Agent role and mapped to project)
@@ -506,7 +591,10 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
             headers,
             credentials: "include",
           }),
-          fetch(`${API_BASE_URL}/users`, { headers, credentials: "include" }),
+          fetch(`${API_BASE_URL}/users?limit=500`, {
+            headers,
+            credentials: "include",
+          }),
           fetch(rolesUrl, { headers, credentials: "include" }),
         ]);
 
@@ -549,6 +637,302 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
 
     fetchMasterData();
   }, []); // Only fetch once on mount
+
+  // Fetch categories + assignment configs for a project (US-011)
+  const fetchCategoryConfigs = async (projectId: string) => {
+    setCategoryConfigLoading(true);
+    try {
+      const token = localStorage.getItem("authToken");
+      const headers = { Authorization: `Bearer ${token}` };
+      const [catsRes, configsRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/categories/project/${projectId}`, {
+          headers,
+          credentials: "include",
+        }),
+        fetch(
+          `${API_BASE_URL}/projects/${projectId}/category-assignment-configs`,
+          { headers, credentials: "include" },
+        ),
+      ]);
+      const catsData = await catsRes.json();
+      const configsData = await configsRes.json();
+      const cats = Array.isArray(catsData) ? catsData : catsData.data || [];
+      setCategoryList(cats.filter((c: any) => c.isActive !== false));
+      if (configsData.success) {
+        setCategoryAssignmentConfigs(configsData.data || []);
+      }
+    } catch (err) {
+      console.error("[CategoryAssignment] fetch error:", err);
+    } finally {
+      setCategoryConfigLoading(false);
+    }
+  };
+
+  const openCatAssignDrawer = (cat: {
+    _id: string;
+    name: string;
+    level?: number;
+    parentId?: string | null;
+  }) => {
+    const existingConfig = categoryAssignmentConfigs.find(
+      (cfg: any) =>
+        cfg.categoryId?._id === cat._id || cfg.categoryId === cat._id,
+    );
+    setCatAssignEditTarget(cat);
+    // If existing config is inactive, treat it as "inherit from parent"
+    setInheritFromParent(
+      existingConfig ? existingConfig.isActive === false : false,
+    );
+    setCatAssignForm({
+      mode: existingConfig?.mode || "round-robin",
+      agentPool: (existingConfig?.agentPool || []).map((a: any) => a._id || a),
+      rolePool: (existingConfig?.rolePool || []).map((r: any) => r._id || r),
+      isActive: existingConfig?.isActive ?? true,
+    });
+    // Reset drawer tab and fetch SLA + escalation data (US-018/022)
+    setDrawerTab("assignment");
+    setCatSLAForm({
+      responseTimeValue: "4",
+      responseTimeUnit: "hours",
+      resolutionTimeValue: "1",
+      resolutionTimeUnit: "days",
+      isActive: true,
+    });
+    setCatEscalationForm({ escalationMatrixId: "", isActive: true });
+    setCatResolvedEscalation(null); // reset while loading
+    fetchCategorySLA(cat._id);
+    fetchCategoryEscalationConfig(cat._id);
+    fetchResolvedEscalationConfig(cat._id); // US-ESC-003
+    const projectId = project?._id || project?.id;
+    if (projectId) {
+      fetchProjectMatrices(String(projectId));
+      fetchDrawerUsersAndRoles(String(projectId));
+    }
+    setCatAssignDrawerOpen(true);
+  };
+
+  const fetchDrawerUsersAndRoles = async (projectId: string) => {
+    try {
+      const token = localStorage.getItem("authToken");
+      const headers = { Authorization: `Bearer ${token}` };
+      const [usersRes, rolesRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/users?project=${projectId}&limit=500`, {
+          headers,
+          credentials: "include",
+        }),
+        fetch(`${API_BASE_URL}/roles?projectId=${projectId}`, {
+          headers,
+          credentials: "include",
+        }),
+      ]);
+      const usersData = await usersRes.json();
+      const rolesData = await rolesRes.json();
+      if (usersData.success) setDrawerUsers(usersData.data || []);
+      if (rolesData.success) setDrawerRoles(rolesData.data || []);
+    } catch (err) {
+      console.error("[CategoryDrawer] fetch users/roles error:", err);
+    }
+  };
+
+  const fetchCategorySLA = async (catId: string) => {
+    try {
+      const token = localStorage.getItem("authToken");
+      const res = await fetch(`${API_BASE_URL}/categories/${catId}/sla`, {
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (data.success && data.data) {
+        setCatSLAForm({
+          responseTimeValue: String(data.data.responseTime?.value ?? "4"),
+          responseTimeUnit: data.data.responseTime?.unit ?? "hours",
+          resolutionTimeValue: String(data.data.resolutionTime?.value ?? "1"),
+          resolutionTimeUnit: data.data.resolutionTime?.unit ?? "days",
+          isActive: data.data.isActive ?? true,
+        });
+      }
+    } catch (err) {
+      console.error("[CategorySLA] fetch error:", err);
+    }
+  };
+
+  const saveCategorySLA = async () => {
+    if (!catAssignEditTarget) return;
+    setCatSLASaving(true);
+    try {
+      const token = localStorage.getItem("authToken");
+      const res = await fetch(
+        `${API_BASE_URL}/categories/${catAssignEditTarget._id}/sla`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          credentials: "include",
+          body: JSON.stringify({
+            responseTime: {
+              value: Number(catSLAForm.responseTimeValue),
+              unit: catSLAForm.responseTimeUnit,
+            },
+            resolutionTime: {
+              value: Number(catSLAForm.resolutionTimeValue),
+              unit: catSLAForm.resolutionTimeUnit,
+            },
+            isActive: catSLAForm.isActive,
+          }),
+        },
+      );
+      const data = await res.json();
+      if (!data.success) {
+        console.error("[CategorySLA] save failed:", data.error);
+      }
+    } catch (err) {
+      console.error("[CategorySLA] save error:", err);
+    } finally {
+      setCatSLASaving(false);
+    }
+  };
+
+  const fetchProjectMatrices = async (projectId: string) => {
+    try {
+      const token = localStorage.getItem("authToken");
+      const res = await fetch(
+        `${API_BASE_URL}/escalation-matrix?projectId=${projectId}&isActive=true`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "include",
+        },
+      );
+      const data = await res.json();
+      if (data.success) {
+        setProjectMatrices(data.data || []);
+      }
+    } catch (err) {
+      console.error("[CategoryEscalation] fetchProjectMatrices error:", err);
+    }
+  };
+
+  const fetchCategoryEscalationConfig = async (catId: string) => {
+    try {
+      const token = localStorage.getItem("authToken");
+      const res = await fetch(
+        `${API_BASE_URL}/categories/${catId}/escalation-config`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "include",
+        },
+      );
+      const data = await res.json();
+      if (data.success && data.data) {
+        setCatEscalationForm({
+          escalationMatrixId:
+            data.data.escalationMatrixId?._id ||
+            data.data.escalationMatrixId ||
+            "",
+          isActive: data.data.isActive ?? true,
+        });
+      }
+    } catch (err) {
+      console.error(
+        "[CategoryEscalation] fetchCategoryEscalationConfig error:",
+        err,
+      );
+    }
+  };
+
+  // US-ESC-003: Fetch the resolved (inherited) escalation config
+  const fetchResolvedEscalationConfig = async (catId: string) => {
+    try {
+      const token = localStorage.getItem("authToken");
+      const res = await fetch(
+        `${API_BASE_URL}/categories/${catId}/escalation-config/resolved`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "include",
+        },
+      );
+      const data = await res.json();
+      if (data.success && data.data) {
+        setCatResolvedEscalation(data.data);
+      } else {
+        setCatResolvedEscalation(null);
+      }
+    } catch (err) {
+      console.error(
+        "[CategoryEscalation] fetchResolvedEscalationConfig error:",
+        err,
+      );
+      setCatResolvedEscalation(null);
+    }
+  };
+
+  const saveCategoryEscalationConfig = async () => {
+    if (!catAssignEditTarget || !catEscalationForm.escalationMatrixId) return;
+    setCatEscSaving(true);
+    try {
+      const token = localStorage.getItem("authToken");
+      const res = await fetch(
+        `${API_BASE_URL}/categories/${catAssignEditTarget._id}/escalation-config`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          credentials: "include",
+          body: JSON.stringify({
+            escalationMatrixId: catEscalationForm.escalationMatrixId,
+            isActive: catEscalationForm.isActive,
+          }),
+        },
+      );
+      const data = await res.json();
+      if (!data.success) {
+        console.error("[CategoryEscalation] save failed:", data.error);
+      }
+    } catch (err) {
+      console.error("[CategoryEscalation] save error:", err);
+    } finally {
+      setCatEscSaving(false);
+    }
+  };
+
+  const saveCatAssignConfig = async () => {
+    if (!catAssignEditTarget || !project?._id) return;
+    setCatAssignSaving(true);
+    try {
+      const token = localStorage.getItem("authToken");
+      // When inheriting from parent, save with isActive: false so resolveConfigForCategory
+      // skips this category and walks up to the parent's rule.
+      const payload = inheritFromParent
+        ? { ...catAssignForm, isActive: false }
+        : catAssignForm;
+      const res = await fetch(
+        `${API_BASE_URL}/categories/${catAssignEditTarget._id}/assignment-config`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          credentials: "include",
+          body: JSON.stringify(payload),
+        },
+      );
+      const data = await res.json();
+      if (data.success) {
+        await fetchCategoryConfigs(project._id);
+        setCatAssignDrawerOpen(false);
+      } else {
+        console.error("[CategoryAssignment] save failed:", data.error);
+      }
+    } catch (err) {
+      console.error("[CategoryAssignment] save error:", err);
+    } finally {
+      setCatAssignSaving(false);
+    }
+  };
 
   // Update form data when project changes (for edit mode)
   useEffect(() => {
@@ -779,6 +1163,11 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
         // Settings
         settings: project?.settings || prevData.settings,
       }));
+
+      // Fetch category assignment configs when editing an existing project
+      if (project._id) {
+        fetchCategoryConfigs(project._id);
+      }
     }
   }, [project]);
 
@@ -4020,6 +4409,29 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         </div>
                       )}
 
+                      {/* US-ASSIGN-001: Empty pool warning for round-robin */}
+                      {formData.assignmentType === "round-robin" &&
+                        formData.assignToUsers.length === 0 &&
+                        formData.assignToRoles.length === 0 && (
+                          <div style={{ marginBottom: "20px" }}>
+                            <div
+                              style={{
+                                padding: "12px 16px",
+                                backgroundColor: "#fffbeb",
+                                border: "1px solid #f59e0b",
+                                borderRadius: "6px",
+                                fontSize: "13px",
+                                color: "#92400e",
+                                lineHeight: "1.5",
+                              }}
+                            >
+                              ⚠️ <strong>No agents in pool</strong> — tickets
+                              will fall back to the submitting user if no
+                              agent-role users are mapped to this project.
+                            </div>
+                          </div>
+                        )}
+
                       {/* Manual Assignment - Single Role */}
                       {formData.assignmentType === "manual" && (
                         <div style={{ marginBottom: "20px" }}>
@@ -4294,9 +4706,214 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                     </div>
                   </div>
 
-                  {/* Online Form Settings */}
-                  {(formData.ticketSubmissionMode === "online" ||
-                    formData.ticketSubmissionMode === "both") && (
+                  {/* US-013: Category assignment redirect notice — replaces legacy conditionRules builder */}
+                  {project?._id && (
+                    <div
+                      style={{
+                        marginTop: "12px",
+                        padding: "12px 16px",
+                        backgroundColor: "#eff6ff",
+                        border: "1px solid #bfdbfe",
+                        borderRadius: "6px",
+                        fontSize: "13px",
+                        color: "#1e40af",
+                        lineHeight: "1.5",
+                      }}
+                    >
+                      💡 For category-specific routing, configure rules in the{" "}
+                      <strong>Category Assignment</strong> section below. Each
+                      category can override the method selected above.
+                    </div>
+                  )}
+
+                  {/* US-011: Category Assignment section */}
+                  {project?._id && (
+                    <div
+                      style={{
+                        marginTop: "24px",
+                        padding: "20px",
+                        backgroundColor: "white",
+                        borderRadius: "8px",
+                        border: "1px solid #e5e7eb",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "flex-start",
+                          marginBottom: "16px",
+                        }}
+                      >
+                        <div>
+                          <h4
+                            style={{
+                              margin: "0 0 4px 0",
+                              fontSize: "16px",
+                              fontWeight: "600",
+                              color: "#1f2937",
+                            }}
+                          >
+                            Category Assignment
+                          </h4>
+                          <p
+                            style={{
+                              margin: 0,
+                              fontSize: "13px",
+                              color: "#6b7280",
+                            }}
+                          >
+                            Override the project-level assignment per category.
+                            Child categories inherit the nearest parent's rule.
+                          </p>
+                        </div>
+                        {categoryConfigLoading && (
+                          <span style={{ fontSize: "12px", color: "#9ca3af" }}>
+                            Loading…
+                          </span>
+                        )}
+                      </div>
+
+                      {categoryList.length === 0 && !categoryConfigLoading ? (
+                        <div
+                          style={{
+                            padding: "16px",
+                            backgroundColor: "#f9fafb",
+                            borderRadius: "6px",
+                            textAlign: "center",
+                            color: "#6b7280",
+                            fontSize: "14px",
+                          }}
+                        >
+                          No active categories found for this project. Add
+                          categories in Master Data → Categories first.
+                        </div>
+                      ) : (
+                        <div
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: "6px",
+                          }}
+                        >
+                          {categoryList
+                            .filter((c) => c.level === 1 || c.parentId == null)
+                            .map((cat) => {
+                              const config = categoryAssignmentConfigs.find(
+                                (cfg: any) =>
+                                  cfg.categoryId?._id === cat._id ||
+                                  cfg.categoryId === cat._id,
+                              );
+                              const modeLabel = config
+                                ? (
+                                    {
+                                      "round-robin": "Round Robin",
+                                      "by-role": "By Role",
+                                      "by-user": "By User",
+                                      manual: "Manual",
+                                    } as Record<string, string>
+                                  )[config.mode] || config.mode
+                                : "Not configured";
+                              const modeColor = config
+                                ? (
+                                    {
+                                      "round-robin": "#3b82f6",
+                                      "by-role": "#7c3aed",
+                                      "by-user": "#10b981",
+                                      manual: "#6b7280",
+                                    } as Record<string, string>
+                                  )[config.mode] || "#6b7280"
+                                : "#9ca3af";
+                              return (
+                                <div
+                                  key={cat._id}
+                                  style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                    padding: "10px 14px",
+                                    backgroundColor: "#f9fafb",
+                                    borderRadius: "6px",
+                                    border: "1px solid #e5e7eb",
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: "8px",
+                                    }}
+                                  >
+                                    <span
+                                      style={{
+                                        fontSize: "14px",
+                                        fontWeight: "500",
+                                        color: "#1f2937",
+                                      }}
+                                    >
+                                      {cat.name}
+                                    </span>
+                                    {config && !config.isActive && (
+                                      <span
+                                        style={{
+                                          fontSize: "11px",
+                                          padding: "2px 6px",
+                                          backgroundColor: "#fee2e2",
+                                          color: "#b91c1c",
+                                          borderRadius: "4px",
+                                        }}
+                                      >
+                                        Inactive
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: "10px",
+                                    }}
+                                  >
+                                    <span
+                                      style={{
+                                        fontSize: "12px",
+                                        fontWeight: "500",
+                                        padding: "3px 8px",
+                                        backgroundColor: modeColor + "1a",
+                                        color: modeColor,
+                                        border: `1px solid ${modeColor}40`,
+                                        borderRadius: "12px",
+                                      }}
+                                    >
+                                      {modeLabel}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => openCatAssignDrawer(cat)}
+                                      style={{
+                                        padding: "5px 12px",
+                                        fontSize: "13px",
+                                        fontWeight: "500",
+                                        border: "1px solid #d1d5db",
+                                        borderRadius: "5px",
+                                        backgroundColor: "white",
+                                        color: "#374151",
+                                        cursor: "pointer",
+                                      }}
+                                    >
+                                      Edit
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Online Form Settings — managed via Query Configuration module */}
+                  {false && (
                     <div
                       style={{
                         padding: "20px",
@@ -6525,6 +7142,1081 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* US-012: Category Assignment Config Drawer */}
+      {catAssignDrawerOpen && catAssignEditTarget && (
+        <>
+          {/* Backdrop */}
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              backgroundColor: "rgba(0,0,0,0.3)",
+              zIndex: 10009,
+            }}
+            onClick={() => setCatAssignDrawerOpen(false)}
+          />
+          {/* Drawer */}
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              right: 0,
+              bottom: 0,
+              width: "420px",
+              backgroundColor: "white",
+              boxShadow: "-4px 0 20px rgba(0,0,0,0.15)",
+              zIndex: 10010,
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            {/* Header */}
+            <div
+              style={{
+                padding: "20px 24px",
+                borderBottom: "1px solid #e5e7eb",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+              }}
+            >
+              <div>
+                <h3
+                  style={{
+                    margin: "0 0 4px 0",
+                    fontSize: "16px",
+                    fontWeight: "600",
+                    color: "#1f2937",
+                  }}
+                >
+                  Category Config
+                </h3>
+                <p style={{ margin: 0, fontSize: "13px", color: "#6b7280" }}>
+                  {catAssignEditTarget.name}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCatAssignDrawerOpen(false)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "#9ca3af",
+                  fontSize: "22px",
+                  lineHeight: 1,
+                  padding: "0 4px",
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Tab strip */}
+            <div
+              style={{
+                display: "flex",
+                borderBottom: "1px solid #e5e7eb",
+                padding: "0 24px",
+                gap: "0",
+              }}
+            >
+              {(["assignment", "sla", "escalation"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setDrawerTab(tab)}
+                  style={{
+                    padding: "10px 16px",
+                    fontSize: "13px",
+                    fontWeight: "500",
+                    border: "none",
+                    background: "none",
+                    cursor: "pointer",
+                    color: drawerTab === tab ? "#3b82f6" : "#6b7280",
+                    borderBottom:
+                      drawerTab === tab
+                        ? "2px solid #3b82f6"
+                        : "2px solid transparent",
+                    textTransform: "capitalize",
+                  }}
+                >
+                  {tab === "sla"
+                    ? "SLA Override"
+                    : tab === "escalation"
+                      ? "Escalation"
+                      : "Assignment"}
+                </button>
+              ))}
+            </div>
+
+            {/* Body */}
+            <div
+              style={{
+                padding: "24px",
+                flex: 1,
+                overflowY: "auto",
+                display: "flex",
+                flexDirection: "column",
+                gap: "20px",
+              }}
+            >
+              {/* ── Assignment tab ─────────────────────────── */}
+              {drawerTab === "assignment" && (
+                <>
+                  {/* Inherit from parent toggle (US-ASSIGN-004) */}
+                  {catAssignEditTarget?.parentId &&
+                    (() => {
+                      const parentCat = categoryList.find(
+                        (c) => c._id === catAssignEditTarget.parentId,
+                      );
+                      const parentConfig = categoryAssignmentConfigs.find(
+                        (cfg: any) =>
+                          cfg.categoryId?._id ===
+                            catAssignEditTarget.parentId ||
+                          cfg.categoryId === catAssignEditTarget.parentId,
+                      );
+                      if (!parentCat) return null;
+                      return (
+                        <div
+                          style={{
+                            padding: "12px 16px",
+                            backgroundColor: inheritFromParent
+                              ? "#f0fdf4"
+                              : "#f9fafb",
+                            border: `1px solid ${inheritFromParent ? "#86efac" : "#e5e7eb"}`,
+                            borderRadius: "8px",
+                          }}
+                        >
+                          <label
+                            style={{
+                              display: "flex",
+                              alignItems: "flex-start",
+                              gap: "10px",
+                              cursor: "pointer",
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={inheritFromParent}
+                              onChange={(e) =>
+                                setInheritFromParent(e.target.checked)
+                              }
+                              style={{
+                                marginTop: "2px",
+                                width: "16px",
+                                height: "16px",
+                              }}
+                            />
+                            <div>
+                              <span
+                                style={{
+                                  fontSize: "14px",
+                                  fontWeight: 500,
+                                  color: "#374151",
+                                }}
+                              >
+                                Inherit from parent: <em>{parentCat.name}</em>
+                              </span>
+                              {parentConfig ? (
+                                <p
+                                  style={{
+                                    fontSize: "12px",
+                                    color: "#6b7280",
+                                    margin: "4px 0 0",
+                                  }}
+                                >
+                                  Parent rule:{" "}
+                                  <strong>{parentConfig.mode}</strong>
+                                  {parentConfig.agentPool?.length > 0 &&
+                                    ` — ${parentConfig.agentPool.length} agent(s)`}
+                                  {parentConfig.rolePool?.length > 0 &&
+                                    ` — ${parentConfig.rolePool.length} role(s)`}
+                                </p>
+                              ) : (
+                                <p
+                                  style={{
+                                    fontSize: "12px",
+                                    color: "#9ca3af",
+                                    margin: "4px 0 0",
+                                  }}
+                                >
+                                  Parent has no direct rule — will fall back to
+                                  project-level setting.
+                                </p>
+                              )}
+                            </div>
+                          </label>
+                        </div>
+                      );
+                    })()}
+
+                  {/* Mode selector — hidden when inheriting */}
+                  {!inheritFromParent && (
+                    <div>
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: "14px",
+                          fontWeight: "500",
+                          color: "#374151",
+                          marginBottom: "10px",
+                        }}
+                      >
+                        Assignment Mode
+                      </label>
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "8px",
+                        }}
+                      >
+                        {(
+                          [
+                            {
+                              value: "round-robin",
+                              label: "Round Robin",
+                              desc: "Rotate evenly among selected agents",
+                            },
+                            {
+                              value: "by-role",
+                              label: "By Role",
+                              desc: "Assign to agents with selected roles",
+                            },
+                            {
+                              value: "by-user",
+                              label: "By User",
+                              desc: "Always assign to specific agents",
+                            },
+                            {
+                              value: "manual",
+                              label: "Manual",
+                              desc: "Do not auto-assign — review first",
+                            },
+                          ] as const
+                        ).map((opt) => (
+                          <label
+                            key={opt.value}
+                            style={{
+                              display: "flex",
+                              alignItems: "flex-start",
+                              gap: "10px",
+                              padding: "10px 12px",
+                              border: `1px solid ${catAssignForm.mode === opt.value ? "#3b82f6" : "#e5e7eb"}`,
+                              borderRadius: "6px",
+                              cursor: "pointer",
+                              backgroundColor:
+                                catAssignForm.mode === opt.value
+                                  ? "#eff6ff"
+                                  : "white",
+                            }}
+                          >
+                            <input
+                              type="radio"
+                              name="catAssignMode"
+                              value={opt.value}
+                              checked={catAssignForm.mode === opt.value}
+                              onChange={() =>
+                                setCatAssignForm({
+                                  ...catAssignForm,
+                                  mode: opt.value,
+                                })
+                              }
+                              style={{ marginTop: "3px" }}
+                            />
+                            <div>
+                              <span
+                                style={{
+                                  fontSize: "14px",
+                                  fontWeight: "500",
+                                  color: "#1f2937",
+                                  display: "block",
+                                }}
+                              >
+                                {opt.label}
+                              </span>
+                              <span
+                                style={{ fontSize: "12px", color: "#6b7280" }}
+                              >
+                                {opt.desc}
+                              </span>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Agent pool — round-robin or by-user */}
+                  {!inheritFromParent &&
+                    (catAssignForm.mode === "round-robin" ||
+                      catAssignForm.mode === "by-user") && (
+                      <div>
+                        <label
+                          style={{
+                            display: "block",
+                            fontSize: "14px",
+                            fontWeight: "500",
+                            color: "#374151",
+                            marginBottom: "6px",
+                          }}
+                        >
+                          {catAssignForm.mode === "by-user"
+                            ? "Assign to Agent(s)"
+                            : "Agent Pool (empty = all project agents)"}
+                        </label>
+                        <div
+                          style={{
+                            border: "1px solid #d1d5db",
+                            borderRadius: "6px",
+                            maxHeight: "200px",
+                            overflowY: "auto",
+                            backgroundColor: "white",
+                          }}
+                        >
+                          {drawerUsers.length === 0 ? (
+                            <p
+                              style={{
+                                padding: "12px",
+                                fontSize: "13px",
+                                color: "#9ca3af",
+                                margin: 0,
+                              }}
+                            >
+                              No users mapped to this project yet.
+                            </p>
+                          ) : (
+                            drawerUsers.map((user: any) => {
+                              const uid: string = user._id || user.id;
+                              const checked =
+                                catAssignForm.agentPool.includes(uid);
+                              return (
+                                <label
+                                  key={uid}
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "10px",
+                                    padding: "8px 12px",
+                                    cursor: "pointer",
+                                    borderBottom: "1px solid #f3f4f6",
+                                    backgroundColor: checked
+                                      ? "#eff6ff"
+                                      : "white",
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={(e) => {
+                                      const pool = e.target.checked
+                                        ? [...catAssignForm.agentPool, uid]
+                                        : catAssignForm.agentPool.filter(
+                                            (id) => id !== uid,
+                                          );
+                                      setCatAssignForm({
+                                        ...catAssignForm,
+                                        agentPool: pool,
+                                      });
+                                    }}
+                                  />
+                                  <span
+                                    style={{
+                                      fontSize: "13px",
+                                      color: "#374151",
+                                    }}
+                                  >
+                                    {user.firstName} {user.lastName}{" "}
+                                    <span
+                                      style={{
+                                        color: "#9ca3af",
+                                        fontSize: "12px",
+                                      }}
+                                    >
+                                      {user.email}
+                                    </span>
+                                  </span>
+                                </label>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                  {/* Role pool — by-role */}
+                  {!inheritFromParent && catAssignForm.mode === "by-role" && (
+                    <div>
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: "14px",
+                          fontWeight: "500",
+                          color: "#374151",
+                          marginBottom: "6px",
+                        }}
+                      >
+                        Role(s) to assign to
+                      </label>
+                      <div
+                        style={{
+                          border: "1px solid #d1d5db",
+                          borderRadius: "6px",
+                          maxHeight: "200px",
+                          overflowY: "auto",
+                          backgroundColor: "white",
+                        }}
+                      >
+                        {drawerRoles.length === 0 ? (
+                          <p
+                            style={{
+                              padding: "12px",
+                              fontSize: "13px",
+                              color: "#9ca3af",
+                              margin: 0,
+                            }}
+                          >
+                            No roles mapped to this project yet.
+                          </p>
+                        ) : (
+                          drawerRoles.map((role: any) => {
+                            const checked = catAssignForm.rolePool.includes(
+                              role._id,
+                            );
+                            return (
+                              <label
+                                key={role._id}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "10px",
+                                  padding: "8px 12px",
+                                  cursor: "pointer",
+                                  borderBottom: "1px solid #f3f4f6",
+                                  backgroundColor: checked
+                                    ? "#faf5ff"
+                                    : "white",
+                                }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={(e) => {
+                                    const pool = e.target.checked
+                                      ? [...catAssignForm.rolePool, role._id]
+                                      : catAssignForm.rolePool.filter(
+                                          (id) => id !== role._id,
+                                        );
+                                    setCatAssignForm({
+                                      ...catAssignForm,
+                                      rolePool: pool,
+                                    });
+                                  }}
+                                />
+                                <span
+                                  style={{ fontSize: "13px", color: "#374151" }}
+                                >
+                                  {role.name}
+                                </span>
+                              </label>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Active toggle */}
+                  {!inheritFromParent && (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "14px",
+                        border: "1px solid #e5e7eb",
+                        borderRadius: "6px",
+                      }}
+                    >
+                      <div>
+                        <span
+                          style={{
+                            fontSize: "14px",
+                            fontWeight: "500",
+                            color: "#374151",
+                            display: "block",
+                          }}
+                        >
+                          Rule Active
+                        </span>
+                        <span style={{ fontSize: "12px", color: "#6b7280" }}>
+                          When inactive, the project-level method is used
+                          instead
+                        </span>
+                      </div>
+                      <div
+                        role="switch"
+                        aria-checked={catAssignForm.isActive}
+                        onClick={() =>
+                          setCatAssignForm({
+                            ...catAssignForm,
+                            isActive: !catAssignForm.isActive,
+                          })
+                        }
+                        style={{
+                          width: "44px",
+                          height: "24px",
+                          backgroundColor: catAssignForm.isActive
+                            ? "#3b82f6"
+                            : "#d1d5db",
+                          borderRadius: "12px",
+                          cursor: "pointer",
+                          position: "relative",
+                          transition: "background-color 0.2s",
+                          flexShrink: 0,
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "18px",
+                            height: "18px",
+                            backgroundColor: "white",
+                            borderRadius: "9px",
+                            position: "absolute",
+                            top: "3px",
+                            left: catAssignForm.isActive ? "23px" : "3px",
+                            transition: "left 0.2s",
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+              {drawerTab === "sla" && (
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "20px",
+                  }}
+                >
+                  {/* Info banner */}
+                  <div
+                    style={{
+                      padding: "10px 14px",
+                      backgroundColor: "#eff6ff",
+                      border: "1px solid #bfdbfe",
+                      borderRadius: "6px",
+                      fontSize: "13px",
+                      color: "#1e40af",
+                      lineHeight: "1.5",
+                    }}
+                  >
+                    💡 These times override the priority-level SLA for tickets
+                    in the <strong>{catAssignEditTarget?.name}</strong>{" "}
+                    category. Leave inactive to fall back to priority SLA.
+                  </div>
+
+                  {/* Response Time */}
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "14px",
+                        fontWeight: "500",
+                        color: "#374151",
+                        marginBottom: "8px",
+                      }}
+                    >
+                      First Response Time
+                    </label>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <input
+                        type="number"
+                        min="1"
+                        value={catSLAForm.responseTimeValue}
+                        onChange={(e) =>
+                          setCatSLAForm({
+                            ...catSLAForm,
+                            responseTimeValue: e.target.value,
+                          })
+                        }
+                        style={{
+                          width: "90px",
+                          padding: "8px 10px",
+                          border: "1px solid #d1d5db",
+                          borderRadius: "6px",
+                          fontSize: "14px",
+                        }}
+                      />
+                      <select
+                        value={catSLAForm.responseTimeUnit}
+                        onChange={(e) =>
+                          setCatSLAForm({
+                            ...catSLAForm,
+                            responseTimeUnit: e.target.value,
+                          })
+                        }
+                        style={{
+                          flex: 1,
+                          padding: "8px 10px",
+                          border: "1px solid #d1d5db",
+                          borderRadius: "6px",
+                          fontSize: "14px",
+                        }}
+                      >
+                        <option value="minutes">Minutes</option>
+                        <option value="hours">Hours</option>
+                        <option value="days">Days</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Resolution Time */}
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "14px",
+                        fontWeight: "500",
+                        color: "#374151",
+                        marginBottom: "8px",
+                      }}
+                    >
+                      Resolution Deadline
+                    </label>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <input
+                        type="number"
+                        min="1"
+                        value={catSLAForm.resolutionTimeValue}
+                        onChange={(e) =>
+                          setCatSLAForm({
+                            ...catSLAForm,
+                            resolutionTimeValue: e.target.value,
+                          })
+                        }
+                        style={{
+                          width: "90px",
+                          padding: "8px 10px",
+                          border: "1px solid #d1d5db",
+                          borderRadius: "6px",
+                          fontSize: "14px",
+                        }}
+                      />
+                      <select
+                        value={catSLAForm.resolutionTimeUnit}
+                        onChange={(e) =>
+                          setCatSLAForm({
+                            ...catSLAForm,
+                            resolutionTimeUnit: e.target.value,
+                          })
+                        }
+                        style={{
+                          flex: 1,
+                          padding: "8px 10px",
+                          border: "1px solid #d1d5db",
+                          borderRadius: "6px",
+                          fontSize: "14px",
+                        }}
+                      >
+                        <option value="minutes">Minutes</option>
+                        <option value="hours">Hours</option>
+                        <option value="days">Days</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Active toggle */}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "14px",
+                      border: "1px solid #e5e7eb",
+                      borderRadius: "6px",
+                    }}
+                  >
+                    <div>
+                      <span
+                        style={{
+                          fontSize: "14px",
+                          fontWeight: "500",
+                          color: "#374151",
+                          display: "block",
+                        }}
+                      >
+                        SLA Override Active
+                      </span>
+                      <span style={{ fontSize: "12px", color: "#6b7280" }}>
+                        When inactive, priority-level SLA is used instead
+                      </span>
+                    </div>
+                    <div
+                      role="switch"
+                      aria-checked={catSLAForm.isActive}
+                      onClick={() =>
+                        setCatSLAForm({
+                          ...catSLAForm,
+                          isActive: !catSLAForm.isActive,
+                        })
+                      }
+                      style={{
+                        width: "44px",
+                        height: "24px",
+                        backgroundColor: catSLAForm.isActive
+                          ? "#3b82f6"
+                          : "#d1d5db",
+                        borderRadius: "12px",
+                        cursor: "pointer",
+                        position: "relative",
+                        transition: "background-color 0.2s",
+                        flexShrink: 0,
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: "18px",
+                          height: "18px",
+                          backgroundColor: "white",
+                          borderRadius: "9px",
+                          position: "absolute",
+                          top: "3px",
+                          left: catSLAForm.isActive ? "23px" : "3px",
+                          transition: "left 0.2s",
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Escalation tab ─────────────────────────── */}
+              {drawerTab === "escalation" && (
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "20px",
+                  }}
+                >
+                  {/* Info banner */}
+                  <div
+                    style={{
+                      backgroundColor: "#f0f9ff",
+                      border: "1px solid #bae6fd",
+                      borderRadius: "8px",
+                      padding: "12px 16px",
+                      fontSize: "13px",
+                      color: "#0369a1",
+                    }}
+                  >
+                    Assign a dedicated escalation matrix for this category. When
+                    set and active, it overrides the project-level matrix for
+                    tickets in this category.
+                  </div>
+
+                  {/* US-ESC-003: Effective (resolved) escalation matrix */}
+                  {catResolvedEscalation && (
+                    <div
+                      style={{
+                        padding: "12px 16px",
+                        backgroundColor:
+                          catResolvedEscalation.source === "direct"
+                            ? "#f0fdf4"
+                            : catResolvedEscalation.source === "inherited"
+                              ? "#fefce8"
+                              : "#f9fafb",
+                        border: `1px solid ${
+                          catResolvedEscalation.source === "direct"
+                            ? "#86efac"
+                            : catResolvedEscalation.source === "inherited"
+                              ? "#fde047"
+                              : "#e5e7eb"
+                        }`,
+                        borderRadius: "8px",
+                        fontSize: "13px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontWeight: 600,
+                          marginBottom: "4px",
+                          color: "#374151",
+                        }}
+                      >
+                        Effective Escalation Matrix
+                      </div>
+                      {catResolvedEscalation.source === "direct" && (
+                        <span style={{ color: "#15803d" }}>
+                          🎯 <strong>{catResolvedEscalation.matrixName}</strong>{" "}
+                          <span style={{ opacity: 0.8 }}>
+                            (Direct override)
+                          </span>
+                        </span>
+                      )}
+                      {catResolvedEscalation.source === "inherited" && (
+                        <span style={{ color: "#92400e" }}>
+                          ↑ <strong>{catResolvedEscalation.matrixName}</strong>{" "}
+                          — inherited from{" "}
+                          <em>
+                            {catResolvedEscalation.inheritedFromCategoryName}
+                          </em>
+                        </span>
+                      )}
+                      {catResolvedEscalation.source === "none" && (
+                        <span style={{ color: "#6b7280" }}>
+                          Using project-default matrix (no override configured)
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Matrix selector */}
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "14px",
+                        fontWeight: "500",
+                        color: "#374151",
+                        marginBottom: "8px",
+                      }}
+                    >
+                      Escalation Matrix
+                    </label>
+                    <select
+                      value={catEscalationForm.escalationMatrixId}
+                      onChange={(e) =>
+                        setCatEscalationForm({
+                          ...catEscalationForm,
+                          escalationMatrixId: e.target.value,
+                        })
+                      }
+                      style={{
+                        width: "100%",
+                        padding: "8px 12px",
+                        fontSize: "14px",
+                        border: "1px solid #d1d5db",
+                        borderRadius: "6px",
+                        backgroundColor: "white",
+                        color: "#374151",
+                      }}
+                    >
+                      <option value="">
+                        — Use project-level matrix (no override) —
+                      </option>
+                      {projectMatrices.map((m) => (
+                        <option key={m._id} value={m._id}>
+                          {m.name}
+                        </option>
+                      ))}
+                    </select>
+                    {projectMatrices.length === 0 && (
+                      <p
+                        style={{
+                          marginTop: "6px",
+                          fontSize: "12px",
+                          color: "#9ca3af",
+                        }}
+                      >
+                        No active escalation matrices found for this project.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Level preview */}
+                  {catEscalationForm.escalationMatrixId && (
+                    <div>
+                      <p
+                        style={{
+                          fontSize: "13px",
+                          fontWeight: "500",
+                          color: "#374151",
+                          marginBottom: "8px",
+                        }}
+                      >
+                        Escalation Levels
+                      </p>
+                      {(() => {
+                        const sel = projectMatrices.find(
+                          (m) => m._id === catEscalationForm.escalationMatrixId,
+                        );
+                        if (!sel || !sel.levels?.length) {
+                          return (
+                            <p style={{ fontSize: "13px", color: "#9ca3af" }}>
+                              No levels defined.
+                            </p>
+                          );
+                        }
+                        return (
+                          <div
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: "6px",
+                            }}
+                          >
+                            {[...sel.levels]
+                              .sort(
+                                (a: any, b: any) =>
+                                  a.levelNumber - b.levelNumber,
+                              )
+                              .map((lv: any) => (
+                                <div
+                                  key={lv.levelNumber}
+                                  style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                    padding: "8px 12px",
+                                    backgroundColor: "#f9fafb",
+                                    border: "1px solid #e5e7eb",
+                                    borderRadius: "6px",
+                                    fontSize: "13px",
+                                    color: "#374151",
+                                  }}
+                                >
+                                  <span>
+                                    L{lv.levelNumber}:{" "}
+                                    {lv.levelName || lv.name || "Level"}
+                                  </span>
+                                  <span style={{ color: "#6b7280" }}>
+                                    {lv.slaHours ?? "-"} {lv.slaUnit || "hrs"}
+                                  </span>
+                                </div>
+                              ))}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+
+                  {/* Active toggle */}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "14px 16px",
+                      border: "1px solid #e5e7eb",
+                      borderRadius: "8px",
+                    }}
+                  >
+                    <div>
+                      <span
+                        style={{
+                          fontSize: "14px",
+                          fontWeight: "500",
+                          color: "#374151",
+                          display: "block",
+                        }}
+                      >
+                        Escalation Override Active
+                      </span>
+                      <span style={{ fontSize: "12px", color: "#6b7280" }}>
+                        When inactive, the project-level matrix is used instead
+                      </span>
+                    </div>
+                    <div
+                      role="switch"
+                      aria-checked={catEscalationForm.isActive}
+                      onClick={() =>
+                        setCatEscalationForm({
+                          ...catEscalationForm,
+                          isActive: !catEscalationForm.isActive,
+                        })
+                      }
+                      style={{
+                        width: "44px",
+                        height: "24px",
+                        backgroundColor: catEscalationForm.isActive
+                          ? "#3b82f6"
+                          : "#d1d5db",
+                        borderRadius: "12px",
+                        cursor: "pointer",
+                        position: "relative",
+                        transition: "background-color 0.2s",
+                        flexShrink: 0,
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: "18px",
+                          height: "18px",
+                          backgroundColor: "white",
+                          borderRadius: "9px",
+                          position: "absolute",
+                          top: "3px",
+                          left: catEscalationForm.isActive ? "23px" : "3px",
+                          transition: "left 0.2s",
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div
+              style={{
+                padding: "16px 24px",
+                borderTop: "1px solid #e5e7eb",
+                display: "flex",
+                gap: "12px",
+                justifyContent: "flex-end",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setCatAssignDrawerOpen(false)}
+                style={{
+                  padding: "8px 20px",
+                  fontSize: "14px",
+                  fontWeight: "500",
+                  border: "1px solid #d1d5db",
+                  borderRadius: "6px",
+                  backgroundColor: "white",
+                  color: "#374151",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={
+                  drawerTab === "assignment"
+                    ? saveCatAssignConfig
+                    : drawerTab === "sla"
+                      ? saveCategorySLA
+                      : saveCategoryEscalationConfig
+                }
+                disabled={catAssignSaving || catEscSaving}
+                style={{
+                  padding: "8px 20px",
+                  fontSize: "14px",
+                  fontWeight: "500",
+                  border: "none",
+                  borderRadius: "6px",
+                  backgroundColor:
+                    catAssignSaving || catEscSaving ? "#93c5fd" : "#3b82f6",
+                  color: "white",
+                  cursor:
+                    catAssignSaving || catEscSaving ? "not-allowed" : "pointer",
+                }}
+              >
+                {catAssignSaving || catEscSaving ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </div>
+        </>
       )}
 
       {/* Toast Notification */}

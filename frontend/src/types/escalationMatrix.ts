@@ -14,6 +14,14 @@ export interface EscalationLevel {
   roleName?: string; // Populated from role
   slaHours: number; // SLA duration for this level in hours
   slaUnit?: SlaUnit; // Display unit (mins, hrs, days) - default 'hrs'
+  /** US-ESC-005: 'reassign' changes assignee; 'notify' only notifies */
+  levelType?: "reassign" | "notify";
+  /** US-ESC-006: specific users to notify (used when levelType='notify') */
+  notifyUserIds?: string[];
+  /** US-ESC-007: trigger on fixed duration or % of overall ticket SLA consumed */
+  slaThresholdType?: "fixed" | "percent";
+  /** US-ESC-007: percentage threshold (1-100), used when slaThresholdType='percent' */
+  slaThresholdPercent?: number;
   isActive: boolean;
   users?: EscalationLevelUser[]; // Users in this role (populated)
   userCount?: number;
@@ -37,12 +45,12 @@ export interface EscalationLevelUser {
 /**
  * Escalation Mode Types
  */
-export type EscalationMode = 'SEQUENTIAL' | 'RANDOM';
+export type EscalationMode = "SEQUENTIAL" | "RANDOM";
 
 /**
  * Priority Mode Types - Controls if matrix uses same levels for all priorities or different per priority
  */
-export type PriorityMode = 'SAME_FOR_ALL' | 'PER_PRIORITY';
+export type PriorityMode = "SAME_FOR_ALL" | "PER_PRIORITY";
 
 /**
  * Priority Configuration - Different escalation levels per priority
@@ -70,10 +78,23 @@ export interface EscalationMatrix {
   projectIds: string[] | ProjectInfo[];
   applicablePriorities?: string[]; // Priority codes this matrix applies to
   isActive: boolean;
+  linkedCategoriesCount?: number; // Number of categories linked to this matrix
+  linkedCategories?: LinkedCategoryInfo[]; // Populated when fetching by ID
   createdBy?: UserInfo;
   updatedBy?: UserInfo;
   createdAt?: string;
   updatedAt?: string;
+}
+
+/**
+ * Linked category info for a matrix
+ */
+export interface LinkedCategoryInfo {
+  _id: string;
+  categoryId: string;
+  categoryName: string;
+  categoryLevel?: number;
+  projectId: string;
 }
 
 /**
@@ -147,7 +168,7 @@ export interface PriorityConfigFormData {
   levels: EscalationLevelFormData[];
 }
 
-export type SlaUnit = 'mins' | 'hrs' | 'days';
+export type SlaUnit = "mins" | "hrs" | "days";
 
 /**
  * Form data for escalation level
@@ -158,6 +179,14 @@ export interface EscalationLevelFormData {
   roleId: string;
   slaHours: number;
   slaUnit?: SlaUnit; // Display unit (mins, hrs, days) - default 'hrs'
+  /** US-ESC-005: 'reassign' changes assignee; 'notify' only notifies */
+  levelType?: "reassign" | "notify";
+  /** US-ESC-006: specific users to notify (used when levelType='notify') */
+  notifyUserIds?: string[];
+  /** US-ESC-007: trigger on fixed duration or % of overall ticket SLA consumed */
+  slaThresholdType?: "fixed" | "percent";
+  /** US-ESC-007: percentage threshold (1-100), used when slaThresholdType='percent' */
+  slaThresholdPercent?: number;
   isActive: boolean;
 }
 

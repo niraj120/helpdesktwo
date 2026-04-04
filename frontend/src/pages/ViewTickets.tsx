@@ -57,6 +57,19 @@ interface Ticket {
   mergedTickets?: string[];
   /** True when a new ticket or student reply has not yet been viewed by an agent */
   hasNewReply?: boolean;
+  roleLevelSLA?: {
+    startedAt?: string;
+    dueAt?: string;
+    breachedAt?: string;
+    pausedAt?: string;
+    pausedDuration?: number;
+  };
+  ticketLevelSLA?: {
+    dueAt?: string;
+    breachedAt?: string;
+    pausedAt?: string;
+    pausedDuration?: number;
+  };
 }
 
 interface Project {
@@ -71,6 +84,54 @@ interface Agent {
   lastName: string;
   email?: string;
 }
+
+// US-ESC-009: SLA countdown helpers
+const formatSlaRemaining = (ms: number): string => {
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  if (h > 24) return `${Math.floor(h / 24)}d ${h % 24}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+};
+
+const getSlaPill = (
+  ticket: Ticket,
+): { label: string; color: string; bg: string; tooltip: string } | null => {
+  const dueAt = ticket.roleLevelSLA?.dueAt ?? ticket.ticketLevelSLA?.dueAt;
+  if (!dueAt) return null;
+  const isPaused = !!(
+    ticket.roleLevelSLA?.pausedAt ?? ticket.ticketLevelSLA?.pausedAt
+  );
+  if (isPaused)
+    return {
+      label: "PAUSED",
+      color: "#374151",
+      bg: "#f3f4f6",
+      tooltip: "SLA is paused",
+    };
+  const isBreached = !!(
+    ticket.roleLevelSLA?.breachedAt ?? ticket.ticketLevelSLA?.breachedAt
+  );
+  const now = Date.now();
+  const due = new Date(dueAt).getTime();
+  const remaining = due - now;
+  if (isBreached || remaining <= 0)
+    return {
+      label: "BREACHED",
+      color: "#dc2626",
+      bg: "#fef2f2",
+      tooltip: `Due: ${new Date(dueAt).toLocaleString()}`,
+    };
+  const startedAt = ticket.roleLevelSLA?.startedAt;
+  const start = startedAt ? new Date(startedAt).getTime() : due - 86400000;
+  const total = due - start;
+  const pct = total > 0 ? (remaining / total) * 100 : 100;
+  const label = formatSlaRemaining(remaining);
+  const tooltip = `Due: ${new Date(dueAt).toLocaleString()}`;
+  if (pct > 50) return { label, color: "#15803d", bg: "#f0fdf4", tooltip };
+  if (pct > 25) return { label, color: "#b45309", bg: "#fffbeb", tooltip };
+  return { label, color: "#dc2626", bg: "#fef2f2", tooltip };
+};
 
 const ViewTickets: React.FC = () => {
   const navigate = useNavigate();
@@ -91,6 +152,12 @@ const ViewTickets: React.FC = () => {
 
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
+  // US-ESC-009: force re-render every 60s so SLA countdowns stay current
+  const [, forceUpdate] = React.useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    const id = setInterval(() => forceUpdate(), 60000);
+    return () => clearInterval(id);
+  }, []);
   const [filterStatus, setFilterStatus] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -912,6 +979,28 @@ const ViewTickets: React.FC = () => {
                       {ticket.priority}
                     </span>
                   </div>
+                  {/* US-ESC-009: SLA countdown pill */}
+                  {(() => {
+                    const pill = getSlaPill(ticket);
+                    if (!pill) return null;
+                    return (
+                      <div title={pill.tooltip}>
+                        <span
+                          style={{
+                            padding: "2px 8px",
+                            borderRadius: "10px",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            color: pill.color,
+                            backgroundColor: pill.bg,
+                            border: `1px solid ${pill.color}30`,
+                          }}
+                        >
+                          ⏱ {pill.label}
+                        </span>
+                      </div>
+                    );
+                  })()}
                   <div>
                     <span style={{ fontWeight: 600 }}>Center:</span>{" "}
                     <span

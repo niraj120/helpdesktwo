@@ -76,8 +76,14 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [categories, setCategories] = useState<string[]>([]);
+  const [categoryObjects, setCategoryObjects] = useState<
+    Array<{ _id: string; name: string }>
+  >([]);
   const [categoryHierarchy, setCategoryHierarchy] =
     useState<CategoryHierarchyValue>({});
+  const [assignmentPreview, setAssignmentPreview] = useState<string | null>(
+    null,
+  );
 
   // Fetch hierarchy config to determine if multi-level categories are enabled
   const { config: hierarchyConfig } = useHierarchyConfig(
@@ -192,6 +198,11 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
 
       // Set categories AFTER processing fields
       setCategories(activeCategoryNames);
+      setCategoryObjects(
+        categoryList
+          .filter((cat: any) => cat.isActive)
+          .map((cat: any) => ({ _id: cat._id, name: cat.name })),
+      );
 
       const filteredFields = formFields.filter(
         (field: OnlineFormField) =>
@@ -212,8 +223,34 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
     }
   };
 
+  const fetchAssignmentPreview = async (categoryId: string) => {
+    try {
+      const token = localStorage.getItem("authToken");
+      const res = await axios.get(
+        `${API_CONFIG.API_URL}/categories/${categoryId}/assignment-preview`,
+        { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+      );
+      if (res.data.success) {
+        setAssignmentPreview(res.data.data.label);
+      } else {
+        setAssignmentPreview(null);
+      }
+    } catch {
+      setAssignmentPreview(null);
+    }
+  };
+
   const handleInputChange = (fieldName: string, value: any) => {
     setFormData((prev) => ({ ...prev, [fieldName]: value }));
+    // Trigger assignment preview when Category field changes (flat dropdown)
+    if (fieldName.toLowerCase() === "category" && typeof value === "string") {
+      const match = categoryObjects.find((c) => c.name === value);
+      if (match) {
+        fetchAssignmentPreview(match._id);
+      } else {
+        setAssignmentPreview(null);
+      }
+    }
   };
 
   const handleFileChange = (fieldName: string, files: FileList | null) => {
@@ -376,6 +413,18 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
                 setCategoryHierarchy(newValue);
                 // Store the display path as the field value for form submission
                 handleInputChange(field.fieldName, newValue);
+                // Push level names into formData so conditionEngine can match
+                // text conditions like "Subcategory equals Name change"
+                if (hierarchyConfig?.levels) {
+                  const nameUpdates: Record<string, string> = {};
+                  hierarchyConfig.levels.forEach((l: any) => {
+                    const nameKey =
+                      `level${l.levelNumber}Name` as keyof typeof newValue;
+                    nameUpdates[l.displayName] =
+                      (newValue[nameKey] as string) || "";
+                  });
+                  setFormData((prev: any) => ({ ...prev, ...nameUpdates }));
+                }
               }}
               mode="online"
               showValidation={false}
@@ -672,6 +721,38 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
                       onChange={(newValue) => {
                         setCategoryHierarchy(newValue);
                         handleInputChange("category", newValue);
+                        // Also push level names into formData keyed by level displayName
+                        // so conditionEngine can match text conditions like
+                        // "Subcategory equals Name change" (names, not ObjectIds).
+                        if (hierarchyConfig?.levels) {
+                          const nameUpdates: Record<string, string> = {};
+                          hierarchyConfig.levels.forEach((l: any) => {
+                            const nameKey =
+                              `level${l.levelNumber}Name` as keyof typeof newValue;
+                            nameUpdates[l.displayName] =
+                              (newValue[nameKey] as string) || "";
+                          });
+                          setFormData((prev: any) => ({
+                            ...prev,
+                            ...nameUpdates,
+                          }));
+                        }
+                        // Trigger preview for hierarchical selector using level1 (ObjectId or name)
+                        const level1 = newValue?.level1;
+                        if (level1) {
+                          // If it looks like an ObjectId (24-char hex) use directly
+                          if (/^[a-f0-9]{24}$/i.test(level1)) {
+                            fetchAssignmentPreview(level1);
+                          } else {
+                            const match = categoryObjects.find(
+                              (c) => c.name === level1,
+                            );
+                            if (match) fetchAssignmentPreview(match._id);
+                            else setAssignmentPreview(null);
+                          }
+                        } else {
+                          setAssignmentPreview(null);
+                        }
                       }}
                       mode="online"
                       showValidation={false}
@@ -684,6 +765,21 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
                 <p>
                   No form fields configured. Please contact the administrator.
                 </p>
+              </div>
+            )}
+
+            {/* US-014: Assignment preview — shown after category selection */}
+            {assignmentPreview && (
+              <div
+                className="flex items-start gap-2 px-4 py-3 rounded-lg text-sm"
+                style={{
+                  backgroundColor: "#f0f9ff",
+                  border: "1px solid #bae6fd",
+                  color: "#0369a1",
+                }}
+              >
+                <span style={{ fontSize: "16px", lineHeight: 1 }}>ℹ️</span>
+                <span>{assignmentPreview}</span>
               </div>
             )}
 

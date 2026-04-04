@@ -103,6 +103,8 @@ export interface IProject extends Document {
       assignToRoles?: string[]; // Roles eligible for assignment (e.g., 'Agent', 'Support')
       reassignOnEscalation?: boolean;
       notifyOnAssignment?: boolean;
+      /** US-ESC-013: minutes of recent activity before auto-escalation is skipped (default 10) */
+      autoEscalateGracePeriodMins?: number;
       conditionRules?: Array<{
         field: string;
         operator: string;
@@ -458,6 +460,7 @@ const projectSchema = new Schema<IProject>(
         assignToRoles: [{ type: String }],
         reassignOnEscalation: { type: Boolean, default: false },
         notifyOnAssignment: { type: Boolean, default: true },
+        autoEscalateGracePeriodMins: { type: Number, default: 10 },
         conditionRules: [
           {
             field: { type: String },

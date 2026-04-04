@@ -1,6 +1,6 @@
-import { Router } from 'express';
-import { authMiddleware } from '../middleware/auth';
-import { requirePermission } from '../middleware/permissions';
+import { Router } from "express";
+import { authMiddleware } from "../middleware/auth";
+import { requirePermission } from "../middleware/permissions";
 import {
   getHierarchyConfig,
   saveHierarchyConfig,
@@ -12,7 +12,7 @@ import {
   deleteHierarchyCategory,
   bulkUploadCategories,
   downloadBulkTemplate,
-} from '../controllers/hierarchyConfigController';
+} from "../controllers/hierarchyConfigController";
 
 const router = Router();
 
@@ -23,7 +23,7 @@ const router = Router();
  * @desc    Get hierarchy configuration for a project
  * @access  Public (needed for forms)
  */
-router.get('/:projectId', getHierarchyConfig);
+router.get("/:projectId", getHierarchyConfig);
 
 /**
  * @route   POST /api/hierarchy-config/:projectId
@@ -31,10 +31,10 @@ router.get('/:projectId', getHierarchyConfig);
  * @access  Private - requires MASTER_DATA_MANAGE_CATEGORIES permission
  */
 router.post(
-  '/:projectId',
+  "/:projectId",
   authMiddleware,
-  requirePermission('MASTER_DATA_MANAGE_CATEGORIES'),
-  saveHierarchyConfig
+  requirePermission("MASTER_DATA_MANAGE_CATEGORIES"),
+  saveHierarchyConfig,
 );
 
 // ==================== CATEGORY TREE ROUTES ====================
@@ -44,21 +44,21 @@ router.post(
  * @desc    Get all categories as tree structure
  * @access  Public (needed for forms)
  */
-router.get('/:projectId/tree', getCategoryTree);
+router.get("/:projectId/tree", getCategoryTree);
 
 /**
  * @route   GET /api/hierarchy-config/:projectId/children/:parentId
  * @desc    Get children of a specific category
  * @access  Public (needed for cascading dropdowns)
  */
-router.get('/:projectId/children/:parentId', getCategoryChildren);
+router.get("/:projectId/children/:parentId", getCategoryChildren);
 
 /**
  * @route   GET /api/hierarchy-config/:projectId/level/:levelNumber
  * @desc    Get categories by level (with optional parent filter)
  * @access  Public (needed for forms)
  */
-router.get('/:projectId/level/:levelNumber', getCategoriesByLevel);
+router.get("/:projectId/level/:levelNumber", getCategoriesByLevel);
 
 // ==================== CATEGORY CRUD ROUTES ====================
 
@@ -68,10 +68,10 @@ router.get('/:projectId/level/:levelNumber', getCategoriesByLevel);
  * @access  Private - requires MASTER_DATA_MANAGE_CATEGORIES permission
  */
 router.post(
-  '/:projectId/categories',
+  "/:projectId/categories",
   authMiddleware,
-  requirePermission('MASTER_DATA_MANAGE_CATEGORIES'),
-  createHierarchyCategory
+  requirePermission("MASTER_DATA_MANAGE_CATEGORIES"),
+  createHierarchyCategory,
 );
 
 /**
@@ -80,10 +80,10 @@ router.post(
  * @access  Private - requires MASTER_DATA_MANAGE_CATEGORIES permission
  */
 router.post(
-  '/:projectId/categories/bulk',
+  "/:projectId/categories/bulk",
   authMiddleware,
-  requirePermission('MASTER_DATA_MANAGE_CATEGORIES'),
-  bulkUploadCategories
+  requirePermission("MASTER_DATA_MANAGE_CATEGORIES"),
+  bulkUploadCategories,
 );
 
 /**
@@ -92,33 +92,33 @@ router.post(
  * @access  Private - requires MASTER_DATA_MANAGE_CATEGORIES permission
  */
 router.get(
-  '/:projectId/categories/template',
+  "/:projectId/categories/template",
   authMiddleware,
-  downloadBulkTemplate
+  downloadBulkTemplate,
 );
 
 /**
- * @route   PUT /api/hierarchy-config/categories/:categoryId
+ * @route   PUT /api/hierarchy-config/:projectId/categories/:categoryId
  * @desc    Update a category
  * @access  Private - requires MASTER_DATA_MANAGE_CATEGORIES permission
  */
 router.put(
-  '/categories/:categoryId',
+  "/:projectId/categories/:categoryId",
   authMiddleware,
-  requirePermission('MASTER_DATA_MANAGE_CATEGORIES'),
-  updateHierarchyCategory
+  requirePermission("MASTER_DATA_MANAGE_CATEGORIES"),
+  updateHierarchyCategory,
 );
 
 /**
- * @route   DELETE /api/hierarchy-config/categories/:categoryId
+ * @route   DELETE /api/hierarchy-config/:projectId/categories/:categoryId
  * @desc    Delete a category (soft delete by default)
  * @access  Private - requires MASTER_DATA_MANAGE_CATEGORIES permission
  */
 router.delete(
-  '/categories/:categoryId',
+  "/:projectId/categories/:categoryId",
   authMiddleware,
-  requirePermission('MASTER_DATA_MANAGE_CATEGORIES'),
-  deleteHierarchyCategory
+  requirePermission("MASTER_DATA_MANAGE_CATEGORIES"),
+  deleteHierarchyCategory,
 );
 
 export default router;

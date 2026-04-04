@@ -17,6 +17,11 @@ import { LanguageToggle } from "../components/LanguageToggle";
 import KnowledgeBaseViewer from "../components/knowledge-base/KnowledgeBaseViewer";
 import { useBranding } from "../contexts/BrandingContext";
 import { API_CONFIG } from "../config/constants";
+import HierarchyCategorySelector, {
+  CategoryHierarchyValue,
+  useHierarchyConfig,
+} from "../components/HierarchyCategorySelector";
+import { conditionEngine, FormFieldSchema } from "../utils/conditionEngine";
 import "./StudentPortal.css";
 
 // Google Maps type declarations
@@ -175,6 +180,13 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
     clientId: string;
     redirectUri: string;
   } | null>(null);
+  const [categoryHierarchy, setCategoryHierarchy] =
+    useState<CategoryHierarchyValue>({});
+
+  // Fetch project hierarchy config (drives Course → Category → Subcategory in the form)
+  const { config: hierarchyConfig } = useHierarchyConfig(
+    projectBranding?.projectId || "",
+  );
 
   const fetchSpecificKBArticle = async (articleId: string) => {
     try {
@@ -782,11 +794,16 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
     setSubmitError(null);
 
     try {
-      // Validate required fields
-      const requiredFields =
-        ticketSettings?.onlineFormFields.filter((f) => f.required) || [];
-      const missingFields = requiredFields.filter(
-        (field) => !formData[field.fieldName],
+      // Validate required fields — respects condition engine visibility rules
+      const allFields =
+        (ticketSettings?.onlineFormFields as FormFieldSchema[]) || [];
+      const { visibleFields, requiredFields } = conditionEngine(
+        allFields,
+        formData,
+      );
+      const missingFields = Array.from(requiredFields).filter(
+        (fieldName) =>
+          !formData[fieldName] && !(fieldFiles[fieldName]?.length > 0),
       );
 
       if (missingFields.length > 0) {
@@ -795,13 +812,27 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
         return;
       }
 
-      // Prepare form data
+      // Prepare form data — only include values for visible fields
       const submitData = new FormData();
       submitData.append("projectId", projectBranding?.projectId || "");
-      submitData.append("formData", JSON.stringify(formData));
+      // Filter out the synthetic hierarchy name keys (Course, Category, Subcategory injected for conditionEngine)
+      const cleanFormData = Object.fromEntries(
+        Object.entries(formData).filter(([key]) => visibleFields.has(key)),
+      );
+      submitData.append("formData", JSON.stringify(cleanFormData));
 
-      // Attach per-field files (keyed by field name so backend can map them)
+      // Include hierarchical category selection if configured
+      if (categoryHierarchy?.level1) {
+        submitData.append(
+          "categoryHierarchy",
+          JSON.stringify(categoryHierarchy),
+        );
+        submitData.append("category", categoryHierarchy.level1);
+      }
+
+      // Attach per-field files — only for visible fields
       Object.keys(fieldFiles).forEach((fieldName) => {
+        if (!visibleFields.has(fieldName)) return;
         fieldFiles[fieldName].forEach((file) => {
           submitData.append(fieldName, file);
         });
@@ -988,7 +1019,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
                   className="text-sm font-medium hover:underline"
                   style={{ color: projectBranding?.primaryColor }}
                 >
-                  {t("clickToUpload")}
+                  {t("clickToUpload", "Click to Upload")}
                 </span>
                 <input
                   type="file"
@@ -1313,24 +1344,79 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
             <div className="p-4 sm:p-8 md:p-12">
               <div className="mb-6 sm:mb-8">
                 <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
-                  {t("submitYourQuery")}
+                  {t("submitYourTicket")}
                 </h2>
                 <p className="text-sm sm:text-base text-gray-600">
-                  {ticketSettings.welcomeMessage || t("fillFormToSubmit")}
+                  {ticketSettings.welcomeMessage ||
+                    t(
+                      "fillFormToSubmit",
+                      "Welcome! Submit your query below and our team will assist you.",
+                    )}
                 </p>
               </div>
               <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
-                {ticketSettings.onlineFormFields.map((field) => (
-                  <div key={field.fieldName} className="group">
-                    <label className="block text-sm font-semibold text-gray-800 mb-2">
-                      {field.fieldName}
-                      {field.required && (
-                        <span className="text-red-500 ml-1">*</span>
-                      )}
-                    </label>
-                    {renderOnlineFormField(field)}
-                  </div>
-                ))}
+                {/* Fixed profile fields (Name, Email, Phone) */}
+                {ticketSettings.onlineFormFields
+                  .filter((f: any) => f.isFixed)
+                  .map((field) => (
+                    <div key={field.fieldName} className="group">
+                      <label className="block text-sm font-semibold text-gray-800 mb-2">
+                        {field.fieldName}
+                        {field.required && (
+                          <span className="text-red-500 ml-1">*</span>
+                        )}
+                      </label>
+                      {renderOnlineFormField(field)}
+                    </div>
+                  ))}
+
+                {/* Hierarchy selector (Course → Category → Subcategory etc.) */}
+                {projectBranding && hierarchyConfig && (
+                  <HierarchyCategorySelector
+                    projectId={projectBranding.projectId}
+                    value={categoryHierarchy}
+                    onChange={(newValue) => {
+                      setCategoryHierarchy(newValue);
+                      // Inject level names into formData so conditionEngine can evaluate
+                      // rules like "When Subcategory equals 'Fees paid but not reflecting'"
+                      if (hierarchyConfig?.levels) {
+                        const nameUpdates: Record<string, string> = {};
+                        (hierarchyConfig.levels as any[]).forEach((l) => {
+                          const nameKey =
+                            `level${l.levelNumber}Name` as keyof CategoryHierarchyValue;
+                          nameUpdates[l.displayName] =
+                            (newValue[nameKey] as string) || "";
+                        });
+                        setFormData((prev) => ({ ...prev, ...nameUpdates }));
+                      }
+                    }}
+                    mode="online"
+                    showValidation={false}
+                  />
+                )}
+
+                {/* Custom form fields — visibility driven by conditionEngine (admin-configured rules) */}
+                {(() => {
+                  const allFields =
+                    ticketSettings.onlineFormFields as FormFieldSchema[];
+                  const { visibleFields, requiredFields } = conditionEngine(
+                    allFields,
+                    formData,
+                  );
+                  return allFields
+                    .filter((f) => !f.isFixed && visibleFields.has(f.fieldName))
+                    .map((field) => (
+                      <div key={field.fieldName} className="group">
+                        <label className="block text-sm font-semibold text-gray-800 mb-2">
+                          {field.fieldName}
+                          {requiredFields.has(field.fieldName) && (
+                            <span className="text-red-500 ml-1">*</span>
+                          )}
+                        </label>
+                        {renderOnlineFormField(field as OnlineFormField)}
+                      </div>
+                    ));
+                })()}
 
                 {/* Submit Button with Modern Design */}
                 <div className="pt-4">
@@ -1365,12 +1451,12 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
                               d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                             ></path>
                           </svg>
-                          <span>{t("submittingQuery")}</span>
+                          <span>{t("submitting")}</span>
                         </>
                       ) : (
                         <>
                           <DocumentArrowUpIcon className="w-6 h-6" />
-                          <span>{t("submitQuery")}</span>
+                          <span>{t("submitTicket")}</span>
                         </>
                       )}
                     </span>

@@ -29,6 +29,10 @@ import { logActivity } from "../utils/logger";
 import { config } from "../config";
 import { initializeSLATracking } from "../services/slaHelperService";
 import { autoAssignMatrixToTicket } from "../services/escalationMatrixService";
+import {
+  autoAssignTicket,
+  AutoAssignResult,
+} from "../utils/ticketAutoAssignment";
 import * as slaService from "../services/slaService";
 import {
   toObjectId,
@@ -205,6 +209,17 @@ export const submitTicket = async (req: Request, res: Response) => {
 
   try {
     const { projectId, formData } = req.body;
+    // Read category & hierarchy sent as separate FormData fields by the frontend
+    const rawCategoryFromBody = req.body.category || null;
+    const rawCategoryHierarchyFromBody = req.body.categoryHierarchy
+      ? (() => {
+          try {
+            return JSON.parse(req.body.categoryHierarchy);
+          } catch {
+            return null;
+          }
+        })()
+      : null;
 
     console.log(`📝 Submitting ticket for project: ${projectId}`);
 
@@ -339,76 +354,52 @@ export const submitTicket = async (req: Request, res: Response) => {
     console.timeEnd("⏱️ Generate ticket number");
     console.log(`🎫 Generated ticket number: ${ticketNumber}`);
 
-    // Auto-assignment logic
+    // Auto-assignment logic (US-001 category-aware engine)
     console.time("⏱️ Auto-assignment");
     let assignedAgent: mongoose.Types.ObjectId | null = null;
+    let assignmentResult: AutoAssignResult | null = null;
 
-    if (project.configuration?.ticketAssignmentSettings?.enabled) {
-      const assignmentSettings = project.configuration.ticketAssignmentSettings;
-      console.log(
-        `🎯 Auto-assignment enabled: ${assignmentSettings.assignmentType}`,
-      );
+    // Resolve the category ObjectId — prefer req.body.category (sent as a separate FormData field
+    // by the frontend's hierarchy selector) over ticketData.Category (legacy in-JSON field).
+    const rawCategory =
+      rawCategoryFromBody ||
+      ticketData.Category ||
+      rawCategoryHierarchyFromBody?.level1 ||
+      null;
+    let categoryObjectId: mongoose.Types.ObjectId | null = null;
+    if (
+      rawCategory &&
+      mongoose.Types.ObjectId.isValid(rawCategory) &&
+      rawCategory.length === 24
+    ) {
+      categoryObjectId = new mongoose.Types.ObjectId(rawCategory);
+    }
 
-      // Get eligible users for assignment
-      let eligibleUsers: any[] = [];
+    // For auto-assignment, use the DEEPEST selected category so that leaf-level
+    // CategoryAssignmentConfigs are matched first (resolveConfigForCategory walks
+    // up to parents automatically if no config exists at the leaf).
+    const deepestCategoryRaw =
+      rawCategoryHierarchyFromBody?.level4 ||
+      rawCategoryHierarchyFromBody?.level3 ||
+      rawCategoryHierarchyFromBody?.level2 ||
+      rawCategoryHierarchyFromBody?.level1 ||
+      rawCategoryFromBody ||
+      null;
+    let deepestCategoryObjectId: mongoose.Types.ObjectId | null = null;
+    if (
+      deepestCategoryRaw &&
+      mongoose.Types.ObjectId.isValid(deepestCategoryRaw) &&
+      deepestCategoryRaw.length === 24
+    ) {
+      deepestCategoryObjectId = new mongoose.Types.ObjectId(deepestCategoryRaw);
+    }
 
-      switch (assignmentSettings.assignmentType) {
-        case "round-robin":
-          // For round-robin: Find users with isAgent roles mapped to this project
-          console.log(
-            `🔍 Looking for agent roles for project: ${projectId} (type: ${typeof projectId})`,
-          );
-
-          const projectObjectId = new mongoose.Types.ObjectId(projectId);
-          const agentRoles = await Role.find({
-            isAgent: true,
-            isActive: true,
-            $or: [
-              { projects: projectObjectId }, // New multi-project mapping
-              { projectId: projectObjectId }, // Old single project mapping (backward compatibility)
-            ],
-          });
-
-          console.log(
-            `📊 Found ${agentRoles.length} agent roles:`,
-            agentRoles.map((r) => ({
-              name: r.name,
-              code: r.code,
-              projectId: r.projectId,
-              projects: r.projects,
-            })),
-          );
-
-          if (agentRoles.length > 0) {
-            const agentRoleIds = agentRoles.map((r) => r._id);
-            eligibleUsers = await User.find({
-              role: { $in: agentRoleIds },
-              isActive: true,
-            });
-            console.log(
-              `🔍 Found ${eligibleUsers.length} agents with isAgent roles for project ${projectId}`,
-            );
-          } else {
-            console.log(
-              `⚠️ No agent roles (isAgent=true) mapped to project ${projectId}`,
-            );
-          }
-
-          if (eligibleUsers.length > 0) {
-            const eligibleUserIds = eligibleUsers.map((u) => u._id);
-            assignedAgent = await getNextRoundRobinAgent(
-              projectId,
-              eligibleUserIds,
-            );
-            console.log(`🔄 Round-robin assignment to agent: ${assignedAgent}`);
-          }
-          break;
-
-        case "manual":
-        default:
-          console.log(`✋ Manual assignment - ticket will be unassigned`);
-          break;
-      }
+    assignmentResult = await autoAssignTicket(
+      projectId.toString(),
+      deepestCategoryObjectId ?? categoryObjectId,
+    );
+    if (assignmentResult) {
+      assignedAgent = assignmentResult.agentId;
     }
     console.timeEnd("⏱️ Auto-assignment");
 
@@ -501,7 +492,8 @@ export const submitTicket = async (req: Request, res: Response) => {
     // Fetch category to get default priority
     console.time("⏱️ Category lookup");
     let ticketPriority = "medium"; // Default fallback
-    const categoryValue = ticketData.Category || "General";
+    // Use the resolved rawCategory (req.body.category takes priority over ticketData.Category)
+    const categoryValue = rawCategory || ticketData.Category || null;
 
     try {
       // Use mongoose.models to ensure the model is available
@@ -594,21 +586,71 @@ export const submitTicket = async (req: Request, res: Response) => {
     const formSchemaSnapshot =
       project.configuration?.ticketSubmissionSettings?.onlineFormFields || [];
 
+    // Build categoryHierarchy from the body — prefer the parsed hierarchy object;
+    // at minimum populate level1 from the resolved categoryObjectId so SLA lookups work.
+    const builtCategoryHierarchy = rawCategoryHierarchyFromBody
+      ? {
+          level1: rawCategoryHierarchyFromBody.level1
+            ? mongoose.Types.ObjectId.isValid(
+                rawCategoryHierarchyFromBody.level1,
+              )
+              ? new mongoose.Types.ObjectId(rawCategoryHierarchyFromBody.level1)
+              : undefined
+            : (categoryObjectId ?? undefined),
+          level2:
+            rawCategoryHierarchyFromBody.level2 &&
+            mongoose.Types.ObjectId.isValid(rawCategoryHierarchyFromBody.level2)
+              ? new mongoose.Types.ObjectId(rawCategoryHierarchyFromBody.level2)
+              : undefined,
+          level3:
+            rawCategoryHierarchyFromBody.level3 &&
+            mongoose.Types.ObjectId.isValid(rawCategoryHierarchyFromBody.level3)
+              ? new mongoose.Types.ObjectId(rawCategoryHierarchyFromBody.level3)
+              : undefined,
+          level4:
+            rawCategoryHierarchyFromBody.level4 &&
+            mongoose.Types.ObjectId.isValid(rawCategoryHierarchyFromBody.level4)
+              ? new mongoose.Types.ObjectId(rawCategoryHierarchyFromBody.level4)
+              : undefined,
+          displayPath: rawCategoryHierarchyFromBody.displayPath,
+        }
+      : categoryObjectId
+        ? { level1: categoryObjectId }
+        : undefined;
+
+    // Collect custom form fields — everything except the standard mapped fields
+    const standardKeys = new Set([
+      "Name",
+      "Email",
+      "Phone",
+      "Subject",
+      "Description",
+      "Category",
+    ]);
+    const customFieldsForMetadata: Record<string, any> = {};
+    for (const [key, val] of Object.entries(ticketData)) {
+      if (!standardKeys.has(key)) customFieldsForMetadata[key] = val;
+    }
+
     const ticket = new Ticket({
       ticketNumber,
-      title: ticketData.Subject || "New Ticket",
+      subject: ticketData.Subject || "New Ticket", // ← was incorrectly "title:"
       description: ticketData.Description || "",
       status: 1, // 1 = Open (numeric code)
       priority: ticketPriority, // Use priority from category default or fallback
       slaRuleId: slaRuleIdForTicket, // ObjectId ref to SLA rule (rename-resilient)
-      category: categoryValue,
+      category: categoryObjectId ?? undefined, // ObjectId (or omit if invalid)
+      categoryHierarchy: builtCategoryHierarchy, // Full hierarchy from HierarchyCategorySelector
+      project: projectObjectIdForMetadata, // Required for project-scoped queries
       createdBy: studentUserId, // Use actual student user ID
       assignedTo: assignedAgent, // Auto-assigned agent (if enabled)
+      assignedVia: assignmentResult?.assignedVia ?? undefined,
+      assignmentAttempts: assignmentResult?.attempts ?? 0,
       submissionSource: "online", // Mark as online submission
       attachments,
       tags: [`student-submission`, `project-${projectId}`, "online"], // Add 'online' tag for online submissions
       formSchemaSnapshot,
-      // Store student contact info in custom metadata
+      // Store student contact info and custom field values in metadata
       metadata: {
         studentName: ticketData.Name,
         studentEmail: ticketData.Email,
@@ -617,6 +659,8 @@ export const submitTicket = async (req: Request, res: Response) => {
         centerId: "online", // Online tickets have center marked as 'online'
         submissionType: "online",
         autoAssigned: !!assignedAgent,
+        assignedVia: assignmentResult?.assignedVia ?? null,
+        customFields: customFieldsForMetadata, // Persist Application ID and all other custom fields
       },
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -726,6 +770,7 @@ export const submitTicket = async (req: Request, res: Response) => {
           new mongoose.Types.ObjectId(projectId),
           ticketPriority,
           ticket.createdAt,
+          ticket.categoryHierarchy?.level1, // US-017: category SLA override
         );
         console.log(
           `✅ SLA tracking initialized for ticket ${ticket.ticketNumber}`,
@@ -742,6 +787,7 @@ export const submitTicket = async (req: Request, res: Response) => {
           ticket._id,
           projectId,
           ticketPriority,
+          categoryObjectId?.toString(), // US-021: category-specific matrix first
         );
         if (result.success) {
           console.log(
@@ -2517,6 +2563,7 @@ export const getTicketById = async (req: Request, res: Response) => {
         lastEscalationAt: slaTracking.lastEscalationAt,
         escalationHistory: slaTracking.escalationHistory || [],
         escalationPolicy: slaTracking.escalationPolicyId || null,
+        slaSource: (slaTracking as any).slaSource || "priority",
       };
       console.log("✅ [getTicketById] Added slaTracking to response");
     } else {
@@ -2966,22 +3013,43 @@ export const updateTicketStatus = async (req: Request, res: Response) => {
       });
     }
 
-    // Validate status is a valid number (1-5)
+    // Validate status is a valid number
     const statusNum = Number(status);
-    const validStatusCodes = [1, 2, 3, 4, 5]; // 1=open, 2=in-progress, 3=on-hold, 4=resolved, 5=closed
     console.log(
       `🔍 Attempting to change status to: ${statusNum} (type: ${typeof statusNum})`,
     );
 
-    if (isNaN(statusNum) || !validStatusCodes.includes(statusNum)) {
+    if (isNaN(statusNum) || statusNum < 1) {
+      console.log(`❌ Invalid status: "${status}".`);
+      return res.status(400).json({
+        success: false,
+        message: `Invalid status code "${status}".`,
+      });
+    }
+
+    // Validate against the project's actual configured status codes
+    const StatusModel = require("../models/Status").Status;
+    const projectStatuses: any[] = await StatusModel.find({
+      projectId: ticket.metadata?.projectId,
+    }).select("code isClosed name");
+    const validStatusCodes =
+      projectStatuses.length > 0
+        ? projectStatuses.map((s: any) => s.code)
+        : [1, 2, 3, 4, 5]; // fallback for projects without custom statuses
+
+    if (!validStatusCodes.includes(statusNum)) {
       console.log(
-        `❌ Invalid status: "${status}". Valid codes: ${validStatusCodes.join(", ")}`,
+        `❌ Invalid status: "${status}". Valid codes for this project: ${validStatusCodes.join(", ")}`,
       );
       return res.status(400).json({
         success: false,
-        message: `Invalid status code "${status}". Must be one of: ${validStatusCodes.join(", ")} (1=open, 2=in-progress, 3=on-hold, 4=resolved, 5=closed)`,
+        message: `Invalid status code "${status}". Valid codes for this project: ${validStatusCodes.join(", ")}`,
       });
     }
+
+    // Find the status document for the new status (used for timestamp logic and feedback)
+    const statusDoc =
+      projectStatuses.find((s: any) => s.code === statusNum) ?? null;
 
     const oldStatus = ticket.status;
     const now = new Date();
@@ -2992,16 +3060,24 @@ export const updateTicketStatus = async (req: Request, res: Response) => {
       updatedAt: now,
     };
 
-    // Set resolvedAt timestamp when status changes to Resolved (4)
-    if (statusNum === 4 && oldStatus !== 4) {
+    const isClosingStatus = statusDoc?.isClosed === true;
+
+    // Set resolvedAt when transitioning to Resolved (code 4) or any isClosed-flagged status
+    if (
+      (statusNum === 4 && oldStatus !== 4) ||
+      (isClosingStatus && statusNum !== 4 && oldStatus !== statusNum)
+    ) {
       updateFields.resolvedAt = now;
     }
 
-    // Set closedAt timestamp when status changes to Closed (5)
-    if (statusNum === 5 && oldStatus !== 5) {
+    // Set closedAt when transitioning to Closed (code 5) or any isClosed-flagged status
+    if (
+      (statusNum === 5 && oldStatus !== 5) ||
+      (isClosingStatus && statusNum !== 5 && oldStatus !== statusNum)
+    ) {
       updateFields.closedAt = now;
-      // If closed directly without being resolved, also set resolvedAt
-      if (!ticket.resolvedAt) {
+      // If closed without previously being resolved, stamp resolvedAt too
+      if (!ticket.resolvedAt && !updateFields.resolvedAt) {
         updateFields.resolvedAt = now;
       }
     }
@@ -3036,16 +3112,7 @@ export const updateTicketStatus = async (req: Request, res: Response) => {
 
     // Check feedback triggers for status change
     try {
-      const Status = require("../models/Status").Status;
-      console.log(
-        `🔍 Looking up status with code: ${statusNum} (type: ${typeof statusNum}) for project: ${ticket.metadata?.projectId}`,
-      );
-
-      const statusDoc = await Status.findOne({
-        code: statusNum,
-        projectId: ticket.metadata?.projectId,
-      });
-
+      // statusDoc was already fetched above during validation
       console.log(`📊 Status Doc found: ${statusDoc ? "YES" : "NO"}`);
       if (statusDoc) {
         console.log(
@@ -5962,6 +6029,7 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
           new mongoose.Types.ObjectId(projectId),
           ticketPriority,
           ticket.createdAt,
+          ticket.categoryHierarchy?.level1, // US-017: category SLA override
         );
         console.log(
           `✅ SLA tracking initialized for offline ticket ${ticketNumber}`,

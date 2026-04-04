@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Clock, Pause, AlertCircle, CheckCircle } from 'lucide-react';
+import React, { useEffect, useState } from "react";
+import { Clock, Pause, AlertCircle, CheckCircle } from "lucide-react";
 import {
   calculateRemainingTime,
   formatCountdown,
@@ -7,7 +7,7 @@ import {
   getSLAColorClass,
   getSLAUrgency,
   SLATimeRemaining,
-} from '../../utils/slaCalculations';
+} from "../../utils/slaCalculations";
 
 interface SLATimerProps {
   dueAt: string | Date;
@@ -18,7 +18,7 @@ interface SLATimerProps {
   breachedAt?: string | Date;
   label: string;
   description?: string;
-  variant: 'primary' | 'secondary';
+  variant: "primary" | "secondary";
   showProgressBar?: boolean;
   className?: string;
 }
@@ -34,7 +34,7 @@ export const SLATimer: React.FC<SLATimerProps> = ({
   description,
   variant,
   showProgressBar = false,
-  className = '',
+  className = "",
 }) => {
   const [remaining, setRemaining] = useState<SLATimeRemaining | null>(null);
   const [progressPercentage, setProgressPercentage] = useState<number>(0);
@@ -42,7 +42,13 @@ export const SLATimer: React.FC<SLATimerProps> = ({
   useEffect(() => {
     const updateTimer = () => {
       // Pass startedAt to handle working calendar - timer won't count down until SLA starts
-      const timeRemaining = calculateRemainingTime(dueAt, isPaused, pausedAt, pausedDuration, startedAt);
+      const timeRemaining = calculateRemainingTime(
+        dueAt,
+        isPaused,
+        pausedAt,
+        pausedDuration,
+        startedAt,
+      );
       setRemaining(timeRemaining);
 
       // Calculate progress percentage if startedAt is provided
@@ -52,7 +58,10 @@ export const SLATimer: React.FC<SLATimerProps> = ({
         const now = new Date().getTime();
         const totalDuration = due - start;
         const elapsed = now - start - pausedDuration;
-        const percentage = Math.min(Math.max((elapsed / totalDuration) * 100, 0), 100);
+        const percentage = Math.min(
+          Math.max((elapsed / totalDuration) * 100, 0),
+          100,
+        );
         setProgressPercentage(percentage);
       }
     };
@@ -67,7 +76,7 @@ export const SLATimer: React.FC<SLATimerProps> = ({
 
   const colors = getSLAColorClass(remaining);
   const urgency = getSLAUrgency(remaining);
-  const isPrimary = variant === 'primary';
+  const isPrimary = variant === "primary";
 
   // Different styling for primary vs secondary
   const containerClasses = isPrimary
@@ -80,33 +89,49 @@ export const SLATimer: React.FC<SLATimerProps> = ({
         <div className="flex-1">
           <div className="flex items-center gap-2">
             {isPaused ? (
-              <Pause className={`${colors.text} ${isPrimary ? 'w-5 h-5' : 'w-4 h-4'}`} />
+              <Pause
+                className={`${colors.text} ${isPrimary ? "w-5 h-5" : "w-4 h-4"}`}
+              />
             ) : remaining.isBreached ? (
-              <AlertCircle className={`${colors.text} ${isPrimary ? 'w-5 h-5' : 'w-4 h-4'}`} />
+              <AlertCircle
+                className={`${colors.text} ${isPrimary ? "w-5 h-5" : "w-4 h-4"}`}
+              />
             ) : (
-              <Clock className={`${colors.text} ${isPrimary ? 'w-5 h-5' : 'w-4 h-4'}`} />
+              <Clock
+                className={`${colors.text} ${isPrimary ? "w-5 h-5" : "w-4 h-4"}`}
+              />
             )}
-            <span className={`${isPrimary ? 'text-sm' : 'text-xs'} font-medium ${colors.text}`}>
+            <span
+              className={`${isPrimary ? "text-sm" : "text-xs"} font-medium ${colors.text}`}
+            >
               {label}
             </span>
           </div>
           {description && (
-            <p className={`${isPrimary ? 'text-xs' : 'text-[11px]'} text-gray-600 mt-1 ml-7`}>
+            <p
+              className={`${isPrimary ? "text-xs" : "text-[11px]"} text-gray-600 mt-1 ml-7`}
+            >
               {description}
             </p>
           )}
         </div>
 
         <div className="text-right">
-          <div className={`${isPrimary ? 'text-2xl' : 'text-lg'} font-bold ${remaining.isNotStarted ? 'text-blue-600' : colors.text} font-mono`}>
-            {remaining.isNotStarted 
+          <div
+            className={`${isPrimary ? "text-2xl" : "text-lg"} font-bold ${remaining.isNotStarted ? "text-blue-600" : colors.text} font-mono`}
+          >
+            {remaining.isNotStarted
               ? formatCountdown(remaining.totalMinutes) // Show SLA duration
               : formatCountdown(remaining.totalMinutes)}
           </div>
-          <div className={`${isPrimary ? 'text-xs' : 'text-[11px]'} ${remaining.isNotStarted ? 'text-blue-600' : colors.text} mt-1`}>
-            {isPaused ? 'Paused' : remaining.isNotStarted 
-              ? `Starts in ${remaining.startsInMinutes}m`
-              : formatTimeRemaining(remaining, true)}
+          <div
+            className={`${isPrimary ? "text-xs" : "text-[11px]"} ${remaining.isNotStarted ? "text-blue-600" : colors.text} mt-1`}
+          >
+            {isPaused
+              ? "Paused"
+              : remaining.isNotStarted
+                ? `Starts in ${remaining.startsInMinutes}m`
+                : formatTimeRemaining(remaining, true)}
           </div>
         </div>
       </div>
@@ -131,7 +156,7 @@ export const SLATimer: React.FC<SLATimerProps> = ({
             <span>SLA Breached</span>
           </div>
         )}
-        {!remaining.isBreached && !isPaused && urgency === 'warning' && (
+        {!remaining.isBreached && !isPaused && urgency === "warning" && (
           <div className="flex items-center gap-1 text-yellow-700 font-medium">
             <AlertCircle className="w-3 h-3" />
             <span>Due Soon</span>
@@ -146,10 +171,10 @@ export const SLATimer: React.FC<SLATimerProps> = ({
             <div
               className={`h-full transition-all duration-300 ${
                 remaining.isBreached
-                  ? 'bg-red-500'
-                  : urgency === 'warning'
-                  ? 'bg-yellow-500'
-                  : 'bg-green-500'
+                  ? "bg-red-500"
+                  : urgency === "warning"
+                    ? "bg-yellow-500"
+                    : "bg-green-500"
               }`}
               style={{ width: `${Math.min(progressPercentage, 100)}%` }}
             />
@@ -161,7 +186,8 @@ export const SLATimer: React.FC<SLATimerProps> = ({
 };
 
 interface DualSLATimerProps {
-ticketId: string;
+  ticketId: string;
+  slaSource?: "category" | "priority" | "default";
   ticketLevelSLA?: {
     startedAt: string;
     dueAt: string;
@@ -183,9 +209,10 @@ ticketId: string;
 
 export const DualSLATimer: React.FC<DualSLATimerProps> = ({
   ticketId,
+  slaSource = "priority",
   ticketLevelSLA,
   roleLevelSLA,
-  className = '',
+  className = "",
 }) => {
   if (!ticketLevelSLA && !roleLevelSLA) {
     return null;
@@ -202,8 +229,16 @@ export const DualSLATimer: React.FC<DualSLATimerProps> = ({
           pausedAt={roleLevelSLA.pausedAt}
           pausedDuration={roleLevelSLA.pausedDuration}
           breachedAt={roleLevelSLA.breachedAt}
-          label="Current Level SLA"
-          description="Time remaining for current escalation level"
+          label={
+            slaSource === "category"
+              ? "Category SLA (Level)"
+              : "Current Level SLA"
+          }
+          description={
+            slaSource === "category"
+              ? "Time remaining based on category SLA override"
+              : "Time remaining for current escalation level"
+          }
           variant="primary"
           showProgressBar={true}
         />
@@ -218,8 +253,12 @@ export const DualSLATimer: React.FC<DualSLATimerProps> = ({
           pausedAt={ticketLevelSLA.pausedAt}
           pausedDuration={ticketLevelSLA.pausedDuration}
           breachedAt={ticketLevelSLA.breachedAt}
-          label="Overall Ticket SLA"
-          description="Total time remaining since ticket creation"
+          label={slaSource === "category" ? "Category SLA" : "Priority SLA"}
+          description={
+            slaSource === "category"
+              ? "SLA overridden at category level"
+              : "Total time remaining since ticket creation"
+          }
           variant="secondary"
           showProgressBar={true}
         />
@@ -246,14 +285,20 @@ export const CompactSLATimer: React.FC<CompactSLATimerProps> = ({
   pausedAt,
   pausedDuration = 0,
   breachedAt,
-  className = '',
+  className = "",
 }) => {
   const [remaining, setRemaining] = useState<SLATimeRemaining | null>(null);
 
   useEffect(() => {
     const updateTimer = () => {
       // Pass startedAt to handle working calendar - timer won't count down until SLA starts
-      const timeRemaining = calculateRemainingTime(dueAt, isPaused, pausedAt, pausedDuration, startedAt);
+      const timeRemaining = calculateRemainingTime(
+        dueAt,
+        isPaused,
+        pausedAt,
+        pausedDuration,
+        startedAt,
+      );
       setRemaining(timeRemaining);
     };
 
@@ -279,7 +324,7 @@ export const CompactSLATimer: React.FC<CompactSLATimerProps> = ({
         <Clock className="w-3 h-3" />
       )}
       <span className="font-mono">
-        {remaining.isNotStarted 
+        {remaining.isNotStarted
           ? `Starts in ${remaining.startsInMinutes}m`
           : formatCountdown(remaining.totalMinutes)}
       </span>

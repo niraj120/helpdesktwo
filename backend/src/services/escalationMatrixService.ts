@@ -6,7 +6,9 @@ import {
 } from "../models/escalation-matrix";
 import { Ticket, ITicket } from "../models/Ticket";
 import { User } from "../models/User";
+import { Project } from "../models/Project";
 import SLATracking from "../models/sla-module/SLATracking";
+import JobLog from "../models/JobLog";
 import { calculateRoleLevelSLA } from "./slaService";
 import { WorkingCalendar } from "../models/WorkingCalendar";
 import {
@@ -31,17 +33,41 @@ function slaToMs(slaValue: number, slaUnit?: string): number {
 }
 
 /**
- * Get active escalation matrix for a project and priority
- * Returns the matrix that:
- * 1. Matches the projectId
- * 2. Matches the priority in applicablePriorities (if priority is provided)
- * 3. Falls back to any active matrix for the project if no priority-specific match
+ * Get active escalation matrix for a project and priority.
+ * Category-scoped lookup (US-021): if categoryId is provided and a
+ * CategoryEscalationConfig exists for it, that matrix takes precedence.
+ * Falls through to priority → project-level fallback otherwise.
  */
 export async function getMatrixByProjectId(
   projectId: string,
   priority?: string,
+  categoryId?: string,
 ): Promise<IEscalationMatrix | null> {
   try {
+    // US-021: category-specific matrix takes precedence
+    if (categoryId && mongoose.Types.ObjectId.isValid(categoryId)) {
+      // Dynamic import to avoid circular dependency at module load time
+      const CategoryEscalationConfig = (
+        await import("../models/ticket-module/CategoryEscalationConfig")
+      ).default;
+      const catConfig = await (CategoryEscalationConfig as any)
+        .findOne({
+          categoryId: new mongoose.Types.ObjectId(categoryId),
+          isActive: true,
+        })
+        .populate("escalationMatrixId")
+        .lean();
+      if (catConfig?.escalationMatrixId) {
+        console.log(
+          `✅ [Escalation] Using category-specific matrix for category ${categoryId}: ${(catConfig.escalationMatrixId as any).name}`,
+        );
+        return catConfig.escalationMatrixId as IEscalationMatrix;
+      }
+      console.log(
+        `⚠️ [Escalation] No active category-config for ${categoryId}, falling back to project matrix`,
+      );
+    }
+
     // First try to find a matrix matching both project and priority
     if (priority) {
       const priorityUpper = priority.toUpperCase();
@@ -79,13 +105,15 @@ export async function getMatrixByProjectId(
 }
 
 /**
- * Auto-assign escalation matrix to a ticket based on its project and priority
- * Should be called during ticket creation
+ * Auto-assign escalation matrix to a ticket based on its project, priority,
+ * and optionally a category-specific config (US-021).
+ * Should be called during ticket creation.
  */
 export async function autoAssignMatrixToTicket(
   ticketId: string | mongoose.Types.ObjectId,
   projectId: string | mongoose.Types.ObjectId,
   ticketPriority?: string,
+  categoryId?: string,
 ): Promise<{ success: boolean; matrixId?: string; message: string }> {
   try {
     // If priority not provided, fetch ticket to get it
@@ -98,7 +126,11 @@ export async function autoAssignMatrixToTicket(
       console.log(`📋 Fetched ticket priority: ${priority}`);
     }
 
-    const matrix = await getMatrixByProjectId(projectId.toString(), priority);
+    const matrix = await getMatrixByProjectId(
+      projectId.toString(),
+      priority,
+      categoryId,
+    );
 
     if (!matrix) {
       return {
@@ -1143,13 +1175,16 @@ export async function assignMatrixToTicket(
 export async function processAutoEscalation(): Promise<{
   processed: number;
   escalated: number;
+  skipped: number;
   errors: string[];
 }> {
   const result = {
     processed: 0,
     escalated: 0,
+    skipped: 0,
     errors: [] as string[],
   };
+  const jobStartMs = Date.now();
 
   try {
     // Find all matrices with autoEscalate enabled
@@ -1210,55 +1245,117 @@ export async function processAutoEscalation(): Promise<{
           continue;
         }
 
+        // US-ESC-013: Grace period — skip tickets recently updated (agent is mid-response)
+        if (!(matrix as any).bypassGracePeriod) {
+          const projectDoc = ticket.metadata?.projectId
+            ? await Project.findById(
+                typeof ticket.metadata.projectId === "string"
+                  ? ticket.metadata.projectId
+                  : (ticket.metadata.projectId as any)?._id,
+              ).select("configuration.ticketAssignmentSettings")
+            : null;
+          const graceMins =
+            (projectDoc as any)?.configuration?.ticketAssignmentSettings
+              ?.autoEscalateGracePeriodMins ?? 10;
+          const updatedAt = (ticket as any).updatedAt as Date | undefined;
+          if (updatedAt) {
+            const now2 = new Date();
+            const msSinceUpdate = now2.getTime() - updatedAt.getTime();
+            if (msSinceUpdate < graceMins * 60 * 1000) {
+              console.log(
+                `⏳ [AUTO-ESC] Ticket ${ticket.ticketNumber}: Updated ${Math.round(msSinceUpdate / 60000)}m ago — within grace period (${graceMins}m), skipping`,
+              );
+              result.skipped++;
+              continue;
+            }
+          }
+        }
+
         // Check if role-level SLA has been breached using roleLevelSLA.dueAt
         const now = new Date();
         let slaBreach = false;
         let slaSource = "unknown";
 
-        // Use roleLevelSLA.dueAt as the primary source for role-level escalation
-        if (ticket.roleLevelSLA?.dueAt) {
-          slaBreach = now > new Date(ticket.roleLevelSLA.dueAt);
-          slaSource = `roleLevelSLA.dueAt=${ticket.roleLevelSLA.dueAt}`;
-          if (slaBreach) {
+        // US-ESC-007: % threshold mode — trigger when X% of ticket-level SLA is consumed
+        const levelThresholdType = (currentLevel as any).slaThresholdType as
+          | string
+          | undefined;
+        const levelThresholdPct = (currentLevel as any).slaThresholdPercent as
+          | number
+          | undefined;
+        if (levelThresholdType === "percent" && levelThresholdPct != null) {
+          // Determine total ticket SLA window
+          const ticketDueAt =
+            ticket.ticketLevelSLA?.dueAt ?? ticket.roleLevelSLA?.dueAt;
+          const ticketCreatedAt = ticket.createdAt;
+          if (ticketDueAt && ticketCreatedAt) {
+            const totalSlaMs =
+              new Date(ticketDueAt).getTime() - ticketCreatedAt.getTime();
+            const elapsedMs = now.getTime() - ticketCreatedAt.getTime();
+            const consumedPct =
+              totalSlaMs > 0 ? (elapsedMs / totalSlaMs) * 100 : 0;
+            slaBreach = consumedPct >= levelThresholdPct;
+            slaSource = `percentThreshold=${levelThresholdPct}% consumed=${Math.round(consumedPct)}%`;
             console.log(
-              `⏰ [AUTO-ESC] Ticket ${ticket.ticketNumber}: Role-level SLA breached (dueAt: ${ticket.roleLevelSLA.dueAt})`,
-            );
-          } else {
-            const minsLeft = Math.round(
-              (new Date(ticket.roleLevelSLA.dueAt).getTime() - now.getTime()) /
-                60000,
-            );
-            console.log(
-              `✅ [AUTO-ESC] Ticket ${ticket.ticketNumber}: SLA OK, ${minsLeft} min(s) remaining`,
+              `📊 [AUTO-ESC] Ticket ${ticket.ticketNumber}: SLA ${Math.round(consumedPct)}% consumed (threshold ${levelThresholdPct}%) — breach=${slaBreach}`,
             );
           }
-        } else {
-          // BUG FIX: roleLevelSLA not set (older ticket or auto-assign didn't run).
-          // Fallback 1: Check legacy SLATracking model
-          const slaTracking = await SLATracking.findOne({
-            ticketId: ticket._id,
-          });
-          if (slaTracking?.resolutionDeadline) {
-            slaBreach = now > slaTracking.resolutionDeadline;
-            slaSource = `SLATracking.resolutionDeadline=${slaTracking.resolutionDeadline}`;
-          } else {
-            // Fallback 2: Use roleLevelSLA.startedAt if available (more accurate than createdAt for escalated tickets).
-            // Only fall back to createdAt if at level 1 to avoid false positives.
-            const slaStartTime =
-              currentLevelNumber === 1
-                ? ticket.createdAt
-                : ticket.roleLevelSLA?.startedAt || ticket.createdAt;
-            const slaDeadline = new Date(
-              slaStartTime.getTime() +
-                slaToMs(currentLevel.slaHours, currentLevel.slaUnit),
-            );
-            slaBreach = now > slaDeadline;
-            slaSource = `fallback from ${slaStartTime.toISOString()} + ${currentLevel.slaHours}${currentLevel.slaUnit || "hrs"}`;
+          // If we can't determine total SLA, fall through to standard check
+          if (slaSource === "unknown") {
             console.log(
-              `⚠️  [AUTO-ESC] Ticket ${ticket.ticketNumber}: roleLevelSLA missing, using fallback SLA source (${slaSource})`,
+              `⚠️  [AUTO-ESC] Ticket ${ticket.ticketNumber}: % threshold configured but no ticketLevelSLA.dueAt — falling back to fixed check`,
             );
           }
         }
+
+        // Standard fixed-duration check (slaThresholdType='fixed' or unset)
+        if (slaSource === "unknown") {
+          // Use roleLevelSLA.dueAt as the primary source for role-level escalation
+          if (ticket.roleLevelSLA?.dueAt) {
+            slaBreach = now > new Date(ticket.roleLevelSLA.dueAt);
+            slaSource = `roleLevelSLA.dueAt=${ticket.roleLevelSLA.dueAt}`;
+            if (slaBreach) {
+              console.log(
+                `⏰ [AUTO-ESC] Ticket ${ticket.ticketNumber}: Role-level SLA breached (dueAt: ${ticket.roleLevelSLA.dueAt})`,
+              );
+            } else {
+              const minsLeft = Math.round(
+                (new Date(ticket.roleLevelSLA.dueAt).getTime() -
+                  now.getTime()) /
+                  60000,
+              );
+              console.log(
+                `✅ [AUTO-ESC] Ticket ${ticket.ticketNumber}: SLA OK, ${minsLeft} min(s) remaining`,
+              );
+            }
+          } else {
+            // BUG FIX: roleLevelSLA not set (older ticket or auto-assign didn't run).
+            // Fallback 1: Check legacy SLATracking model
+            const slaTracking = await SLATracking.findOne({
+              ticketId: ticket._id,
+            });
+            if (slaTracking?.resolutionDeadline) {
+              slaBreach = now > slaTracking.resolutionDeadline;
+              slaSource = `SLATracking.resolutionDeadline=${slaTracking.resolutionDeadline}`;
+            } else {
+              // Fallback 2: Use roleLevelSLA.startedAt if available (more accurate than createdAt for escalated tickets).
+              // Only fall back to createdAt if at level 1 to avoid false positives.
+              const slaStartTime =
+                currentLevelNumber === 1
+                  ? ticket.createdAt
+                  : ticket.roleLevelSLA?.startedAt || ticket.createdAt;
+              const slaDeadline = new Date(
+                slaStartTime.getTime() +
+                  slaToMs(currentLevel.slaHours, currentLevel.slaUnit),
+              );
+              slaBreach = now > slaDeadline;
+              slaSource = `fallback from ${slaStartTime.toISOString()} + ${currentLevel.slaHours}${currentLevel.slaUnit || "hrs"}`;
+              console.log(
+                `⚠️  [AUTO-ESC] Ticket ${ticket.ticketNumber}: roleLevelSLA missing, using fallback SLA source (${slaSource})`,
+              );
+            }
+          }
+        } // end: standard fixed-time SLA check (slaSource === 'unknown')
 
         if (!slaBreach) {
           // SLA not breached yet
@@ -1281,6 +1378,23 @@ export async function processAutoEscalation(): Promise<{
             `ℹ️  [AUTO-ESC] Ticket ${ticket.ticketNumber}: Already at highest level (L${currentLevelNumber}), cannot auto-escalate further`,
           );
           continue;
+        }
+
+        // US-ESC-006: warn if a notify-level has no named recipients and no role members
+        if ((nextLevel as any).levelType === "notify") {
+          const namedUserIds: mongoose.Types.ObjectId[] =
+            (nextLevel as any).notifyUserIds ?? [];
+          if (namedUserIds.length === 0) {
+            const roleUserCount = await User.countDocuments({
+              role: nextLevel.roleId,
+              isActive: true,
+            });
+            if (roleUserCount === 0) {
+              console.warn(
+                `⚠️  [AUTO-ESC] Ticket ${ticket.ticketNumber}: notify-level "${nextLevel.levelName}" (L${nextLevel.levelNumber}) has no role members and no notifyUserIds — notification will be empty`,
+              );
+            }
+          }
         }
 
         // BUG FIX: Add project scope to user query to avoid finding users from other projects
@@ -1314,7 +1428,10 @@ export async function processAutoEscalation(): Promise<{
         // Update ticket with new escalation level
         ticket.currentEscalationLevelId = nextLevel._id;
         ticket.currentEscalationLevelNumber = nextLevel.levelNumber;
-        ticket.assignedTo = assignedUser._id as mongoose.Types.ObjectId;
+        // US-ESC-005: only change assignedTo when levelType is 'reassign' (or unset, default behaviour)
+        if ((nextLevel as any).levelType !== "notify") {
+          ticket.assignedTo = assignedUser._id as mongoose.Types.ObjectId;
+        }
         // Keep status as-is (no "escalated" status value in system)
 
         // Add to escalation history
@@ -1327,7 +1444,9 @@ export async function processAutoEscalation(): Promise<{
             previousAssignee || (assignedUser._id as mongoose.Types.ObjectId), // Use PREVIOUS assignee for history
           fromLevelNumber: currentLevelNumber,
           toLevelNumber: nextLevel.levelNumber,
-          reason: `Auto-escalated from L${currentLevelNumber} to L${nextLevel.levelNumber} due to SLA breach`,
+          reason:
+            `Auto-escalated from L${currentLevelNumber} to L${nextLevel.levelNumber} due to SLA breach` +
+            ((nextLevel as any).levelType === "notify" ? " (notify-only)" : ""),
           escalatedAt: new Date(),
         });
 
@@ -1429,6 +1548,28 @@ export async function processAutoEscalation(): Promise<{
     }
   } catch (err: any) {
     result.errors.push(`General error: ${err.message}`);
+  }
+
+  // US-ESC-012: Persist job run metadata to JobLog collection
+  try {
+    const jobStatus: "success" | "partial" | "error" =
+      result.errors.length === 0
+        ? "success"
+        : result.escalated > 0 || result.processed > 0
+          ? "partial"
+          : "error";
+    await JobLog.create({
+      jobType: "auto-escalation",
+      ranAt: new Date(),
+      durationMs: Date.now() - jobStartMs,
+      processed: result.processed,
+      escalated: result.escalated,
+      skipped: result.skipped,
+      errorMessages: result.errors,
+      status: jobStatus,
+    });
+  } catch (logErr) {
+    console.error("[AUTO-ESC] Failed to persist JobLog:", logErr);
   }
 
   return result;
