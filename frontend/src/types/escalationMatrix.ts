@@ -73,6 +73,12 @@ export interface EscalationMatrix {
   allowSkipLevel: boolean; // Only for RANDOM mode
   allowBackward: boolean; // Allows backward escalation
   autoEscalate: boolean; // Auto-escalate on SLA breach
+  /** US-ESC-008: pre-breach SLA warning config */
+  slaWarningConfig?: {
+    warningThresholds: number[];
+    notifyAssignedAgent: boolean;
+    notifyRoles?: string[];
+  };
   levels: EscalationLevel[]; // Used when priorityMode is 'SAME_FOR_ALL'
   priorityConfigs?: PriorityConfig[]; // Used when priorityMode is 'PER_PRIORITY'
   projectIds: string[] | ProjectInfo[];
@@ -152,6 +158,12 @@ export interface EscalationMatrixFormData {
   allowSkipLevel: boolean;
   allowBackward: boolean;
   autoEscalate: boolean; // Auto-escalate on SLA breach
+  /** US-ESC-008: pre-breach SLA warning config */
+  slaWarningConfig?: {
+    warningThresholds: number[];
+    notifyAssignedAgent: boolean;
+    notifyRoles?: string[];
+  };
   levels: EscalationLevelFormData[]; // Used when priorityMode is 'SAME_FOR_ALL'
   priorityConfigs?: PriorityConfigFormData[]; // Used when priorityMode is 'PER_PRIORITY'
   projectIds: string[];

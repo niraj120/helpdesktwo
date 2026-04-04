@@ -13,6 +13,7 @@ import {
   getAutoEscalationCandidates,
   getAutoEscalationJobLog,
   validateEscalationMatrix,
+  getEscalationCoverage,
 } from "../../controllers/escalation-matrix/escalationMatrixController";
 
 const router = express.Router();
@@ -69,6 +70,14 @@ router.get(
   authMiddleware,
   checkPermission("ESCALATION_MATRIX_VIEW"),
   getUsersForLevel,
+);
+
+// US-ESC-011: Coverage report - must come before :id routes
+router.get(
+  "/coverage",
+  authMiddleware,
+  checkPermission("ESCALATION_MATRIX_VIEW"),
+  getEscalationCoverage,
 );
 
 // Get all escalation matrices

@@ -166,6 +166,20 @@ interface Ticket {
   mergedInto?:
     | string
     | { _id: string; ticketNumber: string; subject?: string; title?: string };
+  // US-ESC-009: SLA tracking fields for countdown pill
+  roleLevelSLA?: {
+    startedAt?: string;
+    dueAt?: string;
+    breachedAt?: string;
+    pausedAt?: string;
+    pausedDuration?: number;
+  };
+  ticketLevelSLA?: {
+    dueAt?: string;
+    breachedAt?: string;
+    pausedAt?: string;
+    pausedDuration?: number;
+  };
   mergedTickets?: Array<{
     _id: string;
     ticketNumber: string;
@@ -363,6 +377,51 @@ interface AgentTicketDetailProps {
 
 /** Opens an attachment — fetches a signed URL from the backend (with auth) then opens it in a new tab.
  * The tab is opened BEFORE the async call so browsers don't block it as a popup. */
+// US-ESC-009: SLA countdown helpers for ticket detail header
+const _formatSlaMsDetail = (ms: number): string => {
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  if (h > 24) return `${Math.floor(h / 24)}d ${h % 24}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+};
+
+const computeDetailSlaPill = (
+  ticket: Ticket,
+): { label: string; color: string; bg: string; tooltip: string } | null => {
+  const dueAt = ticket.roleLevelSLA?.dueAt ?? ticket.ticketLevelSLA?.dueAt;
+  if (!dueAt) return null;
+  if (ticket.roleLevelSLA?.pausedAt ?? ticket.ticketLevelSLA?.pausedAt)
+    return {
+      label: "PAUSED",
+      color: "#374151",
+      bg: "#f3f4f6",
+      tooltip: "SLA is paused",
+    };
+  const isBreached = !!(
+    ticket.roleLevelSLA?.breachedAt ?? ticket.ticketLevelSLA?.breachedAt
+  );
+  const now = Date.now();
+  const due = new Date(dueAt).getTime();
+  const remaining = due - now;
+  if (isBreached || remaining <= 0)
+    return {
+      label: "BREACHED",
+      color: "#dc2626",
+      bg: "#fef2f2",
+      tooltip: `Due: ${new Date(dueAt).toLocaleString()}`,
+    };
+  const startedAt = ticket.roleLevelSLA?.startedAt;
+  const start = startedAt ? new Date(startedAt).getTime() : due - 86400000;
+  const total = due - start;
+  const pct = total > 0 ? (remaining / total) * 100 : 100;
+  const label = _formatSlaMsDetail(remaining);
+  const tooltip = `Due: ${new Date(dueAt).toLocaleString()}`;
+  if (pct > 50) return { label, color: "#15803d", bg: "#f0fdf4", tooltip };
+  if (pct > 25) return { label, color: "#b45309", bg: "#fffbeb", tooltip };
+  return { label, color: "#dc2626", bg: "#fef2f2", tooltip };
+};
+
 const openAttachment = async (pathOrUrl: string | undefined) => {
   if (!pathOrUrl) return;
   // If already a full URL (e.g. GCS signed URL), open it directly.
@@ -394,6 +453,8 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [loading, setLoading] = useState(true);
   const [permissions, setPermissions] = useState<string[]>([]);
+  // US-ESC-009: ticker to keep SLA countdown pill current (updates every 60s)
+  const [, setTickNow] = useState(Date.now());
   const [activeTab, setActiveTab] = useState<
     "details" | "replies" | "notes" | "history" | "emails"
   >("replies"); // Task 6.5: Added 'emails' tab
@@ -797,6 +858,12 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
 
     fetchWorkingCalendar();
   }, [ticket]);
+
+  // US-ESC-009: force re-render every 60s so SLA countdowns stay current
+  useEffect(() => {
+    const timer = setInterval(() => setTickNow(Date.now()), 60000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Task 6.5: Fetch email communications when ticket loads or changes
   useEffect(() => {
@@ -1717,6 +1784,35 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                           </button>
                         </>
                       )}
+                    {/* US-ESC-009: SLA countdown pill */}
+                    {(() => {
+                      const pill = computeDetailSlaPill(ticket);
+                      if (!pill) return null;
+                      return (
+                        <>
+                          <span className="text-gray-300">•</span>
+                          <span
+                            title={pill.tooltip}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "4px",
+                              padding: "2px 8px",
+                              borderRadius: "9999px",
+                              fontSize: "11px",
+                              fontWeight: 600,
+                              color: pill.color,
+                              backgroundColor: pill.bg,
+                              border: `1px solid ${pill.color}40`,
+                              cursor: "default",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            ⏱ SLA: {pill.label}
+                          </span>
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>

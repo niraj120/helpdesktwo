@@ -50,6 +50,12 @@ export interface IEscalationMatrix extends Document {
   autoEscalate: boolean; // Auto-escalate on SLA breach
   /** US-ESC-013: skip grace period check and always auto-escalate regardless of recent ticket activity */
   bypassGracePeriod?: boolean;
+  /** US-ESC-008: pre-breach SLA warning config */
+  slaWarningConfig?: {
+    warningThresholds: number[]; // e.g. [50, 75, 90] — % of SLA elapsed to trigger a warning
+    notifyAssignedAgent: boolean; // Whether to warn the assigned agent
+    notifyRoles?: mongoose.Types.ObjectId[]; // Role IDs whose members should also be warned
+  };
   levels: IEscalationLevel[]; // Used when priorityMode is 'SAME_FOR_ALL'
   priorityConfigs: IPriorityConfig[]; // Used when priorityMode is 'PER_PRIORITY'
   projectIds: mongoose.Types.ObjectId[]; // Projects this matrix applies to
@@ -219,6 +225,12 @@ const EscalationMatrixSchema = new Schema<IEscalationMatrix>(
     bypassGracePeriod: {
       type: Boolean,
       default: false,
+    },
+    // US-ESC-008: pre-breach SLA warning configuration
+    slaWarningConfig: {
+      warningThresholds: { type: [Number], default: [] },
+      notifyAssignedAgent: { type: Boolean, default: true },
+      notifyRoles: [{ type: Schema.Types.ObjectId, ref: "Role" }],
     },
     levels: {
       type: [EscalationLevelSchema],

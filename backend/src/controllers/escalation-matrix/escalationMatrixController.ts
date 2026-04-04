@@ -1264,6 +1264,94 @@ export const validateEscalationMatrix = async (
   }
 };
 
+/**
+ * US-ESC-011: Escalation Matrix Coverage Report
+ * Returns per-project stats: open tickets, how many have a matrix, coverage %
+ */
+export const getEscalationCoverage = async (req: Request, res: Response) => {
+  try {
+    const { projectId } = req.query;
+
+    // Build base match for open tickets
+    const baseMatch: any = {
+      status: { $nin: ["resolved", "closed"] },
+    };
+    if (projectId) {
+      baseMatch["metadata.projectId"] = new mongoose.Types.ObjectId(
+        projectId as string,
+      );
+    }
+
+    // Aggregate open tickets grouped by project
+    const rows = await Ticket.aggregate([
+      { $match: baseMatch },
+      {
+        $group: {
+          _id: "$metadata.projectId",
+          openTickets: { $sum: 1 },
+          withMatrix: {
+            $sum: {
+              $cond: [{ $ifNull: ["$escalationMatrixId", false] }, 1, 0],
+            },
+          },
+        },
+      },
+      {
+        $lookup: {
+          from: "projects",
+          localField: "_id",
+          foreignField: "_id",
+          as: "project",
+        },
+      },
+      {
+        $project: {
+          projectId: "$_id",
+          projectName: {
+            $ifNull: [
+              { $arrayElemAt: ["$project.name", 0] },
+              "Unknown Project",
+            ],
+          },
+          openTickets: 1,
+          withMatrix: 1,
+          withoutMatrix: { $subtract: ["$openTickets", "$withMatrix"] },
+          coveragePct: {
+            $cond: [
+              { $eq: ["$openTickets", 0] },
+              100,
+              {
+                $round: [
+                  {
+                    $multiply: [
+                      { $divide: ["$withMatrix", "$openTickets"] },
+                      100,
+                    ],
+                  },
+                  1,
+                ],
+              },
+            ],
+          },
+        },
+      },
+      { $sort: { coveragePct: 1 } }, // Show lowest coverage first
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: rows,
+    });
+  } catch (error: any) {
+    console.error("getEscalationCoverage error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch escalation coverage report",
+      error: error.message,
+    });
+  }
+};
+
 export default {
   getAllEscalationMatrices,
   getEscalationMatrixById,
@@ -1279,4 +1367,5 @@ export default {
   getAutoEscalationCandidates,
   getAutoEscalationJobLog,
   validateEscalationMatrix,
+  getEscalationCoverage,
 };

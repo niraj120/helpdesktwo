@@ -38,6 +38,7 @@ interface TicketStats {
   pendingOutsideSLA?: number;
   viewMode?: ViewMode;
   teamBreakdown?: TeamMemberStats[];
+  fallbackAssignmentsThisMonth?: number;
   recentActivity: Array<{
     ticketId: string;
     title: string;
@@ -66,6 +67,7 @@ const Dashboard = () => {
     lowPriority: 0,
     recentActivity: [],
     teamBreakdown: [],
+    fallbackAssignmentsThisMonth: 0,
   });
 
   const [loading, setLoading] = useState(true);
@@ -160,6 +162,7 @@ const Dashboard = () => {
           mediumPriority: data.mediumPriority || 0,
           lowPriority: data.lowPriority || 0,
           teamBreakdown: data.teamBreakdown || [],
+          fallbackAssignmentsThisMonth: data.fallbackAssignmentsThisMonth ?? 0,
         });
       } else {
         console.error("Failed to fetch dashboard stats:", response.status);
@@ -326,6 +329,48 @@ const Dashboard = () => {
               />
             </div>
           )}
+
+        {/* US-ASSIGN-001: Fallback Assignments Warning */}
+        {(ticketStats.fallbackAssignmentsThisMonth ?? 0) > 0 && (
+          <div
+            style={{
+              background: "#fffbeb",
+              border: "1px solid #f59e0b",
+              borderRadius: "8px",
+              padding: "16px 20px",
+              marginBottom: "24px",
+              display: "flex",
+              alignItems: "flex-start",
+              gap: "12px",
+            }}
+          >
+            <span style={{ fontSize: "20px" }}>⚠️</span>
+            <div>
+              <p
+                style={{
+                  margin: 0,
+                  fontWeight: 600,
+                  color: "#92400e",
+                  fontSize: "14px",
+                }}
+              >
+                Fallback Assignments This Month:{" "}
+                {ticketStats.fallbackAssignmentsThisMonth}
+              </p>
+              <p
+                style={{
+                  margin: "4px 0 0",
+                  color: "#78350f",
+                  fontSize: "12px",
+                }}
+              >
+                These tickets were assigned via fallback because no eligible
+                agents were found in the pool. Check your agent pool and
+                escalation matrix configuration.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Recent Activity */}
         <div

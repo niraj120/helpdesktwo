@@ -26,6 +26,7 @@ import MyAssets from "../components/MyAssets";
 import TicketListReport from "./TicketListReport";
 import AssetReport from "./AssetReport";
 import ManpowerReport from "./ManpowerReport";
+import ReportsPage from "./ReportsPage";
 
 // Import ticket-related pages
 import ViewTickets from "./ViewTickets";
@@ -1575,6 +1576,14 @@ const ProjectPortalDashboard = () => {
         <Route path="/users" element={<ProjectUserManagement />} />
 
         {/* Reports - Requires REPORT_* permissions */}
+        <Route
+          path="/reports"
+          element={
+            <ProtectedRoute modulePrefix="REPORT_">
+              <ReportsPage wrapWithLayout={false} />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/reports/tickets"
           element={
