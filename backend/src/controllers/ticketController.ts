@@ -4839,12 +4839,12 @@ export const getDashboardStats = async (req: Request, res: Response) => {
 export const getProjectDashboardStats = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.userId;
-    const { projectId, centerId, viewMode } = req.query;
+    const { projectId, projectIds, centerId, viewMode } = req.query;
 
     // viewMode: 'self' (own tickets), 'team' (direct reports), 'hierarchy' (all levels), 'all' (everything)
     const effectiveViewMode = (viewMode as string) || "self";
 
-    if (!projectId) {
+    if (!projectId && !projectIds) {
       return res.status(400).json({
         success: false,
         message: "Project ID is required",
@@ -4910,17 +4910,42 @@ export const getProjectDashboardStats = async (req: Request, res: Response) => {
     // Build query based on user permissions
     // Handle both ObjectId and string for metadata.projectId (some tickets may have string, others ObjectId)
     let projectIdFilter: any;
-    try {
-      const projectObjectId = new mongoose.Types.ObjectId(projectId as string);
-      // Query both ObjectId and string representations
-      projectIdFilter = {
-        $or: [
-          { "metadata.projectId": projectObjectId },
-          { "metadata.projectId": projectId as string },
-        ],
-      };
-    } catch (e) {
-      projectIdFilter = { "metadata.projectId": projectId }; // Fallback to string only
+
+    // Support unified mode: projectIds is comma-separated list of project IDs
+    const projectIdList = projectIds
+      ? (projectIds as string).split(",").map((id) => id.trim()).filter(Boolean)
+      : projectId
+      ? [projectId as string]
+      : [];
+
+    if (projectIdList.length > 1) {
+      // Multiple projects (unified mode): $or across all of them
+      const orClauses: any[] = [];
+      for (const pid of projectIdList) {
+        try {
+          const oid = new mongoose.Types.ObjectId(pid);
+          orClauses.push({ "metadata.projectId": oid });
+          orClauses.push({ "metadata.projectId": pid });
+        } catch {
+          orClauses.push({ "metadata.projectId": pid });
+        }
+      }
+      projectIdFilter = { $or: orClauses };
+    } else if (projectIdList.length === 1) {
+      try {
+        const projectObjectId = new mongoose.Types.ObjectId(projectIdList[0]);
+        // Query both ObjectId and string representations
+        projectIdFilter = {
+          $or: [
+            { "metadata.projectId": projectObjectId },
+            { "metadata.projectId": projectIdList[0] },
+          ],
+        };
+      } catch (e) {
+        projectIdFilter = { "metadata.projectId": projectIdList[0] }; // Fallback to string only
+      }
+    } else {
+      projectIdFilter = {}; // Should not happen due to early return above
     }
     let query: any = projectIdFilter;
 

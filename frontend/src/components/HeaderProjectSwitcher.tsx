@@ -33,6 +33,7 @@ export const HeaderProjectSwitcher: React.FC = () => {
   const location = useLocation();
   const {
     currentProjectId,
+    setCurrentProjectId,
     viewMode,
     userProjects,
     recentProjects,
@@ -126,9 +127,16 @@ export const HeaderProjectSwitcher: React.FC = () => {
 
   const handleUnifiedView = () => {
     setViewMode('unified');
+    setCurrentProjectId(null);
     setIsOpen(false);
     setSearchQuery('');
-    navigate('/dashboard');
+    // Stay inside the portal — extract customUrlPath from current URL
+    const portalMatch = location.pathname.match(/^\/([^/]+)\/portal/);
+    if (portalMatch) {
+      navigate(`/${portalMatch[1]}/portal/dashboard`);
+    } else {
+      navigate('/dashboard');
+    }
   };
 
   // Don't render if user is Super Admin - they have access to all projects
