@@ -1386,6 +1386,22 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                             ? `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}`
                             : "Unassigned"}
                         </div>
+                        {ticket.createdAt && (
+                          <div>
+                            <span style={{ fontWeight: 600 }}>Created:</span>{" "}
+                            {new Date(ticket.createdAt).toLocaleString(
+                              undefined,
+                              {
+                                day: "2-digit",
+                                month: "short",
+                                year: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                hour12: true,
+                              },
+                            )}
+                          </div>
+                        )}
                         {ticket.category && (
                           <div>
                             <span style={{ fontWeight: 600 }}>Category:</span>{" "}

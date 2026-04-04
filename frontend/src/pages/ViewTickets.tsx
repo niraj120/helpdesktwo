@@ -1048,6 +1048,12 @@ const ViewTickets: React.FC = () => {
                       {ticket.category.name}
                     </div>
                   )}
+                  {ticket.createdAt && (
+                    <div>
+                      <span style={{ fontWeight: 600 }}>Created At:</span>{" "}
+                      {new Date(ticket.createdAt).toLocaleString()}
+                    </div>
+                  )}
                 </div>
               </div>
             ))
