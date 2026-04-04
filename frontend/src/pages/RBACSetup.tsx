@@ -441,6 +441,25 @@ const RBACSetup = () => {
   ): GroupedPermissions => {
     const filtered: GroupedPermissions = {};
 
+    // Report permissions that are managed internally by the Report module
+    // (Assign is handled by Report > Assign Reports; others are internal)
+    // Only REPORT_VIEW_TICKETS is exposed in RBAC so admins can gate access to the module.
+    const REPORT_PERMISSIONS_HIDDEN_IN_RBAC = new Set([
+      "REPORT_VIEW_AGENT_PERFORMANCE",
+      "REPORT_VIEW_CSAT",
+      "REPORT_VIEW_SLA",
+      "REPORT_VIEW_QUERY",
+      "REPORT_VIEW_ASSET",
+      "REPORT_VIEW_EMPLOYEE",
+      "REPORT_EXPORT",
+      "REPORT_CREATE_CUSTOM",
+      "REPORT_SCHEDULE",
+      "REPORT_ASSIGN",
+      "REPORT_DELETE",
+      "REPORT_PERMISSIONS_MANAGE",
+      "REPORT_DATA_POINTS_MANAGE",
+    ]);
+
     // Define permission categories for each role type
     // ALL permission prefixes must be listed here to be visible in RBAC Setup
     const allPermissionPrefixes = [
@@ -512,6 +531,8 @@ const RBACSetup = () => {
     Object.entries(permissions).forEach(([category, modules]) => {
       Object.entries(modules).forEach(([module, perms]) => {
         const filteredPerms = perms.filter((perm) => {
+          // Hide report sub-permissions that are managed by the Report module itself
+          if (REPORT_PERMISSIONS_HIDDEN_IN_RBAC.has(perm.code)) return false;
           // Check if permission code starts with any allowed prefix
           return allowedPrefixes.some((prefix) => perm.code.startsWith(prefix));
         });

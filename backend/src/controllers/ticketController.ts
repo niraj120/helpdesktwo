@@ -673,6 +673,27 @@ export const submitTicket = async (req: Request, res: Response) => {
       `✅ Ticket created successfully: ${ticket._id} | Created by: ${studentUserId}${assignedAgent ? ` | Assigned to: ${assignedAgent}` : " | Unassigned"}`,
     );
 
+    // US-ASSIGN-001: Record fallback assignment in changeHistory for dashboard tracking
+    if (assignmentResult?.assignedVia === "fallback") {
+      await Ticket.updateOne(
+        { _id: ticket._id },
+        {
+          $push: {
+            changeHistory: {
+              field: "assignment_fallback",
+              oldValue: "unassigned",
+              newValue: "fallback",
+              changedBy: new mongoose.Types.ObjectId(studentUserId),
+              changedAt: new Date(),
+              changeType: "update" as const,
+              reassignmentReason:
+                "Assignment fallback: no eligible agents in pool, assigned to submitting user",
+            },
+          },
+        },
+      );
+    }
+
     // Initialize priority-level SLA tracking (non-blocking)
     (async () => {
       try {
@@ -4509,6 +4530,46 @@ export const getDashboardStats = async (req: Request, res: Response) => {
 
     console.log(`📊 [DASHBOARD] Final query:`, JSON.stringify(query));
 
+    // ===== FETCH PROJECT STATUS CONFIG FOR DYNAMIC CLOSED/PENDING DETECTION =====
+    // Determines which status codes are "closed" (isClosed=true) and which are "pending"
+    // for SLA bucketing. Falls back to the legacy hardcoded values when a project has no
+    // custom status configuration.
+    let closedStatusCodes: number[] = [4, 5]; // legacy fallback
+    let pendingStatusCodes: number[] = [1, 2, 3]; // legacy fallback
+    try {
+      const StatusModel = require("../models/Status").Status;
+      const effectiveProjectId =
+        projectId ??
+        (query["metadata.projectId"] instanceof mongoose.Types.ObjectId
+          ? query["metadata.projectId"].toString()
+          : query["metadata.projectId"]);
+      if (effectiveProjectId) {
+        const projectStatuses: any[] = await StatusModel.find({
+          projectId: effectiveProjectId,
+        }).select("code isClosed");
+        if (projectStatuses.length > 0) {
+          closedStatusCodes = projectStatuses
+            .filter((s) => s.isClosed === true)
+            .map((s) => s.code);
+          pendingStatusCodes = projectStatuses
+            .filter((s) => s.isClosed !== true)
+            .map((s) => s.code);
+          // If project has no closed status configured, fall back to [4,5]
+          if (closedStatusCodes.length === 0) closedStatusCodes = [4, 5];
+          if (pendingStatusCodes.length === 0) pendingStatusCodes = [1, 2, 3];
+        }
+      }
+    } catch (statusErr) {
+      console.warn(
+        "⚠️ [DASHBOARD] Could not load project status config, using defaults:",
+        statusErr,
+      );
+    }
+    console.log(
+      `📊 [DASHBOARD] Closed status codes: [${closedStatusCodes}]  Pending: [${pendingStatusCodes}]`,
+    );
+    // ===== END STATUS CONFIG =====
+
     // ===== SLA FIELD SELECTION BASED ON VIEW MODE =====
     // For 'self' view (My Ticket Dashboard): Use role-level SLA (resets on escalation)
     // For 'team'/'hierarchy' views: Use ticket-level SLA (overall from creation)
@@ -4552,8 +4613,9 @@ export const getDashboardStats = async (req: Request, res: Response) => {
             ],
 
             // SLA stats for closed/resolved tickets - use appropriate SLA field
+            // closedStatusCodes is derived from the project's Status config (isClosed=true)
             closedSLA: [
-              { $match: { status: { $in: [4, 5] } } },
+              { $match: { status: { $in: closedStatusCodes } } },
               {
                 $group: {
                   _id: {
@@ -4576,8 +4638,9 @@ export const getDashboardStats = async (req: Request, res: Response) => {
             ],
 
             // SLA stats for pending tickets - use appropriate SLA field
+            // pendingStatusCodes is derived from the project's Status config (isClosed!=true)
             pendingSLA: [
-              { $match: { status: { $in: [1, 2, 3] } } },
+              { $match: { status: { $in: pendingStatusCodes } } },
               {
                 $group: {
                   _id: {
@@ -4728,6 +4791,20 @@ export const getDashboardStats = async (req: Request, res: Response) => {
     }
     // ===== END TEAM BREAKDOWN =====
 
+    // US-ASSIGN-001: Count fallback assignments this month for the current project scope
+    const startOfMonth = new Date(
+      new Date().getFullYear(),
+      new Date().getMonth(),
+      1,
+    );
+    const fallbackQuery: any = {
+      assignedVia: "fallback",
+      createdAt: { $gte: startOfMonth },
+    };
+    if (projectId) fallbackQuery["metadata.projectId"] = projectId;
+    const fallbackAssignmentsThisMonth =
+      await Ticket.countDocuments(fallbackQuery);
+
     return res.status(200).json({
       success: true,
       viewMode: appliedViewMode, // Return which view mode was applied
@@ -4744,6 +4821,7 @@ export const getDashboardStats = async (req: Request, res: Response) => {
       pendingOutsideSLA,
       recentActivity: formattedActivity,
       teamBreakdown, // Include team breakdown if applicable
+      fallbackAssignmentsThisMonth,
     });
   } catch (error) {
     console.error("Dashboard stats error:", error);
@@ -5234,6 +5312,29 @@ export const getProjectDashboardStats = async (req: Request, res: Response) => {
     let pendingWithinSLA = 0;
     let pendingOutsideSLA = 0;
 
+    // Fetch project's status config so we can identify closed/pending statuses
+    // by isClosed flag rather than hardcoded codes.
+    let projClosedCodes: Set<number> = new Set([4, 5]); // fallback
+    try {
+      const StatusModel = require("../models/Status").Status;
+      const projStatuses: any[] = await StatusModel.find({
+        projectId: projectId,
+      }).select("code isClosed");
+      if (projStatuses.length > 0) {
+        const closedCodes = projStatuses
+          .filter((s) => s.isClosed === true)
+          .map((s) => s.code);
+        projClosedCodes = new Set(
+          closedCodes.length > 0 ? closedCodes : [4, 5],
+        );
+      }
+    } catch (statusErr) {
+      console.warn(
+        "⚠️ [PROJECT DASHBOARD] Could not load status config, using defaults:",
+        statusErr,
+      );
+    }
+
     const now = new Date();
 
     console.log("🕐 Starting SLA calculation at:", now.toISOString());
@@ -5328,12 +5429,11 @@ export const getProjectDashboardStats = async (req: Request, res: Response) => {
       const slaDeadline = new Date(createdAt.getTime() + resolutionTimeMs);
 
       // SLA Calculation Logic:
-      // For resolved/closed tickets (status 4 or 5): Check actual resolution/closure time against SLA deadline
-      // For open/pending tickets (status 1, 2, or 3): Check current time against SLA deadline
-      const isResolved = ticket.status === 4; // 4 = Resolved
-      const isClosed = ticket.status === 5; // 5 = Closed
-      const isPending =
-        ticket.status === 1 || ticket.status === 2 || ticket.status === 3; // 1=Open, 2=In Progress, 3=On Hold
+      // Closed = any status with isClosed=true in the project's Status config
+      // Pending = any status not in the closed set
+      const isClosed = projClosedCodes.has(ticket.status);
+      const isResolved = isClosed; // treat all closing statuses as resolved for SLA purposes
+      const isPending = !isClosed;
 
       if (isResolved || isClosed) {
         // Determine completion time - try multiple sources:

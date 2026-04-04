@@ -6,7 +6,10 @@ import { User } from "../models/User";
 import mongoose from "mongoose";
 import { sendTicketEscalatedEmail } from "../utils/emailService";
 import { logError, ErrorContext, ErrorSeverity } from "../utils/errorLogger";
-import { processAutoEscalation as processMatrixAutoEscalation } from "./escalationMatrixService";
+import {
+  processAutoEscalation as processMatrixAutoEscalation,
+  processSLAWarnings,
+} from "./escalationMatrixService";
 
 /**
  * Auto-Escalation Service
@@ -156,6 +159,14 @@ class AutoEscalationService {
           "❌ Matrix-based auto-escalation failed:",
           matrixError.message,
         );
+      }
+
+      // US-ESC-008: Process pre-breach SLA warnings
+      try {
+        console.log("🔔 Checking pre-breach SLA warnings...");
+        await processSLAWarnings();
+      } catch (warnErr: any) {
+        console.error("❌ SLA warning processing failed:", warnErr.message);
       }
     } catch (error: any) {
       console.error("❌ Auto-escalation cycle failed:", error.message);

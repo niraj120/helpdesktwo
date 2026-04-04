@@ -16,6 +16,7 @@ import {
   toObjectIdStrict,
   newObjectId,
 } from "../utils/objectIdUtils";
+import { sendSLAWarningEmail } from "../utils/emailService";
 
 /**
  * Convert slaHours value to milliseconds based on slaUnit
@@ -1649,6 +1650,130 @@ export async function getAutoEscalationCandidates(): Promise<
   return candidates;
 }
 
+/**
+ * US-ESC-008: Process pre-breach SLA warnings.
+ * For every open ticket with an escalation matrix that has slaWarningConfig,
+ * check if any warning threshold has been crossed and send the warning email
+ * if it hasn't been sent yet.
+ */
+export async function processSLAWarnings(): Promise<void> {
+  try {
+    const now = new Date();
+
+    // Find open tickets that have an escalation matrix assigned and a started roleLevelSLA
+    const tickets = await Ticket.find({
+      status: { $nin: ["resolved", "closed"] },
+      escalationMatrixId: { $exists: true, $ne: null },
+      "roleLevelSLA.startedAt": { $exists: true },
+      "roleLevelSLA.dueAt": { $exists: true },
+      "roleLevelSLA.breachedAt": { $exists: false },
+    }).lean();
+
+    if (tickets.length === 0) return;
+
+    // Gather unique matrix IDs
+    const matrixIds = [
+      ...new Set(tickets.map((t) => String(t.escalationMatrixId))),
+    ];
+    const matrices = await EscalationMatrix.find({
+      _id: { $in: matrixIds },
+    }).lean();
+    const matrixMap = new Map(matrices.map((m: any) => [String(m._id), m]));
+
+    let warningsSentCount = 0;
+
+    for (const ticket of tickets) {
+      const matrix: any = matrixMap.get(String(ticket.escalationMatrixId));
+      if (!matrix?.slaWarningConfig?.warningThresholds?.length) continue;
+
+      const sla = ticket.roleLevelSLA!;
+      const totalMs =
+        new Date(sla.dueAt).getTime() - new Date(sla.startedAt).getTime();
+      if (totalMs <= 0) continue;
+
+      const elapsedMs = now.getTime() - new Date(sla.startedAt).getTime();
+      const elapsedPct = Math.min(100, (elapsedMs / totalMs) * 100);
+
+      const alreadySent: number[] = (sla as any).warningsSent || [];
+      const thresholdsToFireNow = (
+        matrix.slaWarningConfig.warningThresholds as number[]
+      ).filter((t) => elapsedPct >= t && !alreadySent.includes(t));
+
+      if (thresholdsToFireNow.length === 0) continue;
+
+      // Build recipient list
+      const recipientEmails: string[] = [];
+
+      if (matrix.slaWarningConfig.notifyAssignedAgent && ticket.assignedTo) {
+        const agent = (await User.findById(ticket.assignedTo)
+          .select("email firstName lastName")
+          .lean()) as any;
+        if (agent?.email) {
+          recipientEmails.push(agent.email);
+        }
+      }
+
+      if (matrix.slaWarningConfig.notifyRoles?.length) {
+        const roleMembers = (await User.find({
+          role: { $in: matrix.slaWarningConfig.notifyRoles },
+          isActive: true,
+        })
+          .select("email firstName lastName")
+          .lean()) as any[];
+        for (const m of roleMembers) {
+          if (m.email && !recipientEmails.includes(m.email))
+            recipientEmails.push(m.email);
+        }
+      }
+
+      const assignedAgent = ticket.assignedTo
+        ? ((await User.findById(ticket.assignedTo)
+            .select("firstName lastName")
+            .lean()) as any)
+        : null;
+      const agentName = assignedAgent
+        ? `${assignedAgent.firstName} ${assignedAgent.lastName}`
+        : "Unassigned";
+
+      const ticketNumber = (ticket as any).ticketNumber || String(ticket._id);
+      const ticketTitle =
+        (ticket as any).title || (ticket as any).subject || "Untitled";
+      const projectId = (ticket as any).metadata?.projectId?.toString();
+
+      // Send warning emails for each threshold
+      for (const threshold of thresholdsToFireNow) {
+        for (const email of recipientEmails) {
+          await sendSLAWarningEmail(
+            email,
+            ticketNumber,
+            ticketTitle,
+            threshold,
+            agentName,
+            projectId,
+          );
+          warningsSentCount++;
+        }
+      }
+
+      // Record all fired thresholds so we don't send again
+      await Ticket.updateOne(
+        { _id: ticket._id },
+        {
+          $addToSet: {
+            "roleLevelSLA.warningsSent": { $each: thresholdsToFireNow },
+          },
+        },
+      );
+    }
+
+    console.log(
+      `[processSLAWarnings] Sent ${warningsSentCount} warning email(s) across ${tickets.length} checked tickets.`,
+    );
+  } catch (err) {
+    console.error("[processSLAWarnings] Error:", err);
+  }
+}
+
 export default {
   getMatrixByProjectId,
   autoAssignMatrixToTicket,
@@ -1661,4 +1786,5 @@ export default {
   assignMatrixToTicket,
   processAutoEscalation,
   getAutoEscalationCandidates,
+  processSLAWarnings,
 };

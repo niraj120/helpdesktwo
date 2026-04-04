@@ -135,6 +135,7 @@ export interface ITicket extends Document {
     breachedAt?: Date; // When current role-level SLA was breached (if applicable)
     pausedAt?: Date; // When SLA was paused
     pausedDuration?: number; // Total time paused in minutes
+    warningsSent?: number[]; // US-ESC-008: Threshold percentages for which warnings have already been sent
   };
   createdAt: Date;
   updatedAt: Date;
@@ -406,6 +407,7 @@ const TicketSchema: Schema = new Schema(
       breachedAt: { type: Date },
       pausedAt: { type: Date },
       pausedDuration: { type: Number, default: 0 },
+      warningsSent: { type: [Number], default: [] }, // US-ESC-008
     },
     // Merge tracking fields
     isMerged: {

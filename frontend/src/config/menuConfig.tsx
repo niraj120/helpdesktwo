@@ -1,4 +1,4 @@
-import { ReactNode } from 'react';
+import { ReactNode } from "react";
 import {
   MdDashboard,
   MdFolder,
@@ -30,8 +30,8 @@ import {
   MdTableChart,
   MdMonitorHeart,
   MdStorage,
-} from 'react-icons/md';
-import { PERMISSIONS, PERMISSION_MODULES } from '../constants/permissions';
+} from "react-icons/md";
+import { PERMISSIONS, PERMISSION_MODULES } from "../constants/permissions";
 
 export interface MenuItem {
   path?: string;
@@ -55,60 +55,60 @@ export interface MenuItem {
 export const menuConfig: MenuItem[] = [
   // Dashboard - Visible to all authenticated users
   {
-    path: '/dashboard',
+    path: "/dashboard",
     icon: <MdDashboard />,
-    label: 'Dashboard',
-    labelHi: 'डैशबोर्ड',
-    labelMr: 'डॅशबोर्ड',
+    label: "Dashboard",
+    labelHi: "डैशबोर्ड",
+    labelMr: "डॅशबोर्ड",
     // No permission required - everyone can see dashboard
   },
 
   // Project Management - Super Admin only
   {
-    path: '/projects',
+    path: "/projects",
     icon: <MdFolder />,
-    label: 'Project Management',
-    labelHi: 'प्रोजेक्ट प्रबंधन',
-    labelMr: 'प्रकल्प व्यवस्थापन',
+    label: "Project Management",
+    labelHi: "प्रोजेक्ट प्रबंधन",
+    labelMr: "प्रकल्प व्यवस्थापन",
     modulePrefix: PERMISSION_MODULES.PROJECT,
   },
 
   // Master Data - Super Admin only
   {
-    path: '/master-data',
+    path: "/master-data",
     icon: <MdSettings />,
-    label: 'Master Data',
-    labelHi: 'मास्टर डेटा',
-    labelMr: 'मास्टर डेटा',
+    label: "Master Data",
+    labelHi: "मास्टर डेटा",
+    labelMr: "मास्टर डेटा",
     permission: PERMISSIONS.MASTER_DATA_VIEW,
   },
 
   // RBAC Setup - Super Admin only
   {
-    path: '/rbac',
+    path: "/rbac",
     icon: <MdSecurity />,
-    label: 'RBAC Setup',
-    labelHi: 'RBAC सेटअप',
-    labelMr: 'RBAC सेटअप',
+    label: "RBAC Setup",
+    labelHi: "RBAC सेटअप",
+    labelMr: "RBAC सेटअप",
     modulePrefix: PERMISSION_MODULES.RBAC,
   },
 
   // User Management - Managers and Super Admin
   {
-    path: '/users',
+    path: "/users",
     icon: <MdPeople />,
-    label: 'User Management',
-    labelHi: 'उपयोगकर्ता प्रबंधन',
-    labelMr: 'वापरकर्ता व्यवस्थापन',
+    label: "User Management",
+    labelHi: "उपयोगकर्ता प्रबंधन",
+    labelMr: "वापरकर्ता व्यवस्थापन",
     modulePrefix: PERMISSION_MODULES.USER,
   },
 
   // Queries - For Center Managers and Agents
   {
     icon: <MdConfirmationNumber />,
-    label: 'Queries',
-    labelHi: 'टिकट',
-    labelMr: 'तिकीटे',
+    label: "Queries",
+    labelHi: "टिकट",
+    labelMr: "तिकीटे",
     permission: [
       PERMISSIONS.TICKET_VIEW_ALL,
       PERMISSIONS.TICKET_VIEW_OWN,
@@ -117,28 +117,28 @@ export const menuConfig: MenuItem[] = [
     ],
     subItems: [
       {
-        path: '/tickets/view',
+        path: "/tickets/view",
         icon: <MdConfirmationNumber />,
-        label: 'View Queries',
-        labelHi: 'टिकट देखें',
-        labelMr: 'तिकीटे पहा',
+        label: "View Queries",
+        labelHi: "टिकट देखें",
+        labelMr: "तिकीटे पहा",
         permission: PERMISSIONS.TICKET_VIEW_ALL,
       },
       {
-        path: '/tickets/my-tickets',
+        path: "/tickets/my-tickets",
         icon: <MdPeople />,
-        label: 'My Queries',
-        labelHi: 'मेरे टिकट',
-        labelMr: 'माझी तिकीटे',
+        label: "My Queries",
+        labelHi: "मेरे टिकट",
+        labelMr: "माझी तिकीटे",
         permission: PERMISSIONS.TICKET_VIEW_OWN,
-        excludeForRoles: ['SUPER_ADMIN'], // Super Admin doesn't need this submenu
+        excludeForRoles: ["SUPER_ADMIN"], // Super Admin doesn't need this submenu
       },
       {
-        path: '/tickets/assign',
+        path: "/tickets/assign",
         icon: <MdPeople />,
-        label: 'Assign Queries',
-        labelHi: 'टिकट असाइन करें',
-        labelMr: 'तिकीटे नियुक्त करा',
+        label: "Assign Queries",
+        labelHi: "टिकट असाइन करें",
+        labelMr: "तिकीटे नियुक्त करा",
         permission: PERMISSIONS.TICKET_ASSIGN,
       },
     ],
@@ -146,11 +146,11 @@ export const menuConfig: MenuItem[] = [
 
   // Query Configuration - Super Admin only
   {
-    path: '/ticket-config',
+    path: "/ticket-config",
     icon: <MdSettings />,
-    label: 'Query Configuration',
-    labelHi: 'टिकट कॉन्फ़िगरेशन',
-    labelMr: 'तिकीट कॉन्फिगरेशन',
+    label: "Query Configuration",
+    labelHi: "टिकट कॉन्फ़िगरेशन",
+    labelMr: "तिकीट कॉन्फिगरेशन",
     permission: [
       PERMISSIONS.TICKET_CONFIG_VIEW,
       PERMISSIONS.TICKET_CONFIG_MANAGE_CATEGORIES,
@@ -161,11 +161,11 @@ export const menuConfig: MenuItem[] = [
 
   // Offline Module Setup - Super Admin and Managers
   {
-    path: '/offline-module',
+    path: "/offline-module",
     icon: <MdSettings />,
-    label: 'Offline Module Setup',
-    labelHi: 'ऑफ़लाइन मॉड्यूल सेटअप',
-    labelMr: 'ऑफलाइन मॉड्यूल सेटअप',
+    label: "Offline Module Setup",
+    labelHi: "ऑफ़लाइन मॉड्यूल सेटअप",
+    labelMr: "ऑफलाइन मॉड्यूल सेटअप",
     modulePrefix: PERMISSION_MODULES.OFFLINE,
   },
 
@@ -181,89 +181,108 @@ export const menuConfig: MenuItem[] = [
 
   // SLA & Escalation - Super Admin only
   {
-    path: '/sla',
+    path: "/sla",
     icon: <MdSchedule />,
-    label: 'SLA & Escalation',
-    labelHi: 'SLA और एस्केलेशन',
-    labelMr: 'SLA आणि वाढीव प्रक्रिया',
+    label: "SLA & Escalation",
+    labelHi: "SLA और एस्केलेशन",
+    labelMr: "SLA आणि वाढीव प्रक्रिया",
     modulePrefix: PERMISSION_MODULES.SLA,
   },
 
   // Knowledge Base - Modular system with levels, articles, and tables
   {
     icon: <MdBook />,
-    label: 'Knowledge Base',
-    labelHi: 'ज्ञान आधार',
-    labelMr: 'ज्ञान आधार',
-    permission: [PERMISSIONS.KB_VIEW_CONTENT, PERMISSIONS.KB_MANAGE, PERMISSIONS.KB_MANAGE_LEVELS, PERMISSIONS.KB_MANAGE_ARTICLES, PERMISSIONS.KB_MANAGE_TABLES],
+    label: "Knowledge Base",
+    labelHi: "ज्ञान आधार",
+    labelMr: "ज्ञान आधार",
+    permission: [
+      PERMISSIONS.KB_VIEW_CONTENT,
+      PERMISSIONS.KB_MANAGE,
+      PERMISSIONS.KB_MANAGE_LEVELS,
+      PERMISSIONS.KB_MANAGE_ARTICLES,
+      PERMISSIONS.KB_MANAGE_TABLES,
+    ],
     subItems: [
       {
-        path: '/kb-new/levels',
+        path: "/kb-new/levels",
         icon: <MdCategory />,
-        label: 'Manage Levels',
-        labelHi: 'स्तर प्रबंधित करें',
-        labelMr: 'स्तर व्यवस्थापित करा',
+        label: "Manage Levels",
+        labelHi: "स्तर प्रबंधित करें",
+        labelMr: "स्तर व्यवस्थापित करा",
         permission: [PERMISSIONS.KB_MANAGE, PERMISSIONS.KB_MANAGE_LEVELS],
       },
       {
-        path: '/kb-new/articles',
+        path: "/kb-new/articles",
         icon: <MdArticle />,
-        label: 'Manage Articles',
-        labelHi: 'लेख प्रबंधित करें',
-        labelMr: 'लेख व्यवस्थापित करा',
+        label: "Manage Articles",
+        labelHi: "लेख प्रबंधित करें",
+        labelMr: "लेख व्यवस्थापित करा",
         permission: [PERMISSIONS.KB_MANAGE, PERMISSIONS.KB_MANAGE_ARTICLES],
       },
       {
-        path: '/kb-new/tables',
+        path: "/kb-new/tables",
         icon: <MdTableChart />,
-        label: 'Manage Tables',
-        labelHi: 'तालिका प्रबंधित करें',
-        labelMr: 'तक्ते व्यवस्थापित करा',
+        label: "Manage Tables",
+        labelHi: "तालिका प्रबंधित करें",
+        labelMr: "तक्ते व्यवस्थापित करा",
         permission: [PERMISSIONS.KB_MANAGE, PERMISSIONS.KB_MANAGE_TABLES],
       },
       {
-        path: '/kb-new/viewer',
+        path: "/kb-new/viewer",
         icon: <MdVisibility />,
-        label: 'View KB',
-        labelHi: 'KB देखें',
-        labelMr: 'KB पहा',
-        permission: [PERMISSIONS.KB_VIEW_CONTENT, PERMISSIONS.KB_MANAGE, PERMISSIONS.KB_MANAGE_LEVELS, PERMISSIONS.KB_MANAGE_ARTICLES, PERMISSIONS.KB_MANAGE_TABLES],
+        label: "View KB",
+        labelHi: "KB देखें",
+        labelMr: "KB पहा",
+        permission: [
+          PERMISSIONS.KB_VIEW_CONTENT,
+          PERMISSIONS.KB_MANAGE,
+          PERMISSIONS.KB_MANAGE_LEVELS,
+          PERMISSIONS.KB_MANAGE_ARTICLES,
+          PERMISSIONS.KB_MANAGE_TABLES,
+        ],
       },
     ],
   },
 
   // FAQ - All users (view), Admins (manage)
   {
-    path: '/faq',
+    path: "/faq",
     icon: <MdQuestionAnswer />,
-    label: 'FAQ',
-    labelHi: 'अक्सर पूछे जाने वाले प्रश्न',
-    labelMr: 'वारंवार विचारले जाणारे प्रश्न',
-    permission: [PERMISSIONS.FAQ_VIEW, PERMISSIONS.FAQ_CREATE, PERMISSIONS.FAQ_MANAGE],
+    label: "FAQ",
+    labelHi: "अक्सर पूछे जाने वाले प्रश्न",
+    labelMr: "वारंवार विचारले जाणारे प्रश्न",
+    permission: [
+      PERMISSIONS.FAQ_VIEW,
+      PERMISSIONS.FAQ_CREATE,
+      PERMISSIONS.FAQ_MANAGE,
+    ],
   },
 
   // Feedback Module - Super Admin, Project Admin
   {
     icon: <MdChat />,
-    label: 'Feedback',
-    labelHi: 'फीडबैक',
-    labelMr: 'अभिप्राय',
+    label: "Feedback",
+    labelHi: "फीडबैक",
+    labelMr: "अभिप्राय",
     modulePrefix: PERMISSION_MODULES.FEEDBACK,
     subItems: [
       {
-        path: '/feedback/forms',
+        path: "/feedback/forms",
         icon: <MdFactCheck />,
-        label: 'Manage Forms',
-        labelHi: 'फॉर्म प्रबंधन',
-        labelMr: 'फॉर्म व्यवस्थापन',
-        permission: [PERMISSIONS.FEEDBACK_FORM_CREATE, PERMISSIONS.FEEDBACK_FORM_EDIT],
+        label: "Manage Forms",
+        labelHi: "फॉर्म प्रबंधन",
+        labelMr: "फॉर्म व्यवस्थापन",
+        permission: [
+          PERMISSIONS.FEEDBACK_FORM_CREATE,
+          PERMISSIONS.FEEDBACK_FORM_EDIT,
+        ],
       },
       {
-        path: '/feedback/responses',
+        path: "/feedback/responses",
         icon: <MdBarChart />,
-        label: 'View Responses',
-        labelHi: 'प्रतिक्रियाएं देखें',
-        labelMr: 'प्रतिसाद पहा',
+        label: "View Responses",
+        labelHi: "प्रतिक्रियाएं देखें",
+        labelMr: "प्रतिसाद पहा",
         permission: PERMISSIONS.FEEDBACK_VIEW,
       },
     ],
@@ -272,34 +291,41 @@ export const menuConfig: MenuItem[] = [
   // Asset Management - Super Admin, CET State Cell only
   {
     icon: <MdFactCheck />,
-    label: 'Asset Management',
-    labelHi: 'संपत्ति प्रबंधन',
-    labelMr: 'मालमत्ता व्यवस्थापन',
+    label: "Asset Management",
+    labelHi: "संपत्ति प्रबंधन",
+    labelMr: "मालमत्ता व्यवस्थापन",
     modulePrefix: PERMISSION_MODULES.ASSET,
-    excludeForRoles: ['STUDENT', 'COUNSELOR_L1', 'CET_STATE_CELL', 'AGENT', 'SUPPORT_ADMIN', 'ACCOUNT_OWNER'],
+    excludeForRoles: [
+      "STUDENT",
+      "COUNSELOR_L1",
+      "CET_STATE_CELL",
+      "AGENT",
+      "SUPPORT_ADMIN",
+      "ACCOUNT_OWNER",
+    ],
     subItems: [
       {
-        path: '/assets',
+        path: "/assets",
         icon: <MdCategory />,
-        label: 'Master Assets',
-        labelHi: 'मास्टर संपत्ति',
-        labelMr: 'मास्टर मालमत्ता',
+        label: "Master Assets",
+        labelHi: "मास्टर संपत्ति",
+        labelMr: "मास्टर मालमत्ता",
         permission: PERMISSIONS.ASSET_VIEW,
       },
       {
-        path: '/center-assets',
+        path: "/center-assets",
         icon: <MdFolder />,
-        label: 'Center Assets',
-        labelHi: 'केंद्र संपत्ति',
-        labelMr: 'केंद्र मालमत्ता',
+        label: "Center Assets",
+        labelHi: "केंद्र संपत्ति",
+        labelMr: "केंद्र मालमत्ता",
         permission: PERMISSIONS.ASSET_MANAGE,
       },
       {
-        path: '/my-assets',
+        path: "/my-assets",
         icon: <MdPerson />,
-        label: 'My Assets',
-        labelHi: 'मेरी संपत्ति',
-        labelMr: 'माझी मालमत्ता',
+        label: "My Assets",
+        labelHi: "मेरी संपत्ति",
+        labelMr: "माझी मालमत्ता",
         permission: PERMISSIONS.ASSET_MANAGE,
       },
     ],
@@ -308,70 +334,73 @@ export const menuConfig: MenuItem[] = [
   // Integrations - Super Admin only
   {
     icon: <MdIntegrationInstructions />,
-    label: 'Integrations',
-    labelHi: 'एकीकरण',
-    labelMr: 'इंटिग्रेशन',
+    label: "Integrations",
+    labelHi: "एकीकरण",
+    labelMr: "इंटिग्रेशन",
     modulePrefix: PERMISSION_MODULES.INTEGRATION,
     subItems: [
       {
-        path: '/email-config',
+        path: "/email-config",
         icon: <MdMailOutline />,
-        label: 'Email Configuration',
-        labelHi: 'ईमेल विन्यास',
-        labelMr: 'ईमेल कॉन्फिगरेशन',
-        permission: 'PROJECT_MANAGE_SETTINGS',
+        label: "Email Configuration",
+        labelHi: "ईमेल विन्यास",
+        labelMr: "ईमेल कॉन्फिगरेशन",
+        permission: "PROJECT_MANAGE_SETTINGS",
       },
       {
-        path: '/integrations/email-to-ticket',
+        path: "/integrations/email-to-ticket",
         icon: <MdMailOutline />,
-        label: 'Email-to-Ticket',
-        labelHi: 'ईमेल-टू-टिकट',
-        labelMr: 'ईमेल-टू-टिकट',
-        permission: 'EMAIL_CONFIG_VIEW',
+        label: "Email-to-Ticket",
+        labelHi: "ईमेल-टू-टिकट",
+        labelMr: "ईमेल-टू-टिकट",
+        permission: "EMAIL_CONFIG_VIEW",
       },
     ],
   },
 
   // Reports - Managers and Super Admin
   {
-    path: '/reports',
+    path: "/reports",
     icon: <MdBarChart />,
-    label: 'Reports',
-    labelHi: 'रिपोर्ट',
-    labelMr: 'अहवाल',
+    label: "Reports",
+    labelHi: "रिपोर्ट",
+    labelMr: "अहवाल",
     modulePrefix: PERMISSION_MODULES.REPORT,
   },
 
   // Audit Logs - Super Admin and Managers with submenu
   {
     icon: <MdFactCheck />,
-    label: 'Audit Logs',
-    labelHi: 'ऑडिट लॉग',
-    labelMr: 'ऑडिट लॉग',
-    permission: [PERMISSIONS.AUDIT_VIEW_ACTIVITY, PERMISSIONS.AUDIT_VIEW_ACCESS],
+    label: "Audit Logs",
+    labelHi: "ऑडिट लॉग",
+    labelMr: "ऑडिट लॉग",
+    permission: [
+      PERMISSIONS.AUDIT_VIEW_ACTIVITY,
+      PERMISSIONS.AUDIT_VIEW_ACCESS,
+    ],
     subItems: [
       {
-        path: '/audit/activity-logs',
+        path: "/audit/activity-logs",
         icon: <MdHistory />,
-        label: 'Activity Logs',
-        labelHi: 'गतिविधि लॉग',
-        labelMr: 'अॅक्टिव्हिटी लॉग',
+        label: "Activity Logs",
+        labelHi: "गतिविधि लॉग",
+        labelMr: "अॅक्टिव्हिटी लॉग",
         permission: PERMISSIONS.AUDIT_VIEW_ACTIVITY,
       },
       {
-        path: '/audit/access-logs',
+        path: "/audit/access-logs",
         icon: <MdLogin />,
-        label: 'Access Logs',
-        labelHi: 'एक्सेस लॉग',
-        labelMr: 'अॅक्सेस लॉग',
+        label: "Access Logs",
+        labelHi: "एक्सेस लॉग",
+        labelMr: "अॅक्सेस लॉग",
         permission: PERMISSIONS.AUDIT_VIEW_ACCESS,
       },
       {
-        path: '/audit/email-logs',
+        path: "/audit/email-logs",
         icon: <MdMailOutline />,
-        label: 'Email Logs',
-        labelHi: 'ईमेल लॉग',
-        labelMr: 'ईमेल लॉग',
+        label: "Email Logs",
+        labelHi: "ईमेल लॉग",
+        labelMr: "ईमेल लॉग",
         permission: PERMISSIONS.AUDIT_VIEW_ACTIVITY,
       },
       // HIDDEN: Integration failure logs sub-menu - not ready
@@ -407,17 +436,17 @@ export const menuConfig: MenuItem[] = [
   // System Monitoring - Super Admin only
   {
     icon: <MdMonitorHeart />,
-    label: 'System Monitoring',
-    labelHi: 'सिस्टम मॉनिटरिंग',
-    labelMr: 'सिस्टम मॉनिटरिंग',
+    label: "System Monitoring",
+    labelHi: "सिस्टम मॉनिटरिंग",
+    labelMr: "सिस्टम मॉनिटरिंग",
     modulePrefix: PERMISSION_MODULES.AUDIT, // Reusing AUDIT module for now - Super Admin only
     subItems: [
       {
-        path: '/system/db-monitoring',
+        path: "/system/db-monitoring",
         icon: <MdStorage />,
-        label: 'Database Monitoring',
-        labelHi: 'डेटाबेस मॉनिटरिंग',
-        labelMr: 'डेटाबेस मॉनिटरिंग',
+        label: "Database Monitoring",
+        labelHi: "डेटाबेस मॉनिटरिंग",
+        labelMr: "डेटाबेस मॉनिटरिंग",
         permission: PERMISSIONS.AUDIT_VIEW_ACTIVITY, // Super Admin permission
       },
     ],
@@ -430,19 +459,19 @@ export const menuConfig: MenuItem[] = [
  */
 export const projectPortalMenuConfig: MenuItem[] = [
   {
-    path: 'dashboard', // Relative path, will be prefixed with /:customUrlPath/portal/
+    path: "dashboard", // Relative path, will be prefixed with /:customUrlPath/portal/
     icon: <MdDashboard />,
-    label: 'Dashboard',
-    labelHi: 'डैशबोर्ड',
-    labelMr: 'डॅशबोर्ड',
+    label: "Dashboard",
+    labelHi: "डैशबोर्ड",
+    labelMr: "डॅशबोर्ड",
     permission: PERMISSIONS.DASHBOARD_VIEW, // Now permission-based, not hardcoded
     isProjectRoute: true,
   },
   {
     icon: <MdConfirmationNumber />,
-    label: 'Queries',
-    labelHi: 'टिकट',
-    labelMr: 'तिकीटे',
+    label: "Queries",
+    labelHi: "टिकट",
+    labelMr: "तिकीटे",
     permission: [
       PERMISSIONS.TICKET_ASSIGN,
       PERMISSIONS.TICKET_CREATE,
@@ -451,75 +480,75 @@ export const projectPortalMenuConfig: MenuItem[] = [
     isProjectRoute: true,
     subItems: [
       {
-        path: 'tickets/my-tickets',
+        path: "tickets/my-tickets",
         icon: <MdConfirmationNumber />,
-        label: 'My Queries',
-        labelHi: 'मेरे टिकट',
-        labelMr: 'माझी तिकीटे',
+        label: "My Queries",
+        labelHi: "मेरे टिकट",
+        labelMr: "माझी तिकीटे",
         permission: PERMISSIONS.TICKET_VIEW_OWN,
         isProjectRoute: true,
       },
       {
-        path: 'tickets/assign',
+        path: "tickets/assign",
         icon: <MdPeople />,
-        label: 'Assign Queries',
-        labelHi: 'टिकट असाइन करें',
-        labelMr: 'तिकीटे नियुक्त करा',
+        label: "Assign Queries",
+        labelHi: "टिकट असाइन करें",
+        labelMr: "तिकीटे नियुक्त करा",
         permission: PERMISSIONS.TICKET_ASSIGN,
         isProjectRoute: true,
       },
       {
-        path: 'tickets/create',
+        path: "tickets/create",
         icon: <MdConfirmationNumber />,
-        label: 'Create Query',
-        labelHi: 'टिकट बनाएं',
-        labelMr: 'तिकीट तयार करा',
+        label: "Create Query",
+        labelHi: "टिकट बनाएं",
+        labelMr: "तिकीट तयार करा",
         permission: PERMISSIONS.TICKET_CREATE,
         isProjectRoute: true,
       },
     ],
   },
   {
-    path: 'faq',
+    path: "faq",
     icon: <MdQuestionAnswer />,
-    label: 'FAQ',
-    labelHi: 'अक्सर पूछे जाने वाले प्रश्न',
-    labelMr: 'वारंवार विचारले जाणारे प्रश्न',
+    label: "FAQ",
+    labelHi: "अक्सर पूछे जाने वाले प्रश्न",
+    labelMr: "वारंवार विचारले जाणारे प्रश्न",
     permission: PERMISSIONS.FAQ_VIEW, // All users can view FAQs
     isProjectRoute: true,
   },
   {
-    path: 'offline',
+    path: "offline",
     icon: <MdSettings />,
-    label: 'Offline Support',
-    labelHi: 'ऑफ़लाइन सहायता',
-    labelMr: 'ऑफलाइन सहाय्य',
+    label: "Offline Support",
+    labelHi: "ऑफ़लाइन सहायता",
+    labelMr: "ऑफलाइन सहाय्य",
     permission: PERMISSIONS.OFFLINE_MODULE_ACCESS, // Specific permission instead of module prefix
     isProjectRoute: true,
   },
   {
-    path: 'my-assets',
+    path: "my-assets",
     icon: <MdPerson />,
-    label: 'My Assets',
-    labelHi: 'मेरी संपत्ति',
-    labelMr: 'माझी मालमत्ता',
+    label: "My Assets",
+    labelHi: "मेरी संपत्ति",
+    labelMr: "माझी मालमत्ता",
     permission: PERMISSIONS.MY_ASSETS_VIEW,
     isProjectRoute: true,
   },
   {
-    path: 'users',
+    path: "users",
     icon: <MdPeople />,
-    label: 'User Management',
-    labelHi: 'उपयोगकर्ता प्रबंधन',
-    labelMr: 'वापरकर्ता व्यवस्थापन',
+    label: "User Management",
+    labelHi: "उपयोगकर्ता प्रबंधन",
+    labelMr: "वापरकर्ता व्यवस्थापन",
     modulePrefix: PERMISSION_MODULES.USER,
     isProjectRoute: true,
   },
   {
     icon: <MdBook />,
-    label: 'Knowledge Base',
-    labelHi: 'नॉलेज बेस',
-    labelMr: 'नॉलेज बेस',
+    label: "Knowledge Base",
+    labelHi: "नॉलेज बेस",
+    labelMr: "नॉलेज बेस",
     permission: [
       PERMISSIONS.KB_VIEW_CONTENT,
       PERMISSIONS.KB_MANAGE,
@@ -530,103 +559,84 @@ export const projectPortalMenuConfig: MenuItem[] = [
     isProjectRoute: true,
     subItems: [
       {
-        path: 'kb-new/levels',
+        path: "kb-new/levels",
         icon: <MdCategory />,
-        label: 'Manage Levels',
-        labelHi: 'स्तर प्रबंधित करें',
-        labelMr: 'स्तर व्यवस्थापित करा',
+        label: "Manage Levels",
+        labelHi: "स्तर प्रबंधित करें",
+        labelMr: "स्तर व्यवस्थापित करा",
         permission: [PERMISSIONS.KB_MANAGE, PERMISSIONS.KB_MANAGE_LEVELS],
         isProjectRoute: true,
       },
       {
-        path: 'kb-new/articles',
+        path: "kb-new/articles",
         icon: <MdArticle />,
-        label: 'Manage Articles',
-        labelHi: 'लेख प्रबंधित करें',
-        labelMr: 'लेख व्यवस्थापित करा',
+        label: "Manage Articles",
+        labelHi: "लेख प्रबंधित करें",
+        labelMr: "लेख व्यवस्थापित करा",
         permission: [PERMISSIONS.KB_MANAGE, PERMISSIONS.KB_MANAGE_ARTICLES],
         isProjectRoute: true,
       },
       {
-        path: 'kb-new/tables',
+        path: "kb-new/tables",
         icon: <MdTableChart />,
-        label: 'Manage Tables',
-        labelHi: 'तालिका प्रबंधित करें',
-        labelMr: 'तक्ते व्यवस्थापित करा',
+        label: "Manage Tables",
+        labelHi: "तालिका प्रबंधित करें",
+        labelMr: "तक्ते व्यवस्थापित करा",
         permission: [PERMISSIONS.KB_MANAGE, PERMISSIONS.KB_MANAGE_TABLES],
         isProjectRoute: true,
       },
       {
-        path: 'kb-new/viewer',
+        path: "kb-new/viewer",
         icon: <MdVisibility />,
-        label: 'View KB',
-        labelHi: 'KB देखें',
-        labelMr: 'KB पहा',
-        permission: [PERMISSIONS.KB_VIEW_CONTENT, PERMISSIONS.KB_MANAGE, PERMISSIONS.KB_MANAGE_LEVELS, PERMISSIONS.KB_MANAGE_ARTICLES, PERMISSIONS.KB_MANAGE_TABLES],
+        label: "View KB",
+        labelHi: "KB देखें",
+        labelMr: "KB पहा",
+        permission: [
+          PERMISSIONS.KB_VIEW_CONTENT,
+          PERMISSIONS.KB_MANAGE,
+          PERMISSIONS.KB_MANAGE_LEVELS,
+          PERMISSIONS.KB_MANAGE_ARTICLES,
+          PERMISSIONS.KB_MANAGE_TABLES,
+        ],
         isProjectRoute: true,
       },
     ],
   },
   {
+    path: "reports",
     icon: <MdBarChart />,
-    label: 'Reports',
-    labelHi: 'रिपोर्ट',
-    labelMr: 'अहवाल',
-    modulePrefix: PERMISSION_MODULES.REPORT,
+    label: "Reports",
+    labelHi: "रिपोर्ट",
+    labelMr: "अहवाल",
+    permission: PERMISSIONS.REPORT_VIEW_TICKETS,
     isProjectRoute: true,
-    subItems: [
-      {
-        path: 'reports/tickets',
-        icon: <MdConfirmationNumber />,
-        label: 'Query Summary Report',
-        labelHi: 'टिकट सारांश रिपोर्ट',
-        labelMr: 'तिकीट सारांश अहवाल',
-        permission: PERMISSIONS.REPORT_VIEW_QUERY,
-        isProjectRoute: true,
-      },
-      {
-        path: 'reports/assets',
-        icon: <MdPerson />,
-        label: 'Total Asset Report',
-        labelHi: 'कुल संपत्ति रिपोर्ट',
-        labelMr: 'एकूण मालमत्ता अहवाल',
-        permission: PERMISSIONS.REPORT_VIEW_ASSET,
-        isProjectRoute: true,
-      },
-      {
-        path: 'reports/manpower',
-        icon: <MdPeople />,
-        label: 'Manpower Report',
-        labelHi: 'जनशक्ति रिपोर्ट',
-        labelMr: 'मनुष्यबळ अहवाल',
-        permission: PERMISSIONS.REPORT_VIEW_EMPLOYEE,
-        isProjectRoute: true,
-      },
-    ],
   },
   {
     icon: <MdFactCheck />,
-    label: 'Audit Logs',
-    labelHi: 'ऑडिट लॉग',
-    labelMr: 'ऑडिट लॉग',
-    permission: [PERMISSIONS.AUDIT_VIEW_ACTIVITY, PERMISSIONS.AUDIT_VIEW_ACCESS],
+    label: "Audit Logs",
+    labelHi: "ऑडिट लॉग",
+    labelMr: "ऑडिट लॉग",
+    permission: [
+      PERMISSIONS.AUDIT_VIEW_ACTIVITY,
+      PERMISSIONS.AUDIT_VIEW_ACCESS,
+    ],
     isProjectRoute: true,
     subItems: [
       {
-        path: 'audit/activity-logs',
+        path: "audit/activity-logs",
         icon: <MdHistory />,
-        label: 'Activity Logs',
-        labelHi: 'गतिविधि लॉग',
-        labelMr: 'अॅक्टिव्हिटी लॉग',
+        label: "Activity Logs",
+        labelHi: "गतिविधि लॉग",
+        labelMr: "अॅक्टिव्हिटी लॉग",
         permission: PERMISSIONS.AUDIT_VIEW_ACTIVITY,
         isProjectRoute: true,
       },
       {
-        path: 'audit/access-logs',
+        path: "audit/access-logs",
         icon: <MdLogin />,
-        label: 'Access Logs',
-        labelHi: 'एक्सेस लॉग',
-        labelMr: 'अॅक्सेस लॉग',
+        label: "Access Logs",
+        labelHi: "एक्सेस लॉग",
+        labelMr: "अॅक्सेस लॉग",
         permission: PERMISSIONS.AUDIT_VIEW_ACCESS,
         isProjectRoute: true,
       },
@@ -639,7 +649,7 @@ export const projectPortalMenuConfig: MenuItem[] = [
  */
 export const hasMenuItemPermission = (
   item: MenuItem,
-  userPermissions: string[]
+  userPermissions: string[],
 ): boolean => {
   // Enhanced debug logging for ALL menu items
   console.log(`🔍 Checking permission for "${item.label}":`, {
@@ -647,9 +657,9 @@ export const hasMenuItemPermission = (
     modulePrefix: item.modulePrefix,
     userPermissions: userPermissions,
     hasSubItems: !!item.subItems,
-    path: item.path
+    path: item.path,
   });
-  
+
   // No permission requirement = visible to all
   if (!item.permission && !item.modulePrefix) {
     console.log(`✅ "${item.label}" - No permission required, visible to all`);
@@ -685,34 +695,51 @@ export const hasMenuItemPermission = (
  */
 export const getFilteredMenuItems = (
   menuItems: MenuItem[],
-  userPermissions: string[]
+  userPermissions: string[],
 ): MenuItem[] => {
-  console.log('🎯 getFilteredMenuItems called with permissions:', userPermissions);
-  
+  console.log(
+    "🎯 getFilteredMenuItems called with permissions:",
+    userPermissions,
+  );
+
   // Get user role code from localStorage - with robust fallback
-  let userRole = localStorage.getItem('userRole') || '';
-  console.log('📌 Initial userRole from localStorage:', userRole);
-  
+  let userRole = localStorage.getItem("userRole") || "";
+  console.log("📌 Initial userRole from localStorage:", userRole);
+
   // If userRole doesn't look like a code (no underscore or all lowercase), try to get it from user object
-  if (!userRole || !userRole.includes('_') || userRole !== userRole.toUpperCase()) {
+  if (
+    !userRole ||
+    !userRole.includes("_") ||
+    userRole !== userRole.toUpperCase()
+  ) {
     try {
-      const userStr = localStorage.getItem('user');
+      const userStr = localStorage.getItem("user");
       if (userStr) {
         const user = JSON.parse(userStr);
         const extractedRole = user.role?.code || user.roleCode;
         if (extractedRole) {
-          console.log('📌 Extracted role code from user object:', extractedRole);
+          console.log(
+            "📌 Extracted role code from user object:",
+            extractedRole,
+          );
           userRole = extractedRole;
         }
       }
     } catch (e) {
-      console.warn('⚠️ Failed to parse user object from localStorage');
+      console.warn("⚠️ Failed to parse user object from localStorage");
     }
   }
-  
-  console.log('👤 Final User Role Code:', userRole);
-  console.log('🚫 Asset Management excludes:', ['STUDENT', 'COUNSELOR_L1', 'CET_STATE_CELL', 'AGENT', 'SUPPORT_ADMIN', 'ACCOUNT_OWNER']);
-  
+
+  console.log("👤 Final User Role Code:", userRole);
+  console.log("🚫 Asset Management excludes:", [
+    "STUDENT",
+    "COUNSELOR_L1",
+    "CET_STATE_CELL",
+    "AGENT",
+    "SUPPORT_ADMIN",
+    "ACCOUNT_OWNER",
+  ]);
+
   return menuItems
     .map((item) => {
       // Check if this item should be excluded for this role
@@ -720,7 +747,7 @@ export const getFilteredMenuItems = (
         console.log(`❌ "${item.label}" - Excluded for role: ${userRole}`);
         return null;
       }
-      
+
       // Check if user has permission for this item
       if (!hasMenuItemPermission(item, userPermissions)) {
         console.log(`❌ "${item.label}" - Permission check FAILED`);
@@ -729,24 +756,37 @@ export const getFilteredMenuItems = (
 
       // If item has subItems, filter them too
       if (item.subItems) {
-        console.log(`📂 "${item.label}" has ${item.subItems.length} subItems, filtering...`);
+        console.log(
+          `📂 "${item.label}" has ${item.subItems.length} subItems, filtering...`,
+        );
         const filteredSubItems = item.subItems.filter((subItem) => {
           // Check role-based exclusion for subitems
-          if (subItem.excludeForRoles && subItem.excludeForRoles.includes(userRole)) {
-            console.log(`   ❌ SubItem: "${subItem.label}" - Excluded for role: ${userRole}`);
+          if (
+            subItem.excludeForRoles &&
+            subItem.excludeForRoles.includes(userRole)
+          ) {
+            console.log(
+              `   ❌ SubItem: "${subItem.label}" - Excluded for role: ${userRole}`,
+            );
             return false;
           }
-          
+
           const hasPerm = hasMenuItemPermission(subItem, userPermissions);
-          console.log(`   ${hasPerm ? '✅' : '❌'} SubItem: "${subItem.label}"`);
+          console.log(
+            `   ${hasPerm ? "✅" : "❌"} SubItem: "${subItem.label}"`,
+          );
           return hasPerm;
         });
 
-        console.log(`📂 "${item.label}" - Filtered subItems: ${filteredSubItems.length}/${item.subItems.length}`);
-        
+        console.log(
+          `📂 "${item.label}" - Filtered subItems: ${filteredSubItems.length}/${item.subItems.length}`,
+        );
+
         // Only show parent if at least one sub-item is visible
         if (filteredSubItems.length === 0) {
-          console.log(`❌ "${item.label}" - No visible subItems, hiding parent`);
+          console.log(
+            `❌ "${item.label}" - No visible subItems, hiding parent`,
+          );
           return null;
         }
 

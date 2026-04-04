@@ -120,6 +120,50 @@ const EscalationMatrixContent: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // US-ESC-011: Coverage report
+  const [showCoverage, setShowCoverage] = useState(false);
+  const [coverageData, setCoverageData] = useState<
+    Array<{
+      projectId: string;
+      projectName: string;
+      openTickets: number;
+      withMatrix: number;
+      withoutMatrix: number;
+      coveragePct: number;
+    }>
+  >([]);
+  const [coverageLoading, setCoverageLoading] = useState(false);
+
+  const fetchCoverageReport = async () => {
+    setCoverageLoading(true);
+    try {
+      const token = localStorage.getItem("authToken");
+      const response = await fetch(
+        `${API_CONFIG.API_URL}/escalation-matrix/coverage`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          credentials: "include",
+        },
+      );
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) setCoverageData(data.data || []);
+      }
+    } catch (err) {
+      console.error("Coverage fetch error:", err);
+    } finally {
+      setCoverageLoading(false);
+    }
+  };
+
+  const handleToggleCoverage = () => {
+    if (!showCoverage) fetchCoverageReport();
+    setShowCoverage((v) => !v);
+  };
+
   // Fetch data on mount
   useEffect(() => {
     fetchMatrices();
@@ -451,6 +495,13 @@ const EscalationMatrixContent: React.FC = () => {
       allowSkipLevel: matrix.allowSkipLevel || false,
       allowBackward: matrix.allowBackward || false,
       autoEscalate: matrix.autoEscalate || false,
+      slaWarningConfig: matrix.slaWarningConfig
+        ? {
+            warningThresholds: matrix.slaWarningConfig.warningThresholds || [],
+            notifyAssignedAgent:
+              matrix.slaWarningConfig.notifyAssignedAgent ?? true,
+          }
+        : undefined,
       levels: mappedLevels,
       priorityConfigs: mappedPriorityConfigs,
       projectIds: matrix.projectIds.map((p) =>
@@ -931,6 +982,25 @@ const EscalationMatrixContent: React.FC = () => {
         </p>
         <div style={{ display: "flex", gap: "12px" }}>
           <button
+            onClick={handleToggleCoverage}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "10px 16px",
+              backgroundColor: showCoverage ? "#ede9fe" : "white",
+              color: showCoverage ? "#7c3aed" : "#6b7280",
+              border: `1px solid ${showCoverage ? "#7c3aed" : "#e5e7eb"}`,
+              borderRadius: "6px",
+              fontSize: "14px",
+              fontWeight: 500,
+              cursor: "pointer",
+            }}
+            title="Coverage Report"
+          >
+            📊 Coverage
+          </button>
+          <button
             onClick={fetchMatrices}
             style={{
               display: "flex",
@@ -970,6 +1040,192 @@ const EscalationMatrixContent: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* US-ESC-011: Coverage Report Panel */}
+      {showCoverage && (
+        <div
+          style={{
+            marginBottom: "24px",
+            background: "white",
+            borderRadius: "8px",
+            border: "1px solid #e5e7eb",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              padding: "16px 20px",
+              borderBottom: "1px solid #e5e7eb",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
+            <h3
+              style={{
+                margin: 0,
+                fontSize: "15px",
+                fontWeight: 600,
+                color: "#111827",
+              }}
+            >
+              Escalation Matrix Coverage Report
+            </h3>
+            <button
+              onClick={fetchCoverageReport}
+              disabled={coverageLoading}
+              style={{
+                fontSize: "12px",
+                color: "#7c3aed",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+              }}
+            >
+              {coverageLoading ? "Loading…" : "↻ Refresh"}
+            </button>
+          </div>
+          {coverageLoading ? (
+            <div
+              style={{ padding: "24px", textAlign: "center", color: "#6b7280" }}
+            >
+              Loading coverage data…
+            </div>
+          ) : coverageData.length === 0 ? (
+            <div
+              style={{ padding: "24px", textAlign: "center", color: "#6b7280" }}
+            >
+              No open tickets found.
+            </div>
+          ) : (
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                fontSize: "13px",
+              }}
+            >
+              <thead>
+                <tr style={{ background: "#f9fafb" }}>
+                  <th
+                    style={{
+                      padding: "10px 16px",
+                      textAlign: "left",
+                      color: "#374151",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Project
+                  </th>
+                  <th
+                    style={{
+                      padding: "10px 16px",
+                      textAlign: "right",
+                      color: "#374151",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Open Tickets
+                  </th>
+                  <th
+                    style={{
+                      padding: "10px 16px",
+                      textAlign: "right",
+                      color: "#374151",
+                      fontWeight: 600,
+                    }}
+                  >
+                    With Matrix
+                  </th>
+                  <th
+                    style={{
+                      padding: "10px 16px",
+                      textAlign: "right",
+                      color: "#374151",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Without Matrix
+                  </th>
+                  <th
+                    style={{
+                      padding: "10px 16px",
+                      textAlign: "right",
+                      color: "#374151",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Coverage %
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {coverageData.map((row, i) => (
+                  <tr
+                    key={row.projectId || i}
+                    style={{ borderTop: "1px solid #f3f4f6" }}
+                  >
+                    <td style={{ padding: "10px 16px", color: "#111827" }}>
+                      {row.projectName}
+                    </td>
+                    <td
+                      style={{
+                        padding: "10px 16px",
+                        textAlign: "right",
+                        color: "#6b7280",
+                      }}
+                    >
+                      {row.openTickets}
+                    </td>
+                    <td
+                      style={{
+                        padding: "10px 16px",
+                        textAlign: "right",
+                        color: "#059669",
+                      }}
+                    >
+                      {row.withMatrix}
+                    </td>
+                    <td
+                      style={{
+                        padding: "10px 16px",
+                        textAlign: "right",
+                        color: row.withoutMatrix > 0 ? "#ef4444" : "#6b7280",
+                      }}
+                    >
+                      {row.withoutMatrix}
+                    </td>
+                    <td style={{ padding: "10px 16px", textAlign: "right" }}>
+                      <span
+                        style={{
+                          padding: "2px 8px",
+                          borderRadius: "12px",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          background:
+                            row.coveragePct >= 80
+                              ? "#dcfce7"
+                              : row.coveragePct >= 50
+                                ? "#fef9c3"
+                                : "#fee2e2",
+                          color:
+                            row.coveragePct >= 80
+                              ? "#166534"
+                              : row.coveragePct >= 50
+                                ? "#854d0e"
+                                : "#991b1b",
+                        }}
+                      >
+                        {row.coveragePct}%
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
 
       {/* Error Display */}
       {error && (
@@ -2025,6 +2281,100 @@ const EscalationMatrixContent: React.FC = () => {
                     Automatically escalate tickets to the next level when SLA
                     timeline is breached
                   </p>
+
+                  {/* US-ESC-008: SLA Warning Thresholds (shown when autoEscalate is on) */}
+                  {formData.autoEscalate && (
+                    <div
+                      style={{
+                        marginTop: "16px",
+                        paddingLeft: "16px",
+                        borderLeft: "2px solid #fcd34d",
+                      }}
+                    >
+                      <p
+                        style={{
+                          fontSize: "13px",
+                          fontWeight: 600,
+                          color: "#374151",
+                          marginBottom: "8px",
+                        }}
+                      >
+                        ⏱ SLA Warning Thresholds
+                      </p>
+                      <p
+                        style={{
+                          fontSize: "12px",
+                          color: "#6b7280",
+                          marginBottom: "10px",
+                        }}
+                      >
+                        Send warning emails when SLA time consumed reaches these
+                        percentages (e.g. 50, 75, 90). Separate multiple values
+                        with commas.
+                      </p>
+                      <input
+                        type="text"
+                        placeholder="e.g. 50, 75, 90"
+                        value={(
+                          formData.slaWarningConfig?.warningThresholds || []
+                        ).join(", ")}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          const thresholds = raw
+                            .split(",")
+                            .map((s) => parseInt(s.trim(), 10))
+                            .filter((n) => !isNaN(n) && n > 0 && n <= 100);
+                          setFormData({
+                            ...formData,
+                            slaWarningConfig: {
+                              warningThresholds: thresholds,
+                              notifyAssignedAgent:
+                                formData.slaWarningConfig
+                                  ?.notifyAssignedAgent ?? true,
+                            },
+                          });
+                        }}
+                        style={{
+                          width: "100%",
+                          padding: "8px 12px",
+                          border: "1px solid #d1d5db",
+                          borderRadius: "6px",
+                          fontSize: "13px",
+                          marginBottom: "8px",
+                          boxSizing: "border-box",
+                        }}
+                      />
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          fontSize: "13px",
+                          color: "#374151",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={
+                            formData.slaWarningConfig?.notifyAssignedAgent ??
+                            true
+                          }
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              slaWarningConfig: {
+                                warningThresholds:
+                                  formData.slaWarningConfig
+                                    ?.warningThresholds || [],
+                                notifyAssignedAgent: e.target.checked,
+                              },
+                            })
+                          }
+                        />
+                        Notify assigned agent
+                      </label>
+                    </div>
+                  )}
                 </div>
 
                 {/* Priority Selection - Only show after project is selected */}

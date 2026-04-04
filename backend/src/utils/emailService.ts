@@ -2189,6 +2189,79 @@ export const sendTicketEscalatedEmail = async (
 };
 
 /**
+ * US-NOTIF-001: Send SLA warning email when a ticket approaches its SLA deadline.
+ * @param email - Recipient email address
+ * @param ticketNumber - Ticket number for display
+ * @param ticketTitle - Ticket title/subject
+ * @param thresholdPercent - SLA percentage elapsed that triggered this warning (e.g. 75)
+ * @param assignedAgentName - Display name of the assigned agent
+ * @param projectId - Optional project ID for per-project email config
+ */
+export const sendSLAWarningEmail = async (
+  email: string,
+  ticketNumber: string,
+  ticketTitle: string,
+  thresholdPercent: number,
+  assignedAgentName: string,
+  projectId?: string,
+): Promise<boolean> => {
+  try {
+    const emailConfig = await EmailConfig.findOne(
+      projectId ? { projectId } : {},
+    );
+    const transporter = await getEmailTransporter(projectId);
+    const projectName = emailConfig?.fromName || "SAC Helpdesk";
+
+    const subject = `⚠️ SLA Warning: Ticket ${ticketNumber} has reached ${thresholdPercent}% of its SLA time`;
+    const body = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #d97706;">⚠️ SLA Warning</h2>
+        <p>A ticket has consumed <strong>${thresholdPercent}%</strong> of its allotted SLA time.</p>
+        <div style="background-color: #fffbeb; padding: 20px; margin: 20px 0; border-left: 4px solid #f59e0b;">
+          <p><strong>Ticket Number:</strong> ${ticketNumber}</p>
+          <p><strong>Subject:</strong> ${ticketTitle}</p>
+          <p><strong>Assigned Agent:</strong> ${assignedAgentName}</p>
+          <p><strong>SLA Consumed:</strong> ${thresholdPercent}%</p>
+        </div>
+        <p>Please resolve this ticket promptly to avoid an SLA breach.</p>
+        <p style="font-size:12px;color:#6b7280;">This is an automated notification from ${projectName}.</p>
+      </div>
+    `;
+
+    if (!transporter) {
+      await logEmail({
+        projectId,
+        recipient: email,
+        subject,
+        body,
+        type: "other",
+        status: "simulated",
+      });
+      return true;
+    }
+
+    await transporter.sendMail({
+      from: `"${projectName}" <${emailConfig?.fromEmail}>`,
+      to: email,
+      subject,
+      html: body,
+    });
+    await logEmail({
+      projectId,
+      recipient: email,
+      subject,
+      body,
+      type: "other",
+      status: "sent",
+    });
+    return true;
+  } catch (error) {
+    console.error("❌ Failed to send SLA warning email:", error);
+    return false;
+  }
+};
+
+/**
  * Send ticket reassigned email
  */
 export const sendTicketReassignedEmail = async (
