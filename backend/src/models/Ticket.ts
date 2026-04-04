@@ -146,6 +146,20 @@ export interface ITicket extends Document {
    * ticket detail. Used to show the unread highlight & badge in ticket lists.
    */
   hasNewReply?: boolean;
+  /** How the ticket was assigned (set by the auto-assignment engine, 'manual' when done by a human) */
+  assignedVia?:
+    | "manual"
+    | "round-robin"
+    | "by-role"
+    | "by-user"
+    | "condition-based"
+    | "fallback";
+  /** Number of times the assignment engine attempted to find an agent (incremented per fallback step) */
+  assignmentAttempts?: number;
+  /** US-ASSIGN-002: which category rule caused this assignment (set when assignedVia='by-user' or 'by-role') */
+  assignedViaCategoryId?: mongoose.Types.ObjectId;
+  /** Which source determined the SLA deadlines for this ticket */
+  slaSource?: "category" | "priority" | "default";
 }
 
 const AttachmentSchema = new Schema({
@@ -420,6 +434,37 @@ const TicketSchema: Schema = new Schema(
       type: Boolean,
       default: true, // every new ticket starts as unread
       index: true,
+    },
+    // Assignment tracking (set by auto-assignment engine)
+    assignedVia: {
+      type: String,
+      enum: [
+        "manual",
+        "round-robin",
+        "by-role",
+        "by-user",
+        "condition-based",
+        "fallback",
+        null,
+      ],
+      default: undefined,
+      index: true,
+    },
+    assignmentAttempts: {
+      type: Number,
+      default: 0,
+    },
+    // US-ASSIGN-002: which category rule caused this assignment
+    assignedViaCategoryId: {
+      type: Schema.Types.ObjectId,
+      ref: "Category",
+      default: undefined,
+    },
+    // SLA source tracking
+    slaSource: {
+      type: String,
+      enum: ["category", "priority", "default", null],
+      default: undefined,
     },
   },
   {

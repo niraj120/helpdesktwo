@@ -1971,642 +1971,650 @@ const UserManagement: React.FC<UserManagementProps> = ({
             </p>
           </div>
         ) : (
-          <table
-            style={{
-              width: "100%",
-              borderCollapse: "collapse",
-              fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
-            }}
-          >
-            <thead>
-              <tr
-                style={{
-                  background: "#F9FAFB",
-                  borderBottom: "1px solid #E5E7EB",
-                }}
-              >
-                {hasPermission("USER_DELETE") && (
-                  <th
-                    style={{
-                      padding: "12px 16px",
-                      width: "48px",
-                      textAlign: "center",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      title="Select all users"
-                      checked={
-                        filteredUsers.length > 0 &&
-                        filteredUsers.every((u) => selectedUserIds.has(u._id))
-                      }
-                      onChange={toggleSelectAllUsers}
-                      style={{
-                        cursor: "pointer",
-                        width: "16px",
-                        height: "16px",
-                      }}
-                    />
-                  </th>
-                )}
-                <th
-                  style={{
-                    padding: "12px 24px",
-                    textAlign: "left",
-                    fontSize: "12px",
-                    fontWeight: 600,
-                    color: "#6B7280",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.05em",
-                    fontFamily:
-                      '"Noto Sans", system-ui, -apple-system, sans-serif',
-                  }}
-                >
-                  {getText("Name", "नाव", "नाव")}
-                </th>
-                <th
-                  style={{
-                    padding: "12px 24px",
-                    textAlign: "left",
-                    fontSize: "12px",
-                    fontWeight: 600,
-                    color: "#6B7280",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.05em",
-                    fontFamily:
-                      '"Noto Sans", system-ui, -apple-system, sans-serif',
-                  }}
-                >
-                  {getText("Email", "ईमेल", "ईमेल")}
-                </th>
-                <th
-                  style={{
-                    padding: "12px 24px",
-                    textAlign: "left",
-                    fontSize: "12px",
-                    fontWeight: 600,
-                    color: "#6B7280",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.05em",
-                    fontFamily:
-                      '"Noto Sans", system-ui, -apple-system, sans-serif',
-                  }}
-                >
-                  {getText("Employee Code", "कर्मचारी कोड", "कर्मचारी कोड")}
-                </th>
-                <th
-                  style={{
-                    padding: "12px 24px",
-                    textAlign: "left",
-                    fontSize: "12px",
-                    fontWeight: 600,
-                    color: "#6B7280",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.05em",
-                    fontFamily:
-                      '"Noto Sans", system-ui, -apple-system, sans-serif',
-                  }}
-                >
-                  {getText("Role", "रोल", "रोल")}
-                </th>
-                <th
-                  style={{
-                    padding: "12px 24px",
-                    textAlign: "left",
-                    fontSize: "12px",
-                    fontWeight: 600,
-                    color: "#6B7280",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.05em",
-                    fontFamily:
-                      '"Noto Sans", system-ui, -apple-system, sans-serif',
-                  }}
-                >
-                  {getText("Projects", "प्रकल्प", "प्रकल्प")}
-                </th>
-                <th
-                  style={{
-                    padding: "12px 24px",
-                    textAlign: "left",
-                    fontSize: "12px",
-                    fontWeight: 600,
-                    color: "#6B7280",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.05em",
-                    fontFamily:
-                      '"Noto Sans", system-ui, -apple-system, sans-serif',
-                  }}
-                >
-                  {getText("Centers", "केंद्रे", "केंद्रे")}
-                </th>
-                <th
-                  style={{
-                    padding: "12px 24px",
-                    textAlign: "left",
-                    fontSize: "12px",
-                    fontWeight: 600,
-                    color: "#6B7280",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.05em",
-                    fontFamily:
-                      '"Noto Sans", system-ui, -apple-system, sans-serif',
-                  }}
-                >
-                  {getText("Status", "स्थिती", "स्थिती")}
-                </th>
-                <th
-                  style={{
-                    padding: "12px 24px",
-                    textAlign: "left",
-                    fontSize: "12px",
-                    fontWeight: 600,
-                    color: "#6B7280",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.05em",
-                    fontFamily:
-                      '"Noto Sans", system-ui, -apple-system, sans-serif',
-                  }}
-                >
-                  {getText("Actions", "कृती", "कृती")}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredUsers.map((user, index) => (
+          <div style={{ overflowX: "auto", width: "100%" }}>
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+                minWidth: "900px",
+              }}
+            >
+              <thead>
                 <tr
-                  key={user._id}
                   style={{
-                    borderBottom:
-                      index < filteredUsers.length - 1
-                        ? "1px solid #E5E7EB"
-                        : "none",
-                    background: selectedUserIds.has(user._id)
-                      ? "#FEF2F2"
-                      : "white",
-                    transition: "background 0.15s ease",
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!selectedUserIds.has(user._id))
-                      e.currentTarget.style.background = "#F9FAFB";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = selectedUserIds.has(
-                      user._id,
-                    )
-                      ? "#FEF2F2"
-                      : "white";
+                    background: "#F9FAFB",
+                    borderBottom: "1px solid #E5E7EB",
                   }}
                 >
                   {hasPermission("USER_DELETE") && (
-                    <td
+                    <th
                       style={{
-                        padding: "16px",
-                        textAlign: "center",
+                        padding: "12px 16px",
                         width: "48px",
+                        textAlign: "center",
                       }}
                     >
                       <input
                         type="checkbox"
-                        checked={selectedUserIds.has(user._id)}
-                        onChange={() => toggleUserSelection(user._id)}
+                        title="Select all users"
+                        checked={
+                          filteredUsers.length > 0 &&
+                          filteredUsers.every((u) => selectedUserIds.has(u._id))
+                        }
+                        onChange={toggleSelectAllUsers}
                         style={{
                           cursor: "pointer",
                           width: "16px",
                           height: "16px",
                         }}
                       />
-                    </td>
+                    </th>
                   )}
-                  <td style={{ padding: "16px 24px" }}>
-                    <div>
-                      <div
-                        style={{
-                          fontWeight: 600,
-                          color: "#111827",
-                          fontSize: "14px",
-                          fontFamily:
-                            '"Noto Sans", system-ui, -apple-system, sans-serif',
-                        }}
-                      >
-                        {user.firstName} {user.lastName}
-                      </div>
-                      {user.mobile && (
-                        <div
-                          style={{
-                            fontSize: "12px",
-                            color: "#6B7280",
-                            marginTop: "4px",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "4px",
-                            fontFamily:
-                              '"Noto Sans", system-ui, -apple-system, sans-serif',
-                          }}
-                        >
-                          <svg
-                            width="12"
-                            height="12"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="#6B7280"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <rect
-                              x="5"
-                              y="2"
-                              width="14"
-                              height="20"
-                              rx="2"
-                              ry="2"
-                            />
-                            <line x1="12" y1="18" x2="12.01" y2="18" />
-                          </svg>
-                          {user.mobile}
-                        </div>
-                      )}
-                    </div>
-                  </td>
-                  <td
+                  <th
                     style={{
-                      padding: "16px 24px",
-                      fontSize: "14px",
+                      padding: "12px 24px",
+                      textAlign: "left",
+                      fontSize: "12px",
+                      fontWeight: 600,
                       color: "#6B7280",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
                       fontFamily:
                         '"Noto Sans", system-ui, -apple-system, sans-serif',
                     }}
                   >
-                    {user.email}
-                  </td>
-                  <td style={{ padding: "16px 24px" }}>
-                    {user.employeeCode ? (
-                      <span
+                    {getText("Name", "नाव", "नाव")}
+                  </th>
+                  <th
+                    style={{
+                      padding: "12px 24px",
+                      textAlign: "left",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#6B7280",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                      fontFamily:
+                        '"Noto Sans", system-ui, -apple-system, sans-serif',
+                    }}
+                  >
+                    {getText("Email", "ईमेल", "ईमेल")}
+                  </th>
+                  <th
+                    style={{
+                      padding: "12px 24px",
+                      textAlign: "left",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#6B7280",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                      fontFamily:
+                        '"Noto Sans", system-ui, -apple-system, sans-serif',
+                    }}
+                  >
+                    {getText("Employee Code", "कर्मचारी कोड", "कर्मचारी कोड")}
+                  </th>
+                  <th
+                    style={{
+                      padding: "12px 24px",
+                      textAlign: "left",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#6B7280",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                      fontFamily:
+                        '"Noto Sans", system-ui, -apple-system, sans-serif',
+                    }}
+                  >
+                    {getText("Role", "रोल", "रोल")}
+                  </th>
+                  <th
+                    style={{
+                      padding: "12px 24px",
+                      textAlign: "left",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#6B7280",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                      fontFamily:
+                        '"Noto Sans", system-ui, -apple-system, sans-serif',
+                    }}
+                  >
+                    {getText("Projects", "प्रकल्प", "प्रकल्प")}
+                  </th>
+                  <th
+                    style={{
+                      padding: "12px 24px",
+                      textAlign: "left",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#6B7280",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                      fontFamily:
+                        '"Noto Sans", system-ui, -apple-system, sans-serif',
+                    }}
+                  >
+                    {getText("Centers", "केंद्रे", "केंद्रे")}
+                  </th>
+                  <th
+                    style={{
+                      padding: "12px 24px",
+                      textAlign: "left",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#6B7280",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                      fontFamily:
+                        '"Noto Sans", system-ui, -apple-system, sans-serif',
+                    }}
+                  >
+                    {getText("Status", "स्थिती", "स्थिती")}
+                  </th>
+                  <th
+                    style={{
+                      padding: "12px 24px",
+                      textAlign: "left",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#6B7280",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                      fontFamily:
+                        '"Noto Sans", system-ui, -apple-system, sans-serif',
+                    }}
+                  >
+                    {getText("Actions", "कृती", "कृती")}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredUsers.map((user, index) => (
+                  <tr
+                    key={user._id}
+                    style={{
+                      borderBottom:
+                        index < filteredUsers.length - 1
+                          ? "1px solid #E5E7EB"
+                          : "none",
+                      background: selectedUserIds.has(user._id)
+                        ? "#FEF2F2"
+                        : "white",
+                      transition: "background 0.15s ease",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!selectedUserIds.has(user._id))
+                        e.currentTarget.style.background = "#F9FAFB";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = selectedUserIds.has(
+                        user._id,
+                      )
+                        ? "#FEF2F2"
+                        : "white";
+                    }}
+                  >
+                    {hasPermission("USER_DELETE") && (
+                      <td
                         style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          padding: "4px 10px",
-                          backgroundColor: "#EFF6FF",
-                          color: "#1d4ed8",
-                          borderRadius: "6px",
-                          fontSize: "12px",
-                          fontWeight: 600,
-                          fontFamily:
-                            '"Noto Sans", system-ui, -apple-system, sans-serif',
-                        }}
-                      >
-                        {user.employeeCode}
-                      </span>
-                    ) : (
-                      <span style={{ color: "#9ca3af", fontSize: "14px" }}>
-                        -
-                      </span>
-                    )}
-                  </td>
-                  <td style={{ padding: "16px 24px" }}>
-                    {user.role ? (
-                      <span
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          padding: "4px 10px",
-                          backgroundColor: "#F3E8FF",
-                          color: "#7e22ce",
-                          borderRadius: "6px",
-                          fontSize: "12px",
-                          fontWeight: 600,
-                          fontFamily:
-                            '"Noto Sans", system-ui, -apple-system, sans-serif',
-                        }}
-                      >
-                        {user.role.name}
-                      </span>
-                    ) : (
-                      <span
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          padding: "4px 10px",
-                          backgroundColor: "#FEF2F2",
-                          color: "#dc2626",
-                          borderRadius: "6px",
-                          fontSize: "12px",
-                          fontWeight: 600,
-                          fontFamily:
-                            '"Noto Sans", system-ui, -apple-system, sans-serif',
-                        }}
-                      >
-                        {getText("No Role", "भूमिका नाही", "भूमिका नाही")}
-                      </span>
-                    )}
-                  </td>
-                  <td style={{ padding: "16px 24px" }}>
-                    {user.projects && user.projects.length > 0 ? (
-                      <div
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "6px",
-                          padding: "4px 10px",
-                          background: "#F0FDF4",
-                          borderRadius: "6px",
-                        }}
-                      >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="#16a34a"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                          <polyline points="9 22 9 12 15 12 15 22" />
-                        </svg>
-                        <span
-                          style={{
-                            fontSize: "12px",
-                            fontWeight: 600,
-                            color: "#16a34a",
-                            fontFamily:
-                              '"Noto Sans", system-ui, -apple-system, sans-serif',
-                          }}
-                        >
-                          {user.projects.length}
-                        </span>
-                      </div>
-                    ) : (
-                      <span style={{ color: "#9ca3af", fontSize: "14px" }}>
-                        -
-                      </span>
-                    )}
-                  </td>
-                  <td style={{ padding: "16px 24px" }}>
-                    {user.centers && user.centers.length > 0 ? (
-                      <div
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "6px",
-                          padding: "4px 10px",
-                          background: "#FEF3C7",
-                          borderRadius: "6px",
-                        }}
-                      >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="#d97706"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
-                          <circle cx="12" cy="10" r="3" />
-                        </svg>
-                        <span
-                          style={{
-                            fontSize: "12px",
-                            fontWeight: 600,
-                            color: "#d97706",
-                            fontFamily:
-                              '"Noto Sans", system-ui, -apple-system, sans-serif',
-                          }}
-                        >
-                          {user.centers.length}
-                        </span>
-                      </div>
-                    ) : (
-                      <span style={{ color: "#9ca3af", fontSize: "14px" }}>
-                        -
-                      </span>
-                    )}
-                  </td>
-                  <td style={{ padding: "16px 24px" }}>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "12px",
-                      }}
-                    >
-                      <label
-                        style={{
-                          position: "relative",
-                          display: "inline-block",
-                          width: "44px",
-                          height: "24px",
-                          cursor: hasPermission("USER_EDIT")
-                            ? "pointer"
-                            : "not-allowed",
+                          padding: "16px",
+                          textAlign: "center",
+                          width: "48px",
                         }}
                       >
                         <input
                           type="checkbox"
-                          checked={user.isActive}
-                          onChange={() => handleToggleStatus(user._id)}
-                          disabled={!hasPermission("USER_EDIT")}
+                          checked={selectedUserIds.has(user._id)}
+                          onChange={() => toggleUserSelection(user._id)}
                           style={{
-                            opacity: 0,
-                            width: 0,
-                            height: 0,
-                            position: "absolute",
+                            cursor: "pointer",
+                            width: "16px",
+                            height: "16px",
                           }}
                         />
-                        <span
+                      </td>
+                    )}
+                    <td style={{ padding: "16px 24px" }}>
+                      <div>
+                        <div
                           style={{
-                            position: "absolute",
-                            top: 0,
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
-                            backgroundColor: user.isActive
-                              ? "#10B981"
-                              : "#D1D5DB",
-                            borderRadius: "24px",
-                            transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
-                            opacity: hasPermission("USER_EDIT") ? 1 : 0.5,
+                            fontWeight: 600,
+                            color: "#111827",
+                            fontSize: "14px",
+                            fontFamily:
+                              '"Noto Sans", system-ui, -apple-system, sans-serif',
                           }}
                         >
+                          {user.firstName} {user.lastName}
+                        </div>
+                        {user.mobile && (
+                          <div
+                            style={{
+                              fontSize: "12px",
+                              color: "#6B7280",
+                              marginTop: "4px",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "4px",
+                              fontFamily:
+                                '"Noto Sans", system-ui, -apple-system, sans-serif',
+                            }}
+                          >
+                            <svg
+                              width="12"
+                              height="12"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="#6B7280"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <rect
+                                x="5"
+                                y="2"
+                                width="14"
+                                height="20"
+                                rx="2"
+                                ry="2"
+                              />
+                              <line x1="12" y1="18" x2="12.01" y2="18" />
+                            </svg>
+                            {user.mobile}
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                    <td
+                      style={{
+                        padding: "16px 24px",
+                        fontSize: "14px",
+                        color: "#6B7280",
+                        fontFamily:
+                          '"Noto Sans", system-ui, -apple-system, sans-serif',
+                      }}
+                    >
+                      {user.email}
+                    </td>
+                    <td style={{ padding: "16px 24px" }}>
+                      {user.employeeCode ? (
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            padding: "4px 10px",
+                            backgroundColor: "#EFF6FF",
+                            color: "#1d4ed8",
+                            borderRadius: "6px",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            fontFamily:
+                              '"Noto Sans", system-ui, -apple-system, sans-serif',
+                          }}
+                        >
+                          {user.employeeCode}
+                        </span>
+                      ) : (
+                        <span style={{ color: "#9ca3af", fontSize: "14px" }}>
+                          -
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ padding: "16px 24px" }}>
+                      {user.role ? (
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            padding: "4px 10px",
+                            backgroundColor: "#F3E8FF",
+                            color: "#7e22ce",
+                            borderRadius: "6px",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            fontFamily:
+                              '"Noto Sans", system-ui, -apple-system, sans-serif',
+                          }}
+                        >
+                          {user.role.name}
+                        </span>
+                      ) : (
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            padding: "4px 10px",
+                            backgroundColor: "#FEF2F2",
+                            color: "#dc2626",
+                            borderRadius: "6px",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            fontFamily:
+                              '"Noto Sans", system-ui, -apple-system, sans-serif',
+                          }}
+                        >
+                          {getText("No Role", "भूमिका नाही", "भूमिका नाही")}
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ padding: "16px 24px" }}>
+                      {user.projects && user.projects.length > 0 ? (
+                        <div
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            padding: "4px 10px",
+                            background: "#F0FDF4",
+                            borderRadius: "6px",
+                          }}
+                        >
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="#16a34a"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                            <polyline points="9 22 9 12 15 12 15 22" />
+                          </svg>
+                          <span
+                            style={{
+                              fontSize: "12px",
+                              fontWeight: 600,
+                              color: "#16a34a",
+                              fontFamily:
+                                '"Noto Sans", system-ui, -apple-system, sans-serif',
+                            }}
+                          >
+                            {user.projects.length}
+                          </span>
+                        </div>
+                      ) : (
+                        <span style={{ color: "#9ca3af", fontSize: "14px" }}>
+                          -
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ padding: "16px 24px" }}>
+                      {user.centers && user.centers.length > 0 ? (
+                        <div
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            padding: "4px 10px",
+                            background: "#FEF3C7",
+                            borderRadius: "6px",
+                          }}
+                        >
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="#d97706"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+                            <circle cx="12" cy="10" r="3" />
+                          </svg>
+                          <span
+                            style={{
+                              fontSize: "12px",
+                              fontWeight: 600,
+                              color: "#d97706",
+                              fontFamily:
+                                '"Noto Sans", system-ui, -apple-system, sans-serif',
+                            }}
+                          >
+                            {user.centers.length}
+                          </span>
+                        </div>
+                      ) : (
+                        <span style={{ color: "#9ca3af", fontSize: "14px" }}>
+                          -
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ padding: "16px 24px" }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "12px",
+                        }}
+                      >
+                        <label
+                          style={{
+                            position: "relative",
+                            display: "inline-block",
+                            width: "44px",
+                            height: "24px",
+                            cursor: hasPermission("USER_EDIT")
+                              ? "pointer"
+                              : "not-allowed",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={user.isActive}
+                            onChange={() => handleToggleStatus(user._id)}
+                            disabled={!hasPermission("USER_EDIT")}
+                            style={{
+                              opacity: 0,
+                              width: 0,
+                              height: 0,
+                              position: "absolute",
+                            }}
+                          />
                           <span
                             style={{
                               position: "absolute",
-                              height: "18px",
-                              width: "18px",
-                              left: user.isActive ? "23px" : "3px",
-                              bottom: "3px",
-                              backgroundColor: "white",
-                              borderRadius: "50%",
+                              top: 0,
+                              left: 0,
+                              right: 0,
+                              bottom: 0,
+                              backgroundColor: user.isActive
+                                ? "#10B981"
+                                : "#D1D5DB",
+                              borderRadius: "24px",
                               transition:
                                 "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
-                              boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                              opacity: hasPermission("USER_EDIT") ? 1 : 0.5,
                             }}
-                          ></span>
+                          >
+                            <span
+                              style={{
+                                position: "absolute",
+                                height: "18px",
+                                width: "18px",
+                                left: user.isActive ? "23px" : "3px",
+                                bottom: "3px",
+                                backgroundColor: "white",
+                                borderRadius: "50%",
+                                transition:
+                                  "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+                                boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                              }}
+                            ></span>
+                          </span>
+                        </label>
+                        <span
+                          style={{
+                            backgroundColor: user.isActive
+                              ? "#DCFCE7"
+                              : "#F3F4F6",
+                            color: user.isActive ? "#047857" : "#6B7280",
+                            padding: "4px 10px",
+                            borderRadius: "6px",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            fontFamily:
+                              '"Noto Sans", system-ui, -apple-system, sans-serif',
+                          }}
+                        >
+                          {user.isActive
+                            ? getText("Active", "सक्रिय", "सक्रिय")
+                            : getText("Inactive", "निष्क्रिय", "निष्क्रिय")}
                         </span>
-                      </label>
-                      <span
-                        style={{
-                          backgroundColor: user.isActive
-                            ? "#DCFCE7"
-                            : "#F3F4F6",
-                          color: user.isActive ? "#047857" : "#6B7280",
-                          padding: "4px 10px",
-                          borderRadius: "6px",
-                          fontSize: "12px",
-                          fontWeight: 600,
-                          fontFamily:
-                            '"Noto Sans", system-ui, -apple-system, sans-serif',
-                        }}
-                      >
-                        {user.isActive
-                          ? getText("Active", "सक्रिय", "सक्रिय")
-                          : getText("Inactive", "निष्क्रिय", "निष्क्रिय")}
-                      </span>
-                    </div>
-                  </td>
-                  <td style={{ padding: "16px 24px" }}>
-                    <div style={{ display: "flex", gap: "8px" }}>
-                      {hasPermission("USER_EDIT") && (
-                        <button
-                          onClick={() => handleEditUser(user)}
-                          style={{
-                            padding: "8px",
-                            width: "36px",
-                            height: "36px",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            background: "white",
-                            border: "1.5px solid #E5E7EB",
-                            borderRadius: "8px",
-                            cursor: "pointer",
-                            transition: "all 0.15s ease",
-                            outline: "none",
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = "#EFF6FF";
-                            e.currentTarget.style.borderColor = "#2563EB";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = "white";
-                            e.currentTarget.style.borderColor = "#E5E7EB";
-                          }}
-                          title={getText("Edit", "संपादित करा", "संपादित करा")}
-                        >
-                          <svg
-                            width="16"
-                            height="16"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="#6B7280"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
+                      </div>
+                    </td>
+                    <td style={{ padding: "16px 24px" }}>
+                      <div style={{ display: "flex", gap: "8px" }}>
+                        {hasPermission("USER_EDIT") && (
+                          <button
+                            onClick={() => handleEditUser(user)}
+                            style={{
+                              padding: "8px",
+                              width: "36px",
+                              height: "36px",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              background: "white",
+                              border: "1.5px solid #E5E7EB",
+                              borderRadius: "8px",
+                              cursor: "pointer",
+                              transition: "all 0.15s ease",
+                              outline: "none",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = "#EFF6FF";
+                              e.currentTarget.style.borderColor = "#2563EB";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = "white";
+                              e.currentTarget.style.borderColor = "#E5E7EB";
+                            }}
+                            title={getText(
+                              "Edit",
+                              "संपादित करा",
+                              "संपादित करा",
+                            )}
                           >
-                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                          </svg>
-                        </button>
-                      )}
-                      {hasPermission("USER_VIEW_ALL") && (
-                        <button
-                          onClick={() => handleViewCredentials(user)}
-                          style={{
-                            padding: "8px",
-                            width: "36px",
-                            height: "36px",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            background: "white",
-                            border: "1.5px solid #E5E7EB",
-                            borderRadius: "8px",
-                            cursor: "pointer",
-                            transition: "all 0.15s ease",
-                            outline: "none",
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = "#F0FDF4";
-                            e.currentTarget.style.borderColor = "#10B981";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = "white";
-                            e.currentTarget.style.borderColor = "#E5E7EB";
-                          }}
-                          title={getText(
-                            "View Credentials",
-                            "क्रेडेन्शियल पहा",
-                            "क्रेडेन्शियल पहा",
-                          )}
-                        >
-                          <svg
-                            width="16"
-                            height="16"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="#6B7280"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
+                            <svg
+                              width="16"
+                              height="16"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="#6B7280"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                            </svg>
+                          </button>
+                        )}
+                        {hasPermission("USER_VIEW_ALL") && (
+                          <button
+                            onClick={() => handleViewCredentials(user)}
+                            style={{
+                              padding: "8px",
+                              width: "36px",
+                              height: "36px",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              background: "white",
+                              border: "1.5px solid #E5E7EB",
+                              borderRadius: "8px",
+                              cursor: "pointer",
+                              transition: "all 0.15s ease",
+                              outline: "none",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = "#F0FDF4";
+                              e.currentTarget.style.borderColor = "#10B981";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = "white";
+                              e.currentTarget.style.borderColor = "#E5E7EB";
+                            }}
+                            title={getText(
+                              "View Credentials",
+                              "क्रेडेन्शियल पहा",
+                              "क्रेडेन्शियल पहा",
+                            )}
                           >
-                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                            <circle cx="12" cy="12" r="3" />
-                          </svg>
-                        </button>
-                      )}
-                      {hasPermission("USER_DELETE") && (
-                        <button
-                          onClick={() => handleDeleteUser(user._id)}
-                          style={{
-                            padding: "8px",
-                            width: "36px",
-                            height: "36px",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            background: "white",
-                            border: "1.5px solid #E5E7EB",
-                            borderRadius: "8px",
-                            cursor: "pointer",
-                            transition: "all 0.15s ease",
-                            outline: "none",
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = "#FEF2F2";
-                            e.currentTarget.style.borderColor = "#DC2626";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = "white";
-                            e.currentTarget.style.borderColor = "#E5E7EB";
-                          }}
-                          title={getText("Delete", "हटवा", "हटवा")}
-                        >
-                          <svg
-                            width="16"
-                            height="16"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="#DC2626"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
+                            <svg
+                              width="16"
+                              height="16"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="#6B7280"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                              <circle cx="12" cy="12" r="3" />
+                            </svg>
+                          </button>
+                        )}
+                        {hasPermission("USER_DELETE") && (
+                          <button
+                            onClick={() => handleDeleteUser(user._id)}
+                            style={{
+                              padding: "8px",
+                              width: "36px",
+                              height: "36px",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              background: "white",
+                              border: "1.5px solid #E5E7EB",
+                              borderRadius: "8px",
+                              cursor: "pointer",
+                              transition: "all 0.15s ease",
+                              outline: "none",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = "#FEF2F2";
+                              e.currentTarget.style.borderColor = "#DC2626";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = "white";
+                              e.currentTarget.style.borderColor = "#E5E7EB";
+                            }}
+                            title={getText("Delete", "हटवा", "हटवा")}
                           >
-                            <path d="M3 6h18" />
-                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-                          </svg>
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                            <svg
+                              width="16"
+                              height="16"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="#DC2626"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M3 6h18" />
+                              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                              <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 

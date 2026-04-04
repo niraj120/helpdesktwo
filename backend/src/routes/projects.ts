@@ -21,6 +21,7 @@ import {
   deleteFormField,
   uploadBrandingImage,
 } from '../controllers/projectController';
+import { listConfigsByProject } from '../controllers/ticket-module/categoryAssignmentController';
 import { authMiddleware } from '../middleware/auth';
 import { checkPermission } from '../middleware/permissions';
 
@@ -60,6 +61,9 @@ router.get('/:projectId/form-fields', authMiddleware, checkPermission('PROJECT_V
 router.post('/:projectId/form-fields', authMiddleware, checkPermission('PROJECT_MANAGE_SETTINGS'), createFormField);
 router.put('/:projectId/form-fields/:fieldId', authMiddleware, checkPermission('PROJECT_MANAGE_SETTINGS'), updateFormField);
 router.delete('/:projectId/form-fields/:fieldId', authMiddleware, checkPermission('PROJECT_MANAGE_SETTINGS'), deleteFormField);
+
+// Category Assignment Configs for a project (admin overview)
+router.get('/:projectId/category-assignment-configs', authMiddleware, checkPermission('MASTER_DATA_VIEW'), listConfigsByProject);
 
 // Get single project by ID
 router.get('/:id', authMiddleware, checkPermission('PROJECT_VIEW_ALL'), getProjectById);

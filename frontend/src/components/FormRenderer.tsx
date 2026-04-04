@@ -27,6 +27,13 @@ export interface FormRendererProps {
   onRemoveFile?: (fieldName: string, index: number) => void;
   /** When true: fields are read-only, a Preview banner is shown, submit is disabled */
   previewMode?: boolean;
+  /**
+   * When true (admin builder preview): ALL fields are always rendered regardless
+   * of condition state. Fields whose condition is not currently met are shown with
+   * a subtle "Conditional — not triggered" indicator so the admin can see the full
+   * form layout. Does not affect the live student form (default: false).
+   */
+  showAllFields?: boolean;
   branding?: { primaryColor?: string };
   /** For hierarchical category selector — pass projectId from project context */
   projectId?: string;
@@ -65,6 +72,7 @@ export const FormRenderer: React.FC<FormRendererProps> = ({
   fieldFiles = {},
   onRemoveFile,
   previewMode = false,
+  showAllFields = false,
   branding,
   categoryFieldOverride,
 }) => {
@@ -377,10 +385,40 @@ export const FormRenderer: React.FC<FormRendererProps> = ({
       )}
 
       {fields.map((field) => {
-        if (!visibleFields.has(field.fieldName)) return null;
+        const isCurrentlyVisible = visibleFields.has(field.fieldName);
+        // In showAllFields mode (admin preview), render all fields;
+        // otherwise skip hidden ones as usual.
+        if (!isCurrentlyVisible && !showAllFields) return null;
         const isRequired = requiredFields.has(field.fieldName);
+        const isConditionHidden =
+          showAllFields && !isCurrentlyVisible && !field.isFixed;
         return (
-          <div key={field.fieldName} style={WRAPPER_STYLE}>
+          <div
+            key={field.fieldName}
+            style={{
+              ...WRAPPER_STYLE,
+              ...(isConditionHidden ? { opacity: 0.55 } : {}),
+            }}
+          >
+            {isConditionHidden && (
+              <div
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  padding: "2px 8px",
+                  marginBottom: "4px",
+                  background: "#fef9c3",
+                  border: "1px solid #fde047",
+                  borderRadius: "5px",
+                  fontSize: "11px",
+                  color: "#854d0e",
+                  fontWeight: 500,
+                }}
+              >
+                ⚡ Conditional — condition not yet triggered
+              </div>
+            )}
             <label style={LABEL_STYLE}>
               {field.fieldLabel || field.fieldName}
               {isRequired && (

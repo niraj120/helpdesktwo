@@ -1,6 +1,6 @@
-import express from 'express';
-import { authMiddleware } from '../../middleware/auth';
-import { checkPermission } from '../../middleware/permissions';
+import express from "express";
+import { authMiddleware } from "../../middleware/auth";
+import { checkPermission } from "../../middleware/permissions";
 import {
   getAllEscalationMatrices,
   getEscalationMatrixById,
@@ -11,95 +11,104 @@ import {
   getUsersForLevel,
   processAutoEscalation,
   getAutoEscalationCandidates,
+  getAutoEscalationJobLog,
   validateEscalationMatrix,
-} from '../../controllers/escalation-matrix/escalationMatrixController';
+} from "../../controllers/escalation-matrix/escalationMatrixController";
 
 const router = express.Router();
 
 /**
  * Escalation Matrix Routes
  * Base path: /api/escalation-matrix
- * 
+ *
  * Permission: ESCALATION_MATRIX_MANAGE for CRUD operations
  */
 
 // Validation route - must come before :id routes
 router.post(
-  '/validate',
+  "/validate",
   authMiddleware,
-  checkPermission('ESCALATION_MATRIX_MANAGE'),
-  validateEscalationMatrix
+  checkPermission("ESCALATION_MATRIX_MANAGE"),
+  validateEscalationMatrix,
 );
 
 // Auto-escalation routes - must come before :id routes
 router.post(
-  '/auto-escalate/process',
+  "/auto-escalate/process",
   authMiddleware,
-  checkPermission('ESCALATION_MATRIX_MANAGE'),
-  processAutoEscalation
+  checkPermission("ESCALATION_MATRIX_MANAGE"),
+  processAutoEscalation,
 );
 
 router.get(
-  '/auto-escalate/candidates',
+  "/auto-escalate/candidates",
   authMiddleware,
-  checkPermission('ESCALATION_MATRIX_VIEW'),
-  getAutoEscalationCandidates
+  checkPermission("ESCALATION_MATRIX_VIEW"),
+  getAutoEscalationCandidates,
+);
+
+// US-ESC-012: Job log route - must come before :id routes
+router.get(
+  "/auto-escalate/job-log",
+  authMiddleware,
+  checkPermission("ESCALATION_MATRIX_VIEW"),
+  getAutoEscalationJobLog,
 );
 
 // Toggle status - must come before :id route
 router.patch(
-  '/:id/toggle-status',
+  "/:id/toggle-status",
   authMiddleware,
-  checkPermission('ESCALATION_MATRIX_MANAGE'),
-  toggleEscalationMatrixStatus
+  checkPermission("ESCALATION_MATRIX_MANAGE"),
+  toggleEscalationMatrixStatus,
 );
 
 // Get users for a specific level
 router.get(
-  '/:matrixId/levels/:levelId/users',
+  "/:matrixId/levels/:levelId/users",
   authMiddleware,
-  checkPermission('ESCALATION_MATRIX_VIEW'),
-  getUsersForLevel
+  checkPermission("ESCALATION_MATRIX_VIEW"),
+  getUsersForLevel,
 );
 
 // Get all escalation matrices
 router.get(
-  '/',
+  "/",
   authMiddleware,
-  checkPermission('ESCALATION_MATRIX_VIEW'),
-  getAllEscalationMatrices
+  checkPermission("ESCALATION_MATRIX_VIEW"),
+  getAllEscalationMatrices,
 );
 
 // Get single escalation matrix
 router.get(
-  '/:id',
+  "/:id",
   authMiddleware,
-  checkPermission('ESCALATION_MATRIX_VIEW'),
-  getEscalationMatrixById
+  checkPermission("ESCALATION_MATRIX_VIEW"),
+  getEscalationMatrixById,
 );
 
 // Create escalation matrix
 router.post(
-  '/',
+  "/",
   authMiddleware,
-  checkPermission('ESCALATION_MATRIX_MANAGE'),
-  createEscalationMatrix
+  checkPermission("ESCALATION_MATRIX_MANAGE"),
+  createEscalationMatrix,
 );
 
 // Update escalation matrix
 router.put(
-  '/:id',
+  "/:id",
   authMiddleware,
-  checkPermission('ESCALATION_MATRIX_MANAGE'),
-  updateEscalationMatrix
+  checkPermission("ESCALATION_MATRIX_MANAGE"),
+  updateEscalationMatrix,
 );
 
 // Delete escalation matrix
 router.delete(
-  '/:id',
+  "/:id",
   authMiddleware,
-  checkPermission('ESCALATION_MATRIX_MANAGE'),
-  deleteEscalationMatrix
+  checkPermission("ESCALATION_MATRIX_MANAGE"),
+  deleteEscalationMatrix,
 );
 
 export default router;

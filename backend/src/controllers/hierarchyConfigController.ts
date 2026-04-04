@@ -1,7 +1,11 @@
-import { Request, Response } from 'express';
-import mongoose from 'mongoose';
-import { HierarchyConfig, IHierarchyConfig, IHierarchyLevel } from '../models/HierarchyConfig';
-import { Category, ICategory } from '../models/Category';
+import { Request, Response } from "express";
+import mongoose from "mongoose";
+import {
+  HierarchyConfig,
+  IHierarchyConfig,
+  IHierarchyLevel,
+} from "../models/HierarchyConfig";
+import { Category, ICategory } from "../models/Category";
 
 /**
  * Get hierarchy configuration for a project
@@ -10,17 +14,17 @@ import { Category, ICategory } from '../models/Category';
 export const getHierarchyConfig = async (req: Request, res: Response) => {
   try {
     const { projectId } = req.params;
-    
+
     if (!mongoose.Types.ObjectId.isValid(projectId)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid project ID',
+        message: "Invalid project ID",
       });
     }
 
-    let config = await HierarchyConfig.findOne({ 
+    let config = await HierarchyConfig.findOne({
       projectId: new mongoose.Types.ObjectId(projectId),
-      isActive: true 
+      isActive: true,
     });
 
     // If no config exists, return default single-level config
@@ -31,7 +35,7 @@ export const getHierarchyConfig = async (req: Request, res: Response) => {
         levels: [
           {
             levelNumber: 1,
-            displayName: 'Category',
+            displayName: "Category",
             isMandatory: true,
             isActive: true,
           },
@@ -47,15 +51,47 @@ export const getHierarchyConfig = async (req: Request, res: Response) => {
       } as any;
     }
 
+    // Self-heal: ensure visibilitySettings include all configured levels.
+    // Fixes configs saved before this guard was in place (showInOnlineForm had only [1]).
+    if (config && (config as any).visibilitySettings) {
+      const vis = (config as any).visibilitySettings;
+      const levelCount = (config as any).levelCount || 1;
+      const allLevels = Array.from({ length: levelCount }, (_, i) => i + 1);
+      const expandArr = (arr: number[]) =>
+        Array.from(new Set([...arr, ...allLevels])).sort((a, b) => a - b);
+      const patched: any = {
+        showInOnlineForm: expandArr(vis.showInOnlineForm || []),
+        showInOfflineForm: expandArr(vis.showInOfflineForm || []),
+        showInTicketDisplay: expandArr(vis.showInTicketDisplay || []),
+        showInFilters: vis.showInFilters || [1, 2],
+      };
+      // Write back only if something changed (avoid unnecessary DB writes)
+      if (
+        JSON.stringify(patched.showInOnlineForm) !==
+          JSON.stringify(vis.showInOnlineForm) ||
+        JSON.stringify(patched.showInOfflineForm) !==
+          JSON.stringify(vis.showInOfflineForm) ||
+        JSON.stringify(patched.showInTicketDisplay) !==
+          JSON.stringify(vis.showInTicketDisplay)
+      ) {
+        (config as any).visibilitySettings = patched;
+        try {
+          await (config as any).save();
+        } catch (_) {
+          /* non-critical */
+        }
+      }
+    }
+
     return res.status(200).json({
       success: true,
       data: config,
     });
   } catch (error: any) {
-    console.error('Error fetching hierarchy config:', error);
+    console.error("Error fetching hierarchy config:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to fetch hierarchy configuration',
+      message: "Failed to fetch hierarchy configuration",
       error: error.message,
     });
   }
@@ -69,12 +105,13 @@ export const saveHierarchyConfig = async (req: Request, res: Response) => {
   try {
     const { projectId } = req.params;
     const userId = (req as any).user?.userId;
-    const { levelCount, levels, visibilitySettings, priorityFromLevel } = req.body;
+    const { levelCount, levels, visibilitySettings, priorityFromLevel } =
+      req.body;
 
     if (!mongoose.Types.ObjectId.isValid(projectId)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid project ID',
+        message: "Invalid project ID",
       });
     }
 
@@ -82,7 +119,7 @@ export const saveHierarchyConfig = async (req: Request, res: Response) => {
     if (levelCount < 1 || levelCount > 4) {
       return res.status(400).json({
         success: false,
-        message: 'Level count must be between 1 and 4',
+        message: "Level count must be between 1 and 4",
       });
     }
 
@@ -95,15 +132,19 @@ export const saveHierarchyConfig = async (req: Request, res: Response) => {
     }
 
     // Ensure levels are properly structured
-    const validatedLevels: IHierarchyLevel[] = levels.map((level: any, index: number) => ({
-      levelNumber: index + 1,
-      displayName: level.displayName || `Level ${index + 1}`,
-      isMandatory: index === 0 ? true : (level.isMandatory || false), // Level 1 always mandatory
-      isActive: level.isActive !== false,
-    }));
+    const validatedLevels: IHierarchyLevel[] = levels.map(
+      (level: any, index: number) => ({
+        levelNumber: index + 1,
+        displayName: level.displayName || `Level ${index + 1}`,
+        isMandatory: index === 0 ? true : level.isMandatory || false, // Level 1 always mandatory
+        isActive: level.isActive !== false,
+      }),
+    );
 
     // Find existing config or create new
-    let config = await HierarchyConfig.findOne({ projectId: new mongoose.Types.ObjectId(projectId) });
+    let config = await HierarchyConfig.findOne({
+      projectId: new mongoose.Types.ObjectId(projectId),
+    });
 
     if (config) {
       // Update existing
@@ -111,10 +152,26 @@ export const saveHierarchyConfig = async (req: Request, res: Response) => {
       config.levels = validatedLevels;
       if (visibilitySettings) {
         config.visibilitySettings = visibilitySettings;
+      } else {
+        // Auto-expand visibility arrays to cover any newly added levels
+        const allLevels = Array.from({ length: levelCount }, (_, i) => i + 1);
+        const vis = config.visibilitySettings as any;
+        const expand = (arr: number[]) =>
+          Array.from(
+            new Set([...arr, ...allLevels.filter((l) => l <= levelCount)]),
+          );
+        if (vis) {
+          vis.showInOnlineForm = expand(vis.showInOnlineForm || []);
+          vis.showInOfflineForm = expand(vis.showInOfflineForm || []);
+          vis.showInTicketDisplay = expand(vis.showInTicketDisplay || []);
+        }
       }
       // Update priority from level (0 = manual, 1-4 = from that level)
       if (priorityFromLevel !== undefined) {
-        config.priorityFromLevel = Math.max(0, Math.min(4, parseInt(priorityFromLevel) || 0));
+        config.priorityFromLevel = Math.max(
+          0,
+          Math.min(4, parseInt(priorityFromLevel) || 0),
+        );
       }
       config.updatedBy = new mongoose.Types.ObjectId(userId);
       await config.save();
@@ -126,26 +183,35 @@ export const saveHierarchyConfig = async (req: Request, res: Response) => {
         levels: validatedLevels,
         visibilitySettings: visibilitySettings || {
           showInOnlineForm: Array.from({ length: levelCount }, (_, i) => i + 1),
-          showInOfflineForm: Array.from({ length: levelCount }, (_, i) => i + 1),
-          showInTicketDisplay: Array.from({ length: levelCount }, (_, i) => i + 1),
+          showInOfflineForm: Array.from(
+            { length: levelCount },
+            (_, i) => i + 1,
+          ),
+          showInTicketDisplay: Array.from(
+            { length: levelCount },
+            (_, i) => i + 1,
+          ),
           showInFilters: [1, 2],
         },
-        priorityFromLevel: priorityFromLevel !== undefined ? Math.max(0, Math.min(4, parseInt(priorityFromLevel) || 0)) : 0,
+        priorityFromLevel:
+          priorityFromLevel !== undefined
+            ? Math.max(0, Math.min(4, parseInt(priorityFromLevel) || 0))
+            : 0,
         isActive: true,
         createdBy: new mongoose.Types.ObjectId(userId),
       });
     }
 
-    console.log('✅ Hierarchy config saved:', {
+    console.log("✅ Hierarchy config saved:", {
       projectId,
       levelCount,
-      levels: validatedLevels.map(l => l.displayName),
+      levels: validatedLevels.map((l) => l.displayName),
     });
 
     // Emit WebSocket event for real-time updates
-    const io = (req as any).app.get('io');
+    const io = (req as any).app.get("io");
     if (io) {
-      io.to(`project-config-${projectId}`).emit('hierarchy-config-updated', {
+      io.to(`project-config-${projectId}`).emit("hierarchy-config-updated", {
         projectId,
         config,
       });
@@ -153,14 +219,14 @@ export const saveHierarchyConfig = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       success: true,
-      message: 'Hierarchy configuration saved successfully',
+      message: "Hierarchy configuration saved successfully",
       data: config,
     });
   } catch (error: any) {
-    console.error('Error saving hierarchy config:', error);
+    console.error("Error saving hierarchy config:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to save hierarchy configuration',
+      message: "Failed to save hierarchy configuration",
       error: error.message,
     });
   }
@@ -178,16 +244,16 @@ export const getCategoryTree = async (req: Request, res: Response) => {
     if (!mongoose.Types.ObjectId.isValid(projectId)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid project ID',
+        message: "Invalid project ID",
       });
     }
 
     const query: any = { projectId: new mongoose.Types.ObjectId(projectId) };
-    
-    if (includeInactive !== 'true') {
+
+    if (includeInactive !== "true") {
       query.isActive = true;
     }
-    
+
     if (maxLevel) {
       query.level = { $lte: parseInt(maxLevel as string) };
     }
@@ -199,11 +265,11 @@ export const getCategoryTree = async (req: Request, res: Response) => {
     // Build tree structure
     const buildTree = (items: any[], parentId: string | null = null): any[] => {
       return items
-        .filter(item => {
+        .filter((item) => {
           const itemParentId = item.parentId?.toString() || null;
           return itemParentId === parentId;
         })
-        .map(item => ({
+        .map((item) => ({
           ...item,
           children: buildTree(items, item._id.toString()),
         }));
@@ -217,10 +283,10 @@ export const getCategoryTree = async (req: Request, res: Response) => {
       total: categories.length,
     });
   } catch (error: any) {
-    console.error('Error fetching category tree:', error);
+    console.error("Error fetching category tree:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to fetch category tree',
+      message: "Failed to fetch category tree",
       error: error.message,
     });
   }
@@ -238,27 +304,25 @@ export const getCategoryChildren = async (req: Request, res: Response) => {
     if (!mongoose.Types.ObjectId.isValid(projectId)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid project ID',
+        message: "Invalid project ID",
       });
     }
 
-    const query: any = { 
+    const query: any = {
       projectId: new mongoose.Types.ObjectId(projectId),
-      parentId: parentId === 'null' || parentId === 'root' 
-        ? null 
-        : new mongoose.Types.ObjectId(parentId),
+      parentId:
+        parentId === "null" || parentId === "root"
+          ? null
+          : new mongoose.Types.ObjectId(parentId),
     };
-    
-    if (includeInactive !== 'true') {
+
+    if (includeInactive !== "true") {
       query.isActive = true;
     }
 
     // For root level, we need parentId to not exist or be null
-    if (parentId === 'null' || parentId === 'root') {
-      query.$or = [
-        { parentId: null },
-        { parentId: { $exists: false } },
-      ];
+    if (parentId === "null" || parentId === "root") {
+      query.$or = [{ parentId: null }, { parentId: { $exists: false } }];
       delete query.parentId;
       query.level = 1;
     }
@@ -272,10 +336,10 @@ export const getCategoryChildren = async (req: Request, res: Response) => {
       data: children,
     });
   } catch (error: any) {
-    console.error('Error fetching category children:', error);
+    console.error("Error fetching category children:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to fetch category children',
+      message: "Failed to fetch category children",
       error: error.message,
     });
   }
@@ -293,7 +357,7 @@ export const getCategoriesByLevel = async (req: Request, res: Response) => {
     if (!mongoose.Types.ObjectId.isValid(projectId)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid project ID',
+        message: "Invalid project ID",
       });
     }
 
@@ -301,16 +365,16 @@ export const getCategoriesByLevel = async (req: Request, res: Response) => {
     if (level < 1 || level > 4) {
       return res.status(400).json({
         success: false,
-        message: 'Level must be between 1 and 4',
+        message: "Level must be between 1 and 4",
       });
     }
 
-    const query: any = { 
+    const query: any = {
       projectId: new mongoose.Types.ObjectId(projectId),
       level,
     };
-    
-    if (includeInactive !== 'true') {
+
+    if (includeInactive !== "true") {
       query.isActive = true;
     }
 
@@ -322,7 +386,7 @@ export const getCategoriesByLevel = async (req: Request, res: Response) => {
       return res.status(200).json({
         success: true,
         data: [],
-        message: 'Parent ID required for levels > 1',
+        message: "Parent ID required for levels > 1",
       });
     }
 
@@ -335,10 +399,10 @@ export const getCategoriesByLevel = async (req: Request, res: Response) => {
       data: categories,
     });
   } catch (error: any) {
-    console.error('Error fetching categories by level:', error);
+    console.error("Error fetching categories by level:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to fetch categories',
+      message: "Failed to fetch categories",
       error: error.message,
     });
   }
@@ -352,38 +416,48 @@ export const createHierarchyCategory = async (req: Request, res: Response) => {
   try {
     const { projectId } = req.params;
     const userId = (req as any).user?.userId;
-    const { name, code, description, parentId, level, color, icon, order, defaultPriority } = req.body;
+    const {
+      name,
+      code,
+      description,
+      parentId,
+      level,
+      color,
+      icon,
+      order,
+      defaultPriority,
+    } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(projectId)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid project ID',
+        message: "Invalid project ID",
       });
     }
 
     if (!name) {
       return res.status(400).json({
         success: false,
-        message: 'Name is required',
+        message: "Name is required",
       });
     }
 
     // Validate code is a number
-    const numericCode = typeof code === 'number' ? code : parseInt(code, 10);
+    const numericCode = typeof code === "number" ? code : parseInt(code, 10);
     if (isNaN(numericCode) || numericCode <= 0) {
       return res.status(400).json({
         success: false,
-        message: 'Code must be a positive number',
+        message: "Code must be a positive number",
       });
     }
 
     const categoryLevel = level || 1;
-    
+
     // Validate level
     if (categoryLevel < 1 || categoryLevel > 4) {
       return res.status(400).json({
         success: false,
-        message: 'Level must be between 1 and 4',
+        message: "Level must be between 1 and 4",
       });
     }
 
@@ -391,7 +465,7 @@ export const createHierarchyCategory = async (req: Request, res: Response) => {
     if (categoryLevel > 1 && !parentId) {
       return res.status(400).json({
         success: false,
-        message: 'Parent ID is required for levels > 1',
+        message: "Parent ID is required for levels > 1",
       });
     }
 
@@ -401,7 +475,7 @@ export const createHierarchyCategory = async (req: Request, res: Response) => {
       if (!parent) {
         return res.status(400).json({
           success: false,
-          message: 'Parent category not found',
+          message: "Parent category not found",
         });
       }
       if (parent.level !== categoryLevel - 1) {
@@ -420,7 +494,7 @@ export const createHierarchyCategory = async (req: Request, res: Response) => {
     if (existingByCode) {
       return res.status(400).json({
         success: false,
-        message: 'Category code already exists in this project',
+        message: "Category code already exists in this project",
       });
     }
 
@@ -439,7 +513,7 @@ export const createHierarchyCategory = async (req: Request, res: Response) => {
       createdBy: new mongoose.Types.ObjectId(userId),
     });
 
-    console.log('✅ Category created:', {
+    console.log("✅ Category created:", {
       id: category._id,
       name,
       level: categoryLevel,
@@ -447,25 +521,25 @@ export const createHierarchyCategory = async (req: Request, res: Response) => {
     });
 
     // Emit WebSocket event for real-time updates
-    const io = (req as any).app.get('io');
+    const io = (req as any).app.get("io");
     if (io) {
-      io.to(`project-config-${projectId}`).emit('category-tree-updated', {
+      io.to(`project-config-${projectId}`).emit("category-tree-updated", {
         projectId,
-        action: 'created',
+        action: "created",
         category,
       });
     }
 
     return res.status(201).json({
       success: true,
-      message: 'Category created successfully',
+      message: "Category created successfully",
       data: category,
     });
   } catch (error: any) {
-    console.error('Error creating category:', error);
+    console.error("Error creating category:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to create category',
+      message: "Failed to create category",
       error: error.message,
     });
   }
@@ -473,18 +547,28 @@ export const createHierarchyCategory = async (req: Request, res: Response) => {
 
 /**
  * Update a category
- * @route PUT /api/hierarchy-config/categories/:categoryId
+ * @route PUT /api/hierarchy-config/:projectId/categories/:categoryId
  */
 export const updateHierarchyCategory = async (req: Request, res: Response) => {
   try {
     const { categoryId } = req.params;
     const userId = (req as any).user?.userId;
-    const { name, code, description, color, icon, order, defaultPriority, isActive, parentId } = req.body;
+    const {
+      name,
+      code,
+      description,
+      color,
+      icon,
+      order,
+      defaultPriority,
+      isActive,
+      parentId,
+    } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(categoryId)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid category ID',
+        message: "Invalid category ID",
       });
     }
 
@@ -492,20 +576,20 @@ export const updateHierarchyCategory = async (req: Request, res: Response) => {
     if (!category) {
       return res.status(404).json({
         success: false,
-        message: 'Category not found',
+        message: "Category not found",
       });
     }
 
     // Check for duplicate code if code is being changed
     if (code !== undefined && code !== category.code) {
-      const numericCode = typeof code === 'number' ? code : parseInt(code, 10);
+      const numericCode = typeof code === "number" ? code : parseInt(code, 10);
       if (isNaN(numericCode) || numericCode <= 0) {
         return res.status(400).json({
           success: false,
-          message: 'Code must be a positive number',
+          message: "Code must be a positive number",
         });
       }
-      
+
       const existingByCode = await Category.findOne({
         projectId: category.projectId,
         code: numericCode,
@@ -514,7 +598,7 @@ export const updateHierarchyCategory = async (req: Request, res: Response) => {
       if (existingByCode) {
         return res.status(400).json({
           success: false,
-          message: 'Category code already exists in this project',
+          message: "Category code already exists in this project",
         });
       }
     }
@@ -523,14 +607,15 @@ export const updateHierarchyCategory = async (req: Request, res: Response) => {
     if (parentId !== undefined && parentId !== category.parentId?.toString()) {
       return res.status(400).json({
         success: false,
-        message: 'Changing parent category is not supported. Delete and recreate instead.',
+        message:
+          "Changing parent category is not supported. Delete and recreate instead.",
       });
     }
 
     // Update fields
     if (name) category.name = name;
     if (code !== undefined) {
-      const numericCode = typeof code === 'number' ? code : parseInt(code, 10);
+      const numericCode = typeof code === "number" ? code : parseInt(code, 10);
       if (!isNaN(numericCode) && numericCode > 0) {
         category.code = numericCode;
       }
@@ -539,7 +624,8 @@ export const updateHierarchyCategory = async (req: Request, res: Response) => {
     if (color !== undefined) category.color = color;
     if (icon !== undefined) category.icon = icon;
     if (order !== undefined) category.order = order;
-    if (defaultPriority !== undefined) category.defaultPriority = defaultPriority;
+    if (defaultPriority !== undefined)
+      category.defaultPriority = defaultPriority;
     if (isActive !== undefined) category.isActive = isActive;
     category.updatedBy = new mongoose.Types.ObjectId(userId);
 
@@ -550,31 +636,34 @@ export const updateHierarchyCategory = async (req: Request, res: Response) => {
       await updateDescendantPaths(category._id as mongoose.Types.ObjectId);
     }
 
-    console.log('✅ Category updated:', {
+    console.log("✅ Category updated:", {
       id: categoryId,
       name: category.name,
     });
 
     // Emit WebSocket event for real-time updates
-    const io = (req as any).app.get('io');
+    const io = (req as any).app.get("io");
     if (io && category.projectId) {
-      io.to(`project-config-${category.projectId}`).emit('category-tree-updated', {
-        projectId: category.projectId,
-        action: 'updated',
-        category,
-      });
+      io.to(`project-config-${category.projectId}`).emit(
+        "category-tree-updated",
+        {
+          projectId: category.projectId,
+          action: "updated",
+          category,
+        },
+      );
     }
 
     return res.status(200).json({
       success: true,
-      message: 'Category updated successfully',
+      message: "Category updated successfully",
       data: category,
     });
   } catch (error: any) {
-    console.error('Error updating category:', error);
+    console.error("Error updating category:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to update category',
+      message: "Failed to update category",
       error: error.message,
     });
   }
@@ -582,7 +671,7 @@ export const updateHierarchyCategory = async (req: Request, res: Response) => {
 
 /**
  * Delete a category (soft delete)
- * @route DELETE /api/hierarchy-config/categories/:categoryId
+ * @route DELETE /api/hierarchy-config/:projectId/categories/:categoryId
  */
 export const deleteHierarchyCategory = async (req: Request, res: Response) => {
   try {
@@ -593,7 +682,7 @@ export const deleteHierarchyCategory = async (req: Request, res: Response) => {
     if (!mongoose.Types.ObjectId.isValid(categoryId)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid category ID',
+        message: "Invalid category ID",
       });
     }
 
@@ -601,12 +690,15 @@ export const deleteHierarchyCategory = async (req: Request, res: Response) => {
     if (!category) {
       return res.status(404).json({
         success: false,
-        message: 'Category not found',
+        message: "Category not found",
       });
     }
 
     // Check if category has children
-    const childCount = await Category.countDocuments({ parentId: categoryId, isActive: true });
+    const childCount = await Category.countDocuments({
+      parentId: categoryId,
+      isActive: true,
+    });
     if (childCount > 0) {
       return res.status(400).json({
         success: false,
@@ -615,53 +707,56 @@ export const deleteHierarchyCategory = async (req: Request, res: Response) => {
     }
 
     // Check if category is used in any tickets
-    const Ticket = mongoose.model('Ticket');
+    const Ticket = mongoose.model("Ticket");
     const ticketCount = await Ticket.countDocuments({
       $or: [
         { category: categoryId },
-        { 'categoryHierarchy.level1': categoryId },
-        { 'categoryHierarchy.level2': categoryId },
-        { 'categoryHierarchy.level3': categoryId },
-        { 'categoryHierarchy.level4': categoryId },
+        { "categoryHierarchy.level1": categoryId },
+        { "categoryHierarchy.level2": categoryId },
+        { "categoryHierarchy.level3": categoryId },
+        { "categoryHierarchy.level4": categoryId },
       ],
     });
 
-    if (ticketCount > 0 && hardDelete === 'true') {
+    if (ticketCount > 0 && hardDelete === "true") {
       return res.status(400).json({
         success: false,
         message: `Cannot hard delete category used in ${ticketCount} tickets. Use soft delete instead.`,
       });
     }
 
-    if (hardDelete === 'true') {
+    if (hardDelete === "true") {
       await Category.findByIdAndDelete(categoryId);
-      console.log('🗑️ Category hard deleted:', categoryId);
+      console.log("🗑️ Category hard deleted:", categoryId);
     } else {
       category.isActive = false;
       category.updatedBy = new mongoose.Types.ObjectId(userId);
       await category.save();
-      console.log('🗑️ Category soft deleted:', categoryId);
+      console.log("🗑️ Category soft deleted:", categoryId);
     }
 
     // Emit WebSocket event for real-time updates
-    const io = (req as any).app.get('io');
+    const io = (req as any).app.get("io");
     if (io && category.projectId) {
-      io.to(`project-config-${category.projectId}`).emit('category-tree-updated', {
-        projectId: category.projectId,
-        action: 'deleted',
-        categoryId,
-      });
+      io.to(`project-config-${category.projectId}`).emit(
+        "category-tree-updated",
+        {
+          projectId: category.projectId,
+          action: "deleted",
+          categoryId,
+        },
+      );
     }
 
     return res.status(200).json({
       success: true,
-      message: `Category ${hardDelete === 'true' ? 'deleted' : 'deactivated'} successfully`,
+      message: `Category ${hardDelete === "true" ? "deleted" : "deactivated"} successfully`,
     });
   } catch (error: any) {
-    console.error('Error deleting category:', error);
+    console.error("Error deleting category:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to delete category',
+      message: "Failed to delete category",
       error: error.message,
     });
   }
@@ -670,19 +765,23 @@ export const deleteHierarchyCategory = async (req: Request, res: Response) => {
 /**
  * Helper function to update paths for all descendants of a category
  */
-async function updateDescendantPaths(categoryId: mongoose.Types.ObjectId): Promise<void> {
+async function updateDescendantPaths(
+  categoryId: mongoose.Types.ObjectId,
+): Promise<void> {
   const category = await Category.findById(categoryId);
   if (!category) return;
 
   const descendants = await Category.find({ hierarchyPath: categoryId });
-  
+
   for (const descendant of descendants) {
     // Rebuild path by fetching all ancestors
-    const ancestors = await Category.find({ 
-      _id: { $in: descendant.hierarchyPath } 
+    const ancestors = await Category.find({
+      _id: { $in: descendant.hierarchyPath },
     }).sort({ level: 1 });
-    
-    descendant.path = [...ancestors.map(a => a.name), descendant.name].join(' > ');
+
+    descendant.path = [...ancestors.map((a) => a.name), descendant.name].join(
+      " > ",
+    );
     await descendant.save();
   }
 }
@@ -690,7 +789,7 @@ async function updateDescendantPaths(categoryId: mongoose.Types.ObjectId): Promi
 /**
  * Bulk upload categories from CSV data
  * @route POST /api/hierarchy-config/:projectId/categories/bulk
- * 
+ *
  * Expected CSV format:
  * Level,ParentName,Name,DefaultPriority
  * 1,,Category1,high
@@ -707,14 +806,14 @@ export const bulkUploadCategories = async (req: Request, res: Response) => {
     if (!mongoose.Types.ObjectId.isValid(projectId)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid project ID',
+        message: "Invalid project ID",
       });
     }
 
     if (!Array.isArray(categories) || categories.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'Categories array is required and must not be empty',
+        message: "Categories array is required and must not be empty",
       });
     }
 
@@ -745,19 +844,27 @@ export const bulkUploadCategories = async (req: Request, res: Response) => {
     const existingCategories = await Category.find({
       projectId: new mongoose.Types.ObjectId(projectId),
     });
-    let maxCode = existingCategories.length > 0 
-      ? Math.max(...existingCategories.map(c => typeof c.code === 'number' ? c.code : parseInt(String(c.code), 10) || 0))
-      : 0;
+    let maxCode =
+      existingCategories.length > 0
+        ? Math.max(
+            ...existingCategories.map((c) =>
+              typeof c.code === "number"
+                ? c.code
+                : parseInt(String(c.code), 10) || 0,
+            ),
+          )
+        : 0;
 
     // Build maps for lookups
     const categoryMap = new Map<string, any>(); // name:parentId -> category
     const parentNameMap = new Map<string, any>(); // level:name -> category
     const codeMap = new Map<number, any>(); // code -> category
-    existingCategories.forEach(c => {
-      const parentKey = c.parentId ? c.parentId.toString() : 'root';
+    existingCategories.forEach((c) => {
+      const parentKey = c.parentId ? c.parentId.toString() : "root";
       categoryMap.set(`${c.name}:${parentKey}`, c);
       parentNameMap.set(`${c.level}:${c.name}`, c);
-      const codeNum = typeof c.code === 'number' ? c.code : parseInt(String(c.code), 10);
+      const codeNum =
+        typeof c.code === "number" ? c.code : parseInt(String(c.code), 10);
       if (!isNaN(codeNum)) {
         codeMap.set(codeNum, c);
       }
@@ -775,21 +882,32 @@ export const bulkUploadCategories = async (req: Request, res: Response) => {
 
     for (const row of sortedCategories) {
       try {
-        const code = row.code ? (typeof row.code === 'number' ? row.code : parseInt(String(row.code).trim(), 10)) : null;
-        const level = typeof row.level === 'number' ? row.level : parseInt(row.level, 10);
+        const code = row.code
+          ? typeof row.code === "number"
+            ? row.code
+            : parseInt(String(row.code).trim(), 10)
+          : null;
+        const level =
+          typeof row.level === "number" ? row.level : parseInt(row.level, 10);
         const name = String(row.name).trim();
-        const parentName = row.parentName ? String(row.parentName).trim() : null;
-        const defaultPriority = row.defaultPriority ? String(row.defaultPriority).toLowerCase().trim() : undefined;
+        const parentName = row.parentName
+          ? String(row.parentName).trim()
+          : null;
+        const defaultPriority = row.defaultPriority
+          ? String(row.defaultPriority).toLowerCase().trim()
+          : undefined;
 
         // Find parent if needed
         let parentId = null;
         let parentCategory = null;
-        
+
         if (level > 1 && parentName) {
           // Find parent by name at parent level
           parentCategory = parentNameMap.get(`${level - 1}:${parentName}`);
           if (!parentCategory) {
-            results.errors.push(`Row "${name}": Parent "${parentName}" not found at level ${level - 1}`);
+            results.errors.push(
+              `Row "${name}": Parent "${parentName}" not found at level ${level - 1}`,
+            );
             results.skipped++;
             continue;
           }
@@ -799,13 +917,14 @@ export const bulkUploadCategories = async (req: Request, res: Response) => {
         // If code is provided, UPDATE existing category
         if (code && !isNaN(code) && codeMap.has(code)) {
           const existingCategory = codeMap.get(code);
-          
+
           // Update the category
-          const hierarchyPath = parentCategory && parentCategory.hierarchyPath 
-            ? [...parentCategory.hierarchyPath, parentCategory._id]
-            : [];
-          
-          const path = parentCategory 
+          const hierarchyPath =
+            parentCategory && parentCategory.hierarchyPath
+              ? [...parentCategory.hierarchyPath, parentCategory._id]
+              : [];
+
+          const path = parentCategory
             ? `${parentCategory.path} > ${name}`
             : name;
 
@@ -815,21 +934,36 @@ export const bulkUploadCategories = async (req: Request, res: Response) => {
             level,
             hierarchyPath,
             path,
-            defaultPriority: defaultPriority || existingCategory.defaultPriority,
+            defaultPriority:
+              defaultPriority || existingCategory.defaultPriority,
             updatedBy: userId ? new mongoose.Types.ObjectId(userId) : undefined,
           });
 
           // Update maps
-          const newParentKey = parentId ? parentId.toString() : 'root';
-          categoryMap.set(`${name}:${newParentKey}`, { ...existingCategory, name, parentId, level, path, hierarchyPath });
-          parentNameMap.set(`${level}:${name}`, { ...existingCategory, name, parentId, level, path, hierarchyPath });
-          
+          const newParentKey = parentId ? parentId.toString() : "root";
+          categoryMap.set(`${name}:${newParentKey}`, {
+            ...existingCategory,
+            name,
+            parentId,
+            level,
+            path,
+            hierarchyPath,
+          });
+          parentNameMap.set(`${level}:${name}`, {
+            ...existingCategory,
+            name,
+            parentId,
+            level,
+            path,
+            hierarchyPath,
+          });
+
           results.updated++;
           continue;
         }
 
         // Check if this exact category already exists (same name + same parent) - for new entries
-        const parentKey = parentId ? parentId.toString() : 'root';
+        const parentKey = parentId ? parentId.toString() : "root";
         const existingKey = `${name}:${parentKey}`;
         if (categoryMap.has(existingKey) && !code) {
           results.skipped++;
@@ -838,14 +972,13 @@ export const bulkUploadCategories = async (req: Request, res: Response) => {
 
         // Create new category
         maxCode++;
-        
-        const hierarchyPath = parentCategory && parentCategory.hierarchyPath 
-          ? [...parentCategory.hierarchyPath, parentCategory._id]
-          : [];
-        
-        const path = parentCategory 
-          ? `${parentCategory.path} > ${name}`
-          : name;
+
+        const hierarchyPath =
+          parentCategory && parentCategory.hierarchyPath
+            ? [...parentCategory.hierarchyPath, parentCategory._id]
+            : [];
+
+        const path = parentCategory ? `${parentCategory.path} > ${name}` : name;
 
         const newCategory = await Category.create({
           name,
@@ -861,12 +994,13 @@ export const bulkUploadCategories = async (req: Request, res: Response) => {
         });
 
         // Add to maps for subsequent lookups
-        const newParentKey = newCategory.parentId ? newCategory.parentId.toString() : 'root';
+        const newParentKey = newCategory.parentId
+          ? newCategory.parentId.toString()
+          : "root";
         categoryMap.set(`${name}:${newParentKey}`, newCategory);
         parentNameMap.set(`${level}:${name}`, newCategory); // For parent lookups
         codeMap.set(maxCode, newCategory);
         results.created++;
-
       } catch (err: any) {
         results.errors.push(`Row "${row.name}": ${err.message}`);
         results.skipped++;
@@ -878,12 +1012,11 @@ export const bulkUploadCategories = async (req: Request, res: Response) => {
       message: `Bulk upload completed: ${results.created} created, ${results.updated} updated, ${results.skipped} skipped`,
       data: results,
     });
-
   } catch (error: any) {
-    console.error('Error in bulk upload:', error);
+    console.error("Error in bulk upload:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to process bulk upload',
+      message: "Failed to process bulk upload",
       error: error.message,
     });
   }
@@ -902,7 +1035,12 @@ export const downloadBulkTemplate = async (req: Request, res: Response) => {
       projectId: new mongoose.Types.ObjectId(projectId),
     });
 
-    const levelNames = config?.levels?.map(l => l.displayName) || ['Category', 'Subcategory', 'Topic', 'Subtopic'];
+    const levelNames = config?.levels?.map((l) => l.displayName) || [
+      "Category",
+      "Subcategory",
+      "Topic",
+      "Subtopic",
+    ];
     const levelCount = config?.levelCount || 2;
 
     // Get existing categories from database
@@ -913,36 +1051,44 @@ export const downloadBulkTemplate = async (req: Request, res: Response) => {
 
     // Build parent lookup map
     const parentMap = new Map<string, string>();
-    existingCategories.forEach(cat => {
+    existingCategories.forEach((cat) => {
       parentMap.set(cat._id.toString(), cat.name);
     });
 
     // Create CSV content
-    let csvContent = 'Code,Level,ParentName,Name,DefaultPriority\n';
-    csvContent += '# Instructions:\n';
-    csvContent += '# - Code: Leave empty for new categories, or use existing code to UPDATE\n';
-    csvContent += '# - Level: 1-4 (based on your hierarchy configuration)\n';
-    csvContent += '# - ParentName: Leave empty for Level 1, otherwise enter exact parent name\n';
-    csvContent += '# - Name: Category name (required)\n';
-    csvContent += '# - DefaultPriority: Optional - high, medium, normal, low, critical, urgent\n';
-    csvContent += '# - Lines starting with # are ignored\n';
-    csvContent += '#\n';
-    
+    let csvContent = "Code,Level,ParentName,Name,DefaultPriority\n";
+    csvContent += "# Instructions:\n";
+    csvContent +=
+      "# - Code: Leave empty for new categories, or use existing code to UPDATE\n";
+    csvContent += "# - Level: 1-4 (based on your hierarchy configuration)\n";
+    csvContent +=
+      "# - ParentName: Leave empty for Level 1, otherwise enter exact parent name\n";
+    csvContent += "# - Name: Category name (required)\n";
+    csvContent +=
+      "# - DefaultPriority: Optional - high, medium, normal, low, critical, urgent\n";
+    csvContent += "# - Lines starting with # are ignored\n";
+    csvContent += "#\n";
+
     // Include existing data
     if (existingCategories.length > 0) {
-      csvContent += '# === EXISTING DATA (modify and re-upload to update) ===\n';
+      csvContent +=
+        "# === EXISTING DATA (modify and re-upload to update) ===\n";
       for (const cat of existingCategories) {
-        const parentName = cat.parentId ? (parentMap.get(cat.parentId.toString()) || '') : '';
-        const priority = cat.defaultPriority || '';
+        const parentName = cat.parentId
+          ? parentMap.get(cat.parentId.toString()) || ""
+          : "";
+        const priority = cat.defaultPriority || "";
         // Escape commas in names
-        const escapedName = cat.name.includes(',') ? `"${cat.name}"` : cat.name;
-        const escapedParent = parentName.includes(',') ? `"${parentName}"` : parentName;
+        const escapedName = cat.name.includes(",") ? `"${cat.name}"` : cat.name;
+        const escapedParent = parentName.includes(",")
+          ? `"${parentName}"`
+          : parentName;
         csvContent += `${cat.code},${cat.level},${escapedParent},${escapedName},${priority}\n`;
       }
-      csvContent += '#\n';
-      csvContent += '# === ADD NEW CATEGORIES BELOW (leave Code empty) ===\n';
+      csvContent += "#\n";
+      csvContent += "# === ADD NEW CATEGORIES BELOW (leave Code empty) ===\n";
     } else {
-      csvContent += '# Example data (delete these and add your own):\n';
+      csvContent += "# Example data (delete these and add your own):\n";
       if (levelCount >= 1) {
         csvContent += `,1,,${levelNames[0]} Example 1,high\n`;
         csvContent += `,1,,${levelNames[0]} Example 2,medium\n`;
@@ -953,15 +1099,17 @@ export const downloadBulkTemplate = async (req: Request, res: Response) => {
       }
     }
 
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename=category_bulk_upload_template.csv');
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader(
+      "Content-Disposition",
+      "attachment; filename=category_bulk_upload_template.csv",
+    );
     return res.send(csvContent);
-
   } catch (error: any) {
-    console.error('Error generating template:', error);
+    console.error("Error generating template:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to generate template',
+      message: "Failed to generate template",
       error: error.message,
     });
   }
