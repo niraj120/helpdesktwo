@@ -4,6 +4,7 @@ import DashboardLayout from "../components/DashboardLayout";
 import ModuleHeader from "../components/ModuleHeader";
 import ViewModeSelector from "../components/ViewModeSelector";
 import { API_CONFIG } from "../config/constants";
+import { useProjectContext } from "../contexts/ProjectContext";
 
 type ViewMode = "self" | "team" | "hierarchy" | "all";
 
@@ -29,6 +30,7 @@ interface ProjectDashboardProps {
 
 const ProjectDashboard = ({ wrapWithLayout = true }: ProjectDashboardProps) => {
   const { t } = useTranslation();
+  const { viewMode: projectContextViewMode, userProjects } = useProjectContext();
   const [viewMode, setViewMode] = useState<ViewMode>("self");
   const [stats, setStats] = useState<ProjectDashboardStats>({
     totalTickets: 0,
@@ -59,37 +61,52 @@ const ProjectDashboard = ({ wrapWithLayout = true }: ProjectDashboardProps) => {
     try {
       const token = localStorage.getItem("authToken");
 
-      // Try to get projectId from multiple sources
-      let projectId = localStorage.getItem("projectId");
+      // Unified mode: aggregate across all of the user's projects
+      const isUnified = projectContextViewMode === 'unified';
+
+      // Try to get projectId from multiple sources (used in single-project mode)
+      let projectId = !isUnified ? localStorage.getItem("projectId") : null;
 
       // If not found, try projectContext (used by portal routes)
-      if (!projectId) {
+      if (!isUnified && !projectId) {
         const projectContext = localStorage.getItem("projectContext");
         if (projectContext) {
           try {
             const context = JSON.parse(projectContext);
-            projectId = context.projectId;
+            projectId = context.projectId || null;
           } catch (e) {
             console.error("Failed to parse projectContext:", e);
           }
         }
       }
 
-      if (!projectId) {
+      const params = new URLSearchParams();
+      params.append("viewMode", currentViewMode);
+
+      if (isUnified && userProjects.length > 0) {
+        // Pass all user's project IDs for aggregated stats
+        params.append("projectIds", userProjects.map((p) => p._id).join(","));
+        console.log(
+          "📊 ProjectDashboard (unified): Fetching stats across",
+          userProjects.length,
+          "projects",
+        );
+      } else if (projectId) {
+        params.append("projectId", projectId);
+        console.log(
+          "📊 ProjectDashboard: Fetching stats with viewMode:",
+          currentViewMode,
+          "projectId:",
+          projectId,
+        );
+      } else {
         setError("Project information not found");
         setLoading(false);
         return;
       }
 
-      console.log(
-        "📊 ProjectDashboard: Fetching stats with viewMode:",
-        currentViewMode,
-        "projectId:",
-        projectId,
-      );
-
       const response = await fetch(
-        `${API_CONFIG.API_URL}/tickets/project-dashboard-stats?projectId=${projectId}&viewMode=${currentViewMode}`,
+        `${API_CONFIG.API_URL}/tickets/project-dashboard-stats?${params.toString()}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,

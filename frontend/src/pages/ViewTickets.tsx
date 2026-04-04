@@ -193,7 +193,7 @@ const ViewTickets: React.FC = () => {
 
   const canExport = checkPermission("TICKET_EXPORT");
   const canMerge = checkPermission("TICKET_MERGE");
-  const canDelete = checkPermission("TICKET_VIEW_ALL");
+  const canDelete = checkPermission("TICKET_DELETE");
   const hasViewAll = checkPermission("TICKET_VIEW_ALL");
   const userRole = localStorage.getItem("userRole") || "";
 
