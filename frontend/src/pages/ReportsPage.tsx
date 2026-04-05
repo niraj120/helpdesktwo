@@ -892,7 +892,12 @@ function ReportBuilderSection({
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [catFilter, setCatFilter] = useState("all");
-  const [projectOptions, setProjectOptions] = useState<{ _id: string; name: string }[]>([]);
+  const [projectOptions, setProjectOptions] = useState<
+    { _id: string; name: string }[]
+  >([]);
+  const [openProjectPicker, setOpenProjectPicker] = useState<number | null>(
+    null,
+  );
 
   // Load user's projects for the project filter dropdown
   useEffect(() => {
@@ -1412,9 +1417,17 @@ function ReportBuilderSection({
                   >
                     <select
                       value={f.field}
-                      onChange={(e) =>
-                        updateFilter(i, { field: e.target.value })
-                      }
+                      onChange={(e) => {
+                        const newField = e.target.value;
+                        const patch: Partial<ReportFilter> = {
+                          field: newField,
+                          value: "",
+                        };
+                        if (newField === "ticket_project")
+                          patch.operator = "in";
+                        updateFilter(i, patch);
+                        setOpenProjectPicker(null);
+                      }}
                       style={{
                         flex: 1,
                         padding: "6px 8px",
@@ -1449,45 +1462,140 @@ function ReportBuilderSection({
                       ))}
                     </select>
                     {f.operator !== "is_empty" &&
-                      f.operator !== "is_not_empty" && (
-                        f.field === "ticket_project" && projectOptions.length > 0 ? (
-                          <select
-                            value={f.value}
-                            onChange={(e) =>
-                              updateFilter(i, { value: e.target.value })
-                            }
-                            style={{
-                              flex: 1,
-                              padding: "6px 8px",
-                              border: "1px solid #d1d5db",
-                              borderRadius: 6,
-                              fontSize: 12,
-                            }}
-                          >
-                            <option value="">— select project —</option>
-                            {projectOptions.map((p) => (
-                              <option key={p._id} value={p.name}>
-                                {p.name}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <input
-                            value={f.value}
-                            onChange={(e) =>
-                              updateFilter(i, { value: e.target.value })
-                            }
-                            placeholder="Value"
-                            style={{
-                              flex: 1,
-                              padding: "6px 8px",
-                              border: "1px solid #d1d5db",
-                              borderRadius: 6,
-                              fontSize: 12,
-                            }}
-                          />
-                        )
-                      )}
+                      f.operator !== "is_not_empty" &&
+                      (f.field === "ticket_project" &&
+                      projectOptions.length > 0 ? (() => {
+                        const selectedNames = f.value
+                          ? f.value.split(",").filter(Boolean)
+                          : [];
+                        return (
+                          <div style={{ flex: 1, position: "relative" }}>
+                            <div
+                              onClick={() =>
+                                setOpenProjectPicker(
+                                  openProjectPicker === i ? null : i,
+                                )
+                              }
+                              style={{
+                                padding: "6px 10px",
+                                border: "1px solid #d1d5db",
+                                borderRadius: 6,
+                                fontSize: 12,
+                                cursor: "pointer",
+                                background: "#fff",
+                                minHeight: 32,
+                                display: "flex",
+                                alignItems: "center",
+                                flexWrap: "wrap",
+                                gap: 4,
+                                userSelect: "none",
+                              }}
+                            >
+                              {selectedNames.length === 0 ? (
+                                <span style={{ color: "#9ca3af" }}>
+                                  — select projects —
+                                </span>
+                              ) : (
+                                selectedNames.map((name) => (
+                                  <span
+                                    key={name}
+                                    style={{
+                                      background: "#ede9fe",
+                                      color: "#7c3aed",
+                                      fontSize: 11,
+                                      padding: "1px 7px",
+                                      borderRadius: 10,
+                                      fontWeight: 600,
+                                    }}
+                                  >
+                                    {name}
+                                  </span>
+                                ))
+                              )}
+                              <span
+                                style={{
+                                  marginLeft: "auto",
+                                  color: "#9ca3af",
+                                  fontSize: 10,
+                                }}
+                              >
+                                ▾
+                              </span>
+                            </div>
+                            {openProjectPicker === i && (
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  top: "calc(100% + 4px)",
+                                  left: 0,
+                                  right: 0,
+                                  background: "#fff",
+                                  border: "1px solid #e5e7eb",
+                                  borderRadius: 8,
+                                  boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+                                  zIndex: 200,
+                                  maxHeight: 200,
+                                  overflowY: "auto",
+                                }}
+                              >
+                                {projectOptions.map((p) => {
+                                  const checked = selectedNames.includes(
+                                    p.name,
+                                  );
+                                  return (
+                                    <label
+                                      key={p._id}
+                                      style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 8,
+                                        padding: "7px 12px",
+                                        cursor: "pointer",
+                                        background: checked
+                                          ? "#f5f3ff"
+                                          : "transparent",
+                                      }}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={() => {
+                                          const next = checked
+                                            ? selectedNames.filter(
+                                                (n) => n !== p.name,
+                                              )
+                                            : [...selectedNames, p.name];
+                                          updateFilter(i, {
+                                            value: next.join(","),
+                                          });
+                                        }}
+                                      />
+                                      <span style={{ fontSize: 12 }}>
+                                        {p.name}
+                                      </span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })() : (
+                        <input
+                          value={f.value}
+                          onChange={(e) =>
+                            updateFilter(i, { value: e.target.value })
+                          }
+                          placeholder="Value"
+                          style={{
+                            flex: 1,
+                            padding: "6px 8px",
+                            border: "1px solid #d1d5db",
+                            borderRadius: 6,
+                            fontSize: 12,
+                          }}
+                        />
+                      ))}
                     {f.operator === "between" && (
                       <input
                         value={f.value2 ?? ""}
@@ -1837,9 +1945,14 @@ function SavedReportsSection({
 
   const handleDuplicate = async () => {
     const trimmed = dupName.trim();
-    if (!trimmed) { setDupError("Name is required."); return; }
+    if (!trimmed) {
+      setDupError("Name is required.");
+      return;
+    }
     if (reports.some((r) => r.name.toLowerCase() === trimmed.toLowerCase())) {
-      setDupError("A report with this name already exists. Choose a different name.");
+      setDupError(
+        "A report with this name already exists. Choose a different name.",
+      );
       return;
     }
     const source = reports.find((r) => r._id === dupId);
@@ -2205,7 +2318,14 @@ function SavedReportsSection({
               boxShadow: "0 10px 40px rgba(0,0,0,0.18)",
             }}
           >
-            <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4, color: "#111827" }}>
+            <h3
+              style={{
+                fontSize: 16,
+                fontWeight: 700,
+                marginBottom: 4,
+                color: "#111827",
+              }}
+            >
               Duplicate Report
             </h3>
             <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 16 }}>
@@ -2213,7 +2333,10 @@ function SavedReportsSection({
             </p>
             <input
               value={dupName}
-              onChange={(e) => { setDupName(e.target.value); setDupError(""); }}
+              onChange={(e) => {
+                setDupName(e.target.value);
+                setDupError("");
+              }}
               placeholder="New report name"
               autoFocus
               style={{
@@ -2227,9 +2350,13 @@ function SavedReportsSection({
               }}
             />
             {dupError && (
-              <p style={{ fontSize: 12, color: "#ef4444", marginBottom: 12 }}>{dupError}</p>
+              <p style={{ fontSize: 12, color: "#ef4444", marginBottom: 12 }}>
+                {dupError}
+              </p>
             )}
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <div
+              style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}
+            >
               <button
                 onClick={() => setDupId(null)}
                 style={{
