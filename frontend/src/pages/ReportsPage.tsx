@@ -892,6 +892,20 @@ function ReportBuilderSection({
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [catFilter, setCatFilter] = useState("all");
+  const [projectOptions, setProjectOptions] = useState<{ _id: string; name: string }[]>([]);
+
+  // Load user's projects for the project filter dropdown
+  useEffect(() => {
+    fetch(`${API_CONFIG.API_URL}/projects/my-projects`, {
+      headers: authHeaders(),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        const list = d.projects ?? d.data ?? [];
+        setProjectOptions(list);
+      })
+      .catch(() => {});
+  }, []);
 
   // Pre-populate form when editing an existing report
   useEffect(() => {
@@ -1436,20 +1450,43 @@ function ReportBuilderSection({
                     </select>
                     {f.operator !== "is_empty" &&
                       f.operator !== "is_not_empty" && (
-                        <input
-                          value={f.value}
-                          onChange={(e) =>
-                            updateFilter(i, { value: e.target.value })
-                          }
-                          placeholder="Value"
-                          style={{
-                            flex: 1,
-                            padding: "6px 8px",
-                            border: "1px solid #d1d5db",
-                            borderRadius: 6,
-                            fontSize: 12,
-                          }}
-                        />
+                        f.field === "ticket_project" && projectOptions.length > 0 ? (
+                          <select
+                            value={f.value}
+                            onChange={(e) =>
+                              updateFilter(i, { value: e.target.value })
+                            }
+                            style={{
+                              flex: 1,
+                              padding: "6px 8px",
+                              border: "1px solid #d1d5db",
+                              borderRadius: 6,
+                              fontSize: 12,
+                            }}
+                          >
+                            <option value="">— select project —</option>
+                            {projectOptions.map((p) => (
+                              <option key={p._id} value={p.name}>
+                                {p.name}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            value={f.value}
+                            onChange={(e) =>
+                              updateFilter(i, { value: e.target.value })
+                            }
+                            placeholder="Value"
+                            style={{
+                              flex: 1,
+                              padding: "6px 8px",
+                              border: "1px solid #d1d5db",
+                              borderRadius: 6,
+                              fontSize: 12,
+                            }}
+                          />
+                        )
                       )}
                     {f.operator === "between" && (
                       <input
@@ -1695,6 +1732,11 @@ function SavedReportsSection({
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [dpMap, setDpMap] = useState<Record<string, string>>({});
+  // Duplicate state
+  const [dupId, setDupId] = useState<string | null>(null);
+  const [dupName, setDupName] = useState("");
+  const [dupError, setDupError] = useState("");
+  const [dupSaving, setDupSaving] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -1784,6 +1826,50 @@ function SavedReportsSection({
       setReports((prev) => prev.filter((r) => r._id !== reportId));
     } catch {
       setError("Delete failed");
+    }
+  };
+
+  const openDuplicate = (r: SavedReport) => {
+    setDupId(r._id);
+    setDupName(`${r.name} (Copy)`);
+    setDupError("");
+  };
+
+  const handleDuplicate = async () => {
+    const trimmed = dupName.trim();
+    if (!trimmed) { setDupError("Name is required."); return; }
+    if (reports.some((r) => r.name.toLowerCase() === trimmed.toLowerCase())) {
+      setDupError("A report with this name already exists. Choose a different name.");
+      return;
+    }
+    const source = reports.find((r) => r._id === dupId);
+    if (!source) return;
+    setDupSaving(true);
+    setDupError("");
+    try {
+      const res = await fetch(`${API_CONFIG.API_URL}/reports/saved`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          name: trimmed,
+          description: source.description,
+          dataPoints: source.dataPoints,
+          filters: source.filters,
+          sortBy: source.sortBy,
+          sortOrder: source.sortOrder,
+        }),
+      });
+      const d = await res.json();
+      if (d.success) {
+        setDupId(null);
+        load();
+      } else {
+        setDupError(d.message ?? "Duplicate failed");
+      }
+    } catch {
+      setDupError("Duplicate failed");
+    } finally {
+      setDupSaving(false);
     }
   };
 
@@ -2043,6 +2129,22 @@ function SavedReportsSection({
                         ✎ Edit
                       </button>
                       <button
+                        onClick={() => openDuplicate(r)}
+                        style={{
+                          padding: "4px 10px",
+                          background: "#ede9fe",
+                          color: "#7c3aed",
+                          border: "none",
+                          borderRadius: 6,
+                          fontSize: 11,
+                          cursor: "pointer",
+                          fontWeight: 600,
+                        }}
+                        title="Duplicate this report"
+                      >
+                        ⎘ Copy
+                      </button>
+                      <button
                         onClick={() => handleExport(r._id, r.name)}
                         style={{
                           padding: "4px 10px",
@@ -2078,6 +2180,88 @@ function SavedReportsSection({
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Duplicate Report Modal */}
+      {dupId && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.4)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: 12,
+              padding: 28,
+              width: 420,
+              boxShadow: "0 10px 40px rgba(0,0,0,0.18)",
+            }}
+          >
+            <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4, color: "#111827" }}>
+              Duplicate Report
+            </h3>
+            <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 16 }}>
+              Enter a unique name for the duplicated report.
+            </p>
+            <input
+              value={dupName}
+              onChange={(e) => { setDupName(e.target.value); setDupError(""); }}
+              placeholder="New report name"
+              autoFocus
+              style={{
+                width: "100%",
+                padding: "8px 12px",
+                border: dupError ? "1px solid #ef4444" : "1px solid #d1d5db",
+                borderRadius: 8,
+                fontSize: 13,
+                marginBottom: dupError ? 6 : 16,
+                boxSizing: "border-box",
+              }}
+            />
+            {dupError && (
+              <p style={{ fontSize: 12, color: "#ef4444", marginBottom: 12 }}>{dupError}</p>
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setDupId(null)}
+                style={{
+                  padding: "7px 18px",
+                  border: "1px solid #d1d5db",
+                  borderRadius: 8,
+                  fontSize: 13,
+                  background: "#fff",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDuplicate}
+                disabled={dupSaving}
+                style={{
+                  padding: "7px 18px",
+                  background: "#7c3aed",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 8,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: dupSaving ? "not-allowed" : "pointer",
+                  opacity: dupSaving ? 0.7 : 1,
+                }}
+              >
+                {dupSaving ? "Saving…" : "⎘ Duplicate"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
