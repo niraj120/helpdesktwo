@@ -1,9 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import DashboardLayout from "../components/DashboardLayout";
 import ModuleHeader from "../components/ModuleHeader";
-import TicketListReport from "./TicketListReport";
-import AssetReport from "./AssetReport";
-import EmployeeReport from "./EmployeeReport";
 import { usePermissions } from "../hooks/usePermissions";
 import { PERMISSIONS } from "../constants/permissions";
 import { API_CONFIG } from "../config/constants";
@@ -18,10 +15,7 @@ type Section =
   | "report-builder"
   | "assign-reports"
   | "saved-reports"
-  | "my-reports"
-  | "query"
-  | "asset"
-  | "employee";
+  | "my-reports";
 
 interface RoleOption {
   _id: string;
@@ -116,6 +110,27 @@ const FILTER_OPERATORS = [
   { value: "is_empty", label: "is empty" },
   { value: "is_not_empty", label: "is not empty" },
 ];
+
+// Format a cell value for display: ISO date strings → IST, everything else → String
+function formatCellValue(val: any): string {
+  if (val === null || val === undefined) return "";
+  const s = String(val);
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(s)) {
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleString("en-IN", {
+        timeZone: "Asia/Kolkata",
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      });
+    }
+  }
+  return s;
+}
 
 const CATEGORY_COLORS: Record<string, string> = {
   ticket: "#3b82f6",
@@ -1639,7 +1654,7 @@ function ReportBuilderSection({
                               Array.isArray(row[k]) ? (
                                 row[k].join(", ")
                               ) : (
-                                String(row[k])
+                                formatCellValue(row[k])
                               )
                             ) : (
                               <span style={{ color: "#d1d5db" }}>—</span>
@@ -2160,7 +2175,7 @@ function SavedReportsSection({
                           Array.isArray(row[k]) ? (
                             row[k].join(", ")
                           ) : (
-                            String(row[k])
+                            formatCellValue(row[k])
                           )
                         ) : (
                           <span style={{ color: "#d1d5db" }}>—</span>
@@ -3012,7 +3027,7 @@ function MyReportsSection() {
                                             Array.isArray(row[k]) ? (
                                               row[k].join(", ")
                                             ) : (
-                                              String(row[k])
+                                              formatCellValue(row[k])
                                             )
                                           ) : (
                                             <span style={{ color: "#d1d5db" }}>
@@ -3529,11 +3544,6 @@ const ReportsPage: React.FC<{ wrapWithLayout?: boolean }> = ({
   const canCreate = myModulePerms.canCreate || isAdmin;
   const canAssign = myModulePerms.canAssign || isAdmin;
   const canExport = myModulePerms.canExport || isAdmin;
-  const canViewReports =
-    hasPermission(PERMISSIONS.REPORT_VIEW_TICKETS) || canCreate;
-  const canViewQuery = hasPermission(PERMISSIONS.REPORT_VIEW_QUERY);
-  const canViewAsset = hasPermission(PERMISSIONS.REPORT_VIEW_ASSET);
-  const canViewEmployee = hasPermission(PERMISSIONS.REPORT_VIEW_EMPLOYEE);
 
   const moduleNavItems: {
     section: Section;
@@ -3576,38 +3586,15 @@ const ReportsPage: React.FC<{ wrapWithLayout?: boolean }> = ({
     },
   ];
 
-  const legacyNavItems: {
-    section: Section;
-    label: string;
-    icon: string;
-    show: boolean;
-  }[] = [
-    {
-      section: "query",
-      label: "Query List Report",
-      icon: "📊",
-      show: canViewQuery,
-    },
-    { section: "asset", label: "Asset Report", icon: "📦", show: canViewAsset },
-    {
-      section: "employee",
-      label: "Employee Report",
-      icon: "👥",
-      show: canViewEmployee,
-    },
-  ];
-
   const visibleModule = moduleNavItems.filter((n) => n.show);
-  const visibleLegacy = legacyNavItems.filter((n) => n.show);
 
   // Default to first available section if current one is invisible
   useEffect(() => {
-    const allVisible = [...visibleModule, ...visibleLegacy];
     if (
-      allVisible.length > 0 &&
-      !allVisible.some((n) => n.section === activeSection)
+      visibleModule.length > 0 &&
+      !visibleModule.some((n) => n.section === activeSection)
     ) {
-      setActiveSection(allVisible[0].section);
+      setActiveSection(visibleModule[0].section);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -3666,40 +3653,7 @@ const ReportsPage: React.FC<{ wrapWithLayout?: boolean }> = ({
             </>
           )}
 
-          {visibleLegacy.length > 0 && (
-            <>
-              <div
-                style={{
-                  height: 1,
-                  background: "#f3f4f6",
-                  margin: "8px 4px",
-                }}
-              />
-              <div
-                style={{
-                  padding: "6px 12px 4px",
-                  fontSize: 10,
-                  fontWeight: 700,
-                  color: "#9ca3af",
-                  letterSpacing: "0.1em",
-                  textTransform: "uppercase",
-                }}
-              >
-                Legacy Reports
-              </div>
-              {visibleLegacy.map((item) => (
-                <NavItem
-                  key={item.section}
-                  label={item.label}
-                  icon={item.icon}
-                  active={activeSection === item.section}
-                  onClick={() => setActiveSection(item.section)}
-                />
-              ))}
-            </>
-          )}
-
-          {visibleModule.length === 0 && visibleLegacy.length === 0 && (
+          {visibleModule.length === 0 && (
             <div
               style={{
                 padding: "20px",
@@ -3748,15 +3702,6 @@ const ReportsPage: React.FC<{ wrapWithLayout?: boolean }> = ({
                   setActiveSection("report-builder");
                 }}
               />
-            )}
-            {activeSection === "query" && (
-              <TicketListReport wrapWithLayout={false} />
-            )}
-            {activeSection === "asset" && (
-              <AssetReport wrapWithLayout={false} />
-            )}
-            {activeSection === "employee" && (
-              <EmployeeReport wrapWithLayout={false} />
             )}
           </div>
         </div>

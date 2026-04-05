@@ -60,6 +60,7 @@ export async function logEmailCommunication(
   ticketId: string | mongoose.Types.ObjectId,
   emailData: EmailCommunicationData,
   direction: "incoming" | "outgoing",
+  source?: string,
 ): Promise<any> {
   try {
     console.log(
@@ -136,6 +137,7 @@ export async function logEmailCommunication(
       sentAt: emailData.date || new Date(),
       receivedAt: new Date(),
       status: direction === "incoming" ? "received" : "sent",
+      ...(direction === "incoming" && source ? { inboundSource: source } : {}),
     });
 
     await emailComm.save();
@@ -185,6 +187,7 @@ export async function logIncomingEmail(
     size: number;
     path?: string;
   }>,
+  source?: string,
 ): Promise<any> {
   // Build attachment list: if caller provides pre-uploaded entries (with GCS paths),
   // merge them in so the Email Thread UI can render clickable attachment links.
@@ -215,7 +218,7 @@ export async function logIncomingEmail(
     attachments,
   };
 
-  return logEmailCommunication(ticketId, emailData, "incoming");
+  return logEmailCommunication(ticketId, emailData, "incoming", source);
 }
 
 /**

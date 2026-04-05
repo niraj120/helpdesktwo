@@ -19,6 +19,7 @@ export interface IEmailLog extends Document {
   };
   smtpHost?: string;
   fromEmail?: string;
+  vendor?: string;
   sentAt: Date;
 }
 
@@ -66,6 +67,10 @@ const emailLogSchema = new Schema<IEmailLog>({
   },
   fromEmail: {
     type: String
+  },
+  vendor: {
+    type: String,
+    index: true
   },
   sentAt: {
     type: Date,

@@ -23,8 +23,7 @@ import RedirectToFirstRoute from "../components/RedirectToFirstRoute";
 import EmailConfigPage from "./EmailConfigPage";
 import ProjectDashboard from "./ProjectDashboard";
 import MyAssets from "../components/MyAssets";
-import TicketListReport from "./TicketListReport";
-import AssetReport from "./AssetReport";
+
 import ManpowerReport from "./ManpowerReport";
 import ReportsPage from "./ReportsPage";
 
@@ -1584,30 +1583,6 @@ const ProjectPortalDashboard = () => {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/reports/tickets"
-          element={
-            <ProtectedRoute modulePrefix="REPORT_">
-              <TicketListReport
-                projectId={projectBranding?.projectId}
-                wrapWithLayout={false}
-              />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/reports/assets"
-          element={
-            <ProtectedRoute modulePrefix="REPORT_">
-              <AssetReport
-                projectId={projectBranding?.projectId}
-                wrapWithLayout={false}
-              />
-            </ProtectedRoute>
-          }
-        />
-
         <Route
           path="/reports/manpower"
           element={
