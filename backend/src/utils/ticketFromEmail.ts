@@ -642,7 +642,7 @@ export async function createTicketFromEmail(
       ticket._id,
       parsedEmail,
       attachments,
-      (queueEntry as any)?.metadata?.inboundSource || 'imap',
+      (queueEntry as any)?.metadata?.inboundSource || "imap",
     );
     console.log(`   ✅ Email communication logged (ID: ${emailComm._id})`);
 
@@ -816,7 +816,12 @@ export async function addEmailReplyToTicket(
     }
 
     // 2b. Log email communication with uploaded paths (Task 5.4)
-    const emailComm = await logIncomingEmail(ticket._id, parsedEmail, undefined, (queueEntry as any)?.metadata?.inboundSource || 'imap');
+    const emailComm = await logIncomingEmail(
+      ticket._id,
+      parsedEmail,
+      undefined,
+      (queueEntry as any)?.metadata?.inboundSource || "imap",
+    );
     // Patch the logged email comm with real GCS paths if we uploaded attachments
     if (replyAttachments.length > 0 && emailComm) {
       emailComm.attachments = replyAttachments;

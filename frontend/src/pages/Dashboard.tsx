@@ -562,7 +562,7 @@ const Dashboard = () => {
                   </div>
                 ))}
               </div>
-              {jobLog.errors.length > 0 && (
+              {(jobLog.errors?.length ?? 0) > 0 && (
                 <div>
                   <p
                     style={{
@@ -571,8 +571,8 @@ const Dashboard = () => {
                       fontWeight: 500,
                     }}
                   >
-                    {jobLog.errors.length} error
-                    {jobLog.errors.length !== 1 ? "s" : ""}
+                    {jobLog.errors!.length} error
+                    {jobLog.errors!.length !== 1 ? "s" : ""}
                   </p>
                 </div>
               )}

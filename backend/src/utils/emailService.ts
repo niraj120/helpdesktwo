@@ -71,12 +71,12 @@ const logEmail = async (params: {
 
 // Tracks which delivery vendor was used in the most recent getEmailTransporter call.
 // Safe to read synchronously after awaiting getEmailTransporter() in Node.js single-thread model.
-let _lastTransporterVendor: string = 'simulated';
+let _lastTransporterVendor: string = "simulated";
 
 // Get email transporter from database configuration
 // Supports direct emailConfigId lookup or fallback to projectId
 const getEmailTransporter = async (configIdOrProjectId?: string) => {
-  _lastTransporterVendor = 'simulated'; // reset before each resolution
+  _lastTransporterVendor = "simulated"; // reset before each resolution
   try {
     let emailConfig: any = null;
     let isProjectEmailConfig = false;
@@ -161,7 +161,7 @@ const getEmailTransporter = async (configIdOrProjectId?: string) => {
         console.log(
           `📧 Using SendGrid (ProjectEmailConfig) for delivery (from: ${fromEmail})`,
         );
-        _lastTransporterVendor = 'sendgrid';
+        _lastTransporterVendor = "sendgrid";
         return {
           sendMail: async (options: any) => {
             const msg: any = {
@@ -210,7 +210,7 @@ const getEmailTransporter = async (configIdOrProjectId?: string) => {
         console.log(
           `📧 Using Microsoft Graph API for delivery (from: ${fromEmail})`,
         );
-        _lastTransporterVendor = 'graph';
+        _lastTransporterVendor = "graph";
 
         return {
           sendMail: async (options: any) => {
@@ -365,7 +365,7 @@ const getEmailTransporter = async (configIdOrProjectId?: string) => {
         const fromName = emailConfig.fromName || "SAC Helpdesk";
         sgMail.setApiKey(apiKey);
         // Return a nodemailer-compatible wrapper so all send code works unchanged
-        _lastTransporterVendor = 'sendgrid';
+        _lastTransporterVendor = "sendgrid";
         return {
           sendMail: async (options: any) => {
             const msg: any = {
@@ -417,7 +417,7 @@ const getEmailTransporter = async (configIdOrProjectId?: string) => {
         const fromName = emailConfig.fromName || "SAC Helpdesk";
         sgMail.setApiKey(apiKey);
         console.log(`📧 Using SendGrid for delivery (from: ${fromEmail})`);
-        _lastTransporterVendor = 'sendgrid';
+        _lastTransporterVendor = "sendgrid";
         return {
           sendMail: async (options: any) => {
             const msg: any = {
@@ -521,7 +521,7 @@ const getEmailTransporter = async (configIdOrProjectId?: string) => {
       }
     }
 
-    _lastTransporterVendor = 'smtp';
+    _lastTransporterVendor = "smtp";
     return nodemailer.createTransport({
       host: smtpHost,
       port: smtpPort || 587,
@@ -533,7 +533,7 @@ const getEmailTransporter = async (configIdOrProjectId?: string) => {
     });
   } catch (error) {
     console.error("Failed to get email transporter:", error);
-    _lastTransporterVendor = 'simulated';
+    _lastTransporterVendor = "simulated";
     return null;
   }
 };

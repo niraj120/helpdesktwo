@@ -2666,15 +2666,29 @@ function MyReportsSection() {
                                         typeof filterVal === "object" &&
                                         !Array.isArray(filterVal) &&
                                         filterVal !== null
-                                          ? (filterVal as { from: string; to: string })
+                                          ? (filterVal as {
+                                              from: string;
+                                              to: string;
+                                            })
                                           : { from: "", to: "" };
-                                      const isActive = Boolean(rangeVal.from || rangeVal.to);
+                                      const isActive = Boolean(
+                                        rangeVal.from || rangeVal.to,
+                                      );
                                       return (
                                         <th
                                           key={k}
-                                          style={{ padding: "4px 8px", minWidth: 200 }}
+                                          style={{
+                                            padding: "4px 8px",
+                                            minWidth: 200,
+                                          }}
                                         >
-                                          <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                                          <div
+                                            style={{
+                                              display: "flex",
+                                              gap: 4,
+                                              alignItems: "center",
+                                            }}
+                                          >
                                             <input
                                               type="date"
                                               value={rangeVal.from}
@@ -2683,7 +2697,10 @@ function MyReportsSection() {
                                                   ...prev,
                                                   [report._id]: {
                                                     ...(prev[report._id] ?? {}),
-                                                    [k]: { ...rangeVal, from: e.target.value },
+                                                    [k]: {
+                                                      ...rangeVal,
+                                                      from: e.target.value,
+                                                    },
                                                   },
                                                 }))
                                               }
@@ -2696,11 +2713,21 @@ function MyReportsSection() {
                                                   ? "1px solid #6366f1"
                                                   : "1px solid #d1d5db",
                                                 borderRadius: 4,
-                                                background: isActive ? "#eef2ff" : "#fff",
+                                                background: isActive
+                                                  ? "#eef2ff"
+                                                  : "#fff",
                                                 minWidth: 0,
                                               }}
                                             />
-                                            <span style={{ fontSize: 10, color: "#9ca3af", flexShrink: 0 }}>→</span>
+                                            <span
+                                              style={{
+                                                fontSize: 10,
+                                                color: "#9ca3af",
+                                                flexShrink: 0,
+                                              }}
+                                            >
+                                              →
+                                            </span>
                                             <input
                                               type="date"
                                               value={rangeVal.to}
@@ -2709,7 +2736,10 @@ function MyReportsSection() {
                                                   ...prev,
                                                   [report._id]: {
                                                     ...(prev[report._id] ?? {}),
-                                                    [k]: { ...rangeVal, to: e.target.value },
+                                                    [k]: {
+                                                      ...rangeVal,
+                                                      to: e.target.value,
+                                                    },
                                                   },
                                                 }))
                                               }
@@ -2722,7 +2752,9 @@ function MyReportsSection() {
                                                   ? "1px solid #6366f1"
                                                   : "1px solid #d1d5db",
                                                 borderRadius: 4,
-                                                background: isActive ? "#eef2ff" : "#fff",
+                                                background: isActive
+                                                  ? "#eef2ff"
+                                                  : "#fff",
                                                 minWidth: 0,
                                               }}
                                             />

@@ -81,11 +81,33 @@ interface HealthData {
   lastChecked: Date;
 }
 
+interface ServiceStatus {
+  id: string;
+  name: string;
+  description: string;
+  error: string | null;
+  status: {
+    isActive?: boolean;
+    isRunning?: boolean;
+    isProcessing?: boolean;
+    interval?: string;
+    batchSize?: number;
+    maxEmailsPerFetch?: number;
+    stats?: { totalProcessed: number; successful: number; failed: number };
+    // job queue
+    pending?: number;
+    processing?: number;
+    completed?: number;
+    failed?: number;
+  } | null;
+}
+
 const DBMonitoringDashboard: React.FC = () => {
   const [stats, setStats] = useState<DBStats | null>(null);
   const [health, setHealth] = useState<HealthData | null>(null);
   const [slowQueries, setSlowQueries] = useState<QueryMetric[]>([]);
   const [alerts, setAlerts] = useState<AlertEvent[]>([]);
+  const [services, setServices] = useState<ServiceStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -126,6 +148,17 @@ const DBMonitoringDashboard: React.FC = () => {
       if (healthRes.data.success) setHealth(healthRes.data.data);
       if (slowRes.data.success) setSlowQueries(slowRes.data.data.queries || []);
       if (alertsRes.data.success) setAlerts(alertsRes.data.data.alerts || []);
+
+      // Fetch service statuses (non-critical, ignore failure)
+      try {
+        const servicesRes = await axios.get(`${API_BASE_URL}/db-monitoring/services`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (servicesRes.data.success) setServices(servicesRes.data.data.services || []);
+      } catch {
+        // non-critical
+      }
+
       setError('');
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : 'Failed to fetch monitoring data';
@@ -200,13 +233,13 @@ const DBMonitoringDashboard: React.FC = () => {
 
     eventSource.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'stats') {
-          setStats(data.stats);
-        } else if (data.type === 'alert') {
-          setAlerts((prev) => [data.alert, ...prev.slice(0, 49)]);
-        } else if (data.type === 'slow_query') {
-          setSlowQueries((prev) => [data.query, ...prev.slice(0, 19)]);
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'stats') {
+          setStats(msg.data);
+        } else if (msg.type === 'alert') {
+          setAlerts((prev) => [msg.data, ...prev.slice(0, 49)]);
+        } else if (msg.type === 'slow_query') {
+          setSlowQueries((prev) => [msg.data, ...prev.slice(0, 19)]);
         }
       } catch (err) {
         console.error('Error parsing SSE data:', err);
@@ -637,6 +670,105 @@ const DBMonitoringDashboard: React.FC = () => {
             )}
           </div>
         </div>
+
+        {/* Polling Services Section */}
+        {services.length > 0 && (
+          <div className="bg-white rounded-lg shadow">
+            <div className="p-4 border-b">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <ServerStackIcon className="h-5 w-5 text-indigo-500" />
+                Background Services
+              </h3>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-0 divide-x divide-y">
+              {services.map((svc) => {
+                const isActive = svc.status?.isActive ?? svc.status?.isRunning ?? false;
+                const isProcessing = svc.status?.isProcessing ?? false;
+                return (
+                  <div key={svc.id} className="p-4">
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div>
+                        <p className="font-semibold text-sm text-gray-800">{svc.name}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">{svc.description}</p>
+                      </div>
+                      <span className={`flex-shrink-0 flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${
+                        svc.error ? 'bg-red-100 text-red-700' :
+                        isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                      }`}>
+                        {svc.error ? (
+                          <><XCircleIcon className="h-3 w-3" />Error</>
+                        ) : isActive ? (
+                          <><CheckCircleIcon className="h-3 w-3" />{isProcessing ? 'Running' : 'Active'}</>
+                        ) : (
+                          <><XCircleIcon className="h-3 w-3" />Stopped</>
+                        )}
+                      </span>
+                    </div>
+                    <div className="space-y-1 text-xs text-gray-500">
+                      {svc.status?.interval && (
+                        <div className="flex justify-between">
+                          <span>Interval</span>
+                          <span className="font-mono text-gray-700">{svc.status.interval}</span>
+                        </div>
+                      )}
+                      {svc.status?.batchSize !== undefined && (
+                        <div className="flex justify-between">
+                          <span>Batch size</span>
+                          <span className="font-medium text-gray-700">{svc.status.batchSize}</span>
+                        </div>
+                      )}
+                      {svc.status?.maxEmailsPerFetch !== undefined && (
+                        <div className="flex justify-between">
+                          <span>Max per fetch</span>
+                          <span className="font-medium text-gray-700">{svc.status.maxEmailsPerFetch}</span>
+                        </div>
+                      )}
+                      {svc.status?.stats && (
+                        <>
+                          <div className="flex justify-between">
+                            <span>Processed</span>
+                            <span className="font-medium text-gray-700">{svc.status.stats.totalProcessed}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-green-600">Success</span>
+                            <span className="font-medium text-green-700">{svc.status.stats.successful}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-red-500">Failed</span>
+                            <span className="font-medium text-red-600">{svc.status.stats.failed}</span>
+                          </div>
+                        </>
+                      )}
+                      {svc.status?.pending !== undefined && (
+                        <>
+                          <div className="flex justify-between">
+                            <span>Pending</span>
+                            <span className="font-medium text-yellow-600">{svc.status.pending}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Processing</span>
+                            <span className="font-medium text-blue-600">{svc.status.processing}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Completed</span>
+                            <span className="font-medium text-green-600">{svc.status.completed}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-red-500">Failed</span>
+                            <span className="font-medium text-red-600">{svc.status.failed}</span>
+                          </div>
+                        </>
+                      )}
+                      {svc.error && (
+                        <p className="text-red-500 mt-1 truncate" title={svc.error}>{svc.error}</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Slow Queries Section */}
         <div className="bg-white rounded-lg shadow">

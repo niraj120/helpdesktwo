@@ -14,6 +14,10 @@ import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { requireSuperAdmin } from '../middleware/roleCheck';
 import { dbMonitoringService } from '../services/dbMonitoringService';
 import { enableQueryProfiling, disableQueryProfiling, isQueryProfilingEnabled } from '../middleware/queryProfiler';
+import { emailPollingService } from '../services/emailPollingService';
+import { emailProcessingWorker } from '../services/emailProcessingWorker';
+import { autoEscalationService } from '../services/autoEscalationService';
+import { jobQueue } from '../services/jobQueue';
 
 const router = express.Router();
 
@@ -216,11 +220,16 @@ router.post('/reset', async (req: AuthRequest, res) => {
  */
 router.post('/configure', async (req: AuthRequest, res) => {
   try {
-    const { slowQueryThresholdMs, connectionPoolCheckInterval, metricsRetentionMs } = req.body;
+    const {
+      slowQueryThresholdMs,
+      connectionPoolCheckInterval,
+      connectionPoolCheckIntervalMs,
+      metricsRetentionMs,
+    } = req.body;
     
     dbMonitoringService.configure({
       slowQueryThresholdMs,
-      connectionPoolCheckInterval,
+      connectionPoolCheckInterval: connectionPoolCheckInterval ?? connectionPoolCheckIntervalMs,
       metricsRetentionMs,
     });
     
@@ -247,26 +256,37 @@ router.get('/health', async (req: AuthRequest, res) => {
     // Calculate health score (0-100)
     let healthScore = 100;
     let issues: string[] = [];
+    let components: Array<{ name: string; status: 'healthy' | 'degraded' | 'critical'; message: string }> = [];
     
     // Connection state check
     if (stats.connectionState !== 'connected') {
       healthScore -= 50;
       issues.push('Database not connected');
+      components.push({ name: 'Connection', status: 'critical', message: 'Database not connected' });
+    } else {
+      components.push({ name: 'Connection', status: 'healthy', message: `Connected (${stats.host})` });
     }
     
     // Slow query check
     if (stats.slowQueryCount > 10) {
       healthScore -= 10;
       issues.push(`${stats.slowQueryCount} slow queries in last hour`);
+      components.push({ name: 'Slow Queries', status: 'degraded', message: `${stats.slowQueryCount} slow queries detected` });
+    } else {
+      components.push({ name: 'Slow Queries', status: 'healthy', message: `${stats.slowQueryCount} slow queries` });
     }
     
     // Average latency check
     if (stats.avgQueryTimeMs > 100) {
       healthScore -= 20;
       issues.push(`High average query latency: ${stats.avgQueryTimeMs.toFixed(1)}ms`);
+      components.push({ name: 'Latency', status: 'critical', message: `Avg ${stats.avgQueryTimeMs.toFixed(1)}ms` });
     } else if (stats.avgQueryTimeMs > 50) {
       healthScore -= 10;
       issues.push(`Elevated query latency: ${stats.avgQueryTimeMs.toFixed(1)}ms`);
+      components.push({ name: 'Latency', status: 'degraded', message: `Avg ${stats.avgQueryTimeMs.toFixed(1)}ms` });
+    } else {
+      components.push({ name: 'Latency', status: 'healthy', message: `Avg ${stats.avgQueryTimeMs.toFixed(1)}ms` });
     }
     
     // Connection pool check
@@ -277,10 +297,16 @@ router.get('/health', async (req: AuthRequest, res) => {
       if (usagePercent > 90) {
         healthScore -= 20;
         issues.push('Connection pool nearly exhausted');
+        components.push({ name: 'Connection Pool', status: 'critical', message: `${usagePercent.toFixed(0)}% used` });
       } else if (usagePercent > 70) {
         healthScore -= 10;
         issues.push('Connection pool usage high');
+        components.push({ name: 'Connection Pool', status: 'degraded', message: `${usagePercent.toFixed(0)}% used` });
+      } else {
+        components.push({ name: 'Connection Pool', status: 'healthy', message: `${usagePercent.toFixed(0)}% used` });
       }
+    } else {
+      components.push({ name: 'Connection Pool', status: 'healthy', message: 'No pool data yet' });
     }
     
     // Recent critical alerts
@@ -305,9 +331,11 @@ router.get('/health', async (req: AuthRequest, res) => {
     return res.json({
       success: true,
       data: {
-        healthScore,
+        score: healthScore,
         status,
+        components,
         issues,
+        lastChecked: new Date(),
         metrics: {
           connectionState: stats.connectionState,
           queryCount: stats.queryCount,
@@ -343,7 +371,7 @@ router.get('/realtime', async (req: AuthRequest, res) => {
     res.write(`data: ${JSON.stringify({ type, data, timestamp: new Date() })}\n\n`);
   };
 
-  const onSlowQuery = (query: any) => sendEvent('slowQuery', query);
+  const onSlowQuery = (query: any) => sendEvent('slow_query', query);
   const onAlert = (alert: any) => sendEvent('alert', alert);
   const onConnectionPool = (metrics: any) => sendEvent('connectionPool', metrics);
 
@@ -355,12 +383,7 @@ router.get('/realtime', async (req: AuthRequest, res) => {
   const statsInterval = setInterval(async () => {
     try {
       const stats = await dbMonitoringService.getStats();
-      sendEvent('stats', {
-        queryCount: stats.queryCount,
-        avgQueryTimeMs: stats.avgQueryTimeMs,
-        slowQueryCount: stats.slowQueryCount,
-        connectionPool: stats.connectionPool,
-      });
+      sendEvent('stats', stats);
     } catch {
       // Ignore errors
     }
@@ -375,9 +398,58 @@ router.get('/realtime', async (req: AuthRequest, res) => {
   });
 });
 
+/**
+ * GET /api/db-monitoring/services
+ * Get status of all background polling/worker services
+ */
+router.get('/services', async (req: AuthRequest, res) => {
+  try {
+    const [pollingStatus, workerStatus, escalationStatus, queueStats] = await Promise.allSettled([
+      Promise.resolve(emailPollingService.getStatus()),
+      Promise.resolve(emailProcessingWorker.getStatus()),
+      Promise.resolve(autoEscalationService.getStatus()),
+      jobQueue.getStats(),
+    ]);
+
+    const services = [
+      {
+        id: 'email_polling',
+        name: 'Email Polling',
+        description: 'Polls IMAP and Microsoft Graph for incoming emails',
+        status: pollingStatus.status === 'fulfilled' ? pollingStatus.value : null,
+        error: pollingStatus.status === 'rejected' ? String(pollingStatus.reason) : null,
+      },
+      {
+        id: 'email_processing_worker',
+        name: 'Email Processing Worker',
+        description: 'Processes queued emails and creates/updates tickets',
+        status: workerStatus.status === 'fulfilled' ? workerStatus.value : null,
+        error: workerStatus.status === 'rejected' ? String(workerStatus.reason) : null,
+      },
+      {
+        id: 'auto_escalation',
+        name: 'Auto Escalation',
+        description: 'Checks SLA breaches and escalates overdue tickets every 5 minutes',
+        status: escalationStatus.status === 'fulfilled' ? escalationStatus.value : null,
+        error: escalationStatus.status === 'rejected' ? String(escalationStatus.reason) : null,
+      },
+      {
+        id: 'job_queue',
+        name: 'Job Queue',
+        description: 'MongoDB-backed job queue with priority scheduling and retry',
+        status: queueStats.status === 'fulfilled' ? queueStats.value : null,
+        error: queueStats.status === 'rejected' ? String(queueStats.reason) : null,
+      },
+    ];
+
+    return res.json({ success: true, data: { services, timestamp: new Date() } });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Helper function to format uptime
-function formatUptime(ms: number): string {
-  const seconds = Math.floor(ms / 1000);
+function formatUptime(ms: number): string {  const seconds = Math.floor(ms / 1000);
   const minutes = Math.floor(seconds / 60);
   const hours = Math.floor(minutes / 60);
   const days = Math.floor(hours / 24);

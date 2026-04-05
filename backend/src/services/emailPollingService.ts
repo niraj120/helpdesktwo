@@ -892,7 +892,7 @@ class EmailPollingService {
           subject: emailData.subject,
           messageId: emailData.messageId,
           size: emailSize,
-          inboundSource: config.inboundMethod || 'imap',
+          inboundSource: config.inboundMethod || "imap",
         },
       });
 

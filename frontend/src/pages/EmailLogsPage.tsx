@@ -193,28 +193,48 @@ const EmailLogsPage = () => {
 
   const getVendorInfo = (vendor?: string): { label: string; color: string } => {
     switch (vendor) {
-      case "sendgrid": return { label: "SendGrid", color: "#6366f1" };
-      case "graph":    return { label: "MS Graph", color: "#0078d4" };
-      case "smtp":     return { label: "SMTP",     color: "#10b981" };
-      case "simulated":return { label: "Simulated",color: "#6b7280" };
-      default:         return { label: vendor || "—", color: "#9ca3af" };
+      case "sendgrid":
+        return { label: "SendGrid", color: "#6366f1" };
+      case "graph":
+        return { label: "MS Graph", color: "#0078d4" };
+      case "smtp":
+        return { label: "SMTP", color: "#10b981" };
+      case "simulated":
+        return { label: "Simulated", color: "#6b7280" };
+      default:
+        return { label: vendor || "—", color: "#9ca3af" };
     }
   };
 
   const getSourceInfo = (source?: string): { label: string; color: string } => {
     switch (source) {
-      case "imap":     return { label: "IMAP",      color: "#10b981" };
-      case "graph":    return { label: "Graph API", color: "#0078d4" };
-      case "sendgrid": return { label: "SendGrid",  color: "#6366f1" };
-      case "webhook":  return { label: "Webhook",   color: "#f59e0b" };
-      default:         return { label: source || "—", color: "#9ca3af" };
+      case "imap":
+        return { label: "IMAP", color: "#10b981" };
+      case "graph":
+        return { label: "Graph API", color: "#0078d4" };
+      case "sendgrid":
+        return { label: "SendGrid", color: "#6366f1" };
+      case "webhook":
+        return { label: "Webhook", color: "#f59e0b" };
+      default:
+        return { label: source || "—", color: "#9ca3af" };
     }
   };
 
   const getVendorBadge = (vendor?: string) => {
     const { label, color } = getVendorInfo(vendor);
     return (
-      <span style={{ padding: "3px 10px", borderRadius: "10px", fontSize: "11px", fontWeight: "600", background: `${color}18`, color, border: `1px solid ${color}40` }}>
+      <span
+        style={{
+          padding: "3px 10px",
+          borderRadius: "10px",
+          fontSize: "11px",
+          fontWeight: "600",
+          background: `${color}18`,
+          color,
+          border: `1px solid ${color}40`,
+        }}
+      >
         {label}
       </span>
     );
@@ -223,7 +243,17 @@ const EmailLogsPage = () => {
   const getSourceBadge = (source?: string) => {
     const { label, color } = getSourceInfo(source);
     return (
-      <span style={{ padding: "3px 10px", borderRadius: "10px", fontSize: "11px", fontWeight: "600", background: `${color}18`, color, border: `1px solid ${color}40` }}>
+      <span
+        style={{
+          padding: "3px 10px",
+          borderRadius: "10px",
+          fontSize: "11px",
+          fontWeight: "600",
+          background: `${color}18`,
+          color,
+          border: `1px solid ${color}40`,
+        }}
+      >
         {label}
       </span>
     );
@@ -1074,7 +1104,9 @@ const EmailLogsPage = () => {
                           <td
                             style={{ padding: "12px 16px", fontSize: "14px" }}
                           >
-                            {getSourceBadge((email as IncomingEmail).inboundSource)}
+                            {getSourceBadge(
+                              (email as IncomingEmail).inboundSource,
+                            )}
                           </td>
                           <td
                             style={{ padding: "12px 16px", fontSize: "14px" }}
@@ -1475,7 +1507,9 @@ const EmailLogsPage = () => {
                     >
                       Inbound Source
                     </label>
-                    {getSourceBadge((selectedLog as IncomingEmail).inboundSource)}
+                    {getSourceBadge(
+                      (selectedLog as IncomingEmail).inboundSource,
+                    )}
                   </div>
 
                   <div style={{ marginBottom: "16px" }}>
