@@ -26,6 +26,7 @@ export interface ITicketEmailCommunication extends Document {
     size: number;
     path?: string;
   }[];
+  inboundSource?: string; // Source protocol: 'imap', 'graph', 'sendgrid', 'webhook'
   isProcessed: boolean; // Whether email has been processed into ticket
   processingError?: string; // Any error that occurred during processing
   sentAt?: Date; // When email was sent
@@ -143,6 +144,10 @@ const TicketEmailCommunicationSchema: Schema = new Schema(
         path: { type: String },
       },
     ],
+    inboundSource: {
+      type: String,
+      index: true,
+    },
     isProcessed: {
       type: Boolean,
       default: false,

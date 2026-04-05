@@ -4913,10 +4913,13 @@ export const getProjectDashboardStats = async (req: Request, res: Response) => {
 
     // Support unified mode: projectIds is comma-separated list of project IDs
     const projectIdList = projectIds
-      ? (projectIds as string).split(",").map((id) => id.trim()).filter(Boolean)
+      ? (projectIds as string)
+          .split(",")
+          .map((id) => id.trim())
+          .filter(Boolean)
       : projectId
-      ? [projectId as string]
-      : [];
+        ? [projectId as string]
+        : [];
 
     if (projectIdList.length > 1) {
       // Multiple projects (unified mode): $or across all of them

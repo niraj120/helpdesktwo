@@ -1,9 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import DashboardLayout from "../components/DashboardLayout";
 import ModuleHeader from "../components/ModuleHeader";
-import TicketListReport from "./TicketListReport";
-import AssetReport from "./AssetReport";
-import EmployeeReport from "./EmployeeReport";
 import { usePermissions } from "../hooks/usePermissions";
 import { PERMISSIONS } from "../constants/permissions";
 import { API_CONFIG } from "../config/constants";
@@ -18,10 +15,7 @@ type Section =
   | "report-builder"
   | "assign-reports"
   | "saved-reports"
-  | "my-reports"
-  | "query"
-  | "asset"
-  | "employee";
+  | "my-reports";
 
 interface RoleOption {
   _id: string;
@@ -116,6 +110,27 @@ const FILTER_OPERATORS = [
   { value: "is_empty", label: "is empty" },
   { value: "is_not_empty", label: "is not empty" },
 ];
+
+// Format a cell value for display: ISO date strings → IST, everything else → String
+function formatCellValue(val: any): string {
+  if (val === null || val === undefined) return "";
+  const s = String(val);
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(s)) {
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleString("en-IN", {
+        timeZone: "Asia/Kolkata",
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      });
+    }
+  }
+  return s;
+}
 
 const CATEGORY_COLORS: Record<string, string> = {
   ticket: "#3b82f6",
@@ -854,7 +869,15 @@ function DataPointsSection() {
 // Section: Report Builder
 // ─────────────────────────────────────────────────────────────────────────────
 
-function ReportBuilderSection({ onSaved }: { onSaved?: () => void }) {
+function ReportBuilderSection({
+  onSaved,
+  editingReport,
+  onCancelEdit,
+}: {
+  onSaved?: () => void;
+  editingReport?: SavedReport | null;
+  onCancelEdit?: () => void;
+}) {
   const [dataPoints, setDataPoints] = useState<DataPoint[]>([]);
   const [dpLoading, setDpLoading] = useState(true);
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
@@ -869,6 +892,32 @@ function ReportBuilderSection({ onSaved }: { onSaved?: () => void }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [catFilter, setCatFilter] = useState("all");
+
+  // Pre-populate form when editing an existing report
+  useEffect(() => {
+    if (editingReport) {
+      setReportName(editingReport.name);
+      setReportDesc(editingReport.description ?? "");
+      setSelectedKeys([...editingReport.dataPoints]);
+      setFilters(editingReport.filters ? [...editingReport.filters] : []);
+      setSortBy(editingReport.sortBy ?? "ticket_created_at");
+      setSortOrder((editingReport.sortOrder as "asc" | "desc") ?? "desc");
+      setPreviewRows([]);
+      setError("");
+      setSuccess("");
+    } else {
+      // Cleared (new report mode)
+      setReportName("");
+      setReportDesc("");
+      setSelectedKeys([]);
+      setFilters([]);
+      setSortBy("ticket_created_at");
+      setSortOrder("desc");
+      setPreviewRows([]);
+      setError("");
+      setSuccess("");
+    }
+  }, [editingReport]);
 
   const loadDataPoints = () => {
     setDpLoading(true);
@@ -951,9 +1000,13 @@ function ReportBuilderSection({ onSaved }: { onSaved?: () => void }) {
     setSaving(true);
     setError("");
     setSuccess("");
+    const isEditing = Boolean(editingReport?._id);
+    const url = isEditing
+      ? `${API_CONFIG.API_URL}/reports/saved/${editingReport!._id}`
+      : `${API_CONFIG.API_URL}/reports/saved`;
     try {
-      const res = await fetch(`${API_CONFIG.API_URL}/reports/saved`, {
-        method: "POST",
+      const res = await fetch(url, {
+        method: isEditing ? "PUT" : "POST",
         headers: authHeaders(),
         body: JSON.stringify({
           name: reportName,
@@ -966,16 +1019,22 @@ function ReportBuilderSection({ onSaved }: { onSaved?: () => void }) {
       });
       const d = await res.json();
       if (d.success) {
-        setSuccess("Report saved successfully!");
-        setReportName("");
-        setReportDesc("");
-        setSelectedKeys([]);
-        setFilters([]);
-        setPreviewRows([]);
+        setSuccess(
+          isEditing
+            ? "Report updated successfully!"
+            : "Report saved successfully!",
+        );
+        if (!isEditing) {
+          setReportName("");
+          setReportDesc("");
+          setSelectedKeys([]);
+          setFilters([]);
+          setPreviewRows([]);
+        }
         onSaved?.();
       } else setError(d.message);
     } catch {
-      setError("Save failed");
+      setError(isEditing ? "Update failed" : "Save failed");
     } finally {
       setSaving(false);
     }
@@ -990,13 +1049,47 @@ function ReportBuilderSection({ onSaved }: { onSaved?: () => void }) {
   return (
     <div>
       <div style={{ marginBottom: 20 }}>
-        <h2
-          style={{ fontSize: 18, fontWeight: 700, color: "#111827", margin: 0 }}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            marginBottom: 4,
+          }}
         >
-          Report Builder
-        </h2>
+          <h2
+            style={{
+              fontSize: 18,
+              fontWeight: 700,
+              color: "#111827",
+              margin: 0,
+            }}
+          >
+            {editingReport
+              ? `Edit Report: ${editingReport.name}`
+              : "Report Builder"}
+          </h2>
+          {editingReport && (
+            <button
+              onClick={onCancelEdit}
+              style={{
+                padding: "3px 10px",
+                fontSize: 12,
+                border: "1px solid #d1d5db",
+                borderRadius: 6,
+                background: "#fff",
+                color: "#6b7280",
+                cursor: "pointer",
+              }}
+            >
+              ✕ Cancel
+            </button>
+          )}
+        </div>
         <p style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
-          Select data points, add filters, name your report and save.
+          {editingReport
+            ? "Modify data points, filters, or settings, then save your changes."
+            : "Select data points, add filters, name your report and save."}
         </p>
       </div>
       {error && <ErrorBanner msg={error} />}
@@ -1472,7 +1565,11 @@ function ReportBuilderSection({ onSaved }: { onSaved?: () => void }) {
                   cursor: "pointer",
                 }}
               >
-                {saving ? "Saving…" : "💾 Save Report"}
+                {saving
+                  ? "Saving…"
+                  : editingReport
+                    ? "💾 Update Report"
+                    : "💾 Save Report"}
               </button>
             </div>
           </div>
@@ -1557,7 +1654,7 @@ function ReportBuilderSection({ onSaved }: { onSaved?: () => void }) {
                               Array.isArray(row[k]) ? (
                                 row[k].join(", ")
                               ) : (
-                                String(row[k])
+                                formatCellValue(row[k])
                               )
                             ) : (
                               <span style={{ color: "#d1d5db" }}>—</span>
@@ -1931,6 +2028,21 @@ function SavedReportsSection({
                         {running === r._id ? "…" : "▶ Run"}
                       </button>
                       <button
+                        onClick={() => onEdit?.(r)}
+                        style={{
+                          padding: "4px 10px",
+                          background: "#fef3c7",
+                          color: "#d97706",
+                          border: "none",
+                          borderRadius: 6,
+                          fontSize: 11,
+                          cursor: "pointer",
+                          fontWeight: 600,
+                        }}
+                      >
+                        ✎ Edit
+                      </button>
+                      <button
                         onClick={() => handleExport(r._id, r.name)}
                         style={{
                           padding: "4px 10px",
@@ -2063,7 +2175,7 @@ function SavedReportsSection({
                           Array.isArray(row[k]) ? (
                             row[k].join(", ")
                           ) : (
-                            String(row[k])
+                            formatCellValue(row[k])
                           )
                         ) : (
                           <span style={{ color: "#d1d5db" }}>—</span>
@@ -2096,9 +2208,12 @@ function MyReportsSection() {
   } | null>(null);
   const [dpMap, setDpMap] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
-  // columnFilters: { [reportId]: { [colKey]: string (text) | string[] (multi-select) } }
+  // columnFilters: { [reportId]: { [colKey]: string | string[] | { from: string; to: string } } }
   const [columnFilters, setColumnFilters] = useState<
-    Record<string, Record<string, string | string[]>>
+    Record<
+      string,
+      Record<string, string | string[] | { from: string; to: string }>
+    >
   >({});
   // openDropdown: "reportId:colKey" or null
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
@@ -2134,6 +2249,16 @@ function MyReportsSection() {
   // Columns with ≤15 distinct values get a multi-select dropdown
   const shouldUseDropdown = (rows: any[], colKey: string): boolean =>
     getDistinctValues(rows, colKey).length <= 15;
+
+  // Returns true if a column contains date/datetime values
+  const isDateColumn = (rows: any[], colKey: string): boolean => {
+    if (/(_at|_date|date_|_time)$/i.test(colKey)) return true;
+    const sample = rows
+      .slice(0, 5)
+      .map((r) => r[colKey])
+      .filter(Boolean);
+    return sample.some((v) => /^\d{4}-\d{2}-\d{2}/.test(String(v)));
+  };
 
   useEffect(() => {
     setLoading(true);
@@ -2190,25 +2315,56 @@ function MyReportsSection() {
     dataPoints: string[],
   ) => {
     const filters = columnFilters[reportId] ?? {};
-    const hasActive = Object.values(filters).some((v) =>
-      Array.isArray(v) ? v.length > 0 : Boolean(v),
-    );
+    const hasActive = Object.values(filters).some((v) => {
+      if (Array.isArray(v)) return v.length > 0;
+      if (typeof v === "object" && v !== null) return Boolean(v.from || v.to);
+      return Boolean(v);
+    });
     if (!hasActive) return rows;
     return rows.filter((row) =>
       dataPoints.every((k) => {
         const filter = filters[k];
-        if (!filter || (Array.isArray(filter) ? filter.length === 0 : !filter))
+        if (!filter) return true;
+        if (Array.isArray(filter)) {
+          if (filter.length === 0) return true;
+          const cell =
+            row[k] !== null && row[k] !== undefined
+              ? Array.isArray(row[k])
+                ? row[k].join(", ")
+                : String(row[k])
+              : "";
+          return filter.some((f) => cell.toLowerCase() === f.toLowerCase());
+        }
+        if (
+          typeof filter === "object" &&
+          ("from" in filter || "to" in filter)
+        ) {
+          const { from, to } = filter as { from: string; to: string };
+          if (!from && !to) return true;
+          const raw = row[k];
+          if (raw === null || raw === undefined) return false;
+          const cellDate = new Date(String(raw));
+          if (isNaN(cellDate.getTime())) return false;
+          if (from) {
+            const fromDate = new Date(from);
+            fromDate.setHours(0, 0, 0, 0);
+            if (cellDate < fromDate) return false;
+          }
+          if (to) {
+            const toDate = new Date(to);
+            toDate.setHours(23, 59, 59, 999);
+            if (cellDate > toDate) return false;
+          }
           return true;
+        }
+        // Text filter
+        if (!filter) return true;
         const cell =
           row[k] !== null && row[k] !== undefined
             ? Array.isArray(row[k])
               ? row[k].join(", ")
               : String(row[k])
             : "";
-        if (Array.isArray(filter)) {
-          // Multi-select: cell must equal one of the selected options
-          return filter.some((f) => cell.toLowerCase() === f.toLowerCase());
-        }
         return cell
           .toLowerCase()
           .includes((filter as string).toLowerCase().trim());
@@ -2414,7 +2570,12 @@ function MyReportsSection() {
                         result.dataPoints,
                       );
                       const activeFilterCount = Object.values(filters).filter(
-                        (v) => (Array.isArray(v) ? v.length > 0 : Boolean(v)),
+                        (v) => {
+                          if (Array.isArray(v)) return v.length > 0;
+                          if (typeof v === "object" && v !== null)
+                            return Boolean((v as any).from || (v as any).to);
+                          return Boolean(v);
+                        },
                       ).length;
                       return (
                         <>
@@ -2498,6 +2659,110 @@ function MyReportsSection() {
                                     const ddKey = `${report._id}:${k}`;
                                     const isOpen = openDropdown === ddKey;
                                     const filterVal = filters[k];
+
+                                    // ── Date range filter ──────────────────
+                                    if (isDateColumn(result.rows, k)) {
+                                      const rangeVal =
+                                        typeof filterVal === "object" &&
+                                        !Array.isArray(filterVal) &&
+                                        filterVal !== null
+                                          ? (filterVal as {
+                                              from: string;
+                                              to: string;
+                                            })
+                                          : { from: "", to: "" };
+                                      const isActive = Boolean(
+                                        rangeVal.from || rangeVal.to,
+                                      );
+                                      return (
+                                        <th
+                                          key={k}
+                                          style={{
+                                            padding: "4px 8px",
+                                            minWidth: 200,
+                                          }}
+                                        >
+                                          <div
+                                            style={{
+                                              display: "flex",
+                                              gap: 4,
+                                              alignItems: "center",
+                                            }}
+                                          >
+                                            <input
+                                              type="date"
+                                              value={rangeVal.from}
+                                              onChange={(e) =>
+                                                setColumnFilters((prev) => ({
+                                                  ...prev,
+                                                  [report._id]: {
+                                                    ...(prev[report._id] ?? {}),
+                                                    [k]: {
+                                                      ...rangeVal,
+                                                      from: e.target.value,
+                                                    },
+                                                  },
+                                                }))
+                                              }
+                                              title="From date"
+                                              style={{
+                                                flex: 1,
+                                                fontSize: 10,
+                                                padding: "3px 4px",
+                                                border: isActive
+                                                  ? "1px solid #6366f1"
+                                                  : "1px solid #d1d5db",
+                                                borderRadius: 4,
+                                                background: isActive
+                                                  ? "#eef2ff"
+                                                  : "#fff",
+                                                minWidth: 0,
+                                              }}
+                                            />
+                                            <span
+                                              style={{
+                                                fontSize: 10,
+                                                color: "#9ca3af",
+                                                flexShrink: 0,
+                                              }}
+                                            >
+                                              →
+                                            </span>
+                                            <input
+                                              type="date"
+                                              value={rangeVal.to}
+                                              onChange={(e) =>
+                                                setColumnFilters((prev) => ({
+                                                  ...prev,
+                                                  [report._id]: {
+                                                    ...(prev[report._id] ?? {}),
+                                                    [k]: {
+                                                      ...rangeVal,
+                                                      to: e.target.value,
+                                                    },
+                                                  },
+                                                }))
+                                              }
+                                              title="To date"
+                                              style={{
+                                                flex: 1,
+                                                fontSize: 10,
+                                                padding: "3px 4px",
+                                                border: isActive
+                                                  ? "1px solid #6366f1"
+                                                  : "1px solid #d1d5db",
+                                                borderRadius: 4,
+                                                background: isActive
+                                                  ? "#eef2ff"
+                                                  : "#fff",
+                                                minWidth: 0,
+                                              }}
+                                            />
+                                          </div>
+                                        </th>
+                                      );
+                                    }
+
                                     const selectedArr = Array.isArray(filterVal)
                                       ? (filterVal as string[])
                                       : [];
@@ -2794,7 +3059,7 @@ function MyReportsSection() {
                                             Array.isArray(row[k]) ? (
                                               row[k].join(", ")
                                             ) : (
-                                              String(row[k])
+                                              formatCellValue(row[k])
                                             )
                                           ) : (
                                             <span style={{ color: "#d1d5db" }}>
@@ -3267,6 +3532,7 @@ const ReportsPage: React.FC<{ wrapWithLayout?: boolean }> = ({
   const { hasPermission } = usePermissions();
   const [activeSection, setActiveSection] = useState<Section>("my-reports");
   const [savedCount, setSavedCount] = useState<number | null>(null);
+  const [editingReport, setEditingReport] = useState<SavedReport | null>(null);
   const [myModulePerms, setMyModulePerms] = useState({
     canView: true,
     canCreate: false,
@@ -3310,11 +3576,6 @@ const ReportsPage: React.FC<{ wrapWithLayout?: boolean }> = ({
   const canCreate = myModulePerms.canCreate || isAdmin;
   const canAssign = myModulePerms.canAssign || isAdmin;
   const canExport = myModulePerms.canExport || isAdmin;
-  const canViewReports =
-    hasPermission(PERMISSIONS.REPORT_VIEW_TICKETS) || canCreate;
-  const canViewQuery = hasPermission(PERMISSIONS.REPORT_VIEW_QUERY);
-  const canViewAsset = hasPermission(PERMISSIONS.REPORT_VIEW_ASSET);
-  const canViewEmployee = hasPermission(PERMISSIONS.REPORT_VIEW_EMPLOYEE);
 
   const moduleNavItems: {
     section: Section;
@@ -3357,38 +3618,15 @@ const ReportsPage: React.FC<{ wrapWithLayout?: boolean }> = ({
     },
   ];
 
-  const legacyNavItems: {
-    section: Section;
-    label: string;
-    icon: string;
-    show: boolean;
-  }[] = [
-    {
-      section: "query",
-      label: "Query List Report",
-      icon: "📊",
-      show: canViewQuery,
-    },
-    { section: "asset", label: "Asset Report", icon: "📦", show: canViewAsset },
-    {
-      section: "employee",
-      label: "Employee Report",
-      icon: "👥",
-      show: canViewEmployee,
-    },
-  ];
-
   const visibleModule = moduleNavItems.filter((n) => n.show);
-  const visibleLegacy = legacyNavItems.filter((n) => n.show);
 
   // Default to first available section if current one is invisible
   useEffect(() => {
-    const allVisible = [...visibleModule, ...visibleLegacy];
     if (
-      allVisible.length > 0 &&
-      !allVisible.some((n) => n.section === activeSection)
+      visibleModule.length > 0 &&
+      !visibleModule.some((n) => n.section === activeSection)
     ) {
-      setActiveSection(allVisible[0].section);
+      setActiveSection(visibleModule[0].section);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -3447,40 +3685,7 @@ const ReportsPage: React.FC<{ wrapWithLayout?: boolean }> = ({
             </>
           )}
 
-          {visibleLegacy.length > 0 && (
-            <>
-              <div
-                style={{
-                  height: 1,
-                  background: "#f3f4f6",
-                  margin: "8px 4px",
-                }}
-              />
-              <div
-                style={{
-                  padding: "6px 12px 4px",
-                  fontSize: 10,
-                  fontWeight: 700,
-                  color: "#9ca3af",
-                  letterSpacing: "0.1em",
-                  textTransform: "uppercase",
-                }}
-              >
-                Legacy Reports
-              </div>
-              {visibleLegacy.map((item) => (
-                <NavItem
-                  key={item.section}
-                  label={item.label}
-                  icon={item.icon}
-                  active={activeSection === item.section}
-                  onClick={() => setActiveSection(item.section)}
-                />
-              ))}
-            </>
-          )}
-
-          {visibleModule.length === 0 && visibleLegacy.length === 0 && (
+          {visibleModule.length === 0 && (
             <div
               style={{
                 padding: "20px",
@@ -3509,22 +3714,26 @@ const ReportsPage: React.FC<{ wrapWithLayout?: boolean }> = ({
             {activeSection === "data-points" && <DataPointsSection />}
             {activeSection === "report-builder" && (
               <ReportBuilderSection
+                editingReport={editingReport}
+                onCancelEdit={() => {
+                  setEditingReport(null);
+                  setActiveSection("saved-reports");
+                }}
                 onSaved={() => {
                   setSavedCount((c) => (c ?? 0) + 1);
+                  setEditingReport(null);
                   setActiveSection("saved-reports");
                 }}
               />
             )}
             {activeSection === "assign-reports" && <AssignReportsSection />}
-            {activeSection === "saved-reports" && <SavedReportsSection />}
-            {activeSection === "query" && (
-              <TicketListReport wrapWithLayout={false} />
-            )}
-            {activeSection === "asset" && (
-              <AssetReport wrapWithLayout={false} />
-            )}
-            {activeSection === "employee" && (
-              <EmployeeReport wrapWithLayout={false} />
+            {activeSection === "saved-reports" && (
+              <SavedReportsSection
+                onEdit={(r) => {
+                  setEditingReport(r);
+                  setActiveSection("report-builder");
+                }}
+              />
             )}
           </div>
         </div>

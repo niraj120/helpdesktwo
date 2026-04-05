@@ -28,6 +28,7 @@ interface EmailLog {
   metadata?: any;
   smtpHost?: string;
   fromEmail?: string;
+  vendor?: string;
   sentAt: string;
 }
 
@@ -50,6 +51,7 @@ interface IncomingEmail {
   messageId: string;
   isProcessed: boolean;
   processingError?: string;
+  inboundSource?: string;
   receivedAt: string;
   createdAt: string;
 }
@@ -187,6 +189,74 @@ const EmailLogsPage = () => {
       default:
         return "#6b7280";
     }
+  };
+
+  const getVendorInfo = (vendor?: string): { label: string; color: string } => {
+    switch (vendor) {
+      case "sendgrid":
+        return { label: "SendGrid", color: "#6366f1" };
+      case "graph":
+        return { label: "MS Graph", color: "#0078d4" };
+      case "smtp":
+        return { label: "SMTP", color: "#10b981" };
+      case "simulated":
+        return { label: "Simulated", color: "#6b7280" };
+      default:
+        return { label: vendor || "—", color: "#9ca3af" };
+    }
+  };
+
+  const getSourceInfo = (source?: string): { label: string; color: string } => {
+    switch (source) {
+      case "imap":
+        return { label: "IMAP", color: "#10b981" };
+      case "graph":
+        return { label: "Graph API", color: "#0078d4" };
+      case "sendgrid":
+        return { label: "SendGrid", color: "#6366f1" };
+      case "webhook":
+        return { label: "Webhook", color: "#f59e0b" };
+      default:
+        return { label: source || "—", color: "#9ca3af" };
+    }
+  };
+
+  const getVendorBadge = (vendor?: string) => {
+    const { label, color } = getVendorInfo(vendor);
+    return (
+      <span
+        style={{
+          padding: "3px 10px",
+          borderRadius: "10px",
+          fontSize: "11px",
+          fontWeight: "600",
+          background: `${color}18`,
+          color,
+          border: `1px solid ${color}40`,
+        }}
+      >
+        {label}
+      </span>
+    );
+  };
+
+  const getSourceBadge = (source?: string) => {
+    const { label, color } = getSourceInfo(source);
+    return (
+      <span
+        style={{
+          padding: "3px 10px",
+          borderRadius: "10px",
+          fontSize: "11px",
+          fontWeight: "600",
+          background: `${color}18`,
+          color,
+          border: `1px solid ${color}40`,
+        }}
+      >
+        {label}
+      </span>
+    );
   };
 
   const getStatusBadge = (status: string) => {
@@ -771,6 +841,17 @@ const EmailLogsPage = () => {
                             color: "#6b7280",
                           }}
                         >
+                          DELIVERY
+                        </th>
+                        <th
+                          style={{
+                            padding: "12px 16px",
+                            textAlign: "left",
+                            fontSize: "12px",
+                            fontWeight: "600",
+                            color: "#6b7280",
+                          }}
+                        >
                           PROJECT
                         </th>
                       </>
@@ -819,6 +900,17 @@ const EmailLogsPage = () => {
                           }}
                         >
                           STATUS
+                        </th>
+                        <th
+                          style={{
+                            padding: "12px 16px",
+                            textAlign: "left",
+                            fontSize: "12px",
+                            fontWeight: "600",
+                            color: "#6b7280",
+                          }}
+                        >
+                          SOURCE
                         </th>
                       </>
                     )}
@@ -875,6 +967,11 @@ const EmailLogsPage = () => {
                             style={{ padding: "12px 16px", fontSize: "14px" }}
                           >
                             {getStatusBadge(log.status)}
+                          </td>
+                          <td
+                            style={{ padding: "12px 16px", fontSize: "14px" }}
+                          >
+                            {getVendorBadge(log.vendor)}
                           </td>
                           <td
                             style={{ padding: "12px 16px", fontSize: "14px" }}
@@ -1002,6 +1099,13 @@ const EmailLogsPage = () => {
                               >
                                 PENDING
                               </span>
+                            )}
+                          </td>
+                          <td
+                            style={{ padding: "12px 16px", fontSize: "14px" }}
+                          >
+                            {getSourceBadge(
+                              (email as IncomingEmail).inboundSource,
                             )}
                           </td>
                           <td
@@ -1254,6 +1358,21 @@ const EmailLogsPage = () => {
                     </div>
                   )}
 
+                  <div style={{ marginBottom: "16px" }}>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "12px",
+                        fontWeight: "600",
+                        color: "#6b7280",
+                        marginBottom: "4px",
+                      }}
+                    >
+                      Delivery Method
+                    </label>
+                    {getVendorBadge(selectedLog.vendor)}
+                  </div>
+
                   {selectedLog.fromEmail && (
                     <div style={{ marginBottom: "16px" }}>
                       <label
@@ -1374,6 +1493,23 @@ const EmailLogsPage = () => {
                     <div style={{ fontSize: "14px" }}>
                       {selectedLog.fromEmail}
                     </div>
+                  </div>
+
+                  <div style={{ marginBottom: "16px" }}>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "12px",
+                        fontWeight: "600",
+                        color: "#6b7280",
+                        marginBottom: "4px",
+                      }}
+                    >
+                      Inbound Source
+                    </label>
+                    {getSourceBadge(
+                      (selectedLog as IncomingEmail).inboundSource,
+                    )}
                   </div>
 
                   <div style={{ marginBottom: "16px" }}>

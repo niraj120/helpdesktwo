@@ -170,6 +170,7 @@ export const handleSendgridInbound = async (req: Request, res: Response) => {
         subject: emailData.subject,
         messageId,
         size: emailSize,
+        inboundSource: "sendgrid",
       },
     });
 

@@ -98,6 +98,7 @@ import healthcheckRoutes from "./routes/healthcheck";
 import cacheRoutes from "./routes/cacheRoutes";
 import otpRoutes from "./routes/otp";
 import reportRoutes from "./routes/reportRoutes";
+import dbMonitoringRoutes from "./routes/dbMonitoringRoutes";
 // import integrationRoutes from './routes/integrations'; // TODO: Implement
 import { setupSocketHandlers } from "./socket/socketHandlers";
 import { initializeDatabase } from "./utils/dbInit";
@@ -336,6 +337,9 @@ app.use("/api/feedback-responses", feedbackResponseRoutes);
 
 // Report Module Routes
 app.use("/api/reports", reportRoutes);
+
+// DB Monitoring Routes
+app.use("/api/db-monitoring", dbMonitoringRoutes);
 
 // Integration Routes (TODO: Implement)
 // app.use('/api/integrations', integrationRoutes);

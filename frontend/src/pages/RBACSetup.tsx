@@ -79,6 +79,7 @@ const RBACSetup = () => {
   const [filterType, setFilterType] = useState<
     "all" | "system" | "custom" | "master"
   >("all");
+  const [filterProject, setFilterProject] = useState<string>("all");
 
   // Debounce timer for fetchData to prevent rate limiting
   const fetchDataTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -448,9 +449,6 @@ const RBACSetup = () => {
       "REPORT_VIEW_AGENT_PERFORMANCE",
       "REPORT_VIEW_CSAT",
       "REPORT_VIEW_SLA",
-      "REPORT_VIEW_QUERY",
-      "REPORT_VIEW_ASSET",
-      "REPORT_VIEW_EMPLOYEE",
       "REPORT_EXPORT",
       "REPORT_CREATE_CUSTOM",
       "REPORT_SCHEDULE",
@@ -596,7 +594,10 @@ const RBACSetup = () => {
       (filterType === "master" && role.isMaster) ||
       (filterType === "system" && role.type === "system") ||
       (filterType === "custom" && role.type === "custom");
-    return matchesSearch && matchesFilter;
+    const matchesProject =
+      filterProject === "all" ||
+      (Array.isArray(role.projects) && role.projects.includes(filterProject));
+    return matchesSearch && matchesFilter && matchesProject;
   });
 
   if (loading) {
@@ -739,6 +740,27 @@ const RBACSetup = () => {
               </button>
             ))}
           </div>
+          <select
+            value={filterProject}
+            onChange={(e) => setFilterProject(e.target.value)}
+            style={{
+              padding: "10px 16px",
+              border: "1px solid #d1d5db",
+              borderRadius: "6px",
+              fontSize: "14px",
+              color: filterProject === "all" ? "#6b7280" : "#111827",
+              background: "white",
+              cursor: "pointer",
+              minWidth: "180px",
+            }}
+          >
+            <option value="all">All Projects</option>
+            {projects.map((p) => (
+              <option key={p._id} value={p._id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* Roles Table */}

@@ -93,7 +93,6 @@ const SLARulesPage = lazy(() => import("./pages/SLARulesPage"));
 
 // Reports
 const ReportsPage = lazy(() => import("./pages/ReportsPage"));
-const TicketListReport = lazy(() => import("./pages/TicketListReport"));
 
 // Knowledge Base
 const KnowledgeBaseManagement = lazy(

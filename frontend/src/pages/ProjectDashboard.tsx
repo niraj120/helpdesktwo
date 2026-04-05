@@ -30,7 +30,8 @@ interface ProjectDashboardProps {
 
 const ProjectDashboard = ({ wrapWithLayout = true }: ProjectDashboardProps) => {
   const { t } = useTranslation();
-  const { viewMode: projectContextViewMode, userProjects } = useProjectContext();
+  const { viewMode: projectContextViewMode, userProjects } =
+    useProjectContext();
   const [viewMode, setViewMode] = useState<ViewMode>("self");
   const [stats, setStats] = useState<ProjectDashboardStats>({
     totalTickets: 0,
@@ -62,7 +63,7 @@ const ProjectDashboard = ({ wrapWithLayout = true }: ProjectDashboardProps) => {
       const token = localStorage.getItem("authToken");
 
       // Unified mode: aggregate across all of the user's projects
-      const isUnified = projectContextViewMode === 'unified';
+      const isUnified = projectContextViewMode === "unified";
 
       // Try to get projectId from multiple sources (used in single-project mode)
       let projectId = !isUnified ? localStorage.getItem("projectId") : null;
