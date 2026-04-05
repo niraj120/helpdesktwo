@@ -102,6 +102,7 @@ const PERM_LABELS: {
 const FILTER_OPERATORS = [
   { value: "equals", label: "equals" },
   { value: "not_equals", label: "not equals" },
+  { value: "in", label: "any of" },
   { value: "contains", label: "contains" },
   { value: "not_contains", label: "not contains" },
   { value: "greater_than", label: ">" },
@@ -898,6 +899,9 @@ function ReportBuilderSection({
   const [openProjectPicker, setOpenProjectPicker] = useState<number | null>(
     null,
   );
+  const [tagDraftValues, setTagDraftValues] = useState<Record<number, string>>(
+    {},
+  );
 
   // Load user's projects for the project filter dropdown
   useEffect(() => {
@@ -977,8 +981,21 @@ function ReportBuilderSection({
     ]);
   };
 
-  const removeFilter = (i: number) =>
+  const removeFilter = (i: number) => {
     setFilters((prev) => prev.filter((_, idx) => idx !== i));
+    setTagDraftValues((prev) => {
+      const next: Record<number, string> = {};
+      for (const [k, v] of Object.entries(prev)) {
+        const ki = Number(k);
+        if (ki < i) next[ki] = v;
+        else if (ki > i) next[ki - 1] = v;
+      }
+      return next;
+    });
+    if (openProjectPicker === i) setOpenProjectPicker(null);
+    else if (openProjectPicker !== null && openProjectPicker > i)
+      setOpenProjectPicker(openProjectPicker - 1);
+  };
 
   const updateFilter = (i: number, patch: Partial<ReportFilter>) => {
     setFilters((prev) =>
@@ -1463,124 +1480,246 @@ function ReportBuilderSection({
                     </select>
                     {f.operator !== "is_empty" &&
                       f.operator !== "is_not_empty" &&
-                      (f.field === "ticket_project" &&
-                      projectOptions.length > 0 ? (() => {
-                        const selectedNames = f.value
-                          ? f.value.split(",").filter(Boolean)
-                          : [];
-                        return (
-                          <div style={{ flex: 1, position: "relative" }}>
-                            <div
-                              onClick={() =>
-                                setOpenProjectPicker(
-                                  openProjectPicker === i ? null : i,
-                                )
-                              }
-                              style={{
-                                padding: "6px 10px",
-                                border: "1px solid #d1d5db",
-                                borderRadius: 6,
-                                fontSize: 12,
-                                cursor: "pointer",
-                                background: "#fff",
-                                minHeight: 32,
-                                display: "flex",
-                                alignItems: "center",
-                                flexWrap: "wrap",
-                                gap: 4,
-                                userSelect: "none",
-                              }}
-                            >
-                              {selectedNames.length === 0 ? (
-                                <span style={{ color: "#9ca3af" }}>
-                                  — select projects —
-                                </span>
-                              ) : (
-                                selectedNames.map((name) => (
+                      (f.operator === "in" ? (
+                        // ── "any of" multi-value input ──────────────────────
+                        f.field === "ticket_project" &&
+                        projectOptions.length > 0 ? (
+                          // Project: checkbox dropdown
+                          (() => {
+                            const selectedNames = f.value
+                              ? f.value.split(",").filter(Boolean)
+                              : [];
+                            return (
+                              <div style={{ flex: 1, position: "relative" }}>
+                                <div
+                                  onClick={() =>
+                                    setOpenProjectPicker(
+                                      openProjectPicker === i ? null : i,
+                                    )
+                                  }
+                                  style={{
+                                    padding: "6px 10px",
+                                    border: "1px solid #d1d5db",
+                                    borderRadius: 6,
+                                    fontSize: 12,
+                                    cursor: "pointer",
+                                    background: "#fff",
+                                    minHeight: 32,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    flexWrap: "wrap",
+                                    gap: 4,
+                                    userSelect: "none",
+                                  }}
+                                >
+                                  {selectedNames.length === 0 ? (
+                                    <span style={{ color: "#9ca3af" }}>
+                                      — select projects —
+                                    </span>
+                                  ) : (
+                                    selectedNames.map((name) => (
+                                      <span
+                                        key={name}
+                                        style={{
+                                          background: "#ede9fe",
+                                          color: "#7c3aed",
+                                          fontSize: 11,
+                                          padding: "1px 7px",
+                                          borderRadius: 10,
+                                          fontWeight: 600,
+                                        }}
+                                      >
+                                        {name}
+                                      </span>
+                                    ))
+                                  )}
                                   <span
-                                    key={name}
                                     style={{
-                                      background: "#ede9fe",
-                                      color: "#7c3aed",
-                                      fontSize: 11,
-                                      padding: "1px 7px",
-                                      borderRadius: 10,
-                                      fontWeight: 600,
+                                      marginLeft: "auto",
+                                      color: "#9ca3af",
+                                      fontSize: 10,
                                     }}
                                   >
-                                    {name}
+                                    ▾
                                   </span>
-                                ))
-                              )}
-                              <span
-                                style={{
-                                  marginLeft: "auto",
-                                  color: "#9ca3af",
-                                  fontSize: 10,
-                                }}
-                              >
-                                ▾
-                              </span>
-                            </div>
-                            {openProjectPicker === i && (
+                                </div>
+                                {openProjectPicker === i && (
+                                  <div
+                                    style={{
+                                      position: "absolute",
+                                      top: "calc(100% + 4px)",
+                                      left: 0,
+                                      right: 0,
+                                      background: "#fff",
+                                      border: "1px solid #e5e7eb",
+                                      borderRadius: 8,
+                                      boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+                                      zIndex: 200,
+                                      maxHeight: 200,
+                                      overflowY: "auto",
+                                    }}
+                                  >
+                                    {projectOptions.map((p) => {
+                                      const checked = selectedNames.includes(
+                                        p.name,
+                                      );
+                                      return (
+                                        <label
+                                          key={p._id}
+                                          style={{
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 8,
+                                            padding: "7px 12px",
+                                            cursor: "pointer",
+                                            background: checked
+                                              ? "#f5f3ff"
+                                              : "transparent",
+                                          }}
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={checked}
+                                            onChange={() => {
+                                              const next = checked
+                                                ? selectedNames.filter(
+                                                    (n) => n !== p.name,
+                                                  )
+                                                : [...selectedNames, p.name];
+                                              updateFilter(i, {
+                                                value: next.join(","),
+                                              });
+                                            }}
+                                          />
+                                          <span style={{ fontSize: 12 }}>
+                                            {p.name}
+                                          </span>
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()
+                        ) : (
+                          // Any other field: tag/chip input (type + Enter)
+                          (() => {
+                            const chips = f.value
+                              ? f.value.split(",").filter(Boolean)
+                              : [];
+                            const draft = tagDraftValues[i] ?? "";
+                            return (
                               <div
                                 style={{
-                                  position: "absolute",
-                                  top: "calc(100% + 4px)",
-                                  left: 0,
-                                  right: 0,
+                                  flex: 1,
+                                  display: "flex",
+                                  flexWrap: "wrap",
+                                  alignItems: "center",
+                                  gap: 4,
+                                  padding: "4px 8px",
+                                  border: "1px solid #d1d5db",
+                                  borderRadius: 6,
                                   background: "#fff",
-                                  border: "1px solid #e5e7eb",
-                                  borderRadius: 8,
-                                  boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
-                                  zIndex: 200,
-                                  maxHeight: 200,
-                                  overflowY: "auto",
+                                  minHeight: 32,
+                                  cursor: "text",
+                                }}
+                                onClick={(e) => {
+                                  const inp = (e.currentTarget as HTMLElement).querySelector(
+                                    "input",
+                                  ) as HTMLInputElement | null;
+                                  inp?.focus();
                                 }}
                               >
-                                {projectOptions.map((p) => {
-                                  const checked = selectedNames.includes(
-                                    p.name,
-                                  );
-                                  return (
-                                    <label
-                                      key={p._id}
+                                {chips.map((chip) => (
+                                  <span
+                                    key={chip}
+                                    style={{
+                                      background: "#dbeafe",
+                                      color: "#1d4ed8",
+                                      fontSize: 11,
+                                      padding: "1px 4px 1px 7px",
+                                      borderRadius: 10,
+                                      fontWeight: 600,
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: 3,
+                                    }}
+                                  >
+                                    {chip}
+                                    <span
+                                      onClick={() =>
+                                        updateFilter(i, {
+                                          value: chips
+                                            .filter((c) => c !== chip)
+                                            .join(","),
+                                        })
+                                      }
                                       style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: 8,
-                                        padding: "7px 12px",
                                         cursor: "pointer",
-                                        background: checked
-                                          ? "#f5f3ff"
-                                          : "transparent",
+                                        fontWeight: 700,
+                                        lineHeight: 1,
+                                        opacity: 0.6,
                                       }}
                                     >
-                                      <input
-                                        type="checkbox"
-                                        checked={checked}
-                                        onChange={() => {
-                                          const next = checked
-                                            ? selectedNames.filter(
-                                                (n) => n !== p.name,
-                                              )
-                                            : [...selectedNames, p.name];
-                                          updateFilter(i, {
-                                            value: next.join(","),
-                                          });
-                                        }}
-                                      />
-                                      <span style={{ fontSize: 12 }}>
-                                        {p.name}
-                                      </span>
-                                    </label>
-                                  );
-                                })}
+                                      ×
+                                    </span>
+                                  </span>
+                                ))}
+                                <input
+                                  value={draft}
+                                  onChange={(e) =>
+                                    setTagDraftValues((prev) => ({
+                                      ...prev,
+                                      [i]: e.target.value,
+                                    }))
+                                  }
+                                  onKeyDown={(e) => {
+                                    if (
+                                      (e.key === "Enter" ||
+                                        e.key === ",") &&
+                                      draft.trim()
+                                    ) {
+                                      e.preventDefault();
+                                      const newChip = draft.trim();
+                                      if (!chips.includes(newChip))
+                                        updateFilter(i, {
+                                          value: [...chips, newChip].join(","),
+                                        });
+                                      setTagDraftValues((prev) => ({
+                                        ...prev,
+                                        [i]: "",
+                                      }));
+                                    } else if (
+                                      e.key === "Backspace" &&
+                                      !draft &&
+                                      chips.length > 0
+                                    ) {
+                                      updateFilter(i, {
+                                        value: chips.slice(0, -1).join(","),
+                                      });
+                                    }
+                                  }}
+                                  placeholder={
+                                    chips.length === 0
+                                      ? "Type value, press Enter"
+                                      : "+add"
+                                  }
+                                  style={{
+                                    border: "none",
+                                    outline: "none",
+                                    fontSize: 12,
+                                    flex: 1,
+                                    minWidth: 80,
+                                    background: "transparent",
+                                  }}
+                                />
                               </div>
-                            )}
-                          </div>
-                        );
-                      })() : (
+                            );
+                          })()
+                        )
+                      ) : (
+                        // ── Normal single-value input ────────────────────────
                         <input
                           value={f.value}
                           onChange={(e) =>
