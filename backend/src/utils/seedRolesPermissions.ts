@@ -1023,6 +1023,47 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     category: "audit-logs",
   },
   // =====================================================
+  // ATTENDANCE MODULE CATEGORY
+  // =====================================================
+  {
+    module: "Attendance",
+    name: "View Attendance Records",
+    code: "ATTENDANCE_VIEW",
+    description: "Can view raw attendance records (own or team based on role)",
+    category: "attendance",
+  },
+  {
+    module: "Attendance",
+    name: "View Attendance Reports",
+    code: "ATTENDANCE_REPORT_VIEW",
+    description:
+      "Can access the Attendance Report page and run assigned reports",
+    category: "attendance",
+  },
+  {
+    module: "Attendance",
+    name: "Sync Biometric",
+    code: "ATTENDANCE_SYNC",
+    description:
+      "Can register employees in AFT biometric system and trigger syncs",
+    category: "attendance",
+  },
+  {
+    module: "Attendance",
+    name: "Configure Attendance",
+    code: "ATTENDANCE_CONFIG",
+    description:
+      "Can configure AFT API credentials, sync schedule, field permissions",
+    category: "attendance",
+  },
+  {
+    module: "Attendance",
+    name: "Export Attendance",
+    code: "ATTENDANCE_EXPORT",
+    description: "Can export attendance records as Excel or PDF",
+    category: "attendance",
+  },
+  // =====================================================
   // TICKETS CATEGORY (Core Ticket Operations)
   // =====================================================
   {
@@ -1443,6 +1484,10 @@ const defaultRoles = [
       "EMAIL_CONFIG_EDIT",
       "EMAIL_CONFIG_TEST",
       "EMAIL_TRIGGER_MANAGE",
+      "ATTENDANCE_VIEW",
+      "ATTENDANCE_SYNC",
+      "ATTENDANCE_CONFIG",
+      "ATTENDANCE_EXPORT",
     ],
   },
   {
@@ -1479,6 +1524,9 @@ const defaultRoles = [
       "FORM_DELETE",
       "FORM_ASSIGN_CONTEXT",
       "FORM_VIEW_AUDIT_LOGS",
+      "ATTENDANCE_VIEW",
+      "ATTENDANCE_REPORT_VIEW",
+      "ATTENDANCE_EXPORT",
     ],
   },
   {
@@ -1502,6 +1550,8 @@ const defaultRoles = [
       "OFFLINE_TICKET_ESCALATE",
       "OFFLINE_STUDENT_VIEW",
       "OFFLINE_STUDENT_EDIT",
+      "ATTENDANCE_VIEW",
+      "ATTENDANCE_REPORT_VIEW",
     ],
   },
   {

@@ -26,6 +26,10 @@ import MyAssets from "../components/MyAssets";
 
 import ManpowerReport from "./ManpowerReport";
 import ReportsPage from "./ReportsPage";
+import AttendanceRecordsPage from "./attendance/AttendanceRecordsPage";
+import AttendanceReportPage from "./attendance/AttendanceReportPage";
+import AttendanceBiometricSyncPage from "./attendance/AttendanceBiometricSyncPage";
+import AttendanceConfigPage from "./attendance/AttendanceConfigPage";
 
 // Import ticket-related pages
 import ViewTickets from "./ViewTickets";
@@ -1442,7 +1446,10 @@ const ProjectPortalDashboard = () => {
                 PERMISSIONS.TICKET_VIEW_OWN,
               ]}
             >
-              <ViewTickets />
+              <ViewTickets
+                initialProjectId={projectBranding?.projectId}
+                wrapWithLayout={false}
+              />
             </ProtectedRoute>
           }
         />
@@ -1602,6 +1609,40 @@ const ProjectPortalDashboard = () => {
         <Route
           path="/audit/access-logs"
           element={<AccessLogs wrapWithLayout={false} />}
+        />
+
+        {/* Attendance Module */}
+        <Route
+          path="/attendance/records"
+          element={
+            <ProtectedRoute permission={PERMISSIONS.ATTENDANCE_VIEW}>
+              <AttendanceRecordsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/attendance/report"
+          element={
+            <ProtectedRoute permission={PERMISSIONS.ATTENDANCE_REPORT_VIEW}>
+              <AttendanceReportPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/attendance/employees"
+          element={
+            <ProtectedRoute permission={PERMISSIONS.ATTENDANCE_SYNC}>
+              <AttendanceBiometricSyncPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/attendance/config"
+          element={
+            <ProtectedRoute permission={PERMISSIONS.ATTENDANCE_CONFIG}>
+              <AttendanceConfigPage />
+            </ProtectedRoute>
+          }
         />
 
         {/* Email Configuration */}

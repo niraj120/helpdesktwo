@@ -155,6 +155,20 @@ const DBMonitoringDashboard = lazy(
   () => import("./pages/DBMonitoringDashboard"),
 );
 
+// Attendance Module
+const AttendanceConfigPage = lazy(
+  () => import("./pages/attendance/AttendanceConfigPage"),
+);
+const AttendanceBiometricSyncPage = lazy(
+  () => import("./pages/attendance/AttendanceBiometricSyncPage"),
+);
+const AttendanceRecordsPage = lazy(
+  () => import("./pages/attendance/AttendanceRecordsPage"),
+);
+const AttendanceReportPage = lazy(
+  () => import("./pages/attendance/AttendanceReportPage"),
+);
+
 function App() {
   // Update browser tab title dynamically based on project
   useDynamicTitle();
@@ -724,6 +738,48 @@ function App() {
             element={
               <ProtectedRoute requireAuth={true}>
                 <DBMonitoringDashboard />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Attendance Module Routes */}
+          <Route
+            path="/attendance/records"
+            element={
+              <ProtectedRoute permission="ATTENDANCE_VIEW">
+                <DashboardLayout>
+                  <AttendanceRecordsPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/attendance/report"
+            element={
+              <ProtectedRoute permission="ATTENDANCE_REPORT_VIEW">
+                <DashboardLayout>
+                  <AttendanceReportPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/attendance/employees"
+            element={
+              <ProtectedRoute permission="ATTENDANCE_SYNC">
+                <DashboardLayout>
+                  <AttendanceBiometricSyncPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/attendance/config"
+            element={
+              <ProtectedRoute permission="ATTENDANCE_CONFIG">
+                <DashboardLayout>
+                  <AttendanceConfigPage />
+                </DashboardLayout>
               </ProtectedRoute>
             }
           />

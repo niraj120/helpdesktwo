@@ -47,6 +47,14 @@ export interface IUser extends Document {
   // Token invalidation (incremented when role/permissions change)
   tokenVersion?: number;
 
+  // Attendance Module — Biometric sync fields
+  payrollNumber?: number;
+  biometricSynced?: boolean;
+  biometricEmployeeId?: number; // AFT EmployeeID returned from add-employee API
+  biometricDeviceId?: number; // AFT EmployeeBiometricID returned from add-employee API
+  biometricSyncedAt?: Date;
+  biometricSyncError?: string;
+
   // Methods
   comparePassword(candidatePassword: string): Promise<boolean>;
   generateResetPasswordOTP(): string;
@@ -226,6 +234,14 @@ const userSchema = new Schema<IUser>(
       type: Number,
       default: 0,
     },
+
+    // Attendance Module — Biometric sync fields
+    payrollNumber: { type: Number, default: null },
+    biometricSynced: { type: Boolean, default: false },
+    biometricEmployeeId: { type: Number, default: null, sparse: true },
+    biometricDeviceId: { type: Number, default: null },
+    biometricSyncedAt: { type: Date, default: null },
+    biometricSyncError: { type: String, default: null },
   },
   {
     timestamps: true,

@@ -9,9 +9,9 @@
  */
 export const storePermissions = (permissions: string[]): void => {
   try {
-    localStorage.setItem('userPermissions', JSON.stringify(permissions));
+    localStorage.setItem("userPermissions", JSON.stringify(permissions));
   } catch (error) {
-    console.error('Error storing permissions:', error);
+    console.error("Error storing permissions:", error);
   }
 };
 
@@ -22,27 +22,27 @@ export const storePermissions = (permissions: string[]): void => {
 export const getPermissions = (): string[] => {
   try {
     // First try stored permissions
-    const storedPermissions = localStorage.getItem('userPermissions');
+    const storedPermissions = localStorage.getItem("userPermissions");
     if (storedPermissions) {
       return JSON.parse(storedPermissions);
     }
 
     // Fallback to JWT token
-    const token = localStorage.getItem('authToken');
+    const token = localStorage.getItem("authToken");
     if (!token) return [];
 
-    const parts = token.split('.');
+    const parts = token.split(".");
     if (parts.length !== 3) return [];
 
     const payload = JSON.parse(atob(parts[1]));
     const permissions = payload.role?.permissions || [];
-    
+
     // Cache for next time
     storePermissions(permissions);
-    
+
     return permissions;
   } catch (error) {
-    console.error('Error getting permissions:', error);
+    console.error("Error getting permissions:", error);
     return [];
   }
 };
@@ -52,9 +52,9 @@ export const getPermissions = (): string[] => {
  */
 export const clearPermissions = (): void => {
   try {
-    localStorage.removeItem('userPermissions');
+    localStorage.removeItem("userPermissions");
   } catch (error) {
-    console.error('Error clearing permissions:', error);
+    console.error("Error clearing permissions:", error);
   }
 };
 
@@ -63,7 +63,31 @@ export const clearPermissions = (): void => {
  * @param permission Permission code to check
  * @returns true if user has the permission
  */
+const isSuperAdminUser = (): boolean => {
+  try {
+    const userStr = localStorage.getItem("user");
+    if (userStr) {
+      const user = JSON.parse(userStr);
+      const roleCode = user.role?.code || user.roleCode || "";
+      if (roleCode === "SUPER_ADMIN") return true;
+    }
+    const token = localStorage.getItem("authToken");
+    if (token) {
+      const parts = token.split(".");
+      if (parts.length === 3) {
+        const payload = JSON.parse(atob(parts[1]));
+        const code = payload.role?.code || payload.roleCode || "";
+        if (code === "SUPER_ADMIN") return true;
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return false;
+};
+
 export const hasPermission = (permission: string): boolean => {
+  if (isSuperAdminUser()) return true;
   const permissions = getPermissions();
   return permissions.includes(permission);
 };
@@ -74,6 +98,7 @@ export const hasPermission = (permission: string): boolean => {
  * @returns true if user has at least one permission
  */
 export const hasAnyPermission = (permissionList: string[]): boolean => {
+  if (isSuperAdminUser()) return true;
   const permissions = getPermissions();
   return permissionList.some((permission) => permissions.includes(permission));
 };
@@ -84,6 +109,7 @@ export const hasAnyPermission = (permissionList: string[]): boolean => {
  * @returns true if user has all permissions
  */
 export const hasAllPermissions = (permissionList: string[]): boolean => {
+  if (isSuperAdminUser()) return true;
   const permissions = getPermissions();
   return permissionList.every((permission) => permissions.includes(permission));
 };
@@ -94,6 +120,7 @@ export const hasAllPermissions = (permissionList: string[]): boolean => {
  * @returns true if user has any permission with that prefix
  */
 export const hasModuleAccess = (modulePrefix: string): boolean => {
+  if (isSuperAdminUser()) return true;
   const permissions = getPermissions();
   return permissions.some((permission) => permission.startsWith(modulePrefix));
 };
@@ -106,18 +133,18 @@ export const hasModuleAccess = (modulePrefix: string): boolean => {
  */
 export const extractPermissionsFromToken = (token: string): string[] | null => {
   try {
-    const parts = token.split('.');
+    const parts = token.split(".");
     if (parts.length !== 3) return null;
 
     const payload = JSON.parse(atob(parts[1]));
     const permissions = payload.role?.permissions || [];
-    
+
     // Store for future use
     storePermissions(permissions);
-    
+
     return permissions;
   } catch (error) {
-    console.error('Error extracting permissions from token:', error);
+    console.error("Error extracting permissions from token:", error);
     return null;
   }
 };
@@ -135,18 +162,22 @@ export const hasPermissionsLoaded = (): boolean => {
  * Get user role information from token
  * @returns Role object with code, name, and permissions
  */
-export const getUserRole = (): { code: string; name: string; permissions: string[] } | null => {
+export const getUserRole = (): {
+  code: string;
+  name: string;
+  permissions: string[];
+} | null => {
   try {
-    const token = localStorage.getItem('authToken');
+    const token = localStorage.getItem("authToken");
     if (!token) return null;
 
-    const parts = token.split('.');
+    const parts = token.split(".");
     if (parts.length !== 3) return null;
 
     const payload = JSON.parse(atob(parts[1]));
     return payload.role || null;
   } catch (error) {
-    console.error('Error getting user role:', error);
+    console.error("Error getting user role:", error);
     return null;
   }
 };
@@ -158,10 +189,10 @@ export const getUserRole = (): { code: string; name: string; permissions: string
  */
 export const isSuperAdmin = (): boolean => {
   return hasAllPermissions([
-    'RBAC_VIEW_ROLES',
-    'RBAC_CREATE_ROLE',
-    'PROJECT_VIEW_ALL',
-    'PROJECT_CREATE',
+    "RBAC_VIEW_ROLES",
+    "RBAC_CREATE_ROLE",
+    "PROJECT_VIEW_ALL",
+    "PROJECT_CREATE",
   ]);
 };
 
@@ -171,22 +202,22 @@ export const isSuperAdmin = (): boolean => {
  */
 export const getModuleAccess = (): Record<string, boolean> => {
   const permissions = getPermissions();
-  
+
   return {
     dashboard: true, // Everyone has dashboard access
-    tickets: permissions.some(p => p.startsWith('TICKET_')),
-    users: permissions.some(p => p.startsWith('USER_')),
-    projects: permissions.some(p => p.startsWith('PROJECT_')),
-    rbac: permissions.some(p => p.startsWith('RBAC_')),
-    knowledgeBase: permissions.some(p => p.startsWith('KB_')),
-    audit: permissions.some(p => p.startsWith('AUDIT_')),
-    offline: permissions.some(p => p.startsWith('OFFLINE_')),
-    reports: permissions.some(p => p.startsWith('REPORT_')),
-    approvals: permissions.some(p => p.startsWith('APPROVAL_')),
-    sla: permissions.some(p => p.startsWith('SLA_')),
-    automation: permissions.some(p => p.startsWith('AUTOMATION_')),
-    integrations: permissions.some(p => p.startsWith('INTEGRATION_')),
-    masterData: permissions.some(p => p.startsWith('MASTER_DATA_')),
+    tickets: permissions.some((p) => p.startsWith("TICKET_")),
+    users: permissions.some((p) => p.startsWith("USER_")),
+    projects: permissions.some((p) => p.startsWith("PROJECT_")),
+    rbac: permissions.some((p) => p.startsWith("RBAC_")),
+    knowledgeBase: permissions.some((p) => p.startsWith("KB_")),
+    audit: permissions.some((p) => p.startsWith("AUDIT_")),
+    offline: permissions.some((p) => p.startsWith("OFFLINE_")),
+    reports: permissions.some((p) => p.startsWith("REPORT_")),
+    approvals: permissions.some((p) => p.startsWith("APPROVAL_")),
+    sla: permissions.some((p) => p.startsWith("SLA_")),
+    automation: permissions.some((p) => p.startsWith("AUTOMATION_")),
+    integrations: permissions.some((p) => p.startsWith("INTEGRATION_")),
+    masterData: permissions.some((p) => p.startsWith("MASTER_DATA_")),
   };
 };
 
@@ -197,7 +228,7 @@ export const getModuleAccess = (): Record<string, boolean> => {
  */
 export const validatePermissions = (permissions: string[]): boolean => {
   if (!Array.isArray(permissions)) return false;
-  return permissions.every(p => typeof p === 'string' && p.length > 0);
+  return permissions.every((p) => typeof p === "string" && p.length > 0);
 };
 
 /**
@@ -207,9 +238,9 @@ export const validatePermissions = (permissions: string[]): boolean => {
  */
 export const formatPermissionName = (permissionCode: string): string => {
   return permissionCode
-    .split('_')
-    .map(word => word.charAt(0) + word.slice(1).toLowerCase())
-    .join(' ');
+    .split("_")
+    .map((word) => word.charAt(0) + word.slice(1).toLowerCase())
+    .join(" ");
 };
 
 /**
@@ -217,17 +248,19 @@ export const formatPermissionName = (permissionCode: string): string => {
  * @param permissions Array of permission codes
  * @returns Object with permissions grouped by module
  */
-export const groupPermissionsByModule = (permissions: string[]): Record<string, string[]> => {
+export const groupPermissionsByModule = (
+  permissions: string[],
+): Record<string, string[]> => {
   const grouped: Record<string, string[]> = {};
-  
-  permissions.forEach(permission => {
-    const module = permission.split('_')[0];
+
+  permissions.forEach((permission) => {
+    const module = permission.split("_")[0];
     if (!grouped[module]) {
       grouped[module] = [];
     }
     grouped[module].push(permission);
   });
-  
+
   return grouped;
 };
 

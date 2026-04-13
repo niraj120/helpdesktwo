@@ -488,6 +488,7 @@ const RBACSetup = () => {
       "ESCALATION",
       "TOKEN",
       "DESK",
+      "ATTENDANCE",
     ];
 
     const rolePermissionMap: Record<string, string[]> = {
@@ -507,6 +508,7 @@ const RBACSetup = () => {
         "EMAIL",
         "TOKEN",
         "DESK",
+        "ATTENDANCE",
       ],
       agent: [
         "TICKET",

@@ -1,28 +1,29 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Document, Schema } from "mongoose";
 
 export interface IPermission extends Document {
   module: string;
   name: string;
   code: string;
   description?: string;
-  category: 
-    | 'dashboard'
-    | 'project-management'
-    | 'master-data'
-    | 'rbac-setup'
-    | 'user-management'
-    | 'fields-forms'
-    | 'ticket-automation'
-    | 'ticket-configuration'
-    | 'approval-process'
-    | 'workflow-role-mapping'
-    | 'sla-escalation'
-    | 'knowledge-base'
-    | 'integrations'
-    | 'reports'
-    | 'audit-logs'
-    | 'tickets'
-    | 'offline-module';
+  category:
+    | "dashboard"
+    | "project-management"
+    | "master-data"
+    | "rbac-setup"
+    | "user-management"
+    | "fields-forms"
+    | "ticket-automation"
+    | "ticket-configuration"
+    | "approval-process"
+    | "workflow-role-mapping"
+    | "sla-escalation"
+    | "knowledge-base"
+    | "integrations"
+    | "reports"
+    | "audit-logs"
+    | "tickets"
+    | "offline-module"
+    | "attendance";
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -54,24 +55,25 @@ const permissionSchema = new Schema<IPermission>(
     category: {
       type: String,
       enum: [
-        'dashboard',
-        'project-management',
-        'master-data',
-        'rbac-setup',
-        'user-management',
-        'fields-forms',
-        'ticket-automation',
-        'ticket-configuration',
-        'approval-process',
-        'workflow-role-mapping',
-        'sla-escalation',
-        'knowledge-base',
-        'feedback',
-        'integrations',
-        'reports',
-        'audit-logs',
-        'tickets',
-        'offline-module'
+        "dashboard",
+        "project-management",
+        "master-data",
+        "rbac-setup",
+        "user-management",
+        "fields-forms",
+        "ticket-automation",
+        "ticket-configuration",
+        "approval-process",
+        "workflow-role-mapping",
+        "sla-escalation",
+        "knowledge-base",
+        "feedback",
+        "integrations",
+        "reports",
+        "audit-logs",
+        "tickets",
+        "offline-module",
+        "attendance",
       ],
       required: true,
     },
@@ -82,7 +84,7 @@ const permissionSchema = new Schema<IPermission>(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 // Indexes
@@ -90,4 +92,7 @@ permissionSchema.index({ code: 1 });
 permissionSchema.index({ category: 1 });
 permissionSchema.index({ module: 1 });
 
-export const Permission = mongoose.model<IPermission>('Permission', permissionSchema);
+export const Permission = mongoose.model<IPermission>(
+  "Permission",
+  permissionSchema,
+);

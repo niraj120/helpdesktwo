@@ -2561,7 +2561,10 @@ function SavedReportsSection({
               {runResult.rows.length})
             </div>
             <button
-              onClick={() => { setRunResult(null); setRunPage(1); }}
+              onClick={() => {
+                setRunResult(null);
+                setRunPage(1);
+              }}
               style={{
                 background: "transparent",
                 border: "none",
@@ -2642,102 +2645,104 @@ function SavedReportsSection({
             </table>
           </div>
           {/* Pagination */}
-          {runResult.total > runPageSize && (() => {
-            const totalPages = Math.ceil(runResult.total / runPageSize);
-            const currentReport = reports.find(
-              (r) => r._id === runResult.reportId,
-            );
-            return (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                  padding: "10px 16px",
-                  borderTop: "1px solid #e5e7eb",
-                  background: "#f8fafc",
-                  flexWrap: "wrap",
-                }}
-              >
-                <button
-                  disabled={runPage <= 1 || running !== null}
-                  onClick={() =>
-                    currentReport && handleRun(currentReport, runPage - 1)
-                  }
+          {runResult.total > runPageSize &&
+            (() => {
+              const totalPages = Math.ceil(runResult.total / runPageSize);
+              const currentReport = reports.find(
+                (r) => r._id === runResult.reportId,
+              );
+              return (
+                <div
                   style={{
-                    padding: "5px 12px",
-                    borderRadius: 6,
-                    border: "1px solid #d1d5db",
-                    background: runPage <= 1 ? "#f3f4f6" : "#fff",
-                    color: runPage <= 1 ? "#9ca3af" : "#374151",
-                    cursor: runPage <= 1 ? "default" : "pointer",
-                    fontSize: 12,
-                    fontWeight: 600,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                    padding: "10px 16px",
+                    borderTop: "1px solid #e5e7eb",
+                    background: "#f8fafc",
+                    flexWrap: "wrap",
                   }}
                 >
-                  ← Prev
-                </button>
-                {Array.from({ length: Math.min(totalPages, 10) }, (_, idx) => {
-                  // Show first, last, current ±2, and ellipsis
-                  const p = idx + 1;
-                  return (
-                    <button
-                      key={p}
-                      disabled={p === runPage || running !== null}
-                      onClick={() =>
-                        currentReport && handleRun(currentReport, p)
-                      }
-                      style={{
-                        padding: "5px 10px",
-                        borderRadius: 6,
-                        border: "1px solid #d1d5db",
-                        background: p === runPage ? "#3b82f6" : "#fff",
-                        color: p === runPage ? "#fff" : "#374151",
-                        cursor: p === runPage ? "default" : "pointer",
-                        fontSize: 12,
-                        fontWeight: p === runPage ? 700 : 400,
-                        minWidth: 32,
-                      }}
-                    >
-                      {running !== null && p === runPage ? "…" : p}
-                    </button>
-                  );
-                })}
-                {totalPages > 10 && (
-                  <span style={{ fontSize: 12, color: "#6b7280" }}>
-                    … of {totalPages}
+                  <button
+                    disabled={runPage <= 1 || running !== null}
+                    onClick={() =>
+                      currentReport && handleRun(currentReport, runPage - 1)
+                    }
+                    style={{
+                      padding: "5px 12px",
+                      borderRadius: 6,
+                      border: "1px solid #d1d5db",
+                      background: runPage <= 1 ? "#f3f4f6" : "#fff",
+                      color: runPage <= 1 ? "#9ca3af" : "#374151",
+                      cursor: runPage <= 1 ? "default" : "pointer",
+                      fontSize: 12,
+                      fontWeight: 600,
+                    }}
+                  >
+                    ← Prev
+                  </button>
+                  {Array.from(
+                    { length: Math.min(totalPages, 10) },
+                    (_, idx) => {
+                      // Show first, last, current ±2, and ellipsis
+                      const p = idx + 1;
+                      return (
+                        <button
+                          key={p}
+                          disabled={p === runPage || running !== null}
+                          onClick={() =>
+                            currentReport && handleRun(currentReport, p)
+                          }
+                          style={{
+                            padding: "5px 10px",
+                            borderRadius: 6,
+                            border: "1px solid #d1d5db",
+                            background: p === runPage ? "#3b82f6" : "#fff",
+                            color: p === runPage ? "#fff" : "#374151",
+                            cursor: p === runPage ? "default" : "pointer",
+                            fontSize: 12,
+                            fontWeight: p === runPage ? 700 : 400,
+                            minWidth: 32,
+                          }}
+                        >
+                          {running !== null && p === runPage ? "…" : p}
+                        </button>
+                      );
+                    },
+                  )}
+                  {totalPages > 10 && (
+                    <span style={{ fontSize: 12, color: "#6b7280" }}>
+                      … of {totalPages}
+                    </span>
+                  )}
+                  <button
+                    disabled={runPage >= totalPages || running !== null}
+                    onClick={() =>
+                      currentReport && handleRun(currentReport, runPage + 1)
+                    }
+                    style={{
+                      padding: "5px 12px",
+                      borderRadius: 6,
+                      border: "1px solid #d1d5db",
+                      background: runPage >= totalPages ? "#f3f4f6" : "#fff",
+                      color: runPage >= totalPages ? "#9ca3af" : "#374151",
+                      cursor: runPage >= totalPages ? "default" : "pointer",
+                      fontSize: 12,
+                      fontWeight: 600,
+                    }}
+                  >
+                    Next →
+                  </button>
+                  <span
+                    style={{ fontSize: 12, color: "#6b7280", marginLeft: 4 }}
+                  >
+                    Page {runPage} of {totalPages} &nbsp;·&nbsp;{" "}
+                    {runResult.total.toLocaleString()} rows total
                   </span>
-                )}
-                <button
-                  disabled={runPage >= totalPages || running !== null}
-                  onClick={() =>
-                    currentReport &&
-                    handleRun(currentReport, runPage + 1)
-                  }
-                  style={{
-                    padding: "5px 12px",
-                    borderRadius: 6,
-                    border: "1px solid #d1d5db",
-                    background:
-                      runPage >= totalPages ? "#f3f4f6" : "#fff",
-                    color:
-                      runPage >= totalPages ? "#9ca3af" : "#374151",
-                    cursor:
-                      runPage >= totalPages ? "default" : "pointer",
-                    fontSize: 12,
-                    fontWeight: 600,
-                  }}
-                >
-                  Next →
-                </button>
-                <span style={{ fontSize: 12, color: "#6b7280", marginLeft: 4 }}>
-                  Page {runPage} of {totalPages} &nbsp;·&nbsp;{" "}
-                  {runResult.total.toLocaleString()} rows total
-                </span>
-              </div>
-            );
-          })()}
+                </div>
+              );
+            })()}
         </div>
       )}
     </div>

@@ -84,6 +84,8 @@ import emailInboundRoutes from "./routes/emailInboundRoutes";
 import emailCommunicationsRoutes from "./routes/emailCommunications";
 import whatsappConfigRoutes from "./routes/whatsappConfig";
 import smsConfigRoutes from "./routes/smsConfig";
+import attendanceRoutes from "./routes/attendance";
+import { attendanceScheduler } from "./services/attendanceScheduler";
 import dpdpRoutes from "./routes/dpdp.routes";
 import apiLogRoutes from "./routes/apiLogs";
 import feedbackFormRoutes from "./routes/feedbackForm";
@@ -322,6 +324,9 @@ app.use("/api/whatsapp-config", whatsappConfigRoutes);
 // SMS Configuration Routes
 app.use("/api/sms-config", smsConfigRoutes);
 
+// Attendance Module Routes
+app.use("/api/attendance", attendanceRoutes);
+
 // DPDP Act 2023 Compliance Routes
 app.use("/api/dpdp", dpdpRoutes);
 
@@ -388,6 +393,10 @@ httpServer.listen(PORT, async () => {
     // Start auto-escalation service (monitors and escalates tickets based on SLA)
     console.log("⏰ Starting Auto-Escalation Service...");
     autoEscalationService.start();
+
+    // Start attendance sync scheduler (per-project AFT cron jobs)
+    console.log("📅 Starting Attendance Sync Scheduler...");
+    await attendanceScheduler.start();
   } catch (error) {
     console.error(
       "⚠️  Database initialization failed, but server is still running",

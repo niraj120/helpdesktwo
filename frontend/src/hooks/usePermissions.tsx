@@ -1,52 +1,79 @@
-import { useMemo } from 'react';
+import { useMemo } from "react";
 
 /**
  * Custom hook to check user permissions
  * Reads permissions from localStorage (userPermissions or JWT token)
- * 
+ *
  * For global state management, use usePermissionContext from context/PermissionContext
  */
+const isSuperAdmin = (): boolean => {
+  try {
+    const userStr = localStorage.getItem("user");
+    if (userStr) {
+      const user = JSON.parse(userStr);
+      const roleCode = user.role?.code || user.roleCode || "";
+      if (roleCode === "SUPER_ADMIN") return true;
+    }
+    const token = localStorage.getItem("authToken");
+    if (token) {
+      const parts = token.split(".");
+      if (parts.length === 3) {
+        const payload = JSON.parse(atob(parts[1]));
+        const code = payload.role?.code || payload.roleCode || "";
+        if (code === "SUPER_ADMIN") return true;
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return false;
+};
+
 export const usePermissions = () => {
+  const superAdmin = useMemo(() => isSuperAdmin(), []);
   const permissions = useMemo(() => {
     try {
       // First try to get from stored permissions
-      const storedPermissions = localStorage.getItem('userPermissions');
+      const storedPermissions = localStorage.getItem("userPermissions");
       if (storedPermissions) {
         const parsed = JSON.parse(storedPermissions);
-        console.log('📋 Using stored permissions:', parsed);
+        console.log("📋 Using stored permissions:", parsed);
         return parsed;
       }
 
       // Fallback to JWT token
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       if (!token) {
-        console.warn('⚠️ No authToken found in localStorage');
+        console.warn("⚠️ No authToken found in localStorage");
         return [];
       }
 
       // Decode JWT token (simple base64 decode of payload)
-      const parts = token.split('.');
+      const parts = token.split(".");
       if (parts.length !== 3) {
-        console.warn('⚠️ Invalid JWT token format');
+        console.warn("⚠️ Invalid JWT token format");
         return [];
       }
 
       const payload = JSON.parse(atob(parts[1]));
-      console.log('🔍 JWT Payload:', payload);
-      console.log('🔍 Role from JWT:', payload.role);
-      console.log('🔍 Permissions from role.permissions:', payload.role?.permissions);
-      console.log('🔍 Permissions from root permissions:', payload.permissions);
-      
+      console.log("🔍 JWT Payload:", payload);
+      console.log("🔍 Role from JWT:", payload.role);
+      console.log(
+        "🔍 Permissions from role.permissions:",
+        payload.role?.permissions,
+      );
+      console.log("🔍 Permissions from root permissions:", payload.permissions);
+
       // Try role.permissions first, then fallback to root level permissions
       const perms = payload.role?.permissions || payload.permissions || [];
-      
+
       // Cache for next time
-      localStorage.setItem('userPermissions', JSON.stringify(perms));
-      
-      console.log('✅ Extracted permissions:', perms);
+      localStorage.setItem("userPermissions", JSON.stringify(perms));
+
+      console.log("✅ Extracted permissions:", perms);
       return perms;
     } catch (error) {
-      console.error('❌ Error parsing permissions from token:', error);
+      console.error("❌ Error parsing permissions from token:", error);
       return [];
     }
   }, []);
@@ -57,6 +84,7 @@ export const usePermissions = () => {
    * @returns true if user has the permission
    */
   const hasPermission = (permission: string): boolean => {
+    if (superAdmin) return true;
     return permissions.includes(permission);
   };
 
@@ -66,7 +94,10 @@ export const usePermissions = () => {
    * @returns true if user has at least one of the permissions
    */
   const hasAnyPermission = (permissionList: string[]): boolean => {
-    return permissionList.some((permission) => permissions.includes(permission));
+    if (superAdmin) return true;
+    return permissionList.some((permission) =>
+      permissions.includes(permission),
+    );
   };
 
   /**
@@ -75,7 +106,10 @@ export const usePermissions = () => {
    * @returns true if user has all permissions
    */
   const hasAllPermissions = (permissionList: string[]): boolean => {
-    return permissionList.every((permission) => permissions.includes(permission));
+    if (superAdmin) return true;
+    return permissionList.every((permission) =>
+      permissions.includes(permission),
+    );
   };
 
   /**
@@ -84,7 +118,10 @@ export const usePermissions = () => {
    * @returns true if user has any permission starting with the prefix
    */
   const hasModuleAccess = (modulePrefix: string): boolean => {
-    return permissions.some((permission: string) => permission.startsWith(modulePrefix));
+    if (superAdmin) return true;
+    return permissions.some((permission: string) =>
+      permission.startsWith(modulePrefix),
+    );
   };
 
   /**
@@ -124,7 +161,8 @@ export const ProtectedComponent: React.FC<ProtectedComponentProps> = ({
   children,
   fallback = null,
 }) => {
-  const { hasPermission, hasAnyPermission, hasAllPermissions } = usePermissions();
+  const { hasPermission, hasAnyPermission, hasAllPermissions } =
+    usePermissions();
 
   let hasAccess = false;
 
@@ -146,14 +184,15 @@ export const ProtectedComponent: React.FC<ProtectedComponentProps> = ({
 export const withPermission = (
   Component: React.ComponentType<any>,
   requiredPermission: string | string[],
-  requireAll = false
+  requireAll = false,
 ) => {
   return (props: any) => {
-    const { hasPermission, hasAnyPermission, hasAllPermissions } = usePermissions();
+    const { hasPermission, hasAnyPermission, hasAllPermissions } =
+      usePermissions();
 
     let hasAccess = false;
 
-    if (typeof requiredPermission === 'string') {
+    if (typeof requiredPermission === "string") {
       hasAccess = hasPermission(requiredPermission);
     } else if (Array.isArray(requiredPermission)) {
       hasAccess = requireAll
@@ -163,7 +202,7 @@ export const withPermission = (
 
     if (!hasAccess) {
       return (
-        <div style={{ padding: '24px', textAlign: 'center' }}>
+        <div style={{ padding: "24px", textAlign: "center" }}>
           <h2>Access Denied</h2>
           <p>You don't have permission to access this page.</p>
         </div>

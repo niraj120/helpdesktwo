@@ -16,7 +16,9 @@ interface Role {
   _id: string;
   name: string;
   code: string;
-  projectId?: string; // Optional: roles can be project-specific or global
+  type?: string; // 'system' | 'custom'
+  projectId?: string; // Legacy: single project assignment
+  projects?: string[]; // Current: multiple project assignment
 }
 
 interface Project {
@@ -157,12 +159,23 @@ const UserManagement: React.FC<UserManagementProps> = ({
 
   // Filtered data based on primary project selection - memoized to prevent recalculation
   const filteredRoles = useMemo(() => {
-    if (formData.primaryProject) {
-      return roles.filter(
-        (role) => !role.projectId || role.projectId === formData.primaryProject,
-      );
-    }
-    return roles;
+    if (!formData.primaryProject) return roles;
+    return roles.filter((role) => {
+      // System roles (Super Admin, Student, etc.) are always available
+      if (role.type === "system") return true;
+      // New: role.projects[] array — show only if selected project is included
+      if (role.projects && role.projects.length > 0) {
+        return role.projects.some(
+          (p: any) =>
+            (p._id?.toString?.() ?? p.toString()) === formData.primaryProject,
+        );
+      }
+      // Legacy: single projectId field
+      if (role.projectId) return role.projectId === formData.primaryProject;
+      // No project assignment — hide when a specific project is selected
+      // (prevents orphan/test roles from appearing in the list)
+      return false;
+    });
   }, [formData.primaryProject, roles]);
 
   const filteredCenters = useMemo(() => {
