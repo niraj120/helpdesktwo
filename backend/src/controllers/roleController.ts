@@ -1,43 +1,53 @@
-import { Response } from 'express';
-import { AuthRequest } from '../middleware/auth';
-import { Role } from '../models/Role';
-import { logActivity } from '../utils/logger';
-import multer from 'multer';
-import path from 'path';
-import { GCSService } from '../services/gcsService';
-import { cache, CACHE_KEYS, CACHE_TTL, invalidateCache } from '../utils/cache';
-import mongoose from 'mongoose';
+import { Response } from "express";
+import { AuthRequest } from "../middleware/auth";
+import { Role } from "../models/Role";
+import { logActivity } from "../utils/logger";
+import multer from "multer";
+import path from "path";
+import { GCSService } from "../services/gcsService";
+import { cache, CACHE_KEYS, CACHE_TTL, invalidateCache } from "../utils/cache";
+import mongoose from "mongoose";
 
 /**
  * Sync permissions from Role.permissions array to rolepermissions junction table.
  * This ensures the new RBAC system stays in sync when roles are created/updated.
  */
-async function syncRolePermissionsToJunctionTable(roleId: mongoose.Types.ObjectId, permissionIds: string[]): Promise<void> {
+async function syncRolePermissionsToJunctionTable(
+  roleId: mongoose.Types.ObjectId,
+  permissionIds: string[],
+): Promise<void> {
   const db = mongoose.connection.db;
   if (!db) {
-    console.error('❌ [RBAC] Database connection not available for permission sync');
+    console.error(
+      "❌ [RBAC] Database connection not available for permission sync",
+    );
     return;
   }
 
   try {
     // Delete existing permissions for this role
-    await db.collection('rolepermissions').deleteMany({ roleId: roleId });
+    await db.collection("rolepermissions").deleteMany({ roleId: roleId });
 
     // Insert new permissions
     if (permissionIds.length > 0) {
       const now = new Date();
-      const docs = permissionIds.map(permId => ({
+      const docs = permissionIds.map((permId) => ({
         roleId: roleId,
         permissionId: new mongoose.Types.ObjectId(permId),
         createdAt: now,
-        updatedAt: now
+        updatedAt: now,
       }));
-      await db.collection('rolepermissions').insertMany(docs);
+      await db.collection("rolepermissions").insertMany(docs);
     }
 
-    console.log(`✅ [RBAC] Synced ${permissionIds.length} permissions to junction table for role ${roleId}`);
+    console.log(
+      `✅ [RBAC] Synced ${permissionIds.length} permissions to junction table for role ${roleId}`,
+    );
   } catch (err) {
-    console.error('❌ [RBAC] Failed to sync permissions to junction table:', err);
+    console.error(
+      "❌ [RBAC] Failed to sync permissions to junction table:",
+      err,
+    );
   }
 }
 
@@ -46,12 +56,16 @@ async function syncRolePermissionsToJunctionTable(roleId: mongoose.Types.ObjectI
 // @access  Private
 export const getRoles = async (req: AuthRequest, res: Response) => {
   try {
-    const { projectId, includeSystem = 'true', isActive } = req.query as Record<string, string | undefined>;
+    const {
+      projectId,
+      includeSystem = "true",
+      isActive,
+    } = req.query as Record<string, string | undefined>;
 
     const query: any = {};
 
-    if (typeof isActive !== 'undefined') {
-      query.isActive = isActive !== 'false';
+    if (typeof isActive !== "undefined") {
+      query.isActive = isActive !== "false";
     }
 
     if (projectId) {
@@ -59,13 +73,34 @@ export const getRoles = async (req: AuthRequest, res: Response) => {
         { projects: projectId },
         { projectId },
       ];
-      if (includeSystem !== 'false') {
-        clauses.push({ type: 'system' });
+      if (includeSystem !== "false") {
+        clauses.push({ type: "system" });
       }
       query.$or = clauses;
     }
 
-    const roles = await Role.find(Object.keys(query).length ? query : {}).populate('permissions');
+    // Auto-scope: non-super-admin callers without explicit projectId filter
+    // see only roles assigned to their role's projects (or system roles)
+    if (!projectId) {
+      const callerRole = (req as any).user?.role;
+      const isSuperAdmin =
+        callerRole?.code === "SUPER_ADMIN" ||
+        callerRole?.name === "Super Admin";
+      if (!isSuperAdmin && callerRole?.projects?.length > 0) {
+        const allowedIds = callerRole.projects.map(
+          (p: any) => p._id?.toString() || p.toString(),
+        );
+        query.$or = [
+          { projects: { $in: allowedIds } },
+          { projectId: { $in: allowedIds } },
+          ...(includeSystem !== "false" ? [{ type: "system" }] : []),
+        ];
+      }
+    }
+
+    const roles = await Role.find(
+      Object.keys(query).length ? query : {},
+    ).populate("permissions");
     res.json({
       success: true,
       data: roles,
@@ -73,7 +108,7 @@ export const getRoles = async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     res.status(500).json({
       success: false,
-      error: error.message || 'Failed to fetch roles',
+      error: error.message || "Failed to fetch roles",
     });
   }
 };
@@ -83,11 +118,11 @@ export const getRoles = async (req: AuthRequest, res: Response) => {
 // @access  Private
 export const getRoleById = async (req: AuthRequest, res: Response) => {
   try {
-    const role = await Role.findById(req.params.id).populate('permissions');
+    const role = await Role.findById(req.params.id).populate("permissions");
     if (!role) {
       res.status(404).json({
         success: false,
-        error: 'Role not found',
+        error: "Role not found",
       });
       return;
     }
@@ -98,7 +133,7 @@ export const getRoleById = async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     res.status(500).json({
       success: false,
-      error: error.message || 'Failed to fetch role',
+      error: error.message || "Failed to fetch role",
     });
   }
 };
@@ -108,17 +143,31 @@ export const getRoleById = async (req: AuthRequest, res: Response) => {
 // @access  Private
 export const createRole = async (req: AuthRequest, res: Response) => {
   try {
-    const { name, code, description, permissions, type, projects, projectId, isMaster } = req.body;
+    const {
+      name,
+      code,
+      description,
+      permissions,
+      type,
+      projects,
+      projectId,
+      isMaster,
+    } = req.body;
 
     // Auto-generate code from name if not provided
-    const roleCode = code?.toUpperCase() || name.toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '');
+    const roleCode =
+      code?.toUpperCase() ||
+      name
+        .toUpperCase()
+        .replace(/\s+/g, "_")
+        .replace(/[^A-Z0-9_]/g, "");
 
     // Check if role with same code already exists
     const existingRole = await Role.findOne({ code: roleCode });
     if (existingRole) {
       res.status(400).json({
         success: false,
-        error: 'Role with this code already exists',
+        error: "Role with this code already exists",
       });
       return;
     }
@@ -126,9 +175,9 @@ export const createRole = async (req: AuthRequest, res: Response) => {
     // Sanitize permissions - handle stringified arrays and ensure valid ObjectIds
     let sanitizedPermissions: string[] = [];
     let permissionsToParse: any[] = [];
-    
+
     // Handle case where permissions is a JSON string (from FormData/multipart)
-    if (permissions && typeof permissions === 'string') {
+    if (permissions && typeof permissions === "string") {
       try {
         const parsed = JSON.parse(permissions);
         if (Array.isArray(parsed)) {
@@ -140,16 +189,19 @@ export const createRole = async (req: AuthRequest, res: Response) => {
     } else if (permissions && Array.isArray(permissions)) {
       permissionsToParse = permissions;
     }
-    
+
     for (const perm of permissionsToParse) {
-      if (typeof perm === 'string') {
-        if (perm.startsWith('[')) {
+      if (typeof perm === "string") {
+        if (perm.startsWith("[")) {
           try {
             const parsed = JSON.parse(perm);
             if (Array.isArray(parsed)) {
-              sanitizedPermissions.push(...parsed.filter((p: any) => 
-                typeof p === 'string' && /^[0-9a-fA-F]{24}$/.test(p)
-              ));
+              sanitizedPermissions.push(
+                ...parsed.filter(
+                  (p: any) =>
+                    typeof p === "string" && /^[0-9a-fA-F]{24}$/.test(p),
+                ),
+              );
             }
           } catch {
             if (/^[0-9a-fA-F]{24}$/.test(perm)) {
@@ -159,7 +211,7 @@ export const createRole = async (req: AuthRequest, res: Response) => {
         } else if (/^[0-9a-fA-F]{24}$/.test(perm)) {
           sanitizedPermissions.push(perm);
         }
-      } else if (typeof perm === 'object' && perm) {
+      } else if (typeof perm === "object" && perm) {
         const id = perm._id?.toString() || perm.toString();
         if (/^[0-9a-fA-F]{24}$/.test(id)) {
           sanitizedPermissions.push(id);
@@ -174,14 +226,14 @@ export const createRole = async (req: AuthRequest, res: Response) => {
       code: roleCode,
       description,
       permissions: sanitizedPermissions,
-      type: type || 'custom',
+      type: type || "custom",
       isMaster: isMaster || false,
     };
 
     // Handle project mapping - handle JSON string from FormData
     let projectsToUse: any[] | undefined;
     if (projects) {
-      if (typeof projects === 'string') {
+      if (typeof projects === "string") {
         try {
           const parsed = JSON.parse(projects);
           if (Array.isArray(parsed)) {
@@ -194,7 +246,7 @@ export const createRole = async (req: AuthRequest, res: Response) => {
         projectsToUse = projects;
       }
     }
-    
+
     // If projects array provided, use it
     // If single projectId provided (backward compatibility), convert to array
     if (projectsToUse && projectsToUse.length > 0) {
@@ -206,7 +258,7 @@ export const createRole = async (req: AuthRequest, res: Response) => {
     }
 
     // System roles (like SuperAdmin) should not have project mapping
-    if (type === 'system') {
+    if (type === "system") {
       delete roleData.projects;
       delete roleData.projectId;
     }
@@ -218,33 +270,40 @@ export const createRole = async (req: AuthRequest, res: Response) => {
       await syncRolePermissionsToJunctionTable(role._id, sanitizedPermissions);
     }
 
-    const populatedRole = await Role.findById(role._id).populate('permissions');
-    
+    const populatedRole = await Role.findById(role._id).populate("permissions");
+
     // Log activity
     try {
       const currentUser = req.user;
       if (currentUser) {
-        const projectNames = roleData.projects && Array.isArray(roleData.projects) && roleData.projects.length > 0
-          ? `Projects: ${roleData.projects.length}`
-          : 'No specific projects';
-        
+        const projectNames =
+          roleData.projects &&
+          Array.isArray(roleData.projects) &&
+          roleData.projects.length > 0
+            ? `Projects: ${roleData.projects.length}`
+            : "No specific projects";
+
         await logActivity({
           userId: currentUser.userId,
-          userName: `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim(),
+          userName:
+            `${currentUser.firstName || ""} ${currentUser.lastName || ""}`.trim(),
           userEmail: currentUser.email,
-          action: 'create',
-          entity: 'role',
+          action: "create",
+          entity: "role",
           entityId: role._id.toString(),
           entityName: role.name,
-          projectId: roleData.projects && roleData.projects.length > 0 ? roleData.projects[0].toString() : undefined,
+          projectId:
+            roleData.projects && roleData.projects.length > 0
+              ? roleData.projects[0].toString()
+              : undefined,
           projectName: projectNames,
           description: `Role ${role.name} (${role.code}) created`,
           req,
-          metadata: { code: role.code, type: role.type, isAgent: role.isAgent }
+          metadata: { code: role.code, type: role.type, isAgent: role.isAgent },
         });
       }
     } catch (logError) {
-      console.error('Failed to log activity:', logError);
+      console.error("Failed to log activity:", logError);
     }
 
     res.status(201).json({
@@ -254,7 +313,7 @@ export const createRole = async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     res.status(500).json({
       success: false,
-      error: error.message || 'Failed to create role',
+      error: error.message || "Failed to create role",
     });
   }
 };
@@ -264,24 +323,39 @@ export const createRole = async (req: AuthRequest, res: Response) => {
 // @access  Private
 export const updateRole = async (req: AuthRequest, res: Response) => {
   try {
-    const { name, code, description, permissions, projects, projectId, isMaster, isAgent } = req.body;
+    const {
+      name,
+      code,
+      description,
+      permissions,
+      projects,
+      projectId,
+      isMaster,
+      isAgent,
+    } = req.body;
 
-    console.log('🔄 Updating role with body:', { name, code, isMaster, isAgent, projects });
+    console.log("🔄 Updating role with body:", {
+      name,
+      code,
+      isMaster,
+      isAgent,
+      projects,
+    });
 
     const role = await Role.findById(req.params.id);
     if (!role) {
       res.status(404).json({
         success: false,
-        error: 'Role not found',
+        error: "Role not found",
       });
       return;
     }
 
     // Prevent updating system roles' project mapping
-    if (role.type === 'system' && (projects || projectId)) {
+    if (role.type === "system" && (projects || projectId)) {
       res.status(400).json({
         success: false,
-        error: 'Cannot modify project mapping for system roles',
+        error: "Cannot modify project mapping for system roles",
       });
       return;
     }
@@ -292,7 +366,7 @@ export const updateRole = async (req: AuthRequest, res: Response) => {
       if (existingRole) {
         res.status(400).json({
           success: false,
-          error: 'Role with this code already exists',
+          error: "Role with this code already exists",
         });
         return;
       }
@@ -301,16 +375,16 @@ export const updateRole = async (req: AuthRequest, res: Response) => {
     role.name = name || role.name;
     role.code = code?.toUpperCase() || role.code;
     role.description = description || role.description;
-    
+
     // Check if permissions are actually changing
     let permissionsChanged = false;
     if (permissions !== undefined) {
       // Sanitize permissions - handle stringified arrays and ensure valid ObjectIds
       let sanitizedPermissions: string[] = [];
       let permissionsToParse: any[] = [];
-      
+
       // Handle case where permissions is a JSON string (from FormData/multipart)
-      if (typeof permissions === 'string') {
+      if (typeof permissions === "string") {
         try {
           const parsed = JSON.parse(permissions);
           if (Array.isArray(parsed)) {
@@ -322,17 +396,20 @@ export const updateRole = async (req: AuthRequest, res: Response) => {
       } else if (Array.isArray(permissions)) {
         permissionsToParse = permissions;
       }
-      
+
       for (const perm of permissionsToParse) {
-        if (typeof perm === 'string') {
+        if (typeof perm === "string") {
           // Check if it's a JSON array string
-          if (perm.startsWith('[')) {
+          if (perm.startsWith("[")) {
             try {
               const parsed = JSON.parse(perm);
               if (Array.isArray(parsed)) {
-                sanitizedPermissions.push(...parsed.filter((p: any) => 
-                  typeof p === 'string' && /^[0-9a-fA-F]{24}$/.test(p)
-                ));
+                sanitizedPermissions.push(
+                  ...parsed.filter(
+                    (p: any) =>
+                      typeof p === "string" && /^[0-9a-fA-F]{24}$/.test(p),
+                  ),
+                );
               }
             } catch {
               // Not valid JSON, check if plain ObjectId
@@ -343,7 +420,7 @@ export const updateRole = async (req: AuthRequest, res: Response) => {
           } else if (/^[0-9a-fA-F]{24}$/.test(perm)) {
             sanitizedPermissions.push(perm);
           }
-        } else if (typeof perm === 'object' && perm) {
+        } else if (typeof perm === "object" && perm) {
           // Handle populated objects or ObjectIds
           const id = perm._id?.toString() || perm.toString();
           if (/^[0-9a-fA-F]{24}$/.test(id)) {
@@ -351,32 +428,38 @@ export const updateRole = async (req: AuthRequest, res: Response) => {
           }
         }
       }
-      
+
       // Remove duplicates
       sanitizedPermissions = [...new Set(sanitizedPermissions)];
-      
-      console.log('📋 Permissions sanitized:', permissionsToParse.length, '→', sanitizedPermissions.length);
-      
-      const oldPermissions = role.permissions.map(p => p.toString()).sort();
+
+      console.log(
+        "📋 Permissions sanitized:",
+        permissionsToParse.length,
+        "→",
+        sanitizedPermissions.length,
+      );
+
+      const oldPermissions = role.permissions.map((p) => p.toString()).sort();
       const newPermissions = sanitizedPermissions.sort();
-      permissionsChanged = JSON.stringify(oldPermissions) !== JSON.stringify(newPermissions);
+      permissionsChanged =
+        JSON.stringify(oldPermissions) !== JSON.stringify(newPermissions);
       role.permissions = sanitizedPermissions as any;
     }
 
     if (isMaster !== undefined) {
       role.isMaster = isMaster;
-      console.log('✅ Set isMaster to:', isMaster);
+      console.log("✅ Set isMaster to:", isMaster);
     }
 
     if (isAgent !== undefined) {
       role.isAgent = isAgent;
-      console.log('✅ Set isAgent to:', isAgent);
+      console.log("✅ Set isAgent to:", isAgent);
     }
 
     // Update project mapping - handle JSON string from FormData
     let projectsToUpdate: any[] | undefined;
     if (projects) {
-      if (typeof projects === 'string') {
+      if (typeof projects === "string") {
         try {
           const parsed = JSON.parse(projects);
           if (Array.isArray(parsed)) {
@@ -389,7 +472,7 @@ export const updateRole = async (req: AuthRequest, res: Response) => {
         projectsToUpdate = projects;
       }
     }
-    
+
     if (projectsToUpdate && projectsToUpdate.length > 0) {
       role.projects = projectsToUpdate;
       role.projectId = projectsToUpdate[0];
@@ -402,55 +485,72 @@ export const updateRole = async (req: AuthRequest, res: Response) => {
 
     // ✅ Sync permissions to rolepermissions junction table (NEW RBAC SYSTEM)
     if (permissionsChanged) {
-      const permissionIds = role.permissions.map(p => p.toString());
+      const permissionIds = role.permissions.map((p) => p.toString());
       await syncRolePermissionsToJunctionTable(role._id, permissionIds);
     }
-    
+
     // Invalidate tokens for all users with this role if permissions changed
     if (permissionsChanged) {
-      console.log(`🔄 Permissions changed for role ${role.name}. Invalidating tokens for affected users.`);
-      const { User } = await import('../models/User');
+      console.log(
+        `🔄 Permissions changed for role ${role.name}. Invalidating tokens for affected users.`,
+      );
+      const { User } = await import("../models/User");
       const affectedUsers = await User.find({ role: role._id });
-      
+
       for (const user of affectedUsers) {
         await user.incrementTokenVersion();
         console.log(`   - Incremented token version for user: ${user.email}`);
       }
-      
-      console.log(`✅ Invalidated tokens for ${affectedUsers.length} user(s) with role ${role.name}`);
+
+      console.log(
+        `✅ Invalidated tokens for ${affectedUsers.length} user(s) with role ${role.name}`,
+      );
     }
 
-    const populatedRole = await Role.findById(role._id).populate('permissions');
-    
+    const populatedRole = await Role.findById(role._id).populate("permissions");
+
     // Log activity
     try {
       const currentUser = req.user;
       if (currentUser) {
         const changes = [];
-        if (name) changes.push({ field: 'name', oldValue: role.name, newValue: name });
-        if (permissions) changes.push({ field: 'permissions', oldValue: 'previous', newValue: 'updated' });
-        
-        const projectNames = role.projects && Array.isArray(role.projects) && role.projects.length > 0
-          ? `Projects: ${role.projects.length}`
-          : 'No specific projects';
-        
+        if (name)
+          changes.push({ field: "name", oldValue: role.name, newValue: name });
+        if (permissions)
+          changes.push({
+            field: "permissions",
+            oldValue: "previous",
+            newValue: "updated",
+          });
+
+        const projectNames =
+          role.projects &&
+          Array.isArray(role.projects) &&
+          role.projects.length > 0
+            ? `Projects: ${role.projects.length}`
+            : "No specific projects";
+
         await logActivity({
           userId: currentUser.userId,
-          userName: `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim(),
+          userName:
+            `${currentUser.firstName || ""} ${currentUser.lastName || ""}`.trim(),
           userEmail: currentUser.email,
-          action: 'update',
-          entity: 'role',
+          action: "update",
+          entity: "role",
           entityId: role._id.toString(),
           entityName: role.name,
-          projectId: role.projects && role.projects.length > 0 ? role.projects[0].toString() : undefined,
+          projectId:
+            role.projects && role.projects.length > 0
+              ? role.projects[0].toString()
+              : undefined,
           projectName: projectNames,
           changes: changes.length > 0 ? changes : undefined,
-          description: `Role ${role.name} updated${permissionsChanged ? ' (permissions changed)' : ''}`,
-          req
+          description: `Role ${role.name} updated${permissionsChanged ? " (permissions changed)" : ""}`,
+          req,
         });
       }
     } catch (logError) {
-      console.error('Failed to log activity:', logError);
+      console.error("Failed to log activity:", logError);
     }
 
     res.json({
@@ -460,7 +560,7 @@ export const updateRole = async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     res.status(500).json({
       success: false,
-      error: error.message || 'Failed to update role',
+      error: error.message || "Failed to update role",
     });
   }
 };
@@ -474,7 +574,7 @@ export const deleteRole = async (req: AuthRequest, res: Response) => {
     if (!role) {
       res.status(404).json({
         success: false,
-        error: 'Role not found',
+        error: "Role not found",
       });
       return;
     }
@@ -483,7 +583,7 @@ export const deleteRole = async (req: AuthRequest, res: Response) => {
     if (role.isSystem) {
       res.status(400).json({
         success: false,
-        error: 'Cannot delete system roles',
+        error: "Cannot delete system roles",
       });
       return;
     }
@@ -493,39 +593,40 @@ export const deleteRole = async (req: AuthRequest, res: Response) => {
       id: role._id.toString(),
       name: role.name,
       code: role.code,
-      projects: role.projects
+      projects: role.projects,
     };
-    
+
     await role.deleteOne();
-    
+
     // Log activity
     try {
       const currentUser = req.user;
       if (currentUser) {
         await logActivity({
           userId: currentUser.userId,
-          userName: `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim(),
+          userName:
+            `${currentUser.firstName || ""} ${currentUser.lastName || ""}`.trim(),
           userEmail: currentUser.email,
-          action: 'delete',
-          entity: 'role',
+          action: "delete",
+          entity: "role",
           entityId: deletedRoleData.id,
           entityName: deletedRoleData.name,
           description: `Role ${deletedRoleData.name} (${deletedRoleData.code}) deleted`,
-          req
+          req,
         });
       }
     } catch (logError) {
-      console.error('Failed to log activity:', logError);
+      console.error("Failed to log activity:", logError);
     }
 
     res.json({
       success: true,
-      message: 'Role deleted successfully',
+      message: "Role deleted successfully",
     });
   } catch (error: any) {
     res.status(500).json({
       success: false,
-      error: error.message || 'Failed to delete role',
+      error: error.message || "Failed to delete role",
     });
   }
 };
@@ -542,21 +643,26 @@ export const cloneRole = async (req: AuthRequest, res: Response) => {
     if (!masterRole) {
       res.status(404).json({
         success: false,
-        error: 'Master role not found',
+        error: "Master role not found",
       });
       return;
     }
 
     // Auto-generate code from name if not provided
     const roleName = name || `${masterRole.name} (Copy)`;
-    const roleCode = code?.toUpperCase() || roleName.toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '');
+    const roleCode =
+      code?.toUpperCase() ||
+      roleName
+        .toUpperCase()
+        .replace(/\s+/g, "_")
+        .replace(/[^A-Z0-9_]/g, "");
 
     // Check if role with same code already exists
     const existingRole = await Role.findOne({ code: roleCode });
     if (existingRole) {
       res.status(400).json({
         success: false,
-        error: 'Role with this code already exists',
+        error: "Role with this code already exists",
       });
       return;
     }
@@ -567,7 +673,7 @@ export const cloneRole = async (req: AuthRequest, res: Response) => {
       code: roleCode,
       description: description || masterRole.description,
       permissions: masterRole.permissions, // Copy all permissions
-      type: 'custom', // Cloned roles are always custom
+      type: "custom", // Cloned roles are always custom
       isMaster: false, // Cloned roles are not master by default
       masterRoleId: masterRole._id, // Reference to master role
     };
@@ -582,17 +688,19 @@ export const cloneRole = async (req: AuthRequest, res: Response) => {
     }
 
     const clonedRole = await Role.create(roleData);
-    const populatedRole = await Role.findById(clonedRole._id).populate('permissions');
+    const populatedRole = await Role.findById(clonedRole._id).populate(
+      "permissions",
+    );
 
     res.status(201).json({
       success: true,
       data: populatedRole,
-      message: 'Role cloned successfully',
+      message: "Role cloned successfully",
     });
   } catch (error: any) {
     res.status(500).json({
       success: false,
-      error: error.message || 'Failed to clone role',
+      error: error.message || "Failed to clone role",
     });
   }
 };
@@ -602,7 +710,10 @@ export const cloneRole = async (req: AuthRequest, res: Response) => {
 // @access  Private
 export const getMasterRoles = async (req: AuthRequest, res: Response) => {
   try {
-    const masterRoles = await Role.find({ isMaster: true, isActive: true }).populate('permissions');
+    const masterRoles = await Role.find({
+      isMaster: true,
+      isActive: true,
+    }).populate("permissions");
     res.json({
       success: true,
       data: masterRoles,
@@ -610,7 +721,7 @@ export const getMasterRoles = async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     res.status(500).json({
       success: false,
-      error: error.message || 'Failed to fetch master roles',
+      error: error.message || "Failed to fetch master roles",
     });
   }
 };
@@ -626,17 +737,21 @@ export const uploadRoleDocument = multer({
   fileFilter: (req, file, cb) => {
     // Allow PDF, DOC, DOCX, and image files
     const allowedTypes = [
-      'application/pdf',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'image/jpeg',
-      'image/png',
-      'image/gif',
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "image/jpeg",
+      "image/png",
+      "image/gif",
     ];
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only PDF, DOC, DOCX, and images are allowed.'));
+      cb(
+        new Error(
+          "Invalid file type. Only PDF, DOC, DOCX, and images are allowed.",
+        ),
+      );
     }
   },
 });
@@ -652,7 +767,7 @@ export const deleteRoleDocument = async (req: AuthRequest, res: Response) => {
     if (!role) {
       return res.status(404).json({
         success: false,
-        error: 'Role not found',
+        error: "Role not found",
       });
     }
 
@@ -661,7 +776,7 @@ export const deleteRoleDocument = async (req: AuthRequest, res: Response) => {
       try {
         await GCSService.deleteRoleDocument(role.document.filePath);
       } catch (gcsError) {
-        console.error('Error deleting document from GCS:', gcsError);
+        console.error("Error deleting document from GCS:", gcsError);
       }
     }
 
@@ -674,26 +789,27 @@ export const deleteRoleDocument = async (req: AuthRequest, res: Response) => {
     if (currentUser) {
       await logActivity({
         userId: currentUser.userId,
-        userName: `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim(),
+        userName:
+          `${currentUser.firstName || ""} ${currentUser.lastName || ""}`.trim(),
         userEmail: currentUser.email,
-        action: 'delete',
-        entity: 'role',
+        action: "delete",
+        entity: "role",
         entityId: role._id.toString(),
         entityName: role.name,
-        description: 'Document removed from role',
-        req
+        description: "Document removed from role",
+        req,
       });
     }
 
     return res.json({
       success: true,
-      message: 'Document deleted successfully',
+      message: "Document deleted successfully",
     });
   } catch (error: any) {
-    console.error('Delete role document error:', error);
+    console.error("Delete role document error:", error);
     return res.status(500).json({
       success: false,
-      error: error.message || 'Failed to delete document',
+      error: error.message || "Failed to delete document",
     });
   }
 };

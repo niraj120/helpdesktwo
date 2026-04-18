@@ -143,6 +143,10 @@ const WebhookFailureLogs = lazy(() => import("./pages/WebhookFailureLogs"));
 
 // Integrations & Email
 const EmailConfigPage = lazy(() => import("./pages/EmailConfigPage"));
+const PublicApiKeysPage = lazy(() => import("./pages/PublicApiKeysPage"));
+const WhatsAppWidgetSettings = lazy(
+  () => import("./pages/WhatsAppWidgetSettings"),
+);
 const EmailToTicketConfiguration = lazy(
   () => import("./components/EmailToTicketConfiguration"),
 );
@@ -153,6 +157,20 @@ const IntegrationsManagement = lazy(
 // System Monitoring
 const DBMonitoringDashboard = lazy(
   () => import("./pages/DBMonitoringDashboard"),
+);
+
+// Attendance Module
+const AttendanceConfigPage = lazy(
+  () => import("./pages/attendance/AttendanceConfigPage"),
+);
+const AttendanceBiometricSyncPage = lazy(
+  () => import("./pages/attendance/AttendanceBiometricSyncPage"),
+);
+const AttendanceRecordsPage = lazy(
+  () => import("./pages/attendance/AttendanceRecordsPage"),
+);
+const AttendanceReportPage = lazy(
+  () => import("./pages/attendance/AttendanceReportPage"),
 );
 
 function App() {
@@ -718,12 +736,76 @@ function App() {
             }
           />
 
+          {/* Public API Key Management - Super Admin */}
+          <Route
+            path="/integrations/public-api-keys"
+            element={
+              <ProtectedRoute permission="PROJECT_MANAGE_SETTINGS">
+                <PublicApiKeysPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* WhatsApp Widget Settings - Super Admin */}
+          <Route
+            path="/integrations/whatsapp-widget"
+            element={
+              <ProtectedRoute permission="PROJECT_MANAGE_SETTINGS">
+                <DashboardLayout>
+                  <WhatsAppWidgetSettings />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+
           {/* Database Monitoring - Super Admin Only */}
           <Route
             path="/system/db-monitoring"
             element={
               <ProtectedRoute requireAuth={true}>
                 <DBMonitoringDashboard />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Attendance Module Routes */}
+          <Route
+            path="/attendance/records"
+            element={
+              <ProtectedRoute permission="ATTENDANCE_VIEW">
+                <DashboardLayout>
+                  <AttendanceRecordsPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/attendance/report"
+            element={
+              <ProtectedRoute permission="ATTENDANCE_REPORT_VIEW">
+                <DashboardLayout>
+                  <AttendanceReportPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/attendance/employees"
+            element={
+              <ProtectedRoute permission="ATTENDANCE_SYNC">
+                <DashboardLayout>
+                  <AttendanceBiometricSyncPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/attendance/config"
+            element={
+              <ProtectedRoute permission="ATTENDANCE_CONFIG">
+                <DashboardLayout>
+                  <AttendanceConfigPage />
+                </DashboardLayout>
               </ProtectedRoute>
             }
           />

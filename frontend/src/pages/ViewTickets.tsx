@@ -133,7 +133,16 @@ const getSlaPill = (
   return { label, color: "#dc2626", bg: "#fef2f2", tooltip };
 };
 
-const ViewTickets: React.FC = () => {
+interface ViewTicketsProps {
+  /** When rendered inside a project portal, lock the project filter to this ID */
+  initialProjectId?: string;
+  wrapWithLayout?: boolean;
+}
+
+const ViewTickets: React.FC<ViewTicketsProps> = ({
+  initialProjectId,
+  wrapWithLayout = true,
+}) => {
   const navigate = useNavigate();
 
   // Helper function to check permissions from localStorage
@@ -168,7 +177,8 @@ const ViewTickets: React.FC = () => {
   const pageSize = 20;
 
   // Project + assignedTo filters (server-side)
-  const [filterProject, setFilterProject] = useState("all");
+  // When initialProjectId is provided (portal context), lock to that project
+  const [filterProject, setFilterProject] = useState(initialProjectId ?? "all");
   const [filterAssignedTo, setFilterAssignedTo] = useState("all");
   const [projects, setProjects] = useState<Project[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -204,8 +214,8 @@ const ViewTickets: React.FC = () => {
       return;
     }
     hasFetchedTickets.current = true;
-    fetchTickets(1, "all", "all");
-    fetchProjects();
+    fetchTickets(1, initialProjectId ?? "all", "all");
+    if (!initialProjectId) fetchProjects(); // skip project list when locked to portal project
     fetchAgents();
   }, []);
 
@@ -435,17 +445,27 @@ const ViewTickets: React.FC = () => {
   );
 
   if (loading) {
-    return (
-      <DashboardLayout>
-        <div style={{ padding: "24px", textAlign: "center" }}>
-          <p>Loading tickets...</p>
-        </div>
-      </DashboardLayout>
+    const loadingContent = (
+      <div style={{ padding: "24px", textAlign: "center" }}>
+        <p>Loading tickets...</p>
+      </div>
+    );
+    return wrapWithLayout ? (
+      <DashboardLayout>{loadingContent}</DashboardLayout>
+    ) : (
+      loadingContent
     );
   }
 
+  const Wrapper = ({ children }: { children: React.ReactNode }) =>
+    wrapWithLayout ? (
+      <DashboardLayout>{children}</DashboardLayout>
+    ) : (
+      <>{children}</>
+    );
+
   return (
-    <DashboardLayout>
+    <Wrapper>
       <div style={{ padding: "24px", maxWidth: "1400px", margin: "0 auto" }}>
         <ModuleHeader
           title={hasViewAll ? "All Queries" : "My Queries"}
@@ -550,7 +570,8 @@ const ViewTickets: React.FC = () => {
               alignItems: "center",
             }}
           >
-            {projects.length > 0 && (
+            {/* Hide project dropdown when locked to a portal project */}
+            {!initialProjectId && projects.length > 0 && (
               <select
                 value={filterProject}
                 onChange={(e) => {
@@ -599,12 +620,13 @@ const ViewTickets: React.FC = () => {
                 ))}
               </select>
             )}
-            {(filterProject !== "all" || filterAssignedTo !== "all") && (
+            {((initialProjectId ? false : filterProject !== "all") ||
+              filterAssignedTo !== "all") && (
               <button
                 onClick={() => {
-                  setFilterProject("all");
+                  if (!initialProjectId) setFilterProject("all");
                   setFilterAssignedTo("all");
-                  fetchTickets(1, "all", "all");
+                  fetchTickets(1, initialProjectId ?? "all", "all");
                 }}
                 style={{
                   padding: "9px 14px",
@@ -1451,7 +1473,7 @@ const ViewTickets: React.FC = () => {
           </div>
         </div>
       )}
-    </DashboardLayout>
+    </Wrapper>
   );
 };
 

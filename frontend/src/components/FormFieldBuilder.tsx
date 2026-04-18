@@ -844,6 +844,127 @@ const FieldConfigPanel: React.FC<FieldConfigPanelProps> = ({
               />
             </div>
           </div>
+
+          {/* Expose via External API */}
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              padding: "10px 12px",
+              background: field.includeInPublicApi ? "#f0fdf4" : "#f9fafb",
+              border: `1px solid ${field.includeInPublicApi ? "#86efac" : "#e5e7eb"}`,
+              borderRadius: "6px",
+              cursor: "pointer",
+              fontSize: "13px",
+              userSelect: "none",
+            }}
+            title="When enabled, this field will appear in GET /v1/tickets/form-schema and will be validated in POST /v1/tickets (for online-mode projects)"
+          >
+            <input
+              type="checkbox"
+              checked={!!field.includeInPublicApi}
+              onChange={(e) =>
+                onUpdate({
+                  includeInPublicApi: e.target.checked,
+                  // Clear isFixed when disabling API exposure
+                  ...(!e.target.checked ? { isFixed: false } : {}),
+                })
+              }
+              style={{ width: 15, height: 15, cursor: "pointer" }}
+            />
+            <div>
+              <div
+                style={{
+                  fontWeight: "600",
+                  color: field.includeInPublicApi ? "#15803d" : "#374151",
+                }}
+              >
+                🌐 Expose via External API
+              </div>
+              <div
+                style={{ fontSize: "11px", color: "#6b7280", marginTop: "1px" }}
+              >
+                Include in{" "}
+                <code
+                  style={{
+                    background: "#f3f4f6",
+                    padding: "0 3px",
+                    borderRadius: "3px",
+                  }}
+                >
+                  GET /v1/tickets/form-schema
+                </code>{" "}
+                and validate in{" "}
+                <code
+                  style={{
+                    background: "#f3f4f6",
+                    padding: "0 3px",
+                    borderRadius: "3px",
+                  }}
+                >
+                  POST /v1/tickets
+                </code>
+              </div>
+            </div>
+          </label>
+
+          {/* Fixed Field sub-toggle — only visible when API exposure is on */}
+          {field.includeInPublicApi && (
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                padding: "10px 12px",
+                background: field.isFixed ? "#eff6ff" : "#f9fafb",
+                border: `1px solid ${field.isFixed ? "#93c5fd" : "#e5e7eb"}`,
+                borderRadius: "6px",
+                cursor: "pointer",
+                fontSize: "13px",
+                userSelect: "none",
+                marginTop: "-4px",
+              }}
+              title="Fixed fields are standard required fields (e.g. Name, Email, Category). They always appear in the API schema as 'fixed_fields'."
+            >
+              <input
+                type="checkbox"
+                checked={!!field.isFixed}
+                onChange={(e) => onUpdate({ isFixed: e.target.checked })}
+                style={{ width: 15, height: 15, cursor: "pointer" }}
+              />
+              <div>
+                <div
+                  style={{
+                    fontWeight: "600",
+                    color: field.isFixed ? "#1d4ed8" : "#374151",
+                  }}
+                >
+                  📌 Mark as Fixed Field
+                </div>
+                <div
+                  style={{
+                    fontSize: "11px",
+                    color: "#6b7280",
+                    marginTop: "1px",
+                  }}
+                >
+                  Returned under{" "}
+                  <code
+                    style={{
+                      background: "#f3f4f6",
+                      padding: "0 3px",
+                      borderRadius: "3px",
+                    }}
+                  >
+                    fixed_fields
+                  </code>{" "}
+                  in the schema (standard form fields like Name, Email,
+                  Category)
+                </div>
+              </div>
+            </label>
+          )}
         </div>
       )}
 
@@ -1244,6 +1365,38 @@ export const FormFieldBuilder: React.FC<FormFieldBuilderProps> = ({
                                     title="Click to edit conditions"
                                   >
                                     {condCount} rule{condCount !== 1 ? "s" : ""}
+                                  </span>
+                                )}
+                                {field.isFixed && (
+                                  <span
+                                    style={{
+                                      fontSize: "11px",
+                                      padding: "2px 6px",
+                                      borderRadius: "10px",
+                                      background: "#dbeafe",
+                                      color: "#1d4ed8",
+                                      fontWeight: "600",
+                                      flexShrink: 0,
+                                    }}
+                                    title="Fixed Field — always in API schema as fixed_fields"
+                                  >
+                                    📌 Fixed
+                                  </span>
+                                )}
+                                {!field.isFixed && field.includeInPublicApi && (
+                                  <span
+                                    style={{
+                                      fontSize: "11px",
+                                      padding: "2px 6px",
+                                      borderRadius: "10px",
+                                      background: "#dcfce7",
+                                      color: "#15803d",
+                                      fontWeight: "600",
+                                      flexShrink: 0,
+                                    }}
+                                    title="Custom Field — exposed via External API as custom_fields"
+                                  >
+                                    🌐 API
                                   </span>
                                 )}
                               </div>

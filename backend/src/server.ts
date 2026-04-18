@@ -22,6 +22,7 @@ import "./models/Permission";
 import "./models/Project";
 import "./models/Status";
 import "./models/Center";
+import "./models/PublicApiKey";
 import "./models/Asset";
 import "./models/CenterAssetMapping";
 import "./models/FeedbackForm";
@@ -84,6 +85,8 @@ import emailInboundRoutes from "./routes/emailInboundRoutes";
 import emailCommunicationsRoutes from "./routes/emailCommunications";
 import whatsappConfigRoutes from "./routes/whatsappConfig";
 import smsConfigRoutes from "./routes/smsConfig";
+import attendanceRoutes from "./routes/attendance";
+import { attendanceScheduler } from "./services/attendanceScheduler";
 import dpdpRoutes from "./routes/dpdp.routes";
 import apiLogRoutes from "./routes/apiLogs";
 import feedbackFormRoutes from "./routes/feedbackForm";
@@ -99,6 +102,8 @@ import cacheRoutes from "./routes/cacheRoutes";
 import otpRoutes from "./routes/otp";
 import reportRoutes from "./routes/reportRoutes";
 import dbMonitoringRoutes from "./routes/dbMonitoringRoutes";
+import publicApiKeysRoutes from "./routes/publicApiKeys";
+import publicApiRoutes from "./routes/publicApi";
 // import integrationRoutes from './routes/integrations'; // TODO: Implement
 import { setupSocketHandlers } from "./socket/socketHandlers";
 import { initializeDatabase } from "./utils/dbInit";
@@ -197,6 +202,8 @@ app.use(
       "X-Requested-With",
       "Cache-Control",
       "Pragma",
+      "X-API-Key",
+      "X-Project-ID",
     ],
     exposedHeaders: ["Content-Range", "X-Content-Range"],
     maxAge: 86400, // 24 hours
@@ -322,6 +329,9 @@ app.use("/api/whatsapp-config", whatsappConfigRoutes);
 // SMS Configuration Routes
 app.use("/api/sms-config", smsConfigRoutes);
 
+// Attendance Module Routes
+app.use("/api/attendance", attendanceRoutes);
+
 // DPDP Act 2023 Compliance Routes
 app.use("/api/dpdp", dpdpRoutes);
 
@@ -340,6 +350,13 @@ app.use("/api/reports", reportRoutes);
 
 // DB Monitoring Routes
 app.use("/api/db-monitoring", dbMonitoringRoutes);
+
+// Public API Key Management Routes (admin)
+app.use("/api/admin/public-api-keys", publicApiKeysRoutes);
+
+// Public API Routes (chatbot / WhatsApp / external consumers)
+// Per-endpoint rate limiting is applied inside the router
+app.use("/v1", publicApiRoutes);
 
 // Integration Routes (TODO: Implement)
 // app.use('/api/integrations', integrationRoutes);
@@ -388,6 +405,10 @@ httpServer.listen(PORT, async () => {
     // Start auto-escalation service (monitors and escalates tickets based on SLA)
     console.log("⏰ Starting Auto-Escalation Service...");
     autoEscalationService.start();
+
+    // Start attendance sync scheduler (per-project AFT cron jobs)
+    console.log("📅 Starting Attendance Sync Scheduler...");
+    await attendanceScheduler.start();
   } catch (error) {
     console.error(
       "⚠️  Database initialization failed, but server is still running",

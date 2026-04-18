@@ -59,6 +59,8 @@ export interface FormFieldSchema {
   maxFileSizeMB?: number;
   allowMultiple?: boolean;
   validation?: { minLength?: number; maxLength?: number; pattern?: string };
+  /** When true, this field is exposed via the External / Public API */
+  includeInPublicApi?: boolean;
 }
 
 export interface ConditionEngineResult {

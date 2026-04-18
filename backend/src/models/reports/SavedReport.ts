@@ -10,7 +10,9 @@ export type FilterOperator =
   | "between"
   | "in"
   | "is_empty"
-  | "is_not_empty";
+  | "is_not_empty"
+  | "before"
+  | "after";
 
 export interface IReportFilter {
   field: string; // data point key
@@ -22,6 +24,7 @@ export interface IReportFilter {
 export interface ISavedReport extends Document {
   name: string;
   description: string;
+  reportType: "ticket" | "attendance";
   createdBy: mongoose.Types.ObjectId;
   projectId?: mongoose.Types.ObjectId; // optional project scope
   dataPoints: string[]; // ordered array of selected data point keys
@@ -52,6 +55,8 @@ const FilterSchema = new Schema(
         "in",
         "is_empty",
         "is_not_empty",
+        "before",
+        "after",
       ],
       required: true,
     },
@@ -65,6 +70,11 @@ const SavedReportSchema = new Schema<ISavedReport>(
   {
     name: { type: String, required: true, trim: true },
     description: { type: String, default: "" },
+    reportType: {
+      type: String,
+      enum: ["ticket", "attendance"],
+      default: "ticket",
+    },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
     projectId: { type: Schema.Types.ObjectId, ref: "Project" },
     dataPoints: { type: [String], required: true, default: [] },

@@ -123,6 +123,34 @@ export const getAllUsers = async (
     }
 
     // ============================================
+    // PROJECT SCOPING FOR NON-SUPER-ADMIN CALLERS
+    // If the caller has a role scoped to specific projects (e.g. Sub Admin),
+    // restrict the user list to only users who belong to those projects.
+    // SUPER_ADMIN and roles with no projects[] restriction see everyone.
+    // ============================================
+    const callerRole = (req as any).user?.role;
+    const isSuperAdmin =
+      callerRole?.code === "SUPER_ADMIN" || callerRole?.name === "Super Admin";
+
+    if (!isSuperAdmin && callerRole?.projects?.length > 0) {
+      const allowedProjectIds = callerRole.projects.map(
+        (p: any) => new mongoose.Types.ObjectId(p._id || p),
+      );
+      if (filter.projects) {
+        // A specific ?project= filter was also supplied — honour intersection
+        filter.projects = {
+          $in: [filter.projects]
+            .flat()
+            .filter((id: any) =>
+              allowedProjectIds.some((a: any) => a.equals(id)),
+            ),
+        };
+      } else {
+        filter.projects = { $in: allowedProjectIds };
+      }
+    }
+
+    // ============================================
     // SORTING
     // ============================================
     const allowedSortFields = [

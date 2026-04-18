@@ -28,8 +28,11 @@ import {
   MdArticle,
   MdVisibility,
   MdTableChart,
+  MdFingerprint,
   MdMonitorHeart,
   MdStorage,
+  MdInsights,
+  MdVpnKey,
 } from "react-icons/md";
 import { PERMISSIONS, PERMISSION_MODULES } from "../constants/permissions";
 
@@ -355,6 +358,22 @@ export const menuConfig: MenuItem[] = [
         labelMr: "ईमेल-टू-टिकट",
         permission: "EMAIL_CONFIG_VIEW",
       },
+      {
+        path: "/integrations/public-api-keys",
+        icon: <MdVpnKey />,
+        label: "Public API Keys",
+        labelHi: "सार्वजनिक API कुंजी",
+        labelMr: "सार्वजनिक API की",
+        permission: "PROJECT_MANAGE_SETTINGS",
+      },
+      {
+        path: "/integrations/whatsapp-widget",
+        icon: <MdChat />,
+        label: "WhatsApp Widget",
+        labelHi: "व्हाट्सएप विजेट",
+        labelMr: "व्हाट्सअ‍ॅप विजेट",
+        permission: "PROJECT_MANAGE_SETTINGS",
+      },
     ],
   },
 
@@ -433,6 +452,54 @@ export const menuConfig: MenuItem[] = [
     ],
   },
 
+  // Attendance Module
+  {
+    icon: <MdFingerprint />,
+    label: "Attendance",
+    labelHi: "उपस्थिति",
+    labelMr: "उपस्थिती",
+    permission: [
+      PERMISSIONS.ATTENDANCE_VIEW,
+      PERMISSIONS.ATTENDANCE_REPORT_VIEW,
+      PERMISSIONS.ATTENDANCE_SYNC,
+      PERMISSIONS.ATTENDANCE_CONFIG,
+    ],
+    subItems: [
+      {
+        path: "/attendance/records",
+        icon: <MdFactCheck />,
+        label: "View Records",
+        labelHi: "रिकॉर्ड देखें",
+        labelMr: "रेकॉर्ड पहा",
+        permission: PERMISSIONS.ATTENDANCE_VIEW,
+      },
+      {
+        path: "/attendance/report",
+        icon: <MdInsights />,
+        label: "Attendance Report",
+        labelHi: "उपस्थिति रिपोर्ट",
+        labelMr: "उपस्थिती अहवाल",
+        permission: PERMISSIONS.ATTENDANCE_REPORT_VIEW,
+      },
+      {
+        path: "/attendance/employees",
+        icon: <MdPeople />,
+        label: "Biometric Sync",
+        labelHi: "बायोमेट्रिक सिंक",
+        labelMr: "बायोमेट्रिक सिंक",
+        permission: PERMISSIONS.ATTENDANCE_SYNC,
+      },
+      {
+        path: "/attendance/config",
+        icon: <MdSettings />,
+        label: "Configuration",
+        labelHi: "कॉन्फ़िगरेशन",
+        labelMr: "कॉन्फिगरेशन",
+        permission: PERMISSIONS.ATTENDANCE_CONFIG,
+      },
+    ],
+  },
+
   // System Monitoring - Super Admin only
   {
     icon: <MdMonitorHeart />,
@@ -476,9 +543,19 @@ export const projectPortalMenuConfig: MenuItem[] = [
       PERMISSIONS.TICKET_ASSIGN,
       PERMISSIONS.TICKET_CREATE,
       PERMISSIONS.TICKET_VIEW_OWN,
+      PERMISSIONS.TICKET_VIEW_ALL,
     ],
     isProjectRoute: true,
     subItems: [
+      {
+        path: "tickets/view",
+        icon: <MdConfirmationNumber />,
+        label: "View Queries",
+        labelHi: "सभी टिकट देखें",
+        labelMr: "सर्व तिकीटे पहा",
+        permission: PERMISSIONS.TICKET_VIEW_ALL,
+        isProjectRoute: true,
+      },
       {
         path: "tickets/my-tickets",
         icon: <MdConfirmationNumber />,
@@ -612,6 +689,57 @@ export const projectPortalMenuConfig: MenuItem[] = [
     isProjectRoute: true,
   },
   {
+    icon: <MdFingerprint />,
+    label: "Attendance",
+    labelHi: "उपस्थिति",
+    labelMr: "उपस्थिती",
+    permission: [
+      PERMISSIONS.ATTENDANCE_VIEW,
+      PERMISSIONS.ATTENDANCE_REPORT_VIEW,
+      PERMISSIONS.ATTENDANCE_SYNC,
+      PERMISSIONS.ATTENDANCE_CONFIG,
+    ],
+    isProjectRoute: true,
+    subItems: [
+      {
+        path: "attendance/report",
+        icon: <MdBarChart />,
+        label: "View Attendance",
+        labelHi: "उपस्थिति रिपोर्ट",
+        labelMr: "उपस्थिती अहवाल",
+        permission: PERMISSIONS.ATTENDANCE_REPORT_VIEW,
+        isProjectRoute: true,
+      },
+      {
+        path: "attendance/records",
+        icon: <MdFactCheck />,
+        label: "View Records",
+        labelHi: "रिकॉर्ड देखें",
+        labelMr: "रेकॉर्ड पहा",
+        permission: PERMISSIONS.ATTENDANCE_VIEW,
+        isProjectRoute: true,
+      },
+      {
+        path: "attendance/employees",
+        icon: <MdPeople />,
+        label: "Biometric Sync",
+        labelHi: "बायोमेट्रिक सिंक",
+        labelMr: "बायोमेट्रिक सिंक",
+        permission: PERMISSIONS.ATTENDANCE_SYNC,
+        isProjectRoute: true,
+      },
+      {
+        path: "attendance/config",
+        icon: <MdSettings />,
+        label: "Configuration",
+        labelHi: "कॉन्फ़िगरेशन",
+        labelMr: "कॉन्फिगरेशन",
+        permission: PERMISSIONS.ATTENDANCE_CONFIG,
+        isProjectRoute: true,
+      },
+    ],
+  },
+  {
     icon: <MdFactCheck />,
     label: "Audit Logs",
     labelHi: "ऑडिट लॉग",
@@ -651,6 +779,21 @@ export const hasMenuItemPermission = (
   item: MenuItem,
   userPermissions: string[],
 ): boolean => {
+  // Super Admin bypass — read role code from JWT (reliable source)
+  // localStorage.userRole stores display name ("Super Admin"), NOT the code ("SUPER_ADMIN")
+  try {
+    const token = localStorage.getItem("authToken");
+    if (token) {
+      const parts = token.split(".");
+      if (parts.length === 3) {
+        const payload = JSON.parse(atob(parts[1]));
+        if (payload.role?.code === "SUPER_ADMIN") return true;
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+
   // Enhanced debug logging for ALL menu items
   console.log(`🔍 Checking permission for "${item.label}":`, {
     itemPermission: item.permission,

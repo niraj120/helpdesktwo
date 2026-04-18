@@ -8,6 +8,7 @@ import {
 } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import WhatsAppFloatingIcon from "./WhatsAppFloatingIcon";
 import { SkipLink } from "./accessible/SkipLink";
 import { LanguageToggle } from "./LanguageToggle";
 import { HeaderProjectSwitcher } from "./HeaderProjectSwitcher";
@@ -1301,6 +1302,10 @@ const DashboardLayout = ({
           )}
         </main>
       </div>
+      <WhatsAppFloatingIcon
+        projectId={projectContext?.projectId}
+        isAuthenticated={true}
+      />
     </>
   );
 };

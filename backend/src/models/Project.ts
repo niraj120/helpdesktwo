@@ -216,6 +216,8 @@ export interface IProject extends Document {
           maxLength?: number;
           pattern?: string;
         };
+        /** When true, this field is exposed via the Public API (/v1/tickets/form-schema and POST /v1/tickets) */
+        includeInPublicApi?: boolean;
       }>;
       offlineCenters?: Array<{
         centerName: string;
@@ -308,6 +310,14 @@ export interface IProject extends Document {
         sendWelcomeEmail?: boolean;
       };
     };
+    whatsappWidget?: {
+      enabled: boolean;
+      visibility: "always" | "pre-login" | "post-login";
+      phoneNumber: string; // stored as digits only, e.g. '919876543210'
+      predefinedMessage?: string;
+      position: "bottom-right" | "bottom-left";
+      iconSize: "small" | "medium" | "large";
+    };
   };
 
   // Status and Metadata
@@ -318,6 +328,32 @@ export interface IProject extends Document {
   updatedBy?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
+
+  // Public API settings
+  ticketSequence: number; // Atomic counter for ticket number generation
+  publicApiSettings?: {
+    estimatedResponseTime?: string; // e.g. "Within 4 hours"
+    duplicateTicketWindowMinutes?: number; // default 5
+    projectCode?: string; // Override code for ticket number prefix
+    /** Custom fields the API consumer must/can submit when creating a ticket */
+    customFields?: Array<{
+      key: string; // machine-readable field key, e.g. "course_name"
+      label: string; // human-readable label shown to the consumer
+      type:
+        | "text"
+        | "number"
+        | "email"
+        | "phone"
+        | "select"
+        | "multiselect"
+        | "date"
+        | "boolean";
+      required: boolean;
+      options?: string[]; // for select / multiselect types
+      maxLength?: number; // for text type
+      placeholder?: string;
+    }>;
+  };
 }
 
 const projectSchema = new Schema<IProject>(
@@ -595,6 +631,7 @@ const projectSchema = new Schema<IProject>(
               default: "optional",
             },
             requiredConditions: [{ type: Schema.Types.Mixed }],
+            includeInPublicApi: { type: Boolean, default: false },
             _id: false, // Disable auto _id generation for subdocuments
           },
         ],
@@ -718,6 +755,26 @@ const projectSchema = new Schema<IProject>(
           sendWelcomeEmail: { type: Boolean, default: true },
         },
       },
+      whatsappWidget: {
+        enabled: { type: Boolean, default: false },
+        visibility: {
+          type: String,
+          enum: ["always", "pre-login", "post-login"],
+          default: "always",
+        },
+        phoneNumber: { type: String, trim: true },
+        predefinedMessage: { type: String, trim: true, default: "" },
+        position: {
+          type: String,
+          enum: ["bottom-right", "bottom-left"],
+          default: "bottom-right",
+        },
+        iconSize: {
+          type: String,
+          enum: ["small", "medium", "large"],
+          default: "medium",
+        },
+      },
     },
 
     // Status and Metadata
@@ -741,6 +798,41 @@ const projectSchema = new Schema<IProject>(
     updatedBy: {
       type: Schema.Types.ObjectId,
       ref: "User",
+    },
+    // Public API ticket sequence counter
+    ticketSequence: {
+      type: Number,
+      default: 0,
+    },
+    // Public API configuration
+    publicApiSettings: {
+      estimatedResponseTime: { type: String, default: "Within 4 hours" },
+      duplicateTicketWindowMinutes: { type: Number, default: 5 },
+      projectCode: { type: String, trim: true, uppercase: true },
+      customFields: [
+        {
+          key: { type: String, required: true, trim: true },
+          label: { type: String, required: true, trim: true },
+          type: {
+            type: String,
+            enum: [
+              "text",
+              "number",
+              "email",
+              "phone",
+              "select",
+              "multiselect",
+              "date",
+              "boolean",
+            ],
+            default: "text",
+          },
+          required: { type: Boolean, default: false },
+          options: [{ type: String }],
+          maxLength: { type: Number },
+          placeholder: { type: String },
+        },
+      ],
     },
   },
   {

@@ -90,6 +90,17 @@ export const getAllEscalationMatrices = async (
       filter.isActive = isActive === "true";
     }
 
+    // Auto project scoping: non-super-admins see only their assigned projects
+    const callerRole = (req as any).user?.role;
+    const isSuperAdmin =
+      callerRole?.code === "SUPER_ADMIN" || callerRole?.name === "Super Admin";
+    if (!isSuperAdmin && callerRole?.projects?.length > 0) {
+      const allowedIds = callerRole.projects.map(
+        (p: any) => p._id?.toString() || p.toString(),
+      );
+      filter.projectIds = { $in: allowedIds };
+    }
+
     console.log(
       "🔍 Fetching escalation matrices with filter:",
       JSON.stringify(filter),

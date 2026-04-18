@@ -387,6 +387,17 @@ export const getSavedReports = async (req: Request, res: Response) => {
     }
     if (search) filter.name = { $regex: search, $options: "i" };
 
+    // Auto project scoping: restrict to caller's allowed projects
+    const callerRole = (req as any).user?.role;
+    const isSuperAdmin =
+      callerRole?.code === "SUPER_ADMIN" || callerRole?.name === "Super Admin";
+    if (!isSuperAdmin && callerRole?.projects?.length > 0) {
+      const allowedIds = callerRole.projects.map(
+        (p: any) => new mongoose.Types.ObjectId(p._id || p),
+      );
+      filter.projectId = { $in: allowedIds };
+    }
+
     const [reports, total] = await Promise.all([
       SavedReport.find(filter)
         .populate("createdBy", "firstName lastName email")
@@ -451,12 +462,10 @@ export const createSavedReport = async (req: Request, res: Response) => {
     const userId = req.user?.userId;
     const perms = await getEffectiveModulePerms(userId);
     if (!perms?.canCreate) {
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "You do not have permission to create reports",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "You do not have permission to create reports",
+      });
     }
     const {
       name,
@@ -523,12 +532,10 @@ export const deleteSavedReport = async (req: Request, res: Response) => {
   try {
     const perms = await getEffectiveModulePerms(req.user?.userId);
     if (!perms?.canDelete) {
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "You do not have permission to delete reports",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "You do not have permission to delete reports",
+      });
     }
     const report = await SavedReport.findByIdAndUpdate(
       req.params.id,
@@ -695,12 +702,10 @@ export const exportReport = async (req: Request, res: Response) => {
 
     const perms = await getEffectiveModulePerms(userId);
     if (!perms?.canExport) {
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "You do not have permission to export reports",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "You do not have permission to export reports",
+      });
     }
 
     const report = await SavedReport.findById(id).lean();
@@ -828,12 +833,10 @@ export const updateReportAssignment = async (req: Request, res: Response) => {
 
     const perms = await getEffectiveModulePerms(userId);
     if (!perms?.canAssign) {
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "You do not have permission to assign reports",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "You do not have permission to assign reports",
+      });
     }
 
     if (!mongoose.Types.ObjectId.isValid(reportId)) {
@@ -877,12 +880,10 @@ export const deleteReportAssignment = async (req: Request, res: Response) => {
     const userId = req.user?.userId;
     const perms = await getEffectiveModulePerms(userId);
     if (!perms?.canAssign) {
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "You do not have permission to manage report assignments",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "You do not have permission to manage report assignments",
+      });
     }
     await ReportAssignment.deleteOne({ reportId: req.params.reportId });
     return res

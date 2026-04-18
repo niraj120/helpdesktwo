@@ -102,6 +102,7 @@ const PERM_LABELS: {
 const FILTER_OPERATORS = [
   { value: "equals", label: "equals" },
   { value: "not_equals", label: "not equals" },
+  { value: "in", label: "any of" },
   { value: "contains", label: "contains" },
   { value: "not_contains", label: "not contains" },
   { value: "greater_than", label: ">" },
@@ -892,6 +893,28 @@ function ReportBuilderSection({
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [catFilter, setCatFilter] = useState("all");
+  const [projectOptions, setProjectOptions] = useState<
+    { _id: string; name: string }[]
+  >([]);
+  const [openProjectPicker, setOpenProjectPicker] = useState<number | null>(
+    null,
+  );
+  const [tagDraftValues, setTagDraftValues] = useState<Record<number, string>>(
+    {},
+  );
+
+  // Load user's projects for the project filter dropdown
+  useEffect(() => {
+    fetch(`${API_CONFIG.API_URL}/projects/my-projects`, {
+      headers: authHeaders(),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        const list = d.projects ?? d.data ?? [];
+        setProjectOptions(list);
+      })
+      .catch(() => {});
+  }, []);
 
   // Pre-populate form when editing an existing report
   useEffect(() => {
@@ -958,8 +981,21 @@ function ReportBuilderSection({
     ]);
   };
 
-  const removeFilter = (i: number) =>
+  const removeFilter = (i: number) => {
     setFilters((prev) => prev.filter((_, idx) => idx !== i));
+    setTagDraftValues((prev) => {
+      const next: Record<number, string> = {};
+      for (const [k, v] of Object.entries(prev)) {
+        const ki = Number(k);
+        if (ki < i) next[ki] = v;
+        else if (ki > i) next[ki - 1] = v;
+      }
+      return next;
+    });
+    if (openProjectPicker === i) setOpenProjectPicker(null);
+    else if (openProjectPicker !== null && openProjectPicker > i)
+      setOpenProjectPicker(openProjectPicker - 1);
+  };
 
   const updateFilter = (i: number, patch: Partial<ReportFilter>) => {
     setFilters((prev) =>
@@ -1398,9 +1434,17 @@ function ReportBuilderSection({
                   >
                     <select
                       value={f.field}
-                      onChange={(e) =>
-                        updateFilter(i, { field: e.target.value })
-                      }
+                      onChange={(e) => {
+                        const newField = e.target.value;
+                        const patch: Partial<ReportFilter> = {
+                          field: newField,
+                          value: "",
+                        };
+                        if (newField === "ticket_project")
+                          patch.operator = "in";
+                        updateFilter(i, patch);
+                        setOpenProjectPicker(null);
+                      }}
                       style={{
                         flex: 1,
                         padding: "6px 8px",
@@ -1435,7 +1479,248 @@ function ReportBuilderSection({
                       ))}
                     </select>
                     {f.operator !== "is_empty" &&
-                      f.operator !== "is_not_empty" && (
+                      f.operator !== "is_not_empty" &&
+                      (f.operator === "in" ? (
+                        // ── "any of" multi-value input ──────────────────────
+                        f.field === "ticket_project" &&
+                        projectOptions.length > 0 ? (
+                          // Project: checkbox dropdown
+                          (() => {
+                            const selectedNames = f.value
+                              ? f.value.split(",").filter(Boolean)
+                              : [];
+                            return (
+                              <div style={{ flex: 1, position: "relative" }}>
+                                <div
+                                  onClick={() =>
+                                    setOpenProjectPicker(
+                                      openProjectPicker === i ? null : i,
+                                    )
+                                  }
+                                  style={{
+                                    padding: "6px 10px",
+                                    border: "1px solid #d1d5db",
+                                    borderRadius: 6,
+                                    fontSize: 12,
+                                    cursor: "pointer",
+                                    background: "#fff",
+                                    minHeight: 32,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    flexWrap: "wrap",
+                                    gap: 4,
+                                    userSelect: "none",
+                                  }}
+                                >
+                                  {selectedNames.length === 0 ? (
+                                    <span style={{ color: "#9ca3af" }}>
+                                      — select projects —
+                                    </span>
+                                  ) : (
+                                    selectedNames.map((name) => (
+                                      <span
+                                        key={name}
+                                        style={{
+                                          background: "#ede9fe",
+                                          color: "#7c3aed",
+                                          fontSize: 11,
+                                          padding: "1px 7px",
+                                          borderRadius: 10,
+                                          fontWeight: 600,
+                                        }}
+                                      >
+                                        {name}
+                                      </span>
+                                    ))
+                                  )}
+                                  <span
+                                    style={{
+                                      marginLeft: "auto",
+                                      color: "#9ca3af",
+                                      fontSize: 10,
+                                    }}
+                                  >
+                                    ▾
+                                  </span>
+                                </div>
+                                {openProjectPicker === i && (
+                                  <div
+                                    style={{
+                                      position: "absolute",
+                                      top: "calc(100% + 4px)",
+                                      left: 0,
+                                      right: 0,
+                                      background: "#fff",
+                                      border: "1px solid #e5e7eb",
+                                      borderRadius: 8,
+                                      boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+                                      zIndex: 200,
+                                      maxHeight: 200,
+                                      overflowY: "auto",
+                                    }}
+                                  >
+                                    {projectOptions.map((p) => {
+                                      const checked = selectedNames.includes(
+                                        p.name,
+                                      );
+                                      return (
+                                        <label
+                                          key={p._id}
+                                          style={{
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 8,
+                                            padding: "7px 12px",
+                                            cursor: "pointer",
+                                            background: checked
+                                              ? "#f5f3ff"
+                                              : "transparent",
+                                          }}
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={checked}
+                                            onChange={() => {
+                                              const next = checked
+                                                ? selectedNames.filter(
+                                                    (n) => n !== p.name,
+                                                  )
+                                                : [...selectedNames, p.name];
+                                              updateFilter(i, {
+                                                value: next.join(","),
+                                              });
+                                            }}
+                                          />
+                                          <span style={{ fontSize: 12 }}>
+                                            {p.name}
+                                          </span>
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()
+                        ) : (
+                          // Any other field: tag/chip input (type + Enter)
+                          (() => {
+                            const chips = f.value
+                              ? f.value.split(",").filter(Boolean)
+                              : [];
+                            const draft = tagDraftValues[i] ?? "";
+                            return (
+                              <div
+                                style={{
+                                  flex: 1,
+                                  display: "flex",
+                                  flexWrap: "wrap",
+                                  alignItems: "center",
+                                  gap: 4,
+                                  padding: "4px 8px",
+                                  border: "1px solid #d1d5db",
+                                  borderRadius: 6,
+                                  background: "#fff",
+                                  minHeight: 32,
+                                  cursor: "text",
+                                }}
+                                onClick={(e) => {
+                                  const inp = (
+                                    e.currentTarget as HTMLElement
+                                  ).querySelector(
+                                    "input",
+                                  ) as HTMLInputElement | null;
+                                  inp?.focus();
+                                }}
+                              >
+                                {chips.map((chip) => (
+                                  <span
+                                    key={chip}
+                                    style={{
+                                      background: "#dbeafe",
+                                      color: "#1d4ed8",
+                                      fontSize: 11,
+                                      padding: "1px 4px 1px 7px",
+                                      borderRadius: 10,
+                                      fontWeight: 600,
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: 3,
+                                    }}
+                                  >
+                                    {chip}
+                                    <span
+                                      onClick={() =>
+                                        updateFilter(i, {
+                                          value: chips
+                                            .filter((c) => c !== chip)
+                                            .join(","),
+                                        })
+                                      }
+                                      style={{
+                                        cursor: "pointer",
+                                        fontWeight: 700,
+                                        lineHeight: 1,
+                                        opacity: 0.6,
+                                      }}
+                                    >
+                                      ×
+                                    </span>
+                                  </span>
+                                ))}
+                                <input
+                                  value={draft}
+                                  onChange={(e) =>
+                                    setTagDraftValues((prev) => ({
+                                      ...prev,
+                                      [i]: e.target.value,
+                                    }))
+                                  }
+                                  onKeyDown={(e) => {
+                                    if (
+                                      (e.key === "Enter" || e.key === ",") &&
+                                      draft.trim()
+                                    ) {
+                                      e.preventDefault();
+                                      const newChip = draft.trim();
+                                      if (!chips.includes(newChip))
+                                        updateFilter(i, {
+                                          value: [...chips, newChip].join(","),
+                                        });
+                                      setTagDraftValues((prev) => ({
+                                        ...prev,
+                                        [i]: "",
+                                      }));
+                                    } else if (
+                                      e.key === "Backspace" &&
+                                      !draft &&
+                                      chips.length > 0
+                                    ) {
+                                      updateFilter(i, {
+                                        value: chips.slice(0, -1).join(","),
+                                      });
+                                    }
+                                  }}
+                                  placeholder={
+                                    chips.length === 0
+                                      ? "Type value, press Enter"
+                                      : "+add"
+                                  }
+                                  style={{
+                                    border: "none",
+                                    outline: "none",
+                                    fontSize: 12,
+                                    flex: 1,
+                                    minWidth: 80,
+                                    background: "transparent",
+                                  }}
+                                />
+                              </div>
+                            );
+                          })()
+                        )
+                      ) : (
+                        // ── Normal single-value input ────────────────────────
                         <input
                           value={f.value}
                           onChange={(e) =>
@@ -1450,7 +1735,7 @@ function ReportBuilderSection({
                             fontSize: 12,
                           }}
                         />
-                      )}
+                      ))}
                     {f.operator === "between" && (
                       <input
                         value={f.value2 ?? ""}
@@ -1692,9 +1977,16 @@ function SavedReportsSection({
     dataPoints: string[];
     total: number;
   } | null>(null);
+  const [runPage, setRunPage] = useState(1);
+  const [runPageSize] = useState(100);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [dpMap, setDpMap] = useState<Record<string, string>>({});
+  // Duplicate state
+  const [dupId, setDupId] = useState<string | null>(null);
+  const [dupName, setDupName] = useState("");
+  const [dupError, setDupError] = useState("");
+  const [dupSaving, setDupSaving] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -1724,26 +2016,27 @@ function SavedReportsSection({
     load();
   }, [load]);
 
-  const handleRun = async (report: SavedReport) => {
+  const handleRun = async (report: SavedReport, page = 1) => {
     setRunning(report._id);
     setError("");
     try {
       const res = await fetch(
-        `${API_CONFIG.API_URL}/reports/saved/${report._id}/run?pageSize=100`,
+        `${API_CONFIG.API_URL}/reports/saved/${report._id}/run?pageSize=${runPageSize}&page=${page}`,
         {
           method: "POST",
           headers: authHeaders(),
         },
       );
       const d = await res.json();
-      if (d.success)
+      if (d.success) {
+        setRunPage(page);
         setRunResult({
           reportId: report._id,
           rows: d.data,
           dataPoints: d.meta.dataPoints,
           total: d.meta.total,
         });
-      else setError(d.message);
+      } else setError(d.message);
     } catch {
       setError("Run failed");
     } finally {
@@ -1784,6 +2077,55 @@ function SavedReportsSection({
       setReports((prev) => prev.filter((r) => r._id !== reportId));
     } catch {
       setError("Delete failed");
+    }
+  };
+
+  const openDuplicate = (r: SavedReport) => {
+    setDupId(r._id);
+    setDupName(`${r.name} (Copy)`);
+    setDupError("");
+  };
+
+  const handleDuplicate = async () => {
+    const trimmed = dupName.trim();
+    if (!trimmed) {
+      setDupError("Name is required.");
+      return;
+    }
+    if (reports.some((r) => r.name.toLowerCase() === trimmed.toLowerCase())) {
+      setDupError(
+        "A report with this name already exists. Choose a different name.",
+      );
+      return;
+    }
+    const source = reports.find((r) => r._id === dupId);
+    if (!source) return;
+    setDupSaving(true);
+    setDupError("");
+    try {
+      const res = await fetch(`${API_CONFIG.API_URL}/reports/saved`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          name: trimmed,
+          description: source.description,
+          dataPoints: source.dataPoints,
+          filters: source.filters,
+          sortBy: source.sortBy,
+          sortOrder: source.sortOrder,
+        }),
+      });
+      const d = await res.json();
+      if (d.success) {
+        setDupId(null);
+        load();
+      } else {
+        setDupError(d.message ?? "Duplicate failed");
+      }
+    } catch {
+      setDupError("Duplicate failed");
+    } finally {
+      setDupSaving(false);
     }
   };
 
@@ -2043,6 +2385,22 @@ function SavedReportsSection({
                         ✎ Edit
                       </button>
                       <button
+                        onClick={() => openDuplicate(r)}
+                        style={{
+                          padding: "4px 10px",
+                          background: "#ede9fe",
+                          color: "#7c3aed",
+                          border: "none",
+                          borderRadius: 6,
+                          fontSize: 11,
+                          cursor: "pointer",
+                          fontWeight: 600,
+                        }}
+                        title="Duplicate this report"
+                      >
+                        ⎘ Copy
+                      </button>
+                      <button
                         onClick={() => handleExport(r._id, r.name)}
                         style={{
                           padding: "4px 10px",
@@ -2081,6 +2439,102 @@ function SavedReportsSection({
         </div>
       )}
 
+      {/* Duplicate Report Modal */}
+      {dupId && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.4)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: 12,
+              padding: 28,
+              width: 420,
+              boxShadow: "0 10px 40px rgba(0,0,0,0.18)",
+            }}
+          >
+            <h3
+              style={{
+                fontSize: 16,
+                fontWeight: 700,
+                marginBottom: 4,
+                color: "#111827",
+              }}
+            >
+              Duplicate Report
+            </h3>
+            <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 16 }}>
+              Enter a unique name for the duplicated report.
+            </p>
+            <input
+              value={dupName}
+              onChange={(e) => {
+                setDupName(e.target.value);
+                setDupError("");
+              }}
+              placeholder="New report name"
+              autoFocus
+              style={{
+                width: "100%",
+                padding: "8px 12px",
+                border: dupError ? "1px solid #ef4444" : "1px solid #d1d5db",
+                borderRadius: 8,
+                fontSize: 13,
+                marginBottom: dupError ? 6 : 16,
+                boxSizing: "border-box",
+              }}
+            />
+            {dupError && (
+              <p style={{ fontSize: 12, color: "#ef4444", marginBottom: 12 }}>
+                {dupError}
+              </p>
+            )}
+            <div
+              style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}
+            >
+              <button
+                onClick={() => setDupId(null)}
+                style={{
+                  padding: "7px 18px",
+                  border: "1px solid #d1d5db",
+                  borderRadius: 8,
+                  fontSize: 13,
+                  background: "#fff",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDuplicate}
+                disabled={dupSaving}
+                style={{
+                  padding: "7px 18px",
+                  background: "#7c3aed",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 8,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: dupSaving ? "not-allowed" : "pointer",
+                  opacity: dupSaving ? 0.7 : 1,
+                }}
+              >
+                {dupSaving ? "Saving…" : "⎘ Duplicate"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Run result panel */}
       {runResult && (
         <div
@@ -2107,7 +2561,10 @@ function SavedReportsSection({
               {runResult.rows.length})
             </div>
             <button
-              onClick={() => setRunResult(null)}
+              onClick={() => {
+                setRunResult(null);
+                setRunPage(1);
+              }}
               style={{
                 background: "transparent",
                 border: "none",
@@ -2119,7 +2576,7 @@ function SavedReportsSection({
               ×
             </button>
           </div>
-          <div style={{ overflowX: "auto", maxHeight: 400, overflowY: "auto" }}>
+          <div style={{ overflowX: "auto", maxHeight: 360, overflowY: "auto" }}>
             <table
               style={{
                 width: "100%",
@@ -2187,6 +2644,105 @@ function SavedReportsSection({
               </tbody>
             </table>
           </div>
+          {/* Pagination */}
+          {runResult.total > runPageSize &&
+            (() => {
+              const totalPages = Math.ceil(runResult.total / runPageSize);
+              const currentReport = reports.find(
+                (r) => r._id === runResult.reportId,
+              );
+              return (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                    padding: "10px 16px",
+                    borderTop: "1px solid #e5e7eb",
+                    background: "#f8fafc",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <button
+                    disabled={runPage <= 1 || running !== null}
+                    onClick={() =>
+                      currentReport && handleRun(currentReport, runPage - 1)
+                    }
+                    style={{
+                      padding: "5px 12px",
+                      borderRadius: 6,
+                      border: "1px solid #d1d5db",
+                      background: runPage <= 1 ? "#f3f4f6" : "#fff",
+                      color: runPage <= 1 ? "#9ca3af" : "#374151",
+                      cursor: runPage <= 1 ? "default" : "pointer",
+                      fontSize: 12,
+                      fontWeight: 600,
+                    }}
+                  >
+                    ← Prev
+                  </button>
+                  {Array.from(
+                    { length: Math.min(totalPages, 10) },
+                    (_, idx) => {
+                      // Show first, last, current ±2, and ellipsis
+                      const p = idx + 1;
+                      return (
+                        <button
+                          key={p}
+                          disabled={p === runPage || running !== null}
+                          onClick={() =>
+                            currentReport && handleRun(currentReport, p)
+                          }
+                          style={{
+                            padding: "5px 10px",
+                            borderRadius: 6,
+                            border: "1px solid #d1d5db",
+                            background: p === runPage ? "#3b82f6" : "#fff",
+                            color: p === runPage ? "#fff" : "#374151",
+                            cursor: p === runPage ? "default" : "pointer",
+                            fontSize: 12,
+                            fontWeight: p === runPage ? 700 : 400,
+                            minWidth: 32,
+                          }}
+                        >
+                          {running !== null && p === runPage ? "…" : p}
+                        </button>
+                      );
+                    },
+                  )}
+                  {totalPages > 10 && (
+                    <span style={{ fontSize: 12, color: "#6b7280" }}>
+                      … of {totalPages}
+                    </span>
+                  )}
+                  <button
+                    disabled={runPage >= totalPages || running !== null}
+                    onClick={() =>
+                      currentReport && handleRun(currentReport, runPage + 1)
+                    }
+                    style={{
+                      padding: "5px 12px",
+                      borderRadius: 6,
+                      border: "1px solid #d1d5db",
+                      background: runPage >= totalPages ? "#f3f4f6" : "#fff",
+                      color: runPage >= totalPages ? "#9ca3af" : "#374151",
+                      cursor: runPage >= totalPages ? "default" : "pointer",
+                      fontSize: 12,
+                      fontWeight: 600,
+                    }}
+                  >
+                    Next →
+                  </button>
+                  <span
+                    style={{ fontSize: 12, color: "#6b7280", marginLeft: 4 }}
+                  >
+                    Page {runPage} of {totalPages} &nbsp;·&nbsp;{" "}
+                    {runResult.total.toLocaleString()} rows total
+                  </span>
+                </div>
+              );
+            })()}
         </div>
       )}
     </div>

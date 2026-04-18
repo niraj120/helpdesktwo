@@ -1726,18 +1726,57 @@ const TicketSettings: React.FC = () => {
                                       </span>
                                     )}
                                   </span>
-                                  <span
+                                  <div
                                     style={{
-                                      fontSize: "10px",
-                                      padding: "2px 6px",
-                                      background: "white",
-                                      border: "1px solid #d1d5db",
-                                      borderRadius: "4px",
-                                      fontWeight: "500",
+                                      display: "flex",
+                                      gap: "4px",
+                                      alignItems: "center",
                                     }}
                                   >
-                                    {field.fieldType}
-                                  </span>
+                                    {field.isFixed && (
+                                      <span
+                                        style={{
+                                          fontSize: "10px",
+                                          padding: "2px 5px",
+                                          background: "#dbeafe",
+                                          color: "#1d4ed8",
+                                          borderRadius: "4px",
+                                          fontWeight: "600",
+                                        }}
+                                        title="Fixed Field — always in API schema as fixed_fields"
+                                      >
+                                        📌 Fixed
+                                      </span>
+                                    )}
+                                    {!field.isFixed &&
+                                      field.includeInPublicApi && (
+                                        <span
+                                          style={{
+                                            fontSize: "10px",
+                                            padding: "2px 5px",
+                                            background: "#dcfce7",
+                                            color: "#15803d",
+                                            borderRadius: "4px",
+                                            fontWeight: "600",
+                                          }}
+                                          title="Custom Field — exposed via External API as custom_fields"
+                                        >
+                                          🌐 API
+                                        </span>
+                                      )}
+                                    <span
+                                      style={{
+                                        fontSize: "10px",
+                                        padding: "2px 6px",
+                                        background: "white",
+                                        border: "1px solid #d1d5db",
+                                        borderRadius: "4px",
+                                        fontWeight: "500",
+                                      }}
+                                    >
+                                      {field.fieldType}
+                                    </span>
+                                  </div>
                                 </div>
                                 {field.placeholder && (
                                   <div

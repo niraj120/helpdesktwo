@@ -88,7 +88,10 @@ function filterToMongo(
     case "between":
       return { [field]: { $gte: new Date(value), $lte: new Date(value2) } };
     case "in":
-      return { [field]: { $in: Array.isArray(value) ? value : [value] } };
+      if (Array.isArray(value)) return { [field]: { $in: value } };
+      if (typeof value === "string" && value.includes(","))
+        return { [field]: { $in: value.split(",").filter(Boolean) } };
+      return { [field]: { $in: [value] } };
     case "is_empty":
       return { [field]: { $in: [null, "", []] } };
     case "is_not_empty":
@@ -388,11 +391,20 @@ export async function runReportQuery(
   };
 
   // ── 4. Post-compute $match for filters ────────────────────────────────────
-  const filterConditions: any[] = [];
+  // Group by mongo field: multiple conditions on the SAME field are OR'd
+  // (e.g. two project filters → any-of), different fields are AND'd.
+  const fieldConditionGroups = new Map<string, any[]>();
   for (const f of filters) {
     const fieldName = DATA_POINT_FIELD_MAP[f.field] ?? f.field;
     const expr = filterToMongo(fieldName, f.operator, f.value, f.value2);
-    if (Object.keys(expr).length > 0) filterConditions.push(expr);
+    if (Object.keys(expr).length === 0) continue;
+    if (!fieldConditionGroups.has(fieldName))
+      fieldConditionGroups.set(fieldName, []);
+    fieldConditionGroups.get(fieldName)!.push(expr);
+  }
+  const filterConditions: any[] = [];
+  for (const [, exprs] of fieldConditionGroups) {
+    filterConditions.push(exprs.length === 1 ? exprs[0] : { $or: exprs });
   }
 
   // ── 5. $project — only requested columns ─────────────────────────────────
