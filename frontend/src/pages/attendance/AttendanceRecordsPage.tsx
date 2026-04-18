@@ -25,7 +25,7 @@ interface AttendanceRecord {
 }
 
 interface Summary {
-  byStatus: { P: number; PL: number; H: number; LWP: number };
+  byStatus: Record<string, number>; // dynamic — any status code from biometric partner
   totalRecords: number;
   minDate: string | null;
   maxDate: string | null;
@@ -37,6 +37,16 @@ const STATUS_LABELS: Record<string, string> = {
   PL: "Present Late",
   H: "Holiday",
   LWP: "Leave Without Pay",
+  A: "Absent",
+  CL: "Casual Leave",
+  SL: "Sick Leave",
+  EL: "Earned Leave",
+  AL: "Annual Leave",
+  ML: "Maternity Leave",
+  CO: "Comp Off",
+  OD: "On Duty",
+  WFH: "Work From Home",
+  HD: "Half Day",
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -44,6 +54,16 @@ const STATUS_COLORS: Record<string, string> = {
   PL: "bg-yellow-100 text-yellow-800",
   H: "bg-blue-100 text-blue-800",
   LWP: "bg-red-100 text-red-800",
+  A: "bg-rose-100 text-rose-800",
+  CL: "bg-purple-100 text-purple-800",
+  SL: "bg-orange-100 text-orange-800",
+  EL: "bg-amber-100 text-amber-800",
+  AL: "bg-amber-100 text-amber-800",
+  ML: "bg-pink-100 text-pink-800",
+  CO: "bg-teal-100 text-teal-800",
+  OD: "bg-cyan-100 text-cyan-800",
+  WFH: "bg-sky-100 text-sky-800",
+  HD: "bg-lime-100 text-lime-800",
 };
 
 export default function AttendanceRecordsPage() {
@@ -281,8 +301,11 @@ export default function AttendanceRecordsPage() {
 
       {/* Summary Cards */}
       {summary && !summaryLoading && (
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-4">
-          <div className="col-span-2 bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
+        <div className="flex flex-wrap gap-3 mb-4">
+          <div
+            className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm"
+            style={{ minWidth: 180 }}
+          >
             <div className="text-xs text-gray-500 mb-1 flex items-center gap-1">
               <MdCalendarToday /> Date Range
             </div>
@@ -295,24 +318,27 @@ export default function AttendanceRecordsPage() {
               records
             </div>
           </div>
-          {(["P", "PL", "H", "LWP"] as const).map((code) => (
-            <div
-              key={code}
-              className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm"
-            >
-              <div className="text-xs text-gray-500 mb-1">
-                {STATUS_LABELS[code]}
-              </div>
-              <div className="text-2xl font-bold text-gray-900">
-                {summary.byStatus[code] ?? 0}
-              </div>
-              <span
-                className={`text-xs px-1.5 py-0.5 rounded ${STATUS_COLORS[code]}`}
+          {Object.entries(summary.byStatus)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([code, count]) => (
+              <div
+                key={code}
+                className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm"
+                style={{ minWidth: 110 }}
               >
-                {code}
-              </span>
-            </div>
-          ))}
+                <div className="text-xs text-gray-500 mb-1">
+                  {STATUS_LABELS[code] ?? code}
+                </div>
+                <div className="text-2xl font-bold text-gray-900">{count}</div>
+                <span
+                  className={`text-xs px-1.5 py-0.5 rounded ${
+                    STATUS_COLORS[code] ?? "bg-gray-100 text-gray-800"
+                  }`}
+                >
+                  {code}
+                </span>
+              </div>
+            ))}
         </div>
       )}
 

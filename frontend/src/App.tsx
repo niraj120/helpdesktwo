@@ -143,6 +143,10 @@ const WebhookFailureLogs = lazy(() => import("./pages/WebhookFailureLogs"));
 
 // Integrations & Email
 const EmailConfigPage = lazy(() => import("./pages/EmailConfigPage"));
+const PublicApiKeysPage = lazy(() => import("./pages/PublicApiKeysPage"));
+const WhatsAppWidgetSettings = lazy(
+  () => import("./pages/WhatsAppWidgetSettings"),
+);
 const EmailToTicketConfiguration = lazy(
   () => import("./components/EmailToTicketConfiguration"),
 );
@@ -727,6 +731,28 @@ function App() {
               <ProtectedRoute permission="EMAIL_CONFIG_VIEW">
                 <DashboardLayout>
                   <EmailConfigPage />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Public API Key Management - Super Admin */}
+          <Route
+            path="/integrations/public-api-keys"
+            element={
+              <ProtectedRoute permission="PROJECT_MANAGE_SETTINGS">
+                <PublicApiKeysPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* WhatsApp Widget Settings - Super Admin */}
+          <Route
+            path="/integrations/whatsapp-widget"
+            element={
+              <ProtectedRoute permission="PROJECT_MANAGE_SETTINGS">
+                <DashboardLayout>
+                  <WhatsAppWidgetSettings />
                 </DashboardLayout>
               </ProtectedRoute>
             }

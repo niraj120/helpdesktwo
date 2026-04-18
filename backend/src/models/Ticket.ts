@@ -102,7 +102,17 @@ export interface ITicket extends Document {
   escalationHistory?: IEscalationRecord[];
   changeHistory?: IChangeHistory[]; // Track all changes to the ticket
   tags: string[];
-  submissionSource?: "online" | "offline" | "email"; // Track where ticket was created
+  submissionSource?:
+    | "online"
+    | "offline"
+    | "email"
+    | "whatsapp"
+    | "chatbot"
+    | "web"
+    | "sms"; // Track where ticket was created
+  // Public API fields
+  mobile?: string; // Normalised mobile number (91XXXXXXXXXX) for chatbot/public submissions
+  isRegistered?: boolean; // true = linked to existing user, false = mobile-only (unverified)
   sourceEmail?: string; // Email address from which ticket was created (for email-to-ticket)
   sourceEmailMessageId?: string; // Message ID of the original email (for threading)
   sourceEmailName?: string; // Display name from the email sender
@@ -311,7 +321,7 @@ const TicketSchema: Schema = new Schema(
     createdBy: {
       type: Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: false,
     },
     assignedTo: {
       type: Schema.Types.ObjectId,
@@ -336,9 +346,19 @@ const TicketSchema: Schema = new Schema(
     ],
     submissionSource: {
       type: String,
-      enum: ["online", "offline", "email"],
+      enum: ["online", "offline", "email", "whatsapp", "chatbot", "web", "sms"],
       default: "online",
       index: true,
+    },
+    // Public API fields
+    mobile: {
+      type: String,
+      trim: true,
+      index: true,
+    },
+    isRegistered: {
+      type: Boolean,
+      default: false,
     },
     sourceEmail: {
       type: String,
@@ -476,6 +496,8 @@ const TicketSchema: Schema = new Schema(
 
 // Indexes for better query performance
 TicketSchema.index({ createdBy: 1, createdAt: -1 });
+// Index for duplicate ticket guard (public API)
+TicketSchema.index({ mobile: 1, project: 1, createdAt: -1 });
 TicketSchema.index({ assignedTo: 1, status: 1 });
 TicketSchema.index({
   ticketNumber: "text",

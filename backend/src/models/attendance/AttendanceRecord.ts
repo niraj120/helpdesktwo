@@ -1,6 +1,7 @@
 import mongoose, { Schema, Document } from "mongoose";
 
-export type AttendanceStatus = "P" | "PL" | "H" | "LWP";
+// Open type — biometric partner can send any status code (CL, SL, EL, CO, OD, WFH, etc.)
+export type AttendanceStatus = string;
 
 export interface IAttendanceRecord extends Document {
   projectId: mongoose.Types.ObjectId;
@@ -42,8 +43,8 @@ const attendanceRecordSchema = new Schema<IAttendanceRecord>(
     totalWorkingHours: { type: String, default: null },
     status: {
       type: String,
-      enum: ["P", "PL", "H", "LWP"],
       required: true,
+      // No enum — status codes are defined by the biometric partner and can vary
     },
     center: { type: String, default: null },
     geoLat: { type: Number, default: null },

@@ -169,6 +169,47 @@ const CATEGORIES = [
 ];
 
 //
+// Status labels & colours (declared here so FILTER_FIELDS can reference them)
+//
+
+const STATUS_COLORS: Record<string, string> = {
+  P: "bg-green-100 text-green-800",
+  PL: "bg-yellow-100 text-yellow-800",
+  H: "bg-blue-100 text-blue-800",
+  LWP: "bg-red-100 text-red-800",
+  A: "bg-rose-100 text-rose-800",
+  CL: "bg-purple-100 text-purple-800",
+  SL: "bg-orange-100 text-orange-800",
+  EL: "bg-amber-100 text-amber-800",
+  AL: "bg-amber-100 text-amber-800",
+  ML: "bg-pink-100 text-pink-800",
+  CO: "bg-teal-100 text-teal-800",
+  OD: "bg-cyan-100 text-cyan-800",
+  WFH: "bg-sky-100 text-sky-800",
+  HD: "bg-lime-100 text-lime-800",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  P: "Present",
+  PL: "Present Late",
+  H: "Holiday Leave",
+  LWP: "Leave Without Pay",
+  A: "Absent",
+  CL: "Casual Leave",
+  SL: "Sick Leave",
+  EL: "Earned Leave",
+  AL: "Annual Leave",
+  ML: "Maternity Leave",
+  CO: "Comp Off",
+  OD: "On Duty",
+  WFH: "Work From Home",
+  HD: "Half Day",
+  Absent: "Absent",
+  WO: "Week Off",
+  PH: "Public Holiday",
+};
+
+//
 // Filter definitions
 //
 
@@ -186,12 +227,10 @@ const FILTER_FIELDS: FilterField[] = [
     key: "status",
     label: "Status",
     type: "select",
-    options: [
-      { value: "P", label: "P — Present" },
-      { value: "PL", label: "PL — Present Late" },
-      { value: "H", label: "H — Holiday" },
-      { value: "LWP", label: "LWP — Leave Without Pay" },
-    ],
+    // Dynamically built from STATUS_LABELS (excludes virtual matrix codes Absent/WO/PH)
+    options: Object.entries(STATUS_LABELS)
+      .filter(([code]) => !["Absent", "WO", "PH"].includes(code))
+      .map(([value, label]) => ({ value, label: `${value} — ${label}` })),
   },
   { key: "center", label: "Center", type: "text" },
   { key: "punch_in", label: "Punch In", type: "date" },
@@ -255,20 +294,6 @@ function getOperatorsForField(
 //
 // Helpers
 //
-
-const STATUS_COLORS: Record<string, string> = {
-  P: "bg-green-100 text-green-800",
-  PL: "bg-yellow-100 text-yellow-800",
-  H: "bg-blue-100 text-blue-800",
-  LWP: "bg-red-100 text-red-800",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  P: "Present",
-  PL: "Present Late",
-  H: "Holiday",
-  LWP: "Leave Without Pay",
-};
 
 function getRolePermKey(hasPermission: (p: string) => boolean): PermRole {
   if (hasPermission("ATTENDANCE_CONFIG")) return "admin";
@@ -420,17 +445,42 @@ const tdStyle: React.CSSProperties = {
 // My Attendance Reports (assigned to this user)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Matrix status colour map
+// Matrix status colour map — covers all known biometric status codes
 const MATRIX_STATUS: Record<string, { bg: string; fg: string; label: string }> =
   {
     P: { bg: "#d1fae5", fg: "#065f46", label: "P" },
     PL: { bg: "#fef3c7", fg: "#92400e", label: "PL" },
     H: { bg: "#dbeafe", fg: "#1e3a8a", label: "H" },
     LWP: { bg: "#fee2e2", fg: "#991b1b", label: "LWP" },
+    A: { bg: "#fff1f2", fg: "#be123c", label: "A" },
+    CL: { bg: "#f3e8ff", fg: "#7e22ce", label: "CL" }, // Casual Leave
+    SL: { bg: "#ffedd5", fg: "#c2410c", label: "SL" }, // Sick Leave
+    EL: { bg: "#fef9c3", fg: "#854d0e", label: "EL" }, // Earned Leave
+    AL: { bg: "#fef9c3", fg: "#854d0e", label: "AL" }, // Annual Leave
+    ML: { bg: "#fce7f3", fg: "#be185d", label: "ML" }, // Maternity Leave
+    CO: { bg: "#ccfbf1", fg: "#0f766e", label: "CO" }, // Comp Off
+    OD: { bg: "#cffafe", fg: "#0e7490", label: "OD" }, // On Duty
+    WFH: { bg: "#e0f2fe", fg: "#0284c7", label: "WFH" }, // Work From Home
+    HD: { bg: "#f7fee7", fg: "#3f6212", label: "HD" }, // Half Day
     Absent: { bg: "#fff1f2", fg: "#be123c", label: "A" },
     WO: { bg: "#f3f4f6", fg: "#6b7280", label: "WO" }, // Week Off
     PH: { bg: "#eff6ff", fg: "#1d4ed8", label: "PH" }, // Public Holiday
   };
+
+// Fallback for any status code not listed in MATRIX_STATUS
+function getMatrixStyle(code: string): {
+  bg: string;
+  fg: string;
+  label: string;
+} {
+  return (
+    MATRIX_STATUS[code] ?? {
+      bg: "#f3f4f6",
+      fg: "#374151",
+      label: code.substring(0, 4),
+    }
+  );
+}
 
 const DAY_ABBR = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -793,7 +843,7 @@ function MyAttendanceReports({ token }: { token: string }) {
     if (vt !== "daily") {
       setMatrixRange((p) => ({
         ...p,
-        [reportId]: p[reportId] ?? getDefaultRange(vt),
+        [reportId]: getDefaultRange(vt),
       }));
     }
     setRunResults((p) => {
@@ -1911,19 +1961,7 @@ function MyAttendanceReports({ token }: { token: string }) {
                                 {v.label}
                               </span>
                               <span style={{ color: "#6b7280" }}>
-                                {k === "Absent"
-                                  ? "Absent"
-                                  : k === "P"
-                                    ? "Present"
-                                    : k === "PL"
-                                      ? "Present Late"
-                                      : k === "H"
-                                        ? "Holiday Leave"
-                                        : k === "WO"
-                                          ? "Week Off"
-                                          : k === "PH"
-                                            ? "Public Holiday"
-                                            : "Leave w/o Pay"}
+                                {STATUS_LABELS[k] ?? k}
                               </span>
                             </span>
                           ))}
@@ -1938,6 +1976,15 @@ function MyAttendanceReports({ token }: { token: string }) {
                               minWidth: "100%",
                             }}
                           >
+                            <colgroup>
+                              <col style={{ width: 200, minWidth: 160 }} />
+                              {matrix.dates.map((d) => (
+                                <col
+                                  key={d}
+                                  style={{ width: 34, minWidth: 34 }}
+                                />
+                              ))}
+                            </colgroup>
                             <thead>
                               <tr style={{ background: "#f8fafc" }}>
                                 <th
@@ -1954,7 +2001,9 @@ function MyAttendanceReports({ token }: { token: string }) {
                                     borderBottom: "2px solid #e5e7eb",
                                     borderRight: "1px solid #e5e7eb",
                                     whiteSpace: "nowrap",
-                                    minWidth: 180,
+                                    width: 200,
+                                    minWidth: 160,
+                                    maxWidth: 220,
                                   }}
                                 >
                                   Employee
@@ -2031,6 +2080,11 @@ function MyAttendanceReports({ token }: { token: string }) {
                                       fontWeight: 500,
                                       color: "#111827",
                                       fontSize: 12,
+                                      width: 200,
+                                      minWidth: 160,
+                                      maxWidth: 220,
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
                                     }}
                                   >
                                     <div>{row.name || row.employeeCode}</div>
@@ -2061,10 +2115,10 @@ function MyAttendanceReports({ token }: { token: string }) {
                                       : isWeekOff(d)
                                         ? "#f9fafb"
                                         : undefined;
-                                    const style =
-                                      rawStatus && MATRIX_STATUS[rawStatus]
-                                        ? MATRIX_STATUS[rawStatus]
-                                        : null;
+                                    // Use getMatrixStyle so unknown biometric codes get a styled fallback
+                                    const style = rawStatus
+                                      ? getMatrixStyle(rawStatus)
+                                      : null;
                                     return (
                                       <td
                                         key={d}
@@ -2138,6 +2192,9 @@ function MyAttendanceReports({ token }: { token: string }) {
                                     borderRight: "1px solid #e5e7eb",
                                     borderTop: "2px solid #d1fae5",
                                     whiteSpace: "nowrap",
+                                    width: 200,
+                                    minWidth: 160,
+                                    maxWidth: 220,
                                   }}
                                 >
                                   Attendance Total

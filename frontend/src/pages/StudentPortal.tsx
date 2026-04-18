@@ -15,6 +15,7 @@ import {
 import { StudentLoginModal } from "../components/StudentLoginModal";
 import { LanguageToggle } from "../components/LanguageToggle";
 import KnowledgeBaseViewer from "../components/knowledge-base/KnowledgeBaseViewer";
+import WhatsAppFloatingIcon from "../components/WhatsAppFloatingIcon";
 import { useBranding } from "../contexts/BrandingContext";
 import { API_CONFIG } from "../config/constants";
 import HierarchyCategorySelector, {
@@ -2503,6 +2504,10 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
           ssoConfig={ssoConfig}
         />
       )}
+      <WhatsAppFloatingIcon
+        projectId={projectBranding?.projectId}
+        isAuthenticated={false}
+      />
     </div>
   );
 };

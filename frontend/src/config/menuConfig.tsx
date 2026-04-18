@@ -32,6 +32,7 @@ import {
   MdMonitorHeart,
   MdStorage,
   MdInsights,
+  MdVpnKey,
 } from "react-icons/md";
 import { PERMISSIONS, PERMISSION_MODULES } from "../constants/permissions";
 
@@ -356,6 +357,22 @@ export const menuConfig: MenuItem[] = [
         labelHi: "ईमेल-टू-टिकट",
         labelMr: "ईमेल-टू-टिकट",
         permission: "EMAIL_CONFIG_VIEW",
+      },
+      {
+        path: "/integrations/public-api-keys",
+        icon: <MdVpnKey />,
+        label: "Public API Keys",
+        labelHi: "सार्वजनिक API कुंजी",
+        labelMr: "सार्वजनिक API की",
+        permission: "PROJECT_MANAGE_SETTINGS",
+      },
+      {
+        path: "/integrations/whatsapp-widget",
+        icon: <MdChat />,
+        label: "WhatsApp Widget",
+        labelHi: "व्हाट्सएप विजेट",
+        labelMr: "व्हाट्सअ‍ॅप विजेट",
+        permission: "PROJECT_MANAGE_SETTINGS",
       },
     ],
   },

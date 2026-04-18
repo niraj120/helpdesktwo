@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
-import { useParams } from 'react-router-dom';
-import DashboardLayout from '../components/DashboardLayout';
-import ModuleHeader from '../components/ModuleHeader';
-import { API_CONFIG } from '../config/constants';
-import FormFieldBuilder from '../components/FormFieldBuilder';
-import { FormFieldSchema } from '../utils/conditionEngine';
+import React, { useState, useEffect, useRef } from "react";
+import axios from "axios";
+import { useParams } from "react-router-dom";
+import DashboardLayout from "../components/DashboardLayout";
+import ModuleHeader from "../components/ModuleHeader";
+import { API_CONFIG } from "../config/constants";
+import FormFieldBuilder from "../components/FormFieldBuilder";
+import { FormFieldSchema } from "../utils/conditionEngine";
 import {
   PlusIcon,
   TrashIcon,
@@ -19,12 +19,19 @@ import {
   BuildingOfficeIcon,
   MapPinIcon,
   PencilIcon,
-} from '@heroicons/react/24/outline';
+} from "@heroicons/react/24/outline";
 
 interface RegistrationField {
   id: string;
   fieldName: string;
-  fieldType: 'text' | 'email' | 'phone' | 'number' | 'textarea' | 'dropdown' | 'date';
+  fieldType:
+    | "text"
+    | "email"
+    | "phone"
+    | "number"
+    | "textarea"
+    | "dropdown"
+    | "date";
   required: boolean;
   placeholder: string;
   options?: string[];
@@ -41,7 +48,18 @@ interface RegistrationField {
 interface TicketField {
   id: string;
   fieldName: string;
-  fieldType: 'text' | 'textarea' | 'dropdown' | 'number' | 'date' | 'file' | 'category' | 'category-select' | 'phone' | 'email' | string;
+  fieldType:
+    | "text"
+    | "textarea"
+    | "dropdown"
+    | "number"
+    | "date"
+    | "file"
+    | "category"
+    | "category-select"
+    | "phone"
+    | "email"
+    | string;
   required: boolean;
   placeholder: string;
   options?: string[];
@@ -115,7 +133,7 @@ interface OfflineSettings {
     separator: string;
     includeYear: boolean;
     includeMonth: boolean;
-    resetFrequency: 'never' | 'yearly' | 'monthly';
+    resetFrequency: "never" | "yearly" | "monthly";
   };
   notificationSettings: {
     notifyStudentOnRegistration: boolean;
@@ -127,53 +145,135 @@ interface OfflineSettings {
 
 const OfflineModuleSettings: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
-  const [activeTab, setActiveTab] = useState<'registration' | 'ticket' | 'general' | 'centers'>('general');
+  const [activeTab, setActiveTab] = useState<
+    "registration" | "ticket" | "general" | "centers"
+  >("general");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  
+
   // Ref to prevent duplicate API calls from React.StrictMode
   const hasFetchedSettings = useRef(false);
   const hasFetchedCategories = useRef(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [hierarchyConfig, setHierarchyConfig] = useState<HierarchyConfig | null>(null);
+  const [hierarchyConfig, setHierarchyConfig] =
+    useState<HierarchyConfig | null>(null);
   const hasFetchedHierarchy = useRef(false);
-  
+
   // Offline Centers state
   const [countries, setCountries] = useState<any[]>([]);
   const [centerStates, setCenterStates] = useState<Record<string, any[]>>({});
   const [centerCities, setCenterCities] = useState<Record<string, any[]>>({});
-  const [editingCenter, setEditingCenter] = useState<OfflineCenter | null>(null);
+  const [editingCenter, setEditingCenter] = useState<OfflineCenter | null>(
+    null,
+  );
   const [showCenterForm, setShowCenterForm] = useState(false);
-  
+  // Google business status check
+  const [googleStatusLoading, setGoogleStatusLoading] = useState(false);
+  const [googleStatusResults, setGoogleStatusResults] = useState<any[] | null>(
+    null,
+  );
+  const [googleStatusError, setGoogleStatusError] = useState("");
+
   // Track unsaved changes
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const originalSettings = useRef<OfflineSettings | null>(null);
   const [settings, setSettings] = useState<OfflineSettings>({
     registrationFields: [
-      { id: '1', fieldName: 'firstName', fieldType: 'text', required: true, placeholder: 'Enter first name', order: 1 },
-      { id: '2', fieldName: 'lastName', fieldType: 'text', required: true, placeholder: 'Enter last name', order: 2 },
-      { id: '3', fieldName: 'email', fieldType: 'email', required: true, placeholder: 'student@example.com', order: 3 },
-      { id: '4', fieldName: 'phone', fieldType: 'phone', required: true, placeholder: '+91 98765 43210', order: 4 },
-      { id: '5', fieldName: 'parentMobile', fieldType: 'phone', required: true, placeholder: 'Parent mobile number', isParentMobile: true, order: 5 },
+      {
+        id: "1",
+        fieldName: "firstName",
+        fieldType: "text",
+        required: true,
+        placeholder: "Enter first name",
+        order: 1,
+      },
+      {
+        id: "2",
+        fieldName: "lastName",
+        fieldType: "text",
+        required: true,
+        placeholder: "Enter last name",
+        order: 2,
+      },
+      {
+        id: "3",
+        fieldName: "email",
+        fieldType: "email",
+        required: true,
+        placeholder: "student@example.com",
+        order: 3,
+      },
+      {
+        id: "4",
+        fieldName: "phone",
+        fieldType: "phone",
+        required: true,
+        placeholder: "+91 98765 43210",
+        order: 4,
+      },
+      {
+        id: "5",
+        fieldName: "parentMobile",
+        fieldType: "phone",
+        required: true,
+        placeholder: "Parent mobile number",
+        isParentMobile: true,
+        order: 5,
+      },
     ],
     ticketFields: [
-      { id: 'category-fixed', fieldName: 'Category', fieldType: 'category', required: true, placeholder: 'Select category', isFixed: true, isEnabled: true, order: 1 },
-      { id: 'subject-fixed', fieldName: 'Subject', fieldType: 'text', required: true, placeholder: 'Brief description of issue', isFixed: true, order: 2 },
-      { id: 'description-fixed', fieldName: 'Description', fieldType: 'textarea', required: true, placeholder: 'Detailed description...', isFixed: true, order: 3 },
-      { id: '3', fieldName: 'Attachments', fieldType: 'file', required: false, placeholder: '', allowMultiple: true, maxFiles: 5, allowedFileTypes: ['pdf', 'jpg', 'png', 'doc', 'docx'], order: 4 },
+      {
+        id: "category-fixed",
+        fieldName: "Category",
+        fieldType: "category",
+        required: true,
+        placeholder: "Select category",
+        isFixed: true,
+        isEnabled: true,
+        order: 1,
+      },
+      {
+        id: "subject-fixed",
+        fieldName: "Subject",
+        fieldType: "text",
+        required: true,
+        placeholder: "Brief description of issue",
+        isFixed: true,
+        order: 2,
+      },
+      {
+        id: "description-fixed",
+        fieldName: "Description",
+        fieldType: "textarea",
+        required: true,
+        placeholder: "Detailed description...",
+        isFixed: true,
+        order: 3,
+      },
+      {
+        id: "3",
+        fieldName: "Attachments",
+        fieldType: "file",
+        required: false,
+        placeholder: "",
+        allowMultiple: true,
+        maxFiles: 5,
+        allowedFileTypes: ["pdf", "jpg", "png", "doc", "docx"],
+        order: 4,
+      },
     ],
     allowAgentToMarkResolved: true,
     allowAgentToEscalate: true,
     autoAssignToCreatingAgent: false,
     requireStudentVerification: false,
     offlineTicketNumbering: {
-      prefix: 'OFF',
+      prefix: "OFF",
       startingNumber: 1,
-      separator: '-',
+      separator: "-",
       includeYear: true,
       includeMonth: false,
-      resetFrequency: 'yearly',
+      resetFrequency: "yearly",
     },
     notificationSettings: {
       notifyStudentOnRegistration: true,
@@ -187,7 +287,7 @@ const OfflineModuleSettings: React.FC = () => {
     hasFetchedSettings.current = false;
     hasFetchedCategories.current = false;
     hasFetchedHierarchy.current = false;
-    
+
     // Fetch all data when projectId changes
     const loadData = async () => {
       // Fetch hierarchy config first
@@ -205,15 +305,25 @@ const OfflineModuleSettings: React.FC = () => {
         fetchCategories();
       }
     };
-    
+
     loadData();
   }, [projectId]);
 
   // Apply hierarchy fields whenever hierarchyConfig changes and settings are loaded
   useEffect(() => {
-    console.log('🔍 useEffect triggered - hierarchyConfig:', hierarchyConfig?.levelCount, 'loading:', loading);
-    if (hierarchyConfig && hierarchyConfig.levels && hierarchyConfig.levels.length > 0 && !loading) {
-      console.log('✅ Calling updateHierarchyFields');
+    console.log(
+      "🔍 useEffect triggered - hierarchyConfig:",
+      hierarchyConfig?.levelCount,
+      "loading:",
+      loading,
+    );
+    if (
+      hierarchyConfig &&
+      hierarchyConfig.levels &&
+      hierarchyConfig.levels.length > 0 &&
+      !loading
+    ) {
+      console.log("✅ Calling updateHierarchyFields");
       updateHierarchyFields(hierarchyConfig);
     }
   }, [hierarchyConfig, loading]);
@@ -221,80 +331,111 @@ const OfflineModuleSettings: React.FC = () => {
   const fetchSettings = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('authToken');
-      console.log('🔄 Fetching offline settings for project:', projectId);
-      
+      const token = localStorage.getItem("authToken");
+      console.log("🔄 Fetching offline settings for project:", projectId);
+
       const response = await axios.get(
         `${API_CONFIG.API_URL}/projects/${projectId}/offline-settings`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
 
-      console.log('✅ Offline settings response:', response.data);
+      console.log("✅ Offline settings response:", response.data);
 
       if (response.data.success) {
         const fetchedSettings = response.data.data || {};
-        
-        console.log('📋 Fetched registration fields:', fetchedSettings.registrationFields?.length || 0);
-        console.log('📋 Fetched ticket fields:', fetchedSettings.ticketFields?.length || 0);
-        
+
+        console.log(
+          "📋 Fetched registration fields:",
+          fetchedSettings.registrationFields?.length || 0,
+        );
+        console.log(
+          "📋 Fetched ticket fields:",
+          fetchedSettings.ticketFields?.length || 0,
+        );
+
         // Remove duplicate Category fields - keep only the first one
         if (fetchedSettings.ticketFields) {
           const seenCategories = new Set();
-          fetchedSettings.ticketFields = fetchedSettings.ticketFields.filter((field: TicketField) => {
-            if (field.fieldName === 'Category') {
-              if (seenCategories.has('Category')) {
-                return false; // Remove duplicate
+          fetchedSettings.ticketFields = fetchedSettings.ticketFields.filter(
+            (field: TicketField) => {
+              if (field.fieldName === "Category") {
+                if (seenCategories.has("Category")) {
+                  return false; // Remove duplicate
+                }
+                seenCategories.add("Category");
               }
-              seenCategories.add('Category');
-            }
-            return true;
-          });
+              return true;
+            },
+          );
         }
-        
+
         // Ensure category field exists
-        const hasCategoryField = fetchedSettings.ticketFields?.some((f: TicketField) => 
-          f.fieldType === 'category' || f.fieldType === 'category-select' || f.fieldName === 'Category'
+        const hasCategoryField = fetchedSettings.ticketFields?.some(
+          (f: TicketField) =>
+            f.fieldType === "category" ||
+            f.fieldType === "category-select" ||
+            f.fieldName === "Category",
         );
         if (!hasCategoryField && fetchedSettings.ticketFields) {
           // Add category field as first field if it doesn't exist
           fetchedSettings.ticketFields = [
             {
-              id: 'category-fixed',
-              fieldName: 'Category',
-              fieldType: 'category-select',
+              id: "category-fixed",
+              fieldName: "Category",
+              fieldType: "category-select",
               required: true,
-              placeholder: 'Select category',
+              placeholder: "Select category",
               isFixed: true,
               isEnabled: true,
-              order: 1
+              order: 1,
             },
             ...fetchedSettings.ticketFields.map((f: TicketField) => ({
               ...f,
-              order: (f.order || 0) + 1
-            }))
+              order: (f.order || 0) + 1,
+            })),
           ];
         }
-        
+
         // Merge with defaults to ensure we always have the structure
         const mergedSettings = {
-          registrationFields: fetchedSettings.registrationFields || settings.registrationFields,
+          registrationFields:
+            fetchedSettings.registrationFields || settings.registrationFields,
           ticketFields: fetchedSettings.ticketFields || settings.ticketFields,
-          allowAgentToMarkResolved: fetchedSettings.allowAgentToMarkResolved ?? settings.allowAgentToMarkResolved,
-          allowAgentToEscalate: fetchedSettings.allowAgentToEscalate ?? settings.allowAgentToEscalate,
-          autoAssignToCreatingAgent: fetchedSettings.autoAssignToCreatingAgent ?? settings.autoAssignToCreatingAgent,
-          requireStudentVerification: fetchedSettings.requireStudentVerification ?? settings.requireStudentVerification,
-          offlineTicketNumbering: fetchedSettings.offlineTicketNumbering || settings.offlineTicketNumbering,
-          notificationSettings: fetchedSettings.notificationSettings || settings.notificationSettings,
+          allowAgentToMarkResolved:
+            fetchedSettings.allowAgentToMarkResolved ??
+            settings.allowAgentToMarkResolved,
+          allowAgentToEscalate:
+            fetchedSettings.allowAgentToEscalate ??
+            settings.allowAgentToEscalate,
+          autoAssignToCreatingAgent:
+            fetchedSettings.autoAssignToCreatingAgent ??
+            settings.autoAssignToCreatingAgent,
+          requireStudentVerification:
+            fetchedSettings.requireStudentVerification ??
+            settings.requireStudentVerification,
+          offlineTicketNumbering:
+            fetchedSettings.offlineTicketNumbering ||
+            settings.offlineTicketNumbering,
+          notificationSettings:
+            fetchedSettings.notificationSettings ||
+            settings.notificationSettings,
         };
-        
-        console.log('✅ Setting merged settings with', mergedSettings.registrationFields?.length, 'registration fields');
-        console.log('🎫 Offline ticket numbering:', mergedSettings.offlineTicketNumbering);
+
+        console.log(
+          "✅ Setting merged settings with",
+          mergedSettings.registrationFields?.length,
+          "registration fields",
+        );
+        console.log(
+          "🎫 Offline ticket numbering:",
+          mergedSettings.offlineTicketNumbering,
+        );
         setSettings(mergedSettings);
         originalSettings.current = mergedSettings;
         setHasUnsavedChanges(false);
       }
     } catch (error) {
-      console.error('❌ Error fetching offline settings:', error);
+      console.error("❌ Error fetching offline settings:", error);
     } finally {
       setLoading(false);
     }
@@ -302,16 +443,19 @@ const OfflineModuleSettings: React.FC = () => {
 
   const fetchCategories = async () => {
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       // Fetch all categories (including hierarchy tree) to get level information
       const response = await axios.get(
         `${API_CONFIG.API_URL}/hierarchy-config/${projectId}/tree`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
 
       if (response.data.success) {
         // Flatten the tree to get all categories with level info
-        const flattenTree = (nodes: any[], result: Category[] = []): Category[] => {
+        const flattenTree = (
+          nodes: any[],
+          result: Category[] = [],
+        ): Category[] => {
           for (const node of nodes) {
             result.push({
               _id: node._id,
@@ -328,19 +472,19 @@ const OfflineModuleSettings: React.FC = () => {
         setCategories(flattenTree(response.data.data));
       }
     } catch (error) {
-      console.error('Error fetching categories:', error);
+      console.error("Error fetching categories:", error);
       // Fallback to old endpoint
       try {
-        const token = localStorage.getItem('authToken');
+        const token = localStorage.getItem("authToken");
         const response = await axios.get(
           `${API_CONFIG.API_URL}/categories/project/${projectId}`,
-          { headers: { Authorization: `Bearer ${token}` } }
+          { headers: { Authorization: `Bearer ${token}` } },
         );
         if (response.data.success) {
           setCategories(response.data.data);
         }
       } catch (err) {
-        console.error('Fallback category fetch also failed:', err);
+        console.error("Fallback category fetch also failed:", err);
       }
     }
   };
@@ -348,33 +492,46 @@ const OfflineModuleSettings: React.FC = () => {
   // Fetch hierarchy configuration to know how many category levels are configured
   const fetchHierarchyConfig = async () => {
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const response = await axios.get(
         `${API_CONFIG.API_URL}/hierarchy-config/${projectId}`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
-      
+
       if (response.data.success && response.data.data) {
-        console.log('✅ Hierarchy config loaded:', response.data.data.levelCount, 'levels');
+        console.log(
+          "✅ Hierarchy config loaded:",
+          response.data.data.levelCount,
+          "levels",
+        );
         setHierarchyConfig(response.data.data);
       }
     } catch (error) {
-      console.error('Error fetching hierarchy config:', error);
+      console.error("Error fetching hierarchy config:", error);
     }
   };
 
   // Update ticket fields based on hierarchy configuration
   const updateHierarchyFields = (config: HierarchyConfig) => {
-    console.log('🔄 Updating hierarchy fields with config:', config.levels?.length, 'levels');
-    
-    setSettings(prevSettings => {
+    console.log(
+      "🔄 Updating hierarchy fields with config:",
+      config.levels?.length,
+      "levels",
+    );
+
+    setSettings((prevSettings) => {
       // Remove existing hierarchy/category fixed fields
       const nonHierarchyFields = prevSettings.ticketFields.filter(
-        f => !f.isFixed || (f.fieldName !== 'Category' && !f.fieldType.startsWith('hierarchy-'))
+        (f) =>
+          !f.isFixed ||
+          (f.fieldName !== "Category" && !f.fieldType.startsWith("hierarchy-")),
       );
-      
-      console.log('📋 Non-hierarchy fields:', nonHierarchyFields.map(f => f.fieldName));
-      
+
+      console.log(
+        "📋 Non-hierarchy fields:",
+        nonHierarchyFields.map((f) => f.fieldName),
+      );
+
       // Create fixed fields for each hierarchy level
       const hierarchyFields: TicketField[] = config.levels
         .sort((a, b) => a.levelNumber - b.levelNumber)
@@ -389,22 +546,30 @@ const OfflineModuleSettings: React.FC = () => {
           order: index + 1,
           hierarchyLevel: level.levelNumber,
         }));
-      
-      console.log('✅ Created hierarchy fields:', hierarchyFields.map(f => f.fieldName));
-      
+
+      console.log(
+        "✅ Created hierarchy fields:",
+        hierarchyFields.map((f) => f.fieldName),
+      );
+
       // Update orders of non-hierarchy fields
       const reorderedFields = nonHierarchyFields.map((f, idx) => ({
         ...f,
-        order: hierarchyFields.length + idx + 1
+        order: hierarchyFields.length + idx + 1,
       }));
-      
+
       const result = {
         ...prevSettings,
-        ticketFields: [...hierarchyFields, ...reorderedFields]
+        ticketFields: [...hierarchyFields, ...reorderedFields],
       };
-      
-      console.log('📝 Final ticket fields:', result.ticketFields.map(f => `${f.fieldName} (${f.isFixed ? 'fixed' : 'custom'})`));
-      
+
+      console.log(
+        "📝 Final ticket fields:",
+        result.ticketFields.map(
+          (f) => `${f.fieldName} (${f.isFixed ? "fixed" : "custom"})`,
+        ),
+      );
+
       return result;
     });
   };
@@ -412,156 +577,173 @@ const OfflineModuleSettings: React.FC = () => {
   // Fetch countries for offline centers
   const fetchCountries = async () => {
     try {
-      const token = localStorage.getItem('authToken');
-      const response = await axios.get(`${API_CONFIG.API_URL}/master/countries`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const token = localStorage.getItem("authToken");
+      const response = await axios.get(
+        `${API_CONFIG.API_URL}/master/countries`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
       if (response.data.success) {
         // Map the response to include 'name' property from 'value'
         const formattedCountries = response.data.data.map((c: any) => ({
           _id: c._id,
           key: c.key,
-          name: c.value // Map 'value' to 'name' for consistency
+          name: c.value, // Map 'value' to 'name' for consistency
         }));
         setCountries(formattedCountries);
       }
     } catch (error) {
-      console.error('Error fetching countries:', error);
+      console.error("Error fetching countries:", error);
     }
   };
 
   // Fetch states for a country
-  const fetchStatesForCountry = async (countryId: string, centerId?: string) => {
+  const fetchStatesForCountry = async (
+    countryId: string,
+    centerId?: string,
+  ) => {
     try {
-      const token = localStorage.getItem('authToken');
-      const response = await axios.get(`${API_CONFIG.API_URL}/master/countries/${countryId}/states`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const token = localStorage.getItem("authToken");
+      const response = await axios.get(
+        `${API_CONFIG.API_URL}/master/countries/${countryId}/states`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
       if (response.data.success) {
         // Map the response to include 'name' property from 'value'
         const formattedStates = response.data.data.map((s: any) => ({
           _id: s._id,
           key: s.key,
-          name: s.value // Map 'value' to 'name' for consistency
+          name: s.value, // Map 'value' to 'name' for consistency
         }));
-        setCenterStates(prev => ({
+        setCenterStates((prev) => ({
           ...prev,
-          [centerId || 'new']: formattedStates
+          [centerId || "new"]: formattedStates,
         }));
       }
     } catch (error) {
-      console.error('Error fetching states:', error);
+      console.error("Error fetching states:", error);
     }
   };
 
   // Fetch cities for a state
   const fetchCitiesForState = async (stateId: string, centerId?: string) => {
     try {
-      const token = localStorage.getItem('authToken');
-      const response = await axios.get(`${API_CONFIG.API_URL}/master/states/${stateId}/cities`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const token = localStorage.getItem("authToken");
+      const response = await axios.get(
+        `${API_CONFIG.API_URL}/master/states/${stateId}/cities`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
       if (response.data.success) {
         // Map the response to include 'name' property from 'value'
         const formattedCities = response.data.data.map((c: any) => ({
           _id: c._id,
           key: c.key,
-          name: c.value // Map 'value' to 'name' for consistency
+          name: c.value, // Map 'value' to 'name' for consistency
         }));
-        setCenterCities(prev => ({
+        setCenterCities((prev) => ({
           ...prev,
-          [centerId || 'new']: formattedCities
+          [centerId || "new"]: formattedCities,
         }));
       }
     } catch (error) {
-      console.error('Error fetching cities:', error);
+      console.error("Error fetching cities:", error);
     }
   };
 
   // Add or update offline center
   const handleAddOrUpdateCenter = async (center: OfflineCenter) => {
     try {
-      const token = localStorage.getItem('authToken');
-      
-      if (center._id && center._id !== 'new') {
+      const token = localStorage.getItem("authToken");
+
+      if (center._id && center._id !== "new") {
         // Update existing center via API
         const response = await axios.put(
           `${API_CONFIG.API_URL}/centers/${center._id}`,
           center,
-          { headers: { Authorization: `Bearer ${token}` } }
+          { headers: { Authorization: `Bearer ${token}` } },
         );
-        
+
         if (response.data.success) {
           // Refresh centers list
           const centersResponse = await axios.get(
             `${API_CONFIG.API_URL}/centers?projectId=${projectId}`,
-            { headers: { Authorization: `Bearer ${token}` } }
+            { headers: { Authorization: `Bearer ${token}` } },
           );
-          setSettings({ ...settings, offlineCenters: centersResponse.data.data });
+          setSettings({
+            ...settings,
+            offlineCenters: centersResponse.data.data,
+          });
         }
       } else {
         // Create new center via API
         const response = await axios.post(
           `${API_CONFIG.API_URL}/centers`,
           { ...center, projectId },
-          { headers: { Authorization: `Bearer ${token}` } }
+          { headers: { Authorization: `Bearer ${token}` } },
         );
-        
+
         if (response.data.success) {
           // Refresh centers list
           const centersResponse = await axios.get(
             `${API_CONFIG.API_URL}/centers?projectId=${projectId}`,
-            { headers: { Authorization: `Bearer ${token}` } }
+            { headers: { Authorization: `Bearer ${token}` } },
           );
-          setSettings({ ...settings, offlineCenters: centersResponse.data.data });
+          setSettings({
+            ...settings,
+            offlineCenters: centersResponse.data.data,
+          });
         }
       }
-      
+
       setShowCenterForm(false);
       setEditingCenter(null);
     } catch (error) {
-      console.error('Error saving center:', error);
-      alert('Failed to save center. Please try again.');
+      console.error("Error saving center:", error);
+      alert("Failed to save center. Please try again.");
     }
   };
 
   // Delete offline center
   const handleDeleteCenter = async (centerId: string) => {
-    if (confirm('Are you sure you want to delete this center?')) {
+    if (confirm("Are you sure you want to delete this center?")) {
       try {
-        const token = localStorage.getItem('authToken');
-        
-        await axios.delete(
-          `${API_CONFIG.API_URL}/centers/${centerId}`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        
+        const token = localStorage.getItem("authToken");
+
+        await axios.delete(`${API_CONFIG.API_URL}/centers/${centerId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
         // Refresh centers list
         const centersResponse = await axios.get(
           `${API_CONFIG.API_URL}/centers?projectId=${projectId}`,
-          { headers: { Authorization: `Bearer ${token}` } }
+          { headers: { Authorization: `Bearer ${token}` } },
         );
         setSettings({ ...settings, offlineCenters: centersResponse.data.data });
       } catch (error) {
-        console.error('Error deleting center:', error);
-        alert('Failed to delete center. Please try again.');
+        console.error("Error deleting center:", error);
+        alert("Failed to delete center. Please try again.");
       }
     }
   };
 
   // Load centers from API when component mounts or tab changes
   useEffect(() => {
-    if (activeTab === 'centers' && projectId) {
+    if (activeTab === "centers" && projectId) {
       const loadCenters = async () => {
         try {
-          const token = localStorage.getItem('authToken');
+          const token = localStorage.getItem("authToken");
           const response = await axios.get(
             `${API_CONFIG.API_URL}/centers?projectId=${projectId}`,
-            { headers: { Authorization: `Bearer ${token}` } }
+            { headers: { Authorization: `Bearer ${token}` } },
           );
           setSettings({ ...settings, offlineCenters: response.data.data });
         } catch (error) {
-          console.error('Error loading centers:', error);
+          console.error("Error loading centers:", error);
         }
       };
       loadCenters();
@@ -570,7 +752,7 @@ const OfflineModuleSettings: React.FC = () => {
 
   // Fetch countries when centers tab is active
   useEffect(() => {
-    if (activeTab === 'centers' && countries.length === 0) {
+    if (activeTab === "centers" && countries.length === 0) {
       fetchCountries();
     }
   }, [activeTab]);
@@ -580,15 +762,15 @@ const OfflineModuleSettings: React.FC = () => {
     setSaveSuccess(false);
 
     try {
-      const token = localStorage.getItem('authToken');
-      
+      const token = localStorage.getItem("authToken");
+
       // Exclude centers from settings since they're managed separately via /api/centers
       const { offlineCenters, ...settingsWithoutCenters } = settings;
-      
+
       await axios.put(
         `${API_CONFIG.API_URL}/projects/${projectId}/offline-settings`,
         settingsWithoutCenters,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
 
       setSaveSuccess(true);
@@ -596,7 +778,7 @@ const OfflineModuleSettings: React.FC = () => {
       originalSettings.current = settings;
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (error: any) {
-      alert(error.response?.data?.message || 'Failed to save settings');
+      alert(error.response?.data?.message || "Failed to save settings");
     } finally {
       setSaving(false);
     }
@@ -605,10 +787,10 @@ const OfflineModuleSettings: React.FC = () => {
   const addRegistrationField = () => {
     const newField: RegistrationField = {
       id: Date.now().toString(),
-      fieldName: 'New Field',
-      fieldType: 'text',
+      fieldName: "New Field",
+      fieldType: "text",
       required: false,
-      placeholder: '',
+      placeholder: "",
       order: settings.registrationFields.length + 1,
     };
     setSettings({
@@ -620,59 +802,92 @@ const OfflineModuleSettings: React.FC = () => {
 
   const removeRegistrationField = (id: string) => {
     // Prevent deletion of mandatory fields
-    const field = settings.registrationFields.find(f => f.id === id);
-    const mandatoryFields = ['firstName', 'lastName', 'email', 'phone', 'parentMobile'];
-    
-    if (field && mandatoryFields.includes(field.fieldName)) {
-      alert(`Cannot delete ${field.fieldName} - this is a mandatory field required by the system.`);
-      return;
-    }
-    
-    setSettings({
-      ...settings,
-      registrationFields: settings.registrationFields.filter(f => f.id !== id),
-    });
-    setHasUnsavedChanges(true);
-  };
+    const field = settings.registrationFields.find((f) => f.id === id);
+    const mandatoryFields = [
+      "firstName",
+      "lastName",
+      "email",
+      "phone",
+      "parentMobile",
+    ];
 
-  const updateRegistrationField = (id: string, updates: Partial<RegistrationField>) => {
-    // Prevent changing required status of mandatory fields
-    const field = settings.registrationFields.find(f => f.id === id);
-    const mandatoryFields = ['firstName', 'lastName', 'email', 'phone', 'parentMobile'];
-    
-    if (field && mandatoryFields.includes(field.fieldName) && 'required' in updates && !updates.required) {
-      alert(`${field.fieldName} must remain required - this is a mandatory field.`);
+    if (field && mandatoryFields.includes(field.fieldName)) {
+      alert(
+        `Cannot delete ${field.fieldName} - this is a mandatory field required by the system.`,
+      );
       return;
     }
-    
-    // Prevent changing fieldName of mandatory fields
-    if (field && mandatoryFields.includes(field.fieldName) && 'fieldName' in updates) {
-      alert(`Cannot rename ${field.fieldName} - this is a system field.`);
-      return;
-    }
-    
+
     setSettings({
       ...settings,
-      registrationFields: settings.registrationFields.map(f =>
-        f.id === id ? { ...f, ...updates } : f
+      registrationFields: settings.registrationFields.filter(
+        (f) => f.id !== id,
       ),
     });
     setHasUnsavedChanges(true);
   };
 
-  const moveRegistrationField = (id: string, direction: 'up' | 'down') => {
-    const index = settings.registrationFields.findIndex(f => f.id === id);
+  const updateRegistrationField = (
+    id: string,
+    updates: Partial<RegistrationField>,
+  ) => {
+    // Prevent changing required status of mandatory fields
+    const field = settings.registrationFields.find((f) => f.id === id);
+    const mandatoryFields = [
+      "firstName",
+      "lastName",
+      "email",
+      "phone",
+      "parentMobile",
+    ];
+
     if (
-      (direction === 'up' && index === 0) ||
-      (direction === 'down' && index === settings.registrationFields.length - 1)
+      field &&
+      mandatoryFields.includes(field.fieldName) &&
+      "required" in updates &&
+      !updates.required
+    ) {
+      alert(
+        `${field.fieldName} must remain required - this is a mandatory field.`,
+      );
+      return;
+    }
+
+    // Prevent changing fieldName of mandatory fields
+    if (
+      field &&
+      mandatoryFields.includes(field.fieldName) &&
+      "fieldName" in updates
+    ) {
+      alert(`Cannot rename ${field.fieldName} - this is a system field.`);
+      return;
+    }
+
+    setSettings({
+      ...settings,
+      registrationFields: settings.registrationFields.map((f) =>
+        f.id === id ? { ...f, ...updates } : f,
+      ),
+    });
+    setHasUnsavedChanges(true);
+  };
+
+  const moveRegistrationField = (id: string, direction: "up" | "down") => {
+    const index = settings.registrationFields.findIndex((f) => f.id === id);
+    if (
+      (direction === "up" && index === 0) ||
+      (direction === "down" && index === settings.registrationFields.length - 1)
     ) {
       return;
     }
 
     const newFields = [...settings.registrationFields];
-    const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    [newFields[index], newFields[targetIndex]] = [newFields[targetIndex], newFields[index]];
-    
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    [newFields[index], newFields[targetIndex]] = [
+      newFields[targetIndex],
+      newFields[index],
+    ];
+
     // Update order
     newFields.forEach((field, idx) => {
       field.order = idx + 1;
@@ -685,10 +900,10 @@ const OfflineModuleSettings: React.FC = () => {
   const addTicketField = () => {
     const newField: TicketField = {
       id: Date.now().toString(),
-      fieldName: 'New Field',
-      fieldType: 'text',
+      fieldName: "New Field",
+      fieldType: "text",
       required: false,
-      placeholder: '',
+      placeholder: "",
       order: settings.ticketFields.length + 1,
     };
     setSettings({
@@ -701,7 +916,7 @@ const OfflineModuleSettings: React.FC = () => {
   const removeTicketField = (id: string) => {
     setSettings({
       ...settings,
-      ticketFields: settings.ticketFields.filter(f => f.id !== id),
+      ticketFields: settings.ticketFields.filter((f) => f.id !== id),
     });
     setHasUnsavedChanges(true);
   };
@@ -709,26 +924,29 @@ const OfflineModuleSettings: React.FC = () => {
   const updateTicketField = (id: string, updates: Partial<TicketField>) => {
     setSettings({
       ...settings,
-      ticketFields: settings.ticketFields.map(f =>
-        f.id === id ? { ...f, ...updates } : f
+      ticketFields: settings.ticketFields.map((f) =>
+        f.id === id ? { ...f, ...updates } : f,
       ),
     });
     setHasUnsavedChanges(true);
   };
 
-  const moveTicketField = (id: string, direction: 'up' | 'down') => {
-    const index = settings.ticketFields.findIndex(f => f.id === id);
+  const moveTicketField = (id: string, direction: "up" | "down") => {
+    const index = settings.ticketFields.findIndex((f) => f.id === id);
     if (
-      (direction === 'up' && index === 0) ||
-      (direction === 'down' && index === settings.ticketFields.length - 1)
+      (direction === "up" && index === 0) ||
+      (direction === "down" && index === settings.ticketFields.length - 1)
     ) {
       return;
     }
 
     const newFields = [...settings.ticketFields];
-    const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    [newFields[index], newFields[targetIndex]] = [newFields[targetIndex], newFields[index]];
-    
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    [newFields[index], newFields[targetIndex]] = [
+      newFields[targetIndex],
+      newFields[index],
+    ];
+
     // Update order
     newFields.forEach((field, idx) => {
       field.order = idx + 1;
@@ -743,13 +961,14 @@ const OfflineModuleSettings: React.FC = () => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (hasUnsavedChanges) {
         e.preventDefault();
-        e.returnValue = 'You have unsaved changes. Are you sure you want to leave?';
+        e.returnValue =
+          "You have unsaved changes. Are you sure you want to leave?";
         return e.returnValue;
       }
     };
 
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [hasUnsavedChanges]);
 
   if (loading) {
@@ -773,13 +992,26 @@ const OfflineModuleSettings: React.FC = () => {
         {/* Unsaved Changes Warning */}
         {hasUnsavedChanges && (
           <div className="mb-6 p-4 bg-yellow-50 border border-yellow-300 rounded-lg flex items-start space-x-3">
-            <svg className="h-6 w-6 text-yellow-600 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            <svg
+              className="h-6 w-6 text-yellow-600 flex-shrink-0 mt-0.5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+              />
             </svg>
             <div className="flex-1">
-              <h4 className="font-semibold text-yellow-900">You have unsaved changes</h4>
+              <h4 className="font-semibold text-yellow-900">
+                You have unsaved changes
+              </h4>
               <p className="text-sm text-yellow-700 mt-1">
-                Don't forget to click "Save Configuration" at the bottom to save your changes permanently.
+                Don't forget to click "Save Configuration" at the bottom to save
+                your changes permanently.
               </p>
             </div>
           </div>
@@ -789,7 +1021,9 @@ const OfflineModuleSettings: React.FC = () => {
           <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-start space-x-3">
             <CheckCircleIcon className="h-6 w-6 text-green-600 flex-shrink-0 mt-0.5" />
             <div>
-              <h4 className="font-semibold text-green-900">Settings Saved Successfully!</h4>
+              <h4 className="font-semibold text-green-900">
+                Settings Saved Successfully!
+              </h4>
               <p className="text-sm text-green-700 mt-1">
                 Your offline module configuration has been updated.
               </p>
@@ -800,15 +1034,17 @@ const OfflineModuleSettings: React.FC = () => {
         {/* Main Content - Two Column Layout */}
         <div className="grid grid-cols-12 gap-6">
           {/* Left Column - Configuration Forms (full-width on ticket tab which has its own live preview) */}
-          <div className={activeTab === 'ticket' ? 'col-span-12' : 'col-span-7'}>
+          <div
+            className={activeTab === "ticket" ? "col-span-12" : "col-span-7"}
+          >
             {/* Tab Navigation */}
             <div className="flex space-x-4 border-b border-gray-200 mb-6">
               <button
-                onClick={() => setActiveTab('general')}
+                onClick={() => setActiveTab("general")}
                 className={`px-6 py-3 font-medium transition-colors border-b-2 ${
-                  activeTab === 'general'
-                    ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                  activeTab === "general"
+                    ? "border-blue-600 text-blue-600"
+                    : "border-transparent text-gray-600 hover:text-gray-900"
                 }`}
               >
                 <div className="flex items-center space-x-2">
@@ -817,11 +1053,11 @@ const OfflineModuleSettings: React.FC = () => {
                 </div>
               </button>
               <button
-                onClick={() => setActiveTab('registration')}
+                onClick={() => setActiveTab("registration")}
                 className={`px-6 py-3 font-medium transition-colors border-b-2 ${
-                  activeTab === 'registration'
-                    ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                  activeTab === "registration"
+                    ? "border-blue-600 text-blue-600"
+                    : "border-transparent text-gray-600 hover:text-gray-900"
                 }`}
               >
                 <div className="flex items-center space-x-2">
@@ -830,11 +1066,11 @@ const OfflineModuleSettings: React.FC = () => {
                 </div>
               </button>
               <button
-                onClick={() => setActiveTab('ticket')}
+                onClick={() => setActiveTab("ticket")}
                 className={`px-6 py-3 font-medium transition-colors border-b-2 ${
-                  activeTab === 'ticket'
-                    ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                  activeTab === "ticket"
+                    ? "border-blue-600 text-blue-600"
+                    : "border-transparent text-gray-600 hover:text-gray-900"
                 }`}
               >
                 <div className="flex items-center space-x-2">
@@ -843,11 +1079,11 @@ const OfflineModuleSettings: React.FC = () => {
                 </div>
               </button>
               <button
-                onClick={() => setActiveTab('centers')}
+                onClick={() => setActiveTab("centers")}
                 className={`px-6 py-3 font-medium transition-colors border-b-2 ${
-                  activeTab === 'centers'
-                    ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                  activeTab === "centers"
+                    ? "border-blue-600 text-blue-600"
+                    : "border-transparent text-gray-600 hover:text-gray-900"
                 }`}
               >
                 <div className="flex items-center space-x-2">
@@ -857,772 +1093,1178 @@ const OfflineModuleSettings: React.FC = () => {
               </button>
             </div>
 
-      {/* General Settings Tab */}
-      {activeTab === 'general' && (
-        <div className="space-y-6">
-          {/* Ticket Numbering Configuration */}
-          <div className="bg-white rounded-xl shadow-md p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Offline Query Numbering</h3>
-            <p className="text-sm text-gray-600 mb-6">
-              Configure how query numbers are generated for offline (walk-in) queries
-            </p>
-            
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Prefix
-                  </label>
-                  <input
-                    type="text"
-                    value={settings.offlineTicketNumbering?.prefix ?? ''}
-                    onChange={(e) => {
-                      setSettings({
-                        ...settings,
-                        offlineTicketNumbering: {
-                          ...(settings.offlineTicketNumbering || { startingNumber: 1, separator: '-', includeYear: true, includeMonth: false, resetFrequency: 'yearly' }),
-                          prefix: e.target.value.toUpperCase()
-                        }
-                      });
-                      setHasUnsavedChanges(true);
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="OFF"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Separator
-                  </label>
-                  <select
-                    value={settings.offlineTicketNumbering?.separator || '-'}
-                    onChange={(e) => {
-                      setSettings({
-                        ...settings,
-                        offlineTicketNumbering: {
-                          ...(settings.offlineTicketNumbering || { prefix: 'OFF', startingNumber: 1, includeYear: true, includeMonth: false, resetFrequency: 'yearly' }),
-                          separator: e.target.value
-                        }
-                      });
-                      setHasUnsavedChanges(true);
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="-">Hyphen (-)</option>
-                    <option value="_">Underscore (_)</option>
-                    <option value="/">Slash (/)</option>
-                    <option value="">None</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Starting Number
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={settings.offlineTicketNumbering?.startingNumber || 1}
-                    onChange={(e) => {
-                      setSettings({
-                        ...settings,
-                        offlineTicketNumbering: {
-                          ...(settings.offlineTicketNumbering || { prefix: 'OFF', separator: '-', includeYear: true, includeMonth: false, resetFrequency: 'yearly' }),
-                          startingNumber: parseInt(e.target.value) || 1
-                        }
-                      });
-                      setHasUnsavedChanges(true);
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Reset Frequency
-                  </label>
-                  <select
-                    value={settings.offlineTicketNumbering?.resetFrequency || 'yearly'}
-                    onChange={(e) => {
-                      setSettings({
-                        ...settings,
-                        offlineTicketNumbering: {
-                          ...(settings.offlineTicketNumbering || { prefix: 'OFF', startingNumber: 1, separator: '-', includeYear: true, includeMonth: false }),
-                          resetFrequency: e.target.value as 'never' | 'yearly' | 'monthly'
-                        }
-                      });
-                      setHasUnsavedChanges(true);
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="never">Never Reset</option>
-                    <option value="yearly">Reset Yearly</option>
-                    <option value="monthly">Reset Monthly</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center space-x-3">
-                  <input
-                    type="checkbox"
-                    id="includeYear"
-                    checked={settings.offlineTicketNumbering?.includeYear ?? true}
-                    onChange={(e) => {
-                      setSettings({
-                        ...settings,
-                        offlineTicketNumbering: {
-                          ...(settings.offlineTicketNumbering || { prefix: 'OFF', startingNumber: 1, separator: '-', includeMonth: false, resetFrequency: 'yearly' }),
-                          includeYear: e.target.checked
-                        }
-                      });
-                      setHasUnsavedChanges(true);
-                    }}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                  />
-                  <label htmlFor="includeYear" className="text-sm font-medium text-gray-700">
-                    Include Year in query number
-                  </label>
-                </div>
-
-                <div className="flex items-center space-x-3">
-                  <input
-                    type="checkbox"
-                    id="includeMonth"
-                    checked={settings.offlineTicketNumbering?.includeMonth ?? false}
-                    onChange={(e) => {
-                      setSettings({
-                        ...settings,
-                        offlineTicketNumbering: {
-                          ...(settings.offlineTicketNumbering || { prefix: 'OFF', startingNumber: 1, separator: '-', includeYear: true, resetFrequency: 'yearly' }),
-                          includeMonth: e.target.checked
-                        }
-                      });
-                      setHasUnsavedChanges(true);
-                    }}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                  />
-                  <label htmlFor="includeMonth" className="text-sm font-medium text-gray-700">
-                    Include Month in query number
-                  </label>
-                </div>
-              </div>
-
-              {/* Preview */}
-              <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <div className="flex items-start space-x-2">
-                  <svg className="h-5 w-5 text-blue-600 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <div>
-                    <p className="text-sm font-medium text-blue-900">Preview</p>
-                    <p className="text-lg font-mono font-bold text-blue-700 mt-1">
-                      {(() => {
-                        const config = settings.offlineTicketNumbering || { prefix: 'OFF', separator: '-', includeYear: true, includeMonth: false };
-                        let preview = config.prefix;
-                        if (config.separator) preview += config.separator;
-                        if (config.includeYear) preview += '2025';
-                        if (config.includeMonth) {
-                          if (config.includeYear && config.separator) preview += config.separator;
-                          preview += '12';
-                        }
-                        if (config.separator) preview += config.separator;
-                        preview += '0001';
-                        return preview;
-                      })()}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-md p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Agent Permissions</h3>
-            <div className="space-y-4">
-              <div className="flex items-start space-x-3">
-                <input
-                  type="checkbox"
-                  id="allowMarkResolved"
-                  checked={settings.allowAgentToMarkResolved}
-                  onChange={(e) => {
-                    setSettings({ ...settings, allowAgentToMarkResolved: e.target.checked });
-                    setHasUnsavedChanges(true);
-                  }}
-                  className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <label htmlFor="allowMarkResolved" className="flex-1">
-                  <span className="font-medium text-gray-900">Allow Mark as Resolved</span>
-                  <p className="text-sm text-gray-600 mt-1">
-                    Agents can mark tickets as resolved if issue was fixed during walk-in support
+            {/* General Settings Tab */}
+            {activeTab === "general" && (
+              <div className="space-y-6">
+                {/* Ticket Numbering Configuration */}
+                <div className="bg-white rounded-xl shadow-md p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                    Offline Query Numbering
+                  </h3>
+                  <p className="text-sm text-gray-600 mb-6">
+                    Configure how query numbers are generated for offline
+                    (walk-in) queries
                   </p>
-                </label>
-              </div>
 
-              <div className="flex items-start space-x-3">
-                <input
-                  type="checkbox"
-                  id="allowEscalate"
-                  checked={settings.allowAgentToEscalate}
-                  onChange={(e) => {
-                    setSettings({ ...settings, allowAgentToEscalate: e.target.checked });
-                    setHasUnsavedChanges(true);
-                  }}
-                  className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <label htmlFor="allowEscalate" className="flex-1">
-                  <span className="font-medium text-gray-900">Allow Escalation at Creation</span>
-                  <p className="text-sm text-gray-600 mt-1">
-                    Agents can escalate queries to specialized agents during creation
-                  </p>
-                </label>
-              </div>
-
-              <div className="flex items-start space-x-3">
-                <input
-                  type="checkbox"
-                  id="autoAssign"
-                  checked={settings.autoAssignToCreatingAgent}
-                  onChange={(e) => {
-                    setSettings({ ...settings, autoAssignToCreatingAgent: e.target.checked });
-                    setHasUnsavedChanges(true);
-                  }}
-                  className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <label htmlFor="autoAssign" className="flex-1">
-                  <span className="font-medium text-gray-900">Auto-assign to Counselor</span>
-                  <p className="text-sm text-gray-600 mt-1">
-                    Automatically assign offline tickets to the counselor who created them
-                  </p>
-                </label>
-              </div>
-
-              <div className="flex items-start space-x-3">
-                <input
-                  type="checkbox"
-                  id="requireVerification"
-                  checked={settings.requireStudentVerification}
-                  onChange={(e) => {
-                    setSettings({ ...settings, requireStudentVerification: e.target.checked });
-                    setHasUnsavedChanges(true);
-                  }}
-                  className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <label htmlFor="requireVerification" className="flex-1">
-                  <span className="font-medium text-gray-900">Require Student Verification</span>
-                  <p className="text-sm text-gray-600 mt-1">
-                    Agents must verify student identity before registration (ID card, etc.)
-                  </p>
-                </label>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-md p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Notification Settings</h3>
-            <div className="space-y-4">
-              <div className="flex items-start space-x-3">
-                <input
-                  type="checkbox"
-                  id="notifyRegistration"
-                  checked={settings.notificationSettings.notifyStudentOnRegistration}
-                  onChange={(e) => {
-                    setSettings({
-                      ...settings,
-                      notificationSettings: {
-                        ...settings.notificationSettings,
-                        notifyStudentOnRegistration: e.target.checked,
-                      },
-                    });
-                    setHasUnsavedChanges(true);
-                  }}
-                  className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <label htmlFor="notifyRegistration" className="flex-1">
-                  <span className="font-medium text-gray-900">Notify on Registration</span>
-                  <p className="text-sm text-gray-600 mt-1">
-                    Send email notification when student is registered
-                  </p>
-                </label>
-              </div>
-
-              <div className="flex items-start space-x-3">
-                <input
-                  type="checkbox"
-                  id="notifyTicket"
-                  checked={settings.notificationSettings.notifyStudentOnTicketCreation}
-                  onChange={(e) => {
-                    setSettings({
-                      ...settings,
-                      notificationSettings: {
-                        ...settings.notificationSettings,
-                        notifyStudentOnTicketCreation: e.target.checked,
-                      },
-                    });
-                    setHasUnsavedChanges(true);
-                  }}
-                  className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <label htmlFor="notifyTicket" className="flex-1">
-                  <span className="font-medium text-gray-900">Notify on Query Creation</span>
-                  <p className="text-sm text-gray-600 mt-1">
-                    Send email notification when query is created on their behalf
-                  </p>
-                </label>
-              </div>
-
-              <div className="flex items-start space-x-3">
-                <input
-                  type="checkbox"
-                  id="welcomeEmail"
-                  checked={settings.notificationSettings.sendWelcomeEmail}
-                  onChange={(e) => {
-                    setSettings({
-                      ...settings,
-                      notificationSettings: {
-                        ...settings.notificationSettings,
-                        sendWelcomeEmail: e.target.checked,
-                      },
-                    });
-                    setHasUnsavedChanges(true);
-                  }}
-                  className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <label htmlFor="welcomeEmail" className="flex-1">
-                  <span className="font-medium text-gray-900">Send Welcome Email</span>
-                  <p className="text-sm text-gray-600 mt-1">
-                    Send welcome email with portal access instructions to new students
-                  </p>
-                </label>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Registration Form Tab */}
-      {activeTab === 'registration' && (
-        <div className="space-y-6">
-          <div className="bg-white rounded-xl shadow-md p-6">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">Registration Form Fields</h3>
-                <p className="text-sm text-gray-600 mt-1">
-                  Configure what information agents collect when registering students
-                </p>
-              </div>
-              <button
-                onClick={addRegistrationField}
-                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                <PlusIcon className="h-5 w-5" />
-                <span>Add Field</span>
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              {settings.registrationFields.map((field, index) => {
-                const isMandatoryField = ['firstName', 'lastName', 'email', 'phone', 'parentMobile'].includes(field.fieldName);
-                
-                return (
-                <div key={field.id} className="border border-gray-200 rounded-lg p-4">
-                  {isMandatoryField && (
-                    <div className="mb-2 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
-                      🔒 System Required Field - Cannot be deleted or made optional
-                    </div>
-                  )}
-                  <div className="grid grid-cols-12 gap-4">
-                    {/* Field Name */}
-                    <div className="col-span-3">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Field Name
-                      </label>
-                      {isMandatoryField ? (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Prefix
+                        </label>
                         <input
                           type="text"
-                          value={field.fieldName}
-                          disabled
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed"
+                          value={settings.offlineTicketNumbering?.prefix ?? ""}
+                          onChange={(e) => {
+                            setSettings({
+                              ...settings,
+                              offlineTicketNumbering: {
+                                ...(settings.offlineTicketNumbering || {
+                                  startingNumber: 1,
+                                  separator: "-",
+                                  includeYear: true,
+                                  includeMonth: false,
+                                  resetFrequency: "yearly",
+                                }),
+                                prefix: e.target.value.toUpperCase(),
+                              },
+                            });
+                            setHasUnsavedChanges(true);
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="OFF"
                         />
-                      ) : (
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Separator
+                        </label>
                         <select
-                          value={field.fieldName}
-                          onChange={(e) => updateRegistrationField(field.id, { fieldName: e.target.value })}
+                          value={
+                            settings.offlineTicketNumbering?.separator || "-"
+                          }
+                          onChange={(e) => {
+                            setSettings({
+                              ...settings,
+                              offlineTicketNumbering: {
+                                ...(settings.offlineTicketNumbering || {
+                                  prefix: "OFF",
+                                  startingNumber: 1,
+                                  includeYear: true,
+                                  includeMonth: false,
+                                  resetFrequency: "yearly",
+                                }),
+                                separator: e.target.value,
+                              },
+                            });
+                            setHasUnsavedChanges(true);
+                          }}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         >
-                          <option value="">Select Field</option>
-                          <optgroup label="Student Info">
-                            <option value="name">Name / Full Name</option>
-                            <option value="First Name">First Name</option>
-                            <option value="Last Name">Last Name</option>
-                            <option value="Email">Email</option>
-                            <option value="Phone">Phone</option>
-                            <option value="Mobile Number">Mobile Number</option>
-                            <option value="Parent Mobile">Parent Mobile</option>
-                            <option value="Unique ID">Unique ID / Student ID</option>
-                          </optgroup>
-                          <optgroup label="Custom Fields">
-                            <option value="Address">Address</option>
-                            <option value="City">City</option>
-                            <option value="State">State</option>
-                            <option value="Pincode">Pincode</option>
-                            <option value="Date of Birth">Date of Birth</option>
-                            <option value="Gender">Gender</option>
-                            <option value="Course">Course</option>
-                            <option value="Class">Class</option>
-                            <option value="Custom Field">Custom Field (Edit Name)</option>
-                          </optgroup>
+                          <option value="-">Hyphen (-)</option>
+                          <option value="_">Underscore (_)</option>
+                          <option value="/">Slash (/)</option>
+                          <option value="">None</option>
                         </select>
-                      )}
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Starting Number
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={
+                            settings.offlineTicketNumbering?.startingNumber || 1
+                          }
+                          onChange={(e) => {
+                            setSettings({
+                              ...settings,
+                              offlineTicketNumbering: {
+                                ...(settings.offlineTicketNumbering || {
+                                  prefix: "OFF",
+                                  separator: "-",
+                                  includeYear: true,
+                                  includeMonth: false,
+                                  resetFrequency: "yearly",
+                                }),
+                                startingNumber: parseInt(e.target.value) || 1,
+                              },
+                            });
+                            setHasUnsavedChanges(true);
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Reset Frequency
+                        </label>
+                        <select
+                          value={
+                            settings.offlineTicketNumbering?.resetFrequency ||
+                            "yearly"
+                          }
+                          onChange={(e) => {
+                            setSettings({
+                              ...settings,
+                              offlineTicketNumbering: {
+                                ...(settings.offlineTicketNumbering || {
+                                  prefix: "OFF",
+                                  startingNumber: 1,
+                                  separator: "-",
+                                  includeYear: true,
+                                  includeMonth: false,
+                                }),
+                                resetFrequency: e.target.value as
+                                  | "never"
+                                  | "yearly"
+                                  | "monthly",
+                              },
+                            });
+                            setHasUnsavedChanges(true);
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          <option value="never">Never Reset</option>
+                          <option value="yearly">Reset Yearly</option>
+                          <option value="monthly">Reset Monthly</option>
+                        </select>
+                      </div>
                     </div>
 
-                    {/* Field Type */}
-                    <div className="col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Type
-                      </label>
-                      <select
-                        value={field.fieldType}
-                        onChange={(e) => updateRegistrationField(field.id, { fieldType: e.target.value as any })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      >
-                        <option value="text">Text</option>
-                        <option value="email">Email</option>
-                        <option value="phone">Phone</option>
-                        <option value="number">Number</option>
-                        <option value="textarea">Textarea</option>
-                        <option value="dropdown">Dropdown</option>
-                        <option value="date">Date</option>
-                      </select>
+                    <div className="space-y-3">
+                      <div className="flex items-center space-x-3">
+                        <input
+                          type="checkbox"
+                          id="includeYear"
+                          checked={
+                            settings.offlineTicketNumbering?.includeYear ?? true
+                          }
+                          onChange={(e) => {
+                            setSettings({
+                              ...settings,
+                              offlineTicketNumbering: {
+                                ...(settings.offlineTicketNumbering || {
+                                  prefix: "OFF",
+                                  startingNumber: 1,
+                                  separator: "-",
+                                  includeMonth: false,
+                                  resetFrequency: "yearly",
+                                }),
+                                includeYear: e.target.checked,
+                              },
+                            });
+                            setHasUnsavedChanges(true);
+                          }}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <label
+                          htmlFor="includeYear"
+                          className="text-sm font-medium text-gray-700"
+                        >
+                          Include Year in query number
+                        </label>
+                      </div>
+
+                      <div className="flex items-center space-x-3">
+                        <input
+                          type="checkbox"
+                          id="includeMonth"
+                          checked={
+                            settings.offlineTicketNumbering?.includeMonth ??
+                            false
+                          }
+                          onChange={(e) => {
+                            setSettings({
+                              ...settings,
+                              offlineTicketNumbering: {
+                                ...(settings.offlineTicketNumbering || {
+                                  prefix: "OFF",
+                                  startingNumber: 1,
+                                  separator: "-",
+                                  includeYear: true,
+                                  resetFrequency: "yearly",
+                                }),
+                                includeMonth: e.target.checked,
+                              },
+                            });
+                            setHasUnsavedChanges(true);
+                          }}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <label
+                          htmlFor="includeMonth"
+                          className="text-sm font-medium text-gray-700"
+                        >
+                          Include Month in query number
+                        </label>
+                      </div>
                     </div>
 
-                    {/* Placeholder */}
-                    <div className="col-span-3">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Placeholder
-                      </label>
-                      <input
-                        type="text"
-                        value={field.placeholder}
-                        onChange={(e) => updateRegistrationField(field.id, { placeholder: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
+                    {/* Preview */}
+                    <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                      <div className="flex items-start space-x-2">
+                        <svg
+                          className="h-5 w-5 text-blue-600 mt-0.5"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                          />
+                        </svg>
+                        <div>
+                          <p className="text-sm font-medium text-blue-900">
+                            Preview
+                          </p>
+                          <p className="text-lg font-mono font-bold text-blue-700 mt-1">
+                            {(() => {
+                              const config =
+                                settings.offlineTicketNumbering || {
+                                  prefix: "OFF",
+                                  separator: "-",
+                                  includeYear: true,
+                                  includeMonth: false,
+                                };
+                              let preview = config.prefix;
+                              if (config.separator) preview += config.separator;
+                              if (config.includeYear) preview += "2025";
+                              if (config.includeMonth) {
+                                if (config.includeYear && config.separator)
+                                  preview += config.separator;
+                                preview += "12";
+                              }
+                              if (config.separator) preview += config.separator;
+                              preview += "0001";
+                              return preview;
+                            })()}
+                          </p>
+                        </div>
+                      </div>
                     </div>
+                  </div>
+                </div>
 
-                    {/* Required */}
-                    <div className="col-span-1">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Required
-                      </label>
+                <div className="bg-white rounded-xl shadow-md p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                    Agent Permissions
+                  </h3>
+                  <div className="space-y-4">
+                    <div className="flex items-start space-x-3">
                       <input
                         type="checkbox"
-                        checked={field.required}
-                        onChange={(e) => updateRegistrationField(field.id, { required: e.target.checked })}
-                        disabled={isMandatoryField}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mt-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        id="allowMarkResolved"
+                        checked={settings.allowAgentToMarkResolved}
+                        onChange={(e) => {
+                          setSettings({
+                            ...settings,
+                            allowAgentToMarkResolved: e.target.checked,
+                          });
+                          setHasUnsavedChanges(true);
+                        }}
+                        className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                       />
-                    </div>
-
-                    {/* Actions */}
-                    <div className="col-span-3 flex items-end space-x-2">
-                      <button
-                        onClick={() => moveRegistrationField(field.id, 'up')}
-                        disabled={index === 0}
-                        className="p-2 text-gray-600 hover:bg-gray-100 rounded disabled:opacity-50"
-                        title="Move up"
-                      >
-                        <ArrowUpIcon className="h-5 w-5" />
-                      </button>
-                      <button
-                        onClick={() => moveRegistrationField(field.id, 'down')}
-                        disabled={index === settings.registrationFields.length - 1}
-                        className="p-2 text-gray-600 hover:bg-gray-100 rounded disabled:opacity-50"
-                        title="Move down"
-                      >
-                        <ArrowDownIcon className="h-5 w-5" />
-                      </button>
-                      <button
-                        onClick={() => removeRegistrationField(field.id)}
-                        disabled={isMandatoryField}
-                        className="p-2 text-red-600 hover:bg-red-50 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                        title={isMandatoryField ? "Cannot delete mandatory field" : "Delete field"}
-                      >
-                        <TrashIcon className="h-5 w-5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Dropdown Options */}
-                  {field.fieldType === 'dropdown' && (
-                    <div className="mt-4">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Dropdown Options (comma-separated)
+                      <label htmlFor="allowMarkResolved" className="flex-1">
+                        <span className="font-medium text-gray-900">
+                          Allow Mark as Resolved
+                        </span>
+                        <p className="text-sm text-gray-600 mt-1">
+                          Agents can mark tickets as resolved if issue was fixed
+                          during walk-in support
+                        </p>
                       </label>
+                    </div>
+
+                    <div className="flex items-start space-x-3">
                       <input
-                        type="text"
-                        value={field.options?.join(', ') || ''}
-                        onChange={(e) => updateRegistrationField(field.id, {
-                          options: e.target.value.split(',').map(o => o.trim()).filter(Boolean)
-                        })}
-                        placeholder="Option 1, Option 2, Option 3"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        type="checkbox"
+                        id="allowEscalate"
+                        checked={settings.allowAgentToEscalate}
+                        onChange={(e) => {
+                          setSettings({
+                            ...settings,
+                            allowAgentToEscalate: e.target.checked,
+                          });
+                          setHasUnsavedChanges(true);
+                        }}
+                        className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                       />
+                      <label htmlFor="allowEscalate" className="flex-1">
+                        <span className="font-medium text-gray-900">
+                          Allow Escalation at Creation
+                        </span>
+                        <p className="text-sm text-gray-600 mt-1">
+                          Agents can escalate queries to specialized agents
+                          during creation
+                        </p>
+                      </label>
                     </div>
-                  )}
 
-                  {/* Parent Mobile Checkbox for Phone Fields */}
-                  {field.fieldType === 'phone' && (
-                    <div className="mt-4">
-                      <div className="flex items-start space-x-3">
-                        <input
-                          type="checkbox"
-                          id={`parent-mobile-${field.id}`}
-                          checked={field.isParentMobile || false}
-                          onChange={(e) => updateRegistrationField(field.id, { isParentMobile: e.target.checked })}
-                          className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                        />
-                        <label htmlFor={`parent-mobile-${field.id}`} className="flex-1">
-                          <span className="font-medium text-gray-900">Use as Parent Mobile Number</span>
-                          <p className="text-sm text-gray-600 mt-1">
-                            This number will be saved as parent contact and can be used for parent login
-                          </p>
-                        </label>
-                      </div>
+                    <div className="flex items-start space-x-3">
+                      <input
+                        type="checkbox"
+                        id="autoAssign"
+                        checked={settings.autoAssignToCreatingAgent}
+                        onChange={(e) => {
+                          setSettings({
+                            ...settings,
+                            autoAssignToCreatingAgent: e.target.checked,
+                          });
+                          setHasUnsavedChanges(true);
+                        }}
+                        className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <label htmlFor="autoAssign" className="flex-1">
+                        <span className="font-medium text-gray-900">
+                          Auto-assign to Counselor
+                        </span>
+                        <p className="text-sm text-gray-600 mt-1">
+                          Automatically assign offline tickets to the counselor
+                          who created them
+                        </p>
+                      </label>
                     </div>
-                  )}
 
-                  {/* OTP Verification Checkbox for Phone/Email Fields */}
-                  {(field.fieldType === 'phone' || field.fieldType === 'email') && (
-                    <div className="mt-4">
-                      <div className="flex items-start space-x-3">
-                        <input
-                          type="checkbox"
-                          id={`otp-verification-${field.id}`}
-                          checked={field.requireOtpVerification || false}
-                          onChange={(e) => updateRegistrationField(field.id, { requireOtpVerification: e.target.checked })}
-                          className="mt-1 h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
-                        />
-                        <label htmlFor={`otp-verification-${field.id}`} className="flex-1">
-                          <span className="font-medium text-gray-900">Require OTP Verification</span>
-                          <p className="text-sm text-gray-600 mt-1">
-                            {field.fieldType === 'phone' 
-                              ? 'Send OTP to this phone number and verify before proceeding'
-                              : 'Send OTP to this email address and verify before proceeding'}
-                          </p>
-                        </label>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Ticket Form Tab — uses FormFieldBuilder (DnD, conditions, live preview, all 8 US) */}
-      {activeTab === 'ticket' && (
-        <div>
-          <FormFieldBuilder
-            fields={settings.ticketFields
-              .filter(f => !f.isFixed)
-              .map(f => ({
-                ...f,
-                fieldLabel: (f as any).fieldLabel || f.fieldName,
-                requiredMode: (f as any).requiredMode || (f.required ? 'always' : 'optional'),
-              } as FormFieldSchema))}
-            onChange={(newCustomFields) => {
-              setSettings(prev => ({
-                ...prev,
-                ticketFields: [
-                  ...prev.ticketFields.filter(f => f.isFixed),
-                  ...(newCustomFields as any[]),
-                ],
-              }));
-              setHasUnsavedChanges(true);
-            }}
-            projectId={projectId}
-            hierarchyConfig={hierarchyConfig || undefined}
-          />
-        </div>
-      )}
-
-      {/* Offline Centers Tab */}
-      {activeTab === 'centers' && (
-        <div className="space-y-6">
-          <div className="bg-white rounded-xl shadow-md p-6">
-            <div className="flex items-center justify-between mb-6" style={{ position: 'relative', zIndex: 10 }}>
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">Offline Support Centers</h3>
-                <p className="text-sm text-gray-600 mt-1">
-                  Manage physical locations where agents provide walk-in support
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  setEditingCenter(null);
-                  setShowCenterForm(true);
-                }}
-                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                style={{ position: 'relative', zIndex: 20 }}
-              >
-                <PlusIcon className="h-5 w-5" />
-                <span>Add Center</span>
-              </button>
-            </div>
-
-            {/* Centers List */}
-            {(!settings.offlineCenters || settings.offlineCenters.length === 0) && !showCenterForm ? (
-              <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-                <BuildingOfficeIcon className="h-12 w-12 text-gray-400 mx-auto mb-3" />
-                <p className="text-gray-600 mb-4">No offline centers configured yet</p>
-                <button
-                  onClick={() => setShowCenterForm(true)}
-                  className="text-blue-600 hover:text-blue-700 font-medium"
-                >
-                  + Add your first offline center
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {(settings.offlineCenters || []).map((center) => (
-                  <div key={center._id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-2 mb-2">
-                          <h4 className="font-semibold text-gray-900">{center.centerName}</h4>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3 text-sm text-gray-600">
-                          <div>
-                            <MapPinIcon className="h-4 w-4 inline mr-1" />
-                            {center.city}, {center.state}{center.country && `, ${center.country}`} - {center.pincode}
-                          </div>
-                          <div>
-                            📧 {center.email}
-                          </div>
-                          <div className="col-span-2">
-                            📍 {center.address}
-                          </div>
-                          <div>
-                            📞 {center.phone}
-                          </div>
-                          <div>
-                            🕒 {center.workingHours}
-                          </div>
-                          {center.features && center.features.length > 0 && (
-                            <div className="col-span-2">
-                              <span className="font-medium">Features: </span>
-                              {center.features.join(', ')}
-                            </div>
-                          )}
-                          {center.contacts && center.contacts.length > 0 && (
-                            <div className="col-span-2">
-                              <span className="font-medium">Contacts: </span>
-                              {center.contacts.map((c, i) => `${c.name} (${c.mobile})`).join(', ')}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex space-x-2 ml-4">
-                        <button
-                          onClick={() => {
-                            setEditingCenter(center);
-                            setShowCenterForm(true);
-                          }}
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                          title="Edit"
-                        >
-                          <PencilIcon className="h-5 w-5" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteCenter(center._id!)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded transition-colors"
-                          title="Delete"
-                        >
-                          <TrashIcon className="h-5 w-5" />
-                        </button>
-                      </div>
+                    <div className="flex items-start space-x-3">
+                      <input
+                        type="checkbox"
+                        id="requireVerification"
+                        checked={settings.requireStudentVerification}
+                        onChange={(e) => {
+                          setSettings({
+                            ...settings,
+                            requireStudentVerification: e.target.checked,
+                          });
+                          setHasUnsavedChanges(true);
+                        }}
+                        className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <label htmlFor="requireVerification" className="flex-1">
+                        <span className="font-medium text-gray-900">
+                          Require Student Verification
+                        </span>
+                        <p className="text-sm text-gray-600 mt-1">
+                          Agents must verify student identity before
+                          registration (ID card, etc.)
+                        </p>
+                      </label>
                     </div>
                   </div>
-                ))}
+                </div>
+
+                <div className="bg-white rounded-xl shadow-md p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                    Notification Settings
+                  </h3>
+                  <div className="space-y-4">
+                    <div className="flex items-start space-x-3">
+                      <input
+                        type="checkbox"
+                        id="notifyRegistration"
+                        checked={
+                          settings.notificationSettings
+                            .notifyStudentOnRegistration
+                        }
+                        onChange={(e) => {
+                          setSettings({
+                            ...settings,
+                            notificationSettings: {
+                              ...settings.notificationSettings,
+                              notifyStudentOnRegistration: e.target.checked,
+                            },
+                          });
+                          setHasUnsavedChanges(true);
+                        }}
+                        className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <label htmlFor="notifyRegistration" className="flex-1">
+                        <span className="font-medium text-gray-900">
+                          Notify on Registration
+                        </span>
+                        <p className="text-sm text-gray-600 mt-1">
+                          Send email notification when student is registered
+                        </p>
+                      </label>
+                    </div>
+
+                    <div className="flex items-start space-x-3">
+                      <input
+                        type="checkbox"
+                        id="notifyTicket"
+                        checked={
+                          settings.notificationSettings
+                            .notifyStudentOnTicketCreation
+                        }
+                        onChange={(e) => {
+                          setSettings({
+                            ...settings,
+                            notificationSettings: {
+                              ...settings.notificationSettings,
+                              notifyStudentOnTicketCreation: e.target.checked,
+                            },
+                          });
+                          setHasUnsavedChanges(true);
+                        }}
+                        className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <label htmlFor="notifyTicket" className="flex-1">
+                        <span className="font-medium text-gray-900">
+                          Notify on Query Creation
+                        </span>
+                        <p className="text-sm text-gray-600 mt-1">
+                          Send email notification when query is created on their
+                          behalf
+                        </p>
+                      </label>
+                    </div>
+
+                    <div className="flex items-start space-x-3">
+                      <input
+                        type="checkbox"
+                        id="welcomeEmail"
+                        checked={settings.notificationSettings.sendWelcomeEmail}
+                        onChange={(e) => {
+                          setSettings({
+                            ...settings,
+                            notificationSettings: {
+                              ...settings.notificationSettings,
+                              sendWelcomeEmail: e.target.checked,
+                            },
+                          });
+                          setHasUnsavedChanges(true);
+                        }}
+                        className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <label htmlFor="welcomeEmail" className="flex-1">
+                        <span className="font-medium text-gray-900">
+                          Send Welcome Email
+                        </span>
+                        <p className="text-sm text-gray-600 mt-1">
+                          Send welcome email with portal access instructions to
+                          new students
+                        </p>
+                      </label>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
-            {/* Center Form (Add/Edit) */}
-            {showCenterForm && (
-              <div className="mt-6 border-t pt-6">
-                <h4 className="font-semibold text-gray-900 mb-4">
-                  {editingCenter ? 'Edit Center' : 'Add New Center'}
-                </h4>
-                <CenterForm
-                  center={editingCenter}
-                  countries={countries}
-                  states={centerStates[editingCenter?._id || 'new'] || []}
-                  cities={centerCities[editingCenter?._id || 'new'] || []}
-                  onSave={handleAddOrUpdateCenter}
-                  onCancel={() => {
-                    setShowCenterForm(false);
-                    setEditingCenter(null);
+            {/* Registration Form Tab */}
+            {activeTab === "registration" && (
+              <div className="space-y-6">
+                <div className="bg-white rounded-xl shadow-md p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">
+                        Registration Form Fields
+                      </h3>
+                      <p className="text-sm text-gray-600 mt-1">
+                        Configure what information agents collect when
+                        registering students
+                      </p>
+                    </div>
+                    <button
+                      onClick={addRegistrationField}
+                      className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      <PlusIcon className="h-5 w-5" />
+                      <span>Add Field</span>
+                    </button>
+                  </div>
+
+                  <div className="space-y-4">
+                    {settings.registrationFields.map((field, index) => {
+                      const isMandatoryField = [
+                        "firstName",
+                        "lastName",
+                        "email",
+                        "phone",
+                        "parentMobile",
+                      ].includes(field.fieldName);
+
+                      return (
+                        <div
+                          key={field.id}
+                          className="border border-gray-200 rounded-lg p-4"
+                        >
+                          {isMandatoryField && (
+                            <div className="mb-2 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
+                              🔒 System Required Field - Cannot be deleted or
+                              made optional
+                            </div>
+                          )}
+                          <div className="grid grid-cols-12 gap-4">
+                            {/* Field Name */}
+                            <div className="col-span-3">
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Field Name
+                              </label>
+                              {isMandatoryField ? (
+                                <input
+                                  type="text"
+                                  value={field.fieldName}
+                                  disabled
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed"
+                                />
+                              ) : (
+                                <select
+                                  value={field.fieldName}
+                                  onChange={(e) =>
+                                    updateRegistrationField(field.id, {
+                                      fieldName: e.target.value,
+                                    })
+                                  }
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                >
+                                  <option value="">Select Field</option>
+                                  <optgroup label="Student Info">
+                                    <option value="name">
+                                      Name / Full Name
+                                    </option>
+                                    <option value="First Name">
+                                      First Name
+                                    </option>
+                                    <option value="Last Name">Last Name</option>
+                                    <option value="Email">Email</option>
+                                    <option value="Phone">Phone</option>
+                                    <option value="Mobile Number">
+                                      Mobile Number
+                                    </option>
+                                    <option value="Parent Mobile">
+                                      Parent Mobile
+                                    </option>
+                                    <option value="Unique ID">
+                                      Unique ID / Student ID
+                                    </option>
+                                  </optgroup>
+                                  <optgroup label="Custom Fields">
+                                    <option value="Address">Address</option>
+                                    <option value="City">City</option>
+                                    <option value="State">State</option>
+                                    <option value="Pincode">Pincode</option>
+                                    <option value="Date of Birth">
+                                      Date of Birth
+                                    </option>
+                                    <option value="Gender">Gender</option>
+                                    <option value="Course">Course</option>
+                                    <option value="Class">Class</option>
+                                    <option value="Custom Field">
+                                      Custom Field (Edit Name)
+                                    </option>
+                                  </optgroup>
+                                </select>
+                              )}
+                            </div>
+
+                            {/* Field Type */}
+                            <div className="col-span-2">
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Type
+                              </label>
+                              <select
+                                value={field.fieldType}
+                                onChange={(e) =>
+                                  updateRegistrationField(field.id, {
+                                    fieldType: e.target.value as any,
+                                  })
+                                }
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              >
+                                <option value="text">Text</option>
+                                <option value="email">Email</option>
+                                <option value="phone">Phone</option>
+                                <option value="number">Number</option>
+                                <option value="textarea">Textarea</option>
+                                <option value="dropdown">Dropdown</option>
+                                <option value="date">Date</option>
+                              </select>
+                            </div>
+
+                            {/* Placeholder */}
+                            <div className="col-span-3">
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Placeholder
+                              </label>
+                              <input
+                                type="text"
+                                value={field.placeholder}
+                                onChange={(e) =>
+                                  updateRegistrationField(field.id, {
+                                    placeholder: e.target.value,
+                                  })
+                                }
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              />
+                            </div>
+
+                            {/* Required */}
+                            <div className="col-span-1">
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Required
+                              </label>
+                              <input
+                                type="checkbox"
+                                checked={field.required}
+                                onChange={(e) =>
+                                  updateRegistrationField(field.id, {
+                                    required: e.target.checked,
+                                  })
+                                }
+                                disabled={isMandatoryField}
+                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mt-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                              />
+                            </div>
+
+                            {/* Actions */}
+                            <div className="col-span-3 flex items-end space-x-2">
+                              <button
+                                onClick={() =>
+                                  moveRegistrationField(field.id, "up")
+                                }
+                                disabled={index === 0}
+                                className="p-2 text-gray-600 hover:bg-gray-100 rounded disabled:opacity-50"
+                                title="Move up"
+                              >
+                                <ArrowUpIcon className="h-5 w-5" />
+                              </button>
+                              <button
+                                onClick={() =>
+                                  moveRegistrationField(field.id, "down")
+                                }
+                                disabled={
+                                  index ===
+                                  settings.registrationFields.length - 1
+                                }
+                                className="p-2 text-gray-600 hover:bg-gray-100 rounded disabled:opacity-50"
+                                title="Move down"
+                              >
+                                <ArrowDownIcon className="h-5 w-5" />
+                              </button>
+                              <button
+                                onClick={() =>
+                                  removeRegistrationField(field.id)
+                                }
+                                disabled={isMandatoryField}
+                                className="p-2 text-red-600 hover:bg-red-50 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                                title={
+                                  isMandatoryField
+                                    ? "Cannot delete mandatory field"
+                                    : "Delete field"
+                                }
+                              >
+                                <TrashIcon className="h-5 w-5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Dropdown Options */}
+                          {field.fieldType === "dropdown" && (
+                            <div className="mt-4">
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Dropdown Options (comma-separated)
+                              </label>
+                              <input
+                                type="text"
+                                value={field.options?.join(", ") || ""}
+                                onChange={(e) =>
+                                  updateRegistrationField(field.id, {
+                                    options: e.target.value
+                                      .split(",")
+                                      .map((o) => o.trim())
+                                      .filter(Boolean),
+                                  })
+                                }
+                                placeholder="Option 1, Option 2, Option 3"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              />
+                            </div>
+                          )}
+
+                          {/* Parent Mobile Checkbox for Phone Fields */}
+                          {field.fieldType === "phone" && (
+                            <div className="mt-4">
+                              <div className="flex items-start space-x-3">
+                                <input
+                                  type="checkbox"
+                                  id={`parent-mobile-${field.id}`}
+                                  checked={field.isParentMobile || false}
+                                  onChange={(e) =>
+                                    updateRegistrationField(field.id, {
+                                      isParentMobile: e.target.checked,
+                                    })
+                                  }
+                                  className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                />
+                                <label
+                                  htmlFor={`parent-mobile-${field.id}`}
+                                  className="flex-1"
+                                >
+                                  <span className="font-medium text-gray-900">
+                                    Use as Parent Mobile Number
+                                  </span>
+                                  <p className="text-sm text-gray-600 mt-1">
+                                    This number will be saved as parent contact
+                                    and can be used for parent login
+                                  </p>
+                                </label>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* OTP Verification Checkbox for Phone/Email Fields */}
+                          {(field.fieldType === "phone" ||
+                            field.fieldType === "email") && (
+                            <div className="mt-4">
+                              <div className="flex items-start space-x-3">
+                                <input
+                                  type="checkbox"
+                                  id={`otp-verification-${field.id}`}
+                                  checked={
+                                    field.requireOtpVerification || false
+                                  }
+                                  onChange={(e) =>
+                                    updateRegistrationField(field.id, {
+                                      requireOtpVerification: e.target.checked,
+                                    })
+                                  }
+                                  className="mt-1 h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
+                                />
+                                <label
+                                  htmlFor={`otp-verification-${field.id}`}
+                                  className="flex-1"
+                                >
+                                  <span className="font-medium text-gray-900">
+                                    Require OTP Verification
+                                  </span>
+                                  <p className="text-sm text-gray-600 mt-1">
+                                    {field.fieldType === "phone"
+                                      ? "Send OTP to this phone number and verify before proceeding"
+                                      : "Send OTP to this email address and verify before proceeding"}
+                                  </p>
+                                </label>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Ticket Form Tab — uses FormFieldBuilder (DnD, conditions, live preview, all 8 US) */}
+            {activeTab === "ticket" && (
+              <div>
+                <FormFieldBuilder
+                  fields={settings.ticketFields
+                    .filter((f) => !f.isFixed)
+                    .map(
+                      (f) =>
+                        ({
+                          ...f,
+                          fieldLabel: (f as any).fieldLabel || f.fieldName,
+                          requiredMode:
+                            (f as any).requiredMode ||
+                            (f.required ? "always" : "optional"),
+                        }) as FormFieldSchema,
+                    )}
+                  onChange={(newCustomFields) => {
+                    setSettings((prev) => ({
+                      ...prev,
+                      ticketFields: [
+                        ...prev.ticketFields.filter((f) => f.isFixed),
+                        ...(newCustomFields as any[]),
+                      ],
+                    }));
+                    setHasUnsavedChanges(true);
                   }}
-                  onCountryChange={(countryId) => fetchStatesForCountry(countryId, editingCenter?._id || 'new')}
-                  onStateChange={(stateId) => fetchCitiesForState(stateId, editingCenter?._id || 'new')}
+                  projectId={projectId}
+                  hierarchyConfig={hierarchyConfig || undefined}
                 />
               </div>
             )}
-          </div>
-        </div>
-      )}
 
+            {/* Offline Centers Tab */}
+            {activeTab === "centers" && (
+              <div className="space-y-6">
+                <div className="bg-white rounded-xl shadow-md p-6">
+                  <div
+                    className="flex items-center justify-between mb-6"
+                    style={{ position: "relative", zIndex: 10 }}
+                  >
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">
+                        Offline Support Centers
+                      </h3>
+                      <p className="text-sm text-gray-600 mt-1">
+                        Manage physical locations where agents provide walk-in
+                        support
+                      </p>
+                    </div>
+                    <div
+                      className="flex items-center gap-3"
+                      style={{ position: "relative", zIndex: 20 }}
+                    >
+                      <button
+                        onClick={async () => {
+                          setGoogleStatusLoading(true);
+                          setGoogleStatusError("");
+                          setGoogleStatusResults(null);
+                          try {
+                            const token = localStorage.getItem("authToken");
+                            const res = await axios.get(
+                              `${API_CONFIG.API_URL}/centers/google-status?projectId=${projectId}`,
+                              { headers: { Authorization: `Bearer ${token}` } },
+                            );
+                            setGoogleStatusResults(res.data?.data ?? []);
+                          } catch (err: any) {
+                            setGoogleStatusError(
+                              err.response?.data?.message ||
+                                "Failed to fetch Google status.",
+                            );
+                          } finally {
+                            setGoogleStatusLoading(false);
+                          }
+                        }}
+                        disabled={googleStatusLoading}
+                        className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-60"
+                      >
+                        {googleStatusLoading ? (
+                          <svg
+                            className="animate-spin h-4 w-4"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                          >
+                            <circle
+                              className="opacity-25"
+                              cx="12"
+                              cy="12"
+                              r="10"
+                              stroke="currentColor"
+                              strokeWidth="4"
+                            />
+                            <path
+                              className="opacity-75"
+                              fill="currentColor"
+                              d="M4 12a8 8 0 018-8v8z"
+                            />
+                          </svg>
+                        ) : (
+                          <span>🔍</span>
+                        )}
+                        <span>
+                          {googleStatusLoading
+                            ? "Checking…"
+                            : "Check Google Status"}
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditingCenter(null);
+                          setShowCenterForm(true);
+                        }}
+                        className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      >
+                        <PlusIcon className="h-5 w-5" />
+                        <span>Add Center</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Google Status Results */}
+                  {googleStatusError && (
+                    <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                      {googleStatusError}
+                    </div>
+                  )}
+                  {googleStatusResults && googleStatusResults.length > 0 && (
+                    <div className="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-xl">
+                      <h4 className="text-sm font-semibold text-gray-700 mb-3">
+                        Google Places Business Status
+                      </h4>
+                      <div className="space-y-2">
+                        {googleStatusResults.map((r) => {
+                          const statusConfig: Record<
+                            string,
+                            { label: string; color: string; bg: string }
+                          > = {
+                            OPERATIONAL: {
+                              label: "Operational",
+                              color: "#15803d",
+                              bg: "#f0fdf4",
+                            },
+                            CLOSED_TEMPORARILY: {
+                              label: "Temporarily Closed",
+                              color: "#b45309",
+                              bg: "#fffbeb",
+                            },
+                            CLOSED_PERMANENTLY: {
+                              label: "Permanently Closed",
+                              color: "#dc2626",
+                              bg: "#fef2f2",
+                            },
+                            UNKNOWN: {
+                              label: "Not Found on Google",
+                              color: "#6b7280",
+                              bg: "#f9fafb",
+                            },
+                            LOOKUP_FAILED: {
+                              label: "Lookup Failed",
+                              color: "#6b7280",
+                              bg: "#f9fafb",
+                            },
+                          };
+                          const cfg =
+                            statusConfig[r.business_status] ??
+                            statusConfig["UNKNOWN"];
+                          return (
+                            <div
+                              key={r._id}
+                              className="flex items-center justify-between px-3 py-2 rounded-lg border"
+                              style={{
+                                background: cfg.bg,
+                                borderColor: cfg.color + "33",
+                              }}
+                            >
+                              <div>
+                                <span className="font-medium text-sm text-gray-900">
+                                  {r.centerName}
+                                </span>
+                                <span className="text-xs text-gray-500 ml-2">
+                                  {r.city}, {r.state}
+                                </span>
+                              </div>
+                              <span
+                                className="text-xs font-semibold px-2 py-1 rounded-full"
+                                style={{
+                                  color: cfg.color,
+                                  background: cfg.color + "18",
+                                }}
+                              >
+                                {cfg.label}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Centers List */}
+                  {(!settings.offlineCenters ||
+                    settings.offlineCenters.length === 0) &&
+                  !showCenterForm ? (
+                    <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                      <BuildingOfficeIcon className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                      <p className="text-gray-600 mb-4">
+                        No offline centers configured yet
+                      </p>
+                      <button
+                        onClick={() => setShowCenterForm(true)}
+                        className="text-blue-600 hover:text-blue-700 font-medium"
+                      >
+                        + Add your first offline center
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {(settings.offlineCenters || []).map((center) => (
+                        <div
+                          key={center._id}
+                          className="border rounded-lg p-4 hover:shadow-md transition-shadow"
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center space-x-2 mb-2">
+                                <h4 className="font-semibold text-gray-900">
+                                  {center.centerName}
+                                </h4>
+                              </div>
+                              <div className="grid grid-cols-2 gap-3 text-sm text-gray-600">
+                                <div>
+                                  <MapPinIcon className="h-4 w-4 inline mr-1" />
+                                  {center.city}, {center.state}
+                                  {center.country &&
+                                    `, ${center.country}`} - {center.pincode}
+                                </div>
+                                <div>📧 {center.email}</div>
+                                <div className="col-span-2">
+                                  📍 {center.address}
+                                </div>
+                                <div>📞 {center.phone}</div>
+                                <div>🕒 {center.workingHours}</div>
+                                {center.features &&
+                                  center.features.length > 0 && (
+                                    <div className="col-span-2">
+                                      <span className="font-medium">
+                                        Features:{" "}
+                                      </span>
+                                      {center.features.join(", ")}
+                                    </div>
+                                  )}
+                                {center.contacts &&
+                                  center.contacts.length > 0 && (
+                                    <div className="col-span-2">
+                                      <span className="font-medium">
+                                        Contacts:{" "}
+                                      </span>
+                                      {center.contacts
+                                        .map(
+                                          (c, i) => `${c.name} (${c.mobile})`,
+                                        )
+                                        .join(", ")}
+                                    </div>
+                                  )}
+                              </div>
+                            </div>
+                            <div className="flex space-x-2 ml-4">
+                              <button
+                                onClick={() => {
+                                  setEditingCenter(center);
+                                  setShowCenterForm(true);
+                                }}
+                                className="p-2 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                title="Edit"
+                              >
+                                <PencilIcon className="h-5 w-5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteCenter(center._id!)}
+                                className="p-2 text-red-600 hover:bg-red-50 rounded transition-colors"
+                                title="Delete"
+                              >
+                                <TrashIcon className="h-5 w-5" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Center Form (Add/Edit) */}
+                  {showCenterForm && (
+                    <div className="mt-6 border-t pt-6">
+                      <h4 className="font-semibold text-gray-900 mb-4">
+                        {editingCenter ? "Edit Center" : "Add New Center"}
+                      </h4>
+                      <CenterForm
+                        center={editingCenter}
+                        countries={countries}
+                        states={centerStates[editingCenter?._id || "new"] || []}
+                        cities={centerCities[editingCenter?._id || "new"] || []}
+                        onSave={handleAddOrUpdateCenter}
+                        onCancel={() => {
+                          setShowCenterForm(false);
+                          setEditingCenter(null);
+                        }}
+                        onCountryChange={(countryId) =>
+                          fetchStatesForCountry(
+                            countryId,
+                            editingCenter?._id || "new",
+                          )
+                        }
+                        onStateChange={(stateId) =>
+                          fetchCitiesForState(
+                            stateId,
+                            editingCenter?._id || "new",
+                          )
+                        }
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Right Column - Config Preview (hidden on ticket tab which has its own live preview) */}
-          <div className="col-span-5" style={{ display: activeTab === 'ticket' ? 'none' : undefined }}>
+          <div
+            className="col-span-5"
+            style={{ display: activeTab === "ticket" ? "none" : undefined }}
+          >
             <div className="sticky top-6" style={{ zIndex: 1 }}>
               <div className="bg-white rounded-xl shadow-md p-6">
                 <div className="flex items-center space-x-2 mb-4">
                   <EyeIcon className="h-5 w-5 text-gray-600" />
-                  <h3 className="text-lg font-semibold text-gray-900">Configuration Preview</h3>
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    Configuration Preview
+                  </h3>
                 </div>
 
-                {activeTab === 'general' && (
+                {activeTab === "general" && (
                   <div className="space-y-4">
                     <div className="border-b pb-3">
-                      <h4 className="font-medium text-gray-900 mb-2">Agent Permissions</h4>
+                      <h4 className="font-medium text-gray-900 mb-2">
+                        Agent Permissions
+                      </h4>
                       <ul className="space-y-1 text-sm text-gray-700">
                         <li className="flex items-center space-x-2">
-                          <span>{settings.allowAgentToMarkResolved ? '✓' : '✗'}</span>
+                          <span>
+                            {settings.allowAgentToMarkResolved ? "✓" : "✗"}
+                          </span>
                           <span>Mark as Resolved</span>
                         </li>
                         <li className="flex items-center space-x-2">
-                          <span>{settings.allowAgentToEscalate ? '✓' : '✗'}</span>
+                          <span>
+                            {settings.allowAgentToEscalate ? "✓" : "✗"}
+                          </span>
                           <span>Escalate at Creation</span>
                         </li>
                         <li className="flex items-center space-x-2">
-                          <span>{settings.autoAssignToCreatingAgent ? '✓' : '✗'}</span>
+                          <span>
+                            {settings.autoAssignToCreatingAgent ? "✓" : "✗"}
+                          </span>
                           <span>Auto-assign to Agent</span>
                         </li>
                         <li className="flex items-center space-x-2">
-                          <span>{settings.requireStudentVerification ? '✓' : '✗'}</span>
+                          <span>
+                            {settings.requireStudentVerification ? "✓" : "✗"}
+                          </span>
                           <span>Require Verification</span>
                         </li>
                       </ul>
                     </div>
 
                     <div>
-                      <h4 className="font-medium text-gray-900 mb-2">Notifications</h4>
+                      <h4 className="font-medium text-gray-900 mb-2">
+                        Notifications
+                      </h4>
                       <ul className="space-y-1 text-sm text-gray-700">
                         <li className="flex items-center space-x-2">
-                          <span>{settings.notificationSettings.notifyStudentOnRegistration ? '✓' : '✗'}</span>
+                          <span>
+                            {settings.notificationSettings
+                              .notifyStudentOnRegistration
+                              ? "✓"
+                              : "✗"}
+                          </span>
                           <span>On Registration</span>
                         </li>
                         <li className="flex items-center space-x-2">
-                          <span>{settings.notificationSettings.notifyStudentOnTicketCreation ? '✓' : '✗'}</span>
+                          <span>
+                            {settings.notificationSettings
+                              .notifyStudentOnTicketCreation
+                              ? "✓"
+                              : "✗"}
+                          </span>
                           <span>On Ticket Creation</span>
                         </li>
                         <li className="flex items-center space-x-2">
-                          <span>{settings.notificationSettings.sendWelcomeEmail ? '✓' : '✗'}</span>
+                          <span>
+                            {settings.notificationSettings.sendWelcomeEmail
+                              ? "✓"
+                              : "✗"}
+                          </span>
                           <span>Welcome Email</span>
                         </li>
                       </ul>
@@ -1630,38 +2272,56 @@ const OfflineModuleSettings: React.FC = () => {
                   </div>
                 )}
 
-                {activeTab === 'registration' && (
+                {activeTab === "registration" && (
                   <div>
-                    <h4 className="font-medium text-gray-900 mb-3">Registration Form Fields</h4>
+                    <h4 className="font-medium text-gray-900 mb-3">
+                      Registration Form Fields
+                    </h4>
                     <div className="overflow-auto max-h-[600px]">
                       <table className="w-full text-sm">
                         <thead className="bg-gray-50 sticky top-0">
                           <tr>
-                            <th className="px-3 py-2 text-left font-medium text-gray-700">#</th>
-                            <th className="px-3 py-2 text-left font-medium text-gray-700">Field Name</th>
-                            <th className="px-3 py-2 text-left font-medium text-gray-700">Type</th>
-                            <th className="px-3 py-2 text-center font-medium text-gray-700">Required</th>
+                            <th className="px-3 py-2 text-left font-medium text-gray-700">
+                              #
+                            </th>
+                            <th className="px-3 py-2 text-left font-medium text-gray-700">
+                              Field Name
+                            </th>
+                            <th className="px-3 py-2 text-left font-medium text-gray-700">
+                              Type
+                            </th>
+                            <th className="px-3 py-2 text-center font-medium text-gray-700">
+                              Required
+                            </th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200">
-                          {settings.registrationFields.sort((a, b) => a.order - b.order).map((field, index) => (
-                            <tr key={field.id} className="hover:bg-gray-50">
-                              <td className="px-3 py-2 text-gray-600">{index + 1}</td>
-                              <td className="px-3 py-2 font-medium text-gray-900">{field.fieldName}</td>
-                              <td className="px-3 py-2">
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                                  {field.fieldType}
-                                </span>
-                              </td>
-                              <td className="px-3 py-2 text-center">
-                                {field.required ? (
-                                  <span className="text-red-600 font-bold">*</span>
-                                ) : (
-                                  <span className="text-gray-400">-</span>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
+                          {settings.registrationFields
+                            .sort((a, b) => a.order - b.order)
+                            .map((field, index) => (
+                              <tr key={field.id} className="hover:bg-gray-50">
+                                <td className="px-3 py-2 text-gray-600">
+                                  {index + 1}
+                                </td>
+                                <td className="px-3 py-2 font-medium text-gray-900">
+                                  {field.fieldName}
+                                </td>
+                                <td className="px-3 py-2">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                    {field.fieldType}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2 text-center">
+                                  {field.required ? (
+                                    <span className="text-red-600 font-bold">
+                                      *
+                                    </span>
+                                  ) : (
+                                    <span className="text-gray-400">-</span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
                         </tbody>
                       </table>
                       {settings.registrationFields.length === 0 && (
@@ -1673,38 +2333,56 @@ const OfflineModuleSettings: React.FC = () => {
                   </div>
                 )}
 
-                {activeTab === 'ticket' && (
+                {activeTab === "ticket" && (
                   <div>
-                    <h4 className="font-medium text-gray-900 mb-3">Ticket Form Fields</h4>
+                    <h4 className="font-medium text-gray-900 mb-3">
+                      Ticket Form Fields
+                    </h4>
                     <div className="overflow-auto max-h-[600px]">
                       <table className="w-full text-sm">
                         <thead className="bg-gray-50 sticky top-0">
                           <tr>
-                            <th className="px-3 py-2 text-left font-medium text-gray-700">#</th>
-                            <th className="px-3 py-2 text-left font-medium text-gray-700">Field Name</th>
-                            <th className="px-3 py-2 text-left font-medium text-gray-700">Type</th>
-                            <th className="px-3 py-2 text-center font-medium text-gray-700">Required</th>
+                            <th className="px-3 py-2 text-left font-medium text-gray-700">
+                              #
+                            </th>
+                            <th className="px-3 py-2 text-left font-medium text-gray-700">
+                              Field Name
+                            </th>
+                            <th className="px-3 py-2 text-left font-medium text-gray-700">
+                              Type
+                            </th>
+                            <th className="px-3 py-2 text-center font-medium text-gray-700">
+                              Required
+                            </th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200">
-                          {settings.ticketFields.sort((a, b) => a.order - b.order).map((field, index) => (
-                            <tr key={field.id} className="hover:bg-gray-50">
-                              <td className="px-3 py-2 text-gray-600">{index + 1}</td>
-                              <td className="px-3 py-2 font-medium text-gray-900">{field.fieldName}</td>
-                              <td className="px-3 py-2">
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
-                                  {field.fieldType}
-                                </span>
-                              </td>
-                              <td className="px-3 py-2 text-center">
-                                {field.required ? (
-                                  <span className="text-red-600 font-bold">*</span>
-                                ) : (
-                                  <span className="text-gray-400">-</span>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
+                          {settings.ticketFields
+                            .sort((a, b) => a.order - b.order)
+                            .map((field, index) => (
+                              <tr key={field.id} className="hover:bg-gray-50">
+                                <td className="px-3 py-2 text-gray-600">
+                                  {index + 1}
+                                </td>
+                                <td className="px-3 py-2 font-medium text-gray-900">
+                                  {field.fieldName}
+                                </td>
+                                <td className="px-3 py-2">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                                    {field.fieldType}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2 text-center">
+                                  {field.required ? (
+                                    <span className="text-red-600 font-bold">
+                                      *
+                                    </span>
+                                  ) : (
+                                    <span className="text-gray-400">-</span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
                         </tbody>
                       </table>
                       {settings.ticketFields.length === 0 && (
@@ -1716,32 +2394,51 @@ const OfflineModuleSettings: React.FC = () => {
                   </div>
                 )}
 
-                {activeTab === 'centers' && (
+                {activeTab === "centers" && (
                   <div>
-                    <h4 className="font-medium text-gray-900 mb-3">Offline Centers Summary</h4>
+                    <h4 className="font-medium text-gray-900 mb-3">
+                      Offline Centers Summary
+                    </h4>
                     <div className="space-y-3">
                       <div className="bg-blue-50 rounded-lg p-3">
                         <div className="text-2xl font-bold text-blue-900">
                           {(settings.offlineCenters || []).length}
                         </div>
-                        <div className="text-sm text-blue-700">Total Centers</div>
+                        <div className="text-sm text-blue-700">
+                          Total Centers
+                        </div>
                       </div>
                       <div className="bg-green-50 rounded-lg p-3">
                         <div className="text-2xl font-bold text-green-900">
-                          {(settings.offlineCenters || []).filter(c => c.isActive).length}
+                          {
+                            (settings.offlineCenters || []).filter(
+                              (c) => c.isActive,
+                            ).length
+                          }
                         </div>
-                        <div className="text-sm text-green-700">Active Centers</div>
+                        <div className="text-sm text-green-700">
+                          Active Centers
+                        </div>
                       </div>
                       {(settings.offlineCenters || []).length > 0 && (
                         <div className="mt-4">
-                          <div className="text-xs font-medium text-gray-600 mb-2">Locations:</div>
+                          <div className="text-xs font-medium text-gray-600 mb-2">
+                            Locations:
+                          </div>
                           <div className="space-y-2 text-sm">
-                            {(settings.offlineCenters || []).map((center, idx) => (
-                              <div key={idx} className="flex items-start space-x-2 text-gray-700">
-                                <MapPinIcon className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                                <span className="text-xs">{center.centerName} - {center.city}</span>
-                              </div>
-                            ))}
+                            {(settings.offlineCenters || []).map(
+                              (center, idx) => (
+                                <div
+                                  key={idx}
+                                  className="flex items-start space-x-2 text-gray-700"
+                                >
+                                  <MapPinIcon className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                                  <span className="text-xs">
+                                    {center.centerName} - {center.city}
+                                  </span>
+                                </div>
+                              ),
+                            )}
                           </div>
                         </div>
                       )}
@@ -1753,40 +2450,51 @@ const OfflineModuleSettings: React.FC = () => {
           </div>
         </div>
 
-      {/* Save Button */}
-      <div className="flex justify-end space-x-4 pt-6 border-t mt-6">
-        <button
-          onClick={() => {
-            if (hasUnsavedChanges && !confirm('You have unsaved changes. Are you sure you want to leave without saving?')) {
-              return;
-            }
-            window.history.back();
-          }}
-          className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={handleSaveSettings}
-          disabled={saving}
-          className={`px-6 py-2 text-white rounded-lg transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center space-x-2 ${
-            hasUnsavedChanges ? 'bg-orange-600 hover:bg-orange-700 animate-pulse' : 'bg-blue-600 hover:bg-blue-700'
-          }`}
-        >
-          {saving ? (
-            <>
-              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-              <span>Saving...</span>
-            </>
-          ) : (
-            <>
-              <CheckCircleIcon className="h-5 w-5" />
-              <span>{hasUnsavedChanges ? 'Save Changes Now' : 'Save Configuration'}</span>
-            </>
-          )}
-        </button>
+        {/* Save Button */}
+        <div className="flex justify-end space-x-4 pt-6 border-t mt-6">
+          <button
+            onClick={() => {
+              if (
+                hasUnsavedChanges &&
+                !confirm(
+                  "You have unsaved changes. Are you sure you want to leave without saving?",
+                )
+              ) {
+                return;
+              }
+              window.history.back();
+            }}
+            className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSaveSettings}
+            disabled={saving}
+            className={`px-6 py-2 text-white rounded-lg transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center space-x-2 ${
+              hasUnsavedChanges
+                ? "bg-orange-600 hover:bg-orange-700 animate-pulse"
+                : "bg-blue-600 hover:bg-blue-700"
+            }`}
+          >
+            {saving ? (
+              <>
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                <span>Saving...</span>
+              </>
+            ) : (
+              <>
+                <CheckCircleIcon className="h-5 w-5" />
+                <span>
+                  {hasUnsavedChanges
+                    ? "Save Changes Now"
+                    : "Save Configuration"}
+                </span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
-    </div>
     </DashboardLayout>
   );
 };
@@ -1815,25 +2523,30 @@ const CenterForm: React.FC<CenterFormProps> = ({
 }) => {
   const [formData, setFormData] = useState<OfflineCenter>({
     _id: center?._id,
-    centerName: center?.centerName || '',
-    address: center?.address || '',
-    country: center?.country || '',
-    city: center?.city || '',
-    state: center?.state || '',
-    pincode: center?.pincode || '',
-    phone: center?.phone || '',
-    email: center?.email || '',
-    workingHours: center?.workingHours || '',
+    centerName: center?.centerName || "",
+    address: center?.address || "",
+    country: center?.country || "",
+    city: center?.city || "",
+    state: center?.state || "",
+    pincode: center?.pincode || "",
+    phone: center?.phone || "",
+    email: center?.email || "",
+    workingHours: center?.workingHours || "",
     latitude: center?.latitude,
     longitude: center?.longitude,
     features: center?.features || [],
-    mapLink: center?.mapLink || '',
-    googleMapLink: center?.googleMapLink || '',
+    mapLink: center?.mapLink || "",
+    googleMapLink: center?.googleMapLink || "",
     contacts: center?.contacts || [],
   });
 
-  const [newFeature, setNewFeature] = useState('');
-  const [newContact, setNewContact] = useState({ name: '', role: '', mobile: '', email: '' });
+  const [newFeature, setNewFeature] = useState("");
+  const [newContact, setNewContact] = useState({
+    name: "",
+    role: "",
+    mobile: "",
+    email: "",
+  });
   const [isInitialized, setIsInitialized] = useState(false);
 
   // Update form data when center prop changes
@@ -1841,20 +2554,20 @@ const CenterForm: React.FC<CenterFormProps> = ({
     if (center) {
       setFormData({
         _id: center._id,
-        centerName: center.centerName || '',
-        address: center.address || '',
-        country: center.country || '',
-        city: center.city || '',
-        state: center.state || '',
-        pincode: center.pincode || '',
-        phone: center.phone || '',
-        email: center.email || '',
-        workingHours: center.workingHours || '',
+        centerName: center.centerName || "",
+        address: center.address || "",
+        country: center.country || "",
+        city: center.city || "",
+        state: center.state || "",
+        pincode: center.pincode || "",
+        phone: center.phone || "",
+        email: center.email || "",
+        workingHours: center.workingHours || "",
         latitude: center.latitude,
         longitude: center.longitude,
         features: center.features || [],
-        mapLink: center.mapLink || '',
-        googleMapLink: center.googleMapLink || '',
+        mapLink: center.mapLink || "",
+        googleMapLink: center.googleMapLink || "",
         contacts: center.contacts || [],
       });
       setIsInitialized(false);
@@ -1864,7 +2577,7 @@ const CenterForm: React.FC<CenterFormProps> = ({
   // Load states when editing a center and countries are available
   useEffect(() => {
     if (center && center.country && countries.length > 0 && !isInitialized) {
-      const countryObj = countries.find(c => c.name === center.country);
+      const countryObj = countries.find((c) => c.name === center.country);
       if (countryObj?._id) {
         onCountryChange(countryObj._id);
         setIsInitialized(true);
@@ -1875,7 +2588,7 @@ const CenterForm: React.FC<CenterFormProps> = ({
   // Load cities when editing a center and states are available
   useEffect(() => {
     if (center && center.state && states.length > 0 && isInitialized) {
-      const stateObj = states.find(s => s.name === center.state);
+      const stateObj = states.find((s) => s.name === center.state);
       if (stateObj?._id) {
         onStateChange(stateObj._id);
       }
@@ -1884,20 +2597,31 @@ const CenterForm: React.FC<CenterFormProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // Validation
-    if (!formData.centerName || !formData.address || !formData.city || !formData.state || !formData.pincode) {
-      alert('Please fill in all required fields');
+    if (
+      !formData.centerName ||
+      !formData.address ||
+      !formData.city ||
+      !formData.state ||
+      !formData.pincode
+    ) {
+      alert("Please fill in all required fields");
       return;
     }
-    
+
     onSave(formData);
   };
 
   const handleCountryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const countryId = e.target.value;
-    const selectedCountry = countries.find(c => c._id === countryId);
-    setFormData({ ...formData, country: selectedCountry?.name || '', state: '', city: '' });
+    const selectedCountry = countries.find((c) => c._id === countryId);
+    setFormData({
+      ...formData,
+      country: selectedCountry?.name || "",
+      state: "",
+      city: "",
+    });
     if (countryId) {
       onCountryChange(countryId);
     }
@@ -1905,8 +2629,8 @@ const CenterForm: React.FC<CenterFormProps> = ({
 
   const handleStateChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const stateId = e.target.value;
-    const selectedState = states.find(s => s._id === stateId);
-    setFormData({ ...formData, state: selectedState?.name || '', city: '' });
+    const selectedState = states.find((s) => s._id === stateId);
+    setFormData({ ...formData, state: selectedState?.name || "", city: "" });
     if (stateId) {
       onStateChange(stateId);
     }
@@ -1914,31 +2638,41 @@ const CenterForm: React.FC<CenterFormProps> = ({
 
   const handleCityChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const cityId = e.target.value;
-    const selectedCity = cities.find(c => c._id === cityId);
-    setFormData({ ...formData, city: selectedCity?.name || '' });
+    const selectedCity = cities.find((c) => c._id === cityId);
+    setFormData({ ...formData, city: selectedCity?.name || "" });
   };
 
   const addFeature = () => {
     if (newFeature.trim()) {
-      setFormData({ ...formData, features: [...(formData.features || []), newFeature.trim()] });
-      setNewFeature('');
+      setFormData({
+        ...formData,
+        features: [...(formData.features || []), newFeature.trim()],
+      });
+      setNewFeature("");
     }
   };
 
   const removeFeature = (index: number) => {
-    const updatedFeatures = (formData.features || []).filter((_, i) => i !== index);
+    const updatedFeatures = (formData.features || []).filter(
+      (_, i) => i !== index,
+    );
     setFormData({ ...formData, features: updatedFeatures });
   };
 
   const addContact = () => {
     if (newContact.name.trim() && newContact.mobile.trim()) {
-      setFormData({ ...formData, contacts: [...(formData.contacts || []), newContact] });
-      setNewContact({ name: '', role: '', mobile: '', email: '' });
+      setFormData({
+        ...formData,
+        contacts: [...(formData.contacts || []), newContact],
+      });
+      setNewContact({ name: "", role: "", mobile: "", email: "" });
     }
   };
 
   const removeContact = (index: number) => {
-    const updatedContacts = (formData.contacts || []).filter((_, i) => i !== index);
+    const updatedContacts = (formData.contacts || []).filter(
+      (_, i) => i !== index,
+    );
     setFormData({ ...formData, contacts: updatedContacts });
   };
 
@@ -1953,7 +2687,9 @@ const CenterForm: React.FC<CenterFormProps> = ({
           <input
             type="text"
             value={formData.centerName}
-            onChange={(e) => setFormData({ ...formData, centerName: e.target.value })}
+            onChange={(e) =>
+              setFormData({ ...formData, centerName: e.target.value })
+            }
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="e.g., Main Campus Support Center"
             required
@@ -1967,7 +2703,9 @@ const CenterForm: React.FC<CenterFormProps> = ({
           </label>
           <textarea
             value={formData.address}
-            onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+            onChange={(e) =>
+              setFormData({ ...formData, address: e.target.value })
+            }
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="Full address with street and building"
             rows={2}
@@ -1981,7 +2719,9 @@ const CenterForm: React.FC<CenterFormProps> = ({
             Country <span className="text-red-500">*</span>
           </label>
           <select
-            value={countries.find(c => c.name === formData.country)?._id || ''}
+            value={
+              countries.find((c) => c.name === formData.country)?._id || ""
+            }
             onChange={handleCountryChange}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             required
@@ -2001,7 +2741,7 @@ const CenterForm: React.FC<CenterFormProps> = ({
             State <span className="text-red-500">*</span>
           </label>
           <select
-            value={states.find(s => s.name === formData.state)?._id || ''}
+            value={states.find((s) => s.name === formData.state)?._id || ""}
             onChange={handleStateChange}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             disabled={!formData.country}
@@ -2022,7 +2762,7 @@ const CenterForm: React.FC<CenterFormProps> = ({
             City <span className="text-red-500">*</span>
           </label>
           <select
-            value={cities.find(c => c.name === formData.city)?._id || ''}
+            value={cities.find((c) => c.name === formData.city)?._id || ""}
             onChange={handleCityChange}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             disabled={!formData.state}
@@ -2045,7 +2785,9 @@ const CenterForm: React.FC<CenterFormProps> = ({
           <input
             type="text"
             value={formData.pincode}
-            onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
+            onChange={(e) =>
+              setFormData({ ...formData, pincode: e.target.value })
+            }
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="e.g., 400001"
             required
@@ -2060,7 +2802,9 @@ const CenterForm: React.FC<CenterFormProps> = ({
           <input
             type="tel"
             value={formData.phone}
-            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+            onChange={(e) =>
+              setFormData({ ...formData, phone: e.target.value })
+            }
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="+91 98765 43210"
             required
@@ -2075,7 +2819,9 @@ const CenterForm: React.FC<CenterFormProps> = ({
           <input
             type="email"
             value={formData.email}
-            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+            onChange={(e) =>
+              setFormData({ ...formData, email: e.target.value })
+            }
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="center@example.com"
             required
@@ -2090,7 +2836,9 @@ const CenterForm: React.FC<CenterFormProps> = ({
           <input
             type="text"
             value={formData.workingHours}
-            onChange={(e) => setFormData({ ...formData, workingHours: e.target.value })}
+            onChange={(e) =>
+              setFormData({ ...formData, workingHours: e.target.value })
+            }
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="e.g., Mon-Fri: 9AM-6PM"
             required
@@ -2104,8 +2852,10 @@ const CenterForm: React.FC<CenterFormProps> = ({
           </label>
           <input
             type="url"
-            value={formData.mapLink || ''}
-            onChange={(e) => setFormData({ ...formData, mapLink: e.target.value })}
+            value={formData.mapLink || ""}
+            onChange={(e) =>
+              setFormData({ ...formData, mapLink: e.target.value })
+            }
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="https://maps.app.goo.gl/..."
           />
@@ -2118,8 +2868,10 @@ const CenterForm: React.FC<CenterFormProps> = ({
           </label>
           <input
             type="url"
-            value={formData.googleMapLink || ''}
-            onChange={(e) => setFormData({ ...formData, googleMapLink: e.target.value })}
+            value={formData.googleMapLink || ""}
+            onChange={(e) =>
+              setFormData({ ...formData, googleMapLink: e.target.value })
+            }
             onBlur={(e) => {
               const url = e.target.value;
               if (url) {
@@ -2128,18 +2880,18 @@ const CenterForm: React.FC<CenterFormProps> = ({
                 // Format 2: https://www.google.com/maps/place/.../@28.6139,77.2090
                 // Format 3: https://maps.app.goo.gl/... (shortened, harder to parse)
                 // Format 4: https://www.google.com/maps/@28.6139,77.2090,15z
-                
+
                 let lat: number | undefined;
                 let lng: number | undefined;
-                
+
                 try {
                   // Try to match coordinates in various formats
                   const patterns = [
-                    /@(-?\d+\.\d+),(-?\d+\.\d+)/,  // @lat,lng
-                    /q=(-?\d+\.\d+),(-?\d+\.\d+)/,  // q=lat,lng
+                    /@(-?\d+\.\d+),(-?\d+\.\d+)/, // @lat,lng
+                    /q=(-?\d+\.\d+),(-?\d+\.\d+)/, // q=lat,lng
                     /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/, // !3dlat!4dlng
                   ];
-                  
+
                   for (const pattern of patterns) {
                     const match = url.match(pattern);
                     if (match) {
@@ -2148,17 +2900,25 @@ const CenterForm: React.FC<CenterFormProps> = ({
                       break;
                     }
                   }
-                  
-                  if (lat !== undefined && lng !== undefined && !isNaN(lat) && !isNaN(lng)) {
-                    setFormData({ 
-                      ...formData, 
+
+                  if (
+                    lat !== undefined &&
+                    lng !== undefined &&
+                    !isNaN(lat) &&
+                    !isNaN(lng)
+                  ) {
+                    setFormData({
+                      ...formData,
                       googleMapLink: url,
-                      latitude: lat, 
-                      longitude: lng 
+                      latitude: lat,
+                      longitude: lng,
                     });
                   }
                 } catch (error) {
-                  console.error('Failed to extract coordinates from Google Maps URL:', error);
+                  console.error(
+                    "Failed to extract coordinates from Google Maps URL:",
+                    error,
+                  );
                 }
               }
             }}
@@ -2175,8 +2935,13 @@ const CenterForm: React.FC<CenterFormProps> = ({
           <input
             type="number"
             step="any"
-            value={formData.latitude || ''}
-            onChange={(e) => setFormData({ ...formData, latitude: parseFloat(e.target.value) || undefined })}
+            value={formData.latitude || ""}
+            onChange={(e) =>
+              setFormData({
+                ...formData,
+                latitude: parseFloat(e.target.value) || undefined,
+              })
+            }
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="e.g., 28.6139"
           />
@@ -2190,8 +2955,13 @@ const CenterForm: React.FC<CenterFormProps> = ({
           <input
             type="number"
             step="any"
-            value={formData.longitude || ''}
-            onChange={(e) => setFormData({ ...formData, longitude: parseFloat(e.target.value) || undefined })}
+            value={formData.longitude || ""}
+            onChange={(e) =>
+              setFormData({
+                ...formData,
+                longitude: parseFloat(e.target.value) || undefined,
+              })
+            }
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="e.g., 77.2090"
           />
@@ -2209,7 +2979,7 @@ const CenterForm: React.FC<CenterFormProps> = ({
             value={newFeature}
             onChange={(e) => setNewFeature(e.target.value)}
             onKeyPress={(e) => {
-              if (e.key === 'Enter') {
+              if (e.key === "Enter") {
                 e.preventDefault();
                 addFeature();
               }
@@ -2230,7 +3000,10 @@ const CenterForm: React.FC<CenterFormProps> = ({
         </div>
         <div className="flex flex-wrap gap-2">
           {(formData.features || []).map((feature, index) => (
-            <span key={index} className="inline-flex items-center space-x-1 px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
+            <span
+              key={index}
+              className="inline-flex items-center space-x-1 px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm"
+            >
               <span>{feature}</span>
               <button
                 type="button"
@@ -2253,28 +3026,36 @@ const CenterForm: React.FC<CenterFormProps> = ({
           <input
             type="text"
             value={newContact.name}
-            onChange={(e) => setNewContact({ ...newContact, name: e.target.value })}
+            onChange={(e) =>
+              setNewContact({ ...newContact, name: e.target.value })
+            }
             className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="Name"
           />
           <input
             type="text"
             value={newContact.role}
-            onChange={(e) => setNewContact({ ...newContact, role: e.target.value })}
+            onChange={(e) =>
+              setNewContact({ ...newContact, role: e.target.value })
+            }
             className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="Role"
           />
           <input
             type="tel"
             value={newContact.mobile}
-            onChange={(e) => setNewContact({ ...newContact, mobile: e.target.value })}
+            onChange={(e) =>
+              setNewContact({ ...newContact, mobile: e.target.value })
+            }
             className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="Mobile"
           />
           <input
             type="email"
             value={newContact.email}
-            onChange={(e) => setNewContact({ ...newContact, email: e.target.value })}
+            onChange={(e) =>
+              setNewContact({ ...newContact, email: e.target.value })
+            }
             className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="Email"
           />
@@ -2289,10 +3070,17 @@ const CenterForm: React.FC<CenterFormProps> = ({
         </div>
         <div className="space-y-2">
           {(formData.contacts || []).map((contact, index) => (
-            <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+            <div
+              key={index}
+              className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+            >
               <div className="text-sm">
-                <div className="font-medium">{contact.name} {contact.role && `- ${contact.role}`}</div>
-                <div className="text-gray-600">{contact.mobile} {contact.email && `• ${contact.email}`}</div>
+                <div className="font-medium">
+                  {contact.name} {contact.role && `- ${contact.role}`}
+                </div>
+                <div className="text-gray-600">
+                  {contact.mobile} {contact.email && `• ${contact.email}`}
+                </div>
               </div>
               <button
                 type="button"
@@ -2319,7 +3107,7 @@ const CenterForm: React.FC<CenterFormProps> = ({
           type="submit"
           className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
         >
-          {center ? 'Update Center' : 'Add Center'}
+          {center ? "Update Center" : "Add Center"}
         </button>
       </div>
     </form>

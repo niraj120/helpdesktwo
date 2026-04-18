@@ -276,9 +276,10 @@ export const getAttendanceSummary = async (
       },
     ]);
 
-    const byStatus: Record<string, number> = { P: 0, PL: 0, H: 0, LWP: 0 };
+    // Fully dynamic — collect all status codes that actually appear in the data
+    const byStatus: Record<string, number> = {};
     for (const row of statusCounts) {
-      byStatus[row._id as string] = row.count as number;
+      if (row._id) byStatus[row._id as string] = row.count as number;
     }
 
     const meta = overview[0] ?? {

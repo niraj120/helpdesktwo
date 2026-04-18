@@ -22,6 +22,7 @@ import "./models/Permission";
 import "./models/Project";
 import "./models/Status";
 import "./models/Center";
+import "./models/PublicApiKey";
 import "./models/Asset";
 import "./models/CenterAssetMapping";
 import "./models/FeedbackForm";
@@ -101,6 +102,8 @@ import cacheRoutes from "./routes/cacheRoutes";
 import otpRoutes from "./routes/otp";
 import reportRoutes from "./routes/reportRoutes";
 import dbMonitoringRoutes from "./routes/dbMonitoringRoutes";
+import publicApiKeysRoutes from "./routes/publicApiKeys";
+import publicApiRoutes from "./routes/publicApi";
 // import integrationRoutes from './routes/integrations'; // TODO: Implement
 import { setupSocketHandlers } from "./socket/socketHandlers";
 import { initializeDatabase } from "./utils/dbInit";
@@ -199,6 +202,8 @@ app.use(
       "X-Requested-With",
       "Cache-Control",
       "Pragma",
+      "X-API-Key",
+      "X-Project-ID",
     ],
     exposedHeaders: ["Content-Range", "X-Content-Range"],
     maxAge: 86400, // 24 hours
@@ -345,6 +350,13 @@ app.use("/api/reports", reportRoutes);
 
 // DB Monitoring Routes
 app.use("/api/db-monitoring", dbMonitoringRoutes);
+
+// Public API Key Management Routes (admin)
+app.use("/api/admin/public-api-keys", publicApiKeysRoutes);
+
+// Public API Routes (chatbot / WhatsApp / external consumers)
+// Per-endpoint rate limiting is applied inside the router
+app.use("/v1", publicApiRoutes);
 
 // Integration Routes (TODO: Implement)
 // app.use('/api/integrations', integrationRoutes);
