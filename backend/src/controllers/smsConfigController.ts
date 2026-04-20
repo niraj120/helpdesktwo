@@ -153,6 +153,20 @@ export const testSMSTrigger = async (req: Request, res: Response) => {
       studentName: "Test Student",
       ticketId: "#T-12345",
       status: "Resolved",
+      projectName: "SAC Helpdesk",
+      loginUrl: "https://helpdesk.example.com",
+      resetLink: "https://helpdesk.example.com/reset",
+      ticketNumber: "T-12345",
+      ticketSubject: "Test Ticket Subject",
+      newStatus: "In Progress",
+      reason: "Test reason",
+      escalatedTo: "Senior Agent",
+      commentText: "Test comment",
+      // Numbered variables for DLT templates (e.g. TTBS)
+      "1": "MHT CET ",
+      "2": "(PCB 1st Attempt) 2026",
+      "3": "https://cetcell.",
+      "4": "mahacet.org",
     };
 
     // We use the existing sendTriggerSMS but strictly for testing purposes
@@ -189,20 +203,16 @@ export const testSMSTrigger = async (req: Request, res: Response) => {
     });
 
     if (result.success) {
-      return res
-        .status(200)
-        .json({
-          success: true,
-          message: "Test SMS sent successfully",
-          responseId: result.responseId,
-        });
+      return res.status(200).json({
+        success: true,
+        message: "Test SMS sent successfully",
+        responseId: result.responseId,
+      });
     } else {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          error: result.error || "Failed to send test SMS",
-        });
+      return res.status(400).json({
+        success: false,
+        error: result.error || "Failed to send test SMS",
+      });
     }
   } catch (error) {
     console.error("Test SMS error:", error);

@@ -46,7 +46,8 @@ const logSMS = async (
 
 /**
  * Generic vendor-agnostic SMS sender
- * Builds the API call dynamically from stored config — no vendor-specific code.
+ * Builds the API call dynamically from stored config.
+ * Supports GET-based APIs (Gupshup, custom) and POST-XML APIs (TTBS).
  */
 export const sendSMS = async (
   phoneNumber: string,
@@ -59,52 +60,56 @@ export const sendSMS = async (
     const cleanPhone = phoneNumber.replace(/\D/g, "");
     const sendTo = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
 
-    const params: Record<string, string> = {};
+    let responseData: any;
 
-    // Credential params (use stored param names or Gupshup defaults for backward compat)
-    const usernameParam = config.usernameParamName || "userid";
-    const passwordParam = config.passwordParamName || "password";
-    const phoneParam = config.phoneParamName || "send_to";
-    const messageParam = config.messageParamName || "msg";
+    // All vendors use GET-based API with query params
+    {
+      const params: Record<string, string> = {};
 
-    params[usernameParam] = config.userId;
-    params[passwordParam] = password;
-    params[phoneParam] = sendTo;
-    params[messageParam] = message;
+      const usernameParam = config.usernameParamName || "userid";
+      const passwordParam = config.passwordParamName || "password";
+      const phoneParam = config.phoneParamName || "send_to";
+      const messageParam = config.messageParamName || "msg";
 
-    // Sender ID (DLT header)
-    if (config.senderId && config.senderIdParamName) {
-      params[config.senderIdParamName] = config.senderId;
-    }
+      params[usernameParam] = config.userId;
+      params[passwordParam] = password;
+      params[phoneParam] = sendTo;
+      params[messageParam] = message;
 
-    // DLT Principal Entity ID
-    if (config.peid) {
-      params["peid"] = config.peid;
-    }
-
-    // Per-trigger DLT template IDs (contentid, tmid for TTBS / TRAI compliance)
-    if (triggerOptions?.dltContentId) {
-      params["contentid"] = triggerOptions.dltContentId;
-    }
-    if (triggerOptions?.dltTemplateId) {
-      params["tmid"] = triggerOptions.dltTemplateId;
-    }
-
-    // Extra static params (JSON — e.g. Gupshup needs method=SendMessage, msg_type=TEXT, etc.)
-    if (config.extraStaticParams) {
-      try {
-        const extra = JSON.parse(config.extraStaticParams);
-        Object.assign(params, extra);
-      } catch {
-        // Invalid JSON — skip
+      // Sender ID (DLT header)
+      if (config.senderId && config.senderIdParamName) {
+        params[config.senderIdParamName] = config.senderId;
       }
-    }
 
-    const apiUrl =
-      config.apiUrl || "https://enterpriseapi.smsgupshup.com/GatewayAPI/rest";
-    const queryString = new URLSearchParams(params).toString();
-    const response = await axios.get(`${apiUrl}?${queryString}`);
-    const responseData = response.data;
+      // DLT Principal Entity ID
+      if (config.peid) {
+        params["peid"] = config.peid;
+      }
+
+      // Per-trigger DLT template IDs
+      if (triggerOptions?.dltContentId) {
+        params["contentid"] = triggerOptions.dltContentId;
+      }
+      if (triggerOptions?.dltTemplateId) {
+        params["tmid"] = triggerOptions.dltTemplateId;
+      }
+
+      // Extra static params (JSON)
+      if (config.extraStaticParams) {
+        try {
+          const extra = JSON.parse(config.extraStaticParams);
+          Object.assign(params, extra);
+        } catch {
+          // Invalid JSON — skip
+        }
+      }
+
+      const apiUrl =
+        config.apiUrl || "https://enterpriseapi.smsgupshup.com/GatewayAPI/rest";
+      const queryString = new URLSearchParams(params).toString();
+      const response = await axios.get(`${apiUrl}?${queryString}`);
+      responseData = response.data;
+    }
 
     const successPattern = (config.successPattern || "success").toLowerCase();
     const responseStr =

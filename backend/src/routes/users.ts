@@ -18,6 +18,9 @@ import {
   getEscalationAgents,
   getUserReport,
   checkDuplicate,
+  downloadBulkUserTemplate,
+  bulkCreateUsers,
+  bulkUploadMiddleware,
 } from "../controllers/userController";
 
 const router = Router();
@@ -77,6 +80,25 @@ router.get(
   "/check-duplicate",
   checkPermission("OFFLINE_STUDENT_REGISTER"),
   checkDuplicate,
+);
+
+// @desc    Download Excel template for bulk user creation
+// @route   GET /api/users/bulk-template
+// @access  Private
+router.get(
+  "/bulk-template",
+  checkPermission("USER_CREATE"),
+  downloadBulkUserTemplate,
+);
+
+// @desc    Bulk create users from uploaded Excel
+// @route   POST /api/users/bulk-upload
+// @access  Private
+router.post(
+  "/bulk-upload",
+  checkPermission("USER_CREATE"),
+  bulkUploadMiddleware,
+  bulkCreateUsers,
 );
 
 // @desc    Register student (offline module)
