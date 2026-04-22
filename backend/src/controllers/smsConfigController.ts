@@ -163,7 +163,7 @@ export const testSMSTrigger = async (req: Request, res: Response) => {
       escalatedTo: "Senior Agent",
       commentText: "Test comment",
       // Numbered variables for DLT templates (e.g. TTBS)
-      "1": "MHT CET ",
+      "1": "MHT-CET ",
       "2": "(PCB 1st Attempt) 2026",
       "3": "https://cetcell.",
       "4": "mahacet.org",
@@ -219,5 +219,71 @@ export const testSMSTrigger = async (req: Request, res: Response) => {
     return res
       .status(500)
       .json({ success: false, error: "Internal server error during test" });
+  }
+};
+
+/**
+ * Test Student OTP SMS with static content (no variable substitution)
+ */
+export const testStudentOTPStaticContent = async (
+  req: Request,
+  res: Response,
+) => {
+  try {
+    const { projectId } = req.params;
+    const { phone, message } = req.body as { phone?: string; message?: string };
+
+    if (!phone) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Phone number is required" });
+    }
+
+    const config = await SMSConfig.findOne({ projectId });
+    if (!config) {
+      return res
+        .status(404)
+        .json({ success: false, error: "SMS config not found" });
+    }
+
+    const trigger = (config.triggers as any)?.studentOTP;
+    if (!trigger) {
+      return res
+        .status(404)
+        .json({ success: false, error: "studentOTP trigger not found" });
+    }
+
+    const defaultStaticMessage =
+      "Dear Candidate,\n\nPlease re-download hall ticket for MHT-CET (PCB 1st Attempt) 2026 from https://cetcell.mahacet.org. Exam. Kindly ignore your previous hall ticket.\n\nCET CELL,\nMumbai";
+
+    // Send exact static content for DLT testing; no placeholder replacement.
+    const staticMessage =
+      typeof message === "string" && message.trim().length > 0
+        ? message.trim()
+        : (trigger.template || defaultStaticMessage);
+
+    const result = await sendSMS(phone, staticMessage, config, {
+      dltContentId: (trigger as any).dltContentId,
+      dltTemplateId: (trigger as any).dltTemplateId,
+    });
+
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        error: result.error || "Failed to send static OTP test SMS",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Static OTP test SMS sent successfully",
+      responseId: result.responseId,
+    });
+  } catch (error) {
+    console.error("Static OTP test SMS error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Internal server error during static OTP test",
+    });
   }
 };
