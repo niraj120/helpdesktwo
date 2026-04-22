@@ -215,6 +215,23 @@ const UserManagement: React.FC<UserManagementProps> = ({
 
   const [saving, setSaving] = useState(false);
 
+  // Bulk upload modal state
+  const [showBulkUploadModal, setShowBulkUploadModal] = useState(false);
+  const [bulkUploadFile, setBulkUploadFile] = useState<File | null>(null);
+  const [bulkUploading, setBulkUploading] = useState(false);
+  const [bulkUploadResults, setBulkUploadResults] = useState<{
+    total: number;
+    created: number;
+    failed: number;
+    results: Array<{
+      row: number;
+      email: string;
+      status: string;
+      error?: string;
+    }>;
+  } | null>(null);
+  const bulkFileInputRef = useRef<HTMLInputElement>(null);
+
   // Multi-select state for bulk delete
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(
     new Set(),
@@ -1217,6 +1234,62 @@ const UserManagement: React.FC<UserManagementProps> = ({
     }
   };
 
+  // Bulk upload handlers
+  const handleDownloadTemplate = async () => {
+    try {
+      const token = localStorage.getItem("authToken");
+      const response = await fetch(
+        `${API_CONFIG.API_URL}/users/bulk-template`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "include",
+        },
+      );
+      if (!response.ok) throw new Error("Failed to download template");
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "bulk-user-template.xlsx";
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error("Error downloading template:", error);
+      alert("Failed to download template");
+    }
+  };
+
+  const handleBulkUpload = async () => {
+    if (!bulkUploadFile) return;
+    setBulkUploading(true);
+    setBulkUploadResults(null);
+    try {
+      const token = localStorage.getItem("authToken");
+      const formPayload = new FormData();
+      formPayload.append("file", bulkUploadFile);
+      const response = await fetch(`${API_CONFIG.API_URL}/users/bulk-upload`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
+        body: formPayload,
+      });
+      const data = await response.json();
+      if (data.success) {
+        setBulkUploadResults(data.data);
+        if (data.data.created > 0) fetchUsers();
+      } else {
+        alert(data.error || "Bulk upload failed");
+      }
+    } catch (error) {
+      console.error("Error during bulk upload:", error);
+      alert("Failed to upload file");
+    } finally {
+      setBulkUploading(false);
+    }
+  };
+
   const toggleUserSelection = (userId: string) => {
     setSelectedUserIds((prev) => {
       const next = new Set(prev);
@@ -1809,6 +1882,61 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 <line x1="12" y1="15" x2="12" y2="3" />
               </svg>
               {getText("Add from HRMS", "HRMS मधून जोडा", "HRMS मधून जोडा")}
+            </button>
+          )}
+          {hasPermission("USER_CREATE") && (
+            <button
+              onClick={() => {
+                setBulkUploadFile(null);
+                setBulkUploadResults(null);
+                setShowBulkUploadModal(true);
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "10px 16px",
+                background: "#f59e0b",
+                color: "white",
+                border: "none",
+                borderRadius: "8px",
+                fontSize: "14px",
+                fontWeight: 600,
+                cursor: "pointer",
+                boxShadow: "0 2px 6px rgba(245, 158, 11, 0.24)",
+                transition: "all 0.2s ease",
+                fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+                outline: "none",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "#d97706";
+                e.currentTarget.style.boxShadow =
+                  "0 4px 12px rgba(245, 158, 11, 0.32)";
+                e.currentTarget.style.transform = "translateY(-1px)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "#f59e0b";
+                e.currentTarget.style.boxShadow =
+                  "0 2px 6px rgba(245, 158, 11, 0.24)";
+                e.currentTarget.style.transform = "translateY(0)";
+              }}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="12" y1="18" x2="12" y2="12" />
+                <line x1="9" y1="15" x2="15" y2="15" />
+              </svg>
+              {getText("Bulk Upload", "बल्क अपलोड", "बल्क अपलोड")}
             </button>
           )}
           {hasPermission("USER_CREATE") && (
@@ -4170,6 +4298,591 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         "वापरकर्ता तयार करा",
                         "वापरकर्ता तयार करा",
                       )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Upload Modal */}
+      {showBulkUploadModal && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: "20px",
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: "white",
+              borderRadius: "12px",
+              maxWidth: "720px",
+              width: "100%",
+              maxHeight: "85vh",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            {/* Header */}
+            <div
+              style={{
+                padding: "24px",
+                borderBottom: "1px solid #e5e7eb",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexShrink: 0,
+              }}
+            >
+              <h2
+                style={{
+                  fontSize: "20px",
+                  fontWeight: "600",
+                  color: "#1f2937",
+                  margin: 0,
+                }}
+              >
+                {getText(
+                  "Bulk Upload Users",
+                  "बल्क वापरकर्ता अपलोड",
+                  "बल्क वापरकर्ता अपलोड",
+                )}
+              </h2>
+              <button
+                onClick={() => {
+                  setShowBulkUploadModal(false);
+                  setBulkUploadFile(null);
+                  setBulkUploadResults(null);
+                }}
+                style={{
+                  background: "none",
+                  border: "none",
+                  fontSize: "24px",
+                  cursor: "pointer",
+                  color: "#6b7280",
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding: "24px", overflowY: "auto", flex: 1 }}>
+              {/* Step 1: Download Template */}
+              <div
+                style={{
+                  marginBottom: "24px",
+                  padding: "20px",
+                  backgroundColor: "#f0f9ff",
+                  borderRadius: "8px",
+                  border: "1px solid #bae6fd",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "12px",
+                    marginBottom: "8px",
+                  }}
+                >
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: "28px",
+                      height: "28px",
+                      borderRadius: "50%",
+                      backgroundColor: "#2563eb",
+                      color: "white",
+                      fontSize: "14px",
+                      fontWeight: "bold",
+                      flexShrink: 0,
+                    }}
+                  >
+                    1
+                  </span>
+                  <span
+                    style={{
+                      fontWeight: 600,
+                      fontSize: "15px",
+                      color: "#1f2937",
+                    }}
+                  >
+                    {getText(
+                      "Download Template",
+                      "टेम्पलेट डाउनलोड करा",
+                      "टेम्पलेट डाउनलोड करा",
+                    )}
+                  </span>
+                </div>
+                <p
+                  style={{
+                    fontSize: "13px",
+                    color: "#6b7280",
+                    margin: "0 0 12px 40px",
+                  }}
+                >
+                  {getText(
+                    "Download the Excel template, fill in user details, and upload it back. The template includes reference sheets for valid Role Codes and Project Codes.",
+                    "एक्सेल टेम्पलेट डाउनलोड करा, वापरकर्ता तपशील भरा आणि ते परत अपलोड करा.",
+                    "एक्सेल टेम्पलेट डाउनलोड करा, वापरकर्ता तपशील भरा आणि ते परत अपलोड करा.",
+                  )}
+                </p>
+                <div style={{ marginLeft: "40px" }}>
+                  <button
+                    onClick={handleDownloadTemplate}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      padding: "8px 16px",
+                      background: "#2563eb",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "6px",
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="7 10 12 15 17 10" />
+                      <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                    {getText(
+                      "Download Template (.xlsx)",
+                      "टेम्पलेट डाउनलोड (.xlsx)",
+                      "टेम्पलेट डाउनलोड (.xlsx)",
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Step 2: Upload File */}
+              <div
+                style={{
+                  marginBottom: "24px",
+                  padding: "20px",
+                  backgroundColor: "#fefce8",
+                  borderRadius: "8px",
+                  border: "1px solid #fde68a",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "12px",
+                    marginBottom: "8px",
+                  }}
+                >
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: "28px",
+                      height: "28px",
+                      borderRadius: "50%",
+                      backgroundColor: "#f59e0b",
+                      color: "white",
+                      fontSize: "14px",
+                      fontWeight: "bold",
+                      flexShrink: 0,
+                    }}
+                  >
+                    2
+                  </span>
+                  <span
+                    style={{
+                      fontWeight: 600,
+                      fontSize: "15px",
+                      color: "#1f2937",
+                    }}
+                  >
+                    {getText(
+                      "Upload Filled Template",
+                      "भरलेला टेम्पलेट अपलोड करा",
+                      "भरलेला टेम्पलेट अपलोड करा",
+                    )}
+                  </span>
+                </div>
+                <div style={{ marginLeft: "40px" }}>
+                  <input
+                    ref={bulkFileInputRef}
+                    type="file"
+                    accept=".xlsx,.xls"
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        setBulkUploadFile(e.target.files[0]);
+                        setBulkUploadResults(null);
+                      }
+                    }}
+                  />
+                  <div
+                    onClick={() => bulkFileInputRef.current?.click()}
+                    style={{
+                      border: "2px dashed #d1d5db",
+                      borderRadius: "8px",
+                      padding: "24px",
+                      textAlign: "center",
+                      cursor: "pointer",
+                      backgroundColor: bulkUploadFile ? "#f0fdf4" : "#fafafa",
+                      transition: "all 0.2s ease",
+                    }}
+                  >
+                    {bulkUploadFile ? (
+                      <div>
+                        <svg
+                          width="32"
+                          height="32"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="#10b981"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          style={{ margin: "0 auto 8px" }}
+                        >
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <polyline points="14 2 14 8 20 8" />
+                          <polyline points="9 15 12 12 15 15" />
+                        </svg>
+                        <p
+                          style={{
+                            fontSize: "14px",
+                            fontWeight: 600,
+                            color: "#10b981",
+                            margin: 0,
+                          }}
+                        >
+                          {bulkUploadFile.name}
+                        </p>
+                        <p
+                          style={{
+                            fontSize: "12px",
+                            color: "#6b7280",
+                            margin: "4px 0 0",
+                          }}
+                        >
+                          {(bulkUploadFile.size / 1024).toFixed(1)} KB -{" "}
+                          {getText(
+                            "Click to change",
+                            "बदलण्यासाठी क्लिक करा",
+                            "बदलण्यासाठी क्लिक करा",
+                          )}
+                        </p>
+                      </div>
+                    ) : (
+                      <div>
+                        <svg
+                          width="32"
+                          height="32"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="#9ca3af"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          style={{ margin: "0 auto 8px" }}
+                        >
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                          <polyline points="17 8 12 3 7 8" />
+                          <line x1="12" y1="3" x2="12" y2="15" />
+                        </svg>
+                        <p
+                          style={{
+                            fontSize: "14px",
+                            color: "#6b7280",
+                            margin: 0,
+                          }}
+                        >
+                          {getText(
+                            "Click to select Excel file (.xlsx)",
+                            "एक्सेल फाइल (.xlsx) निवडण्यासाठी क्लिक करा",
+                            "एक्सेल फाइल (.xlsx) निवडण्यासाठी क्लिक करा",
+                          )}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Results */}
+              {bulkUploadResults && (
+                <div
+                  style={{
+                    padding: "20px",
+                    backgroundColor: "#f9fafb",
+                    borderRadius: "8px",
+                    border: "1px solid #e5e7eb",
+                  }}
+                >
+                  <h3
+                    style={{
+                      fontSize: "16px",
+                      fontWeight: 600,
+                      color: "#1f2937",
+                      margin: "0 0 12px",
+                    }}
+                  >
+                    {getText("Upload Results", "अपलोड निकाल", "अपलोड निकाल")}
+                  </h3>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "16px",
+                      marginBottom: "16px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        padding: "12px 20px",
+                        backgroundColor: "#f0fdf4",
+                        borderRadius: "8px",
+                        flex: 1,
+                        textAlign: "center",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: "24px",
+                          fontWeight: "bold",
+                          color: "#10b981",
+                        }}
+                      >
+                        {bulkUploadResults.created}
+                      </div>
+                      <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                        {getText("Created", "तयार केले", "तयार केले")}
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        padding: "12px 20px",
+                        backgroundColor: "#fef2f2",
+                        borderRadius: "8px",
+                        flex: 1,
+                        textAlign: "center",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: "24px",
+                          fontWeight: "bold",
+                          color: "#ef4444",
+                        }}
+                      >
+                        {bulkUploadResults.failed}
+                      </div>
+                      <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                        {getText("Failed", "अयशस्वी", "अयशस्वी")}
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        padding: "12px 20px",
+                        backgroundColor: "#f0f9ff",
+                        borderRadius: "8px",
+                        flex: 1,
+                        textAlign: "center",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: "24px",
+                          fontWeight: "bold",
+                          color: "#2563eb",
+                        }}
+                      >
+                        {bulkUploadResults.total}
+                      </div>
+                      <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                        {getText("Total", "एकूण", "एकूण")}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Failed rows detail */}
+                  {bulkUploadResults.results.filter(
+                    (r) => r.status === "failed",
+                  ).length > 0 && (
+                    <div>
+                      <h4
+                        style={{
+                          fontSize: "13px",
+                          fontWeight: 600,
+                          color: "#ef4444",
+                          marginBottom: "8px",
+                        }}
+                      >
+                        {getText(
+                          "Failed Rows:",
+                          "अयशस्वी पंक्ती:",
+                          "अयशस्वी पंक्ती:",
+                        )}
+                      </h4>
+                      <div
+                        style={{
+                          maxHeight: "200px",
+                          overflowY: "auto",
+                          border: "1px solid #fecaca",
+                          borderRadius: "6px",
+                        }}
+                      >
+                        <table
+                          style={{
+                            width: "100%",
+                            fontSize: "12px",
+                            borderCollapse: "collapse",
+                          }}
+                        >
+                          <thead>
+                            <tr style={{ backgroundColor: "#fef2f2" }}>
+                              <th
+                                style={{
+                                  padding: "8px",
+                                  textAlign: "left",
+                                  borderBottom: "1px solid #fecaca",
+                                }}
+                              >
+                                Row
+                              </th>
+                              <th
+                                style={{
+                                  padding: "8px",
+                                  textAlign: "left",
+                                  borderBottom: "1px solid #fecaca",
+                                }}
+                              >
+                                Email
+                              </th>
+                              <th
+                                style={{
+                                  padding: "8px",
+                                  textAlign: "left",
+                                  borderBottom: "1px solid #fecaca",
+                                }}
+                              >
+                                Error
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {bulkUploadResults.results
+                              .filter((r) => r.status === "failed")
+                              .map((r, i) => (
+                                <tr
+                                  key={i}
+                                  style={{ borderBottom: "1px solid #fee2e2" }}
+                                >
+                                  <td style={{ padding: "6px 8px" }}>
+                                    {r.row}
+                                  </td>
+                                  <td style={{ padding: "6px 8px" }}>
+                                    {r.email}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "6px 8px",
+                                      color: "#dc2626",
+                                    }}
+                                  >
+                                    {r.error}
+                                  </td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div
+              style={{
+                padding: "16px 24px",
+                borderTop: "1px solid #e5e7eb",
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "12px",
+                flexShrink: 0,
+              }}
+            >
+              <button
+                onClick={() => {
+                  setShowBulkUploadModal(false);
+                  setBulkUploadFile(null);
+                  setBulkUploadResults(null);
+                }}
+                style={{
+                  padding: "10px 20px",
+                  border: "1px solid #d1d5db",
+                  borderRadius: "6px",
+                  backgroundColor: "white",
+                  color: "#374151",
+                  fontSize: "14px",
+                  fontWeight: "500",
+                  cursor: "pointer",
+                }}
+              >
+                {getText("Close", "बंद करा", "बंद करा")}
+              </button>
+              <button
+                onClick={handleBulkUpload}
+                disabled={!bulkUploadFile || bulkUploading}
+                style={{
+                  padding: "10px 20px",
+                  border: "none",
+                  borderRadius: "6px",
+                  backgroundColor:
+                    !bulkUploadFile || bulkUploading ? "#d1d5db" : "#f59e0b",
+                  color: "white",
+                  fontSize: "14px",
+                  fontWeight: "500",
+                  cursor:
+                    !bulkUploadFile || bulkUploading
+                      ? "not-allowed"
+                      : "pointer",
+                }}
+              >
+                {bulkUploading
+                  ? getText(
+                      "Uploading...",
+                      "अपलोड करत आहे...",
+                      "अपलोड करत आहे...",
+                    )
+                  : getText(
+                      "Upload & Create Users",
+                      "अपलोड आणि वापरकर्ते तयार करा",
+                      "अपलोड आणि वापरकर्ते तयार करा",
+                    )}
               </button>
             </div>
           </div>

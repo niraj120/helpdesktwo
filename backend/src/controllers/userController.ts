@@ -6,6 +6,26 @@ import { hrmsService } from "../services/hrmsService";
 import mongoose from "mongoose";
 import { logActivity } from "../utils/logger";
 import { validatePasswordPolicy } from "../utils/passwordPolicyUtils";
+import ExcelJS from "exceljs";
+import multer from "multer";
+
+// Multer config for bulk upload (memory storage, Excel files only)
+const bulkUploadStorage = multer.memoryStorage();
+export const bulkUploadMiddleware = multer({
+  storage: bulkUploadStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
+  fileFilter: (_req, file, cb) => {
+    const allowed = [
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.ms-excel",
+    ];
+    if (allowed.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only .xlsx and .xls files are allowed"));
+    }
+  },
+}).single("file");
 
 /**
  * Get all users with filters and pagination
@@ -1831,6 +1851,361 @@ export const checkDuplicate = async (
     }
   } catch (error: any) {
     console.error("Check duplicate error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Download Excel template for bulk user creation
+ */
+export const downloadBulkUserTemplate = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    // Fetch roles and projects for dropdown references
+    const [roles, projects] = await Promise.all([
+      Role.find({ isActive: true }).select("name code").lean(),
+      Project.find({ status: "active" }).select("name code").lean(),
+    ]);
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = "SAC Helpdesk";
+    workbook.created = new Date();
+
+    // ---- Main sheet: Users ----
+    const sheet = workbook.addWorksheet("Users");
+
+    sheet.columns = [
+      { header: "First Name *", key: "firstName", width: 20 },
+      { header: "Last Name *", key: "lastName", width: 20 },
+      { header: "Email *", key: "email", width: 30 },
+      { header: "Password *", key: "password", width: 20 },
+      { header: "Mobile", key: "mobile", width: 18 },
+      { header: "Role Code *", key: "roleCode", width: 20 },
+      { header: "Employee Code", key: "employeeCode", width: 18 },
+      { header: "Department", key: "department", width: 20 },
+      { header: "Designation", key: "designation", width: 20 },
+      { header: "Project Codes", key: "projectCodes", width: 30 },
+    ];
+
+    // Style header row
+    const headerRow = sheet.getRow(1);
+    headerRow.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF2563EB" },
+      };
+      cell.alignment = { horizontal: "center", vertical: "middle" };
+      cell.border = {
+        bottom: { style: "thin" },
+        right: { style: "thin" },
+      };
+    });
+
+    // Add a sample row
+    sheet.addRow({
+      firstName: "John",
+      lastName: "Doe",
+      email: "john.doe@example.com",
+      password: "Password@123",
+      mobile: "9876543210",
+      roleCode: roles[0]?.code || "AGENT",
+      employeeCode: "EMP001",
+      department: "Support",
+      designation: "Executive",
+      projectCodes: projects.length > 0 ? projects[0].code : "PROJ1",
+    });
+
+    // Style sample row as light gray italic
+    const sampleRow = sheet.getRow(2);
+    sampleRow.eachCell((cell) => {
+      cell.font = { italic: true, color: { argb: "FF9CA3AF" } };
+    });
+
+    // ---- Reference sheet: Roles ----
+    const rolesSheet = workbook.addWorksheet("Roles Reference");
+    rolesSheet.columns = [
+      { header: "Role Name", key: "name", width: 30 },
+      { header: "Role Code (use this)", key: "code", width: 25 },
+    ];
+    const rolesHeaderRow = rolesSheet.getRow(1);
+    rolesHeaderRow.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF10B981" },
+      };
+    });
+    for (const r of roles) {
+      rolesSheet.addRow({ name: r.name, code: r.code });
+    }
+
+    // ---- Reference sheet: Projects ----
+    const projectsSheet = workbook.addWorksheet("Projects Reference");
+    projectsSheet.columns = [
+      { header: "Project Name", key: "name", width: 30 },
+      { header: "Project Code (use this)", key: "code", width: 25 },
+    ];
+    const projectsHeaderRow = projectsSheet.getRow(1);
+    projectsHeaderRow.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFA855F7" },
+      };
+    });
+    for (const p of projects) {
+      projectsSheet.addRow({ name: p.name, code: p.code });
+    }
+
+    // Send the workbook as a download
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    res.setHeader(
+      "Content-Disposition",
+      'attachment; filename="bulk-user-template.xlsx"',
+    );
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error: any) {
+    console.error("Download template error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Bulk create users from uploaded Excel file
+ */
+export const bulkCreateUsers = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const file = req.file as Express.Multer.File | undefined;
+    if (!file) {
+      res.status(400).json({ success: false, error: "No file uploaded" });
+      return;
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await workbook.xlsx.load(file.buffer as any);
+
+    const sheet = workbook.getWorksheet("Users") || workbook.worksheets[0];
+    if (!sheet) {
+      res
+        .status(400)
+        .json({ success: false, error: "No worksheet found in file" });
+      return;
+    }
+
+    // Preload roles and projects for validation
+    const [rolesMap, projectsMap] = await Promise.all([
+      Role.find({ isActive: true })
+        .select("name code")
+        .lean()
+        .then((docs) => {
+          const map = new Map<string, string>();
+          for (const d of docs)
+            map.set(
+              d.code.toUpperCase(),
+              (d._id as mongoose.Types.ObjectId).toString(),
+            );
+          return map;
+        }),
+      Project.find({ status: "active" })
+        .select("name code")
+        .lean()
+        .then((docs) => {
+          const map = new Map<string, string>();
+          for (const d of docs)
+            map.set(
+              d.code.toUpperCase(),
+              (d._id as mongoose.Types.ObjectId).toString(),
+            );
+          return map;
+        }),
+    ]);
+
+    const results: {
+      row: number;
+      email: string;
+      status: "created" | "failed";
+      error?: string;
+    }[] = [];
+    const emailsSeen = new Set<string>();
+
+    // Iterate rows (skip header row 1)
+    for (let rowNum = 2; rowNum <= sheet.rowCount; rowNum++) {
+      const row = sheet.getRow(rowNum);
+
+      const firstName = (row.getCell(1).text || "").trim();
+      const lastName = (row.getCell(2).text || "").trim();
+      const email = (row.getCell(3).text || "").trim().toLowerCase();
+      const password = (row.getCell(4).text || "").trim();
+      const mobile = (row.getCell(5).text || "").trim();
+      const roleCode = (row.getCell(6).text || "").trim().toUpperCase();
+      const employeeCode = (row.getCell(7).text || "").trim();
+      const department = (row.getCell(8).text || "").trim();
+      const designation = (row.getCell(9).text || "").trim();
+      const projectCodesRaw = (row.getCell(10).text || "").trim();
+
+      // Skip empty rows
+      if (!firstName && !lastName && !email) continue;
+
+      // Validation
+      const errors: string[] = [];
+      if (!firstName) errors.push("First Name is required");
+      if (!lastName) errors.push("Last Name is required");
+      if (!email) errors.push("Email is required");
+      if (!password) errors.push("Password is required");
+      if (password && password.length < 8)
+        errors.push("Password must be at least 8 characters");
+      if (!roleCode) errors.push("Role Code is required");
+
+      const namePattern = /^[a-zA-Z\s.]+$/;
+      if (firstName && !namePattern.test(firstName))
+        errors.push("First Name: only letters, spaces, dots allowed");
+      if (lastName && !namePattern.test(lastName))
+        errors.push("Last Name: only letters, spaces, dots allowed");
+
+      if (mobile && !/^[6-9]\d{9}$/.test(mobile))
+        errors.push("Invalid mobile number");
+
+      // Email format check
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+        errors.push("Invalid email format");
+
+      // Role lookup
+      const roleId = rolesMap.get(roleCode);
+      if (roleCode && !roleId) errors.push(`Role code '${roleCode}' not found`);
+
+      // Project codes
+      const projectIds: string[] = [];
+      if (projectCodesRaw) {
+        for (const pc of projectCodesRaw.split(",")) {
+          const code = pc.trim().toUpperCase();
+          if (!code) continue;
+          const pid = projectsMap.get(code);
+          if (pid) {
+            projectIds.push(pid);
+          } else {
+            errors.push(`Project code '${pc.trim()}' not found`);
+          }
+        }
+      }
+
+      // Duplicate in file
+      if (email && emailsSeen.has(email)) {
+        errors.push("Duplicate email in file");
+      }
+
+      if (errors.length > 0) {
+        results.push({
+          row: rowNum,
+          email: email || "(empty)",
+          status: "failed",
+          error: errors.join("; "),
+        });
+        continue;
+      }
+
+      emailsSeen.add(email);
+
+      // Check DB duplicates
+      const existingUser = await User.findOne({ email });
+      if (existingUser) {
+        results.push({
+          row: rowNum,
+          email,
+          status: "failed",
+          error: "Email already exists in system",
+        });
+        continue;
+      }
+
+      if (employeeCode) {
+        const existingEmp = await User.findOne({ employeeCode });
+        if (existingEmp) {
+          results.push({
+            row: rowNum,
+            email,
+            status: "failed",
+            error: `Employee code '${employeeCode}' already exists`,
+          });
+          continue;
+        }
+      }
+
+      // Create user
+      try {
+        const userData: any = {
+          firstName,
+          lastName,
+          email,
+          password,
+          mobile: mobile || undefined,
+          role: roleId,
+          department: department || undefined,
+          designation: designation || undefined,
+          projects: projectIds,
+          registrationSource: "manual",
+        };
+        if (employeeCode) userData.employeeCode = employeeCode;
+
+        const user = new User(userData);
+        await user.save();
+        results.push({ row: rowNum, email, status: "created" });
+      } catch (saveErr: any) {
+        results.push({
+          row: rowNum,
+          email,
+          status: "failed",
+          error: saveErr.message || "Failed to save",
+        });
+      }
+    }
+
+    const created = results.filter((r) => r.status === "created").length;
+    const failed = results.filter((r) => r.status === "failed").length;
+
+    // Log activity
+    try {
+      const currentUser = (req as any).user;
+      if (currentUser) {
+        await logActivity({
+          userId: currentUser.userId,
+          userName:
+            `${currentUser.firstName || ""} ${currentUser.lastName || ""}`.trim(),
+          userEmail: currentUser.email,
+          action: "create",
+          entity: "user",
+          description: `Bulk created ${created} users (${failed} failed) from Excel upload`,
+          metadata: { created, failed, totalRows: results.length },
+        });
+      }
+    } catch (logErr) {
+      console.error("Failed to log bulk create activity:", logErr);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        total: results.length,
+        created,
+        failed,
+        results,
+      },
+    });
+  } catch (error: any) {
+    console.error("Bulk create users error:", error);
     res.status(500).json({ success: false, error: error.message });
   }
 };

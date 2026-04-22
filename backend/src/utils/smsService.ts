@@ -46,7 +46,8 @@ const logSMS = async (
 
 /**
  * Generic vendor-agnostic SMS sender
- * Builds the API call dynamically from stored config — no vendor-specific code.
+ * Builds the API call dynamically from stored config.
+ * Supports GET-based APIs (Gupshup, custom) and POST-XML APIs (TTBS).
  */
 export const sendSMS = async (
   phoneNumber: string,
@@ -58,53 +59,94 @@ export const sendSMS = async (
     const password = config.getDecryptedPassword();
     const cleanPhone = phoneNumber.replace(/\D/g, "");
     const sendTo = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
-
-    const params: Record<string, string> = {};
-
-    // Credential params (use stored param names or Gupshup defaults for backward compat)
-    const usernameParam = config.usernameParamName || "userid";
-    const passwordParam = config.passwordParamName || "password";
-    const phoneParam = config.phoneParamName || "send_to";
-    const messageParam = config.messageParamName || "msg";
-
-    params[usernameParam] = config.userId;
-    params[passwordParam] = password;
-    params[phoneParam] = sendTo;
-    params[messageParam] = message;
-
-    // Sender ID (DLT header)
-    if (config.senderId && config.senderIdParamName) {
-      params[config.senderIdParamName] = config.senderId;
-    }
-
-    // DLT Principal Entity ID
-    if (config.peid) {
-      params["peid"] = config.peid;
-    }
-
-    // Per-trigger DLT template IDs (contentid, tmid for TTBS / TRAI compliance)
-    if (triggerOptions?.dltContentId) {
-      params["contentid"] = triggerOptions.dltContentId;
-    }
-    if (triggerOptions?.dltTemplateId) {
-      params["tmid"] = triggerOptions.dltTemplateId;
-    }
-
-    // Extra static params (JSON — e.g. Gupshup needs method=SendMessage, msg_type=TEXT, etc.)
-    if (config.extraStaticParams) {
-      try {
-        const extra = JSON.parse(config.extraStaticParams);
-        Object.assign(params, extra);
-      } catch {
-        // Invalid JSON — skip
-      }
-    }
-
     const apiUrl =
       config.apiUrl || "https://enterpriseapi.smsgupshup.com/GatewayAPI/rest";
-    const queryString = new URLSearchParams(params).toString();
-    const response = await axios.get(`${apiUrl}?${queryString}`);
-    const responseData = response.data;
+    const isTataCampaignApi = apiUrl
+      .toLowerCase()
+      .includes("/campaignservice/campaigns/qs");
+
+    let responseData: any;
+
+    // All vendors use GET-based API with query params
+    {
+      const params: Record<string, string> = {};
+
+      const usernameParam =
+        config.usernameParamName || (isTataCampaignApi ? "user" : "userid");
+      const passwordParam =
+        config.passwordParamName ||
+        (isTataCampaignApi ? "pswd" : "password");
+      const phoneParam =
+        config.phoneParamName || (isTataCampaignApi ? "recipient" : "send_to");
+      const messageParam =
+        config.messageParamName || (isTataCampaignApi ? "msg" : "msg");
+      const senderParam =
+        config.senderIdParamName || (isTataCampaignApi ? "sender" : "");
+
+      params[usernameParam] = config.userId;
+      params[passwordParam] = password;
+      params[phoneParam] = sendTo;
+      params[messageParam] = message;
+
+      // Sender ID (DLT header)
+      if (config.senderId && senderParam) {
+        params[senderParam] = config.senderId;
+      }
+
+      // Tata campaign API expects delivery report flag in request
+      if (isTataCampaignApi) {
+        params["dr"] = "false";
+      }
+
+      // DLT Principal Entity ID
+      if (config.peid) {
+        params[isTataCampaignApi ? "PE_ID" : "peid"] = config.peid;
+      }
+
+      // Per-trigger DLT template IDs
+      if (isTataCampaignApi) {
+        // Tata campaign API consumes one template field: Template_ID.
+        const templateId =
+          triggerOptions?.dltTemplateId || triggerOptions?.dltContentId;
+        if (templateId) {
+          params["Template_ID"] = templateId;
+        }
+      } else {
+        if (triggerOptions?.dltContentId) {
+          params["contentid"] = triggerOptions.dltContentId;
+        }
+        if (triggerOptions?.dltTemplateId) {
+          params["tmid"] = triggerOptions.dltTemplateId;
+        }
+      }
+
+      // Extra static params (JSON)
+      if (config.extraStaticParams) {
+        try {
+          const extra = JSON.parse(config.extraStaticParams);
+          Object.assign(params, extra);
+        } catch {
+          // Invalid JSON — skip
+        }
+      }
+
+      const queryString = new URLSearchParams(params).toString();
+      const response = await axios.get(`${apiUrl}?${queryString}`);
+      responseData = response.data;
+    }
+
+    // Tata campaign API returns JSON payload (jobId/campaignId), not legacy text statuses.
+    if (
+      isTataCampaignApi &&
+      responseData &&
+      typeof responseData === "object" &&
+      (responseData.jobId || responseData.campaignId)
+    ) {
+      return {
+        success: true,
+        responseId: String(responseData.jobId || responseData.campaignId),
+      };
+    }
 
     const successPattern = (config.successPattern || "success").toLowerCase();
     const responseStr =

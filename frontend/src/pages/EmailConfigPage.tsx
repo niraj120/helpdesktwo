@@ -235,7 +235,7 @@ const SMS_VENDOR_PRESETS: Record<string, Partial<ISMSConfig>> = {
     phoneParamName: "mobile",
     messageParamName: "message",
     senderIdParamName: "senderid",
-    successPattern: "success",
+    successPattern: "accepted",
     extraStaticParams: "",
   },
   custom: {

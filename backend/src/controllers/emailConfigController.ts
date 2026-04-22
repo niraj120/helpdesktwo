@@ -9,6 +9,7 @@ import {
 } from "../utils/whatsappService";
 import nodemailer from "nodemailer";
 import sgMail from "@sendgrid/mail";
+import { decrypt, isEncrypted } from "../utils/encryption";
 
 // Get email configuration for a project
 export const getEmailConfig = async (req: Request, res: Response) => {
@@ -164,11 +165,26 @@ export const testEmailConfig = async (req: Request, res: Response) => {
             "SMTP configuration is incomplete (host, username, password required)",
         });
       }
+
+      // Decrypt SMTP password if encrypted
+      let smtpPass = config.smtpPassword;
+      if (isEncrypted(smtpPass)) {
+        try {
+          smtpPass = decrypt(smtpPass);
+        } catch (decryptErr) {
+          console.error(
+            "Failed to decrypt SMTP password for test:",
+            decryptErr,
+          );
+        }
+      }
+
       const transporter = nodemailer.createTransport({
         host: config.smtpHost,
         port: config.smtpPort,
         secure: config.smtpSecure,
-        auth: { user: config.smtpUser, pass: config.smtpPassword },
+        auth: { user: config.smtpUser, pass: smtpPass },
+        tls: { rejectUnauthorized: false },
       });
       await transporter.sendMail({
         from: `"${config.fromName}" <${config.fromEmail}>`,
@@ -244,11 +260,25 @@ export const testNotificationBundle = async (req: Request, res: Response) => {
               message: "From email is missing",
             };
           } else {
+            // Decrypt SMTP password if encrypted
+            let smtpPass = config.smtpPassword;
+            if (isEncrypted(smtpPass)) {
+              try {
+                smtpPass = decrypt(smtpPass);
+              } catch (decryptErr) {
+                console.error(
+                  "Failed to decrypt SMTP password for bundle test:",
+                  decryptErr,
+                );
+              }
+            }
+
             const transporter = nodemailer.createTransport({
               host: config.smtpHost,
               port: config.smtpPort,
               secure: config.smtpSecure,
-              auth: { user: config.smtpUser, pass: config.smtpPassword },
+              auth: { user: config.smtpUser, pass: smtpPass },
+              tls: { rejectUnauthorized: false },
             });
 
             await transporter.sendMail({

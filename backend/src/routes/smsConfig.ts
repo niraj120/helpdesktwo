@@ -3,7 +3,8 @@ import {
     getSMSConfig,
     updateSMSSettings,
     updateSMSTrigger,
-    testSMSTrigger
+    testSMSTrigger,
+    testStudentOTPStaticContent,
 } from '../controllers/smsConfigController';
 import { authMiddleware } from '../middleware/auth';
 
@@ -39,5 +40,12 @@ router.put('/:projectId/triggers/:triggerName', updateSMSTrigger);
  * @access  Private
  */
 router.post('/:projectId/triggers/:triggerName/test', testSMSTrigger);
+
+/**
+ * @route   POST /api/sms-config/:projectId/student-otp/test-static
+ * @desc    Send static OTP SMS content (without variable replacement)
+ * @access  Private
+ */
+router.post('/:projectId/student-otp/test-static', testStudentOTPStaticContent);
 
 export default router;
