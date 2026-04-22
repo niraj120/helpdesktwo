@@ -356,7 +356,8 @@ app.use("/api/admin/public-api-keys", publicApiKeysRoutes);
 
 // Public API Routes (chatbot / WhatsApp / external consumers)
 // Per-endpoint rate limiting is applied inside the router
-app.use("/v1", publicApiRoutes);
+// ⚠️ Use /api/v1 so Vite proxy in dev forwards these to backend correctly
+app.use("/api/v1", publicApiRoutes);
 
 // Integration Routes (TODO: Implement)
 // app.use('/api/integrations', integrationRoutes);
