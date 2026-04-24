@@ -94,11 +94,15 @@ export const getAllEscalationMatrices = async (
     const callerRole = (req as any).user?.role;
     const isSuperAdmin =
       callerRole?.code === "SUPER_ADMIN" || callerRole?.name === "Super Admin";
-    if (!isSuperAdmin && callerRole?.projects?.length > 0) {
-      const allowedIds = callerRole.projects.map(
-        (p: any) => p._id?.toString() || p.toString(),
-      );
-      filter.projectIds = { $in: allowedIds };
+    if (!isSuperAdmin) {
+      if (callerRole?.projects?.length > 0) {
+        const allowedIds = callerRole.projects.map(
+          (p: any) => p._id?.toString() || p.toString(),
+        );
+        filter.projectIds = { $in: allowedIds };
+      } else {
+        filter.projectIds = { $in: [] };
+      }
     }
 
     console.log(

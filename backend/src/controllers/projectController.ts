@@ -83,8 +83,10 @@ export const getAllProjects = async (req: Request, res: Response) => {
             `🔒 Filtering projects for user ${user?.email}: ${allProjectIds.length} projects`,
           );
         } else {
+          // Explicitly match nothing so no projects are leaked to users with no assignments
+          query._id = { $in: [] };
           console.log(
-            `⚠️  User ${user?.email} has no assigned projects (neither on user nor role)!`,
+            `⚠️  User ${user?.email} has no assigned projects — returning empty list`,
           );
         }
       } else {

@@ -23,12 +23,11 @@ export const getAttendanceConfig = async (
       return;
     }
 
-    let config = await AttendanceConfig.findOne({ projectId });
-
-    if (!config) {
-      // Auto-create with defaults on first access
-      config = await AttendanceConfig.create({ projectId });
-    }
+    let config = await AttendanceConfig.findOneAndUpdate(
+      { projectId },
+      { $setOnInsert: { projectId } },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
 
     // Never expose raw or encrypted token
     const safeConfig = config.toObject();

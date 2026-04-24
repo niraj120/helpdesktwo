@@ -473,9 +473,11 @@ export const updateRole = async (req: AuthRequest, res: Response) => {
       }
     }
 
-    if (projectsToUpdate && projectsToUpdate.length > 0) {
+    if (projectsToUpdate !== undefined) {
       role.projects = projectsToUpdate;
-      role.projectId = projectsToUpdate[0];
+      // Keep projectId in sync: use first project or clear it when list is empty
+      role.projectId =
+        projectsToUpdate.length > 0 ? projectsToUpdate[0] : undefined;
     } else if (projectId) {
       role.projectId = projectId;
       role.projects = [projectId];

@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { MdAdd, MdEdit, MdDelete, MdSearch, MdRefresh } from 'react-icons/md';
-import { API_CONFIG } from '../config/constants';
-import { usePermissions } from '../hooks/usePermissions';
-import { PERMISSIONS } from '../constants/permissions';
-import DashboardLayout from './DashboardLayout';
-import ModuleHeader from './ModuleHeader';
+import React, { useState, useEffect } from "react";
+import { MdAdd, MdEdit, MdDelete, MdSearch, MdRefresh } from "react-icons/md";
+import { API_CONFIG } from "../config/constants";
+import { usePermissions } from "../hooks/usePermissions";
+import { PERMISSIONS } from "../constants/permissions";
+import DashboardLayout from "./DashboardLayout";
+import ModuleHeader from "./ModuleHeader";
 
 interface AssetCategory {
   _id: string;
@@ -50,25 +50,32 @@ interface Project {
 const AssetManagement: React.FC = () => {
   const { hasPermission } = usePermissions();
   const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProject, setSelectedProject] = useState<string>('');
+  const [selectedProject, setSelectedProject] = useState<string>("");
   const [assets, setAssets] = useState<Asset[]>([]);
   const [categories, setCategories] = useState<AssetCategory[]>([]);
   const [loading, setLoading] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterActive, setFilterActive] = useState<'all' | 'active' | 'inactive'>('all');
-  
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterActive, setFilterActive] = useState<
+    "all" | "active" | "inactive"
+  >("all");
+
   // Dialog state
   const [showModal, setShowModal] = useState(false);
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
   const [formData, setFormData] = useState<AssetFormData>({
-    name: '',
-    description: '',
-    category: '',
+    name: "",
+    description: "",
+    category: "",
     predefinedCount: 0,
-    unit: 'units',
+    unit: "units",
   });
-  const [formErrors, setFormErrors] = useState<Partial<Record<keyof AssetFormData, string>>>({});
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [formErrors, setFormErrors] = useState<
+    Partial<Record<keyof AssetFormData, string>>
+  >({});
+  const [message, setMessage] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
 
   const canCreate = hasPermission(PERMISSIONS.ASSET_CREATE);
   const canEdit = hasPermission(PERMISSIONS.ASSET_EDIT);
@@ -87,13 +94,13 @@ const AssetManagement: React.FC = () => {
 
   const fetchProjects = async () => {
     try {
-      const token = localStorage.getItem('authToken');
-      const response = await fetch(`${API_CONFIG.API_URL}/projects`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-        credentials: 'include',
+      const token = localStorage.getItem("authToken");
+      const response = await fetch(`${API_CONFIG.API_URL}/projects?limit=100`, {
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
       });
       const data = await response.json();
-      
+
       let projectsData = [];
       if (data.success && data.data && Array.isArray(data.data.projects)) {
         projectsData = data.data.projects;
@@ -102,31 +109,36 @@ const AssetManagement: React.FC = () => {
       } else if (Array.isArray(data.projects)) {
         projectsData = data.projects;
       }
-      
-      const activeProjects = projectsData.filter((p: any) => p.isActive !== false);
+
+      const activeProjects = projectsData.filter(
+        (p: any) => p.isActive !== false,
+      );
       setProjects(activeProjects);
       if (activeProjects.length > 0 && !selectedProject) {
         setSelectedProject(activeProjects[0]._id);
       }
     } catch (error) {
-      console.error('Failed to fetch projects:', error);
+      console.error("Failed to fetch projects:", error);
     }
   };
 
   const fetchAssets = async () => {
     if (!selectedProject) return;
-    
+
     try {
       setLoading(true);
-      const token = localStorage.getItem('authToken');
-      const response = await fetch(`${API_CONFIG.API_URL}/assets?projectId=${selectedProject}`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-        credentials: 'include',
-      });
+      const token = localStorage.getItem("authToken");
+      const response = await fetch(
+        `${API_CONFIG.API_URL}/assets?projectId=${selectedProject}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "include",
+        },
+      );
       const data = await response.json();
       setAssets(data.data || []);
     } catch (error: any) {
-      showMessage('error', error.message || 'Failed to fetch assets');
+      showMessage("error", error.message || "Failed to fetch assets");
     } finally {
       setLoading(false);
     }
@@ -134,17 +146,20 @@ const AssetManagement: React.FC = () => {
 
   const fetchCategories = async () => {
     if (!selectedProject) return;
-    
+
     try {
-      const token = localStorage.getItem('authToken');
-      const response = await fetch(`${API_CONFIG.API_URL}/asset-categories/project/${selectedProject}`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-        credentials: 'include',
-      });
+      const token = localStorage.getItem("authToken");
+      const response = await fetch(
+        `${API_CONFIG.API_URL}/asset-categories/project/${selectedProject}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "include",
+        },
+      );
       const data = await response.json();
       setCategories(data.data || []);
     } catch (error) {
-      console.error('Failed to fetch asset categories:', error);
+      console.error("Failed to fetch asset categories:", error);
     }
   };
 
@@ -152,24 +167,25 @@ const AssetManagement: React.FC = () => {
     if (asset) {
       setEditingAsset(asset);
       // Extract category ID if it's an object (populated), otherwise use string
-      const categoryId = typeof asset.category === 'object' && asset.category !== null 
-        ? asset.category._id 
-        : asset.category || '';
+      const categoryId =
+        typeof asset.category === "object" && asset.category !== null
+          ? asset.category._id
+          : asset.category || "";
       setFormData({
         name: asset.name,
-        description: asset.description || '',
+        description: asset.description || "",
         category: categoryId,
         predefinedCount: asset.predefinedCount,
-        unit: asset.unit || 'units',
+        unit: asset.unit || "units",
       });
     } else {
       setEditingAsset(null);
       setFormData({
-        name: '',
-        description: '',
-        category: '',
+        name: "",
+        description: "",
+        category: "",
         predefinedCount: 0,
-        unit: 'units',
+        unit: "units",
       });
     }
     setFormErrors({});
@@ -186,10 +202,10 @@ const AssetManagement: React.FC = () => {
     const errors: Partial<Record<keyof AssetFormData, string>> = {};
 
     if (!formData.name.trim()) {
-      errors.name = 'Asset name is required';
+      errors.name = "Asset name is required";
     }
     if (Number(formData.predefinedCount) < 0) {
-      errors.predefinedCount = 'Count cannot be negative';
+      errors.predefinedCount = "Count cannot be negative";
     }
 
     setFormErrors(errors);
@@ -202,117 +218,132 @@ const AssetManagement: React.FC = () => {
 
     try {
       setLoading(true);
-      const token = localStorage.getItem('authToken');
-      
-      const url = editingAsset 
+      const token = localStorage.getItem("authToken");
+
+      const url = editingAsset
         ? `${API_CONFIG.API_URL}/assets/${editingAsset._id}`
         : `${API_CONFIG.API_URL}/assets`;
-      
-      const payload = editingAsset 
-        ? formData 
+
+      const payload = editingAsset
+        ? formData
         : { ...formData, projectId: selectedProject };
-      
+
       const response = await fetch(url, {
-        method: editingAsset ? 'PUT' : 'POST',
+        method: editingAsset ? "PUT" : "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
-        credentials: 'include',
+        credentials: "include",
         body: JSON.stringify(payload),
       });
 
       const data = await response.json();
-      
+
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to save asset');
+        throw new Error(data.message || "Failed to save asset");
       }
 
-      showMessage('success', editingAsset ? 'Asset updated successfully' : 'Asset created successfully');
+      showMessage(
+        "success",
+        editingAsset
+          ? "Asset updated successfully"
+          : "Asset created successfully",
+      );
       handleCloseModal();
       fetchAssets();
       fetchCategories();
     } catch (error: any) {
-      showMessage('error', error.message || 'Failed to save asset');
+      showMessage("error", error.message || "Failed to save asset");
     } finally {
       setLoading(false);
     }
   };
 
   const handleDelete = async (assetId: string) => {
-    if (!confirm('Are you sure you want to delete this asset?')) return;
+    if (!confirm("Are you sure you want to delete this asset?")) return;
 
     try {
       setLoading(true);
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const response = await fetch(`${API_CONFIG.API_URL}/assets/${assetId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` },
-        credentials: 'include',
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
       });
 
       const data = await response.json();
-      
+
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to delete asset');
+        throw new Error(data.message || "Failed to delete asset");
       }
 
-      showMessage('success', 'Asset deleted successfully');
+      showMessage("success", "Asset deleted successfully");
       fetchAssets();
     } catch (error: any) {
-      showMessage('error', error.message || 'Failed to delete asset. It may be mapped to centers.');
+      showMessage(
+        "error",
+        error.message || "Failed to delete asset. It may be mapped to centers.",
+      );
     } finally {
       setLoading(false);
     }
   };
 
-  const handleToggleStatus = async (assetId: string, currentStatus: boolean) => {
+  const handleToggleStatus = async (
+    assetId: string,
+    currentStatus: boolean,
+  ) => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const response = await fetch(`${API_CONFIG.API_URL}/assets/${assetId}`, {
-        method: 'PUT',
+        method: "PUT",
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
-        credentials: 'include',
+        credentials: "include",
         body: JSON.stringify({ isActive: !currentStatus }),
       });
 
       const data = await response.json();
-      
+
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to update asset status');
+        throw new Error(data.message || "Failed to update asset status");
       }
 
-      showMessage('success', `Asset ${!currentStatus ? 'activated' : 'deactivated'} successfully`);
+      showMessage(
+        "success",
+        `Asset ${!currentStatus ? "activated" : "deactivated"} successfully`,
+      );
       fetchAssets();
     } catch (error: any) {
-      showMessage('error', error.message || 'Failed to update asset status');
+      showMessage("error", error.message || "Failed to update asset status");
     } finally {
       setLoading(false);
     }
   };
 
-  const showMessage = (type: 'success' | 'error', text: string) => {
+  const showMessage = (type: "success" | "error", text: string) => {
     setMessage({ type, text });
     setTimeout(() => setMessage(null), 5000);
   };
 
   const filteredAssets = assets.filter((asset) => {
-    const categoryName = typeof asset.category === 'object' && asset.category !== null 
-      ? asset.category.name 
-      : asset.category;
+    const categoryName =
+      typeof asset.category === "object" && asset.category !== null
+        ? asset.category.name
+        : asset.category;
     const matchesSearch =
       asset.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       asset.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       categoryName?.toLowerCase().includes(searchQuery.toLowerCase());
 
     const matchesFilter =
-      filterActive === 'all' ||
-      (filterActive === 'active' && asset.isActive) ||
-      (filterActive === 'inactive' && !asset.isActive);
+      filterActive === "all" ||
+      (filterActive === "active" && asset.isActive) ||
+      (filterActive === "inactive" && !asset.isActive);
 
     return matchesSearch && matchesFilter;
   });
@@ -324,24 +355,31 @@ const AssetManagement: React.FC = () => {
           title="Asset Management"
           subtitle="Manage assets and inventory across projects"
         />
-        
-        <div style={{ marginBottom: '24px', display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+
+        <div
+          style={{
+            marginBottom: "24px",
+            display: "flex",
+            gap: "12px",
+            justifyContent: "flex-end",
+          }}
+        >
           <button
             onClick={fetchAssets}
             disabled={loading || !selectedProject}
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '10px 20px',
-              background: 'white',
-              border: '2px solid #E5E7EB',
-              borderRadius: '12px',
-              fontSize: '14px',
-              fontWeight: '600',
-              cursor: (loading || !selectedProject) ? 'not-allowed' : 'pointer',
-              opacity: (loading || !selectedProject) ? 0.5 : 1,
-              transition: 'all 0.2s'
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "10px 20px",
+              background: "white",
+              border: "2px solid #E5E7EB",
+              borderRadius: "12px",
+              fontSize: "14px",
+              fontWeight: "600",
+              cursor: loading || !selectedProject ? "not-allowed" : "pointer",
+              opacity: loading || !selectedProject ? 0.5 : 1,
+              transition: "all 0.2s",
             }}
           >
             <MdRefresh className="h-5 w-5" />
@@ -352,30 +390,38 @@ const AssetManagement: React.FC = () => {
               onClick={() => handleOpenModal()}
               disabled={loading || !selectedProject}
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '10px 20px',
-                background: (loading || !selectedProject) ? '#9ca3af' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                color: 'white',
-                border: 'none',
-                borderRadius: '12px',
-                fontSize: '14px',
-                fontWeight: '600',
-                cursor: (loading || !selectedProject) ? 'not-allowed' : 'pointer',
-                transition: 'all 0.2s',
-                boxShadow: (loading || !selectedProject) ? 'none' : '0 4px 15px rgba(102, 126, 234, 0.4)'
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "10px 20px",
+                background:
+                  loading || !selectedProject
+                    ? "#9ca3af"
+                    : "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                color: "white",
+                border: "none",
+                borderRadius: "12px",
+                fontSize: "14px",
+                fontWeight: "600",
+                cursor: loading || !selectedProject ? "not-allowed" : "pointer",
+                transition: "all 0.2s",
+                boxShadow:
+                  loading || !selectedProject
+                    ? "none"
+                    : "0 4px 15px rgba(102, 126, 234, 0.4)",
               }}
               onMouseEnter={(e) => {
                 if (!loading && selectedProject) {
-                  e.currentTarget.style.transform = 'translateY(-2px)';
-                  e.currentTarget.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.4)';
+                  e.currentTarget.style.transform = "translateY(-2px)";
+                  e.currentTarget.style.boxShadow =
+                    "0 6px 20px rgba(102, 126, 234, 0.4)";
                 }
               }}
               onMouseLeave={(e) => {
                 if (!loading && selectedProject) {
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = '0 4px 15px rgba(102, 126, 234, 0.4)';
+                  e.currentTarget.style.transform = "translateY(0)";
+                  e.currentTarget.style.boxShadow =
+                    "0 4px 15px rgba(102, 126, 234, 0.4)";
                 }
               }}
             >
@@ -406,7 +452,9 @@ const AssetManagement: React.FC = () => {
 
         {/* Message Alert */}
         {message && (
-          <div className={`mb-4 rounded-lg p-4 ${message.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
+          <div
+            className={`mb-4 rounded-lg p-4 ${message.type === "success" ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}
+          >
             {message.text}
           </div>
         )}
@@ -446,69 +494,106 @@ const AssetManagement: React.FC = () => {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Asset Name</th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Category</th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Description</th>
-                <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Predefined Count</th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Unit</th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Created By</th>
-                <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Actions</th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                  Asset Name
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                  Category
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                  Description
+                </th>
+                <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">
+                  Predefined Count
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                  Unit
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                  Status
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                  Created By
+                </th>
+                <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 bg-white">
               {loading && !assets.length ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-4 text-center text-sm text-gray-500">
+                  <td
+                    colSpan={8}
+                    className="px-6 py-4 text-center text-sm text-gray-500"
+                  >
                     Loading assets...
                   </td>
                 </tr>
               ) : filteredAssets.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-4 text-center text-sm text-gray-500">
-                    No assets found. {canCreate && 'Click "Add Asset" to create one.'}
+                  <td
+                    colSpan={8}
+                    className="px-6 py-4 text-center text-sm text-gray-500"
+                  >
+                    No assets found.{" "}
+                    {canCreate && 'Click "Add Asset" to create one.'}
                   </td>
                 </tr>
               ) : (
                 filteredAssets.map((asset) => (
                   <tr key={asset._id} className="hover:bg-gray-50">
-                    <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">{asset.name}</td>
+                    <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">
+                      {asset.name}
+                    </td>
                     <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
-                      {typeof asset.category === 'object' && asset.category !== null 
-                        ? asset.category.name 
-                        : asset.category || '-'}
+                      {typeof asset.category === "object" &&
+                      asset.category !== null
+                        ? asset.category.name
+                        : asset.category || "-"}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-500">
-                      <div className="max-w-xs truncate">{asset.description || '-'}</div>
+                      <div className="max-w-xs truncate">
+                        {asset.description || "-"}
+                      </div>
                     </td>
-                    <td className="whitespace-nowrap px-6 py-4 text-right text-sm text-gray-900">{asset.predefinedCount}</td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">{asset.unit || 'units'}</td>
+                    <td className="whitespace-nowrap px-6 py-4 text-right text-sm text-gray-900">
+                      {asset.predefinedCount}
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
+                      {asset.unit || "units"}
+                    </td>
                     <td className="whitespace-nowrap px-6 py-4">
                       <div className="flex items-center gap-2">
-                        <span className={`text-xs font-medium ${asset.isActive ? 'text-green-700' : 'text-gray-500'}`}>
-                          {asset.isActive ? 'Active' : 'Inactive'}
+                        <span
+                          className={`text-xs font-medium ${asset.isActive ? "text-green-700" : "text-gray-500"}`}
+                        >
+                          {asset.isActive ? "Active" : "Inactive"}
                         </span>
                         <button
-                          onClick={() => handleToggleStatus(asset._id, asset.isActive)}
+                          onClick={() =>
+                            handleToggleStatus(asset._id, asset.isActive)
+                          }
                           className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                            asset.isActive ? 'bg-green-600' : 'bg-gray-200'
+                            asset.isActive ? "bg-green-600" : "bg-gray-200"
                           }`}
                           role="switch"
                           aria-checked={asset.isActive}
-                          title={`Click to ${asset.isActive ? 'deactivate' : 'activate'}`}
+                          title={`Click to ${asset.isActive ? "deactivate" : "activate"}`}
                         >
                           <span
                             className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                              asset.isActive ? 'translate-x-6' : 'translate-x-1'
+                              asset.isActive ? "translate-x-6" : "translate-x-1"
                             }`}
                           />
                         </button>
                       </div>
                     </td>
                     <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
-                      {asset.createdBy 
-                        ? `${asset.createdBy.firstName || ''} ${asset.createdBy.lastName || ''}`.trim() || 'Unknown'
-                        : 'Unknown'}
+                      {asset.createdBy
+                        ? `${asset.createdBy.firstName || ""} ${asset.createdBy.lastName || ""}`.trim() ||
+                          "Unknown"
+                        : "Unknown"}
                     </td>
                     <td className="whitespace-nowrap px-6 py-4 text-center text-sm font-medium">
                       <div className="flex justify-center gap-2">
@@ -545,10 +630,10 @@ const AssetManagement: React.FC = () => {
             <div className="w-full max-w-2xl rounded-lg bg-white shadow-xl">
               <div className="border-b border-gray-200 px-6 py-4">
                 <h2 className="text-xl font-semibold text-gray-900">
-                  {editingAsset ? 'Edit Asset' : 'Add New Asset'}
+                  {editingAsset ? "Edit Asset" : "Add New Asset"}
                 </h2>
               </div>
-              
+
               <form onSubmit={handleSubmit} className="p-6">
                 <div className="space-y-4">
                   <div>
@@ -558,25 +643,36 @@ const AssetManagement: React.FC = () => {
                     <input
                       type="text"
                       value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      onChange={(e) =>
+                        setFormData({ ...formData, name: e.target.value })
+                      }
                       className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />
-                    {formErrors.name && <p className="mt-1 text-sm text-red-600">{formErrors.name}</p>}
+                    {formErrors.name && (
+                      <p className="mt-1 text-sm text-red-600">
+                        {formErrors.name}
+                      </p>
+                    )}
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Asset Category</label>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Asset Category
+                    </label>
                     <select
                       value={formData.category}
-                      onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                      onChange={(e) =>
+                        setFormData({ ...formData, category: e.target.value })
+                      }
                       className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     >
                       <option value="">Select category...</option>
                       {categories
-                        .filter(cat => cat.isActive)
+                        .filter((cat) => cat.isActive)
                         .map((cat) => (
                           <option key={cat._id} value={cat._id}>
-                            {cat.icon && `${cat.icon} `}{cat.name}
+                            {cat.icon && `${cat.icon} `}
+                            {cat.name}
                           </option>
                         ))}
                     </select>
@@ -586,10 +682,17 @@ const AssetManagement: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Description</label>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Description
+                    </label>
                     <textarea
                       value={formData.description}
-                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          description: e.target.value,
+                        })
+                      }
                       rows={3}
                       className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />
@@ -602,20 +705,35 @@ const AssetManagement: React.FC = () => {
                     <input
                       type="number"
                       value={formData.predefinedCount}
-                      onChange={(e) => setFormData({ ...formData, predefinedCount: parseInt(e.target.value) || 0 })}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          predefinedCount: parseInt(e.target.value) || 0,
+                        })
+                      }
                       min="0"
                       className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />
-                    {formErrors.predefinedCount && <p className="mt-1 text-sm text-red-600">{formErrors.predefinedCount}</p>}
-                    <p className="mt-1 text-sm text-gray-500">Default quantity when mapping to centers</p>
+                    {formErrors.predefinedCount && (
+                      <p className="mt-1 text-sm text-red-600">
+                        {formErrors.predefinedCount}
+                      </p>
+                    )}
+                    <p className="mt-1 text-sm text-gray-500">
+                      Default quantity when mapping to centers
+                    </p>
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Unit</label>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Unit
+                    </label>
                     <input
                       type="text"
                       value={formData.unit}
-                      onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                      onChange={(e) =>
+                        setFormData({ ...formData, unit: e.target.value })
+                      }
                       placeholder="e.g., units, pieces, sets"
                       className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />
@@ -635,7 +753,7 @@ const AssetManagement: React.FC = () => {
                     disabled={loading}
                     className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                   >
-                    {editingAsset ? 'Update' : 'Create'}
+                    {editingAsset ? "Update" : "Create"}
                   </button>
                 </div>
               </form>

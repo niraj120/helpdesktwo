@@ -83,9 +83,12 @@ const EmailToTicketConfiguration: React.FC = () => {
   const fetchProjects = async () => {
     try {
       const token = localStorage.getItem("authToken");
-      const response = await axios.get(`${API_CONFIG.API_URL}/projects`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await axios.get(
+        `${API_CONFIG.API_URL}/projects?limit=100`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
 
       if (response.data.success) {
         const projectsArray = Array.isArray(response.data.data?.projects)

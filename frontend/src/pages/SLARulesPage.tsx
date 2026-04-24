@@ -95,7 +95,7 @@ const SLARulesPage: React.FC = () => {
   const fetchProjects = async () => {
     try {
       const token = localStorage.getItem("authToken");
-      const response = await fetch(`${API_CONFIG.API_URL}/projects`, {
+      const response = await fetch(`${API_CONFIG.API_URL}/projects?limit=100`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -291,11 +291,9 @@ const SLARulesPage: React.FC = () => {
         });
         fetchPriorities();
       } else {
-        const errorData = await response
-          .json()
-          .catch(() => ({
-            message: `Failed to ${isEditing ? "update" : "create"}`,
-          }));
+        const errorData = await response.json().catch(() => ({
+          message: `Failed to ${isEditing ? "update" : "create"}`,
+        }));
         alert(
           `Failed to ${isEditing ? "update" : "create"} priority: ${errorData.message}`,
         );

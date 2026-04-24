@@ -145,7 +145,7 @@ const RBACSetup = () => {
         await Promise.all([
           axios.get(`${API_CONFIG.API_URL}/roles`, { headers }),
           axios.get(`${API_CONFIG.API_URL}/permissions/grouped`, { headers }),
-          axios.get(`${API_CONFIG.API_URL}/projects`, { headers }),
+          axios.get(`${API_CONFIG.API_URL}/projects?limit=100`, { headers }),
           axios.get(`${API_CONFIG.API_URL}/roles/master/list`, { headers }),
         ]);
 

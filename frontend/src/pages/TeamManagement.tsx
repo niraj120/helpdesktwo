@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import DashboardLayout from '../components/DashboardLayout';
-import ModuleHeader from '../components/ModuleHeader';
-import { API_CONFIG } from '../config/constants';
-import { usePermissions } from '../hooks/usePermissions';
-import { PERMISSIONS } from '../constants/permissions';
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import DashboardLayout from "../components/DashboardLayout";
+import ModuleHeader from "../components/ModuleHeader";
+import { API_CONFIG } from "../config/constants";
+import { usePermissions } from "../hooks/usePermissions";
+import { PERMISSIONS } from "../constants/permissions";
 import {
   PlusIcon,
   TrashIcon,
@@ -12,7 +12,7 @@ import {
   UserGroupIcon,
   CheckCircleIcon,
   XCircleIcon,
-} from '@heroicons/react/24/outline';
+} from "@heroicons/react/24/outline";
 
 interface User {
   _id: string;
@@ -53,7 +53,7 @@ interface HierarchyMapping {
 
 /**
  * TeamManagement Page
- * 
+ *
  * Admin interface for managing user reporting hierarchies
  * Allows creating supervisor → reportee relationships
  * Requires HIERARCHY_MANAGE_TEAM permission
@@ -71,18 +71,18 @@ const TeamManagement = () => {
 
   // Form state
   const [formData, setFormData] = useState({
-    supervisorUserId: '',
-    reporteeUserId: '',
-    projectId: '',
-    relationshipType: 'direct_report',
+    supervisorUserId: "",
+    reporteeUserId: "",
+    projectId: "",
+    relationshipType: "direct_report",
   });
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   useEffect(() => {
     // Check permission
     if (!hasPermission(PERMISSIONS.HIERARCHY_MANAGE_TEAM)) {
-      navigate('/dashboard');
+      navigate("/dashboard");
       return;
     }
 
@@ -92,13 +92,13 @@ const TeamManagement = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
 
       const [usersRes, projectsRes, mappingsRes] = await Promise.all([
         fetch(`${API_CONFIG.API_URL}/users`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
-        fetch(`${API_CONFIG.API_URL}/projects`, {
+        fetch(`${API_CONFIG.API_URL}/projects?limit=100`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
         fetch(`${API_CONFIG.API_URL}/hierarchy/mappings`, {
@@ -121,8 +121,8 @@ const TeamManagement = () => {
         setMappings(mappingsData.mappings || mappingsData);
       }
     } catch (error) {
-      console.error('Error fetching data:', error);
-      setError('Failed to load data. Please refresh the page.');
+      console.error("Error fetching data:", error);
+      setError("Failed to load data. Please refresh the page.");
     } finally {
       setLoading(false);
     }
@@ -130,23 +130,23 @@ const TeamManagement = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
-    setSuccess('');
+    setError("");
+    setSuccess("");
 
     // Validation
     if (!formData.supervisorUserId || !formData.reporteeUserId) {
-      setError('Please select both supervisor and reportee');
+      setError("Please select both supervisor and reportee");
       return;
     }
 
     if (formData.supervisorUserId === formData.reporteeUserId) {
-      setError('Supervisor and reportee cannot be the same person');
+      setError("Supervisor and reportee cannot be the same person");
       return;
     }
 
     try {
       setSubmitting(true);
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
 
       const payload: any = {
         supervisorUserId: formData.supervisorUserId,
@@ -159,9 +159,9 @@ const TeamManagement = () => {
       }
 
       const response = await fetch(`${API_CONFIG.API_URL}/hierarchy/mapping`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify(payload),
@@ -170,58 +170,58 @@ const TeamManagement = () => {
       const data = await response.json();
 
       if (response.ok) {
-        setSuccess('Hierarchy mapping created successfully!');
+        setSuccess("Hierarchy mapping created successfully!");
         setFormData({
-          supervisorUserId: '',
-          reporteeUserId: '',
-          projectId: '',
-          relationshipType: 'direct_report',
+          supervisorUserId: "",
+          reporteeUserId: "",
+          projectId: "",
+          relationshipType: "direct_report",
         });
         setShowForm(false);
         fetchData(); // Refresh mappings list
       } else {
-        setError(data.message || 'Failed to create mapping. Please try again.');
+        setError(data.message || "Failed to create mapping. Please try again.");
       }
     } catch (error) {
-      console.error('Error creating mapping:', error);
-      setError('An error occurred. Please try again.');
+      console.error("Error creating mapping:", error);
+      setError("An error occurred. Please try again.");
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleDeactivate = async (mappingId: string) => {
-    if (!confirm('Are you sure you want to deactivate this mapping?')) {
+    if (!confirm("Are you sure you want to deactivate this mapping?")) {
       return;
     }
 
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const response = await fetch(
         `${API_CONFIG.API_URL}/hierarchy/mapping/${mappingId}`,
         {
-          method: 'DELETE',
+          method: "DELETE",
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
 
       if (response.ok) {
-        setSuccess('Mapping deactivated successfully');
+        setSuccess("Mapping deactivated successfully");
         fetchData();
       } else {
         const data = await response.json();
-        setError(data.message || 'Failed to deactivate mapping');
+        setError(data.message || "Failed to deactivate mapping");
       }
     } catch (error) {
-      console.error('Error deactivating mapping:', error);
-      setError('An error occurred while deactivating the mapping');
+      console.error("Error deactivating mapping:", error);
+      setError("An error occurred while deactivating the mapping");
     }
   };
 
   if (loading) {
     return (
       <DashboardLayout>
-        <div style={{ padding: '20px' }}>
+        <div style={{ padding: "20px" }}>
           <div className="text-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
             <p className="mt-4 text-gray-600">Loading team management...</p>
@@ -233,7 +233,7 @@ const TeamManagement = () => {
 
   return (
     <DashboardLayout>
-      <div style={{ padding: '20px' }}>
+      <div style={{ padding: "20px" }}>
         <div className="flex justify-between items-center mb-6">
           <ModuleHeader
             title="Team Management"
@@ -286,7 +286,10 @@ const TeamManagement = () => {
                   <select
                     value={formData.supervisorUserId}
                     onChange={(e) =>
-                      setFormData({ ...formData, supervisorUserId: e.target.value })
+                      setFormData({
+                        ...formData,
+                        supervisorUserId: e.target.value,
+                      })
                     }
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     required
@@ -294,7 +297,8 @@ const TeamManagement = () => {
                     <option value="">Select Supervisor</option>
                     {users.map((user) => (
                       <option key={user._id} value={user._id}>
-                        {user.fullName || user.email} ({user.role?.name || 'No Role'})
+                        {user.fullName || user.email} (
+                        {user.role?.name || "No Role"})
                       </option>
                     ))}
                   </select>
@@ -308,7 +312,10 @@ const TeamManagement = () => {
                   <select
                     value={formData.reporteeUserId}
                     onChange={(e) =>
-                      setFormData({ ...formData, reporteeUserId: e.target.value })
+                      setFormData({
+                        ...formData,
+                        reporteeUserId: e.target.value,
+                      })
                     }
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     required
@@ -318,7 +325,8 @@ const TeamManagement = () => {
                       .filter((u) => u._id !== formData.supervisorUserId)
                       .map((user) => (
                         <option key={user._id} value={user._id}>
-                          {user.fullName || user.email} ({user.role?.name || 'No Role'})
+                          {user.fullName || user.email} (
+                          {user.role?.name || "No Role"})
                         </option>
                       ))}
                   </select>
@@ -353,7 +361,10 @@ const TeamManagement = () => {
                   <select
                     value={formData.relationshipType}
                     onChange={(e) =>
-                      setFormData({ ...formData, relationshipType: e.target.value })
+                      setFormData({
+                        ...formData,
+                        relationshipType: e.target.value,
+                      })
                     }
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
@@ -398,7 +409,9 @@ const TeamManagement = () => {
               <div className="text-center py-12 text-gray-500">
                 <UserGroupIcon className="h-12 w-12 mx-auto mb-3 text-gray-300" />
                 <p>No hierarchy mappings found</p>
-                <p className="text-sm mt-1">Click "Add Mapping" to create one</p>
+                <p className="text-sm mt-1">
+                  Click "Add Mapping" to create one
+                </p>
               </div>
             ) : (
               <table className="min-w-full divide-y divide-gray-200">
@@ -446,10 +459,10 @@ const TeamManagement = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {mapping.projectId?.name || 'All Projects'}
+                        {mapping.projectId?.name || "All Projects"}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {mapping.relationshipType.replace('_', ' ')}
+                        {mapping.relationshipType.replace("_", " ")}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         {mapping.isActive ? (

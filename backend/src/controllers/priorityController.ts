@@ -21,11 +21,15 @@ export const getAllPriorities = async (req: Request, res: Response) => {
     const callerRole = (req as any).user?.role;
     const isSuperAdmin =
       callerRole?.code === "SUPER_ADMIN" || callerRole?.name === "Super Admin";
-    if (!isSuperAdmin && callerRole?.projects?.length > 0) {
-      const allowedIds = callerRole.projects.map(
-        (p: any) => new mongoose.Types.ObjectId(p._id || p),
-      );
-      filter.projectId = { $in: allowedIds };
+    if (!isSuperAdmin) {
+      if (callerRole?.projects?.length > 0) {
+        const allowedIds = callerRole.projects.map(
+          (p: any) => new mongoose.Types.ObjectId(p._id || p),
+        );
+        filter.projectId = { $in: allowedIds };
+      } else {
+        filter.projectId = { $in: [] };
+      }
     }
 
     const priorities = await Priority.find(filter)
@@ -71,11 +75,15 @@ export const getActivePriorities = async (req: Request, res: Response) => {
     const callerRole = (req as any).user?.role;
     const isSuperAdmin =
       callerRole?.code === "SUPER_ADMIN" || callerRole?.name === "Super Admin";
-    if (!isSuperAdmin && callerRole?.projects?.length > 0) {
-      const allowedIds = callerRole.projects.map(
-        (p: any) => new mongoose.Types.ObjectId(p._id || p),
-      );
-      filter.projectId = { $in: allowedIds };
+    if (!isSuperAdmin) {
+      if (callerRole?.projects?.length > 0) {
+        const allowedIds = callerRole.projects.map(
+          (p: any) => new mongoose.Types.ObjectId(p._id || p),
+        );
+        filter.projectId = { $in: allowedIds };
+      } else {
+        filter.projectId = { $in: [] };
+      }
     }
 
     const priorities = await Priority.find(filter)
