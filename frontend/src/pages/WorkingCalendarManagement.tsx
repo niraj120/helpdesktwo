@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
-import DashboardLayout from '../components/DashboardLayout';
-import { API_CONFIG } from '../config/constants';
+import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import axios from "axios";
+import DashboardLayout from "../components/DashboardLayout";
+import { API_CONFIG } from "../config/constants";
 import {
   Calendar,
   Clock,
@@ -13,7 +13,7 @@ import {
   X,
   Star,
   AlertCircle,
-} from 'lucide-react';
+} from "lucide-react";
 
 interface WorkingDay {
   dayOfWeek: number;
@@ -51,43 +51,54 @@ interface Project {
   code?: string;
 }
 
-const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const daysOfWeek = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
 
 const WorkingCalendarManagement: React.FC = () => {
   const navigate = useNavigate();
   const [calendars, setCalendars] = useState<WorkingCalendar[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [editingCalendar, setEditingCalendar] = useState<WorkingCalendar | null>(null);
-  const [projectId, setProjectId] = useState<string>(''); // Current user's project context
+  const [editingCalendar, setEditingCalendar] =
+    useState<WorkingCalendar | null>(null);
+  const [projectId, setProjectId] = useState<string>(""); // Current user's project context
   const [projects, setProjects] = useState<Project[]>([]); // All projects for Super Admin
   const [isSuperAdmin, setIsSuperAdmin] = useState(false); // Flag to determine if Super Admin
 
   // Form state
   const [formData, setFormData] = useState({
-    name: '',
-    description: '',
-    timezone: 'Asia/Kolkata',
-    selectedProjectId: '', // Project selected in form
+    name: "",
+    description: "",
+    timezone: "Asia/Kolkata",
+    selectedProjectId: "", // Project selected in form
     workingHours: Array.from({ length: 7 }, (_, i) => ({
       dayOfWeek: i,
       isWorkingDay: i >= 1 && i <= 5, // Mon-Fri by default
-      startTime: '09:00',
-      endTime: '18:00',
+      startTime: "09:00",
+      endTime: "18:00",
       breaks: [] as Array<{ startTime: string; endTime: string }>,
     })),
     holidays: [] as Holiday[],
   });
 
   const [newHoliday, setNewHoliday] = useState({
-    date: '',
-    name: '',
-    description: '',
+    date: "",
+    name: "",
+    description: "",
     isRecurring: false,
   });
 
   useEffect(() => {
-    const projectContext = JSON.parse(localStorage.getItem('projectContext') || '{}');
+    const projectContext = JSON.parse(
+      localStorage.getItem("projectContext") || "{}",
+    );
     if (projectContext.projectId) {
       setProjectId(projectContext.projectId);
       setIsSuperAdmin(false);
@@ -102,40 +113,41 @@ const WorkingCalendarManagement: React.FC = () => {
 
   const fetchProjects = async () => {
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const response = await axios.get(
-        `${API_CONFIG.API_URL}/projects`,
+        `${API_CONFIG.API_URL}/projects?limit=100`,
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
 
       if (response.data.success) {
         // Handle different API response formats
-        const projectsData = response.data.data?.projects || response.data.data || [];
+        const projectsData =
+          response.data.data?.projects || response.data.data || [];
         setProjects(projectsData);
       }
     } catch (error: any) {
-      console.error('Error fetching projects:', error);
+      console.error("Error fetching projects:", error);
     }
   };
 
   const fetchAllCalendars = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const response = await axios.get(
         `${API_CONFIG.API_URL}/working-calendars/all`,
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
 
       if (response.data.success) {
         setCalendars(response.data.data || []);
       }
     } catch (error: any) {
-      console.error('Error fetching all working calendars:', error);
+      console.error("Error fetching all working calendars:", error);
     } finally {
       setLoading(false);
     }
@@ -144,20 +156,20 @@ const WorkingCalendarManagement: React.FC = () => {
   const fetchCalendars = async (projId: string) => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const response = await axios.get(
         `${API_CONFIG.API_URL}/working-calendars/project/${projId}`,
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
 
       if (response.data.success) {
         setCalendars(response.data.data || []);
       }
     } catch (error) {
-      console.error('Error fetching calendars:', error);
-      alert('Failed to fetch working calendars');
+      console.error("Error fetching calendars:", error);
+      alert("Failed to fetch working calendars");
     } finally {
       setLoading(false);
     }
@@ -166,15 +178,15 @@ const WorkingCalendarManagement: React.FC = () => {
   const handleCreate = () => {
     setEditingCalendar(null);
     setFormData({
-      name: '',
-      description: '',
-      timezone: 'Asia/Kolkata',
-      selectedProjectId: projectId || '', // Use current project or empty for Super Admin
+      name: "",
+      description: "",
+      timezone: "Asia/Kolkata",
+      selectedProjectId: projectId || "", // Use current project or empty for Super Admin
       workingHours: Array.from({ length: 7 }, (_, i) => ({
         dayOfWeek: i,
         isWorkingDay: i >= 1 && i <= 5,
-        startTime: '09:00',
-        endTime: '18:00',
+        startTime: "09:00",
+        endTime: "18:00",
         breaks: [] as Array<{ startTime: string; endTime: string }>,
       })),
       holidays: [],
@@ -183,17 +195,18 @@ const WorkingCalendarManagement: React.FC = () => {
   };
 
   const handleEdit = (calendar: WorkingCalendar) => {
-    const calendarProjectId = typeof calendar.projectId === 'object' 
-      ? calendar.projectId._id 
-      : calendar.projectId;
-      
+    const calendarProjectId =
+      typeof calendar.projectId === "object"
+        ? calendar.projectId._id
+        : calendar.projectId;
+
     setEditingCalendar(calendar);
     setFormData({
       name: calendar.name,
-      description: calendar.description || '',
+      description: calendar.description || "",
       timezone: calendar.timezone,
       selectedProjectId: calendarProjectId,
-      workingHours: calendar.workingHours.map(day => ({
+      workingHours: calendar.workingHours.map((day) => ({
         ...day,
         breaks: day.breaks || [],
       })),
@@ -206,20 +219,22 @@ const WorkingCalendarManagement: React.FC = () => {
     try {
       // Validate project selection for Super Admin
       if (isSuperAdmin && !formData.selectedProjectId) {
-        alert('Please select a project');
+        alert("Please select a project");
         return;
       }
 
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const targetProjectId = formData.selectedProjectId || projectId;
-      
+
       const payload = {
         ...formData,
         projectId: targetProjectId,
-        isDefault: calendars.filter(c => {
-          const calendarProjId = typeof c.projectId === 'object' ? c.projectId._id : c.projectId;
-          return calendarProjId === targetProjectId;
-        }).length === 0, // First calendar for this project is default
+        isDefault:
+          calendars.filter((c) => {
+            const calendarProjId =
+              typeof c.projectId === "object" ? c.projectId._id : c.projectId;
+            return calendarProjId === targetProjectId;
+          }).length === 0, // First calendar for this project is default
       };
 
       if (editingCalendar) {
@@ -229,23 +244,19 @@ const WorkingCalendarManagement: React.FC = () => {
           payload,
           {
             headers: { Authorization: `Bearer ${token}` },
-          }
+          },
         );
-        alert('Working calendar updated successfully');
+        alert("Working calendar updated successfully");
       } else {
         // Create
-        await axios.post(
-          `${API_CONFIG.API_URL}/working-calendars`,
-          payload,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-        alert('Working calendar created successfully');
+        await axios.post(`${API_CONFIG.API_URL}/working-calendars`, payload, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        alert("Working calendar created successfully");
       }
 
       setShowModal(false);
-      
+
       // Refresh data based on mode
       if (isSuperAdmin) {
         fetchAllCalendars();
@@ -253,53 +264,55 @@ const WorkingCalendarManagement: React.FC = () => {
         fetchCalendars(projectId);
       }
     } catch (error: any) {
-      console.error('Error saving calendar:', error);
-      alert(error.response?.data?.message || 'Failed to save working calendar');
+      console.error("Error saving calendar:", error);
+      alert(error.response?.data?.message || "Failed to save working calendar");
     }
   };
 
   const handleDelete = async (calendarId: string) => {
-    if (!confirm('Are you sure you want to delete this working calendar?')) {
+    if (!confirm("Are you sure you want to delete this working calendar?")) {
       return;
     }
 
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       await axios.delete(
         `${API_CONFIG.API_URL}/working-calendars/${calendarId}`,
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
-      alert('Working calendar deleted successfully');
+      alert("Working calendar deleted successfully");
       fetchCalendars(projectId);
     } catch (error: any) {
-      console.error('Error deleting calendar:', error);
-      alert(error.response?.data?.message || 'Failed to delete working calendar');
+      console.error("Error deleting calendar:", error);
+      alert(
+        error.response?.data?.message || "Failed to delete working calendar",
+      );
     }
   };
 
   const handleSetDefault = async (calendarId: string) => {
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       await axios.put(
         `${API_CONFIG.API_URL}/working-calendars/${calendarId}/set-default`,
         {},
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
-      alert('Default calendar updated successfully');
+      alert("Default calendar updated successfully");
       fetchCalendars(projectId);
     } catch (error: any) {
-      console.error('Error setting default:', error);
-      alert(error.response?.data?.message || 'Failed to set default calendar');
+      console.error("Error setting default:", error);
+      alert(error.response?.data?.message || "Failed to set default calendar");
     }
   };
 
   const handleAddHoliday = () => {
     if (!newHoliday.date || !newHoliday.name) {
-      alert('Date and name are required');
+      alert("Date and name are required");
       return;
     }
 
@@ -317,9 +330,9 @@ const WorkingCalendarManagement: React.FC = () => {
     });
 
     setNewHoliday({
-      date: '',
-      name: '',
-      description: '',
+      date: "",
+      name: "",
+      description: "",
       isRecurring: false,
     });
   };
@@ -335,7 +348,7 @@ const WorkingCalendarManagement: React.FC = () => {
     setFormData({
       ...formData,
       workingHours: formData.workingHours.map((day, i) =>
-        i === dayIndex ? { ...day, [field]: value } : day
+        i === dayIndex ? { ...day, [field]: value } : day,
       ),
     });
   };
@@ -354,46 +367,48 @@ const WorkingCalendarManagement: React.FC = () => {
     <DashboardLayout>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Tab Navigation - Consistent with SLA pages */}
-        <div style={{ 
-          display: 'flex', 
-          gap: '4px', 
-          marginBottom: '24px',
-          borderBottom: '2px solid #e5e7eb'
-        }}>
+        <div
+          style={{
+            display: "flex",
+            gap: "4px",
+            marginBottom: "24px",
+            borderBottom: "2px solid #e5e7eb",
+          }}
+        >
           <button
-            onClick={() => navigate('/sla')}
+            onClick={() => navigate("/sla")}
             className="btn btn-text"
             style={{
-              borderBottom: '3px solid transparent',
-              color: '#6b7280',
-              marginBottom: '-2px',
-              textTransform: 'none',
+              borderBottom: "3px solid transparent",
+              color: "#6b7280",
+              marginBottom: "-2px",
+              textTransform: "none",
               borderRadius: 0,
-              padding: '12px 24px',
-              background: 'none',
-              border: 'none',
-              fontSize: '14px',
+              padding: "12px 24px",
+              background: "none",
+              border: "none",
+              fontSize: "14px",
               fontWeight: 500,
-              cursor: 'pointer',
+              cursor: "pointer",
             }}
           >
             Priority
           </button>
           <button
-            onClick={() => navigate('/escalation-matrix')}
+            onClick={() => navigate("/escalation-matrix")}
             className="btn btn-text"
             style={{
-              borderBottom: '3px solid transparent',
-              color: '#6b7280',
-              marginBottom: '-2px',
-              textTransform: 'none',
+              borderBottom: "3px solid transparent",
+              color: "#6b7280",
+              marginBottom: "-2px",
+              textTransform: "none",
               borderRadius: 0,
-              padding: '12px 24px',
-              background: 'none',
-              border: 'none',
-              fontSize: '14px',
+              padding: "12px 24px",
+              background: "none",
+              border: "none",
+              fontSize: "14px",
               fontWeight: 500,
-              cursor: 'pointer',
+              cursor: "pointer",
             }}
           >
             Escalation Matrix
@@ -401,17 +416,17 @@ const WorkingCalendarManagement: React.FC = () => {
           <button
             className="btn btn-text"
             style={{
-              borderBottom: '3px solid #7c3aed',
-              color: '#7c3aed',
-              marginBottom: '-2px',
-              textTransform: 'none',
+              borderBottom: "3px solid #7c3aed",
+              color: "#7c3aed",
+              marginBottom: "-2px",
+              textTransform: "none",
               borderRadius: 0,
-              padding: '12px 24px',
-              background: 'none',
-              border: 'none',
-              fontSize: '14px',
+              padding: "12px 24px",
+              background: "none",
+              border: "none",
+              fontSize: "14px",
               fontWeight: 500,
-              cursor: 'pointer',
+              cursor: "pointer",
             }}
           >
             Working Calendar
@@ -421,7 +436,9 @@ const WorkingCalendarManagement: React.FC = () => {
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Working Calendars</h1>
+            <h1 className="text-2xl font-bold text-gray-900">
+              Working Calendars
+            </h1>
             <p className="text-sm text-gray-600 mt-1">
               Manage working hours, holidays, and SLA calculations
             </p>
@@ -439,9 +456,12 @@ const WorkingCalendarManagement: React.FC = () => {
         {calendars.length === 0 ? (
           <div className="bg-white rounded-lg shadow p-12 text-center">
             <Calendar className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No Working Calendars</h3>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              No Working Calendars
+            </h3>
             <p className="text-gray-600 mb-4">
-              Create a working calendar to manage SLA calculations with business hours and holidays.
+              Create a working calendar to manage SLA calculations with business
+              hours and holidays.
             </p>
             <button
               onClick={handleCreate}
@@ -472,13 +492,16 @@ const WorkingCalendarManagement: React.FC = () => {
                           </span>
                         )}
                       </div>
-                      {isSuperAdmin && typeof calendar.projectId === 'object' && (
-                        <p className="text-xs text-gray-500 mt-1">
-                          Project: {calendar.projectId.name}
-                        </p>
-                      )}
+                      {isSuperAdmin &&
+                        typeof calendar.projectId === "object" && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            Project: {calendar.projectId.name}
+                          </p>
+                        )}
                       {calendar.description && (
-                        <p className="text-sm text-gray-600 mt-1">{calendar.description}</p>
+                        <p className="text-sm text-gray-600 mt-1">
+                          {calendar.description}
+                        </p>
                       )}
                     </div>
                   </div>
@@ -487,12 +510,18 @@ const WorkingCalendarManagement: React.FC = () => {
                     <div className="flex items-center gap-2 text-sm text-gray-700">
                       <Clock className="w-4 h-4 text-gray-400" />
                       <span>
-                        {calendar.workingHours.filter((d) => d.isWorkingDay).length} working days
+                        {
+                          calendar.workingHours.filter((d) => d.isWorkingDay)
+                            .length
+                        }{" "}
+                        working days
                       </span>
                     </div>
                     <div className="flex items-center gap-2 text-sm text-gray-700">
                       <Calendar className="w-4 h-4 text-gray-400" />
-                      <span>{calendar.holidays.length} holidays configured</span>
+                      <span>
+                        {calendar.holidays.length} holidays configured
+                      </span>
                     </div>
                     <div className="text-xs text-gray-500">
                       Timezone: {calendar.timezone}
@@ -537,7 +566,9 @@ const WorkingCalendarManagement: React.FC = () => {
             <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
               <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
                 <h2 className="text-xl font-bold text-gray-900">
-                  {editingCalendar ? 'Edit Working Calendar' : 'New Working Calendar'}
+                  {editingCalendar
+                    ? "Edit Working Calendar"
+                    : "New Working Calendar"}
                 </h2>
                 <button
                   onClick={() => setShowModal(false)}
@@ -557,7 +588,9 @@ const WorkingCalendarManagement: React.FC = () => {
                     <input
                       type="text"
                       value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      onChange={(e) =>
+                        setFormData({ ...formData, name: e.target.value })
+                      }
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       placeholder="e.g., Standard Business Hours"
                     />
@@ -568,14 +601,20 @@ const WorkingCalendarManagement: React.FC = () => {
                     </label>
                     <select
                       value={formData.timezone}
-                      onChange={(e) => setFormData({ ...formData, timezone: e.target.value })}
+                      onChange={(e) =>
+                        setFormData({ ...formData, timezone: e.target.value })
+                      }
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
                       <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
-                      <option value="America/New_York">America/New_York (EST)</option>
+                      <option value="America/New_York">
+                        America/New_York (EST)
+                      </option>
                       <option value="Europe/London">Europe/London (GMT)</option>
                       <option value="Asia/Dubai">Asia/Dubai (GST)</option>
-                      <option value="Australia/Sydney">Australia/Sydney (AEDT)</option>
+                      <option value="Australia/Sydney">
+                        Australia/Sydney (AEDT)
+                      </option>
                     </select>
                   </div>
                 </div>
@@ -588,7 +627,12 @@ const WorkingCalendarManagement: React.FC = () => {
                     </label>
                     <select
                       value={formData.selectedProjectId}
-                      onChange={(e) => setFormData({ ...formData, selectedProjectId: e.target.value })}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          selectedProjectId: e.target.value,
+                        })
+                      }
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       disabled={!!editingCalendar} // Disable when editing
                     >
@@ -613,7 +657,9 @@ const WorkingCalendarManagement: React.FC = () => {
                   </label>
                   <textarea
                     value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, description: e.target.value })
+                    }
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     rows={2}
                     placeholder="Optional description"
@@ -622,7 +668,9 @@ const WorkingCalendarManagement: React.FC = () => {
 
                 {/* Working Hours */}
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-3">Working Hours</h3>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                    Working Hours
+                  </h3>
                   <div className="space-y-2">
                     {formData.workingHours.map((day, index) => (
                       <div
@@ -633,7 +681,11 @@ const WorkingCalendarManagement: React.FC = () => {
                           type="checkbox"
                           checked={day.isWorkingDay}
                           onChange={(e) =>
-                            updateWorkingDay(index, 'isWorkingDay', e.target.checked)
+                            updateWorkingDay(
+                              index,
+                              "isWorkingDay",
+                              e.target.checked,
+                            )
                           }
                           className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
                         />
@@ -646,7 +698,11 @@ const WorkingCalendarManagement: React.FC = () => {
                               type="time"
                               value={day.startTime}
                               onChange={(e) =>
-                                updateWorkingDay(index, 'startTime', e.target.value)
+                                updateWorkingDay(
+                                  index,
+                                  "startTime",
+                                  e.target.value,
+                                )
                               }
                               className="px-3 py-1 border border-gray-300 rounded text-sm"
                             />
@@ -655,13 +711,19 @@ const WorkingCalendarManagement: React.FC = () => {
                               type="time"
                               value={day.endTime}
                               onChange={(e) =>
-                                updateWorkingDay(index, 'endTime', e.target.value)
+                                updateWorkingDay(
+                                  index,
+                                  "endTime",
+                                  e.target.value,
+                                )
                               }
                               className="px-3 py-1 border border-gray-300 rounded text-sm"
                             />
                           </div>
                         ) : (
-                          <span className="text-sm text-gray-500">Non-working day</span>
+                          <span className="text-sm text-gray-500">
+                            Non-working day
+                          </span>
                         )}
                       </div>
                     ))}
@@ -670,8 +732,10 @@ const WorkingCalendarManagement: React.FC = () => {
 
                 {/* Holidays */}
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-3">Holidays</h3>
-                  
+                  <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                    Holidays
+                  </h3>
+
                   {/* Add Holiday Form */}
                   <div className="bg-blue-50 rounded-lg p-4 mb-3">
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
@@ -696,7 +760,10 @@ const WorkingCalendarManagement: React.FC = () => {
                         type="text"
                         value={newHoliday.description}
                         onChange={(e) =>
-                          setNewHoliday({ ...newHoliday, description: e.target.value })
+                          setNewHoliday({
+                            ...newHoliday,
+                            description: e.target.value,
+                          })
                         }
                         placeholder="Description (optional)"
                         className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
@@ -714,7 +781,10 @@ const WorkingCalendarManagement: React.FC = () => {
                         type="checkbox"
                         checked={newHoliday.isRecurring}
                         onChange={(e) =>
-                          setNewHoliday({ ...newHoliday, isRecurring: e.target.checked })
+                          setNewHoliday({
+                            ...newHoliday,
+                            isRecurring: e.target.checked,
+                          })
                         }
                         className="w-4 h-4 text-blue-600 rounded"
                       />
@@ -736,7 +806,7 @@ const WorkingCalendarManagement: React.FC = () => {
                             </div>
                             <div className="text-xs text-gray-600">
                               {new Date(holiday.date).toLocaleDateString()}
-                              {holiday.isRecurring && ' (Recurring)'}
+                              {holiday.isRecurring && " (Recurring)"}
                             </div>
                             {holiday.description && (
                               <div className="text-xs text-gray-500 mt-1">
@@ -774,7 +844,7 @@ const WorkingCalendarManagement: React.FC = () => {
                   className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                 >
                   <Save className="w-4 h-4" />
-                  {editingCalendar ? 'Update Calendar' : 'Create Calendar'}
+                  {editingCalendar ? "Update Calendar" : "Create Calendar"}
                 </button>
               </div>
             </div>

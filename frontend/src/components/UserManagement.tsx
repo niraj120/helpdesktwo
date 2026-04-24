@@ -499,12 +499,15 @@ const UserManagement: React.FC<UserManagementProps> = ({
       // Fetch projects based on view mode
       if (isUnifiedMode || !isProjectPortal) {
         // In unified mode or super admin portal, fetch ALL projects from API
-        const projectsRes = await fetch(`${API_CONFIG.API_URL}/projects`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
+        const projectsRes = await fetch(
+          `${API_CONFIG.API_URL}/projects?limit=100`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
           },
-        });
+        );
 
         const projectsData = await projectsRes.json();
         console.log("🌐 Projects API response:", projectsData);
@@ -684,7 +687,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
   const fetchAllProjectsForSuperAdmin = async () => {
     try {
       const token = localStorage.getItem("authToken");
-      const response = await fetch(`${API_CONFIG.API_URL}/projects`, {
+      const response = await fetch(`${API_CONFIG.API_URL}/projects?limit=100`, {
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",

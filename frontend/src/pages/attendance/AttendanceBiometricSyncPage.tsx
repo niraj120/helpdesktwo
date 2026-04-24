@@ -30,6 +30,7 @@ interface Employee {
   biometricDeviceId: number | null;
   biometricSyncedAt: string | null;
   biometricSyncError: string | null;
+  isActive: boolean;
 }
 
 interface SyncResult {
@@ -349,6 +350,9 @@ export default function AttendanceBiometricSyncPage() {
                     Payroll #
                   </th>
                   <th className="px-3 py-3 text-center font-medium text-gray-700">
+                    Status
+                  </th>
+                  <th className="px-3 py-3 text-center font-medium text-gray-700">
                     Sync Status
                   </th>
                   <th className="px-3 py-3 text-left font-medium text-gray-700">
@@ -363,7 +367,7 @@ export default function AttendanceBiometricSyncPage() {
                 {employees.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={8}
+                      colSpan={9}
                       className="px-4 py-8 text-center text-gray-500"
                     >
                       No employees found.
@@ -457,6 +461,17 @@ export default function AttendanceBiometricSyncPage() {
                                 <MdEdit className="text-xs" />
                               </button>
                             </div>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 text-center">
+                          {emp.isActive ? (
+                            <span className="inline-flex items-center gap-1 bg-green-100 text-green-800 text-xs px-2 py-0.5 rounded">
+                              Active (1)
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 bg-red-100 text-red-800 text-xs px-2 py-0.5 rounded">
+                              Inactive (0)
+                            </span>
                           )}
                         </td>
                         <td className="px-3 py-3 text-center">

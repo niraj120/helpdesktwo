@@ -33,7 +33,6 @@ export const getEmployeesForSync = async (
 
     const query: Record<string, unknown> = {
       projects: new mongoose.Types.ObjectId(projectId as string),
-      isActive: true,
     };
 
     // Status filter
@@ -60,7 +59,7 @@ export const getEmployeesForSync = async (
     const [users, total] = await Promise.all([
       User.find(query)
         .select(
-          "_id employeeCode firstName lastName fullName email payrollNumber biometricSynced biometricEmployeeId biometricDeviceId biometricSyncedAt biometricSyncError",
+          "_id employeeCode firstName lastName fullName email payrollNumber biometricSynced biometricEmployeeId biometricDeviceId biometricSyncedAt biometricSyncError isActive",
         )
         .collation({ locale: "en" })
         .sort({ fullName: 1 })
@@ -82,6 +81,7 @@ export const getEmployeesForSync = async (
       biometricDeviceId: u.biometricDeviceId ?? null,
       biometricSyncedAt: u.biometricSyncedAt ?? null,
       biometricSyncError: u.biometricSyncError ?? null,
+      isActive: u.isActive ?? true,
     }));
 
     res.json({ data, meta: { total, page, limit } });
@@ -181,7 +181,7 @@ export const triggerBiometricSync = async (
 
     for (const userId of userIds) {
       const user = await User.findById(userId).select(
-        "_id employeeCode firstName lastName fullName payrollNumber biometricEmployeeId biometricDeviceId projects",
+        "_id employeeCode firstName lastName fullName payrollNumber biometricEmployeeId biometricDeviceId projects isActive",
       );
 
       if (!user) {
@@ -216,6 +216,7 @@ export const triggerBiometricSync = async (
         Name: employeeName,
         userid: user.employeeCode,
         payroll: user.payrollNumber,
+        status: user.isActive ? 1 : 0,
       };
 
       let aftResponse: {

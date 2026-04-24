@@ -157,7 +157,7 @@ const CenterAssetMappingAccordion: React.FC = () => {
   const fetchProjects = async () => {
     try {
       const token = localStorage.getItem("authToken");
-      const response = await fetch(`${API_CONFIG.API_URL}/projects`, {
+      const response = await fetch(`${API_CONFIG.API_URL}/projects?limit=100`, {
         headers: { Authorization: `Bearer ${token}` },
         credentials: "include",
       });

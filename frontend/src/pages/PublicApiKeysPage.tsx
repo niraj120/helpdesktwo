@@ -1505,9 +1505,12 @@ export default function PublicApiKeysPage() {
   useEffect(() => {
     async function loadProjects() {
       try {
-        const res = await axios.get(`${API_CONFIG.API_URL}/projects`, {
-          headers: authHeaders(),
-        });
+        const res = await axios.get(
+          `${API_CONFIG.API_URL}/projects?limit=100`,
+          {
+            headers: authHeaders(),
+          },
+        );
         const d = res.data;
         let list: Project[] = [];
         if (d?.data?.projects && Array.isArray(d.data.projects)) {
