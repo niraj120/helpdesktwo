@@ -80,7 +80,13 @@ export const lookupUser = async (
   req: PublicApiRequest,
   res: Response,
 ): Promise<void> => {
-  const { mobile: rawMobile, project_id } = req.query as Record<string, string>;
+  const { mobile: rawMobile, project_id: queryProjectId } = req.query as Record<
+    string,
+    string
+  >;
+
+  // project_id from API key (middleware) takes precedence; query param is accepted as fallback
+  const project_id = req.publicApiProjectId || queryProjectId;
 
   // Validate
   const errors: { field: string; message: string }[] = [];

@@ -1,7 +1,11 @@
-import mongoose from 'mongoose';
-import { WorkingCalendar, IWorkingCalendar } from '../models/WorkingCalendar';
-import { Priority, IPriority } from '../models/master-data/Priority';
-import { EscalationMatrix, IEscalationMatrix, IEscalationLevel } from '../models/escalation-matrix/EscalationMatrix';
+import mongoose from "mongoose";
+import { WorkingCalendar, IWorkingCalendar } from "../models/WorkingCalendar";
+import { Priority, IPriority } from "../models/master-data/Priority";
+import {
+  EscalationMatrix,
+  IEscalationMatrix,
+  IEscalationLevel,
+} from "../models/escalation-matrix/EscalationMatrix";
 
 /**
  * SLA Service
@@ -11,15 +15,18 @@ import { EscalationMatrix, IEscalationMatrix, IEscalationLevel } from '../models
 /**
  * Convert time value and unit to hours
  */
-export function convertToHours(value: number, unit: 'minutes' | 'hours' | 'days' | 'mins' | 'hrs'): number {
+export function convertToHours(
+  value: number,
+  unit: "minutes" | "hours" | "days" | "mins" | "hrs",
+): number {
   switch (unit) {
-    case 'minutes':
-    case 'mins':
+    case "minutes":
+    case "mins":
       return value / 60;
-    case 'hours':
-    case 'hrs':
+    case "hours":
+    case "hrs":
       return value;
-    case 'days':
+    case "days":
       return value * 24;
     default:
       return value; // Default to hours
@@ -40,7 +47,7 @@ export function hoursToMinutes(hours: number): number {
 export async function calculateDueDate(
   startDate: Date,
   durationHours: number,
-  workingCalendarId?: mongoose.Types.ObjectId
+  workingCalendarId?: mongoose.Types.ObjectId,
 ): Promise<Date> {
   if (!workingCalendarId) {
     // No calendar specified - use simple date addition
@@ -76,7 +83,7 @@ export async function calculateDueDate(
 export async function calculateWorkingMinutes(
   startDate: Date,
   endDate: Date,
-  workingCalendarId?: mongoose.Types.ObjectId
+  workingCalendarId?: mongoose.Types.ObjectId,
 ): Promise<number> {
   if (!workingCalendarId) {
     // No calendar - calculate simple difference
@@ -97,7 +104,7 @@ export async function calculateWorkingMinutes(
  */
 export async function isWorkingTime(
   date: Date,
-  workingCalendarId?: mongoose.Types.ObjectId
+  workingCalendarId?: mongoose.Types.ObjectId,
 ): Promise<boolean> {
   if (!workingCalendarId) {
     return true; // No calendar - always working
@@ -116,7 +123,7 @@ export async function isWorkingTime(
  */
 export async function getNextWorkingTime(
   date: Date,
-  workingCalendarId?: mongoose.Types.ObjectId
+  workingCalendarId?: mongoose.Types.ObjectId,
 ): Promise<Date> {
   if (!workingCalendarId) {
     return date; // No calendar - return same date
@@ -137,8 +144,13 @@ export async function getNextWorkingTime(
 export async function validateEscalationLevelsAgainstPriority(
   priorityCode: string,
   levels: IEscalationLevel[],
-  projectId: mongoose.Types.ObjectId
-): Promise<{ valid: boolean; reason?: string; totalHours?: number; priorityHours?: number }> {
+  projectId: mongoose.Types.ObjectId,
+): Promise<{
+  valid: boolean;
+  reason?: string;
+  totalHours?: number;
+  priorityHours?: number;
+}> {
   // Find priority — support both a raw ObjectId (_id) and a code string (e.g. "HIGH")
   // When looking up by _id, skip the projectId filter since _id is globally unique.
   let priority = null;
@@ -174,7 +186,7 @@ export async function validateEscalationLevelsAgainstPriority(
   // Get priority resolution time in hours
   const priorityResolutionHours = convertToHours(
     priority.resolutionTime.value,
-    priority.resolutionTime.unit
+    priority.resolutionTime.unit,
   );
 
   if (totalLevelHours > priorityResolutionHours) {
@@ -199,11 +211,11 @@ export async function validateEscalationLevelsAgainstPriority(
  */
 export async function validateEscalationMatrix(
   matrix: IEscalationMatrix,
-  projectId: mongoose.Types.ObjectId
+  projectId: mongoose.Types.ObjectId,
 ): Promise<{ valid: boolean; errors: string[] }> {
   const errors: string[] = [];
 
-  if (matrix.priorityMode === 'SAME_FOR_ALL') {
+  if (matrix.priorityMode === "SAME_FOR_ALL") {
     // For SAME_FOR_ALL mode, we can't validate without knowing which priorities exist
     // This validation should be done when assigning matrix to tickets
     return { valid: true, errors: [] };
@@ -214,7 +226,7 @@ export async function validateEscalationMatrix(
     const validation = await validateEscalationLevelsAgainstPriority(
       priorityConfig.priorityCode,
       priorityConfig.levels,
-      projectId
+      projectId,
     );
 
     if (!validation.valid) {
@@ -235,7 +247,7 @@ export async function calculateTicketLevelSLA(
   createdAt: Date,
   priorityCode: string,
   projectId: mongoose.Types.ObjectId,
-  workingCalendarId?: mongoose.Types.ObjectId
+  workingCalendarId?: mongoose.Types.ObjectId,
 ): Promise<Date> {
   const priority = await Priority.findOne({
     code: priorityCode.toUpperCase(),
@@ -250,7 +262,7 @@ export async function calculateTicketLevelSLA(
 
   const resolutionHours = convertToHours(
     priority.resolutionTime.value,
-    priority.resolutionTime.unit
+    priority.resolutionTime.unit,
   );
 
   return calculateDueDate(createdAt, resolutionHours, workingCalendarId);
@@ -264,11 +276,11 @@ export async function calculateRoleLevelSLA(
   escalationMatrix: IEscalationMatrix,
   currentLevelNumber: number,
   priorityCode: string,
-  workingCalendarId?: mongoose.Types.ObjectId
+  workingCalendarId?: mongoose.Types.ObjectId,
 ): Promise<Date> {
   // Get levels for this priority
   const levels = escalationMatrix.getLevelsForPriority(priorityCode);
-  const currentLevel = levels.find(l => l.levelNumber === currentLevelNumber);
+  const currentLevel = levels.find((l) => l.levelNumber === currentLevelNumber);
 
   if (!currentLevel) {
     // Default to 24 hours if level not found
@@ -276,10 +288,15 @@ export async function calculateRoleLevelSLA(
   }
 
   // Convert slaHours to actual hours based on slaUnit (mins, hrs, days)
-  const slaUnit = currentLevel.slaUnit || 'hrs';
-  const actualHours = convertToHours(currentLevel.slaHours, slaUnit as 'minutes' | 'hours' | 'days' | 'mins' | 'hrs');
-  console.log(`📊 Level ${currentLevelNumber} SLA: ${currentLevel.slaHours} ${slaUnit} = ${actualHours} hours`);
-  
+  const slaUnit = currentLevel.slaUnit || "hrs";
+  const actualHours = convertToHours(
+    currentLevel.slaHours,
+    slaUnit as "minutes" | "hours" | "days" | "mins" | "hrs",
+  );
+  console.log(
+    `📊 Level ${currentLevelNumber} SLA: ${currentLevel.slaHours} ${slaUnit} = ${actualHours} hours`,
+  );
+
   return calculateDueDate(startedAt, actualHours, workingCalendarId);
 }
 
@@ -287,7 +304,7 @@ export async function calculateRoleLevelSLA(
  * Get default working calendar for a project
  */
 export async function getDefaultWorkingCalendar(
-  projectId: mongoose.Types.ObjectId
+  projectId: mongoose.Types.ObjectId,
 ): Promise<IWorkingCalendar | null> {
   return await WorkingCalendar.findOne({
     projectId,
@@ -304,19 +321,27 @@ export async function calculateRemainingTime(
   dueAt: Date,
   pausedAt?: Date,
   pausedDuration: number = 0,
-  workingCalendarId?: mongoose.Types.ObjectId
+  workingCalendarId?: mongoose.Types.ObjectId,
 ): Promise<number> {
   const now = new Date();
-  
+
   // If currently paused, don't count time since pause
   if (pausedAt) {
-    const workingMinutes = await calculateWorkingMinutes(pausedAt, dueAt, workingCalendarId);
+    const workingMinutes = await calculateWorkingMinutes(
+      pausedAt,
+      dueAt,
+      workingCalendarId,
+    );
     return workingMinutes + pausedDuration;
   }
 
   // Calculate working minutes from now to due date
-  const workingMinutes = await calculateWorkingMinutes(now, dueAt, workingCalendarId);
-  
+  const workingMinutes = await calculateWorkingMinutes(
+    now,
+    dueAt,
+    workingCalendarId,
+  );
+
   // Add back any paused duration
   return workingMinutes + pausedDuration;
 }

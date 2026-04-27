@@ -468,7 +468,10 @@ const EscalationMatrixContent: React.FC = () => {
     const mappedLevels = (fullMatrix.levels || []).map((l) => ({
       levelNumber: l.levelNumber,
       levelName: l.levelName,
-      roleId: l.roleId !== null && typeof l.roleId === "object" ? (l.roleId as any)._id : l.roleId,
+      roleId:
+        l.roleId !== null && typeof l.roleId === "object"
+          ? (l.roleId as any)._id
+          : l.roleId,
       slaHours: l.slaHours,
       slaUnit: (l as any).slaUnit || "hrs",
       levelType: (l as any).levelType || "reassign",
@@ -482,25 +485,30 @@ const EscalationMatrixContent: React.FC = () => {
     }));
 
     // Map priority configs for PER_PRIORITY mode
-    const mappedPriorityConfigs = (fullMatrix.priorityConfigs || []).map((pc) => ({
-      priorityCode: pc.priorityCode,
-      priorityName: pc.priorityName,
-      levels: (pc.levels || []).map((l) => ({
-        levelNumber: l.levelNumber,
-        levelName: l.levelName,
-        roleId: l.roleId !== null && typeof l.roleId === "object" ? (l.roleId as any)._id : l.roleId,
-        slaHours: l.slaHours,
-        slaUnit: (l as any).slaUnit || "hrs",
-        levelType: (l as any).levelType || "reassign",
-        notifyUserIds:
-          (l as any).notifyUserIds?.map((id: any) =>
-            typeof id === "object" ? (id._id ?? String(id)) : String(id),
-          ) ?? [],
-        slaThresholdType: (l as any).slaThresholdType ?? "fixed",
-        slaThresholdPercent: (l as any).slaThresholdPercent,
-        isActive: l.isActive,
-      })),
-    }));
+    const mappedPriorityConfigs = (fullMatrix.priorityConfigs || []).map(
+      (pc) => ({
+        priorityCode: pc.priorityCode,
+        priorityName: pc.priorityName,
+        levels: (pc.levels || []).map((l) => ({
+          levelNumber: l.levelNumber,
+          levelName: l.levelName,
+          roleId:
+            l.roleId !== null && typeof l.roleId === "object"
+              ? (l.roleId as any)._id
+              : l.roleId,
+          slaHours: l.slaHours,
+          slaUnit: (l as any).slaUnit || "hrs",
+          levelType: (l as any).levelType || "reassign",
+          notifyUserIds:
+            (l as any).notifyUserIds?.map((id: any) =>
+              typeof id === "object" ? (id._id ?? String(id)) : String(id),
+            ) ?? [],
+          slaThresholdType: (l as any).slaThresholdType ?? "fixed",
+          slaThresholdPercent: (l as any).slaThresholdPercent,
+          isActive: l.isActive,
+        })),
+      }),
+    );
 
     setFormData({
       name: fullMatrix.name,
@@ -512,7 +520,8 @@ const EscalationMatrixContent: React.FC = () => {
       autoEscalate: fullMatrix.autoEscalate || false,
       slaWarningConfig: fullMatrix.slaWarningConfig
         ? {
-            warningThresholds: fullMatrix.slaWarningConfig.warningThresholds || [],
+            warningThresholds:
+              fullMatrix.slaWarningConfig.warningThresholds || [],
             notifyAssignedAgent:
               fullMatrix.slaWarningConfig.notifyAssignedAgent ?? true,
           }
@@ -530,7 +539,10 @@ const EscalationMatrixContent: React.FC = () => {
     // If no applicablePriorities stored, try to derive from priorityConfigs or matrix name
     let prioritiesToRestore: string[] = [];
 
-    if (fullMatrix.applicablePriorities && fullMatrix.applicablePriorities.length > 0) {
+    if (
+      fullMatrix.applicablePriorities &&
+      fullMatrix.applicablePriorities.length > 0
+    ) {
       prioritiesToRestore = fullMatrix.applicablePriorities;
     } else if (
       fullMatrix.priorityMode === "PER_PRIORITY" &&
@@ -597,7 +609,6 @@ const EscalationMatrixContent: React.FC = () => {
         );
         return;
       }
-
     } else {
       // SAME_FOR_ALL mode
       if (formData.levels.length === 0) {
@@ -610,7 +621,6 @@ const EscalationMatrixContent: React.FC = () => {
         setError("All levels must have a role assigned");
         return;
       }
-
     }
 
     // Validate at least one priority is selected
@@ -1515,8 +1525,13 @@ const EscalationMatrixContent: React.FC = () => {
                     </td>
                     <td style={{ padding: "16px 24px" }}>
                       <span style={{ fontSize: "14px", color: "#111827" }}>
-                        {matrix.priorityMode === "PER_PRIORITY" && (matrix as any).priorityConfigs?.length > 0
-                          ? (matrix as any).priorityConfigs.reduce((sum: number, pc: any) => sum + (pc.levels?.length || 0), 0)
+                        {matrix.priorityMode === "PER_PRIORITY" &&
+                        (matrix as any).priorityConfigs?.length > 0
+                          ? (matrix as any).priorityConfigs.reduce(
+                              (sum: number, pc: any) =>
+                                sum + (pc.levels?.length || 0),
+                              0,
+                            )
                           : matrix.levels.length}{" "}
                         levels
                       </span>
@@ -1635,13 +1650,22 @@ const EscalationMatrixContent: React.FC = () => {
                               gap: "8px",
                             }}
                           >
-                            {(matrix.priorityMode === "PER_PRIORITY" && (matrix as any).priorityConfigs?.length > 0
-                              ? (matrix as any).priorityConfigs.flatMap((pc: any) =>
-                                  (pc.levels || []).map((l: any) => ({ ...l, _priorityLabel: pc.priorityName || pc.priorityCode }))
+                            {(matrix.priorityMode === "PER_PRIORITY" &&
+                            (matrix as any).priorityConfigs?.length > 0
+                              ? (matrix as any).priorityConfigs.flatMap(
+                                  (pc: any) =>
+                                    (pc.levels || []).map((l: any) => ({
+                                      ...l,
+                                      _priorityLabel:
+                                        pc.priorityName || pc.priorityCode,
+                                    })),
                                 )
                               : matrix.levels
                             )
-                              .sort((a: any, b: any) => a.levelNumber - b.levelNumber)
+                              .sort(
+                                (a: any, b: any) =>
+                                  a.levelNumber - b.levelNumber,
+                              )
                               .map((level: any, idx: number) => (
                                 <div
                                   key={level._id || idx}
@@ -1679,7 +1703,14 @@ const EscalationMatrixContent: React.FC = () => {
                                     >
                                       {level.levelName}
                                       {(level as any)._priorityLabel && (
-                                        <span style={{ fontSize: "11px", color: "#6d28d9", marginLeft: "6px", fontWeight: 400 }}>
+                                        <span
+                                          style={{
+                                            fontSize: "11px",
+                                            color: "#6d28d9",
+                                            marginLeft: "6px",
+                                            fontWeight: 400,
+                                          }}
+                                        >
                                           [{(level as any)._priorityLabel}]
                                         </span>
                                       )}
@@ -1691,7 +1722,8 @@ const EscalationMatrixContent: React.FC = () => {
                                       }}
                                     >
                                       Role:{" "}
-                                      {level.roleId !== null && typeof level.roleId === "object"
+                                      {level.roleId !== null &&
+                                      typeof level.roleId === "object"
                                         ? (level.roleId as any).name
                                         : getRoleName(level.roleId as string)}
                                       {" | "}
