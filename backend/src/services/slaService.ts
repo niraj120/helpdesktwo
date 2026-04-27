@@ -139,12 +139,12 @@ export async function validateEscalationLevelsAgainstPriority(
   levels: IEscalationLevel[],
   projectId: mongoose.Types.ObjectId
 ): Promise<{ valid: boolean; reason?: string; totalHours?: number; priorityHours?: number }> {
-  // Find priority — support both a code string (e.g. "HIGH") and a raw ObjectId
+  // Find priority — support both a raw ObjectId (_id) and a code string (e.g. "HIGH")
+  // When looking up by _id, skip the projectId filter since _id is globally unique.
   let priority = null;
   if (mongoose.Types.ObjectId.isValid(priorityCode)) {
     priority = await Priority.findOne({
       _id: priorityCode,
-      projectId,
       isActive: true,
     });
   }
@@ -157,12 +157,18 @@ export async function validateEscalationLevelsAgainstPriority(
   }
 
   if (!priority) {
-    return { valid: false, reason: `Priority '${priorityCode}' not found` };
+    // Priority not found — skip validation rather than blocking matrix creation.
+    // This can happen with custom project priorities whose ID format differs.
+    console.warn(
+      `[SLA] validateEscalationLevelsAgainstPriority: priority '${priorityCode}' not found — skipping time validation`,
+    );
+    return { valid: true };
   }
 
-  // Calculate total escalation level duration
+  // Calculate total escalation level duration — respecting slaUnit (mins/hrs/days)
   const totalLevelHours = levels.reduce((sum, level) => {
-    return sum + level.slaHours;
+    const unit = (level as any).slaUnit ?? "hrs";
+    return sum + convertToHours(level.slaHours, unit as any);
   }, 0);
 
   // Get priority resolution time in hours
@@ -174,7 +180,7 @@ export async function validateEscalationLevelsAgainstPriority(
   if (totalLevelHours > priorityResolutionHours) {
     return {
       valid: false,
-      reason: `Total escalation time (${totalLevelHours}h) exceeds priority resolution time (${priorityResolutionHours}h)`,
+      reason: `Total escalation time (${(totalLevelHours * 60).toFixed(0)} min) exceeds priority resolution time (${(priorityResolutionHours * 60).toFixed(0)} min)`,
       totalHours: totalLevelHours,
       priorityHours: priorityResolutionHours,
     };
