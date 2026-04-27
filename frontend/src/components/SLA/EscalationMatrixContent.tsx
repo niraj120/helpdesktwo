@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { API_CONFIG } from "../../config/constants";
 import {
   getAllEscalationMatrices,
+  getEscalationMatrixById,
   createEscalationMatrix,
   updateEscalationMatrix,
   deleteEscalationMatrix,
@@ -436,24 +437,38 @@ const EscalationMatrixContent: React.FC = () => {
     setShowModal(true);
   };
 
-  const openEditModal = (matrix: EscalationMatrix) => {
+  const openEditModal = async (matrix: EscalationMatrix) => {
+    // Fetch full matrix detail so linkedCategories are included
+    // (the list endpoint only returns linkedCategoriesCount, not the full array)
+    let fullMatrix = matrix;
+    if (matrix._id) {
+      try {
+        const detail = await getEscalationMatrixById(matrix._id);
+        if (detail.success && detail.data) {
+          fullMatrix = detail.data;
+        }
+      } catch {
+        // fall back to list data if fetch fails
+      }
+    }
+
     // Debug: Log raw matrix data from API
     console.log("📥 Opening edit modal - Raw matrix data:", {
-      name: matrix.name,
-      escalationMode: matrix.escalationMode,
-      priorityMode: matrix.priorityMode,
-      allowSkipLevel: matrix.allowSkipLevel,
-      allowBackward: matrix.allowBackward,
-      autoEscalate: matrix.autoEscalate,
+      name: fullMatrix.name,
+      escalationMode: fullMatrix.escalationMode,
+      priorityMode: fullMatrix.priorityMode,
+      allowSkipLevel: fullMatrix.allowSkipLevel,
+      allowBackward: fullMatrix.allowBackward,
+      autoEscalate: fullMatrix.autoEscalate,
     });
 
-    setEditingMatrix(matrix);
+    setEditingMatrix(fullMatrix);
 
     // Map levels for SAME_FOR_ALL mode
-    const mappedLevels = (matrix.levels || []).map((l) => ({
+    const mappedLevels = (fullMatrix.levels || []).map((l) => ({
       levelNumber: l.levelNumber,
       levelName: l.levelName,
-      roleId: typeof l.roleId === "object" ? (l.roleId as any)._id : l.roleId,
+      roleId: l.roleId !== null && typeof l.roleId === "object" ? (l.roleId as any)._id : l.roleId,
       slaHours: l.slaHours,
       slaUnit: (l as any).slaUnit || "hrs",
       levelType: (l as any).levelType || "reassign",
@@ -467,13 +482,13 @@ const EscalationMatrixContent: React.FC = () => {
     }));
 
     // Map priority configs for PER_PRIORITY mode
-    const mappedPriorityConfigs = (matrix.priorityConfigs || []).map((pc) => ({
+    const mappedPriorityConfigs = (fullMatrix.priorityConfigs || []).map((pc) => ({
       priorityCode: pc.priorityCode,
       priorityName: pc.priorityName,
       levels: (pc.levels || []).map((l) => ({
         levelNumber: l.levelNumber,
         levelName: l.levelName,
-        roleId: typeof l.roleId === "object" ? (l.roleId as any)._id : l.roleId,
+        roleId: l.roleId !== null && typeof l.roleId === "object" ? (l.roleId as any)._id : l.roleId,
         slaHours: l.slaHours,
         slaUnit: (l as any).slaUnit || "hrs",
         levelType: (l as any).levelType || "reassign",
@@ -488,43 +503,43 @@ const EscalationMatrixContent: React.FC = () => {
     }));
 
     setFormData({
-      name: matrix.name,
-      description: matrix.description || "",
-      escalationMode: matrix.escalationMode,
-      priorityMode: matrix.priorityMode || "SAME_FOR_ALL",
-      allowSkipLevel: matrix.allowSkipLevel || false,
-      allowBackward: matrix.allowBackward || false,
-      autoEscalate: matrix.autoEscalate || false,
-      slaWarningConfig: matrix.slaWarningConfig
+      name: fullMatrix.name,
+      description: fullMatrix.description || "",
+      escalationMode: fullMatrix.escalationMode,
+      priorityMode: fullMatrix.priorityMode || "SAME_FOR_ALL",
+      allowSkipLevel: fullMatrix.allowSkipLevel || false,
+      allowBackward: fullMatrix.allowBackward || false,
+      autoEscalate: fullMatrix.autoEscalate || false,
+      slaWarningConfig: fullMatrix.slaWarningConfig
         ? {
-            warningThresholds: matrix.slaWarningConfig.warningThresholds || [],
+            warningThresholds: fullMatrix.slaWarningConfig.warningThresholds || [],
             notifyAssignedAgent:
-              matrix.slaWarningConfig.notifyAssignedAgent ?? true,
+              fullMatrix.slaWarningConfig.notifyAssignedAgent ?? true,
           }
         : undefined,
       levels: mappedLevels,
       priorityConfigs: mappedPriorityConfigs,
-      projectIds: matrix.projectIds.map((p) =>
+      projectIds: fullMatrix.projectIds.map((p) =>
         typeof p === "object" ? p._id : p,
       ),
-      applicablePriorities: matrix.applicablePriorities || [],
-      isActive: matrix.isActive,
+      applicablePriorities: fullMatrix.applicablePriorities || [],
+      isActive: fullMatrix.isActive,
     });
 
     // Queue priorities to be restored after they're fetched (projectIds change triggers fetch)
     // If no applicablePriorities stored, try to derive from priorityConfigs or matrix name
     let prioritiesToRestore: string[] = [];
 
-    if (matrix.applicablePriorities && matrix.applicablePriorities.length > 0) {
-      prioritiesToRestore = matrix.applicablePriorities;
+    if (fullMatrix.applicablePriorities && fullMatrix.applicablePriorities.length > 0) {
+      prioritiesToRestore = fullMatrix.applicablePriorities;
     } else if (
-      matrix.priorityMode === "PER_PRIORITY" &&
+      fullMatrix.priorityMode === "PER_PRIORITY" &&
       mappedPriorityConfigs.length > 0
     ) {
       prioritiesToRestore = mappedPriorityConfigs.map((c) => c.priorityCode);
     } else {
       // Try to derive from matrix name (e.g., "MHCET LOW" -> "Low")
-      const matrixNameLower = matrix.name.toLowerCase();
+      const matrixNameLower = fullMatrix.name.toLowerCase();
       if (matrixNameLower.includes("low")) prioritiesToRestore.push("Low");
       if (matrixNameLower.includes("medium"))
         prioritiesToRestore.push("Medium");
@@ -542,7 +557,7 @@ const EscalationMatrixContent: React.FC = () => {
     if (prioritiesToRestore.length > 0) {
       setPendingPrioritiesToRestore(prioritiesToRestore);
       if (
-        matrix.priorityMode === "PER_PRIORITY" &&
+        fullMatrix.priorityMode === "PER_PRIORITY" &&
         mappedPriorityConfigs.length > 0
       ) {
         setActivePriorityTab(mappedPriorityConfigs[0].priorityCode);
@@ -553,9 +568,9 @@ const EscalationMatrixContent: React.FC = () => {
       setSelectedPriorities([]);
     }
 
-    // Restore linked categories from matrix data
+    // Restore linked categories from full matrix detail
     setLinkedCategoryIds(
-      (matrix.linkedCategories || []).map((lc) => lc.categoryId),
+      (fullMatrix.linkedCategories || []).map((lc) => lc.categoryId),
     );
 
     setShowModal(true);
@@ -583,14 +598,6 @@ const EscalationMatrixContent: React.FC = () => {
         return;
       }
 
-      // Validate SLA hours don't exceed resolution time for each priority
-      for (const config of formData.priorityConfigs || []) {
-        const validation = validateLevelsAgainstPriority(config.priorityCode);
-        if (!validation.valid) {
-          setError(validation.message);
-          return;
-        }
-      }
     } else {
       // SAME_FOR_ALL mode
       if (formData.levels.length === 0) {
@@ -604,14 +611,6 @@ const EscalationMatrixContent: React.FC = () => {
         return;
       }
 
-      // Validate SLA hours don't exceed resolution time for ANY selected priority
-      for (const priorityCode of selectedPriorities) {
-        const validation = validateLevelsAgainstPriority(priorityCode);
-        if (!validation.valid) {
-          setError(validation.message);
-          return;
-        }
-      }
     }
 
     // Validate at least one priority is selected
@@ -1516,7 +1515,10 @@ const EscalationMatrixContent: React.FC = () => {
                     </td>
                     <td style={{ padding: "16px 24px" }}>
                       <span style={{ fontSize: "14px", color: "#111827" }}>
-                        {matrix.levels.length} levels
+                        {matrix.priorityMode === "PER_PRIORITY" && (matrix as any).priorityConfigs?.length > 0
+                          ? (matrix as any).priorityConfigs.reduce((sum: number, pc: any) => sum + (pc.levels?.length || 0), 0)
+                          : matrix.levels.length}{" "}
+                        levels
                       </span>
                     </td>
                     <td style={{ padding: "16px 24px" }}>
@@ -1633,9 +1635,14 @@ const EscalationMatrixContent: React.FC = () => {
                               gap: "8px",
                             }}
                           >
-                            {matrix.levels
-                              .sort((a, b) => a.levelNumber - b.levelNumber)
-                              .map((level, idx) => (
+                            {(matrix.priorityMode === "PER_PRIORITY" && (matrix as any).priorityConfigs?.length > 0
+                              ? (matrix as any).priorityConfigs.flatMap((pc: any) =>
+                                  (pc.levels || []).map((l: any) => ({ ...l, _priorityLabel: pc.priorityName || pc.priorityCode }))
+                                )
+                              : matrix.levels
+                            )
+                              .sort((a: any, b: any) => a.levelNumber - b.levelNumber)
+                              .map((level: any, idx: number) => (
                                 <div
                                   key={level._id || idx}
                                   style={{
@@ -1671,6 +1678,11 @@ const EscalationMatrixContent: React.FC = () => {
                                       }}
                                     >
                                       {level.levelName}
+                                      {(level as any)._priorityLabel && (
+                                        <span style={{ fontSize: "11px", color: "#6d28d9", marginLeft: "6px", fontWeight: 400 }}>
+                                          [{(level as any)._priorityLabel}]
+                                        </span>
+                                      )}
                                     </div>
                                     <div
                                       style={{
@@ -1679,7 +1691,7 @@ const EscalationMatrixContent: React.FC = () => {
                                       }}
                                     >
                                       Role:{" "}
-                                      {typeof level.roleId === "object"
+                                      {level.roleId !== null && typeof level.roleId === "object"
                                         ? (level.roleId as any).name
                                         : getRoleName(level.roleId as string)}
                                       {" | "}
@@ -2745,11 +2757,12 @@ const EscalationMatrixContent: React.FC = () => {
                                     )?.name || activePriorityTab}
                                   </strong>{" "}
                                   priority (Resolution:{" "}
-                                  {formatResolutionTime(
-                                    priorities.find(
+                                  {(() => {
+                                    const p = priorities.find(
                                       (p) => p._id === activePriorityTab,
-                                    )!,
-                                  )}
+                                    );
+                                    return p ? formatResolutionTime(p) : "—";
+                                  })()}
                                   )
                                 </div>
                               )}
