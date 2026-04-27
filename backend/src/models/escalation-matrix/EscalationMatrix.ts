@@ -101,7 +101,8 @@ const EscalationLevelSchema = new Schema<IEscalationLevel>(
     roleId: {
       type: Schema.Types.ObjectId,
       ref: "Role",
-      required: true,
+      required: false, // Optional for PER_PRIORITY template levels (may have no role assigned)
+      default: null,
     },
     slaHours: {
       type: Number,

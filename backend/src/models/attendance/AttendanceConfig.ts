@@ -113,23 +113,37 @@ const attendanceConfigSchema = new Schema<IAttendanceConfig>(
 );
 
 // Instance method: decrypt the AFT Bearer token
+// Also handles legacy documents that stored the key in plain "apiKey" field
 attendanceConfigSchema.methods.getDecryptedApiKey = function (): string {
-  if (!this.apiKeyEncrypted) return "";
-  try {
-    if (isEncrypted(this.apiKeyEncrypted)) {
-      return decrypt(this.apiKeyEncrypted);
+  // New field (encrypted)
+  if (this.apiKeyEncrypted) {
+    try {
+      if (isEncrypted(this.apiKeyEncrypted)) {
+        return decrypt(this.apiKeyEncrypted);
+      }
+      // Stored as plain text (no ENCRYPTION_KEY available at save time)
+      return this.apiKeyEncrypted;
+    } catch {
+      return "";
     }
-    return this.apiKeyEncrypted;
-  } catch {
-    return "";
   }
+  // Legacy fallback: old documents stored the key in a plain "apiKey" field
+  const legacyKey = (this as any).get("apiKey") ?? (this as any).apiKey;
+  return typeof legacyKey === "string" ? legacyKey : "";
 };
 
-// Encrypt token before saving
+// Encrypt token before saving (graceful — plain-text fallback if no ENCRYPTION_KEY)
 attendanceConfigSchema.pre("save", function (next) {
   if (this.isModified("apiKeyEncrypted") && this.apiKeyEncrypted) {
     if (!isEncrypted(this.apiKeyEncrypted)) {
-      this.apiKeyEncrypted = encrypt(this.apiKeyEncrypted);
+      try {
+        this.apiKeyEncrypted = encrypt(this.apiKeyEncrypted);
+      } catch {
+        // ENCRYPTION_KEY not configured — store as plain text with a warning
+        console.warn(
+          "[AttendanceConfig] ENCRYPTION_KEY not set — storing API key as plain text. Set ENCRYPTION_KEY in production for encrypted storage.",
+        );
+      }
     }
   }
   next();
