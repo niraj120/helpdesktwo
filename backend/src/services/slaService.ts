@@ -139,12 +139,22 @@ export async function validateEscalationLevelsAgainstPriority(
   levels: IEscalationLevel[],
   projectId: mongoose.Types.ObjectId
 ): Promise<{ valid: boolean; reason?: string; totalHours?: number; priorityHours?: number }> {
-  // Find priority
-  const priority = await Priority.findOne({
-    code: priorityCode.toUpperCase(),
-    projectId,
-    isActive: true,
-  });
+  // Find priority — support both a code string (e.g. "HIGH") and a raw ObjectId
+  let priority = null;
+  if (mongoose.Types.ObjectId.isValid(priorityCode)) {
+    priority = await Priority.findOne({
+      _id: priorityCode,
+      projectId,
+      isActive: true,
+    });
+  }
+  if (!priority) {
+    priority = await Priority.findOne({
+      code: priorityCode.toUpperCase(),
+      projectId,
+      isActive: true,
+    });
+  }
 
   if (!priority) {
     return { valid: false, reason: `Priority '${priorityCode}' not found` };
