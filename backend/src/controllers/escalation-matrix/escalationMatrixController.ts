@@ -284,15 +284,29 @@ export const createEscalationMatrix = async (
       return;
     }
 
-    // Validate all roleIds exist
-    const roleIds = levels.map((l: IEscalationLevel) => l.roleId);
-    const existingRoles = await Role.find({ _id: { $in: roleIds } });
-    if (existingRoles.length !== roleIds.length) {
-      res.status(400).json({
-        success: false,
-        message: "One or more role IDs are invalid",
-      });
-      return;
+    // Validate all roleIds exist — skipped for PER_PRIORITY mode where top-level
+    // levels are only a UI template and may carry an empty roleId.
+    if (priorityMode !== "PER_PRIORITY") {
+      const emptyRoleLevel = levels.find(
+        (l: any) => !l.roleId || String(l.roleId).trim() === "",
+      );
+      if (emptyRoleLevel) {
+        res.status(400).json({
+          success: false,
+          message: `Level "${emptyRoleLevel.levelName || emptyRoleLevel.levelNumber}" must have a role selected`,
+        });
+        return;
+      }
+
+      const roleIds = levels.map((l: IEscalationLevel) => l.roleId);
+      const existingRoles = await Role.find({ _id: { $in: roleIds } });
+      if (existingRoles.length !== roleIds.length) {
+        res.status(400).json({
+          success: false,
+          message: "One or more role IDs are invalid",
+        });
+        return;
+      }
     }
 
     // Prepare matrix data
@@ -315,7 +329,8 @@ export const createEscalationMatrix = async (
       levels: levels.map((l: any) => ({
         levelNumber: l.levelNumber,
         levelName: l.levelName,
-        roleId: l.roleId,
+        // Store null instead of empty string to avoid ObjectId cast errors
+        roleId: l.roleId && String(l.roleId).trim() !== "" ? l.roleId : null,
         slaHours: l.slaHours || 24,
         slaUnit: l.slaUnit || "hrs", // Save slaUnit for proper display
         responseTime: l.responseTime,
@@ -475,15 +490,30 @@ export const updateEscalationMatrix = async (
         return;
       }
 
-      // Validate all roleIds exist
-      const roleIds = levels.map((l: IEscalationLevel) => l.roleId);
-      const existingRoles = await Role.find({ _id: { $in: roleIds } });
-      if (existingRoles.length !== roleIds.length) {
-        res.status(400).json({
-          success: false,
-          message: "One or more role IDs are invalid",
-        });
-        return;
+      // Validate all roleIds exist — skipped for PER_PRIORITY mode where top-level
+      // levels are only a UI template and may carry an empty roleId.
+      const effectivePriorityMode = priorityMode ?? matrix.priorityMode;
+      if (effectivePriorityMode !== "PER_PRIORITY") {
+        const emptyRoleLevel = levels.find(
+          (l: any) => !l.roleId || String(l.roleId).trim() === "",
+        );
+        if (emptyRoleLevel) {
+          res.status(400).json({
+            success: false,
+            message: `Level "${emptyRoleLevel.levelName || emptyRoleLevel.levelNumber}" must have a role selected`,
+          });
+          return;
+        }
+
+        const roleIds = levels.map((l: IEscalationLevel) => l.roleId);
+        const existingRoles = await Role.find({ _id: { $in: roleIds } });
+        if (existingRoles.length !== roleIds.length) {
+          res.status(400).json({
+            success: false,
+            message: "One or more role IDs are invalid",
+          });
+          return;
+        }
       }
 
       // Validate priority configs if in PER_PRIORITY mode
@@ -508,7 +538,8 @@ export const updateEscalationMatrix = async (
       matrix.levels = levels.map((l: any) => ({
         levelNumber: l.levelNumber,
         levelName: l.levelName,
-        roleId: l.roleId,
+        // Store null instead of empty string to avoid ObjectId cast errors
+        roleId: l.roleId && String(l.roleId).trim() !== "" ? l.roleId : null,
         slaHours: l.slaHours || 24,
         slaUnit: l.slaUnit || "hrs", // Save slaUnit for proper display
         responseTime: l.responseTime,

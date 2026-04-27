@@ -30,8 +30,12 @@ export const getAttendanceConfig = async (
     );
 
     // Never expose raw or encrypted token
-    const safeConfig = config.toObject();
+    const safeConfig = config.toObject() as Record<string, unknown>;
     safeConfig.apiKeyEncrypted = config.apiKeyEncrypted ? MASKED_TOKEN : "";
+    // Mask legacy plain-text apiKey field (old documents stored it here)
+    if (safeConfig.apiKey) {
+      safeConfig.apiKey = MASKED_TOKEN;
+    }
 
     res.json(safeConfig);
   } catch (err) {
@@ -75,6 +79,7 @@ export const updateAttendanceConfig = async (
       "syncActive",
       "syncSchedule",
       "publishedCheckEnabled",
+      "syncLookbackDays",
       "commonIdentifier",
       "displayFields",
       "fieldPermissions",
@@ -88,7 +93,25 @@ export const updateAttendanceConfig = async (
 
     // Handle token
     if (apiKey !== undefined && apiKey !== MASKED_TOKEN && apiKey !== "") {
-      config.apiKeyEncrypted = encrypt(apiKey);
+      try {
+        config.apiKeyEncrypted = encrypt(apiKey);
+      } catch {
+        // ENCRYPTION_KEY not configured — store plain text (pre-save hook will warn)
+        config.apiKeyEncrypted = apiKey;
+      }
+    } else if (
+      apiKey === undefined &&
+      !config.apiKeyEncrypted &&
+      (config as unknown as Record<string, unknown>).apiKey
+    ) {
+      // Migrate legacy plain-text apiKey field into apiKeyEncrypted
+      const legacyKey = (config as unknown as Record<string, unknown>)
+        .apiKey as string;
+      try {
+        config.apiKeyEncrypted = encrypt(legacyKey);
+      } catch {
+        config.apiKeyEncrypted = legacyKey;
+      }
     }
     // If apiKey === MASKED_TOKEN or undefined → leave existing encrypted value
 
@@ -99,8 +122,12 @@ export const updateAttendanceConfig = async (
       await attendanceScheduler.rebuildProjectSchedule(projectId);
     }
 
-    const safeConfig = config.toObject();
+    const safeConfig = config.toObject() as Record<string, unknown>;
     safeConfig.apiKeyEncrypted = config.apiKeyEncrypted ? MASKED_TOKEN : "";
+    // Mask legacy plain-text apiKey field too
+    if (safeConfig.apiKey) {
+      safeConfig.apiKey = MASKED_TOKEN;
+    }
 
     res.json({ message: "Attendance config updated", config: safeConfig });
   } catch (err) {
