@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import {
   MdVpnKey,
@@ -192,7 +192,7 @@ function formatDate(iso: string) {
 }
 
 // Base server URL (strips /api â€” /v1/* routes are NOT under /api)
-const SERVER_BASE = API_CONFIG.BASE_URL;
+const SERVER_BASE = API_CONFIG.API_URL;
 
 function methodBadge(method: "GET" | "POST") {
   return method === "GET"
