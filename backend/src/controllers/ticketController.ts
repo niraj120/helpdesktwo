@@ -2502,8 +2502,9 @@ export const getTicketById = async (req: Request, res: Response) => {
 
     // Check permissions:
     // 1. Student can view their own ticket (email matches)
-    // 2. Agent can view tickets assigned to them
-    // 3. Admin/Super Admin can view any ticket
+    // 2. Agent/DNO with TICKET_VIEW_ALL can view any ticket
+    // 3. Agent/DNO with only TICKET_VIEW_OWN can view only their assigned tickets
+    // 4. Admin/Super Admin can view any ticket
     const roleObj = user.role as any;
     const isStudent = roleObj?.code === "STUDENT";
     const isAgent =
@@ -2512,6 +2513,10 @@ export const getTicketById = async (req: Request, res: Response) => {
     const isAssignedAgent =
       ticket.assignedTo && ticket.assignedTo._id.toString() === userId;
     const ownsTicket = ticket.metadata?.studentEmail === user.email;
+    // Permission codes are attached by authMiddleware as req.user.role.permissions
+    const userPermissions: string[] =
+      (req as any).user?.role?.permissions || [];
+    const hasViewAll = userPermissions.includes("TICKET_VIEW_ALL");
 
     if (isStudent && !ownsTicket) {
       return res.status(403).json({
@@ -2520,9 +2525,12 @@ export const getTicketById = async (req: Request, res: Response) => {
       });
     }
 
+    // Agents with TICKET_VIEW_ALL can see any ticket; ADMIN/SUPERADMIN always bypass.
+    // Agents with only TICKET_VIEW_OWN are limited to their assigned tickets.
     if (
       isAgent &&
       !isAssignedAgent &&
+      !hasViewAll &&
       !["ADMIN", "SUPERADMIN"].includes(roleObj?.code)
     ) {
       return res.status(403).json({

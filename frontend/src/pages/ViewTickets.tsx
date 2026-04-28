@@ -5,7 +5,7 @@ import React, {
   useMemo,
   useCallback,
 } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import DashboardLayout from "../components/DashboardLayout";
 import ModuleHeader from "../components/ModuleHeader";
 import axios from "axios";
@@ -144,6 +144,7 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
   wrapWithLayout = true,
 }) => {
   const navigate = useNavigate();
+  const { customUrlPath } = useParams<{ customUrlPath?: string }>();
 
   // Helper function to check permissions from localStorage
   const checkPermission = (permission: string): boolean => {
@@ -875,7 +876,13 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                     )}
                     <div
                       style={{ flex: 1, cursor: "pointer" }}
-                      onClick={() => navigate(`/tickets/${ticket._id}`)}
+                      onClick={() =>
+                        navigate(
+                          initialProjectId && customUrlPath
+                            ? `/${customUrlPath}/portal/tickets/${ticket._id}`
+                            : `/tickets/${ticket._id}`
+                        )
+                      }
                     >
                       <span
                         style={{
