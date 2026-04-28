@@ -4158,13 +4158,6 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                     hierarchyConfig.levelCount > 1 &&
                     ticketProjectId ? (
                       <div>
-                        {/* Display current hierarchy if set */}
-                        {ticket.categoryHierarchy?.displayPath && (
-                          <div className="mb-2 p-2 bg-gray-50 rounded-lg text-sm">
-                            <span className="text-gray-500">Current: </span>
-                            <span>{ticket.categoryHierarchy.displayPath}</span>
-                          </div>
-                        )}
                         {!permissions.includes("TICKET_CHANGE_CATEGORY") ? (
                           <div className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed">
                             {ticket.categoryHierarchy?.displayPath ||

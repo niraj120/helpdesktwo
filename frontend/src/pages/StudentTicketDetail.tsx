@@ -17,7 +17,7 @@ import {
 interface Ticket {
   _id: string;
   ticketNumber: string;
-  title: string;
+  subject: string;
   description: string;
   status: number; // 1=Open, 2=In Progress, 3=On Hold, 4=Resolved, 5=Closed
   priority: "low" | "medium" | "high" | "urgent";
@@ -442,20 +442,26 @@ const StudentTicketDetail: React.FC = () => {
                     </span>
                   </div>
                   <h2 className="text-xl font-semibold text-gray-900">
-                    {ticket.title}
+                    {ticket.subject}
                   </h2>
                 </div>
                 <div className="flex flex-col items-end space-y-2 ml-4">
-                  <span
-                    className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(ticket.status)}`}
-                  >
-                    {getStatusName(ticket.status).toUpperCase()}
-                  </span>
-                  <span
-                    className={`text-xs font-medium ${getPriorityColor(ticket.priority)}`}
-                  >
-                    {ticket.priority.toUpperCase()}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-gray-500 font-medium">Status –</span>
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(ticket.status)}`}
+                    >
+                      {getStatusName(ticket.status).toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-gray-500 font-medium">Priority –</span>
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-medium ${getPriorityColor(ticket.priority)}`}
+                    >
+                      {ticket.priority.toUpperCase()}
+                    </span>
+                  </div>
                 </div>
               </div>
 

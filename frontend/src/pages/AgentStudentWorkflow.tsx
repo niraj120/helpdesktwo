@@ -671,7 +671,7 @@ const AgentStudentWorkflow: React.FC = () => {
     const requiredFields =
       offlineSettings?.registrationFields.filter((f) => f.required) || [];
     for (const field of requiredFields) {
-      if (!registrationForm[field.fieldName]) {
+      if (!registrationForm[field.fieldName]?.toString().trim()) {
         setRegistrationError(`${field.fieldName} is required`);
         return;
       }
@@ -1210,13 +1210,22 @@ const AgentStudentWorkflow: React.FC = () => {
 
     switch (field.fieldType) {
       case "text":
-      case "number":
+      case "number": {
+        const isNameField = field.fieldName === "firstName" || field.fieldName === "lastName";
         return (
           <input
             type={field.fieldType === "number" ? "number" : "text"}
             required={isRequired}
             value={value || ""}
-            onChange={(e) => onChange(e.target.value)}
+            onChange={(e) => {
+              let val = e.target.value;
+              if (isNameField) {
+                val = val.replace(/[0-9]/g, "").replace(/^\s+/, "");
+              } else if (field.fieldType === "text") {
+                val = val.replace(/^\s+/, "");
+              }
+              onChange(val);
+            }}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder={placeholder}
             minLength={field.validation?.minLength}
@@ -1224,6 +1233,7 @@ const AgentStudentWorkflow: React.FC = () => {
             pattern={field.validation?.pattern}
           />
         );
+      }
 
       case "email":
       case "phone": {
@@ -1635,7 +1645,12 @@ const AgentStudentWorkflow: React.FC = () => {
                 <input
                   type="text"
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => {
+                    const val = searchType === "name"
+                      ? e.target.value.replace(/[0-9]/g, "")
+                      : e.target.value;
+                    setSearchQuery(val);
+                  }}
                   onKeyPress={(e) => e.key === "Enter" && handleSearchStudent()}
                   className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder={
