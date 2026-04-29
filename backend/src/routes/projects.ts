@@ -24,6 +24,7 @@ import {
   updateWhatsappWidgetSettings,
 } from "../controllers/projectController";
 import { listConfigsByProject } from "../controllers/ticket-module/categoryAssignmentController";
+import { listEscalationConfigsByProject } from "../controllers/ticket-module/categoryEscalationController";
 import { authMiddleware } from "../middleware/auth";
 import { checkPermission } from "../middleware/permissions";
 
@@ -122,6 +123,14 @@ router.get(
   authMiddleware,
   checkPermission("MASTER_DATA_VIEW"),
   listConfigsByProject,
+);
+
+// Category Escalation Configs for a project (admin overview)
+router.get(
+  "/:projectId/category-escalation-configs",
+  authMiddleware,
+  checkPermission("MASTER_DATA_VIEW"),
+  listEscalationConfigsByProject,
 );
 
 // Get single project by ID

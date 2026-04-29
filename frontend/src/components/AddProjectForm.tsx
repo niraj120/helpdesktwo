@@ -368,6 +368,9 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
   const [categoryAssignmentConfigs, setCategoryAssignmentConfigs] = useState<
     any[]
   >([]);
+  const [categoryEscalationConfigs, setCategoryEscalationConfigs] = useState<
+    any[]
+  >([]);
   const [categoryConfigLoading, setCategoryConfigLoading] = useState(false);
   const [catAssignDrawerOpen, setCatAssignDrawerOpen] = useState(false);
   const [catAssignEditTarget, setCatAssignEditTarget] = useState<{
@@ -638,13 +641,13 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
     fetchMasterData();
   }, []); // Only fetch once on mount
 
-  // Fetch categories + assignment configs for a project (US-011)
+  // Fetch categories + assignment configs + escalation configs for a project (US-011/US-022)
   const fetchCategoryConfigs = async (projectId: string) => {
     setCategoryConfigLoading(true);
     try {
       const token = localStorage.getItem("authToken");
       const headers = { Authorization: `Bearer ${token}` };
-      const [catsRes, configsRes] = await Promise.all([
+      const [catsRes, configsRes, escRes] = await Promise.all([
         fetch(`${API_BASE_URL}/categories/project/${projectId}`, {
           headers,
           credentials: "include",
@@ -653,13 +656,21 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
           `${API_BASE_URL}/projects/${projectId}/category-assignment-configs`,
           { headers, credentials: "include" },
         ),
+        fetch(
+          `${API_BASE_URL}/projects/${projectId}/category-escalation-configs`,
+          { headers, credentials: "include" },
+        ),
       ]);
       const catsData = await catsRes.json();
       const configsData = await configsRes.json();
+      const escData = await escRes.json();
       const cats = Array.isArray(catsData) ? catsData : catsData.data || [];
       setCategoryList(cats.filter((c: any) => c.isActive !== false));
       if (configsData.success) {
         setCategoryAssignmentConfigs(configsData.data || []);
+      }
+      if (escData.success) {
+        setCategoryEscalationConfigs(escData.data || []);
       }
     } catch (err) {
       console.error("[CategoryAssignment] fetch error:", err);
@@ -888,11 +899,17 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
         },
       );
       const data = await res.json();
-      if (!data.success) {
+      if (data.success) {
+        const projectId = project?._id || project?.id;
+        if (projectId) await fetchCategoryConfigs(String(projectId));
+        setCatAssignDrawerOpen(false);
+      } else {
         console.error("[CategoryEscalation] save failed:", data.error);
+        alert("Failed to save escalation config: " + (data.error || "Unknown error"));
       }
     } catch (err) {
       console.error("[CategoryEscalation] save error:", err);
+      alert("Error saving escalation config. Please try again.");
     } finally {
       setCatEscSaving(false);
     }
@@ -4824,6 +4841,18 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                     } as Record<string, string>
                                   )[config.mode] || "#6b7280"
                                 : "#9ca3af";
+                              // US-022: Escalation config status for this category
+                              const escConfig = categoryEscalationConfigs.find(
+                                (ec: any) =>
+                                  ec.categoryId?._id === cat._id ||
+                                  ec.categoryId === cat._id,
+                              );
+                              const escLabel = escConfig?.isActive
+                                ? (escConfig.escalationMatrixId?.name || "Configured")
+                                : "No escalation";
+                              const escColor = escConfig?.isActive
+                                ? "#059669"
+                                : "#9ca3af";
                               return (
                                 <div
                                   key={cat._id}
@@ -4886,6 +4915,20 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                       }}
                                     >
                                       {modeLabel}
+                                    </span>
+                                    <span
+                                      title="Escalation config"
+                                      style={{
+                                        fontSize: "12px",
+                                        fontWeight: "500",
+                                        padding: "3px 8px",
+                                        backgroundColor: escColor + "1a",
+                                        color: escColor,
+                                        border: `1px solid ${escColor}40`,
+                                        borderRadius: "12px",
+                                      }}
+                                    >
+                                      {escLabel}
                                     </span>
                                     <button
                                       type="button"
