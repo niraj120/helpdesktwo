@@ -442,6 +442,40 @@ export const createProject = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error("Create project error:", error);
     console.error("Error details:", error.message);
+    // Handle duplicate projectId caused by concurrent creates — reset and retry once
+    if (error.code === 11000 && error.keyPattern?.projectId) {
+      try {
+        const projects = await (Project as any)
+          .find({ projectId: /^P\d+$/ }, { projectId: 1 })
+          .lean();
+        let maxNum = 0;
+        for (const p of projects as Array<{ projectId?: string }>) {
+          const match = p.projectId?.match(/^P(\d+)$/);
+          if (match) {
+            const n = parseInt(match[1], 10);
+            if (n > maxNum) maxNum = n;
+          }
+        }
+        const projectData = req.body;
+        const retryProject = new Project({
+          ...projectData,
+          code: projectData.code.toUpperCase(),
+          projectId: `P${String(maxNum + 1).padStart(3, "0")}`,
+          createdBy: req.body.createdBy,
+        });
+        await retryProject.save();
+        return res.status(201).json({
+          success: true,
+          data: { project: retryProject },
+          message: "Project created successfully",
+        });
+      } catch (retryError: any) {
+        return res.status(500).json({
+          success: false,
+          message: "Failed to create project due to ID conflict. Please try again.",
+        });
+      }
+    }
     if (error.errors) {
       console.error(
         "Validation errors:",

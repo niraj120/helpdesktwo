@@ -46,6 +46,7 @@ const StudentLayout = ({ children }: StudentLayoutProps) => {
   const [user, setUser] = useState<User | null>(null);
   const [branding, setBranding] = useState<ProjectBranding | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
+  const [submissionMode, setSubmissionMode] = useState<string>("both");
   const { hasPermission, getAllPermissions } = usePermissions();
 
   // Debug: Log permissions on mount
@@ -73,6 +74,9 @@ const StudentLayout = ({ children }: StudentLayoutProps) => {
             setBranding(response.data.data.branding);
             if (response.data.data.projectId) {
               setProjectId(response.data.data.projectId);
+            }
+            if (response.data.data.ticketSubmissionMode) {
+              setSubmissionMode(response.data.data.ticketSubmissionMode);
             }
           }
         } catch (error) {
@@ -165,13 +169,18 @@ const StudentLayout = ({ children }: StudentLayoutProps) => {
       icon: <MdLocationOn />,
       label: "Find Center",
       permission: PERMISSIONS.OFFLINE_MODULE_ACCESS,
+      showForModes: ["offline", "both"], // Only show for offline or both-mode projects
     },
   ];
 
-  // Filter menu items based on permissions
-  const visibleMenuItems = menuItems.filter(
-    (item) => !item.permission || hasPermission(item.permission),
-  );
+  // Filter menu items based on permissions and project submission mode
+  const visibleMenuItems = menuItems.filter((item) => {
+    // Check project-mode visibility (e.g., Find Center only for offline/both)
+    if ((item as any).showForModes && !(item as any).showForModes.includes(submissionMode)) {
+      return false;
+    }
+    return !item.permission || hasPermission(item.permission);
+  });
 
   const isActive = (path: string) => {
     return location.pathname.includes(path);

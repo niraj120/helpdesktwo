@@ -113,6 +113,7 @@ export const getAllEscalationMatrices = async (
     const matrices = await EscalationMatrix.find(filter)
       .populate("projectIds", "name code")
       .populate("levels.roleId", "name code")
+      .populate("levels.assigneeUserId", "firstName lastName email")
       .populate("createdBy", "firstName lastName email")
       .populate("updatedBy", "firstName lastName email")
       .sort({ createdAt: -1 })
@@ -163,6 +164,7 @@ export const getEscalationMatrixById = async (
     const matrix = await EscalationMatrix.findById(id)
       .populate("projectIds", "name code")
       .populate("levels.roleId", "name code")
+      .populate("levels.assigneeUserId", "firstName lastName email")
       .populate("createdBy", "firstName lastName email")
       .populate("updatedBy", "firstName lastName email");
 
@@ -246,6 +248,9 @@ export const createEscalationMatrix = async (
       priorityMode,
       priorityConfigs,
       applicablePriorities,
+      scopeMode,
+      categoryIds,
+      slaWarningConfig,
     } = req.body;
 
     // Validate required fields
@@ -286,9 +291,12 @@ export const createEscalationMatrix = async (
 
     // Validate all roleIds exist — skipped for PER_PRIORITY mode where top-level
     // levels are only a UI template and may carry an empty roleId.
+    // Also skipped for levels where assigneeType === 'user'.
     if (priorityMode !== "PER_PRIORITY") {
       const emptyRoleLevel = levels.find(
-        (l: any) => !l.roleId || String(l.roleId).trim() === "",
+        (l: any) =>
+          l.assigneeType !== "user" &&
+          (!l.roleId || String(l.roleId).trim() === ""),
       );
       if (emptyRoleLevel) {
         res.status(400).json({
@@ -298,14 +306,18 @@ export const createEscalationMatrix = async (
         return;
       }
 
-      const roleIds = levels.map((l: IEscalationLevel) => l.roleId);
-      const existingRoles = await Role.find({ _id: { $in: roleIds } });
-      if (existingRoles.length !== roleIds.length) {
-        res.status(400).json({
-          success: false,
-          message: "One or more role IDs are invalid",
-        });
-        return;
+      const roleIds = levels
+        .filter((l: any) => l.assigneeType !== "user" && l.roleId)
+        .map((l: IEscalationLevel) => l.roleId);
+      if (roleIds.length > 0) {
+        const existingRoles = await Role.find({ _id: { $in: roleIds } });
+        if (existingRoles.length !== roleIds.length) {
+          res.status(400).json({
+            success: false,
+            message: "One or more role IDs are invalid",
+          });
+          return;
+        }
       }
     }
 
@@ -329,15 +341,24 @@ export const createEscalationMatrix = async (
       levels: levels.map((l: any) => ({
         levelNumber: l.levelNumber,
         levelName: l.levelName,
+        assigneeType: l.assigneeType || "role",
         // Store null instead of empty string to avoid ObjectId cast errors
         roleId: l.roleId && String(l.roleId).trim() !== "" ? l.roleId : null,
+        assigneeUserId: l.assigneeUserId && String(l.assigneeUserId).trim() !== "" ? l.assigneeUserId : null,
         slaHours: l.slaHours || 24,
-        slaUnit: l.slaUnit || "hrs", // Save slaUnit for proper display
+        slaUnit: l.slaUnit || "hrs",
         responseTime: l.responseTime,
+        levelType: l.levelType || "reassign",
+        notifyUserIds: Array.isArray(l.notifyUserIds) ? l.notifyUserIds : [],
+        slaThresholdType: l.slaThresholdType || "fixed",
+        slaThresholdPercent: l.slaThresholdPercent,
         isActive: l.isActive !== false,
       })),
       projectIds: projectIds || [],
       applicablePriorities: normalizedPriorities,
+      scopeMode: scopeMode || "PRIORITY",
+      categoryIds: Array.isArray(categoryIds) ? categoryIds : [],
+      slaWarningConfig: slaWarningConfig || undefined,
       isActive: isActive !== false,
       createdBy: userId,
     };
@@ -440,6 +461,9 @@ export const updateEscalationMatrix = async (
       priorityMode,
       priorityConfigs,
       applicablePriorities,
+      scopeMode,
+      categoryIds,
+      slaWarningConfig,
     } = req.body;
 
     // Debug: Log incoming request body
@@ -450,6 +474,9 @@ export const updateEscalationMatrix = async (
       allowBackward,
       autoEscalate,
       isActive,
+      scopeMode,
+      categoryIds,
+      categoryIdsCount: Array.isArray(categoryIds) ? categoryIds.length : "not-array",
     });
 
     const matrix = await EscalationMatrix.findById(id);
@@ -492,10 +519,13 @@ export const updateEscalationMatrix = async (
 
       // Validate all roleIds exist — skipped for PER_PRIORITY mode where top-level
       // levels are only a UI template and may carry an empty roleId.
+      // Also skipped for levels where assigneeType === 'user'.
       const effectivePriorityMode = priorityMode ?? matrix.priorityMode;
       if (effectivePriorityMode !== "PER_PRIORITY") {
         const emptyRoleLevel = levels.find(
-          (l: any) => !l.roleId || String(l.roleId).trim() === "",
+          (l: any) =>
+            l.assigneeType !== "user" &&
+            (!l.roleId || String(l.roleId).trim() === ""),
         );
         if (emptyRoleLevel) {
           res.status(400).json({
@@ -505,14 +535,18 @@ export const updateEscalationMatrix = async (
           return;
         }
 
-        const roleIds = levels.map((l: IEscalationLevel) => l.roleId);
-        const existingRoles = await Role.find({ _id: { $in: roleIds } });
-        if (existingRoles.length !== roleIds.length) {
-          res.status(400).json({
-            success: false,
-            message: "One or more role IDs are invalid",
-          });
-          return;
+        const roleIds = levels
+          .filter((l: any) => l.assigneeType !== "user" && l.roleId)
+          .map((l: IEscalationLevel) => l.roleId);
+        if (roleIds.length > 0) {
+          const existingRoles = await Role.find({ _id: { $in: roleIds } });
+          if (existingRoles.length !== roleIds.length) {
+            res.status(400).json({
+              success: false,
+              message: "One or more role IDs are invalid",
+            });
+            return;
+          }
         }
       }
 
@@ -538,11 +572,17 @@ export const updateEscalationMatrix = async (
       matrix.levels = levels.map((l: any) => ({
         levelNumber: l.levelNumber,
         levelName: l.levelName,
+        assigneeType: l.assigneeType || "role",
         // Store null instead of empty string to avoid ObjectId cast errors
         roleId: l.roleId && String(l.roleId).trim() !== "" ? l.roleId : null,
+        assigneeUserId: l.assigneeUserId && String(l.assigneeUserId).trim() !== "" ? l.assigneeUserId : null,
         slaHours: l.slaHours || 24,
-        slaUnit: l.slaUnit || "hrs", // Save slaUnit for proper display
+        slaUnit: l.slaUnit || "hrs",
         responseTime: l.responseTime,
+        levelType: l.levelType || "reassign",
+        notifyUserIds: Array.isArray(l.notifyUserIds) ? l.notifyUserIds : [],
+        slaThresholdType: l.slaThresholdType || "fixed",
+        slaThresholdPercent: l.slaThresholdPercent,
         isActive: l.isActive !== false,
       })) as any;
     }
@@ -564,6 +604,12 @@ export const updateEscalationMatrix = async (
     if (projectIds) matrix.projectIds = projectIds;
     if (isActive !== undefined) matrix.isActive = isActive;
     if (autoEscalate !== undefined) matrix.autoEscalate = autoEscalate;
+    if (scopeMode !== undefined) (matrix as any).scopeMode = scopeMode;
+    if (categoryIds !== undefined) {
+      (matrix as any).categoryIds = Array.isArray(categoryIds) ? categoryIds : [];
+      matrix.markModified("categoryIds");
+    }
+    if (slaWarningConfig !== undefined) (matrix as any).slaWarningConfig = slaWarningConfig;
 
     // Update priority mode configuration
     if (priorityMode !== undefined) {
@@ -618,6 +664,9 @@ export const updateEscalationMatrix = async (
       allowSkipLevel: matrix.allowSkipLevel,
       allowBackward: matrix.allowBackward,
       autoEscalate: matrix.autoEscalate,
+      scopeMode: (matrix as any).scopeMode,
+      categoryIds: (matrix as any).categoryIds,
+      categoryIdsCount: ((matrix as any).categoryIds as any[])?.length,
     });
 
     await matrix.save();

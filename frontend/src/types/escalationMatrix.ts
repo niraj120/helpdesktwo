@@ -10,8 +10,14 @@ export interface EscalationLevel {
   _id?: string;
   levelNumber: number; // Defines escalation order (1, 2, 3, ...)
   levelName: string; // Display label only
-  roleId: string; // Role responsible at this level
+  /** Whether this level assigns to a role or a specific user */
+  assigneeType?: "role" | "user";
+  roleId: string; // Role responsible at this level (used when assigneeType='role')
   roleName?: string; // Populated from role
+  /** Specific user ID — used when assigneeType='user' */
+  assigneeUserId?: string;
+  /** Display name of the specific user (populated) */
+  assigneeUserName?: string;
   slaHours: number; // SLA duration for this level in hours
   slaUnit?: SlaUnit; // Display unit (mins, hrs, days) - default 'hrs'
   /** US-ESC-005: 'reassign' changes assignee; 'notify' only notifies */
@@ -69,6 +75,10 @@ export interface EscalationMatrix {
   name: string;
   description?: string;
   escalationMode: EscalationMode;
+  /** Whether this matrix is scoped by priority or by ticket category */
+  scopeMode?: "PRIORITY" | "CATEGORY";
+  /** Category IDs this matrix applies to — used when scopeMode='CATEGORY' */
+  categoryIds?: string[];
   priorityMode?: PriorityMode; // NEW: Controls if matrix is same for all priorities or different
   allowSkipLevel: boolean; // Only for RANDOM mode
   allowBackward: boolean; // Allows backward escalation
@@ -154,6 +164,10 @@ export interface EscalationMatrixFormData {
   name: string;
   description?: string;
   escalationMode: EscalationMode;
+  /** Whether this matrix is scoped by priority or by ticket category */
+  scopeMode?: "PRIORITY" | "CATEGORY";
+  /** Category IDs this matrix applies to — used when scopeMode='CATEGORY' */
+  categoryIds?: string[];
   priorityMode?: PriorityMode; // NEW: Controls if matrix uses same levels for all priorities
   allowSkipLevel: boolean;
   allowBackward: boolean;
@@ -188,7 +202,13 @@ export type SlaUnit = "mins" | "hrs" | "days";
 export interface EscalationLevelFormData {
   levelNumber: number;
   levelName: string;
+  /** Whether this level assigns to a role or a specific user */
+  assigneeType?: "role" | "user";
   roleId: string;
+  /** Specific user ID — used when assigneeType='user' */
+  assigneeUserId?: string;
+  /** Display name of the specific user (for UI only, not sent to backend) */
+  assigneeUserName?: string;
   slaHours: number;
   slaUnit?: SlaUnit; // Display unit (mins, hrs, days) - default 'hrs'
   /** US-ESC-005: 'reassign' changes assignee; 'notify' only notifies */

@@ -851,10 +851,22 @@ projectSchema.index({ createdAt: -1 });
 // Auto-generate projectId before saving
 projectSchema.pre("save", async function (next) {
   if (this.isNew) {
-    // Auto-generate projectId
+    // Auto-generate projectId — use max existing number instead of count
+    // (countDocuments breaks when projects have been deleted)
     if (!this.projectId) {
-      const count = await mongoose.models.Project.countDocuments();
-      this.projectId = `P${String(count + 1).padStart(3, "0")}`;
+      const projects = await mongoose.models.Project
+        .find({ projectId: /^P\d+$/ }, { projectId: 1 })
+        .lean();
+
+      let maxNum = 0;
+      for (const p of projects as Array<{ projectId?: string }>) {
+        const match = p.projectId?.match(/^P(\d+)$/);
+        if (match) {
+          const n = parseInt(match[1], 10);
+          if (n > maxNum) maxNum = n;
+        }
+      }
+      this.projectId = `P${String(maxNum + 1).padStart(3, "0")}`;
     }
 
     // Auto-generate name from portal name if not provided
