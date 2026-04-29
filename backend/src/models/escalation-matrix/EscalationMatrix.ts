@@ -11,7 +11,11 @@ export interface IEscalationLevel {
   _id?: mongoose.Types.ObjectId;
   levelNumber: number; // Defines escalation order (1, 2, 3, ...)
   levelName: string; // Display label only (e.g., "Level 1 Support", "Manager Review")
-  roleId: mongoose.Types.ObjectId; // Role responsible at this level
+  /** Whether this level is assigned to a role or a specific user */
+  assigneeType?: "role" | "user";
+  roleId: mongoose.Types.ObjectId; // Role responsible at this level (used when assigneeType='role')
+  /** Specific user ObjectId — used when assigneeType='user' */
+  assigneeUserId?: mongoose.Types.ObjectId;
   slaHours: number; // SLA duration for this level (always stored as hours internally)
   slaUnit?: SlaUnit; // Display unit for UI (mins, hrs, days) - default 'hrs'
   levelType?: "reassign" | "notify"; // US-ESC-005: 'reassign' reassigns ticket; 'notify' only notifies  /** US-ESC-006: specific users to notify in addition to role (used when levelType='notify') */
@@ -44,7 +48,11 @@ export interface IEscalationMatrix extends Document {
   name: string;
   description?: string;
   escalationMode: "SEQUENTIAL" | "RANDOM";
-  priorityMode: "SAME_FOR_ALL" | "PER_PRIORITY"; // NEW: Controls if matrix is same for all priorities or different
+  /** scopeMode: 'PRIORITY' uses priority-based routing (default); 'CATEGORY' routes by ticket category */
+  scopeMode?: "PRIORITY" | "CATEGORY";
+  /** Category ObjectIds this matrix applies to — used when scopeMode='CATEGORY' */
+  categoryIds?: mongoose.Types.ObjectId[];
+  priorityMode: "SAME_FOR_ALL" | "PER_PRIORITY"; // Controls if matrix is same for all priorities or different
   allowSkipLevel: boolean; // Only applicable for RANDOM mode
   allowBackward: boolean; // Allows backward escalation
   autoEscalate: boolean; // Auto-escalate on SLA breach
@@ -98,10 +106,20 @@ const EscalationLevelSchema = new Schema<IEscalationLevel>(
       required: true,
       trim: true,
     },
+    assigneeType: {
+      type: String,
+      enum: ["role", "user"],
+      default: "role",
+    },
     roleId: {
       type: Schema.Types.ObjectId,
       ref: "Role",
-      required: false, // Optional for PER_PRIORITY template levels (may have no role assigned)
+      required: false, // Optional when assigneeType='user'
+      default: null,
+    },
+    assigneeUserId: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
       default: null,
     },
     slaHours: {
@@ -201,6 +219,18 @@ const EscalationMatrixSchema = new Schema<IEscalationMatrix>(
       default: "SEQUENTIAL",
       index: true,
     },
+    scopeMode: {
+      type: String,
+      enum: ["PRIORITY", "CATEGORY"],
+      default: "PRIORITY",
+      index: true,
+    },
+    categoryIds: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "Category",
+      },
+    ],
     priorityMode: {
       type: String,
       required: true,
@@ -297,11 +327,14 @@ const EscalationMatrixSchema = new Schema<IEscalationMatrix>(
 EscalationMatrixSchema.index({ projectIds: 1, isActive: 1 });
 EscalationMatrixSchema.index({ name: 1, projectIds: 1 });
 
+// Compound index for category-scoped matrix lookup
+EscalationMatrixSchema.index({ categoryIds: 1, isActive: 1 });
+
 // Pre-save hook to sort levels by levelNumber
 EscalationMatrixSchema.pre("save", function (next) {
-  // Sort levels in SAME_FOR_ALL mode
+  // Sort levels in CATEGORY mode or SAME_FOR_ALL mode
   if (
-    this.priorityMode === "SAME_FOR_ALL" &&
+    (this.scopeMode === "CATEGORY" || this.priorityMode === "SAME_FOR_ALL") &&
     this.levels &&
     this.levels.length > 0
   ) {

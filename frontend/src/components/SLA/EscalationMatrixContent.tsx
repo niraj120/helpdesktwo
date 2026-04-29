@@ -89,6 +89,8 @@ const EscalationMatrixContent: React.FC = () => {
     name: "",
     description: "",
     escalationMode: "SEQUENTIAL",
+    scopeMode: "PRIORITY",
+    categoryIds: [],
     priorityMode: "SAME_FOR_ALL",
     allowSkipLevel: false,
     allowBackward: false,
@@ -118,6 +120,9 @@ const EscalationMatrixContent: React.FC = () => {
   >([]);
   const [linkedCategoryIds, setLinkedCategoryIds] = useState<string[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState(false);
+  const [projectUsers, setProjectUsers] = useState<
+    { _id: string; firstName: string; lastName: string; email: string }[]
+  >([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -187,8 +192,10 @@ const EscalationMatrixContent: React.FC = () => {
   useEffect(() => {
     if (formData.projectIds.length > 0 && showModal) {
       fetchCategoriesForProject(formData.projectIds[0]);
+      fetchProjectUsers(formData.projectIds[0]);
     } else {
       setAvailableCategories([]);
+      setProjectUsers([]);
     }
   }, [formData.projectIds, showModal]);
 
@@ -340,6 +347,31 @@ const EscalationMatrixContent: React.FC = () => {
     }
   };
 
+  // Fetch users scoped to the selected project (for "By User" level assignee picker)
+  const fetchProjectUsers = async (projectId: string) => {
+    try {
+      const token = localStorage.getItem("authToken");
+      const response = await fetch(
+        `${API_CONFIG.API_URL}/users?project=${projectId}&isActive=true&limit=300`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          credentials: "include",
+        },
+      );
+      if (response.ok) {
+        const data = await response.json();
+        const list = data.data?.users ?? data.data ?? data.users ?? [];
+        setProjectUsers(Array.isArray(list) ? list : []);
+      }
+    } catch (err) {
+      console.error("Error fetching project users:", err);
+      setProjectUsers([]);
+    }
+  };
+
   const fetchProjects = async () => {
     try {
       const token = localStorage.getItem("authToken");
@@ -409,6 +441,8 @@ const EscalationMatrixContent: React.FC = () => {
       name: "",
       description: "",
       escalationMode: "SEQUENTIAL",
+      scopeMode: "PRIORITY",
+      categoryIds: [],
       priorityMode: "SAME_FOR_ALL",
       allowSkipLevel: false,
       allowBackward: false,
@@ -417,7 +451,9 @@ const EscalationMatrixContent: React.FC = () => {
         {
           levelNumber: 1,
           levelName: "Level 1",
+          assigneeType: "role",
           roleId: "",
+          assigneeUserId: "",
           slaHours: 24,
           slaUnit: "hrs",
           levelType: "reassign" as "reassign" | "notify",
@@ -468,10 +504,22 @@ const EscalationMatrixContent: React.FC = () => {
     const mappedLevels = (fullMatrix.levels || []).map((l) => ({
       levelNumber: l.levelNumber,
       levelName: l.levelName,
+      assigneeType: ((l as any).assigneeType as "role" | "user") || "role",
       roleId:
         l.roleId !== null && typeof l.roleId === "object"
           ? (l.roleId as any)._id
           : l.roleId,
+      assigneeUserId: (l as any).assigneeUserId
+        ? typeof (l as any).assigneeUserId === "object"
+          ? ((l as any).assigneeUserId as any)._id
+          : String((l as any).assigneeUserId)
+        : "",
+      assigneeUserName: (() => {
+        const u = (l as any).assigneeUserId;
+        if (!u) return "";
+        if (typeof u === "object") return [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || "";
+        return "";
+      })(),
       slaHours: l.slaHours,
       slaUnit: (l as any).slaUnit || "hrs",
       levelType: (l as any).levelType || "reassign",
@@ -514,6 +562,10 @@ const EscalationMatrixContent: React.FC = () => {
       name: fullMatrix.name,
       description: fullMatrix.description || "",
       escalationMode: fullMatrix.escalationMode,
+      scopeMode: (fullMatrix as any).scopeMode || "PRIORITY",
+      categoryIds: (fullMatrix as any).categoryIds?.map((id: any) =>
+        typeof id === "object" ? id._id ?? String(id) : String(id),
+      ) || [],
       priorityMode: fullMatrix.priorityMode || "SAME_FOR_ALL",
       allowSkipLevel: fullMatrix.allowSkipLevel || false,
       allowBackward: fullMatrix.allowBackward || false,
@@ -580,10 +632,21 @@ const EscalationMatrixContent: React.FC = () => {
       setSelectedPriorities([]);
     }
 
-    // Restore linked categories from full matrix detail
-    setLinkedCategoryIds(
-      (fullMatrix.linkedCategories || []).map((lc) => lc.categoryId),
-    );
+    // Restore linked categories
+    // If scopeMode is CATEGORY, use the embedded categoryIds from the matrix;
+    // otherwise fall back to the legacy linkedCategories join records.
+    const savedScopeMode = (fullMatrix as any).scopeMode || "PRIORITY";
+    if (savedScopeMode === "CATEGORY" && (fullMatrix as any).categoryIds?.length > 0) {
+      setLinkedCategoryIds(
+        (fullMatrix as any).categoryIds.map((id: any) =>
+          typeof id === "object" ? id._id ?? String(id) : String(id),
+        ),
+      );
+    } else {
+      setLinkedCategoryIds(
+        (fullMatrix.linkedCategories || []).map((lc) => lc.categoryId),
+      );
+    }
 
     setShowModal(true);
   };
@@ -594,63 +657,96 @@ const EscalationMatrixContent: React.FC = () => {
       return;
     }
 
-    // Validation based on priority mode
-    if (formData.priorityMode === "PER_PRIORITY") {
-      // Validate all priority configs have at least one level with a role
-      const invalidConfigs = (formData.priorityConfigs || []).filter(
-        (config) => {
-          if (config.levels.length === 0) return true;
-          return config.levels.some((l) => !l.roleId);
-        },
-      );
-      if (invalidConfigs.length > 0) {
-        setError(
-          `All priority configurations must have at least one level with a role assigned. Check: ${invalidConfigs.map((c) => c.priorityCode).join(", ")}`,
-        );
+    const isCategoryMode = formData.scopeMode === "CATEGORY";
+
+    // Helper: check level has a valid assignee (role or user)
+    const levelHasAssignee = (l: EscalationLevelFormData) =>
+      l.assigneeType === "user" ? !!l.assigneeUserId : !!l.roleId;
+
+    if (isCategoryMode) {
+      // Category mode validation
+      if (linkedCategoryIds.length === 0) {
+        setError("Please select at least one category for a category-scoped matrix");
         return;
       }
-    } else {
-      // SAME_FOR_ALL mode
       if (formData.levels.length === 0) {
         setError("At least one escalation level is required");
         return;
       }
-
-      const invalidLevels = formData.levels.filter((l) => !l.roleId);
+      const invalidLevels = formData.levels.filter((l) => !levelHasAssignee(l));
       if (invalidLevels.length > 0) {
-        setError("All levels must have a role assigned");
+        setError("All levels must have a role or user assigned");
+        return;
+      }
+    } else {
+      // Priority mode validation
+      if (formData.priorityMode === "PER_PRIORITY") {
+        const invalidConfigs = (formData.priorityConfigs || []).filter(
+          (config) => {
+            if (config.levels.length === 0) return true;
+            return config.levels.some((l) => !levelHasAssignee(l));
+          },
+        );
+        if (invalidConfigs.length > 0) {
+          setError(
+            `All priority configurations must have at least one level with a role or user assigned. Check: ${invalidConfigs.map((c) => c.priorityCode).join(", ")}`,
+          );
+          return;
+        }
+      } else {
+        // SAME_FOR_ALL mode
+        if (formData.levels.length === 0) {
+          setError("At least one escalation level is required");
+          return;
+        }
+        const invalidLevels = formData.levels.filter((l) => !levelHasAssignee(l));
+        if (invalidLevels.length > 0) {
+          setError("All levels must have a role or user assigned");
+          return;
+        }
+      }
+
+      // Validate at least one priority is selected
+      if (selectedPriorities.length === 0 && priorities.length > 0) {
+        setError("Please select at least one priority");
         return;
       }
     }
 
-    // Validate at least one priority is selected
-    if (selectedPriorities.length === 0 && priorities.length > 0) {
-      setError("Please select at least one priority");
-      return;
-    }
-
     // Convert selected priority IDs to priority codes (names in uppercase)
-    // The backend expects codes like 'HIGH', 'MEDIUM', 'LOW', not ObjectIds
     const priorityCodes = selectedPriorities.map((id) => {
       const priority = priorities.find((p) => p._id === id);
-      return priority?.name?.toUpperCase() || id; // Fallback to id if not found
+      return priority?.name?.toUpperCase() || id;
     });
 
-    // Prepare save data with applicablePriorities as codes
-    const saveData = {
+    // Prepare save data
+    const saveData: EscalationMatrixFormData = {
       ...formData,
-      applicablePriorities: priorityCodes,
+      applicablePriorities: isCategoryMode ? [] : priorityCodes,
+      categoryIds: isCategoryMode ? linkedCategoryIds : [],
     };
 
-    // Debug: Log saveData before save
+    // Strip assigneeUserName (display-only, not sent to backend)
+    const stripDisplayFields = (l: EscalationLevelFormData) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { assigneeUserName, ...rest } = l as any;
+      return rest;
+    };
+    saveData.levels = saveData.levels.map(stripDisplayFields);
+    if (saveData.priorityConfigs) {
+      saveData.priorityConfigs = saveData.priorityConfigs.map((pc) => ({
+        ...pc,
+        levels: pc.levels.map(stripDisplayFields),
+      }));
+    }
+
     console.log("🔄 Escalation Matrix Save - saveData:", {
       name: saveData.name,
+      scopeMode: saveData.scopeMode,
       escalationMode: saveData.escalationMode,
       priorityMode: saveData.priorityMode,
+      categoryIds: saveData.categoryIds,
       applicablePriorities: saveData.applicablePriorities,
-      allowSkipLevel: saveData.allowSkipLevel,
-      allowBackward: saveData.allowBackward,
-      autoEscalate: saveData.autoEscalate,
       levelsCount: saveData.levels.length,
       priorityConfigsCount: saveData.priorityConfigs?.length || 0,
     });
@@ -671,38 +767,13 @@ const EscalationMatrixContent: React.FC = () => {
       if (response.success) {
         const savedMatrixId = response.data?._id || editingMatrix?._id;
 
-        // Save category bindings: upsert selected, deactivate removed
-        if (savedMatrixId && linkedCategoryIds.length > 0) {
-          const token = localStorage.getItem("authToken");
-          await Promise.allSettled(
-            linkedCategoryIds.map((catId) =>
-              fetch(
-                `${API_CONFIG.API_URL}/categories/${catId}/escalation-config`,
-                {
-                  method: "PUT",
-                  headers: {
-                    Authorization: `Bearer ${token}`,
-                    "Content-Type": "application/json",
-                  },
-                  credentials: "include",
-                  body: JSON.stringify({
-                    escalationMatrixId: savedMatrixId,
-                    isActive: true,
-                  }),
-                },
-              ),
-            ),
-          );
-        }
-        // Deactivate categories that were previously linked but now unchecked
-        if (editingMatrix?.linkedCategories) {
-          const removedCatIds = editingMatrix.linkedCategories
-            .map((lc) => lc.categoryId)
-            .filter((id) => !linkedCategoryIds.includes(id));
-          if (removedCatIds.length > 0) {
+        // For PRIORITY-scoped matrices only: sync legacy CategoryEscalationConfig records
+        // (CATEGORY-scoped matrices embed categoryIds directly on the matrix — no join records needed)
+        if (!isCategoryMode && savedMatrixId) {
+          if (linkedCategoryIds.length > 0) {
             const token = localStorage.getItem("authToken");
             await Promise.allSettled(
-              removedCatIds.map((catId) =>
+              linkedCategoryIds.map((catId) =>
                 fetch(
                   `${API_CONFIG.API_URL}/categories/${catId}/escalation-config`,
                   {
@@ -714,12 +785,39 @@ const EscalationMatrixContent: React.FC = () => {
                     credentials: "include",
                     body: JSON.stringify({
                       escalationMatrixId: savedMatrixId,
-                      isActive: false,
+                      isActive: true,
                     }),
                   },
                 ),
               ),
             );
+          }
+          if (editingMatrix?.linkedCategories) {
+            const removedCatIds = editingMatrix.linkedCategories
+              .map((lc) => lc.categoryId)
+              .filter((id) => !linkedCategoryIds.includes(id));
+            if (removedCatIds.length > 0) {
+              const token = localStorage.getItem("authToken");
+              await Promise.allSettled(
+                removedCatIds.map((catId) =>
+                  fetch(
+                    `${API_CONFIG.API_URL}/categories/${catId}/escalation-config`,
+                    {
+                      method: "PUT",
+                      headers: {
+                        Authorization: `Bearer ${token}`,
+                        "Content-Type": "application/json",
+                      },
+                      credentials: "include",
+                      body: JSON.stringify({
+                        escalationMatrixId: savedMatrixId,
+                        isActive: false,
+                      }),
+                    },
+                  ),
+                ),
+              );
+            }
           }
         }
 
@@ -816,7 +914,9 @@ const EscalationMatrixContent: React.FC = () => {
       {
         levelNumber: maxLevel + 1,
         levelName: `Level ${maxLevel + 1}`,
+        assigneeType: "role" as "role" | "user",
         roleId: "",
+        assigneeUserId: "",
         slaHours: 24,
         slaUnit: "hrs" as SlaUnit,
         levelType: "reassign" as "reassign" | "notify",
@@ -873,6 +973,24 @@ const EscalationMatrixContent: React.FC = () => {
     if (!roleId) return "Unknown";
     const role = roles.find((r) => r._id === roleId);
     return role?.name || "Unknown";
+  };
+
+  const getAssigneeLabelForLevel = (level: any): string => {
+    if (level.assigneeType === "user") {
+      const u = level.assigneeUserId;
+      if (!u) return "Unknown User";
+      if (typeof u === "object") {
+        return [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || "Unknown User";
+      }
+      // plain ID — try to match from projectUsers (loaded during edit)
+      const found = projectUsers.find((pu) => pu._id === String(u));
+      if (found) return [found.firstName, found.lastName].filter(Boolean).join(" ") || found.email;
+      return "User";
+    }
+    // role mode
+    const rid = level.roleId;
+    if (rid !== null && typeof rid === "object") return (rid as any).name || "Unknown";
+    return getRoleName(rid as string);
   };
 
   // Convert resolution time to hours
@@ -1537,27 +1655,35 @@ const EscalationMatrixContent: React.FC = () => {
                       </span>
                     </td>
                     <td style={{ padding: "16px 24px" }}>
-                      {(matrix.linkedCategoriesCount || 0) > 0 ? (
-                        <span
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "4px",
-                            padding: "4px 10px",
-                            borderRadius: "9999px",
-                            fontSize: "12px",
-                            fontWeight: 500,
-                            backgroundColor: "#ede9fe",
-                            color: "#6d28d9",
-                          }}
-                        >
-                          🏷️ {matrix.linkedCategoriesCount}
-                        </span>
-                      ) : (
-                        <span style={{ fontSize: "12px", color: "#9ca3af" }}>
-                          —
-                        </span>
-                      )}
+                      {(() => {
+                        // Prefer embedded categoryIds (new schema) if present,
+                        // fall back to legacy linkedCategoriesCount join records.
+                        const catCount = (matrix as any).categoryIds?.length || 0;
+                        const count = catCount > 0
+                          ? catCount
+                          : (matrix.linkedCategoriesCount || 0);
+                        return count > 0 ? (
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "4px",
+                              padding: "4px 10px",
+                              borderRadius: "9999px",
+                              fontSize: "12px",
+                              fontWeight: 500,
+                              backgroundColor: "#ede9fe",
+                              color: "#6d28d9",
+                            }}
+                          >
+                            🏷️ {count}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: "12px", color: "#9ca3af" }}>
+                            —
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td style={{ padding: "16px 24px" }}>
                       <button
@@ -1721,11 +1847,8 @@ const EscalationMatrixContent: React.FC = () => {
                                         color: "#6b7280",
                                       }}
                                     >
-                                      Role:{" "}
-                                      {level.roleId !== null &&
-                                      typeof level.roleId === "object"
-                                        ? (level.roleId as any).name
-                                        : getRoleName(level.roleId as string)}
+                                      {(level as any).assigneeType === "user" ? "User" : "Role"}:{" "}
+                                      {getAssigneeLabelForLevel(level)}
                                       {" | "}
                                       SLA: {level.slaHours}
                                       {(level as any).slaUnit === "mins"
@@ -1961,7 +2084,7 @@ const EscalationMatrixContent: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Category Overrides — shown after a project is selected */}
+                {/* Matrix Scope Mode — shown after a project is selected */}
                 {formData.projectIds.length > 0 && (
                   <div style={{ marginBottom: "24px" }}>
                     <h4
@@ -1972,98 +2095,196 @@ const EscalationMatrixContent: React.FC = () => {
                         marginBottom: "4px",
                       }}
                     >
-                      Category Overrides
+                      Matrix Scope *
                     </h4>
                     <p
                       style={{
                         fontSize: "12px",
                         color: "#6b7280",
-                        marginBottom: "10px",
+                        marginBottom: "12px",
                       }}
                     >
-                      Select categories that should use this escalation matrix
-                      instead of the project default.
+                      Choose whether this matrix applies based on ticket
+                      priority or ticket category.
                     </p>
-                    {categoriesLoading ? (
-                      <p style={{ fontSize: "13px", color: "#6b7280" }}>
-                        Loading categories…
-                      </p>
-                    ) : availableCategories.length === 0 ? (
-                      <p
+                    <div style={{ display: "flex", gap: "12px", marginBottom: "16px" }}>
+                      {/* Priority-based card */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setFormData({ ...formData, scopeMode: "PRIORITY" })
+                        }
                         style={{
-                          fontSize: "13px",
-                          color: "#9ca3af",
-                          fontStyle: "italic",
+                          flex: 1,
+                          padding: "14px 16px",
+                          border:
+                            formData.scopeMode !== "CATEGORY"
+                              ? "2px solid #7c3aed"
+                              : "2px solid #e5e7eb",
+                          borderRadius: "8px",
+                          textAlign: "left",
+                          backgroundColor:
+                            formData.scopeMode !== "CATEGORY"
+                              ? "#f5f3ff"
+                              : "white",
+                          cursor: "pointer",
                         }}
                       >
-                        No categories found for this project.
-                      </p>
-                    ) : (
+                        <div
+                          style={{
+                            fontWeight: 600,
+                            fontSize: "14px",
+                            color: "#374151",
+                            marginBottom: "4px",
+                          }}
+                        >
+                          🎯 Priority-based
+                        </div>
+                        <p style={{ fontSize: "12px", color: "#6b7280", margin: 0 }}>
+                          Matrix applies to all tickets matching selected
+                          priorities (High, Medium, Low…)
+                        </p>
+                      </button>
+                      {/* Category-based card */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setFormData({ ...formData, scopeMode: "CATEGORY" })
+                        }
+                        style={{
+                          flex: 1,
+                          padding: "14px 16px",
+                          border:
+                            formData.scopeMode === "CATEGORY"
+                              ? "2px solid #0891b2"
+                              : "2px solid #e5e7eb",
+                          borderRadius: "8px",
+                          textAlign: "left",
+                          backgroundColor:
+                            formData.scopeMode === "CATEGORY"
+                              ? "#ecfeff"
+                              : "white",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontWeight: 600,
+                            fontSize: "14px",
+                            color: "#374151",
+                            marginBottom: "4px",
+                          }}
+                        >
+                          🏷️ Category-based
+                        </div>
+                        <p style={{ fontSize: "12px", color: "#6b7280", margin: 0 }}>
+                          Matrix applies only to tickets in specific categories
+                        </p>
+                      </button>
+                    </div>
+
+                    {/* Category selection — shown only when CATEGORY scope is chosen */}
+                    {formData.scopeMode === "CATEGORY" && (
                       <div
                         style={{
-                          display: "grid",
-                          gridTemplateColumns:
-                            "repeat(auto-fill, minmax(200px, 1fr))",
-                          gap: "8px",
+                          padding: "16px",
+                          backgroundColor: "#f0fdff",
+                          borderRadius: "8px",
+                          border: "1px solid #a5f3fc",
                         }}
                       >
-                        {availableCategories.map((cat) => {
-                          const checked = linkedCategoryIds.includes(cat._id);
-                          return (
-                            <label
-                              key={cat._id}
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                padding: "10px 12px",
-                                border: checked
-                                  ? "2px solid #7c3aed"
-                                  : "1px solid #e5e7eb",
-                                borderRadius: "8px",
-                                backgroundColor: checked ? "#f5f3ff" : "white",
-                                cursor: "pointer",
-                                fontSize: "13px",
-                              }}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => {
-                                  setLinkedCategoryIds((prev) =>
-                                    checked
-                                      ? prev.filter((id) => id !== cat._id)
-                                      : [...prev, cat._id],
-                                  );
-                                }}
-                                style={{ marginRight: "8px" }}
-                              />
-                              <span
-                                style={{
-                                  color: "#374151",
-                                  fontWeight: checked ? 500 : 400,
-                                }}
-                              >
-                                {cat.name}
-                              </span>
-                            </label>
-                          );
-                        })}
+                        <p
+                          style={{
+                            fontSize: "13px",
+                            fontWeight: 500,
+                            color: "#0e7490",
+                            marginBottom: "10px",
+                          }}
+                        >
+                          Select categories this matrix applies to *
+                        </p>
+                        {categoriesLoading ? (
+                          <p style={{ fontSize: "13px", color: "#6b7280" }}>
+                            Loading categories…
+                          </p>
+                        ) : availableCategories.length === 0 ? (
+                          <p
+                            style={{
+                              fontSize: "13px",
+                              color: "#9ca3af",
+                              fontStyle: "italic",
+                            }}
+                          >
+                            No categories found for this project.
+                          </p>
+                        ) : (
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns:
+                                "repeat(auto-fill, minmax(200px, 1fr))",
+                              gap: "8px",
+                            }}
+                          >
+                            {availableCategories.map((cat) => {
+                              const checked = linkedCategoryIds.includes(cat._id);
+                              return (
+                                <label
+                                  key={cat._id}
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    padding: "10px 12px",
+                                    border: checked
+                                      ? "2px solid #0891b2"
+                                      : "1px solid #e5e7eb",
+                                    borderRadius: "8px",
+                                    backgroundColor: checked ? "#ecfeff" : "white",
+                                    cursor: "pointer",
+                                    fontSize: "13px",
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => {
+                                      setLinkedCategoryIds((prev) =>
+                                        checked
+                                          ? prev.filter((id) => id !== cat._id)
+                                          : [...prev, cat._id],
+                                      );
+                                    }}
+                                    style={{ marginRight: "8px" }}
+                                  />
+                                  <span
+                                    style={{
+                                      color: "#374151",
+                                      fontWeight: checked ? 500 : 400,
+                                    }}
+                                  >
+                                    {cat.name}
+                                  </span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
+                        {linkedCategoryIds.length > 0 && (
+                          <p
+                            style={{
+                              fontSize: "12px",
+                              color: "#0891b2",
+                              marginTop: "8px",
+                            }}
+                          >
+                            {linkedCategoryIds.length}{" "}
+                            {linkedCategoryIds.length === 1
+                              ? "category"
+                              : "categories"}{" "}
+                            selected
+                          </p>
+                        )}
                       </div>
-                    )}
-                    {linkedCategoryIds.length > 0 && (
-                      <p
-                        style={{
-                          fontSize: "12px",
-                          color: "#7c3aed",
-                          marginTop: "8px",
-                        }}
-                      >
-                        {linkedCategoryIds.length}{" "}
-                        {linkedCategoryIds.length === 1
-                          ? "category"
-                          : "categories"}{" "}
-                        selected
-                      </p>
                     )}
                   </div>
                 )}
@@ -2421,8 +2642,8 @@ const EscalationMatrixContent: React.FC = () => {
                   )}
                 </div>
 
-                {/* Priority Selection - Only show after project is selected */}
-                {formData.projectIds.length > 0 && (
+                {/* Priority Selection - Only shown for Priority-scoped matrices */}
+                {formData.projectIds.length > 0 && formData.scopeMode !== "CATEGORY" && (
                   <div style={{ marginBottom: "24px" }}>
                     <h4
                       style={{
@@ -2866,11 +3087,13 @@ const EscalationMatrixContent: React.FC = () => {
                   </div>
                 )}
 
-                {/* Escalation Levels - Show only when priorities are selected */}
-                {selectedPriorities.length > 0 &&
-                  (formData.priorityMode === "SAME_FOR_ALL" ||
-                    (formData.priorityMode === "PER_PRIORITY" &&
-                      activePriorityTab)) && (
+                {/* Escalation Levels - Show for category mode OR when priorities are selected */}
+                {(formData.scopeMode === "CATEGORY"
+                  ? linkedCategoryIds.length > 0
+                  : selectedPriorities.length > 0 &&
+                    (formData.priorityMode === "SAME_FOR_ALL" ||
+                      (formData.priorityMode === "PER_PRIORITY" &&
+                        activePriorityTab))) && (
                     <div style={{ marginBottom: "24px" }}>
                       <div
                         style={{
@@ -2984,6 +3207,7 @@ const EscalationMatrixContent: React.FC = () => {
                                   border: "1px solid #d1d5db",
                                   borderRadius: "6px",
                                   fontSize: "14px",
+                                  display: (level.assigneeType ?? "role") === "user" ? "none" : undefined,
                                 }}
                               >
                                 <option value="">Select Role</option>
@@ -2994,6 +3218,92 @@ const EscalationMatrixContent: React.FC = () => {
                                 ))}
                               </select>
 
+                              {/* Assignee type toggle: Role / User */}
+                              <div
+                                style={{
+                                  display: "flex",
+                                  gap: "2px",
+                                  padding: "2px",
+                                  backgroundColor: "#f3f4f6",
+                                  borderRadius: "6px",
+                                  flexShrink: 0,
+                                }}
+                                title="Assign this level to a Role (any member of the role) or a specific User"
+                              >
+                                {(["role", "user"] as const).map((at) => (
+                                  <button
+                                    key={at}
+                                    type="button"
+                                    onClick={() => {
+                                      // Single atomic update to avoid stale-state overwrite
+                                      const currentLevels = getCurrentLevels();
+                                      const newLevels = currentLevels.map((l, i) => {
+                                        if (i !== index) return l;
+                                        const updated = { ...l, assigneeType: at as "role" | "user" };
+                                        if (at === "user") updated.roleId = "";
+                                        else updated.assigneeUserId = "";
+                                        return updated;
+                                      });
+                                      setCurrentLevels(newLevels);
+                                    }}
+                                    style={{
+                                      padding: "4px 8px",
+                                      borderRadius: "4px",
+                                      border: "none",
+                                      fontSize: "12px",
+                                      fontWeight: 500,
+                                      cursor: "pointer",
+                                      backgroundColor:
+                                        (level.assigneeType ?? "role") === at
+                                          ? "#6366f1"
+                                          : "transparent",
+                                      color:
+                                        (level.assigneeType ?? "role") === at
+                                          ? "white"
+                                          : "#6b7280",
+                                    }}
+                                  >
+                                    {at === "role" ? "Role" : "User"}
+                                  </button>
+                                ))}
+                              </div>
+
+                              {/* User picker — shown when assigneeType='user' */}
+                              <select
+                                value={level.assigneeUserId || ""}
+                                onChange={(e) => {
+                                  const user = projectUsers.find((u) => u._id === e.target.value);
+                                  const currentLevels = getCurrentLevels();
+                                  const newLevels = currentLevels.map((l, i) => {
+                                    if (i !== index) return l;
+                                    return {
+                                      ...l,
+                                      assigneeUserId: e.target.value,
+                                      assigneeUserName: user
+                                        ? [user.firstName, user.lastName].filter(Boolean).join(" ")
+                                        : "",
+                                    };
+                                  });
+                                  setCurrentLevels(newLevels);
+                                }}
+                                style={{
+                                  flex: 1,
+                                  padding: "8px 12px",
+                                  border: "1px solid #d1d5db",
+                                  borderRadius: "6px",
+                                  fontSize: "14px",
+                                  display: (level.assigneeType ?? "role") === "user" ? undefined : "none",
+                                }}
+                              >
+                                <option value="">Select User</option>
+                                {projectUsers.map((u) => (
+                                  <option key={u._id} value={u._id}>
+                                    {[u.firstName, u.lastName].filter(Boolean).join(" ")}{u.email ? ` — ${u.email}` : ""}
+                                  </option>
+                                ))}
+                              </select>
+
+                              {/* SLA hours + unit */}
                               <div
                                 style={{
                                   display: "flex",

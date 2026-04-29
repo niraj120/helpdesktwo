@@ -47,7 +47,21 @@ export async function getMatrixByProjectId(
   try {
     // US-021: category-specific matrix takes precedence
     if (categoryId && mongoose.Types.ObjectId.isValid(categoryId)) {
-      // Dynamic import to avoid circular dependency at module load time
+      // First: check for a CATEGORY-scoped matrix that directly embeds this categoryId
+      const categoryMatrix = await EscalationMatrix.findOne({
+        scopeMode: "CATEGORY",
+        categoryIds: new mongoose.Types.ObjectId(categoryId),
+        projectIds: toObjectIdStrict(projectId, "projectId"),
+        isActive: true,
+      }).lean();
+      if (categoryMatrix) {
+        console.log(
+          `✅ [Escalation] Using category-scoped matrix for category ${categoryId}: ${(categoryMatrix as any).name}`,
+        );
+        return categoryMatrix as IEscalationMatrix;
+      }
+
+      // Fallback: legacy CategoryEscalationConfig join record
       const CategoryEscalationConfig = (
         await import("../models/ticket-module/CategoryEscalationConfig")
       ).default;
@@ -60,7 +74,7 @@ export async function getMatrixByProjectId(
         .lean();
       if (catConfig?.escalationMatrixId) {
         console.log(
-          `✅ [Escalation] Using category-specific matrix for category ${categoryId}: ${(catConfig.escalationMatrixId as any).name}`,
+          `✅ [Escalation] Using legacy category-config for category ${categoryId}: ${(catConfig.escalationMatrixId as any).name}`,
         );
         return catConfig.escalationMatrixId as IEscalationMatrix;
       }
@@ -161,7 +175,7 @@ export async function autoAssignMatrixToTicket(
     }
 
     // Detect the correct start level:
-    // If the ticket is already assigned to someone, find which level their role maps to.
+    // If the ticket is already assigned to someone, find which level their role (or direct user) maps to.
     // This handles the case where a Level 2 agent creates an offline ticket — the
     // ticket should start at Level 2 rather than always defaulting to Level 1.
     let startLevel = sortedLevels[0]; // default: Level 1
@@ -169,15 +183,30 @@ export async function autoAssignMatrixToTicket(
       const assignedUser = await User.findById(ticket.assignedTo)
         .select("role")
         .lean();
-      if (assignedUser?.role) {
-        const matchedLevel = sortedLevels.find(
-          (l) => l.roleId?.toString() === assignedUser.role?.toString(),
+      if (assignedUser) {
+        // Check direct-user assignment first (assigneeType='user')
+        const matchedByUser = sortedLevels.find(
+          (l) =>
+            (l as any).assigneeType === "user" &&
+            (l as any).assigneeUserId?.toString() ===
+              ticket.assignedTo?.toString(),
         );
-        if (matchedLevel) {
-          startLevel = matchedLevel;
+        if (matchedByUser) {
+          startLevel = matchedByUser;
           console.log(
-            `🎯 Assigned agent's role matches Level ${matchedLevel.levelNumber} — starting matrix there instead of Level 1`,
+            `🎯 Assigned agent matches Level ${matchedByUser.levelNumber} (by-user) — starting matrix there instead of Level 1`,
           );
+        } else if (assignedUser.role) {
+          // Fall back to role-based matching
+          const matchedByRole = sortedLevels.find(
+            (l) => l.roleId?.toString() === assignedUser.role?.toString(),
+          );
+          if (matchedByRole) {
+            startLevel = matchedByRole;
+            console.log(
+              `🎯 Assigned agent's role matches Level ${matchedByRole.levelNumber} — starting matrix there instead of Level 1`,
+            );
+          }
         }
       }
     }
@@ -260,6 +289,22 @@ export async function autoAssignMatrixToTicket(
       pausedAt: undefined,
       pausedDuration: 0,
     };
+
+    // If the start level is a direct-user assignment and the ticket is currently
+    // unassigned, assign it to that specific user now.
+    if (
+      (startLevel as any).assigneeType === "user" &&
+      (startLevel as any).assigneeUserId &&
+      !ticket.assignedTo
+    ) {
+      ticket.assignedTo = new mongoose.Types.ObjectId(
+        (startLevel as any).assigneeUserId.toString(),
+      );
+      console.log(
+        `👤 [Escalation] L${startLevel.levelNumber} is user-type — auto-assigning ticket to user ${(startLevel as any).assigneeUserId}`,
+      );
+    }
+
     await ticket.save();
 
     console.log(
@@ -1398,32 +1443,58 @@ export async function processAutoEscalation(): Promise<{
           }
         }
 
-        // BUG FIX: Add project scope to user query to avoid finding users from other projects
-        const userQuery: any = {
-          role: nextLevel.roleId,
-          isActive: true,
-        };
-        if (ticket.project) {
-          userQuery.$or = [
-            { projects: { $in: [ticket.project] } },
-            { projects: { $exists: false } },
-            { projects: { $size: 0 } },
-          ];
-        }
-        const usersInRole = await User.find(userQuery).select(
-          "_id firstName lastName",
-        );
+        // Resolve the assignee for the next level.
+        // User-type levels have a named assigneeUserId; role-type levels pick a random member.
+        let assignedUser: { _id: any; firstName?: string; lastName?: string };
+        const nextIsUserType = (nextLevel as any).assigneeType === "user";
 
-        if (usersInRole.length === 0) {
-          const errMsg = `Ticket ${ticket.ticketNumber}: No active users in role ${nextLevel.roleId} for level ${nextLevel.levelNumber} (project: ${ticket.project})`;
-          console.log(`❌ [AUTO-ESC] ${errMsg}`);
-          result.errors.push(errMsg);
-          continue;
+        if (nextIsUserType) {
+          // Direct-user level: use the named user
+          const namedUserId = (nextLevel as any).assigneeUserId;
+          if (!namedUserId) {
+            const errMsg = `Ticket ${ticket.ticketNumber}: User-type level ${nextLevel.levelNumber} has no assigneeUserId set`;
+            console.log(`❌ [AUTO-ESC] ${errMsg}`);
+            result.errors.push(errMsg);
+            continue;
+          }
+          const namedUser = await User.findById(namedUserId).select(
+            "_id firstName lastName isActive",
+          );
+          if (!namedUser || !(namedUser as any).isActive) {
+            const errMsg = `Ticket ${ticket.ticketNumber}: Named user ${namedUserId} for level ${nextLevel.levelNumber} not found or inactive`;
+            console.log(`❌ [AUTO-ESC] ${errMsg}`);
+            result.errors.push(errMsg);
+            continue;
+          }
+          assignedUser = namedUser;
+        } else {
+          // BUG FIX: Add project scope to user query to avoid finding users from other projects
+          const userQuery: any = {
+            role: nextLevel.roleId,
+            isActive: true,
+          };
+          if (ticket.project) {
+            userQuery.$or = [
+              { projects: { $in: [ticket.project] } },
+              { projects: { $exists: false } },
+              { projects: { $size: 0 } },
+            ];
+          }
+          const usersInRole = await User.find(userQuery).select(
+            "_id firstName lastName",
+          );
+
+          if (usersInRole.length === 0) {
+            const errMsg = `Ticket ${ticket.ticketNumber}: No active users in role ${nextLevel.roleId} for level ${nextLevel.levelNumber} (project: ${ticket.project})`;
+            console.log(`❌ [AUTO-ESC] ${errMsg}`);
+            result.errors.push(errMsg);
+            continue;
+          }
+
+          // Select a random user from the role
+          assignedUser = usersInRole[Math.floor(Math.random() * usersInRole.length)];
         }
 
-        // Select a random user from the role
-        const assignedUser =
-          usersInRole[Math.floor(Math.random() * usersInRole.length)];
         const previousAssignee = ticket.assignedTo;
 
         // Update ticket with new escalation level
