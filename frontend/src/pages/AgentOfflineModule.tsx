@@ -609,6 +609,16 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
   const handleRegisterUser = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Validate required fields (reject space-only input)
+    const requiredRegFields =
+      offlineSettings?.registrationFields.filter((f) => f.required) || [];
+    for (const field of requiredRegFields) {
+      if (!userForm[field.fieldName]?.toString().trim()) {
+        alert(`${field.fieldName} is required`);
+        return;
+      }
+    }
+
     // Check OTP verifications before proceeding
     const otpCheck = checkOtpVerificationsComplete("registration");
     if (!otpCheck.complete) {
@@ -858,7 +868,8 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
       case "text":
       case "email":
       case "phone":
-      case "number":
+      case "number": {
+        const isNameField = field.fieldName === "firstName" || field.fieldName === "lastName";
         return (
           <div className="space-y-2">
             <div className="flex gap-2">
@@ -875,7 +886,13 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                 required={isRequired}
                 value={value || ""}
                 onChange={(e) => {
-                  onChange(e.target.value);
+                  let val = e.target.value;
+                  if (isNameField) {
+                    val = val.replace(/[0-9]/g, "").replace(/^\s+/, "");
+                  } else if (field.fieldType === "text") {
+                    val = val.replace(/^\s+/, "");
+                  }
+                  onChange(val);
                   // Reset verification if value changes
                   if (needsOtpVerification && isVerified) {
                     setVerifiedFields((prev) => ({
@@ -927,6 +944,7 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
             )}
           </div>
         );
+      }
 
       case "textarea":
         return (

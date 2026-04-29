@@ -205,3 +205,38 @@ export const resolvedCategoryEscalationConfig = async (
     return res.status(500).json({ success: false, error: error.message });
   }
 };
+
+/**
+ * GET /api/projects/:projectId/category-escalation-configs
+ * Bulk-fetch all escalation configs for every category in a project.
+ * Used by the admin overview to show configured/not-configured status per category.
+ */
+export const listEscalationConfigsByProject = async (
+  req: Request,
+  res: Response,
+): Promise<Response> => {
+  try {
+    const { projectId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(projectId)) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Invalid projectId" });
+    }
+
+    const configs = await CategoryEscalationConfig.find({
+      projectId: new mongoose.Types.ObjectId(projectId),
+    })
+      .populate("categoryId", "name level parentId")
+      .populate("escalationMatrixId", "name isActive")
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({ success: true, data: configs });
+  } catch (error: any) {
+    console.error(
+      "[CategoryEscalation] listEscalationConfigsByProject error:",
+      error,
+    );
+    return res.status(500).json({ success: false, error: error.message });
+  }
+};
