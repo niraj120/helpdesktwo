@@ -155,13 +155,12 @@ export async function autoAssignMatrixToTicket(
     }
 
     // Sort levels and get the first level
-    // Handle both SAME_FOR_ALL and PER_PRIORITY matrices
-    const effectiveLevels: IEscalationLevel[] =
-      matrix.priorityMode === "PER_PRIORITY"
-        ? (matrix as any).getLevelsForPriority(
-            typeof priority === "string" ? priority : "MEDIUM",
-          )
-        : matrix.levels || [];
+    // Handle both SAME_FOR_ALL and PER_PRIORITY matrices.
+    // getEffectiveLevelsByPriority works with lean() objects (no Mongoose methods needed).
+    const effectiveLevels: IEscalationLevel[] = getEffectiveLevelsByPriority(
+      matrix,
+      typeof priority === "string" ? priority : undefined,
+    );
     const sortedLevels = [...effectiveLevels]
       .filter((l) => l.isActive)
       .sort((a, b) => a.levelNumber - b.levelNumber);
@@ -424,6 +423,120 @@ export interface EscalationContext {
 }
 
 /**
+ * Resolve the effective levels for a ticket from a matrix.
+ *
+ * For SAME_FOR_ALL matrices this is simply `matrix.levels`.
+ * For PER_PRIORITY matrices we try (in order):
+ *   1. Exact match on ticket.priority
+ *   2. Find the config that contains the ticket's currentEscalationLevelId
+ *   3. Find the config that contains the ticket's currentEscalationLevelNumber
+ *   4. First available priority config as a last resort
+ *
+ * This prevents "highest escalation level" false-positives when a ticket's
+ * stored priority code doesn't match any configured priority tier.
+ */
+
+/**
+ * Get effective escalation levels for a priority code.
+ * Uses direct property access so it works with both Mongoose documents
+ * AND lean() plain objects (which have no instance methods).
+ */
+function getEffectiveLevelsByPriority(
+  matrix: any,
+  priority?: string,
+): IEscalationLevel[] {
+  const allConfigs: any[] = matrix.priorityConfigs || [];
+
+  if (matrix.priorityMode !== "PER_PRIORITY") {
+    return matrix.levels || [];
+  }
+
+  // Direct property access — no Mongoose method call
+  if (priority) {
+    const exactConfig = allConfigs.find(
+      (c: any) => c.priorityCode === priority.toUpperCase(),
+    );
+    if (exactConfig && (exactConfig.levels || []).length > 0) {
+      return exactConfig.levels;
+    }
+  }
+
+  // Fallback: first available config
+  if (allConfigs.length > 0 && (allConfigs[0].levels || []).length > 0) {
+    console.log(
+      `⚠️ [Escalation] PER_PRIORITY fallback: priority "${priority}" not matched, using first config "${allConfigs[0].priorityCode}"`,
+    );
+    return allConfigs[0].levels;
+  }
+
+  return [];
+}
+
+function getEffectiveLevelsForTicket(
+  matrix: IEscalationMatrix,
+  ticket: ITicket,
+): IEscalationLevel[] {
+  if ((matrix as any).priorityMode !== "PER_PRIORITY") {
+    return (matrix as any).levels || [];
+  }
+
+  const ticketPriority = (ticket as any).priority;
+
+  // 1. Exact priority match (direct property access, works for lean objects)
+  const allConfigs: any[] = (matrix as any).priorityConfigs || [];
+  if (ticketPriority) {
+    const exactConfig = allConfigs.find(
+      (c: any) => c.priorityCode === ticketPriority.toUpperCase(),
+    );
+    if (exactConfig && (exactConfig.levels || []).length > 0) {
+      return exactConfig.levels;
+    }
+  }
+
+
+  // 2. Find the config whose levels contain the ticket's current level ID
+  if (ticket.currentEscalationLevelId) {
+    for (const cfg of allConfigs) {
+      const found = (cfg.levels || []).find(
+        (l: any) =>
+          l._id?.toString() === ticket.currentEscalationLevelId?.toString(),
+      );
+      if (found) {
+        console.log(
+          `⚠️ [Escalation] PER_PRIORITY fallback: using config "${cfg.priorityCode}" (matched by level ID)`,
+        );
+        return cfg.levels;
+      }
+    }
+  }
+
+  // 3. Find the config whose levels contain the ticket's current level number
+  if (ticket.currentEscalationLevelNumber) {
+    for (const cfg of allConfigs) {
+      const found = (cfg.levels || []).find(
+        (l: any) => l.levelNumber === ticket.currentEscalationLevelNumber,
+      );
+      if (found) {
+        console.log(
+          `⚠️ [Escalation] PER_PRIORITY fallback: using config "${cfg.priorityCode}" (matched by level number)`,
+        );
+        return cfg.levels;
+      }
+    }
+  }
+
+  // 4. Last resort: first available config
+  if (allConfigs.length > 0 && (allConfigs[0].levels || []).length > 0) {
+    console.log(
+      `⚠️ [Escalation] PER_PRIORITY fallback: priority "${ticketPriority}" not found, using first config "${allConfigs[0].priorityCode}"`,
+    );
+    return allConfigs[0].levels;
+  }
+
+  return [];
+}
+
+/**
  * Get escalation context for a ticket
  */
 export async function getEscalationContext(
@@ -450,12 +563,11 @@ export async function getEscalationContext(
   let currentLevel: IEscalationLevel | undefined;
 
   // Resolve all levels across both SAME_FOR_ALL and PER_PRIORITY modes
-  const allMatrixLevels: IEscalationLevel[] =
-    matrix.priorityMode === "PER_PRIORITY"
-      ? (matrix as any).getLevelsForPriority(
-          (ticket as any).priority || "MEDIUM",
-        )
-      : matrix.levels || [];
+  // Uses fallback logic for PER_PRIORITY when ticket priority doesn't match any config
+  const allMatrixLevels: IEscalationLevel[] = getEffectiveLevelsForTicket(
+    matrix,
+    ticket,
+  );
 
   if (ticket.currentEscalationLevelId) {
     currentLevel = allMatrixLevels.find(
@@ -606,13 +718,9 @@ export async function getAllowedEscalationLevels(
   };
 
   // Sort levels by levelNumber
-  // Handle both SAME_FOR_ALL and PER_PRIORITY matrices
+  // Handle both SAME_FOR_ALL and PER_PRIORITY matrices, with fallback for unknown priorities
   const effectiveLevelsForAllowed: IEscalationLevel[] =
-    matrix.priorityMode === "PER_PRIORITY"
-      ? (matrix as any).getLevelsForPriority(
-          (ticket as any).priority || "MEDIUM",
-        )
-      : matrix.levels || [];
+    getEffectiveLevelsForTicket(matrix, ticket);
   const sortedLevels = [...effectiveLevelsForAllowed]
     .filter((l) => l.isActive)
     .sort((a, b) => a.levelNumber - b.levelNumber);
@@ -1219,13 +1327,12 @@ export async function assignMatrixToTicket(
   }
 
   // Sort levels and get the starting level
-  // Handle both SAME_FOR_ALL and PER_PRIORITY matrices
-  const effectiveLevelsForAssign: IEscalationLevel[] =
-    matrix.priorityMode === "PER_PRIORITY"
-      ? (matrix as any).getLevelsForPriority(
-          (ticket as any).priority || "MEDIUM",
-        )
-      : matrix.levels || [];
+  // Handle both SAME_FOR_ALL and PER_PRIORITY matrices.
+  // getEffectiveLevelsByPriority works with non-lean Mongoose docs too.
+  const effectiveLevelsForAssign: IEscalationLevel[] = getEffectiveLevelsByPriority(
+    matrix,
+    (ticket as any).priority,
+  );
   const sortedLevels = [...effectiveLevelsForAssign]
     .filter((l) => l.isActive)
     .sort((a, b) => a.levelNumber - b.levelNumber);
@@ -1250,11 +1357,84 @@ export async function assignMatrixToTicket(
     startLevel = sortedLevels[0];
   }
 
-  ticket.escalationMatrixId = new mongoose.Types.ObjectId(matrixId);
-  ticket.currentEscalationLevelId = startLevel._id;
-  ticket.currentEscalationLevelNumber = startLevel.levelNumber;
+  const now = new Date();
 
-  await ticket.save();
+  // Resolve working calendar (from ticket or project)
+  let workingCalendarId = ticket.workingCalendarId;
+  if (!workingCalendarId && ticket.metadata?.projectId) {
+    const projectCalendar = await WorkingCalendar.findOne({
+      projectId:
+        typeof ticket.metadata.projectId === "string"
+          ? new mongoose.Types.ObjectId(ticket.metadata.projectId)
+          : ticket.metadata.projectId,
+      isActive: true,
+    });
+    if (projectCalendar) {
+      workingCalendarId = projectCalendar._id as mongoose.Types.ObjectId;
+    }
+  }
+
+  // Determine effective SLA start time (skip non-working hours)
+  let slaStartTime: Date = now;
+  if (workingCalendarId) {
+    const calendar = await WorkingCalendar.findById(workingCalendarId);
+    if (calendar?.isActive && !calendar.isWorkingTime(now)) {
+      slaStartTime = calendar.getNextWorkingTime(now);
+    }
+  }
+
+  // Calculate L1 SLA deadline
+  let roleLevelDueAt: Date;
+  try {
+    roleLevelDueAt = await calculateRoleLevelSLA(
+      slaStartTime,
+      matrix as IEscalationMatrix,
+      startLevel.levelNumber,
+      (ticket as any).priority || "MEDIUM",
+      workingCalendarId,
+    );
+  } catch {
+    roleLevelDueAt = new Date(
+      slaStartTime.getTime() + slaToMs(startLevel.slaHours, startLevel.slaUnit),
+    );
+  }
+
+  const matrixUpdateFields: Record<string, any> = {
+    escalationMatrixId: new mongoose.Types.ObjectId(matrixId),
+    currentEscalationLevelId: startLevel._id,
+    currentEscalationLevelNumber: startLevel.levelNumber,
+    roleLevelSLA: {
+      startedAt: slaStartTime,
+      dueAt: roleLevelDueAt,
+      breachedAt: undefined,
+      pausedAt: undefined,
+      pausedDuration: 0,
+    },
+  };
+
+  if (workingCalendarId) {
+    matrixUpdateFields.workingCalendarId = workingCalendarId;
+  }
+
+  // Auto-assign to specific user if the start level designates one
+  if (
+    (startLevel as any).assigneeType === "user" &&
+    (startLevel as any).assigneeUserId &&
+    !ticket.assignedTo
+  ) {
+    matrixUpdateFields.assignedTo = new mongoose.Types.ObjectId(
+      (startLevel as any).assigneeUserId.toString(),
+    );
+    console.log(
+      `👤 [Escalation] L${startLevel.levelNumber} is user-type — auto-assigning ticket to user ${(startLevel as any).assigneeUserId}`,
+    );
+  }
+
+  await Ticket.updateOne({ _id: ticket._id }, { $set: matrixUpdateFields });
+
+  console.log(
+    `🎯 [Escalation] Matrix "${matrix.name}" manually assigned at L${startLevel.levelNumber}, SLA due ${roleLevelDueAt.toISOString()}`,
+  );
 
   return {
     success: true,
@@ -1319,12 +1499,11 @@ export async function processAutoEscalation(): Promise<{
 
         const currentLevelNumber = ticket.currentEscalationLevelNumber || 1;
 
-        // BUG FIX: Handle both SAME_FOR_ALL and PER_PRIORITY matrices.
-        // Previously used matrix.levels directly which is EMPTY for PER_PRIORITY mode.
-        const levelsForPriority: IEscalationLevel[] =
-          matrix.priorityMode === "PER_PRIORITY"
-            ? matrix.getLevelsForPriority(ticket.priority || "MEDIUM")
-            : matrix.levels;
+        // Use lean-safe helper — works with both Mongoose docs and plain objects.
+        const levelsForPriority: IEscalationLevel[] = getEffectiveLevelsByPriority(
+          matrix,
+          ticket.priority,
+        );
 
         const currentLevel = levelsForPriority.find(
           (l) => l.levelNumber === currentLevelNumber && l.isActive,

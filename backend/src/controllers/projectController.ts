@@ -810,6 +810,15 @@ export const updateProjectModules = async (req: Request, res: Response) => {
       });
     }
 
+    // Invalidate branding cache so module changes take effect immediately
+    invalidateCache.project(id);
+    if (project.branding?.customUrlPath) {
+      invalidateCache.projectBranding(project.branding.customUrlPath);
+    }
+    if (project.code) {
+      invalidateCache.projectBranding(project.code.toLowerCase());
+    }
+
     console.log(`✅ Updated modules for project: ${project.name}`);
 
     return res.json({
