@@ -175,11 +175,15 @@ export async function autoAssignMatrixToTicket(
     }
 
     // Detect the correct start level:
-    // If the ticket is already assigned to someone, find which level their role (or direct user) maps to.
-    // This handles the case where a Level 2 agent creates an offline ticket — the
-    // ticket should start at Level 2 rather than always defaulting to Level 1.
+    // For OFFLINE tickets, if the creating agent's role maps to a higher level, start there.
+    // This handles the case where a Level 2 agent creates an offline ticket directly.
+    // For ONLINE tickets, always start at Level 1 regardless of auto-assignment —
+    // the auto-assignment pool may include any role and must not inflate the start level.
     let startLevel = sortedLevels[0]; // default: Level 1
-    if (ticket.assignedTo) {
+    const isOfflineTicket =
+      ticket.submissionSource === "offline" ||
+      (ticket.metadata as any)?.submissionType === "offline";
+    if (ticket.assignedTo && isOfflineTicket) {
       const assignedUser = await User.findById(ticket.assignedTo)
         .select("role")
         .lean();
@@ -466,10 +470,14 @@ export async function getAllowedEscalationLevels(
 ): Promise<AllowedEscalationLevel[]> {
   const context = await getEscalationContext(ticketId);
   if (!context) {
+    console.log(`⚠️ [Escalation] getEscalationContext returned null for ticket ${ticketId}`);
     return [];
   }
 
   const { matrix, currentLevelNumber, ticket } = context;
+  console.log(
+    `🔍 [Escalation] ticket=${ticketId} currentLevelNumber=${currentLevelNumber} mode=${matrix.escalationMode} levels=${matrix.levels.length} submissionSource=${(ticket as any).submissionSource}`,
+  );
   const allowedLevels: AllowedEscalationLevel[] = [];
 
   // Helper to find who was the handler at a specific level
@@ -578,8 +586,12 @@ export async function getAllowedEscalationLevels(
     .sort((a, b) => a.levelNumber - b.levelNumber);
 
   if (sortedLevels.length === 0) {
+    console.log(`⚠️ [Escalation] No active levels in matrix for ticket ${ticketId}`);
     return [];
   }
+  console.log(
+    `🔍 [Escalation] sortedLevels=[${sortedLevels.map((l) => l.levelNumber).join(",")}] currentLevelNumber=${currentLevelNumber}`,
+  );
 
   if (matrix.escalationMode === "SEQUENTIAL") {
     // SEQUENTIAL mode: Only allow immediate next level (forward)

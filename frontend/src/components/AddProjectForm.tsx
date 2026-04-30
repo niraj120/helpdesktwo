@@ -285,7 +285,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
       secondaryColor: project?.branding?.colorTheme?.secondary || "#64748b",
       footerText:
         project?.branding?.footerText ||
-        "Â© 2025 Your Organization. All rights reserved.",
+        "© 2025 Your Organization. All rights reserved.",
       customUrlPath: project?.branding?.customUrlPath || "",
     },
 
@@ -545,7 +545,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
 
         if (countriesData.success) {
           console.log(
-            "âœ… Countries loaded:",
+            "✅ Countries loaded:",
             countriesData.data.length,
             "countries",
           );
@@ -557,18 +557,18 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
           setCountries(formattedCountries);
         }
         if (usersData.success) {
-          console.log("âœ… Users loaded:", usersData.data.length, "users");
+          console.log("✅ Users loaded:", usersData.data.length, "users");
           setUsers(usersData.data);
         }
         if (rolesData.success) {
-          console.log("âœ… Roles loaded:", rolesData.data.length, "roles");
+          console.log("✅ Roles loaded:", rolesData.data.length, "roles");
           setRoles(rolesData.data);
           // Role IDs no longer needed for filtering - permissions handle access control
         }
 
         // Mark as fetched to prevent duplicate calls
         hasFetchedMasterData.current = true;
-        console.log("âœ… Master data fetch complete");
+        console.log("✅ Master data fetch complete");
       } catch (error) {
         console.error("âŒ Error fetching master data:", error);
       }
@@ -796,7 +796,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
           secondaryColor: project?.branding?.colorTheme?.secondary || "#64748b",
           footerText:
             project?.branding?.footerText ||
-            "Â© 2025 Your Organization. All rights reserved.",
+            "© 2025 Your Organization. All rights reserved.",
           customUrlPath: project?.branding?.customUrlPath || "",
         },
 
@@ -1224,7 +1224,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
               (e.currentTarget.style.backgroundColor = "transparent")
             }
           >
-            âœ•
+            ✕
           </button>
         </div>
 
@@ -1556,7 +1556,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           },
                         });
                       }}
-                      placeholder="e.g., Â© 2025 Your Organization. All rights reserved."
+                      placeholder="e.g., © 2025 Your Organization. All rights reserved."
                       className="text-field"
                       style={{
                         width: "100%",
@@ -1593,7 +1593,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         {window.location.origin}/[your-custom-path]
                       </strong>
                       <br />
-                      Example: Enter "studentassistcenter" â†’ URL will be:{" "}
+                      Example: Enter "studentassistcenter" → URL will be:{" "}
                       {window.location.origin}/studentassistcenter
                     </p>
                     <div
@@ -1784,7 +1784,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                               lineHeight: "1.5",
                             }}
                           >
-                            Recommended: 240Ã—40px â€¢ Max 2MB
+                            Recommended: 240×40px • Max 2MB
                           </p>
                         </div>
                         <div
@@ -2006,7 +2006,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                               lineHeight: "1.5",
                             }}
                           >
-                            Recommended: 16Ã—16px â€¢ Max 1MB
+                            Recommended: 16×16px • Max 1MB
                           </p>
                         </div>
                         <div
@@ -2788,7 +2788,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         </div>
                       </div>
 
-                      {/* Keycloak config fields â€” shown only when SSO is enabled */}
+                      {/* Keycloak config fields — shown only when SSO is enabled */}
                       {formData.keycloakSsoEnabled && (
                         <div
                           style={{
@@ -2961,7 +2961,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                     keycloakClientSecret: e.target.value,
                                   })
                                 }
-                                placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+                                placeholder="••••••••"
                                 autoComplete="new-password"
                                 style={{
                                   width: "100%",
@@ -4004,14 +4004,14 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         >
                           {formData.assignmentType === "manual" && (
                             <span>
-                              â„¹ï¸ Tickets will not be automatically assigned.
+                              ℹ️ Tickets will not be automatically assigned.
                               Users with "assign ticket" permission can assign
                               tickets to agents in the project.
                             </span>
                           )}
                           {formData.assignmentType === "round-robin" && (
                             <span>
-                              âœ“ Tickets will be automatically assigned to agents
+                              ✓ Tickets will be automatically assigned to agents
                               (roles marked as "Agent Role") in a rotating
                               sequence. Each agent gets one ticket before the
                               cycle repeats.
@@ -4034,7 +4034,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                               lineHeight: "1.6",
                             }}
                           >
-                            âœ“ <strong>Auto-assignment enabled:</strong> Tickets
+                            ✓ <strong>Auto-assignment enabled:</strong> Tickets
                             will be automatically assigned to agents in a
                             rotating sequence.
                             <br />
@@ -4063,7 +4063,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                 lineHeight: "1.5",
                               }}
                             >
-                              âš ï¸ <strong>No agents in pool</strong> â€” tickets
+                              âš ï¸ <strong>No agents in pool</strong> — tickets
                               will fall back to the submitting user if no
                               agent-role users are mapped to this project.
                             </div>
@@ -4085,7 +4085,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                 textAlign: "center",
                               }}
                             >
-                              â„¹ï¸ Manual assignment role selection will be
+                              ℹ️ Manual assignment role selection will be
                               available after you create the project and map
                               roles to it.
                             </div>
@@ -4145,7 +4145,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                       {role.name}{" "}
                                       {!isMapped
                                         ? "âš ï¸ (Not mapped to this project)"
-                                        : "âœ“"}
+                                        : "✓"}
                                     </option>
                                   );
                                 })}
@@ -4172,7 +4172,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                     }}
                                   >
                                     âš ï¸ Some roles are not mapped to this
-                                    project. Go to RBAC Setup â†’ Edit Role â†’ Map
+                                    project. Go to RBAC Setup → Edit Role → Map
                                     to this project.
                                   </span>
                                 )}
@@ -4344,7 +4344,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                     </div>
                   </div>
 
-                  {/* Online Form Settings â€” managed via Query Configuration module */}
+                  {/* Online Form Settings — managed via Query Configuration module */}
                   {false && (
                     <div
                       style={{
@@ -4967,7 +4967,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       >
                         Maximum file size: 2MB
                         <br />
-                        Best dimensions: 1920 Ã— 1080 pixels
+                        Best dimensions: 1920 × 1080 pixels
                       </div>
                       <div
                         style={{
@@ -5202,7 +5202,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                   fontSize: "16px",
                                 }}
                               >
-                                âœ“
+                                ✓
                               </span>
                             )}
                           </button>
@@ -5312,7 +5312,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         gap: "12px",
                       }}
                     >
-                      <span style={{ fontSize: "20px" }}>â„¹ï¸</span>
+                      <span style={{ fontSize: "20px" }}>ℹ️</span>
                       <div style={{ flex: 1 }}>
                         <p
                           style={{
@@ -5751,7 +5751,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   justifyContent: "center",
                 }}
               >
-                Ã—
+                ×
               </button>
             </div>
 
@@ -5849,7 +5849,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   }}
                 >
                   <strong>Example:</strong>
-                  <br />â€¢ Customer Portal:{" "}
+                  <br />• Customer Portal:{" "}
                   <code
                     style={{
                       backgroundColor: "#e0f2fe",
@@ -5861,7 +5861,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                     https://www.hubblehox.com/
                     {formData.portalUrl || "domain_name"}
                   </code>
-                  <br />â€¢ Agent Portal:{" "}
+                  <br />• Agent Portal:{" "}
                   <code
                     style={{
                       backgroundColor: "#e0f2fe",
@@ -6021,7 +6021,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   justifyContent: "center",
                 }}
               >
-                Ã—
+                ×
               </button>
             </div>
 
@@ -6173,7 +6173,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   justifyContent: "center",
                 }}
               >
-                Ã—
+                ×
               </button>
             </div>
 
@@ -6535,7 +6535,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         </label>
                         <input
                           type="password"
-                          placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+                          placeholder="••••••••"
                           disabled
                           style={{
                             width: "100%",

@@ -69,6 +69,8 @@ interface HierarchyCategorySelectorProps {
   value?: CategoryHierarchyValue;
   onChange: (value: CategoryHierarchyValue) => void;
   onPriorityChange?: (priority: string | undefined) => void; // Callback for auto-assigned priority
+  /** Called whenever a level's available options change — (level, hasOptions) */
+  onLevelOptionsChange?: (level: number, hasOptions: boolean) => void;
   mode?: "online" | "offline" | "display" | "filter"; // Which visibility setting to use
   disabled?: boolean;
   showValidation?: boolean;
@@ -87,6 +89,7 @@ const HierarchyCategorySelector: React.FC<HierarchyCategorySelectorProps> = ({
   value = {},
   onChange,
   onPriorityChange,
+  onLevelOptionsChange,
   mode = "online",
   disabled = false,
   showValidation = false,
@@ -226,33 +229,45 @@ const HierarchyCategorySelector: React.FC<HierarchyCategorySelectorProps> = ({
    */
   useEffect(() => {
     if (value?.level1 && config && config.levelCount >= 2) {
-      fetchCategoriesForLevel(2, value.level1).then(setLevel2Options);
+      fetchCategoriesForLevel(2, value.level1).then((opts) => {
+        setLevel2Options(opts);
+        onLevelOptionsChange?.(2, opts.length > 0);
+      });
     } else {
       setLevel2Options([]);
+      onLevelOptionsChange?.(2, false);
     }
-  }, [value?.level1, config, fetchCategoriesForLevel]);
+  }, [value?.level1, config, fetchCategoriesForLevel]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * Load Level 3 categories when Level 2 selection changes
    */
   useEffect(() => {
     if (value?.level2 && config && config.levelCount >= 3) {
-      fetchCategoriesForLevel(3, value.level2).then(setLevel3Options);
+      fetchCategoriesForLevel(3, value.level2).then((opts) => {
+        setLevel3Options(opts);
+        onLevelOptionsChange?.(3, opts.length > 0);
+      });
     } else {
       setLevel3Options([]);
+      onLevelOptionsChange?.(3, false);
     }
-  }, [value?.level2, config, fetchCategoriesForLevel]);
+  }, [value?.level2, config, fetchCategoriesForLevel]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * Load Level 4 categories when Level 3 selection changes
    */
   useEffect(() => {
     if (value?.level3 && config && config.levelCount >= 4) {
-      fetchCategoriesForLevel(4, value.level3).then(setLevel4Options);
+      fetchCategoriesForLevel(4, value.level3).then((opts) => {
+        setLevel4Options(opts);
+        onLevelOptionsChange?.(4, opts.length > 0);
+      });
     } else {
       setLevel4Options([]);
+      onLevelOptionsChange?.(4, false);
     }
-  }, [value?.level3, config, fetchCategoriesForLevel]);
+  }, [value?.level3, config, fetchCategoriesForLevel]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * Handle level selection change
@@ -519,6 +534,12 @@ const HierarchyCategorySelector: React.FC<HierarchyCategorySelectorProps> = ({
     const levelDisabled = isLevelDisabled(levelNumber);
     const isValid = isLevelValid(levelNumber);
     const isLoading = loadingLevel === levelNumber;
+
+    // Hide a deeper level when its parent IS selected (not disabled) but the
+    // server returned no children for the chosen parent — no options to pick.
+    if (levelNumber > 1 && !levelDisabled && !isLoading && options.length === 0) {
+      return null;
+    }
 
     return (
       <div

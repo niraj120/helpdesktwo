@@ -56,6 +56,16 @@ interface Ticket {
   mergedInto?:
     | string
     | { _id: string; ticketNumber: string; subject?: string; title?: string };
+  metadata?: {
+    customFields?: Record<string, any>;
+    [key: string]: any;
+  };
+  formSchemaSnapshot?: Array<{
+    fieldName: string;
+    fieldType: string;
+    required?: boolean;
+    options?: string[];
+  }>;
 }
 
 interface ProjectBranding {
@@ -486,6 +496,43 @@ const StudentTicketDetail: React.FC = () => {
                   )}
                 </div>
               </div>
+
+              {/* Form Details — custom fields submitted with the ticket */}
+              {(() => {
+                const schema = ticket.formSchemaSnapshot || [];
+                const customFields = ticket.metadata?.customFields || {};
+                const standardKeys = new Set(["Name", "Email", "Phone", "Subject", "Description", "Category", "Subcategory"]);
+                const schemaRows = schema.filter((f) => !standardKeys.has(f.fieldName));
+                const extraKeys = Object.keys(customFields).filter(
+                  (k) => !standardKeys.has(k) && !schemaRows.find((f) => f.fieldName === k)
+                );
+                const allRows = [
+                  ...schemaRows.map((f) => ({ label: f.fieldName, value: customFields[f.fieldName] })),
+                  ...extraKeys.map((k) => ({ label: k, value: customFields[k] })),
+                ].filter((r) => r.value !== undefined && r.value !== null && r.value !== "");
+
+                if (allRows.length === 0) return null;
+
+                return (
+                  <div className="mt-4 pt-4 border-t border-gray-200">
+                    <div className="flex items-center space-x-2 mb-3">
+                      <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                        Additional Details
+                      </span>
+                    </div>
+                    <dl className="grid grid-cols-2 gap-x-6 gap-y-3">
+                      {allRows.map(({ label, value }) => (
+                        <div key={label}>
+                          <dt className="text-xs text-gray-500 font-medium mb-0.5">{label}</dt>
+                          <dd className="text-sm text-gray-900 break-words">
+                            {Array.isArray(value) ? value.join(", ") : String(value)}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+                );
+              })()}
 
               {/* Original Attachments */}
               {ticket.attachments && ticket.attachments.length > 0 && (

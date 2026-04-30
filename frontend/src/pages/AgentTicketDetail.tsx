@@ -136,7 +136,14 @@ interface Ticket {
     studentEmail?: string;
     studentPhone?: string;
     projectId?: string;
+    customFields?: Record<string, any>;
   };
+  formSchemaSnapshot?: Array<{
+    fieldName: string;
+    fieldType: string;
+    required?: boolean;
+    options?: string[];
+  }>;
   tags?: string[];
   threads?: Thread[];
   comments?: Comment[]; // Task 7.5: Email replies stored as comments
@@ -4434,6 +4441,43 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                   </div>
                 </div>
               </div>
+
+              {/* Form Details Card — custom fields submitted with the ticket */}
+              {(() => {
+                const schema = ticket.formSchemaSnapshot || [];
+                const customFields = ticket.metadata?.customFields || {};
+                // Standard fields already shown elsewhere; skip them
+                const standardKeys = new Set(["Name", "Email", "Phone", "Subject", "Description", "Category", "Subcategory"]);
+                // Build rows: prefer schema order, fall back to raw customFields keys
+                const schemaRows = schema.filter((f) => !standardKeys.has(f.fieldName));
+                const extraKeys = Object.keys(customFields).filter(
+                  (k) => !standardKeys.has(k) && !schemaRows.find((f) => f.fieldName === k)
+                );
+                const allRows = [
+                  ...schemaRows.map((f) => ({ label: f.fieldName, value: customFields[f.fieldName] })),
+                  ...extraKeys.map((k) => ({ label: k, value: customFields[k] })),
+                ].filter((r) => r.value !== undefined && r.value !== null && r.value !== "");
+
+                if (allRows.length === 0) return null;
+
+                return (
+                  <div className="bg-white rounded-xl shadow-sm p-6">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Form Details</h3>
+                    <div className="space-y-3">
+                      {allRows.map(({ label, value }) => (
+                        <div key={label}>
+                          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-0.5">
+                            {label}
+                          </p>
+                          <p className="text-sm text-gray-900 break-words">
+                            {Array.isArray(value) ? value.join(", ") : String(value)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Tags Card */}
               <div className="bg-white rounded-xl shadow-sm p-6">

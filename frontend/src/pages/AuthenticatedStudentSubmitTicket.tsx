@@ -75,6 +75,11 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
   const [submitting, setSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [createdTicketNumber, setCreatedTicketNumber] = useState<string>("");
+  // Tracks which hierarchy levels (2, 3, 4) actually have options for the current selection
+  const [hierarchyLevelHasOptions, setHierarchyLevelHasOptions] = useState<
+    Record<number, boolean>
+  >({});
   const [categories, setCategories] = useState<string[]>([]);
   const [categoryObjects, setCategoryObjects] = useState<
     Array<{ _id: string; name: string }>
@@ -294,15 +299,54 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
         allFields,
         formData,
       );
-      const missingFields = Array.from(requiredFields).filter(
-        (fieldName) =>
-          !formData[fieldName] && !(fieldFiles[fieldName]?.length > 0),
-      );
+
+      // For the Category field, when using HierarchyCategorySelector the value
+      // stored in formData["category"] is a CategoryHierarchyValue object.
+      // Replace the truthiness check with an explicit level1 check.
+      const categoryFieldName = allFields.find(
+        (f) => f.fieldName.toLowerCase() === "category",
+      )?.fieldName;
+      const missingFields = Array.from(requiredFields).filter((fieldName) => {
+        if (
+          categoryFieldName &&
+          fieldName === categoryFieldName &&
+          hierarchyConfig &&
+          hierarchyConfig.levelCount > 1
+        ) {
+          // Hierarchy selector: require level1 to be selected
+          return !categoryHierarchy.level1;
+        }
+        return !formData[fieldName] && !(fieldFiles[fieldName]?.length > 0);
+      });
 
       if (missingFields.length > 0) {
         setSubmitError("Please fill in all required fields");
+        window.scrollTo({ top: 0, behavior: "smooth" });
         setSubmitting(false);
         return;
+      }
+
+      // Validate mandatory hierarchy sub-levels (level 2, 3, 4) when options exist
+      if (hierarchyConfig && hierarchyConfig.levelCount > 1) {
+        const onlineLevels =
+          hierarchyConfig.visibilitySettings.showInOnlineForm;
+        for (const levelConf of hierarchyConfig.levels) {
+          if (!onlineLevels.includes(levelConf.levelNumber)) continue;
+          if (!levelConf.isMandatory) continue;
+          if (levelConf.levelNumber === 1) continue; // already checked above
+          // Only require if options are available for this level
+          if (!hierarchyLevelHasOptions[levelConf.levelNumber]) continue;
+          const val =
+            categoryHierarchy[
+              `level${levelConf.levelNumber}` as keyof typeof categoryHierarchy
+            ];
+          if (!val) {
+            setSubmitError(`Please select ${levelConf.displayName}`);
+            window.scrollTo({ top: 0, behavior: "smooth" });
+            setSubmitting(false);
+            return;
+          }
+        }
       }
 
       // Prepare form data — only send values from visible fields
@@ -356,17 +400,16 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
 
       console.log("✅ Ticket submitted successfully:", response.data);
 
+      const ticketNum =
+        response.data.data?.ticketNumber ||
+        response.data.ticketNumber ||
+        "";
+      setCreatedTicketNumber(ticketNum);
       setSubmitSuccess(true);
       setFormData({});
       setFieldFiles({});
-
-      // Scroll to top to show success message
-      window.scrollTo({ top: 0, behavior: "smooth" });
-
-      // Redirect to my tickets after 3 seconds
-      setTimeout(() => {
-        navigate(`/${customUrlPath}/student/my-tickets`);
-      }, 3000);
+      setCategoryHierarchy({});
+      setHierarchyLevelHasOptions({});
     } catch (error: any) {
       console.error("Error submitting ticket:", error);
       setSubmitError(
@@ -409,6 +452,12 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
             <HierarchyCategorySelector
               projectId={branding.projectId}
               value={categoryHierarchy}
+              onLevelOptionsChange={(level, hasOpts) =>
+                setHierarchyLevelHasOptions((prev) => ({
+                  ...prev,
+                  [level]: hasOpts,
+                }))
+              }
               onChange={(newValue) => {
                 setCategoryHierarchy(newValue);
                 // Store the display path as the field value for form submission
@@ -657,31 +706,66 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
           </Link>
         )}
 
+        {/* Success Modal */}
+        {submitSuccess && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            {/* Backdrop */}
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+            {/* Dialog */}
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-8 text-center">
+              {/* Green check */}
+              <div className="flex items-center justify-center w-16 h-16 rounded-full bg-green-100 mx-auto mb-4">
+                <CheckCircleIcon className="h-9 w-9 text-green-600" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 mb-1">
+                Query Submitted!
+              </h3>
+              {createdTicketNumber && (
+                <div className="my-3 px-4 py-2 bg-blue-50 rounded-lg border border-blue-200 inline-block">
+                  <span className="text-sm text-blue-600 font-medium">
+                    Ticket Number
+                  </span>
+                  <p className="text-xl font-bold text-blue-800 mt-0.5">
+                    {createdTicketNumber}
+                  </p>
+                </div>
+              )}
+              <p className="text-gray-600 text-sm mt-3 mb-6">
+                {ticketSettings?.successMessage ||
+                  "Your query has been submitted. Our team will get back to you soon."}
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setSubmitSuccess(false);
+                    navigate(`/${customUrlPath}/student/my-tickets`);
+                  }}
+                  className="flex-1 px-4 py-2 text-sm font-semibold text-white rounded-lg"
+                  style={{
+                    background: branding?.primaryColor
+                      ? `linear-gradient(135deg, ${branding.primaryColor} 0%, ${branding.secondaryColor} 100%)`
+                      : "linear-gradient(135deg, #3b82f6 0%, #1e40af 100%)",
+                  }}
+                >
+                  View My Tickets
+                </button>
+                <button
+                  onClick={() => setSubmitSuccess(false)}
+                  className="flex-1 px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                >
+                  Submit Another
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Announcement */}
         {ticketSettings?.announcement && (
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
             <p className="text-blue-900 text-sm">
               {ticketSettings.announcement}
             </p>
-          </div>
-        )}
-
-        {/* Success Message */}
-        {submitSuccess && (
-          <div className="bg-green-50 border border-green-200 rounded-xl p-6 mb-6 flex items-start space-x-4">
-            <CheckCircleIcon className="w-6 h-6 text-green-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <h3 className="text-lg font-semibold text-green-900 mb-1">
-                Query Submitted Successfully!
-              </h3>
-              <p className="text-green-700">
-                {ticketSettings?.successMessage ||
-                  "Your query has been submitted. Our team will get back to you soon."}
-              </p>
-              <p className="text-green-600 text-sm mt-2">
-                Redirecting to My Queries...
-              </p>
-            </div>
           </div>
         )}
 
@@ -718,6 +802,12 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
                     <HierarchyCategorySelector
                       projectId={branding.projectId}
                       value={categoryHierarchy}
+                      onLevelOptionsChange={(level, hasOpts) =>
+                        setHierarchyLevelHasOptions((prev) => ({
+                          ...prev,
+                          [level]: hasOpts,
+                        }))
+                      }
                       onChange={(newValue) => {
                         setCategoryHierarchy(newValue);
                         handleInputChange("category", newValue);
