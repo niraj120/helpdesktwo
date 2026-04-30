@@ -10,6 +10,7 @@ import {
 import DOMPurify from "dompurify";
 import { getText } from "../utils/language";
 import API_BASE_URL from "../config/api";
+import { clearBrandingCache } from "../contexts/BrandingContext";
 
 interface AddProjectFormProps {
   project?: any | null;
@@ -1074,6 +1075,8 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
 
       const data = await response.json();
       if (data.success) {
+        // Clear the branding cache so the portal picks up the latest settings immediately
+        clearBrandingCache();
         setToast({
           show: true,
           type: "success",

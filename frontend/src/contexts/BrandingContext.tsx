@@ -41,7 +41,7 @@ const BrandingContext = createContext<BrandingContextType | undefined>(undefined
 
 // Cache to store branding data per project
 const brandingCache = new Map<string, { data: ProjectBranding; timestamp: number }>();
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+const CACHE_DURATION = 30 * 1000; // 30 seconds — short TTL so admin changes propagate quickly
 
 interface BrandingProviderProps {
   children: ReactNode;
@@ -214,9 +214,13 @@ export const BrandingProvider: React.FC<BrandingProviderProps> = ({ children }) 
   }, [branding]);
 
   // Memoize refetch callback to maintain stable reference
+  // Always bypasses the cache so admin changes propagate immediately
   const memoizedRefetch = useCallback(async () => {
+    if (customUrlPath) {
+      brandingCache.delete(customUrlPath);
+    }
     await fetchBranding();
-  }, [fetchBranding]);
+  }, [customUrlPath, fetchBranding]);
 
   // Memoize context value to prevent unnecessary re-renders of consumers
   const contextValue = useMemo(() => ({
