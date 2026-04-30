@@ -808,7 +808,7 @@ export const submitTicket = async (req: Request, res: Response) => {
           ticket._id,
           projectId,
           ticketPriority,
-          categoryObjectId?.toString(), // US-021: category-specific matrix first
+          (deepestCategoryObjectId ?? categoryObjectId)?.toString(), // US-021: use deepest category for matrix lookup
         );
         if (result.success) {
           console.log(
@@ -6185,6 +6185,7 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
         ticket._id,
         projectId,
         ticketPriority,
+        finalCategoryId ?? undefined, // US-021: use deepest category for matrix lookup
       );
       if (result.success) {
         console.log(

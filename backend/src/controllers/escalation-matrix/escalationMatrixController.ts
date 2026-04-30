@@ -380,7 +380,15 @@ export const createEscalationMatrix = async (
           });
           return;
         }
-        matrixData.priorityConfigs = priorityConfigs;
+        // Sanitize empty roleId/assigneeUserId strings to null (same as top-level levels)
+        matrixData.priorityConfigs = priorityConfigs.map((config: any) => ({
+          ...config,
+          levels: (config.levels || []).map((l: any) => ({
+            ...l,
+            roleId: l.roleId && String(l.roleId).trim() !== "" ? l.roleId : null,
+            assigneeUserId: l.assigneeUserId && String(l.assigneeUserId).trim() !== "" ? l.assigneeUserId : null,
+          })),
+        }));
 
         // Validate each priority configuration against priority SLA
         if (projectIds && projectIds.length > 0) {
@@ -640,7 +648,15 @@ export const updateEscalationMatrix = async (
           }
         }
       }
-      matrix.priorityConfigs = priorityConfigs;
+      // Sanitize empty roleId/assigneeUserId strings to null (same as top-level levels)
+      matrix.priorityConfigs = priorityConfigs.map((config: any) => ({
+        ...config,
+        levels: (config.levels || []).map((l: any) => ({
+          ...l,
+          roleId: l.roleId && String(l.roleId).trim() !== "" ? l.roleId : null,
+          assigneeUserId: l.assigneeUserId && String(l.assigneeUserId).trim() !== "" ? l.assigneeUserId : null,
+        })),
+      }));
     }
 
     // Update applicablePriorities if provided - normalize to uppercase codes

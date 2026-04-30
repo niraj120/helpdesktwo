@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import axios from "axios";
 import {
@@ -706,9 +707,9 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
           </Link>
         )}
 
-        {/* Success Modal */}
-        {submitSuccess && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center">
+        {/* Success Modal — rendered via portal to avoid z-index/stacking-context issues */}
+        {submitSuccess && createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center">
             {/* Backdrop */}
             <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
             {/* Dialog */}
@@ -757,7 +758,8 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
                 </button>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         )}
 
         {/* Announcement */}

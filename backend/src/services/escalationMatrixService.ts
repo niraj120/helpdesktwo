@@ -155,7 +155,14 @@ export async function autoAssignMatrixToTicket(
     }
 
     // Sort levels and get the first level
-    const sortedLevels = [...matrix.levels]
+    // Handle both SAME_FOR_ALL and PER_PRIORITY matrices
+    const effectiveLevels: IEscalationLevel[] =
+      matrix.priorityMode === "PER_PRIORITY"
+        ? (matrix as any).getLevelsForPriority(
+            typeof priority === "string" ? priority : "MEDIUM",
+          )
+        : matrix.levels || [];
+    const sortedLevels = [...effectiveLevels]
       .filter((l) => l.isActive)
       .sort((a, b) => a.levelNumber - b.levelNumber);
 
@@ -425,7 +432,9 @@ export async function getEscalationContext(
 
   const matrix = await EscalationMatrix.findById(
     ticket.escalationMatrixId,
-  ).populate("levels.roleId", "name code");
+  )
+    .populate("levels.roleId", "name code")
+    .populate("priorityConfigs.levels.roleId", "name code");
 
   if (!matrix) {
     return null;
@@ -434,12 +443,18 @@ export async function getEscalationContext(
   const currentLevelNumber = ticket.currentEscalationLevelNumber || 0;
   let currentLevel: IEscalationLevel | undefined;
 
+  // Resolve all levels across both SAME_FOR_ALL and PER_PRIORITY modes
+  const allMatrixLevels: IEscalationLevel[] =
+    matrix.priorityMode === "PER_PRIORITY"
+      ? (matrix as any).getLevelsForPriority((ticket as any).priority || "MEDIUM")
+      : matrix.levels || [];
+
   if (ticket.currentEscalationLevelId) {
-    currentLevel = matrix.levels.find(
+    currentLevel = allMatrixLevels.find(
       (l) => l._id?.toString() === ticket.currentEscalationLevelId?.toString(),
     );
   } else if (currentLevelNumber > 0) {
-    currentLevel = matrix.levels.find(
+    currentLevel = allMatrixLevels.find(
       (l) => l.levelNumber === currentLevelNumber,
     );
   }
@@ -581,7 +596,14 @@ export async function getAllowedEscalationLevels(
   };
 
   // Sort levels by levelNumber
-  const sortedLevels = [...matrix.levels]
+  // Handle both SAME_FOR_ALL and PER_PRIORITY matrices
+  const effectiveLevelsForAllowed: IEscalationLevel[] =
+    matrix.priorityMode === "PER_PRIORITY"
+      ? (matrix as any).getLevelsForPriority(
+          (ticket as any).priority || "MEDIUM",
+        )
+      : matrix.levels || [];
+  const sortedLevels = [...effectiveLevelsForAllowed]
     .filter((l) => l.isActive)
     .sort((a, b) => a.levelNumber - b.levelNumber);
 
@@ -1185,7 +1207,14 @@ export async function assignMatrixToTicket(
   }
 
   // Sort levels and get the starting level
-  const sortedLevels = [...matrix.levels]
+  // Handle both SAME_FOR_ALL and PER_PRIORITY matrices
+  const effectiveLevelsForAssign: IEscalationLevel[] =
+    matrix.priorityMode === "PER_PRIORITY"
+      ? (matrix as any).getLevelsForPriority(
+          (ticket as any).priority || "MEDIUM",
+        )
+      : matrix.levels || [];
+  const sortedLevels = [...effectiveLevelsForAssign]
     .filter((l) => l.isActive)
     .sort((a, b) => a.levelNumber - b.levelNumber);
 
