@@ -739,37 +739,17 @@ export const submitTicket = async (req: Request, res: Response) => {
           );
 
           if (ticketSLADueDate) {
-            ticket.ticketLevelSLA = {
-              dueAt: ticketSLADueDate,
-              pausedDuration: 0,
-            };
-
-            // If ticket has escalation matrix, initialize role-level SLA
-            if (ticket.escalationMatrixId) {
-              const matrix = await EscalationMatrix.findById(
-                ticket.escalationMatrixId,
-              );
-              if (matrix && ticket.currentEscalationLevelNumber) {
-                const roleSLADueDate = await slaService.calculateRoleLevelSLA(
-                  ticket.createdAt,
-                  matrix,
-                  ticket.currentEscalationLevelNumber,
-                  priority.code,
-                  calendar._id as mongoose.Types.ObjectId,
-                );
-
-                if (roleSLADueDate) {
-                  ticket.roleLevelSLA = {
-                    startedAt: ticket.createdAt,
-                    dueAt: roleSLADueDate,
-                    pausedDuration: 0,
-                  };
-                }
-              }
-            }
-
-            ticket.workingCalendarId = calendar._id as any;
-            await ticket.save();
+            // Use atomic updateOne to avoid overwriting escalationMatrixId/roleLevelSLA
+            // set by the concurrent autoAssignMatrixToTicket IIFE (race condition fix).
+            await Ticket.updateOne(
+              { _id: ticket._id },
+              {
+                $set: {
+                  ticketLevelSLA: { dueAt: ticketSLADueDate, pausedDuration: 0 },
+                  workingCalendarId: calendar._id,
+                },
+              },
+            );
             console.log(
               `✅ Priority-level SLA tracking initialized for ticket ${ticket.ticketNumber}`,
             );
@@ -6113,37 +6093,17 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
           );
 
           if (ticketSLADueDate) {
-            ticket.ticketLevelSLA = {
-              dueAt: ticketSLADueDate,
-              pausedDuration: 0,
-            };
-
-            // If ticket has escalation matrix, initialize role-level SLA
-            if (ticket.escalationMatrixId) {
-              const matrix = await EscalationMatrix.findById(
-                ticket.escalationMatrixId,
-              );
-              if (matrix && ticket.currentEscalationLevelNumber) {
-                const roleSLADueDate = await slaService.calculateRoleLevelSLA(
-                  ticket.createdAt,
-                  matrix,
-                  ticket.currentEscalationLevelNumber,
-                  priority.code,
-                  calendar._id as mongoose.Types.ObjectId,
-                );
-
-                if (roleSLADueDate) {
-                  ticket.roleLevelSLA = {
-                    startedAt: ticket.createdAt,
-                    dueAt: roleSLADueDate,
-                    pausedDuration: 0,
-                  };
-                }
-              }
-            }
-
-            ticket.workingCalendarId = calendar._id as any;
-            await ticket.save();
+            // Use atomic updateOne to avoid overwriting escalationMatrixId/roleLevelSLA
+            // set by the concurrent autoAssignMatrixToTicket call (race condition fix).
+            await Ticket.updateOne(
+              { _id: ticket._id },
+              {
+                $set: {
+                  ticketLevelSLA: { dueAt: ticketSLADueDate, pausedDuration: 0 },
+                  workingCalendarId: calendar._id,
+                },
+              },
+            );
             console.log(
               `✅ Priority-level SLA tracking initialized for offline ticket ${ticket.ticketNumber}`,
             );

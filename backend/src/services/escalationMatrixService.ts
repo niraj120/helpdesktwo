@@ -289,17 +289,25 @@ export async function autoAssignMatrixToTicket(
       );
     }
 
-    // Update ticket with escalation matrix AND roleLevelSLA
-    ticket.escalationMatrixId = new mongoose.Types.ObjectId(matrix._id);
-    ticket.currentEscalationLevelId = startLevel._id;
-    ticket.currentEscalationLevelNumber = startLevel.levelNumber;
-    ticket.roleLevelSLA = {
-      startedAt: escalationStartTime,
-      dueAt: roleLevelDueAt,
-      breachedAt: undefined,
-      pausedAt: undefined,
-      pausedDuration: 0,
+    // Build atomic update fields — avoids overwriting ticketLevelSLA/workingCalendarId
+    // set by the concurrent Priority SLA IIFE in ticketController (race condition fix).
+    const matrixUpdateFields: Record<string, any> = {
+      escalationMatrixId: new mongoose.Types.ObjectId(matrix._id),
+      currentEscalationLevelId: startLevel._id,
+      currentEscalationLevelNumber: startLevel.levelNumber,
+      roleLevelSLA: {
+        startedAt: escalationStartTime,
+        dueAt: roleLevelDueAt,
+        breachedAt: undefined,
+        pausedAt: undefined,
+        pausedDuration: 0,
+      },
     };
+
+    // Include workingCalendarId if we resolved it in this function
+    if (workingCalendarId) {
+      matrixUpdateFields.workingCalendarId = workingCalendarId;
+    }
 
     // If the start level is a direct-user assignment and the ticket is currently
     // unassigned, assign it to that specific user now.
@@ -308,7 +316,7 @@ export async function autoAssignMatrixToTicket(
       (startLevel as any).assigneeUserId &&
       !ticket.assignedTo
     ) {
-      ticket.assignedTo = new mongoose.Types.ObjectId(
+      matrixUpdateFields.assignedTo = new mongoose.Types.ObjectId(
         (startLevel as any).assigneeUserId.toString(),
       );
       console.log(
@@ -316,7 +324,7 @@ export async function autoAssignMatrixToTicket(
       );
     }
 
-    await ticket.save();
+    await Ticket.updateOne({ _id: ticket._id }, { $set: matrixUpdateFields });
 
     console.log(
       `🎯 Role-level SLA initialized: L${startLevel.levelNumber} deadline = ${roleLevelDueAt.toISOString()} (${startLevel.slaHours} ${startLevel.slaUnit || "hrs"})`,
@@ -430,9 +438,7 @@ export async function getEscalationContext(
     return null;
   }
 
-  const matrix = await EscalationMatrix.findById(
-    ticket.escalationMatrixId,
-  )
+  const matrix = await EscalationMatrix.findById(ticket.escalationMatrixId)
     .populate("levels.roleId", "name code")
     .populate("priorityConfigs.levels.roleId", "name code");
 
@@ -446,7 +452,9 @@ export async function getEscalationContext(
   // Resolve all levels across both SAME_FOR_ALL and PER_PRIORITY modes
   const allMatrixLevels: IEscalationLevel[] =
     matrix.priorityMode === "PER_PRIORITY"
-      ? (matrix as any).getLevelsForPriority((ticket as any).priority || "MEDIUM")
+      ? (matrix as any).getLevelsForPriority(
+          (ticket as any).priority || "MEDIUM",
+        )
       : matrix.levels || [];
 
   if (ticket.currentEscalationLevelId) {
@@ -485,7 +493,9 @@ export async function getAllowedEscalationLevels(
 ): Promise<AllowedEscalationLevel[]> {
   const context = await getEscalationContext(ticketId);
   if (!context) {
-    console.log(`⚠️ [Escalation] getEscalationContext returned null for ticket ${ticketId}`);
+    console.log(
+      `⚠️ [Escalation] getEscalationContext returned null for ticket ${ticketId}`,
+    );
     return [];
   }
 
@@ -608,7 +618,9 @@ export async function getAllowedEscalationLevels(
     .sort((a, b) => a.levelNumber - b.levelNumber);
 
   if (sortedLevels.length === 0) {
-    console.log(`⚠️ [Escalation] No active levels in matrix for ticket ${ticketId}`);
+    console.log(
+      `⚠️ [Escalation] No active levels in matrix for ticket ${ticketId}`,
+    );
     return [];
   }
   console.log(
@@ -1533,7 +1545,8 @@ export async function processAutoEscalation(): Promise<{
           }
 
           // Select a random user from the role
-          assignedUser = usersInRole[Math.floor(Math.random() * usersInRole.length)];
+          assignedUser =
+            usersInRole[Math.floor(Math.random() * usersInRole.length)];
         }
 
         const previousAssignee = ticket.assignedTo;
