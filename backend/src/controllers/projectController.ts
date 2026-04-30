@@ -472,7 +472,8 @@ export const createProject = async (req: Request, res: Response) => {
       } catch (retryError: any) {
         return res.status(500).json({
           success: false,
-          message: "Failed to create project due to ID conflict. Please try again.",
+          message:
+            "Failed to create project due to ID conflict. Please try again.",
         });
       }
     }
@@ -935,7 +936,7 @@ export const getProjectBranding = async (req: Request, res: Response) => {
             "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI" // Test key as fallback
           : undefined,
       },
-      knowledgeBase: (project as any).knowledgeBase ?? true, // Enable KB by default
+      knowledgeBase: (project as any).modules?.knowledgeBase ?? true, // Reads from project.modules.knowledgeBase
       ticketSubmissionMode:
         (project as any).ticketSubmissionSettings?.mode || "both", // online, offline, or both
     };

@@ -850,6 +850,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
       setSubmitSuccess(true);
       setFormData({});
       setFieldFiles({});
+      setCategoryHierarchy({});
 
       // Reset form after 5 seconds
       setTimeout(() => {
@@ -1300,32 +1301,35 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
         className={`max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 ${hideHeader ? "py-0" : "py-4 sm:py-8"}`}
       >
         {/* Success Modal — rendered via portal to stay above all overlays */}
-        {submitSuccess && createPortal(
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center">
-            {/* Backdrop */}
-            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-            {/* Dialog */}
-            <div className="relative bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4 text-center animate-fadeIn">
-              <div className="flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mx-auto mb-4">
-                <CheckCircleIcon className="w-10 h-10 text-green-600" />
+        {submitSuccess &&
+          createPortal(
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center">
+              {/* Backdrop */}
+              <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+              {/* Dialog */}
+              <div className="relative bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4 text-center animate-fadeIn">
+                <div className="flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mx-auto mb-4">
+                  <CheckCircleIcon className="w-10 h-10 text-green-600" />
+                </div>
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                  🎉 {t("querySubmittedSuccess")}
+                </h2>
+                <p className="text-gray-600 mb-6">
+                  {ticketSettings.successMessage || t("querySubmittedMessage")}
+                </p>
+                <button
+                  onClick={() => setSubmitSuccess(false)}
+                  className="px-6 py-2.5 rounded-lg text-white font-medium"
+                  style={{
+                    background: projectBranding?.primaryColor || "#2563eb",
+                  }}
+                >
+                  {t("close") || "Close"}
+                </button>
               </div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                🎉 {t("querySubmittedSuccess")}
-              </h2>
-              <p className="text-gray-600 mb-6">
-                {ticketSettings.successMessage || t("querySubmittedMessage")}
-              </p>
-              <button
-                onClick={() => setSubmitSuccess(false)}
-                className="px-6 py-2.5 rounded-lg text-white font-medium"
-                style={{ background: projectBranding?.primaryColor || "#2563eb" }}
-              >
-                {t("close") || "Close"}
-              </button>
-            </div>
-          </div>,
-          document.body
-        )}
+            </div>,
+            document.body,
+          )}
 
         {/* Error Message */}
         {submitError && (
