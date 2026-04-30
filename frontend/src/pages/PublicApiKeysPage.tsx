@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+﻿import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import {
   MdVpnKey,
@@ -55,7 +55,7 @@ const ENDPOINTS: EndpointDef[] = [
     path: "/v1/users/lookup",
     title: "Lookup User",
     description:
-      "Find a registered user by mobile number within a project. Always returns HTTP 200 â€” check the 'found' flag in the response.",
+      "Find a registered user by mobile number within a project. Always returns HTTP 200 — check the 'found' flag in the response.",
     queryParams: [
       { key: "mobile", label: "Mobile Number", placeholder: "9876543210" },
     ],
@@ -191,7 +191,7 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleString();
 }
 
-// Base server URL (strips /api â€” /v1/* routes are NOT under /api)
+// Base server URL (strips /api — /v1/* routes are NOT under /api)
 const SERVER_BASE = API_CONFIG.API_URL;
 
 function methodBadge(method: "GET" | "POST") {
@@ -264,7 +264,7 @@ function KeyRevealModal({
           onClick={onClose}
           className="w-full bg-gray-900 text-white py-2.5 rounded-lg font-medium hover:bg-gray-800 transition-colors"
         >
-          I've saved the key â€” Close
+          I've saved the key — Close
         </button>
       </div>
     </div>
@@ -381,7 +381,7 @@ function KeysTab({
               {keys.map((k) => (
                 <tr key={k._id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-3 font-mono text-gray-800">
-                    {k.keyPrefix}â€¦
+                    {k.keyPrefix}…
                   </td>
                   <td className="px-4 py-3">
                     {k.isActive ? (
@@ -802,7 +802,7 @@ function PlaygroundTab({ selectedProjectId }: { selectedProjectId: string }) {
               ) : (
                 <MdPlayArrow />
               )}
-              {running ? "Runningâ€¦" : "Send Request"}
+              {running ? "Running…" : "Send Request"}
             </button>
             <button
               onClick={copyCurl}
@@ -894,7 +894,7 @@ function ShareTab({
     const projectLabel = projectName || selectedProjectId || "Project";
     const lines: string[] = [
       "=".repeat(64),
-      `  SAC Helpdesk â€” Public API Reference`,
+      `  SAC Helpdesk — Public API Reference`,
       `  Project: ${projectLabel}`,
       `  Generated: ${new Date().toLocaleString()}`,
       "=".repeat(64),
