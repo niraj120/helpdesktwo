@@ -151,6 +151,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
   const [submitting, setSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [createdTicketNumber, setCreatedTicketNumber] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<
     "all" | "state" | "city" | "pincode"
@@ -841,21 +842,19 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
       });
 
       // Submit ticket
-      await axios.post(`${API_CONFIG.API_URL}/tickets/submit`, submitData, {
+      const response = await axios.post(`${API_CONFIG.API_URL}/tickets/submit`, submitData, {
         headers: {
           "Content-Type": "multipart/form-data",
         },
       });
 
+      const ticketNum =
+        response.data.data?.ticketNumber || response.data.ticketNumber || "";
+      setCreatedTicketNumber(ticketNum);
       setSubmitSuccess(true);
       setFormData({});
       setFieldFiles({});
       setCategoryHierarchy({});
-
-      // Reset form after 5 seconds
-      setTimeout(() => {
-        setSubmitSuccess(false);
-      }, 5000);
     } catch (err: any) {
       console.error("Error submitting ticket:", err);
       setSubmitError(err.response?.data?.message || "Failed to submit ticket");
@@ -1312,10 +1311,17 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
                   <CheckCircleIcon className="w-10 h-10 text-green-600" />
                 </div>
                 <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                  🎉 {t("querySubmittedSuccess")}
+                  🎉 {t("querySubmittedSuccess", "Query Submitted Successfully!")}
                 </h2>
+                {createdTicketNumber && (
+                  <div className="my-3 px-4 py-2 bg-blue-50 rounded-lg border border-blue-200 inline-block">
+                    <span className="text-sm text-blue-600 font-medium">Ticket Number</span>
+                    <p className="text-xl font-bold text-blue-800 mt-0.5">{createdTicketNumber}</p>
+                  </div>
+                )}
                 <p className="text-gray-600 mb-6">
-                  {ticketSettings.successMessage || t("querySubmittedMessage")}
+                  {ticketSettings.successMessage ||
+                    t("querySubmittedMessage", "Your ticket has been submitted. Our team will get back to you soon.")}
                 </p>
                 <button
                   onClick={() => setSubmitSuccess(false)}
