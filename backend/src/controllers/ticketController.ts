@@ -2894,6 +2894,19 @@ export const closeTicket = async (req: Request, res: Response) => {
 
     await ticket.save();
 
+    // Stop SLA escalation tracking so the cron cannot escalate after student close
+    (async () => {
+      try {
+        const SLATracking = require("../models/sla-module/SLATracking").default;
+        await SLATracking.updateOne(
+          { ticketId: ticket._id },
+          { $unset: { nextEscalationDue: 1 }, $set: { resolutionStatus: "met" } },
+        );
+      } catch (slaErr) {
+        console.error("Failed to clear SLA tracking on student close:", slaErr);
+      }
+    })();
+
     console.log(`✅ Ticket closed by student: ${ticket._id} by ${user.email}`);
 
     return res.status(200).json({
@@ -3117,6 +3130,22 @@ export const updateTicketStatus = async (req: Request, res: Response) => {
         success: false,
         message: "Failed to update ticket",
       });
+    }
+
+    // If the new status closes the ticket, stop SLA escalation tracking immediately.
+    // This prevents the 5-min cron from escalating an already-closed ticket.
+    if (isClosingStatus || statusNum === 4 || statusNum === 5) {
+      (async () => {
+        try {
+          const SLATracking = require("../models/sla-module/SLATracking").default;
+          await SLATracking.updateOne(
+            { ticketId: id },
+            { $unset: { nextEscalationDue: 1 }, $set: { resolutionStatus: "met" } },
+          );
+        } catch (slaErr) {
+          console.error("Failed to clear SLA tracking on ticket close:", slaErr);
+        }
+      })();
     }
 
     // Check feedback triggers for status change

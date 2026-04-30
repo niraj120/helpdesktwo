@@ -1298,11 +1298,13 @@ export async function processAutoEscalation(): Promise<{
 
     const matrixIds = autoEscalateMatrices.map((m) => m._id);
 
-    // Find open tickets with these matrices
-    // Status values: 1=open, 2=in-progress, 3=on-hold (don't check resolved/closed)
+    // Find open tickets with these matrices.
+    // Use closedAt absence as the primary guard so that projects with custom
+    // isClosed status codes (anything other than 4/5) are also excluded.
     const tickets = await Ticket.find({
       escalationMatrixId: { $in: matrixIds },
       status: { $in: [1, 2, 3] },
+      closedAt: { $exists: false }, // safety net for custom close status codes
     });
 
     for (const ticket of tickets) {
