@@ -869,7 +869,8 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
       case "email":
       case "phone":
       case "number": {
-        const isNameField = field.fieldName === "firstName" || field.fieldName === "lastName";
+        const isNameField =
+          field.fieldName === "firstName" || field.fieldName === "lastName";
         return (
           <div className="space-y-2">
             <div className="flex gap-2">
@@ -1455,7 +1456,9 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                             <th className="px-3 py-2 font-semibold whitespace-nowrap w-32">
                               Ticket #
                             </th>
-                            <th className="px-3 py-2 font-semibold w-52">Subject</th>
+                            <th className="px-3 py-2 font-semibold w-52">
+                              Subject
+                            </th>
                             <th className="px-3 py-2 font-semibold w-64">
                               Category
                             </th>
@@ -1465,7 +1468,9 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                             <th className="px-3 py-2 font-semibold whitespace-nowrap w-28">
                               Assigned To
                             </th>
-                            <th className="px-3 py-2 font-semibold w-20">Status</th>
+                            <th className="px-3 py-2 font-semibold w-20">
+                              Status
+                            </th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">

@@ -398,6 +398,33 @@ const computeDetailSlaPill = (
 ): { label: string; color: string; bg: string; tooltip: string } | null => {
   const dueAt = ticket.roleLevelSLA?.dueAt ?? ticket.ticketLevelSLA?.dueAt;
   if (!dueAt) return null;
+
+  // Closed/resolved tickets: show frozen SLA status (met or breached at close time).
+  // closedAt is the most reliable indicator — it is set for ALL closing status codes.
+  const closedAt = (ticket as any).closedAt as string | undefined;
+  const statusNum = Number((ticket as any).status);
+  const isTicketClosed = !!(closedAt || statusNum === 4 || statusNum === 5);
+  if (isTicketClosed) {
+    const due = new Date(dueAt).getTime();
+    const closedMs = closedAt ? new Date(closedAt).getTime() : Date.now();
+    const existingBreachedAt =
+      ticket.roleLevelSLA?.breachedAt ?? ticket.ticketLevelSLA?.breachedAt;
+    const wasBreached = !!(existingBreachedAt || closedMs > due);
+    if (wasBreached)
+      return {
+        label: "BREACHED",
+        color: "#dc2626",
+        bg: "#fef2f2",
+        tooltip: `SLA breached. Closed: ${new Date(closedAt ?? Date.now()).toLocaleString()}`,
+      };
+    return {
+      label: "MET",
+      color: "#15803d",
+      bg: "#f0fdf4",
+      tooltip: `Closed within SLA at ${new Date(closedAt ?? Date.now()).toLocaleString()}`,
+    };
+  }
+
   if (ticket.roleLevelSLA?.pausedAt ?? ticket.ticketLevelSLA?.pausedAt)
     return {
       label: "PAUSED",
@@ -3683,15 +3710,21 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
 
                   {/* Priority Resolution Timer - Shows overall priority-level resolution time */}
                   {(() => {
-                    // Check if ticket is resolved or closed
+                    // Check if ticket is resolved or closed.
+                    // Use closedAt as the primary guard to handle custom isClosed status codes.
                     const statusLower = String(ticket.status).toLowerCase();
+                    const ticketClosedAt = (ticket as any).closedAt as
+                      | string
+                      | undefined;
                     const isResolved =
                       String(ticket.status) === "4" ||
-                      statusLower === "resolved";
+                      statusLower === "resolved" ||
+                      !!(ticket as any).resolvedAt;
                     const isClosed =
                       String(ticket.status) === "5" ||
                       statusLower === "closed" ||
-                      statusLower === "close";
+                      statusLower === "close" ||
+                      !!ticketClosedAt; // most reliable: set for ALL closing status codes
                     const isComplete = isResolved || isClosed;
 
                     // Get priority resolution time from SLA rules
@@ -3919,15 +3952,18 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
 
                   {/* Escalation Level Countdown - Uses fetched escalation matrix */}
                   {(() => {
-                    // Check if ticket is resolved or closed (handle both numeric and string values)
+                    // Check if ticket is resolved or closed (handle both numeric and string values).
+                    // Use closedAt as the primary guard for custom isClosed status codes.
                     const statusLower = String(ticket.status).toLowerCase();
                     const isResolved =
                       String(ticket.status) === "4" ||
-                      statusLower === "resolved";
+                      statusLower === "resolved" ||
+                      !!(ticket as any).resolvedAt;
                     const isClosed =
                       String(ticket.status) === "5" ||
                       statusLower === "closed" ||
-                      statusLower === "close";
+                      statusLower === "close" ||
+                      !!(ticket as any).closedAt; // most reliable: set for ALL closing status codes
                     const isComplete = isResolved || isClosed;
 
                     // Use escalation matrix from state (fetched via ticket.escalationMatrixId)
@@ -4447,22 +4483,45 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                 const schema = ticket.formSchemaSnapshot || [];
                 const customFields = ticket.metadata?.customFields || {};
                 // Standard fields already shown elsewhere; skip them
-                const standardKeys = new Set(["Name", "Email", "Phone", "Subject", "Description", "Category", "Subcategory"]);
+                const standardKeys = new Set([
+                  "Name",
+                  "Email",
+                  "Phone",
+                  "Subject",
+                  "Description",
+                  "Category",
+                  "Subcategory",
+                ]);
                 // Build rows: prefer schema order, fall back to raw customFields keys
-                const schemaRows = schema.filter((f) => !standardKeys.has(f.fieldName));
+                const schemaRows = schema.filter(
+                  (f) => !standardKeys.has(f.fieldName),
+                );
                 const extraKeys = Object.keys(customFields).filter(
-                  (k) => !standardKeys.has(k) && !schemaRows.find((f) => f.fieldName === k)
+                  (k) =>
+                    !standardKeys.has(k) &&
+                    !schemaRows.find((f) => f.fieldName === k),
                 );
                 const allRows = [
-                  ...schemaRows.map((f) => ({ label: f.fieldName, value: customFields[f.fieldName] })),
-                  ...extraKeys.map((k) => ({ label: k, value: customFields[k] })),
-                ].filter((r) => r.value !== undefined && r.value !== null && r.value !== "");
+                  ...schemaRows.map((f) => ({
+                    label: f.fieldName,
+                    value: customFields[f.fieldName],
+                  })),
+                  ...extraKeys.map((k) => ({
+                    label: k,
+                    value: customFields[k],
+                  })),
+                ].filter(
+                  (r) =>
+                    r.value !== undefined && r.value !== null && r.value !== "",
+                );
 
                 if (allRows.length === 0) return null;
 
                 return (
                   <div className="bg-white rounded-xl shadow-sm p-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Form Details</h3>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                      Form Details
+                    </h3>
                     <div className="space-y-3">
                       {allRows.map(({ label, value }) => (
                         <div key={label}>
@@ -4470,7 +4529,9 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                             {label}
                           </p>
                           <p className="text-sm text-gray-900 break-words">
-                            {Array.isArray(value) ? value.join(", ") : String(value)}
+                            {Array.isArray(value)
+                              ? value.join(", ")
+                              : String(value)}
                           </p>
                         </div>
                       ))}

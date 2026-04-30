@@ -1211,7 +1211,8 @@ const AgentStudentWorkflow: React.FC = () => {
     switch (field.fieldType) {
       case "text":
       case "number": {
-        const isNameField = field.fieldName === "firstName" || field.fieldName === "lastName";
+        const isNameField =
+          field.fieldName === "firstName" || field.fieldName === "lastName";
         return (
           <input
             type={field.fieldType === "number" ? "number" : "text"}
@@ -1646,9 +1647,10 @@ const AgentStudentWorkflow: React.FC = () => {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => {
-                    const val = searchType === "name"
-                      ? e.target.value.replace(/[0-9]/g, "")
-                      : e.target.value;
+                    const val =
+                      searchType === "name"
+                        ? e.target.value.replace(/[0-9]/g, "")
+                        : e.target.value;
                     setSearchQuery(val);
                   }}
                   onKeyPress={(e) => e.key === "Enter" && handleSearchStudent()}
@@ -1898,9 +1900,7 @@ const AgentStudentWorkflow: React.FC = () => {
                       {
                         userPriorTickets.filter(
                           (t) =>
-                            t.status === 1 ||
-                            t.status === 2 ||
-                            t.status === 3,
+                            t.status === 1 || t.status === 2 || t.status === 3,
                         ).length
                       }{" "}
                       open / in-progress ticket(s) already exist. Review before
@@ -1915,8 +1915,12 @@ const AgentStudentWorkflow: React.FC = () => {
                         <th className="px-3 py-2 font-semibold whitespace-nowrap w-32">
                           Ticket #
                         </th>
-                        <th className="px-3 py-2 font-semibold w-52">Subject</th>
-                        <th className="px-3 py-2 font-semibold w-64">Category</th>
+                        <th className="px-3 py-2 font-semibold w-52">
+                          Subject
+                        </th>
+                        <th className="px-3 py-2 font-semibold w-64">
+                          Category
+                        </th>
                         <th className="px-3 py-2 font-semibold whitespace-nowrap w-36">
                           Center
                         </th>

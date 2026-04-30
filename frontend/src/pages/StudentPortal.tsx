@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useParams, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import axios from "axios";
@@ -849,6 +850,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
       setSubmitSuccess(true);
       setFormData({});
       setFieldFiles({});
+      setCategoryHierarchy({});
 
       // Reset form after 5 seconds
       setTimeout(() => {
@@ -1298,26 +1300,36 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
       <main
         className={`max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 ${hideHeader ? "py-0" : "py-4 sm:py-8"}`}
       >
-        {/* Success Message */}
-        {submitSuccess && (
-          <div
-            className="mb-6 rounded-xl p-6 flex items-start space-x-4 shadow-lg animate-fadeIn"
-            style={{
-              background: `linear-gradient(135deg, #10b98115 0%, #10b98125 100%)`,
-              border: "1px solid #10b981",
-            }}
-          >
-            <CheckCircleIcon className="w-7 h-7 text-green-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <h3 className="text-lg font-bold text-green-900 mb-1">
-                🎉 {t("querySubmittedSuccess")}
-              </h3>
-              <p className="text-green-700 font-medium">
-                {ticketSettings.successMessage || t("querySubmittedMessage")}
-              </p>
-            </div>
-          </div>
-        )}
+        {/* Success Modal — rendered via portal to stay above all overlays */}
+        {submitSuccess &&
+          createPortal(
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center">
+              {/* Backdrop */}
+              <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+              {/* Dialog */}
+              <div className="relative bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4 text-center animate-fadeIn">
+                <div className="flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mx-auto mb-4">
+                  <CheckCircleIcon className="w-10 h-10 text-green-600" />
+                </div>
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                  🎉 {t("querySubmittedSuccess")}
+                </h2>
+                <p className="text-gray-600 mb-6">
+                  {ticketSettings.successMessage || t("querySubmittedMessage")}
+                </p>
+                <button
+                  onClick={() => setSubmitSuccess(false)}
+                  className="px-6 py-2.5 rounded-lg text-white font-medium"
+                  style={{
+                    background: projectBranding?.primaryColor || "#2563eb",
+                  }}
+                >
+                  {t("close") || "Close"}
+                </button>
+              </div>
+            </div>,
+            document.body,
+          )}
 
         {/* Error Message */}
         {submitError && (

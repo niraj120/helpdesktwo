@@ -880,7 +880,7 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                         navigate(
                           initialProjectId && customUrlPath
                             ? `/${customUrlPath}/portal/tickets/${ticket._id}`
-                            : `/tickets/${ticket._id}`
+                            : `/tickets/${ticket._id}`,
                         )
                       }
                     >

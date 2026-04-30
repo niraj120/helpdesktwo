@@ -176,7 +176,10 @@ const StudentLayout = ({ children }: StudentLayoutProps) => {
   // Filter menu items based on permissions and project submission mode
   const visibleMenuItems = menuItems.filter((item) => {
     // Check project-mode visibility (e.g., Find Center only for offline/both)
-    if ((item as any).showForModes && !(item as any).showForModes.includes(submissionMode)) {
+    if (
+      (item as any).showForModes &&
+      !(item as any).showForModes.includes(submissionMode)
+    ) {
       return false;
     }
     return !item.permission || hasPermission(item.permission);

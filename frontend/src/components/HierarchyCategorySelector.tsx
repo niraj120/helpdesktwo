@@ -537,7 +537,12 @@ const HierarchyCategorySelector: React.FC<HierarchyCategorySelectorProps> = ({
 
     // Hide a deeper level when its parent IS selected (not disabled) but the
     // server returned no children for the chosen parent — no options to pick.
-    if (levelNumber > 1 && !levelDisabled && !isLoading && options.length === 0) {
+    if (
+      levelNumber > 1 &&
+      !levelDisabled &&
+      !isLoading &&
+      options.length === 0
+    ) {
       return null;
     }
 

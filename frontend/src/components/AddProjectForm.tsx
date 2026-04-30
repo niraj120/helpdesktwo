@@ -356,8 +356,6 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
   >([]);
   const [agentRoleId, setAgentRoleId] = useState<string>("");
 
-
-
   // Computed: Filter roles for current project
   const projectRoles = roles.filter((role) => {
     if (role.isActive === false) return false;
@@ -1121,7 +1119,12 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
       labelMr: "à¤¸à¤¾à¤®à¤¾à¤¨à¥à¤¯",
       icon: <MdSettings />,
     },
-    { id: "login", label: "Login", labelMr: "à¤²à¥‰à¤—à¤¿à¤¨", icon: <MdLock /> },
+    {
+      id: "login",
+      label: "Login",
+      labelMr: "à¤²à¥‰à¤—à¤¿à¤¨",
+      icon: <MdLock />,
+    },
     {
       id: "security",
       label: "Security",
@@ -3844,6 +3847,80 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                     </div>
                   </div>
 
+                  {/* Knowledge Base Tab on Submit Portal */}
+                  <div
+                    style={{
+                      padding: "20px",
+                      backgroundColor: "white",
+                      borderRadius: "8px",
+                      border: "1px solid #e5e7eb",
+                    }}
+                  >
+                    <h4
+                      style={{
+                        margin: "0 0 8px 0",
+                        fontSize: "16px",
+                        fontWeight: "600",
+                        color: "#1f2937",
+                      }}
+                    >
+                      Knowledge Base
+                    </h4>
+                    <p
+                      style={{
+                        margin: "0 0 16px 0",
+                        fontSize: "13px",
+                        color: "#6b7280",
+                      }}
+                    >
+                      When enabled, a "Knowledge Base" tab will appear on the
+                      student ticket submission page so users can browse
+                      articles before raising a ticket.
+                    </p>
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "12px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={formData.modules?.knowledgeBase ?? true}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            modules: {
+                              ...formData.modules,
+                              knowledgeBase: e.target.checked,
+                            },
+                          })
+                        }
+                        style={{
+                          width: "18px",
+                          height: "18px",
+                          cursor: "pointer",
+                        }}
+                      />
+                      <div>
+                        <div
+                          style={{
+                            fontSize: "15px",
+                            fontWeight: "500",
+                            color: "#1f2937",
+                          }}
+                        >
+                          Show Knowledge Base tab on submit page
+                        </div>
+                        <div style={{ fontSize: "13px", color: "#6b7280" }}>
+                          Disable to hide the Knowledge Base tab from the public
+                          ticket portal for this project
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+
                   {/* Announcement Banner */}
                   <div
                     style={{
@@ -5484,7 +5561,11 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                     e.currentTarget.style.borderColor = "#d1d5db";
                   }}
                 >
-                  {getText("Discard", "à¤°à¤¦à¥à¤¦ à¤•à¤°à¤¾", "à¤°à¤¦à¥à¤¦ à¤•à¤°à¤¾")}
+                  {getText(
+                    "Discard",
+                    "à¤°à¤¦à¥à¤¦ à¤•à¤°à¤¾",
+                    "à¤°à¤¦à¥à¤¦ à¤•à¤°à¤¾",
+                  )}
                 </button>
                 <button
                   type="submit"
@@ -5542,8 +5623,16 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                     </svg>
                   )}
                   {saving
-                    ? getText("Saving...", "à¤œà¤¤à¤¨ à¤•à¤°à¤¤ à¤†à¤¹à¥‡...", "à¤œà¤¤à¤¨ à¤•à¤°à¤¤ à¤†à¤¹à¥‡...")
-                    : getText("Update Project", "à¤…à¤ªà¤¡à¥‡à¤Ÿ à¤•à¤°à¤¾", "à¤…à¤ªà¤¡à¥‡à¤Ÿ à¤•à¤°à¤¾")}
+                    ? getText(
+                        "Saving...",
+                        "à¤œà¤¤à¤¨ à¤•à¤°à¤¤ à¤†à¤¹à¥‡...",
+                        "à¤œà¤¤à¤¨ à¤•à¤°à¤¤ à¤†à¤¹à¥‡...",
+                      )
+                    : getText(
+                        "Update Project",
+                        "à¤…à¤ªà¤¡à¥‡à¤Ÿ à¤•à¤°à¤¾",
+                        "à¤…à¤ªà¤¡à¥‡à¤Ÿ à¤•à¤°à¤¾",
+                      )}
                 </button>
               </div>
             </div>
