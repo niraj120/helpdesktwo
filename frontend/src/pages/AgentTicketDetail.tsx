@@ -3713,7 +3713,9 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                     // Check if ticket is resolved or closed.
                     // Use closedAt as the primary guard to handle custom isClosed status codes.
                     const statusLower = String(ticket.status).toLowerCase();
-                    const ticketClosedAt = (ticket as any).closedAt as string | undefined;
+                    const ticketClosedAt = (ticket as any).closedAt as
+                      | string
+                      | undefined;
                     const isResolved =
                       String(ticket.status) === "4" ||
                       statusLower === "resolved" ||

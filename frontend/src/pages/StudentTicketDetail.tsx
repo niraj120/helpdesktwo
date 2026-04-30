@@ -457,7 +457,9 @@ const StudentTicketDetail: React.FC = () => {
                 </div>
                 <div className="flex flex-col items-end space-y-2 ml-4">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-gray-500 font-medium">Status –</span>
+                    <span className="text-xs text-gray-500 font-medium">
+                      Status –
+                    </span>
                     <span
                       className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(ticket.status)}`}
                     >
@@ -465,7 +467,9 @@ const StudentTicketDetail: React.FC = () => {
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-gray-500 font-medium">Priority –</span>
+                    <span className="text-xs text-gray-500 font-medium">
+                      Priority –
+                    </span>
                     <span
                       className={`px-3 py-1 rounded-full text-xs font-medium ${getPriorityColor(ticket.priority)}`}
                     >
@@ -501,15 +505,36 @@ const StudentTicketDetail: React.FC = () => {
               {(() => {
                 const schema = ticket.formSchemaSnapshot || [];
                 const customFields = ticket.metadata?.customFields || {};
-                const standardKeys = new Set(["Name", "Email", "Phone", "Subject", "Description", "Category", "Subcategory"]);
-                const schemaRows = schema.filter((f) => !standardKeys.has(f.fieldName));
+                const standardKeys = new Set([
+                  "Name",
+                  "Email",
+                  "Phone",
+                  "Subject",
+                  "Description",
+                  "Category",
+                  "Subcategory",
+                ]);
+                const schemaRows = schema.filter(
+                  (f) => !standardKeys.has(f.fieldName),
+                );
                 const extraKeys = Object.keys(customFields).filter(
-                  (k) => !standardKeys.has(k) && !schemaRows.find((f) => f.fieldName === k)
+                  (k) =>
+                    !standardKeys.has(k) &&
+                    !schemaRows.find((f) => f.fieldName === k),
                 );
                 const allRows = [
-                  ...schemaRows.map((f) => ({ label: f.fieldName, value: customFields[f.fieldName] })),
-                  ...extraKeys.map((k) => ({ label: k, value: customFields[k] })),
-                ].filter((r) => r.value !== undefined && r.value !== null && r.value !== "");
+                  ...schemaRows.map((f) => ({
+                    label: f.fieldName,
+                    value: customFields[f.fieldName],
+                  })),
+                  ...extraKeys.map((k) => ({
+                    label: k,
+                    value: customFields[k],
+                  })),
+                ].filter(
+                  (r) =>
+                    r.value !== undefined && r.value !== null && r.value !== "",
+                );
 
                 if (allRows.length === 0) return null;
 
@@ -523,9 +548,13 @@ const StudentTicketDetail: React.FC = () => {
                     <dl className="grid grid-cols-2 gap-x-6 gap-y-3">
                       {allRows.map(({ label, value }) => (
                         <div key={label}>
-                          <dt className="text-xs text-gray-500 font-medium mb-0.5">{label}</dt>
+                          <dt className="text-xs text-gray-500 font-medium mb-0.5">
+                            {label}
+                          </dt>
                           <dd className="text-sm text-gray-900 break-words">
-                            {Array.isArray(value) ? value.join(", ") : String(value)}
+                            {Array.isArray(value)
+                              ? value.join(", ")
+                              : String(value)}
                           </dd>
                         </div>
                       ))}

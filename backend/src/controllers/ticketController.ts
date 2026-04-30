@@ -745,7 +745,10 @@ export const submitTicket = async (req: Request, res: Response) => {
               { _id: ticket._id },
               {
                 $set: {
-                  ticketLevelSLA: { dueAt: ticketSLADueDate, pausedDuration: 0 },
+                  ticketLevelSLA: {
+                    dueAt: ticketSLADueDate,
+                    pausedDuration: 0,
+                  },
                   workingCalendarId: calendar._id,
                 },
               },
@@ -2900,7 +2903,10 @@ export const closeTicket = async (req: Request, res: Response) => {
         const SLATracking = require("../models/sla-module/SLATracking").default;
         await SLATracking.updateOne(
           { ticketId: ticket._id },
-          { $unset: { nextEscalationDue: 1 }, $set: { resolutionStatus: "met" } },
+          {
+            $unset: { nextEscalationDue: 1 },
+            $set: { resolutionStatus: "met" },
+          },
         );
       } catch (slaErr) {
         console.error("Failed to clear SLA tracking on student close:", slaErr);
@@ -3137,13 +3143,20 @@ export const updateTicketStatus = async (req: Request, res: Response) => {
     if (isClosingStatus || statusNum === 4 || statusNum === 5) {
       (async () => {
         try {
-          const SLATracking = require("../models/sla-module/SLATracking").default;
+          const SLATracking =
+            require("../models/sla-module/SLATracking").default;
           await SLATracking.updateOne(
             { ticketId: id },
-            { $unset: { nextEscalationDue: 1 }, $set: { resolutionStatus: "met" } },
+            {
+              $unset: { nextEscalationDue: 1 },
+              $set: { resolutionStatus: "met" },
+            },
           );
         } catch (slaErr) {
-          console.error("Failed to clear SLA tracking on ticket close:", slaErr);
+          console.error(
+            "Failed to clear SLA tracking on ticket close:",
+            slaErr,
+          );
         }
       })();
     }
@@ -6128,7 +6141,10 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
               { _id: ticket._id },
               {
                 $set: {
-                  ticketLevelSLA: { dueAt: ticketSLADueDate, pausedDuration: 0 },
+                  ticketLevelSLA: {
+                    dueAt: ticketSLADueDate,
+                    pausedDuration: 0,
+                  },
                   workingCalendarId: calendar._id,
                 },
               },

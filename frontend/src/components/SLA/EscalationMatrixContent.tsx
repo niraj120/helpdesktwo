@@ -517,7 +517,10 @@ const EscalationMatrixContent: React.FC = () => {
       assigneeUserName: (() => {
         const u = (l as any).assigneeUserId;
         if (!u) return "";
-        if (typeof u === "object") return [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || "";
+        if (typeof u === "object")
+          return (
+            [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || ""
+          );
         return "";
       })(),
       slaHours: l.slaHours,
@@ -563,9 +566,10 @@ const EscalationMatrixContent: React.FC = () => {
       description: fullMatrix.description || "",
       escalationMode: fullMatrix.escalationMode,
       scopeMode: (fullMatrix as any).scopeMode || "PRIORITY",
-      categoryIds: (fullMatrix as any).categoryIds?.map((id: any) =>
-        typeof id === "object" ? id._id ?? String(id) : String(id),
-      ) || [],
+      categoryIds:
+        (fullMatrix as any).categoryIds?.map((id: any) =>
+          typeof id === "object" ? (id._id ?? String(id)) : String(id),
+        ) || [],
       priorityMode: fullMatrix.priorityMode || "SAME_FOR_ALL",
       allowSkipLevel: fullMatrix.allowSkipLevel || false,
       allowBackward: fullMatrix.allowBackward || false,
@@ -636,10 +640,13 @@ const EscalationMatrixContent: React.FC = () => {
     // If scopeMode is CATEGORY, use the embedded categoryIds from the matrix;
     // otherwise fall back to the legacy linkedCategories join records.
     const savedScopeMode = (fullMatrix as any).scopeMode || "PRIORITY";
-    if (savedScopeMode === "CATEGORY" && (fullMatrix as any).categoryIds?.length > 0) {
+    if (
+      savedScopeMode === "CATEGORY" &&
+      (fullMatrix as any).categoryIds?.length > 0
+    ) {
       setLinkedCategoryIds(
         (fullMatrix as any).categoryIds.map((id: any) =>
-          typeof id === "object" ? id._id ?? String(id) : String(id),
+          typeof id === "object" ? (id._id ?? String(id)) : String(id),
         ),
       );
     } else {
@@ -666,7 +673,9 @@ const EscalationMatrixContent: React.FC = () => {
     if (isCategoryMode) {
       // Category mode validation
       if (linkedCategoryIds.length === 0) {
-        setError("Please select at least one category for a category-scoped matrix");
+        setError(
+          "Please select at least one category for a category-scoped matrix",
+        );
         return;
       }
       if (formData.levels.length === 0) {
@@ -699,7 +708,9 @@ const EscalationMatrixContent: React.FC = () => {
           setError("At least one escalation level is required");
           return;
         }
-        const invalidLevels = formData.levels.filter((l) => !levelHasAssignee(l));
+        const invalidLevels = formData.levels.filter(
+          (l) => !levelHasAssignee(l),
+        );
         if (invalidLevels.length > 0) {
           setError("All levels must have a role or user assigned");
           return;
@@ -980,16 +991,25 @@ const EscalationMatrixContent: React.FC = () => {
       const u = level.assigneeUserId;
       if (!u) return "Unknown User";
       if (typeof u === "object") {
-        return [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || "Unknown User";
+        return (
+          [u.firstName, u.lastName].filter(Boolean).join(" ") ||
+          u.email ||
+          "Unknown User"
+        );
       }
       // plain ID — try to match from projectUsers (loaded during edit)
       const found = projectUsers.find((pu) => pu._id === String(u));
-      if (found) return [found.firstName, found.lastName].filter(Boolean).join(" ") || found.email;
+      if (found)
+        return (
+          [found.firstName, found.lastName].filter(Boolean).join(" ") ||
+          found.email
+        );
       return "User";
     }
     // role mode
     const rid = level.roleId;
-    if (rid !== null && typeof rid === "object") return (rid as any).name || "Unknown";
+    if (rid !== null && typeof rid === "object")
+      return (rid as any).name || "Unknown";
     return getRoleName(rid as string);
   };
 
@@ -1658,10 +1678,12 @@ const EscalationMatrixContent: React.FC = () => {
                       {(() => {
                         // Prefer embedded categoryIds (new schema) if present,
                         // fall back to legacy linkedCategoriesCount join records.
-                        const catCount = (matrix as any).categoryIds?.length || 0;
-                        const count = catCount > 0
-                          ? catCount
-                          : (matrix.linkedCategoriesCount || 0);
+                        const catCount =
+                          (matrix as any).categoryIds?.length || 0;
+                        const count =
+                          catCount > 0
+                            ? catCount
+                            : matrix.linkedCategoriesCount || 0;
                         return count > 0 ? (
                           <span
                             style={{
@@ -1847,8 +1869,10 @@ const EscalationMatrixContent: React.FC = () => {
                                         color: "#6b7280",
                                       }}
                                     >
-                                      {(level as any).assigneeType === "user" ? "User" : "Role"}:{" "}
-                                      {getAssigneeLabelForLevel(level)}
+                                      {(level as any).assigneeType === "user"
+                                        ? "User"
+                                        : "Role"}
+                                      : {getAssigneeLabelForLevel(level)}
                                       {" | "}
                                       SLA: {level.slaHours}
                                       {(level as any).slaUnit === "mins"
@@ -2107,7 +2131,13 @@ const EscalationMatrixContent: React.FC = () => {
                       Choose whether this matrix applies based on ticket
                       priority or ticket category.
                     </p>
-                    <div style={{ display: "flex", gap: "12px", marginBottom: "16px" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "12px",
+                        marginBottom: "16px",
+                      }}
+                    >
                       {/* Priority-based card */}
                       <button
                         type="button"
@@ -2140,7 +2170,13 @@ const EscalationMatrixContent: React.FC = () => {
                         >
                           🎯 Priority-based
                         </div>
-                        <p style={{ fontSize: "12px", color: "#6b7280", margin: 0 }}>
+                        <p
+                          style={{
+                            fontSize: "12px",
+                            color: "#6b7280",
+                            margin: 0,
+                          }}
+                        >
                           Matrix applies to all tickets matching selected
                           priorities (High, Medium, Low…)
                         </p>
@@ -2177,7 +2213,13 @@ const EscalationMatrixContent: React.FC = () => {
                         >
                           🏷️ Category-based
                         </div>
-                        <p style={{ fontSize: "12px", color: "#6b7280", margin: 0 }}>
+                        <p
+                          style={{
+                            fontSize: "12px",
+                            color: "#6b7280",
+                            margin: 0,
+                          }}
+                        >
                           Matrix applies only to tickets in specific categories
                         </p>
                       </button>
@@ -2227,7 +2269,9 @@ const EscalationMatrixContent: React.FC = () => {
                             }}
                           >
                             {availableCategories.map((cat) => {
-                              const checked = linkedCategoryIds.includes(cat._id);
+                              const checked = linkedCategoryIds.includes(
+                                cat._id,
+                              );
                               return (
                                 <label
                                   key={cat._id}
@@ -2239,7 +2283,9 @@ const EscalationMatrixContent: React.FC = () => {
                                       ? "2px solid #0891b2"
                                       : "1px solid #e5e7eb",
                                     borderRadius: "8px",
-                                    backgroundColor: checked ? "#ecfeff" : "white",
+                                    backgroundColor: checked
+                                      ? "#ecfeff"
+                                      : "white",
                                     cursor: "pointer",
                                     fontSize: "13px",
                                   }}
@@ -2643,392 +2689,217 @@ const EscalationMatrixContent: React.FC = () => {
                 </div>
 
                 {/* Priority Selection - Only shown for Priority-scoped matrices */}
-                {formData.projectIds.length > 0 && formData.scopeMode !== "CATEGORY" && (
-                  <div style={{ marginBottom: "24px" }}>
-                    <h4
-                      style={{
-                        fontSize: "14px",
-                        fontWeight: 500,
-                        color: "#374151",
-                        marginBottom: "8px",
-                      }}
-                    >
-                      Select Priorities *
-                    </h4>
-                    <p
-                      style={{
-                        fontSize: "12px",
-                        color: "#6b7280",
-                        marginBottom: "12px",
-                      }}
-                    >
-                      Choose which priorities this escalation matrix applies to.
-                      Resolution time (RT) is shown for each priority.
-                    </p>
-
-                    {priorities.length === 0 ? (
-                      <div
+                {formData.projectIds.length > 0 &&
+                  formData.scopeMode !== "CATEGORY" && (
+                    <div style={{ marginBottom: "24px" }}>
+                      <h4
                         style={{
-                          padding: "16px",
-                          backgroundColor: "#fef3c7",
-                          borderRadius: "8px",
-                          border: "1px solid #fcd34d",
+                          fontSize: "14px",
+                          fontWeight: 500,
+                          color: "#374151",
+                          marginBottom: "8px",
                         }}
                       >
-                        <p
-                          style={{
-                            margin: 0,
-                            fontSize: "13px",
-                            color: "#92400e",
-                          }}
-                        >
-                          ⚠️ No priorities found for this project. Please create
-                          priorities first from the Priority tab.
-                        </p>
-                      </div>
-                    ) : (
-                      <>
-                        {/* Select All Button */}
-                        <div style={{ marginBottom: "12px" }}>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (
-                                selectedPriorities.length === priorities.length
-                              ) {
-                                setSelectedPriorities([]);
-                                setFormData({
-                                  ...formData,
-                                  priorityMode: "SAME_FOR_ALL",
-                                });
-                              } else {
-                                selectAllPriorities();
-                                setFormData({
-                                  ...formData,
-                                  priorityMode: "SAME_FOR_ALL",
-                                });
-                              }
-                            }}
-                            style={{
-                              padding: "8px 16px",
-                              backgroundColor:
-                                selectedPriorities.length === priorities.length
-                                  ? "#10b981"
-                                  : "#f3f4f6",
-                              color:
-                                selectedPriorities.length === priorities.length
-                                  ? "white"
-                                  : "#374151",
-                              border: "none",
-                              borderRadius: "6px",
-                              fontSize: "13px",
-                              fontWeight: 500,
-                              cursor: "pointer",
-                            }}
-                          >
-                            {selectedPriorities.length === priorities.length
-                              ? "✓ All Priorities Selected (Same escalation for all)"
-                              : "Select All Priorities"}
-                          </button>
-                        </div>
+                        Select Priorities *
+                      </h4>
+                      <p
+                        style={{
+                          fontSize: "12px",
+                          color: "#6b7280",
+                          marginBottom: "12px",
+                        }}
+                      >
+                        Choose which priorities this escalation matrix applies
+                        to. Resolution time (RT) is shown for each priority.
+                      </p>
 
-                        {/* Priority Checkboxes */}
+                      {priorities.length === 0 ? (
                         <div
                           style={{
-                            display: "grid",
-                            gridTemplateColumns:
-                              "repeat(auto-fill, minmax(250px, 1fr))",
-                            gap: "8px",
-                            marginBottom: "16px",
+                            padding: "16px",
+                            backgroundColor: "#fef3c7",
+                            borderRadius: "8px",
+                            border: "1px solid #fcd34d",
                           }}
                         >
-                          {priorities.map((priority) => {
-                            const isSelected = selectedPriorities.includes(
-                              priority._id,
-                            );
-                            const validation = isSelected
-                              ? validateLevelsAgainstPriority(priority._id)
-                              : null;
-
-                            return (
-                              <label
-                                key={priority._id}
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  padding: "12px",
-                                  border: isSelected
-                                    ? "2px solid #8b5cf6"
-                                    : "1px solid #e5e7eb",
-                                  borderRadius: "8px",
-                                  backgroundColor: isSelected
-                                    ? "#f5f3ff"
-                                    : "white",
-                                  cursor: "pointer",
-                                }}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  onChange={() => {
-                                    togglePrioritySelection(priority._id);
-                                    // If unchecking and this was the active tab, switch to another
-                                    if (
-                                      isSelected &&
-                                      activePriorityTab === priority._id
-                                    ) {
-                                      const remaining =
-                                        selectedPriorities.filter(
-                                          (p) => p !== priority._id,
-                                        );
-                                      setActivePriorityTab(remaining[0] || "");
-                                    }
-                                    // If checking and no active tab, set this as active
-                                    if (!isSelected && !activePriorityTab) {
-                                      setActivePriorityTab(priority._id);
-                                    }
-                                  }}
-                                  style={{
-                                    marginRight: "10px",
-                                    width: "18px",
-                                    height: "18px",
-                                  }}
-                                />
-                                <div style={{ flex: 1 }}>
-                                  <div
-                                    style={{
-                                      display: "flex",
-                                      alignItems: "center",
-                                      gap: "8px",
-                                    }}
-                                  >
-                                    <span
-                                      style={{
-                                        fontWeight: 500,
-                                        color: "#374151",
-                                      }}
-                                    >
-                                      {priority.name}
-                                    </span>
-                                  </div>
-                                  <div
-                                    style={{
-                                      fontSize: "12px",
-                                      color: "#6b7280",
-                                      marginTop: "2px",
-                                    }}
-                                  >
-                                    Resolution:{" "}
-                                    <strong>
-                                      {formatResolutionTime(priority)}
-                                    </strong>{" "}
-                                    ({getResolutionTimeInHours(priority)}h)
-                                  </div>
-                                  {validation && !validation.valid && (
-                                    <div
-                                      style={{
-                                        fontSize: "11px",
-                                        color: "#dc2626",
-                                        marginTop: "4px",
-                                      }}
-                                    >
-                                      ⚠️ Levels exceed RT (
-                                      {validation.totalHours.toFixed(1)}h /{" "}
-                                      {validation.maxHours}h)
-                                    </div>
-                                  )}
-                                </div>
-                              </label>
-                            );
-                          })}
-                        </div>
-
-                        {/* Priority Mode Selection */}
-                        {selectedPriorities.length > 1 && (
-                          <div
+                          <p
                             style={{
-                              marginBottom: "16px",
-                              padding: "12px",
-                              backgroundColor: "#f9fafb",
-                              borderRadius: "8px",
+                              margin: 0,
+                              fontSize: "13px",
+                              color: "#92400e",
                             }}
                           >
-                            <p
+                            ⚠️ No priorities found for this project. Please
+                            create priorities first from the Priority tab.
+                          </p>
+                        </div>
+                      ) : (
+                        <>
+                          {/* Select All Button */}
+                          <div style={{ marginBottom: "12px" }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (
+                                  selectedPriorities.length ===
+                                  priorities.length
+                                ) {
+                                  setSelectedPriorities([]);
+                                  setFormData({
+                                    ...formData,
+                                    priorityMode: "SAME_FOR_ALL",
+                                  });
+                                } else {
+                                  selectAllPriorities();
+                                  setFormData({
+                                    ...formData,
+                                    priorityMode: "SAME_FOR_ALL",
+                                  });
+                                }
+                              }}
                               style={{
+                                padding: "8px 16px",
+                                backgroundColor:
+                                  selectedPriorities.length ===
+                                  priorities.length
+                                    ? "#10b981"
+                                    : "#f3f4f6",
+                                color:
+                                  selectedPriorities.length ===
+                                  priorities.length
+                                    ? "white"
+                                    : "#374151",
+                                border: "none",
+                                borderRadius: "6px",
                                 fontSize: "13px",
-                                color: "#374151",
-                                margin: "0 0 8px 0",
+                                fontWeight: 500,
+                                cursor: "pointer",
                               }}
                             >
-                              <strong>
-                                Escalation Mode for Selected Priorities:
-                              </strong>
-                            </p>
-                            <div style={{ display: "flex", gap: "12px" }}>
-                              <label
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  cursor: "pointer",
-                                }}
-                              >
-                                <input
-                                  type="radio"
-                                  name="priorityModeRadio"
-                                  checked={
-                                    formData.priorityMode === "SAME_FOR_ALL"
-                                  }
-                                  onChange={() =>
-                                    setFormData({
-                                      ...formData,
-                                      priorityMode: "SAME_FOR_ALL",
-                                    })
-                                  }
-                                  style={{ marginRight: "6px" }}
-                                />
-                                <span style={{ fontSize: "13px" }}>
-                                  Same escalation for all selected priorities
-                                </span>
-                              </label>
-                              <label
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  cursor: "pointer",
-                                }}
-                              >
-                                <input
-                                  type="radio"
-                                  name="priorityModeRadio"
-                                  checked={
-                                    formData.priorityMode === "PER_PRIORITY"
-                                  }
-                                  onChange={() => {
-                                    // Initialize per-priority configs for selected priorities
-                                    const newConfigs = selectedPriorities.map(
-                                      (id) => {
-                                        const p = priorities.find(
-                                          (pr) => pr._id === id,
-                                        );
-                                        return {
-                                          priorityCode: id,
-                                          priorityName: p?.name || id,
-                                          levels: [
-                                            {
-                                              levelNumber: 1,
-                                              levelName: "Level 1",
-                                              roleId: "",
-                                              slaHours: 24,
-                                              slaUnit: "hrs" as const,
-                                              isActive: true,
-                                            },
-                                          ],
-                                        };
-                                      },
-                                    );
-                                    setFormData({
-                                      ...formData,
-                                      priorityMode: "PER_PRIORITY",
-                                      priorityConfigs: newConfigs,
-                                    });
-                                    setActivePriorityTab(selectedPriorities[0]);
-                                  }}
-                                  style={{ marginRight: "6px" }}
-                                />
-                                <span style={{ fontSize: "13px" }}>
-                                  Different escalation per priority
-                                </span>
-                              </label>
-                            </div>
+                              {selectedPriorities.length === priorities.length
+                                ? "✓ All Priorities Selected (Same escalation for all)"
+                                : "Select All Priorities"}
+                            </button>
                           </div>
-                        )}
 
-                        {/* Per-Priority Tabs */}
-                        {formData.priorityMode === "PER_PRIORITY" &&
-                          selectedPriorities.length > 0 && (
-                            <div style={{ marginTop: "12px" }}>
-                              <div
-                                style={{
-                                  display: "flex",
-                                  gap: "4px",
-                                  borderBottom: "2px solid #e5e7eb",
-                                  marginBottom: "12px",
-                                  overflowX: "auto",
-                                }}
-                              >
-                                {selectedPriorities.map((id) => {
-                                  const priority = priorities.find(
-                                    (p) => p._id === id,
-                                  );
-                                  const validation =
-                                    validateLevelsAgainstPriority(id);
-                                  return (
-                                    <button
-                                      key={id}
-                                      type="button"
-                                      onClick={() => setActivePriorityTab(id)}
-                                      style={{
-                                        padding: "8px 16px",
-                                        borderTop: "none",
-                                        borderLeft: "none",
-                                        borderRight: "none",
-                                        borderBottom:
-                                          activePriorityTab === id
-                                            ? "3px solid #8b5cf6"
-                                            : "3px solid transparent",
-                                        backgroundColor: "transparent",
-                                        cursor: "pointer",
-                                        fontWeight:
-                                          activePriorityTab === id ? 600 : 400,
-                                        color: !validation.valid
-                                          ? "#dc2626"
-                                          : activePriorityTab === id
-                                            ? "#8b5cf6"
-                                            : "#6b7280",
-                                        fontSize: "14px",
-                                        whiteSpace: "nowrap",
-                                      }}
-                                    >
-                                      {priority?.name || id}{" "}
-                                      {!validation.valid && "⚠️"}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                              {activePriorityTab && (
-                                <div
+                          {/* Priority Checkboxes */}
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns:
+                                "repeat(auto-fill, minmax(250px, 1fr))",
+                              gap: "8px",
+                              marginBottom: "16px",
+                            }}
+                          >
+                            {priorities.map((priority) => {
+                              const isSelected = selectedPriorities.includes(
+                                priority._id,
+                              );
+                              const validation = isSelected
+                                ? validateLevelsAgainstPriority(priority._id)
+                                : null;
+
+                              return (
+                                <label
+                                  key={priority._id}
                                   style={{
-                                    fontSize: "12px",
-                                    color: "#6b7280",
-                                    marginBottom: "8px",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    padding: "12px",
+                                    border: isSelected
+                                      ? "2px solid #8b5cf6"
+                                      : "1px solid #e5e7eb",
+                                    borderRadius: "8px",
+                                    backgroundColor: isSelected
+                                      ? "#f5f3ff"
+                                      : "white",
+                                    cursor: "pointer",
                                   }}
                                 >
-                                  Configure escalation levels for{" "}
-                                  <strong>
-                                    {priorities.find(
-                                      (p) => p._id === activePriorityTab,
-                                    )?.name || activePriorityTab}
-                                  </strong>{" "}
-                                  priority (Resolution:{" "}
-                                  {(() => {
-                                    const p = priorities.find(
-                                      (p) => p._id === activePriorityTab,
-                                    );
-                                    return p ? formatResolutionTime(p) : "—";
-                                  })()}
-                                  )
-                                </div>
-                              )}
-                            </div>
-                          )}
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => {
+                                      togglePrioritySelection(priority._id);
+                                      // If unchecking and this was the active tab, switch to another
+                                      if (
+                                        isSelected &&
+                                        activePriorityTab === priority._id
+                                      ) {
+                                        const remaining =
+                                          selectedPriorities.filter(
+                                            (p) => p !== priority._id,
+                                          );
+                                        setActivePriorityTab(
+                                          remaining[0] || "",
+                                        );
+                                      }
+                                      // If checking and no active tab, set this as active
+                                      if (!isSelected && !activePriorityTab) {
+                                        setActivePriorityTab(priority._id);
+                                      }
+                                    }}
+                                    style={{
+                                      marginRight: "10px",
+                                      width: "18px",
+                                      height: "18px",
+                                    }}
+                                  />
+                                  <div style={{ flex: 1 }}>
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: "8px",
+                                      }}
+                                    >
+                                      <span
+                                        style={{
+                                          fontWeight: 500,
+                                          color: "#374151",
+                                        }}
+                                      >
+                                        {priority.name}
+                                      </span>
+                                    </div>
+                                    <div
+                                      style={{
+                                        fontSize: "12px",
+                                        color: "#6b7280",
+                                        marginTop: "2px",
+                                      }}
+                                    >
+                                      Resolution:{" "}
+                                      <strong>
+                                        {formatResolutionTime(priority)}
+                                      </strong>{" "}
+                                      ({getResolutionTimeInHours(priority)}h)
+                                    </div>
+                                    {validation && !validation.valid && (
+                                      <div
+                                        style={{
+                                          fontSize: "11px",
+                                          color: "#dc2626",
+                                          marginTop: "4px",
+                                        }}
+                                      >
+                                        ⚠️ Levels exceed RT (
+                                        {validation.totalHours.toFixed(1)}h /{" "}
+                                        {validation.maxHours}h)
+                                      </div>
+                                    )}
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
 
-                        {/* Validation Summary for SAME_FOR_ALL mode */}
-                        {formData.priorityMode === "SAME_FOR_ALL" &&
-                          selectedPriorities.length > 0 &&
-                          formData.levels.length > 0 && (
+                          {/* Priority Mode Selection */}
+                          {selectedPriorities.length > 1 && (
                             <div
                               style={{
-                                marginTop: "12px",
+                                marginBottom: "16px",
                                 padding: "12px",
                                 backgroundColor: "#f9fafb",
                                 borderRadius: "8px",
@@ -3037,55 +2908,240 @@ const EscalationMatrixContent: React.FC = () => {
                               <p
                                 style={{
                                   fontSize: "13px",
-                                  fontWeight: 500,
                                   color: "#374151",
                                   margin: "0 0 8px 0",
                                 }}
                               >
-                                SLA Validation:
+                                <strong>
+                                  Escalation Mode for Selected Priorities:
+                                </strong>
                               </p>
-                              <div
-                                style={{
-                                  display: "flex",
-                                  flexWrap: "wrap",
-                                  gap: "8px",
-                                }}
-                              >
-                                {selectedPriorities.map((id) => {
-                                  const priority = priorities.find(
-                                    (p) => p._id === id,
-                                  );
-                                  const validation =
-                                    validateLevelsAgainstPriority(id);
-                                  return (
-                                    <div
-                                      key={id}
-                                      style={{
-                                        padding: "6px 12px",
-                                        borderRadius: "6px",
-                                        backgroundColor: validation.valid
-                                          ? "#d1fae5"
-                                          : "#fee2e2",
-                                        border: `1px solid ${validation.valid ? "#10b981" : "#dc2626"}`,
-                                        fontSize: "12px",
-                                      }}
-                                    >
-                                      <span style={{ fontWeight: 500 }}>
-                                        {priority?.name}
-                                      </span>
-                                      : {validation.totalHours.toFixed(1)}h /{" "}
-                                      {validation.maxHours}h
-                                      {validation.valid ? " ✓" : " ✗"}
-                                    </div>
-                                  );
-                                })}
+                              <div style={{ display: "flex", gap: "12px" }}>
+                                <label
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  <input
+                                    type="radio"
+                                    name="priorityModeRadio"
+                                    checked={
+                                      formData.priorityMode === "SAME_FOR_ALL"
+                                    }
+                                    onChange={() =>
+                                      setFormData({
+                                        ...formData,
+                                        priorityMode: "SAME_FOR_ALL",
+                                      })
+                                    }
+                                    style={{ marginRight: "6px" }}
+                                  />
+                                  <span style={{ fontSize: "13px" }}>
+                                    Same escalation for all selected priorities
+                                  </span>
+                                </label>
+                                <label
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  <input
+                                    type="radio"
+                                    name="priorityModeRadio"
+                                    checked={
+                                      formData.priorityMode === "PER_PRIORITY"
+                                    }
+                                    onChange={() => {
+                                      // Initialize per-priority configs for selected priorities
+                                      const newConfigs = selectedPriorities.map(
+                                        (id) => {
+                                          const p = priorities.find(
+                                            (pr) => pr._id === id,
+                                          );
+                                          return {
+                                            priorityCode: id,
+                                            priorityName: p?.name || id,
+                                            levels: [
+                                              {
+                                                levelNumber: 1,
+                                                levelName: "Level 1",
+                                                roleId: "",
+                                                slaHours: 24,
+                                                slaUnit: "hrs" as const,
+                                                isActive: true,
+                                              },
+                                            ],
+                                          };
+                                        },
+                                      );
+                                      setFormData({
+                                        ...formData,
+                                        priorityMode: "PER_PRIORITY",
+                                        priorityConfigs: newConfigs,
+                                      });
+                                      setActivePriorityTab(
+                                        selectedPriorities[0],
+                                      );
+                                    }}
+                                    style={{ marginRight: "6px" }}
+                                  />
+                                  <span style={{ fontSize: "13px" }}>
+                                    Different escalation per priority
+                                  </span>
+                                </label>
                               </div>
                             </div>
                           )}
-                      </>
-                    )}
-                  </div>
-                )}
+
+                          {/* Per-Priority Tabs */}
+                          {formData.priorityMode === "PER_PRIORITY" &&
+                            selectedPriorities.length > 0 && (
+                              <div style={{ marginTop: "12px" }}>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    gap: "4px",
+                                    borderBottom: "2px solid #e5e7eb",
+                                    marginBottom: "12px",
+                                    overflowX: "auto",
+                                  }}
+                                >
+                                  {selectedPriorities.map((id) => {
+                                    const priority = priorities.find(
+                                      (p) => p._id === id,
+                                    );
+                                    const validation =
+                                      validateLevelsAgainstPriority(id);
+                                    return (
+                                      <button
+                                        key={id}
+                                        type="button"
+                                        onClick={() => setActivePriorityTab(id)}
+                                        style={{
+                                          padding: "8px 16px",
+                                          borderTop: "none",
+                                          borderLeft: "none",
+                                          borderRight: "none",
+                                          borderBottom:
+                                            activePriorityTab === id
+                                              ? "3px solid #8b5cf6"
+                                              : "3px solid transparent",
+                                          backgroundColor: "transparent",
+                                          cursor: "pointer",
+                                          fontWeight:
+                                            activePriorityTab === id
+                                              ? 600
+                                              : 400,
+                                          color: !validation.valid
+                                            ? "#dc2626"
+                                            : activePriorityTab === id
+                                              ? "#8b5cf6"
+                                              : "#6b7280",
+                                          fontSize: "14px",
+                                          whiteSpace: "nowrap",
+                                        }}
+                                      >
+                                        {priority?.name || id}{" "}
+                                        {!validation.valid && "⚠️"}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                                {activePriorityTab && (
+                                  <div
+                                    style={{
+                                      fontSize: "12px",
+                                      color: "#6b7280",
+                                      marginBottom: "8px",
+                                    }}
+                                  >
+                                    Configure escalation levels for{" "}
+                                    <strong>
+                                      {priorities.find(
+                                        (p) => p._id === activePriorityTab,
+                                      )?.name || activePriorityTab}
+                                    </strong>{" "}
+                                    priority (Resolution:{" "}
+                                    {(() => {
+                                      const p = priorities.find(
+                                        (p) => p._id === activePriorityTab,
+                                      );
+                                      return p ? formatResolutionTime(p) : "—";
+                                    })()}
+                                    )
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                          {/* Validation Summary for SAME_FOR_ALL mode */}
+                          {formData.priorityMode === "SAME_FOR_ALL" &&
+                            selectedPriorities.length > 0 &&
+                            formData.levels.length > 0 && (
+                              <div
+                                style={{
+                                  marginTop: "12px",
+                                  padding: "12px",
+                                  backgroundColor: "#f9fafb",
+                                  borderRadius: "8px",
+                                }}
+                              >
+                                <p
+                                  style={{
+                                    fontSize: "13px",
+                                    fontWeight: 500,
+                                    color: "#374151",
+                                    margin: "0 0 8px 0",
+                                  }}
+                                >
+                                  SLA Validation:
+                                </p>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    flexWrap: "wrap",
+                                    gap: "8px",
+                                  }}
+                                >
+                                  {selectedPriorities.map((id) => {
+                                    const priority = priorities.find(
+                                      (p) => p._id === id,
+                                    );
+                                    const validation =
+                                      validateLevelsAgainstPriority(id);
+                                    return (
+                                      <div
+                                        key={id}
+                                        style={{
+                                          padding: "6px 12px",
+                                          borderRadius: "6px",
+                                          backgroundColor: validation.valid
+                                            ? "#d1fae5"
+                                            : "#fee2e2",
+                                          border: `1px solid ${validation.valid ? "#10b981" : "#dc2626"}`,
+                                          fontSize: "12px",
+                                        }}
+                                      >
+                                        <span style={{ fontWeight: 500 }}>
+                                          {priority?.name}
+                                        </span>
+                                        : {validation.totalHours.toFixed(1)}h /{" "}
+                                        {validation.maxHours}h
+                                        {validation.valid ? " ✓" : " ✗"}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                        </>
+                      )}
+                    </div>
+                  )}
 
                 {/* Escalation Levels - Show for category mode OR when priorities are selected */}
                 {(formData.scopeMode === "CATEGORY"
@@ -3094,545 +3150,557 @@ const EscalationMatrixContent: React.FC = () => {
                     (formData.priorityMode === "SAME_FOR_ALL" ||
                       (formData.priorityMode === "PER_PRIORITY" &&
                         activePriorityTab))) && (
-                    <div style={{ marginBottom: "24px" }}>
-                      <div
+                  <div style={{ marginBottom: "24px" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: "12px",
+                      }}
+                    >
+                      <label
+                        style={{
+                          fontSize: "14px",
+                          fontWeight: 500,
+                          color: "#374151",
+                        }}
+                      >
+                        Escalation Levels{" "}
+                        {formData.priorityMode === "PER_PRIORITY" &&
+                        activePriorityTab
+                          ? `(${activePriorityTab})`
+                          : ""}{" "}
+                        *
+                      </label>
+                      <button
+                        type="button"
+                        onClick={addLevel}
                         style={{
                           display: "flex",
-                          justifyContent: "space-between",
                           alignItems: "center",
-                          marginBottom: "12px",
+                          gap: "4px",
+                          padding: "6px 12px",
+                          backgroundColor: "white",
+                          color: "#4f46e5",
+                          border: "1px solid #4f46e5",
+                          borderRadius: "6px",
+                          fontSize: "14px",
+                          cursor: "pointer",
                         }}
                       >
-                        <label
-                          style={{
-                            fontSize: "14px",
-                            fontWeight: 500,
-                            color: "#374151",
-                          }}
-                        >
-                          Escalation Levels{" "}
-                          {formData.priorityMode === "PER_PRIORITY" &&
-                          activePriorityTab
-                            ? `(${activePriorityTab})`
-                            : ""}{" "}
-                          *
-                        </label>
-                        <button
-                          type="button"
-                          onClick={addLevel}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "4px",
-                            padding: "6px 12px",
-                            backgroundColor: "white",
-                            color: "#4f46e5",
-                            border: "1px solid #4f46e5",
-                            borderRadius: "6px",
-                            fontSize: "14px",
-                            cursor: "pointer",
-                          }}
-                        >
-                          <PlusIcon className="w-4 h-4" />
-                          Add Level
-                        </button>
-                      </div>
+                        <PlusIcon className="w-4 h-4" />
+                        Add Level
+                      </button>
+                    </div>
 
-                      <div
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: "12px",
-                        }}
-                      >
-                        {getCurrentLevels()
-                          .sort((a, b) => a.levelNumber - b.levelNumber)
-                          .map((level, index) => (
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "12px",
+                      }}
+                    >
+                      {getCurrentLevels()
+                        .sort((a, b) => a.levelNumber - b.levelNumber)
+                        .map((level, index) => (
+                          <div
+                            key={index}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "12px",
+                              padding: "12px",
+                              backgroundColor: "#f9fafb",
+                              borderRadius: "8px",
+                            }}
+                          >
                             <div
-                              key={index}
                               style={{
+                                width: "32px",
+                                height: "32px",
+                                backgroundColor: "#e0e7ff",
+                                color: "#4f46e5",
+                                borderRadius: "50%",
                                 display: "flex",
                                 alignItems: "center",
-                                gap: "12px",
-                                padding: "12px",
-                                backgroundColor: "#f9fafb",
-                                borderRadius: "8px",
+                                justifyContent: "center",
+                                fontWeight: 500,
+                                fontSize: "14px",
                               }}
                             >
-                              <div
-                                style={{
-                                  width: "32px",
-                                  height: "32px",
-                                  backgroundColor: "#e0e7ff",
-                                  color: "#4f46e5",
-                                  borderRadius: "50%",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  fontWeight: 500,
-                                  fontSize: "14px",
-                                }}
-                              >
-                                {level.levelNumber}
-                              </div>
+                              {level.levelNumber}
+                            </div>
 
-                              <input
-                                type="text"
-                                value={level.levelName}
-                                onChange={(e) =>
-                                  updateLevel(
-                                    index,
-                                    "levelName",
-                                    e.target.value,
-                                  )
-                                }
-                                style={{
-                                  flex: 1,
-                                  padding: "8px 12px",
-                                  border: "1px solid #d1d5db",
-                                  borderRadius: "6px",
-                                  fontSize: "14px",
-                                }}
-                                placeholder="Level name"
-                              />
+                            <input
+                              type="text"
+                              value={level.levelName}
+                              onChange={(e) =>
+                                updateLevel(index, "levelName", e.target.value)
+                              }
+                              style={{
+                                flex: 1,
+                                padding: "8px 12px",
+                                border: "1px solid #d1d5db",
+                                borderRadius: "6px",
+                                fontSize: "14px",
+                              }}
+                              placeholder="Level name"
+                            />
 
-                              <select
-                                value={level.roleId}
-                                onChange={(e) =>
-                                  updateLevel(index, "roleId", e.target.value)
-                                }
-                                style={{
-                                  flex: 1,
-                                  padding: "8px 12px",
-                                  border: "1px solid #d1d5db",
-                                  borderRadius: "6px",
-                                  fontSize: "14px",
-                                  display: (level.assigneeType ?? "role") === "user" ? "none" : undefined,
-                                }}
-                              >
-                                <option value="">Select Role</option>
-                                {(roles || []).map((role) => (
-                                  <option key={role._id} value={role._id}>
-                                    {role.name}
-                                  </option>
-                                ))}
-                              </select>
+                            <select
+                              value={level.roleId}
+                              onChange={(e) =>
+                                updateLevel(index, "roleId", e.target.value)
+                              }
+                              style={{
+                                flex: 1,
+                                padding: "8px 12px",
+                                border: "1px solid #d1d5db",
+                                borderRadius: "6px",
+                                fontSize: "14px",
+                                display:
+                                  (level.assigneeType ?? "role") === "user"
+                                    ? "none"
+                                    : undefined,
+                              }}
+                            >
+                              <option value="">Select Role</option>
+                              {(roles || []).map((role) => (
+                                <option key={role._id} value={role._id}>
+                                  {role.name}
+                                </option>
+                              ))}
+                            </select>
 
-                              {/* Assignee type toggle: Role / User */}
-                              <div
-                                style={{
-                                  display: "flex",
-                                  gap: "2px",
-                                  padding: "2px",
-                                  backgroundColor: "#f3f4f6",
-                                  borderRadius: "6px",
-                                  flexShrink: 0,
-                                }}
-                                title="Assign this level to a Role (any member of the role) or a specific User"
-                              >
-                                {(["role", "user"] as const).map((at) => (
-                                  <button
-                                    key={at}
-                                    type="button"
-                                    onClick={() => {
-                                      // Single atomic update to avoid stale-state overwrite
-                                      const currentLevels = getCurrentLevels();
-                                      const newLevels = currentLevels.map((l, i) => {
+                            {/* Assignee type toggle: Role / User */}
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: "2px",
+                                padding: "2px",
+                                backgroundColor: "#f3f4f6",
+                                borderRadius: "6px",
+                                flexShrink: 0,
+                              }}
+                              title="Assign this level to a Role (any member of the role) or a specific User"
+                            >
+                              {(["role", "user"] as const).map((at) => (
+                                <button
+                                  key={at}
+                                  type="button"
+                                  onClick={() => {
+                                    // Single atomic update to avoid stale-state overwrite
+                                    const currentLevels = getCurrentLevels();
+                                    const newLevels = currentLevels.map(
+                                      (l, i) => {
                                         if (i !== index) return l;
-                                        const updated = { ...l, assigneeType: at as "role" | "user" };
+                                        const updated = {
+                                          ...l,
+                                          assigneeType: at as "role" | "user",
+                                        };
                                         if (at === "user") updated.roleId = "";
                                         else updated.assigneeUserId = "";
                                         return updated;
-                                      });
-                                      setCurrentLevels(newLevels);
-                                    }}
-                                    style={{
-                                      padding: "4px 8px",
-                                      borderRadius: "4px",
-                                      border: "none",
-                                      fontSize: "12px",
-                                      fontWeight: 500,
-                                      cursor: "pointer",
-                                      backgroundColor:
-                                        (level.assigneeType ?? "role") === at
-                                          ? "#6366f1"
-                                          : "transparent",
-                                      color:
-                                        (level.assigneeType ?? "role") === at
-                                          ? "white"
-                                          : "#6b7280",
-                                    }}
-                                  >
-                                    {at === "role" ? "Role" : "User"}
-                                  </button>
-                                ))}
-                              </div>
+                                      },
+                                    );
+                                    setCurrentLevels(newLevels);
+                                  }}
+                                  style={{
+                                    padding: "4px 8px",
+                                    borderRadius: "4px",
+                                    border: "none",
+                                    fontSize: "12px",
+                                    fontWeight: 500,
+                                    cursor: "pointer",
+                                    backgroundColor:
+                                      (level.assigneeType ?? "role") === at
+                                        ? "#6366f1"
+                                        : "transparent",
+                                    color:
+                                      (level.assigneeType ?? "role") === at
+                                        ? "white"
+                                        : "#6b7280",
+                                  }}
+                                >
+                                  {at === "role" ? "Role" : "User"}
+                                </button>
+                              ))}
+                            </div>
 
-                              {/* User picker — shown when assigneeType='user' */}
-                              <select
-                                value={level.assigneeUserId || ""}
-                                onChange={(e) => {
-                                  const user = projectUsers.find((u) => u._id === e.target.value);
-                                  const currentLevels = getCurrentLevels();
-                                  const newLevels = currentLevels.map((l, i) => {
-                                    if (i !== index) return l;
-                                    return {
-                                      ...l,
-                                      assigneeUserId: e.target.value,
-                                      assigneeUserName: user
-                                        ? [user.firstName, user.lastName].filter(Boolean).join(" ")
-                                        : "",
-                                    };
-                                  });
-                                  setCurrentLevels(newLevels);
-                                }}
+                            {/* User picker — shown when assigneeType='user' */}
+                            <select
+                              value={level.assigneeUserId || ""}
+                              onChange={(e) => {
+                                const user = projectUsers.find(
+                                  (u) => u._id === e.target.value,
+                                );
+                                const currentLevels = getCurrentLevels();
+                                const newLevels = currentLevels.map((l, i) => {
+                                  if (i !== index) return l;
+                                  return {
+                                    ...l,
+                                    assigneeUserId: e.target.value,
+                                    assigneeUserName: user
+                                      ? [user.firstName, user.lastName]
+                                          .filter(Boolean)
+                                          .join(" ")
+                                      : "",
+                                  };
+                                });
+                                setCurrentLevels(newLevels);
+                              }}
+                              style={{
+                                flex: 1,
+                                padding: "8px 12px",
+                                border: "1px solid #d1d5db",
+                                borderRadius: "6px",
+                                fontSize: "14px",
+                                display:
+                                  (level.assigneeType ?? "role") === "user"
+                                    ? undefined
+                                    : "none",
+                              }}
+                            >
+                              <option value="">Select User</option>
+                              {projectUsers.map((u) => (
+                                <option key={u._id} value={u._id}>
+                                  {[u.firstName, u.lastName]
+                                    .filter(Boolean)
+                                    .join(" ")}
+                                  {u.email ? ` — ${u.email}` : ""}
+                                </option>
+                              ))}
+                            </select>
+
+                            {/* SLA hours + unit */}
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                              }}
+                            >
+                              <input
+                                type="number"
+                                value={level.slaHours}
+                                onChange={(e) =>
+                                  updateLevel(
+                                    index,
+                                    "slaHours",
+                                    parseInt(e.target.value) || 0,
+                                  )
+                                }
                                 style={{
-                                  flex: 1,
-                                  padding: "8px 12px",
+                                  width: "64px",
+                                  padding: "8px",
                                   border: "1px solid #d1d5db",
-                                  borderRadius: "6px",
+                                  borderRadius: "6px 0 0 6px",
                                   fontSize: "14px",
-                                  display: (level.assigneeType ?? "role") === "user" ? undefined : "none",
+                                  textAlign: "center",
+                                }}
+                                min="0"
+                              />
+                              <select
+                                value={level.slaUnit || "hrs"}
+                                onChange={(e) =>
+                                  updateLevel(
+                                    index,
+                                    "slaUnit",
+                                    e.target.value as SlaUnit,
+                                  )
+                                }
+                                style={{
+                                  padding: "8px 6px",
+                                  border: "1px solid #d1d5db",
+                                  borderLeft: "none",
+                                  borderRadius: "0 6px 6px 0",
+                                  fontSize: "14px",
+                                  backgroundColor: "#f9fafb",
+                                  cursor: "pointer",
                                 }}
                               >
-                                <option value="">Select User</option>
-                                {projectUsers.map((u) => (
-                                  <option key={u._id} value={u._id}>
-                                    {[u.firstName, u.lastName].filter(Boolean).join(" ")}{u.email ? ` — ${u.email}` : ""}
-                                  </option>
-                                ))}
+                                <option value="mins">min</option>
+                                <option value="hrs">hrs</option>
+                                <option value="days">days</option>
                               </select>
+                            </div>
 
-                              {/* SLA hours + unit */}
+                            {/* US-ESC-007: SLA threshold type toggle */}
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: "2px",
+                                padding: "2px",
+                                backgroundColor: "#f3f4f6",
+                                borderRadius: "6px",
+                                flexShrink: 0,
+                              }}
+                              title="Trigger on Fixed time OR when % of overall ticket SLA is consumed"
+                            >
+                              {(["fixed", "percent"] as const).map((tt) => (
+                                <button
+                                  key={tt}
+                                  type="button"
+                                  onClick={() =>
+                                    updateLevel(
+                                      index,
+                                      "slaThresholdType" as keyof EscalationLevelFormData,
+                                      tt,
+                                    )
+                                  }
+                                  style={{
+                                    padding: "4px 8px",
+                                    borderRadius: "4px",
+                                    border: "none",
+                                    fontSize: "12px",
+                                    fontWeight: 500,
+                                    cursor: "pointer",
+                                    backgroundColor:
+                                      (level.slaThresholdType ?? "fixed") === tt
+                                        ? "#6366f1"
+                                        : "transparent",
+                                    color:
+                                      (level.slaThresholdType ?? "fixed") === tt
+                                        ? "white"
+                                        : "#6b7280",
+                                  }}
+                                >
+                                  {tt === "fixed" ? "Fixed" : "% SLA"}
+                                </button>
+                              ))}
+                            </div>
+
+                            {/* US-ESC-007: percent value input (only when percent mode) */}
+                            {(level.slaThresholdType ?? "fixed") ===
+                              "percent" && (
                               <div
                                 style={{
                                   display: "flex",
                                   alignItems: "center",
+                                  gap: "4px",
                                 }}
                               >
                                 <input
                                   type="number"
-                                  value={level.slaHours}
+                                  value={level.slaThresholdPercent ?? 75}
                                   onChange={(e) =>
                                     updateLevel(
                                       index,
-                                      "slaHours",
-                                      parseInt(e.target.value) || 0,
+                                      "slaThresholdPercent" as keyof EscalationLevelFormData,
+                                      Math.min(
+                                        100,
+                                        Math.max(
+                                          1,
+                                          parseInt(e.target.value) || 75,
+                                        ),
+                                      ),
                                     )
                                   }
+                                  min={1}
+                                  max={100}
                                   style={{
-                                    width: "64px",
-                                    padding: "8px",
+                                    width: "54px",
+                                    padding: "6px 4px",
                                     border: "1px solid #d1d5db",
-                                    borderRadius: "6px 0 0 6px",
-                                    fontSize: "14px",
+                                    borderRadius: "6px",
+                                    fontSize: "13px",
                                     textAlign: "center",
                                   }}
-                                  min="0"
                                 />
-                                <select
-                                  value={level.slaUnit || "hrs"}
-                                  onChange={(e) =>
-                                    updateLevel(
-                                      index,
-                                      "slaUnit",
-                                      e.target.value as SlaUnit,
-                                    )
-                                  }
+                                <span
                                   style={{
-                                    padding: "8px 6px",
-                                    border: "1px solid #d1d5db",
-                                    borderLeft: "none",
-                                    borderRadius: "0 6px 6px 0",
-                                    fontSize: "14px",
-                                    backgroundColor: "#f9fafb",
-                                    cursor: "pointer",
-                                  }}
-                                >
-                                  <option value="mins">min</option>
-                                  <option value="hrs">hrs</option>
-                                  <option value="days">days</option>
-                                </select>
-                              </div>
-
-                              {/* US-ESC-007: SLA threshold type toggle */}
-                              <div
-                                style={{
-                                  display: "flex",
-                                  gap: "2px",
-                                  padding: "2px",
-                                  backgroundColor: "#f3f4f6",
-                                  borderRadius: "6px",
-                                  flexShrink: 0,
-                                }}
-                                title="Trigger on Fixed time OR when % of overall ticket SLA is consumed"
-                              >
-                                {(["fixed", "percent"] as const).map((tt) => (
-                                  <button
-                                    key={tt}
-                                    type="button"
-                                    onClick={() =>
-                                      updateLevel(
-                                        index,
-                                        "slaThresholdType" as keyof EscalationLevelFormData,
-                                        tt,
-                                      )
-                                    }
-                                    style={{
-                                      padding: "4px 8px",
-                                      borderRadius: "4px",
-                                      border: "none",
-                                      fontSize: "12px",
-                                      fontWeight: 500,
-                                      cursor: "pointer",
-                                      backgroundColor:
-                                        (level.slaThresholdType ?? "fixed") ===
-                                        tt
-                                          ? "#6366f1"
-                                          : "transparent",
-                                      color:
-                                        (level.slaThresholdType ?? "fixed") ===
-                                        tt
-                                          ? "white"
-                                          : "#6b7280",
-                                    }}
-                                  >
-                                    {tt === "fixed" ? "Fixed" : "% SLA"}
-                                  </button>
-                                ))}
-                              </div>
-
-                              {/* US-ESC-007: percent value input (only when percent mode) */}
-                              {(level.slaThresholdType ?? "fixed") ===
-                                "percent" && (
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: "4px",
-                                  }}
-                                >
-                                  <input
-                                    type="number"
-                                    value={level.slaThresholdPercent ?? 75}
-                                    onChange={(e) =>
-                                      updateLevel(
-                                        index,
-                                        "slaThresholdPercent" as keyof EscalationLevelFormData,
-                                        Math.min(
-                                          100,
-                                          Math.max(
-                                            1,
-                                            parseInt(e.target.value) || 75,
-                                          ),
-                                        ),
-                                      )
-                                    }
-                                    min={1}
-                                    max={100}
-                                    style={{
-                                      width: "54px",
-                                      padding: "6px 4px",
-                                      border: "1px solid #d1d5db",
-                                      borderRadius: "6px",
-                                      fontSize: "13px",
-                                      textAlign: "center",
-                                    }}
-                                  />
-                                  <span
-                                    style={{
-                                      fontSize: "12px",
-                                      color: "#6b7280",
-                                    }}
-                                  >
-                                    %
-                                  </span>
-                                </div>
-                              )}
-
-                              {/* US-ESC-005: level type toggle */}
-                              <div
-                                style={{
-                                  display: "flex",
-                                  gap: "2px",
-                                  padding: "2px",
-                                  backgroundColor: "#f3f4f6",
-                                  borderRadius: "6px",
-                                  flexShrink: 0,
-                                }}
-                                title="Escalation action: Reassign changes who owns the ticket; Notify-only just notifies the escalation role"
-                              >
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    updateLevel(
-                                      index,
-                                      "levelType" as keyof EscalationLevelFormData,
-                                      "reassign",
-                                    )
-                                  }
-                                  style={{
-                                    padding: "4px 8px",
-                                    borderRadius: "4px",
-                                    border: "none",
                                     fontSize: "12px",
-                                    fontWeight: 500,
-                                    cursor: "pointer",
-                                    backgroundColor:
-                                      (level.levelType || "reassign") ===
-                                      "reassign"
-                                        ? "#3b82f6"
-                                        : "transparent",
-                                    color:
-                                      (level.levelType || "reassign") ===
-                                      "reassign"
-                                        ? "white"
-                                        : "#6b7280",
+                                    color: "#6b7280",
                                   }}
                                 >
-                                  Reassign
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    updateLevel(
-                                      index,
-                                      "levelType" as keyof EscalationLevelFormData,
-                                      "notify",
-                                    )
-                                  }
-                                  style={{
-                                    padding: "4px 8px",
-                                    borderRadius: "4px",
-                                    border: "none",
-                                    fontSize: "12px",
-                                    fontWeight: 500,
-                                    cursor: "pointer",
-                                    backgroundColor:
-                                      level.levelType === "notify"
-                                        ? "#f59e0b"
-                                        : "transparent",
-                                    color:
-                                      level.levelType === "notify"
-                                        ? "white"
-                                        : "#6b7280",
-                                  }}
-                                >
-                                  Notify
-                                </button>
+                                  %
+                                </span>
                               </div>
+                            )}
 
-                              {/* US-ESC-006: notify user picker (shown when levelType='notify') */}
-                              {level.levelType === "notify" && (
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    gap: "4px",
-                                    minWidth: "160px",
-                                    maxWidth: "220px",
-                                  }}
-                                  title="Also notify specific users (optional). Leave empty to notify only the escalation role."
-                                >
-                                  <span
-                                    style={{
-                                      fontSize: "11px",
-                                      color: "#6b7280",
-                                      fontWeight: 500,
-                                    }}
-                                  >
-                                    Also notify
-                                  </span>
-                                  <select
-                                    multiple
-                                    value={level.notifyUserIds ?? []}
-                                    onChange={(e) => {
-                                      const selected = Array.from(
-                                        e.target.selectedOptions,
-                                      ).map((o) => o.value);
-                                      updateLevel(
-                                        index,
-                                        "notifyUserIds" as keyof EscalationLevelFormData,
-                                        selected,
-                                      );
-                                    }}
-                                    style={{
-                                      padding: "4px",
-                                      border: "1px solid #d1d5db",
-                                      borderRadius: "6px",
-                                      fontSize: "12px",
-                                      height: "72px",
-                                      cursor: "pointer",
-                                    }}
-                                  >
-                                    {notifyUsers.map((u) => (
-                                      <option key={u._id} value={u._id}>
-                                        {u.firstName} {u.lastName}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
-                              )}
+                            {/* US-ESC-005: level type toggle */}
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: "2px",
+                                padding: "2px",
+                                backgroundColor: "#f3f4f6",
+                                borderRadius: "6px",
+                                flexShrink: 0,
+                              }}
+                              title="Escalation action: Reassign changes who owns the ticket; Notify-only just notifies the escalation role"
+                            >
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updateLevel(
+                                    index,
+                                    "levelType" as keyof EscalationLevelFormData,
+                                    "reassign",
+                                  )
+                                }
+                                style={{
+                                  padding: "4px 8px",
+                                  borderRadius: "4px",
+                                  border: "none",
+                                  fontSize: "12px",
+                                  fontWeight: 500,
+                                  cursor: "pointer",
+                                  backgroundColor:
+                                    (level.levelType || "reassign") ===
+                                    "reassign"
+                                      ? "#3b82f6"
+                                      : "transparent",
+                                  color:
+                                    (level.levelType || "reassign") ===
+                                    "reassign"
+                                      ? "white"
+                                      : "#6b7280",
+                                }}
+                              >
+                                Reassign
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updateLevel(
+                                    index,
+                                    "levelType" as keyof EscalationLevelFormData,
+                                    "notify",
+                                  )
+                                }
+                                style={{
+                                  padding: "4px 8px",
+                                  borderRadius: "4px",
+                                  border: "none",
+                                  fontSize: "12px",
+                                  fontWeight: 500,
+                                  cursor: "pointer",
+                                  backgroundColor:
+                                    level.levelType === "notify"
+                                      ? "#f59e0b"
+                                      : "transparent",
+                                  color:
+                                    level.levelType === "notify"
+                                      ? "white"
+                                      : "#6b7280",
+                                }}
+                              >
+                                Notify
+                              </button>
+                            </div>
 
+                            {/* US-ESC-006: notify user picker (shown when levelType='notify') */}
+                            {level.levelType === "notify" && (
                               <div
                                 style={{
                                   display: "flex",
                                   flexDirection: "column",
+                                  gap: "4px",
+                                  minWidth: "160px",
+                                  maxWidth: "220px",
                                 }}
+                                title="Also notify specific users (optional). Leave empty to notify only the escalation role."
                               >
-                                <button
-                                  type="button"
-                                  onClick={() => moveLevel(index, "up")}
-                                  disabled={index === 0}
+                                <span
                                   style={{
-                                    background: "none",
-                                    border: "none",
-                                    color: index === 0 ? "#d1d5db" : "#9ca3af",
-                                    cursor: index === 0 ? "default" : "pointer",
+                                    fontSize: "11px",
+                                    color: "#6b7280",
+                                    fontWeight: 500,
                                   }}
                                 >
-                                  <ChevronUpIcon className="w-4 h-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => moveLevel(index, "down")}
-                                  disabled={
-                                    index === getCurrentLevels().length - 1
-                                  }
+                                  Also notify
+                                </span>
+                                <select
+                                  multiple
+                                  value={level.notifyUserIds ?? []}
+                                  onChange={(e) => {
+                                    const selected = Array.from(
+                                      e.target.selectedOptions,
+                                    ).map((o) => o.value);
+                                    updateLevel(
+                                      index,
+                                      "notifyUserIds" as keyof EscalationLevelFormData,
+                                      selected,
+                                    );
+                                  }}
                                   style={{
-                                    background: "none",
-                                    border: "none",
-                                    color:
-                                      index === getCurrentLevels().length - 1
-                                        ? "#d1d5db"
-                                        : "#9ca3af",
-                                    cursor:
-                                      index === getCurrentLevels().length - 1
-                                        ? "default"
-                                        : "pointer",
+                                    padding: "4px",
+                                    border: "1px solid #d1d5db",
+                                    borderRadius: "6px",
+                                    fontSize: "12px",
+                                    height: "72px",
+                                    cursor: "pointer",
                                   }}
                                 >
-                                  <ChevronDownIcon className="w-4 h-4" />
-                                </button>
+                                  {notifyUsers.map((u) => (
+                                    <option key={u._id} value={u._id}>
+                                      {u.firstName} {u.lastName}
+                                    </option>
+                                  ))}
+                                </select>
                               </div>
+                            )}
 
+                            <div
+                              style={{
+                                display: "flex",
+                                flexDirection: "column",
+                              }}
+                            >
                               <button
                                 type="button"
-                                onClick={() => removeLevel(index)}
+                                onClick={() => moveLevel(index, "up")}
+                                disabled={index === 0}
                                 style={{
                                   background: "none",
                                   border: "none",
-                                  color: "#dc2626",
-                                  cursor: "pointer",
+                                  color: index === 0 ? "#d1d5db" : "#9ca3af",
+                                  cursor: index === 0 ? "default" : "pointer",
                                 }}
                               >
-                                <TrashIcon className="w-5 h-5" />
+                                <ChevronUpIcon className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => moveLevel(index, "down")}
+                                disabled={
+                                  index === getCurrentLevels().length - 1
+                                }
+                                style={{
+                                  background: "none",
+                                  border: "none",
+                                  color:
+                                    index === getCurrentLevels().length - 1
+                                      ? "#d1d5db"
+                                      : "#9ca3af",
+                                  cursor:
+                                    index === getCurrentLevels().length - 1
+                                      ? "default"
+                                      : "pointer",
+                                }}
+                              >
+                                <ChevronDownIcon className="w-4 h-4" />
                               </button>
                             </div>
-                          ))}
-                      </div>
+
+                            <button
+                              type="button"
+                              onClick={() => removeLevel(index)}
+                              style={{
+                                background: "none",
+                                border: "none",
+                                color: "#dc2626",
+                                cursor: "pointer",
+                              }}
+                            >
+                              <TrashIcon className="w-5 h-5" />
+                            </button>
+                          </div>
+                        ))}
                     </div>
-                  )}
+                  </div>
+                )}
 
                 {/* Active Status */}
                 <div style={{ marginBottom: "16px" }}>

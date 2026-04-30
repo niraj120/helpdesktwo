@@ -402,9 +402,7 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
       console.log("✅ Ticket submitted successfully:", response.data);
 
       const ticketNum =
-        response.data.data?.ticketNumber ||
-        response.data.ticketNumber ||
-        "";
+        response.data.data?.ticketNumber || response.data.ticketNumber || "";
       setCreatedTicketNumber(ticketNum);
       setSubmitSuccess(true);
       setFormData({});
@@ -708,59 +706,60 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
         )}
 
         {/* Success Modal — rendered via portal to avoid z-index/stacking-context issues */}
-        {submitSuccess && createPortal(
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center">
-            {/* Backdrop */}
-            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-            {/* Dialog */}
-            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-8 text-center">
-              {/* Green check */}
-              <div className="flex items-center justify-center w-16 h-16 rounded-full bg-green-100 mx-auto mb-4">
-                <CheckCircleIcon className="h-9 w-9 text-green-600" />
-              </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-1">
-                Query Submitted!
-              </h3>
-              {createdTicketNumber && (
-                <div className="my-3 px-4 py-2 bg-blue-50 rounded-lg border border-blue-200 inline-block">
-                  <span className="text-sm text-blue-600 font-medium">
-                    Ticket Number
-                  </span>
-                  <p className="text-xl font-bold text-blue-800 mt-0.5">
-                    {createdTicketNumber}
-                  </p>
+        {submitSuccess &&
+          createPortal(
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center">
+              {/* Backdrop */}
+              <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+              {/* Dialog */}
+              <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-8 text-center">
+                {/* Green check */}
+                <div className="flex items-center justify-center w-16 h-16 rounded-full bg-green-100 mx-auto mb-4">
+                  <CheckCircleIcon className="h-9 w-9 text-green-600" />
                 </div>
-              )}
-              <p className="text-gray-600 text-sm mt-3 mb-6">
-                {ticketSettings?.successMessage ||
-                  "Your query has been submitted. Our team will get back to you soon."}
-              </p>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => {
-                    setSubmitSuccess(false);
-                    navigate(`/${customUrlPath}/student/my-tickets`);
-                  }}
-                  className="flex-1 px-4 py-2 text-sm font-semibold text-white rounded-lg"
-                  style={{
-                    background: branding?.primaryColor
-                      ? `linear-gradient(135deg, ${branding.primaryColor} 0%, ${branding.secondaryColor} 100%)`
-                      : "linear-gradient(135deg, #3b82f6 0%, #1e40af 100%)",
-                  }}
-                >
-                  View My Tickets
-                </button>
-                <button
-                  onClick={() => setSubmitSuccess(false)}
-                  className="flex-1 px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
-                >
-                  Submit Another
-                </button>
+                <h3 className="text-xl font-bold text-gray-900 mb-1">
+                  Query Submitted!
+                </h3>
+                {createdTicketNumber && (
+                  <div className="my-3 px-4 py-2 bg-blue-50 rounded-lg border border-blue-200 inline-block">
+                    <span className="text-sm text-blue-600 font-medium">
+                      Ticket Number
+                    </span>
+                    <p className="text-xl font-bold text-blue-800 mt-0.5">
+                      {createdTicketNumber}
+                    </p>
+                  </div>
+                )}
+                <p className="text-gray-600 text-sm mt-3 mb-6">
+                  {ticketSettings?.successMessage ||
+                    "Your query has been submitted. Our team will get back to you soon."}
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => {
+                      setSubmitSuccess(false);
+                      navigate(`/${customUrlPath}/student/my-tickets`);
+                    }}
+                    className="flex-1 px-4 py-2 text-sm font-semibold text-white rounded-lg"
+                    style={{
+                      background: branding?.primaryColor
+                        ? `linear-gradient(135deg, ${branding.primaryColor} 0%, ${branding.secondaryColor} 100%)`
+                        : "linear-gradient(135deg, #3b82f6 0%, #1e40af 100%)",
+                    }}
+                  >
+                    View My Tickets
+                  </button>
+                  <button
+                    onClick={() => setSubmitSuccess(false)}
+                    className="flex-1 px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                  >
+                    Submit Another
+                  </button>
+                </div>
               </div>
-            </div>
-          </div>,
-          document.body
-        )}
+            </div>,
+            document.body,
+          )}
 
         {/* Announcement */}
         {ticketSettings?.announcement && (

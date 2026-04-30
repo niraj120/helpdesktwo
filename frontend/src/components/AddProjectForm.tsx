@@ -3874,8 +3874,8 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       }}
                     >
                       When enabled, a "Knowledge Base" tab will appear on the
-                      student ticket submission page so users can browse articles
-                      before raising a ticket.
+                      student ticket submission page so users can browse
+                      articles before raising a ticket.
                     </p>
                     <label
                       style={{
@@ -3897,7 +3897,11 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                             },
                           })
                         }
-                        style={{ width: "18px", height: "18px", cursor: "pointer" }}
+                        style={{
+                          width: "18px",
+                          height: "18px",
+                          cursor: "pointer",
+                        }}
                       />
                       <div>
                         <div

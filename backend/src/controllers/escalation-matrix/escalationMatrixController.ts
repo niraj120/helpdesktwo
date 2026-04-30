@@ -344,7 +344,10 @@ export const createEscalationMatrix = async (
         assigneeType: l.assigneeType || "role",
         // Store null instead of empty string to avoid ObjectId cast errors
         roleId: l.roleId && String(l.roleId).trim() !== "" ? l.roleId : null,
-        assigneeUserId: l.assigneeUserId && String(l.assigneeUserId).trim() !== "" ? l.assigneeUserId : null,
+        assigneeUserId:
+          l.assigneeUserId && String(l.assigneeUserId).trim() !== ""
+            ? l.assigneeUserId
+            : null,
         slaHours: l.slaHours || 24,
         slaUnit: l.slaUnit || "hrs",
         responseTime: l.responseTime,
@@ -385,8 +388,12 @@ export const createEscalationMatrix = async (
           ...config,
           levels: (config.levels || []).map((l: any) => ({
             ...l,
-            roleId: l.roleId && String(l.roleId).trim() !== "" ? l.roleId : null,
-            assigneeUserId: l.assigneeUserId && String(l.assigneeUserId).trim() !== "" ? l.assigneeUserId : null,
+            roleId:
+              l.roleId && String(l.roleId).trim() !== "" ? l.roleId : null,
+            assigneeUserId:
+              l.assigneeUserId && String(l.assigneeUserId).trim() !== ""
+                ? l.assigneeUserId
+                : null,
           })),
         }));
 
@@ -484,7 +491,9 @@ export const updateEscalationMatrix = async (
       isActive,
       scopeMode,
       categoryIds,
-      categoryIdsCount: Array.isArray(categoryIds) ? categoryIds.length : "not-array",
+      categoryIdsCount: Array.isArray(categoryIds)
+        ? categoryIds.length
+        : "not-array",
     });
 
     const matrix = await EscalationMatrix.findById(id);
@@ -583,7 +592,10 @@ export const updateEscalationMatrix = async (
         assigneeType: l.assigneeType || "role",
         // Store null instead of empty string to avoid ObjectId cast errors
         roleId: l.roleId && String(l.roleId).trim() !== "" ? l.roleId : null,
-        assigneeUserId: l.assigneeUserId && String(l.assigneeUserId).trim() !== "" ? l.assigneeUserId : null,
+        assigneeUserId:
+          l.assigneeUserId && String(l.assigneeUserId).trim() !== ""
+            ? l.assigneeUserId
+            : null,
         slaHours: l.slaHours || 24,
         slaUnit: l.slaUnit || "hrs",
         responseTime: l.responseTime,
@@ -614,10 +626,13 @@ export const updateEscalationMatrix = async (
     if (autoEscalate !== undefined) matrix.autoEscalate = autoEscalate;
     if (scopeMode !== undefined) (matrix as any).scopeMode = scopeMode;
     if (categoryIds !== undefined) {
-      (matrix as any).categoryIds = Array.isArray(categoryIds) ? categoryIds : [];
+      (matrix as any).categoryIds = Array.isArray(categoryIds)
+        ? categoryIds
+        : [];
       matrix.markModified("categoryIds");
     }
-    if (slaWarningConfig !== undefined) (matrix as any).slaWarningConfig = slaWarningConfig;
+    if (slaWarningConfig !== undefined)
+      (matrix as any).slaWarningConfig = slaWarningConfig;
 
     // Update priority mode configuration
     if (priorityMode !== undefined) {
@@ -654,7 +669,10 @@ export const updateEscalationMatrix = async (
         levels: (config.levels || []).map((l: any) => ({
           ...l,
           roleId: l.roleId && String(l.roleId).trim() !== "" ? l.roleId : null,
-          assigneeUserId: l.assigneeUserId && String(l.assigneeUserId).trim() !== "" ? l.assigneeUserId : null,
+          assigneeUserId:
+            l.assigneeUserId && String(l.assigneeUserId).trim() !== ""
+              ? l.assigneeUserId
+              : null,
         })),
       }));
     }

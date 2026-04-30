@@ -854,9 +854,10 @@ projectSchema.pre("save", async function (next) {
     // Auto-generate projectId — use max existing number instead of count
     // (countDocuments breaks when projects have been deleted)
     if (!this.projectId) {
-      const projects = await mongoose.models.Project
-        .find({ projectId: /^P\d+$/ }, { projectId: 1 })
-        .lean();
+      const projects = await mongoose.models.Project.find(
+        { projectId: /^P\d+$/ },
+        { projectId: 1 },
+      ).lean();
 
       let maxNum = 0;
       for (const p of projects as Array<{ projectId?: string }>) {

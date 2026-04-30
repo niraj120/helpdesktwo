@@ -102,7 +102,12 @@ class AutoEscalationService {
         try {
           const ticket = tracking.ticketId as any;
 
-          if (!ticket || ticket.status === 4 || ticket.status === 5 || (ticket as any).closedAt) {
+          if (
+            !ticket ||
+            ticket.status === 4 ||
+            ticket.status === 5 ||
+            (ticket as any).closedAt
+          ) {
             // Ticket is resolved, closed (any status code), or deleted — clear next escalation
             await SLATracking.updateOne(
               { _id: tracking._id },
