@@ -358,26 +358,6 @@ interface SLARule {
   isActive: boolean;
 }
 
-interface EscalationPolicy {
-  _id: string;
-  name: string;
-  description: string;
-  policyId: string;
-  isActive: boolean;
-  levels: Array<{
-    level: number;
-    escalateAfter: {
-      value: number;
-      unit: string;
-    };
-    escalateTo: {
-      type: string;
-      targetId: string;
-      targetName: string;
-    };
-  }>;
-}
-
 interface AgentTicketDetailProps {
   wrapWithLayout?: boolean;
 }
@@ -574,10 +554,6 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
   const [priorityData, setPriorityData] = useState<any>(null);
   const [slaRules, setSlaRules] = useState<any[]>([]);
 
-  // Task 6.4: State for escalation policies (for level-based SLA timing) and user role
-  const [escalationPolicies, setEscalationPolicies] = useState<
-    EscalationPolicy[]
-  >([]);
   const [userRole, setUserRole] = useState<{
     _id: string;
     name: string;
@@ -1016,7 +992,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
       console.log("📋 Fetching master data for projectId:", projectId);
 
       // PERFORMANCE: Fetch all data in parallel using Promise.all
-      const [ticketConfigRes, tagsRes, escalationRes] = await Promise.all([
+      const [ticketConfigRes, tagsRes] = await Promise.all([
         // Ticket settings (statuses, priorities, categories, SLA rules)
         axios.get(
           `${API_CONFIG.API_URL}/projects/${projectId}/ticket-settings`,
@@ -1027,16 +1003,6 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
           .get(`${API_CONFIG.API_URL}/tickets/tags`, { headers })
           .catch((err) => {
             console.warn("⚠️ Error fetching tags (non-critical):", err.message);
-            return { data: { data: [] } };
-          }),
-        // Escalation policies
-        axios
-          .get(
-            `${API_CONFIG.API_URL}/escalation-policies?projectId=${projectId}&isActive=true`,
-            { headers },
-          )
-          .catch((err) => {
-            console.error("❌ Error fetching escalation policies:", err);
             return { data: { data: [] } };
           }),
       ]);
@@ -1095,13 +1061,6 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
 
       // Process tags
       setAvailableTags(tagsRes.data.data || []);
-
-      // Process escalation policies for SLA level calculation
-      const policies = escalationRes.data.data || [];
-
-      // Task 6.4: Store raw escalation policies for SLA level calculation
-      setEscalationPolicies(policies);
-      console.log("📋 Raw Escalation Policies:", policies);
     } catch (error) {
       console.error("❌ Error fetching master data:", error);
       if (axios.isAxiosError(error)) {

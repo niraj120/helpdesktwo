@@ -145,7 +145,7 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
       console.log("📋 Ticket settings received:", settings);
       console.log(
         "📝 Online form fields:",
-        settings.ticketSubmissionSettings?.onlineFormFields,
+        settings.onlineFormFields,
       );
 
       // Filter out student profile fields (Name, Email, Phone/Mobile Number) and Priority
@@ -164,7 +164,7 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
         "priority",
       ];
       let formFields =
-        settings.ticketSubmissionSettings?.onlineFormFields || [];
+        settings.onlineFormFields || [];
 
       // If no fields configured, use default fields (excluding profile fields)
       if (formFields.length === 0) {
@@ -200,6 +200,25 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
           }
           return field;
         });
+
+        // Inject a Category field at the top if none is present.
+        // FormRenderer will replace it with HierarchyCategorySelector when
+        // hierarchy is configured (levelCount > 1), or render a plain dropdown otherwise.
+        const hasCategoryField = formFields.some(
+          (f: OnlineFormField) => f.fieldName.toLowerCase() === "category",
+        );
+        if (!hasCategoryField) {
+          formFields = [
+            {
+              fieldName: "Category",
+              fieldType: "dropdown",
+              required: false,
+              placeholder: "Select category",
+              options: activeCategoryNames,
+            },
+            ...formFields,
+          ];
+        }
       }
 
       // Set categories AFTER processing fields
@@ -218,7 +237,7 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
       console.log("✅ Filtered fields (without profile):", filteredFields);
 
       setTicketSettings({
-        ...settings.ticketSubmissionSettings,
+        ...settings,
         onlineFormFields: filteredFields,
       });
     } catch (error) {

@@ -1347,20 +1347,38 @@ const StudentDashboard: React.FC = () => {
             </button>
           )}
 
-          {/* Find Center - Requires OFFLINE_MODULE_ACCESS permission */}
-          {hasPermission(PERMISSIONS.OFFLINE_MODULE_ACCESS) && (
-            <button
-              onClick={() => setActiveModule("find-center")}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
-                activeModule === "find-center"
-                  ? "bg-blue-50 text-blue-600 font-medium"
-                  : "text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              <MapPinIcon className="h-5 w-5" />
-              <span>Find Center</span>
-            </button>
-          )}
+          {/* Submit Ticket - Requires TICKET_CREATE and online/both mode */}
+          {hasPermission(PERMISSIONS.TICKET_CREATE) &&
+            ticketSettings?.mode !== "offline" && (
+              <button
+                onClick={() => setActiveModule("submit-ticket")}
+                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
+                  activeModule === "submit-ticket"
+                    ? "bg-blue-50 text-blue-600 font-medium"
+                    : "text-gray-700 hover:bg-gray-50"
+                }`}
+              >
+                <DocumentArrowUpIcon className="h-5 w-5" />
+                <span>Submit Ticket</span>
+              </button>
+            )}
+
+          {/* Find Center - Requires OFFLINE_MODULE_ACCESS permission and offline/both mode */}
+          {hasPermission(PERMISSIONS.OFFLINE_MODULE_ACCESS) &&
+            (ticketSettings?.mode === "offline" ||
+              ticketSettings?.mode === "both") && (
+              <button
+                onClick={() => setActiveModule("find-center")}
+                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
+                  activeModule === "find-center"
+                    ? "bg-blue-50 text-blue-600 font-medium"
+                    : "text-gray-700 hover:bg-gray-50"
+                }`}
+              >
+                <MapPinIcon className="h-5 w-5" />
+                <span>Find Center</span>
+              </button>
+            )}
         </nav>
       </aside>
 

@@ -28,7 +28,10 @@ import {
 import { logActivity } from "../utils/logger";
 import { config } from "../config";
 import { initializeSLATracking } from "../services/slaHelperService";
-import { autoAssignMatrixToTicket } from "../services/escalationMatrixService";
+import {
+  autoAssignMatrixToTicket,
+  getMatrixByProjectId,
+} from "../services/escalationMatrixService";
 import {
   autoAssignTicket,
   AutoAssignResult,
@@ -394,12 +397,27 @@ export const submitTicket = async (req: Request, res: Response) => {
       deepestCategoryObjectId = new mongoose.Types.ObjectId(deepestCategoryRaw);
     }
 
-    assignmentResult = await autoAssignTicket(
+    // If an EscalationMatrix is configured for this project/category, skip the legacy
+    // CategoryAssignmentConfig engine entirely.  The matrix's Level 1 role/user pool
+    // will handle initial assignment inside autoAssignMatrixToTicket (post-save).
+    const existingMatrix = await getMatrixByProjectId(
       projectId.toString(),
-      deepestCategoryObjectId ?? categoryObjectId,
+      undefined, // priority not yet resolved at this point
+      (deepestCategoryObjectId ?? categoryObjectId)?.toString(),
     );
-    if (assignmentResult) {
-      assignedAgent = assignmentResult.agentId;
+
+    if (!existingMatrix) {
+      assignmentResult = await autoAssignTicket(
+        projectId.toString(),
+        deepestCategoryObjectId ?? categoryObjectId,
+      );
+      if (assignmentResult) {
+        assignedAgent = assignmentResult.agentId;
+      }
+    } else {
+      console.log(
+        `ℹ️ [Auto-assign] EscalationMatrix "${(existingMatrix as any).name}" found for project — skipping legacy assignment engine, matrix L1 will assign on save`,
+      );
     }
     console.timeEnd("⏱️ Auto-assignment");
 
@@ -673,7 +691,8 @@ export const submitTicket = async (req: Request, res: Response) => {
       `✅ Ticket created successfully: ${ticket._id} | Created by: ${studentUserId}${assignedAgent ? ` | Assigned to: ${assignedAgent}` : " | Unassigned"}`,
     );
 
-    // US-ASSIGN-001: Record fallback assignment in changeHistory for dashboard tracking
+    // US-ASSIGN-001: Record truly-unresolvable fallback (self-assign) in changeHistory for dashboard tracking
+    // Note: project-level round-robin is assignedVia='round-robin' and does NOT enter this block
     if (assignmentResult?.assignedVia === "fallback") {
       await Ticket.updateOne(
         { _id: ticket._id },

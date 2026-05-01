@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import axios from "axios";
@@ -24,6 +24,8 @@ interface StudentLoginModalProps {
   customUrlPath: string;
   ssoEnabled?: boolean;
   ssoConfig?: SsoKeycloakConfig | null;
+  initialEmail?: string;
+  initialPassword?: string;
 }
 
 type Step = "email" | "otp" | "password" | "set-password" | "password-success";
@@ -35,6 +37,8 @@ export const StudentLoginModal: React.FC<StudentLoginModalProps> = ({
   customUrlPath,
   ssoEnabled = false,
   ssoConfig = null,
+  initialEmail,
+  initialPassword,
 }) => {
   const navigate = useNavigate();
   const { t } = useTranslation();
@@ -49,6 +53,50 @@ export const StudentLoginModal: React.FC<StudentLoginModalProps> = ({
   const [tempToken, setTempToken] = useState("");
   const [firstName, setFirstName] = useState("");
   const [passwordPolicy, setPasswordPolicy] = useState<any>(null);
+  const hasAutoLoginAttempted = useRef(false);
+
+  // Auto-login when both initialEmail and initialPassword are provided via URL params
+  useEffect(() => {
+    if (
+      isOpen &&
+      initialEmail &&
+      initialPassword &&
+      !hasAutoLoginAttempted.current
+    ) {
+      hasAutoLoginAttempted.current = true;
+      setEmail(initialEmail);
+      setPassword(initialPassword);
+      setLoading(true);
+      setError(null);
+
+      axios
+        .post(`${API_CONFIG.API_URL}/student-auth/login`, {
+          email: initialEmail,
+          password: initialPassword,
+        })
+        .then((response) => {
+          const { token, user } = response.data.data;
+          localStorage.removeItem("authToken");
+          localStorage.removeItem("userPermissions");
+          localStorage.setItem("authToken", token);
+          if (user?.role?.permissions && Array.isArray(user.role.permissions)) {
+            localStorage.setItem(
+              "userPermissions",
+              JSON.stringify(user.role.permissions),
+            );
+          }
+          onClose();
+          setTimeout(() => {
+            navigate(`/${customUrlPath}/student/dashboard`);
+          }, 100);
+        })
+        .catch((err: any) => {
+          setError(err.response?.data?.message || "Invalid email or password");
+          setStep("password");
+          setLoading(false);
+        });
+    }
+  }, [isOpen, initialEmail, initialPassword]);
 
   // Fetch password policy when entering set-password step
   useEffect(() => {

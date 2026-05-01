@@ -146,12 +146,13 @@ const StudentLayout = ({ children }: StudentLayoutProps) => {
       label: "My Queries",
       permission: PERMISSIONS.TICKET_VIEW_OWN,
     },
-    // {
-    //   path: `/${customUrlPath}/student/submit-ticket`,
-    //   icon: <MdAdd />,
-    //   label: 'Submit Query',
-    //   permission: PERMISSIONS.TICKET_VIEW_OWN, // Changed from TICKET_CREATE to TICKET_VIEW_OWN
-    // },
+    {
+      path: `/${customUrlPath}/submit-ticket`,
+      icon: <MdAdd />,
+      label: "Submit Ticket",
+      permission: PERMISSIONS.TICKET_CREATE,
+      showForModes: ["online", "both"],
+    },
     {
       path: `/${customUrlPath}/kb-new/viewer`,
       icon: <MdBook />,

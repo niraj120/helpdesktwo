@@ -1196,6 +1196,7 @@ export const resetUserPassword = async (
     }
 
     user.password = newPassword;
+    user.requirePasswordSetup = false; // Admin-set password clears the OTP setup requirement
     user.resetPasswordOTP = undefined;
     user.resetPasswordOTPExpires = undefined;
     user.resetPasswordAttempts = 0;
