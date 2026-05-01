@@ -684,6 +684,7 @@ export async function getEscalationContext(
 export async function getAllowedEscalationLevels(
   ticketId: string,
 ): Promise<AllowedEscalationLevel[]> {
+  try {
   const context = await getEscalationContext(ticketId);
   if (!context) {
     console.log(
@@ -973,6 +974,10 @@ export async function getAllowedEscalationLevels(
 
   // Sort by level number for consistent ordering
   return allowedLevels.sort((a, b) => a.levelNumber - b.levelNumber);
+  } catch (err: any) {
+    console.error(`❌ [Escalation] getAllowedEscalationLevels failed for ticket ${ticketId}:`, err.message);
+    throw err; // Re-throw so the controller can return a proper error response
+  }
 }
 
 /**
@@ -1545,10 +1550,14 @@ export async function processAutoEscalation(): Promise<{
   const jobStartMs = Date.now();
 
   try {
-    // Find all matrices with autoEscalate enabled
+    // Find all matrices that have auto-escalation enabled.
+    // We use $ne: false so that:
+    //   - Matrices with autoEscalate: true   → included (explicit enable)
+    //   - Matrices with autoEscalate: null/undefined → included (legacy, default-on)
+    //   - Matrices with autoEscalate: false  → excluded  (explicit disable)
     const autoEscalateMatrices = await EscalationMatrix.find({
       isActive: true,
-      autoEscalate: true,
+      autoEscalate: { $ne: false },
     });
 
     if (autoEscalateMatrices.length === 0) {

@@ -249,7 +249,7 @@ const EscalationMatrixSchema = new Schema<IEscalationMatrix>(
     },
     autoEscalate: {
       type: Boolean,
-      default: false,
+      default: true, // Default ON — admin must explicitly disable if unwanted
       // When true, tickets auto-escalate to next level on SLA breach
     },
     // US-ESC-013: skip recent-activity grace period for this matrix (useful for critical priority matrices)

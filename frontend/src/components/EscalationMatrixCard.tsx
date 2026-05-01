@@ -45,6 +45,7 @@ const EscalationMatrixCard: React.FC<EscalationMatrixCardProps> = ({
   const [allowedLevels, setAllowedLevels] = useState<AllowedEscalationLevel[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [fetchSucceeded, setFetchSucceeded] = useState(false); // true only when API returned success
   const [isEscalating, setIsEscalating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
@@ -71,22 +72,29 @@ const EscalationMatrixCard: React.FC<EscalationMatrixCardProps> = ({
     try {
       setLoading(true);
       setError(null);
+      setFetchSucceeded(false);
       
       const response = await getAllowedEscalations(ticketId);
       
       if (response.success && response.data) {
         setAllowedLevels(response.data);
+        setFetchSucceeded(true);
       } else {
-        // No matrix assigned or no levels available
+        // API returned success:false — show the error message instead of 'highest level'
         setAllowedLevels([]);
+        setFetchSucceeded(false);
+        if (response.message) {
+          setError(response.message);
+        }
       }
     } catch (err: any) {
       console.error('Error fetching allowed escalations:', err);
       setError(err.message);
+      setFetchSucceeded(false);
     } finally {
       setLoading(false);
     }
-  };
+  };;
 
   const handleEscalate = async () => {
     if (!selectedLevelId || !escalationReason.trim()) {
@@ -357,9 +365,11 @@ const EscalationMatrixCard: React.FC<EscalationMatrixCardProps> = ({
             <div className="p-4 bg-gray-50 rounded-lg text-center">
               <InformationCircleIcon className="w-8 h-8 text-gray-400 mx-auto mb-2" />
               <p className="text-sm text-gray-600">
-                {currentLevelNumber > 0
-                  ? 'This ticket is at the highest escalation level.'
-                  : 'No escalation matrix is assigned to this ticket.'}
+                {fetchSucceeded
+                  ? currentLevelNumber > 0
+                    ? 'This ticket is at the highest escalation level.'
+                    : 'No escalation matrix is assigned to this ticket.'
+                  : 'Unable to load escalation options. Please refresh and try again.'}
               </p>
             </div>
           ) : (
