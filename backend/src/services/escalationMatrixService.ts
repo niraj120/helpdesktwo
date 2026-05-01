@@ -318,9 +318,61 @@ export async function autoAssignMatrixToTicket(
       matrixUpdateFields.assignedTo = new mongoose.Types.ObjectId(
         (startLevel as any).assigneeUserId.toString(),
       );
+      matrixUpdateFields.assignedVia = "by-user";
       console.log(
         `👤 [Escalation] L${startLevel.levelNumber} is user-type — auto-assigning ticket to user ${(startLevel as any).assigneeUserId}`,
       );
+    }
+
+    // If the start level is role-based and the ticket is currently unassigned,
+    // pick an agent from that role's user pool via round-robin.
+    if (
+      (!(startLevel as any).assigneeType ||
+        (startLevel as any).assigneeType === "role") &&
+      startLevel.roleId &&
+      !ticket.assignedTo &&
+      !matrixUpdateFields.assignedTo
+    ) {
+      const roleAgents = await User.find({
+        role: startLevel.roleId,
+        isActive: true,
+      })
+        .select("_id")
+        .lean();
+
+      if (roleAgents.length > 0) {
+        // Round-robin: find which agent was last assigned for this project, pick the next one
+        const lastTicket = await Ticket.findOne({
+          project: ticket.project,
+          assignedTo: { $exists: true, $ne: null },
+        })
+          .sort({ createdAt: -1 })
+          .select("assignedTo")
+          .lean();
+
+        let chosenAgent: mongoose.Types.ObjectId;
+        if (!lastTicket?.assignedTo) {
+          chosenAgent = roleAgents[0]._id as mongoose.Types.ObjectId;
+        } else {
+          const lastIdx = roleAgents.findIndex(
+            (u) => u._id.toString() === lastTicket.assignedTo!.toString(),
+          );
+          const nextIdx = (lastIdx + 1) % roleAgents.length;
+          chosenAgent = roleAgents[nextIdx]._id as mongoose.Types.ObjectId;
+        }
+
+        matrixUpdateFields.assignedTo = chosenAgent;
+        matrixUpdateFields.assignedVia = "by-role";
+        matrixUpdateFields["metadata.assignedVia"] = "by-role";
+        matrixUpdateFields["metadata.autoAssigned"] = true;
+        console.log(
+          `👥 [Escalation] L${startLevel.levelNumber} is role-type — round-robin assigned ticket to agent ${chosenAgent}`,
+        );
+      } else {
+        console.log(
+          `⚠️ [Escalation] L${startLevel.levelNumber} role ${startLevel.roleId} has no active users — ticket stays unassigned`,
+        );
+      }
     }
 
     await Ticket.updateOne({ _id: ticket._id }, { $set: matrixUpdateFields });
@@ -493,7 +545,6 @@ function getEffectiveLevelsForTicket(
     }
   }
 
-
   // 2. Find the config whose levels contain the ticket's current level ID
   if (ticket.currentEscalationLevelId) {
     for (const cfg of allConfigs) {
@@ -547,11 +598,41 @@ export async function getEscalationContext(
     return null;
   }
 
-  if (!ticket.escalationMatrixId) {
-    return null;
+  let resolvedMatrixId = ticket.escalationMatrixId;
+
+  // Fallback: if matrix was never assigned to the ticket (e.g. ticket created before matrix
+  // was configured), look it up dynamically by project and patch the ticket for future use.
+  if (!resolvedMatrixId) {
+    const projectId = (ticket as any).metadata?.projectId;
+    if (!projectId) {
+      console.log(
+        `⚠️ [Escalation] Ticket ${ticketId} has no escalationMatrixId and no metadata.projectId — cannot resolve matrix`,
+      );
+      return null;
+    }
+    const fallbackMatrix = await getMatrixByProjectId(
+      projectId.toString(),
+      (ticket as any).priority,
+      (ticket as any).metadata?.categoryId,
+    );
+    if (!fallbackMatrix) {
+      console.log(
+        `⚠️ [Escalation] No active EscalationMatrix found for project ${projectId} — ticket ${ticketId} has no matrix`,
+      );
+      return null;
+    }
+    resolvedMatrixId = (fallbackMatrix as any)._id;
+    // Persist the resolved matrix on the ticket so auto-escalation worker works too
+    await Ticket.findByIdAndUpdate(ticketId, {
+      $set: { escalationMatrixId: resolvedMatrixId },
+    });
+    ticket.escalationMatrixId = resolvedMatrixId;
+    console.log(
+      `✅ [Escalation] Retroactively assigned matrix "${(fallbackMatrix as any).name}" to ticket ${ticketId}`,
+    );
   }
 
-  const matrix = await EscalationMatrix.findById(ticket.escalationMatrixId)
+  const matrix = await EscalationMatrix.findById(resolvedMatrixId)
     .populate("levels.roleId", "name code")
     .populate("priorityConfigs.levels.roleId", "name code");
 
@@ -1329,10 +1410,8 @@ export async function assignMatrixToTicket(
   // Sort levels and get the starting level
   // Handle both SAME_FOR_ALL and PER_PRIORITY matrices.
   // getEffectiveLevelsByPriority works with non-lean Mongoose docs too.
-  const effectiveLevelsForAssign: IEscalationLevel[] = getEffectiveLevelsByPriority(
-    matrix,
-    (ticket as any).priority,
-  );
+  const effectiveLevelsForAssign: IEscalationLevel[] =
+    getEffectiveLevelsByPriority(matrix, (ticket as any).priority);
   const sortedLevels = [...effectiveLevelsForAssign]
     .filter((l) => l.isActive)
     .sort((a, b) => a.levelNumber - b.levelNumber);
@@ -1500,10 +1579,8 @@ export async function processAutoEscalation(): Promise<{
         const currentLevelNumber = ticket.currentEscalationLevelNumber || 1;
 
         // Use lean-safe helper — works with both Mongoose docs and plain objects.
-        const levelsForPriority: IEscalationLevel[] = getEffectiveLevelsByPriority(
-          matrix,
-          ticket.priority,
-        );
+        const levelsForPriority: IEscalationLevel[] =
+          getEffectiveLevelsByPriority(matrix, ticket.priority);
 
         const currentLevel = levelsForPriority.find(
           (l) => l.levelNumber === currentLevelNumber && l.isActive,

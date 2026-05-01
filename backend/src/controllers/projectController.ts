@@ -947,7 +947,8 @@ export const getProjectBranding = async (req: Request, res: Response) => {
       },
       knowledgeBase: (project as any).modules?.knowledgeBase ?? true, // Reads from project.modules.knowledgeBase
       ticketSubmissionMode:
-        (project as any).ticketSubmissionSettings?.mode || "both", // online, offline, or both
+        (project as any).configuration?.ticketSubmissionSettings?.mode ||
+        "both", // online, offline, or both
     };
 
     console.log(`✅ Found project branding: ${project.name}`, brandingData);

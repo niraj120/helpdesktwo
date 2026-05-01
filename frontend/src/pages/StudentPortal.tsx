@@ -161,6 +161,22 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
   const [uniqueStates, setUniqueStates] = useState<string[]>([]);
   const [uniqueCities, setUniqueCities] = useState<string[]>([]);
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [autoLoginEmail, setAutoLoginEmail] = useState("");
+  const [autoLoginPassword, setAutoLoginPassword] = useState("");
+
+  // Read ?email and ?password from URL and auto-open login modal
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const qEmail = params.get("email");
+    const qPassword = params.get("password");
+    if (qEmail && qPassword) {
+      setAutoLoginEmail(qEmail);
+      setAutoLoginPassword(qPassword);
+      setShowLoginModal(true);
+      // Remove credentials from URL immediately to avoid them staying in browser history
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
   const [sortBy, setSortBy] = useState<
     "none" | "district" | "distance" | "alphabetical"
   >("none");
@@ -842,11 +858,15 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
       });
 
       // Submit ticket
-      const response = await axios.post(`${API_CONFIG.API_URL}/tickets/submit`, submitData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
+      const response = await axios.post(
+        `${API_CONFIG.API_URL}/tickets/submit`,
+        submitData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
         },
-      });
+      );
 
       const ticketNum =
         response.data.data?.ticketNumber || response.data.ticketNumber || "";
@@ -1311,17 +1331,25 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
                   <CheckCircleIcon className="w-10 h-10 text-green-600" />
                 </div>
                 <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                  🎉 {t("querySubmittedSuccess", "Query Submitted Successfully!")}
+                  🎉{" "}
+                  {t("querySubmittedSuccess", "Query Submitted Successfully!")}
                 </h2>
                 {createdTicketNumber && (
                   <div className="my-3 px-4 py-2 bg-blue-50 rounded-lg border border-blue-200 inline-block">
-                    <span className="text-sm text-blue-600 font-medium">Ticket Number</span>
-                    <p className="text-xl font-bold text-blue-800 mt-0.5">{createdTicketNumber}</p>
+                    <span className="text-sm text-blue-600 font-medium">
+                      Ticket Number
+                    </span>
+                    <p className="text-xl font-bold text-blue-800 mt-0.5">
+                      {createdTicketNumber}
+                    </p>
                   </div>
                 )}
                 <p className="text-gray-600 mb-6">
                   {ticketSettings.successMessage ||
-                    t("querySubmittedMessage", "Your ticket has been submitted. Our team will get back to you soon.")}
+                    t(
+                      "querySubmittedMessage",
+                      "Your ticket has been submitted. Our team will get back to you soon.",
+                    )}
                 </p>
                 <button
                   onClick={() => setSubmitSuccess(false)}
@@ -2520,6 +2548,8 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
           customUrlPath={customUrlPath || ""}
           ssoEnabled={ssoEnabled}
           ssoConfig={ssoConfig}
+          initialEmail={autoLoginEmail}
+          initialPassword={autoLoginPassword}
         />
       )}
       <WhatsAppFloatingIcon
