@@ -687,6 +687,31 @@ export const submitTicket = async (req: Request, res: Response) => {
     await ticket.save();
     console.timeEnd("⏱️ Ticket save");
 
+    // Emit real-time event so all connected agents on the ticket list refresh automatically
+    (() => {
+      try {
+        const { getIo } = require("../socket/ioInstance");
+        const { emitTicketListUpdate } = require("../socket/socketHandlers");
+        const io = getIo();
+        if (io) {
+          emitTicketListUpdate(io, projectId, {
+            type: "new-ticket",
+            ticket: {
+              _id: ticket._id,
+              ticketNumber: ticket.ticketNumber,
+              subject: ticket.subject,
+              status: ticket.status,
+              priority: ticket.priority,
+              createdAt: ticket.createdAt,
+              metadata: { projectId },
+            },
+          });
+        }
+      } catch (socketErr) {
+        console.error("⚠️ Failed to emit ticket-list-update socket event:", socketErr);
+      }
+    })();
+
     console.log(
       `✅ Ticket created successfully: ${ticket._id} | Created by: ${studentUserId}${assignedAgent ? ` | Assigned to: ${assignedAgent}` : " | Unassigned"}`,
     );
@@ -2750,6 +2775,29 @@ export const replyToTicket = async (req: Request, res: Response) => {
     console.log(
       `✅ Reply added to ticket: ${updatedTicket._id} by user: ${user.email}`,
     );
+
+    // Emit real-time event for ticket detail page listeners
+    (() => {
+      try {
+        const { getIo } = require("../socket/ioInstance");
+        const { emitTicketUpdate, emitTicketListUpdate } = require("../socket/socketHandlers");
+        const io = getIo();
+        if (io) {
+          // Notify anyone viewing the specific ticket detail
+          emitTicketUpdate(io, id, { type: "new-reply", thread: newThread });
+          // Notify ticket list watchers (for hasNewReply badge)
+          const projectId = updatedTicket.project?.toString() || (updatedTicket as any).metadata?.projectId?.toString();
+          if (projectId) {
+            emitTicketListUpdate(io, projectId, {
+              type: "new-reply",
+              ticket: { _id: updatedTicket._id, ticketNumber: updatedTicket.ticketNumber, hasNewReply: isStudentReply },
+            });
+          }
+        }
+      } catch (socketErr) {
+        console.error("⚠️ Failed to emit reply socket event:", socketErr);
+      }
+    })();
 
     // Send "Comment Added" trigger email (non-blocking)
     (async () => {

@@ -17,6 +17,8 @@ import {
   TrashIcon,
 } from "@heroicons/react/24/outline";
 import { API_CONFIG } from "../config/constants";
+import { useSocket } from "../hooks/useSocket";
+import toast from "react-hot-toast";
 
 interface Ticket {
   _id: string;
@@ -207,6 +209,47 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
   const canDelete = checkPermission("TICKET_DELETE");
   const hasViewAll = checkPermission("TICKET_VIEW_ALL");
   const userRole = localStorage.getItem("userRole") || "";
+
+  // Real-time: track pending new-ticket badge so the user sees a refresh hint
+  const [pendingNewTickets, setPendingNewTickets] = useState(0);
+
+  // Build socket rooms: join the project-specific room when a project is locked, else join all-tickets
+  const socketRooms = useMemo(() => {
+    if (initialProjectId) return [`project-tickets-${initialProjectId}`];
+    return ['all-tickets'];
+  }, [initialProjectId]);
+
+  useSocket({
+    rooms: socketRooms,
+    events: {
+      'ticket-list-update': (payload: { type: string; ticket: any }) => {
+        if (payload.type === 'new-ticket') {
+          // Prepend new ticket if on page 1 and no active filters
+          setTickets((prev) => {
+            const alreadyExists = prev.some((t) => t._id === payload.ticket._id);
+            if (alreadyExists) return prev;
+            if (currentPage === 1) {
+              toast.success(`New ticket: ${payload.ticket.ticketNumber}`, { duration: 4000 });
+              setTotalTickets((n) => n + 1);
+              return [payload.ticket as Ticket, ...prev.slice(0, pageSize - 1)];
+            }
+            // On other pages just show a badge
+            setPendingNewTickets((n) => n + 1);
+            return prev;
+          });
+        } else if (payload.type === 'new-reply') {
+          // Update hasNewReply on the matching ticket row
+          setTickets((prev) =>
+            prev.map((t) =>
+              t._id === payload.ticket._id
+                ? { ...t, hasNewReply: payload.ticket.hasNewReply }
+                : t,
+            ),
+          );
+        }
+      },
+    },
+  });
 
   useEffect(() => {
     // Prevent duplicate calls from React.StrictMode
@@ -476,6 +519,34 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
               : "View and manage queries assigned to you"
           }
         />
+
+        {/* Real-time: pending new tickets banner */}
+        {pendingNewTickets > 0 && (
+          <div
+            onClick={() => {
+              setPendingNewTickets(0);
+              fetchTickets(1, filterProject, filterAssignedTo);
+            }}
+            style={{
+              background: "#3b82f6",
+              color: "white",
+              borderRadius: "8px",
+              padding: "10px 16px",
+              marginBottom: "12px",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              fontWeight: 500,
+              fontSize: "14px",
+            }}
+          >
+            <span>🔔</span>
+            <span>
+              {pendingNewTickets} new ticket{pendingNewTickets > 1 ? "s" : ""} arrived — click to refresh
+            </span>
+          </div>
+        )}
 
         {/* Filters */}
         <div

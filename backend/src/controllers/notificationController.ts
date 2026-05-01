@@ -166,9 +166,32 @@ export const createNotification = async (data: {
     const Notification = require('../models/Notification').Notification;
 
     const notification = await Notification.create(data);
-    
-    // You can emit WebSocket event here for real-time notifications
-    // io.to(userId.toString()).emit('notification', notification);
+
+    // Emit real-time in-app notification via Socket.IO
+    try {
+      const { getIo } = require('../socket/ioInstance');
+      const io = getIo();
+      if (io) {
+        io.to(`user-${data.userId.toString()}`).emit('notification', {
+          ...notification.toObject(),
+        });
+      }
+    } catch {
+      // non-fatal
+    }
+
+    // Send web push notification
+    try {
+      const { sendPushToUser } = require('../services/webPushService');
+      await sendPushToUser(data.userId.toString(), {
+        title: data.title,
+        body: data.message,
+        url: data.link || '/',
+        tag: data.ticketId ? `ticket-${data.ticketId.toString()}` : 'notification',
+      });
+    } catch {
+      // non-fatal — push may not be configured
+    }
 
     return notification;
   } catch (error) {
