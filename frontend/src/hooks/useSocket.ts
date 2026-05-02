@@ -43,71 +43,88 @@ interface UseSocketOptions {
   events?: Record<SocketEvent, (data: any) => void>;
 }
 
+const emitJoin = (socket: Socket, roomId: string) => {
+  if (roomId === "all-tickets") {
+    socket.emit("join-all-tickets");
+  } else if (roomId.startsWith("project-tickets-")) {
+    socket.emit("join-project-tickets", roomId.replace("project-tickets-", ""));
+  } else if (roomId.startsWith("ticket-")) {
+    socket.emit("join-ticket", roomId.replace("ticket-", ""));
+  }
+};
+
+const emitLeave = (socket: Socket, roomId: string) => {
+  if (roomId === "all-tickets") {
+    socket.emit("leave-all-tickets");
+  } else if (roomId.startsWith("project-tickets-")) {
+    socket.emit("leave-project-tickets", roomId.replace("project-tickets-", ""));
+  } else if (roomId.startsWith("ticket-")) {
+    socket.emit("leave-ticket", roomId.replace("ticket-", ""));
+  }
+};
+
 /**
  * Hook to connect to Socket.IO, join rooms, and listen for events.
- * Automatically join/leave on mount/unmount.
+ *
+ * Design:
+ * - ONE-TIME effect creates the socket and registers stable event wrappers
+ *   that delegate to an always-current ref — handlers never go stale.
+ * - SEPARATE rooms effect re-runs whenever rooms change (e.g. when
+ *   currentProjectId resolves from context after first render). This fixes
+ *   the production issue where context resolves async and the first emit
+ *   was for the wrong / empty room.
  */
 export const useSocket = ({
   rooms = [],
   events = {},
 }: UseSocketOptions = {}) => {
   const socketRef = useRef<Socket | null>(null);
+  // Always-current events ref so handlers never see stale closures
+  const eventsRef = useRef(events);
+  eventsRef.current = events;
 
+  // --- One-time: create socket and register stable event wrappers ---
   useEffect(() => {
     const socket = getSocket();
     socketRef.current = socket;
 
-    // Helper: join all requested rooms (called on mount AND on every reconnect)
-    const joinRooms = () => {
-      rooms.forEach((roomId) => {
-        if (roomId === "all-tickets") {
-          socket.emit("join-all-tickets");
-        } else if (roomId.startsWith("project-tickets-")) {
-          socket.emit(
-            "join-project-tickets",
-            roomId.replace("project-tickets-", ""),
-          );
-        } else if (roomId.startsWith("ticket-")) {
-          socket.emit("join-ticket", roomId.replace("ticket-", ""));
-        }
-      });
-    };
-
-    // Join now (or buffer until connected)
-    joinRooms();
-    // Re-join after every reconnect (server drops room membership on disconnect)
-    socket.on("connect", joinRooms);
-
-    // Register event listeners
-    const registeredEvents = Object.entries(events);
-    registeredEvents.forEach(([event, handler]) => {
-      socket.on(event, handler);
+    // Build stable wrappers once; they delegate to eventsRef so they always
+    // call the latest version of each handler without re-registering.
+    const stableHandlers: Record<string, (data: any) => void> = {};
+    Object.keys(eventsRef.current).forEach((event) => {
+      stableHandlers[event] = (data: any) => eventsRef.current[event]?.(data);
+      socket.on(event, stableHandlers[event]);
     });
 
     return () => {
-      socket.off("connect", joinRooms);
-
-      // Leave rooms
-      rooms.forEach((roomId) => {
-        if (roomId === "all-tickets") {
-          socket.emit("leave-all-tickets");
-        } else if (roomId.startsWith("project-tickets-")) {
-          socket.emit(
-            "leave-project-tickets",
-            roomId.replace("project-tickets-", ""),
-          );
-        } else if (roomId.startsWith("ticket-")) {
-          socket.emit("leave-ticket", roomId.replace("ticket-", ""));
-        }
-      });
-
-      // Remove listeners
-      registeredEvents.forEach(([event, handler]) => {
-        socket.off(event, handler);
+      Object.keys(stableHandlers).forEach((event) => {
+        socket.off(event, stableHandlers[event]);
       });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // --- Reactive rooms: re-runs when rooms list changes ---
+  // Using rooms.join(",") as dep so the effect re-fires when the list
+  // changes (e.g. currentProjectId loaded from context after first render).
+  const roomsKey = rooms.join(",");
+  useEffect(() => {
+    const socket = socketRef.current ?? getSocket();
+    socketRef.current = socket;
+
+    const joinRooms = () => rooms.forEach((id) => emitJoin(socket, id));
+
+    // Join immediately if already connected (buffered otherwise by socket.io)
+    joinRooms();
+    // Re-join on every reconnect
+    socket.on("connect", joinRooms);
+
+    return () => {
+      socket.off("connect", joinRooms);
+      rooms.forEach((id) => emitLeave(socket, id));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomsKey]);
 
   const emit = useCallback((event: string, ...args: any[]) => {
     socketRef.current?.emit(event, ...args);
@@ -115,3 +132,4 @@ export const useSocket = ({
 
   return { emit };
 };
+
