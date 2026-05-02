@@ -20,7 +20,12 @@ export const getSocket = (): Socket => {
     const token = localStorage.getItem("authToken");
     _socket = io(API_CONFIG.BASE_URL, {
       auth: { token },
-      transports: ["websocket", "polling"],
+      // Use /api/socket.io so requests go through the existing nginx /api
+      // proxy block instead of needing a separate /socket.io location.
+      path: "/api/socket.io",
+      // Start with polling so the handshake always succeeds regardless of
+      // WebSocket availability at the proxy layer.
+      transports: ["polling", "websocket"],
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 2000,
