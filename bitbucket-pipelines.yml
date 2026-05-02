@@ -35,5 +35,3 @@ pipelines:
                 pm2 restart helpdesk-backend:3003 &&
                 echo "Backend deployed successfully!"
               '
-
-
