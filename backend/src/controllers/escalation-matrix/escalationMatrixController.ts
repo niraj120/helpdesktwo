@@ -1118,7 +1118,9 @@ export const escalateTicketWithMatrix = async (
     if (result.assignedUser?._id) {
       (async () => {
         try {
-          const { createNotification } = require("../../controllers/notificationController");
+          const {
+            createNotification,
+          } = require("../../controllers/notificationController");
           const ticketDoc = result.ticket as any;
           const projId =
             ticketDoc?.metadata?.projectId?._id?.toString() ||
@@ -1127,10 +1129,13 @@ export const escalateTicketWithMatrix = async (
           if (projId) {
             const isProduction = process.env.NODE_ENV === "production";
             const frontendUrl = isProduction
-              ? process.env.PRODUCTION_FRONTEND_URL || "https://helpdesk.hubblehox.ai"
+              ? process.env.PRODUCTION_FRONTEND_URL ||
+                "https://helpdesk.hubblehox.ai"
               : process.env.FRONTEND_URL || "http://localhost:3001";
             await createNotification({
-              userId: new mongoose.Types.ObjectId(result.assignedUser._id.toString()),
+              userId: new mongoose.Types.ObjectId(
+                result.assignedUser._id.toString(),
+              ),
               projectId: new mongoose.Types.ObjectId(projId),
               type: "info" as const,
               title: `Ticket Escalated to You: ${ticketDoc.ticketNumber}`,
@@ -1140,7 +1145,10 @@ export const escalateTicketWithMatrix = async (
             });
           }
         } catch (notifErr) {
-          console.error("⚠️ Failed to send escalation push notification:", notifErr);
+          console.error(
+            "⚠️ Failed to send escalation push notification:",
+            notifErr,
+          );
         }
       })();
     }
