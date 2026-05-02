@@ -121,8 +121,9 @@ const EscalationMatrixContent: React.FC = () => {
   const [linkedCategoryIds, setLinkedCategoryIds] = useState<string[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState(false);
   const [projectUsers, setProjectUsers] = useState<
-    { _id: string; firstName: string; lastName: string; email: string }[]
+    { _id: string; firstName: string; lastName: string; email: string; role?: { code: string } }[]
   >([]);
+  const [levelUserSearch, setLevelUserSearch] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -3266,7 +3267,7 @@ const EscalationMatrixContent: React.FC = () => {
                               }}
                             >
                               <option value="">Select Role</option>
-                              {(roles || []).map((role) => (
+                              {(roles || []).filter((r) => r.code !== "STUDENT").map((role) => (
                                 <option key={role._id} value={role._id}>
                                   {role.name}
                                 </option>
@@ -3329,49 +3330,94 @@ const EscalationMatrixContent: React.FC = () => {
                             </div>
 
                             {/* User picker — shown when assigneeType='user' */}
-                            <select
-                              value={level.assigneeUserId || ""}
-                              onChange={(e) => {
-                                const user = projectUsers.find(
-                                  (u) => u._id === e.target.value,
-                                );
-                                const currentLevels = getCurrentLevels();
-                                const newLevels = currentLevels.map((l, i) => {
-                                  if (i !== index) return l;
-                                  return {
-                                    ...l,
-                                    assigneeUserId: e.target.value,
-                                    assigneeUserName: user
-                                      ? [user.firstName, user.lastName]
-                                          .filter(Boolean)
-                                          .join(" ")
-                                      : "",
-                                  };
-                                });
-                                setCurrentLevels(newLevels);
-                              }}
+                            <div
                               style={{
                                 flex: 1,
-                                padding: "8px 12px",
-                                border: "1px solid #d1d5db",
-                                borderRadius: "6px",
-                                fontSize: "14px",
                                 display:
                                   (level.assigneeType ?? "role") === "user"
-                                    ? undefined
+                                    ? "flex"
                                     : "none",
+                                flexDirection: "column",
+                                gap: "4px",
                               }}
                             >
-                              <option value="">Select User</option>
-                              {projectUsers.map((u) => (
-                                <option key={u._id} value={u._id}>
-                                  {[u.firstName, u.lastName]
-                                    .filter(Boolean)
-                                    .join(" ")}
-                                  {u.email ? ` — ${u.email}` : ""}
-                                </option>
-                              ))}
-                            </select>
+                              <input
+                                type="text"
+                                placeholder="Search user..."
+                                value={levelUserSearch[index] || ""}
+                                onChange={(e) =>
+                                  setLevelUserSearch((prev) => ({
+                                    ...prev,
+                                    [index]: e.target.value,
+                                  }))
+                                }
+                                style={{
+                                  padding: "6px 10px",
+                                  border: "1px solid #d1d5db",
+                                  borderRadius: "6px",
+                                  fontSize: "13px",
+                                  width: "100%",
+                                  boxSizing: "border-box",
+                                }}
+                              />
+                              <select
+                                value={level.assigneeUserId || ""}
+                                onChange={(e) => {
+                                  const user = projectUsers.find(
+                                    (u) => u._id === e.target.value,
+                                  );
+                                  const currentLevels = getCurrentLevels();
+                                  const newLevels = currentLevels.map(
+                                    (l, i) => {
+                                      if (i !== index) return l;
+                                      return {
+                                        ...l,
+                                        assigneeUserId: e.target.value,
+                                        assigneeUserName: user
+                                          ? [user.firstName, user.lastName]
+                                              .filter(Boolean)
+                                              .join(" ")
+                                          : "",
+                                      };
+                                    },
+                                  );
+                                  setCurrentLevels(newLevels);
+                                }}
+                                style={{
+                                  padding: "8px 12px",
+                                  border: "1px solid #d1d5db",
+                                  borderRadius: "6px",
+                                  fontSize: "14px",
+                                  width: "100%",
+                                }}
+                              >
+                                <option value="">Select User</option>
+                                {projectUsers
+                                  .filter(
+                                    (u) => u.role?.code !== "STUDENT",
+                                  )
+                                  .filter((u) => {
+                                    const q = (
+                                      levelUserSearch[index] || ""
+                                    ).toLowerCase();
+                                    if (!q) return true;
+                                    return (
+                                      `${u.firstName} ${u.lastName}`
+                                        .toLowerCase()
+                                        .includes(q) ||
+                                      u.email.toLowerCase().includes(q)
+                                    );
+                                  })
+                                  .map((u) => (
+                                    <option key={u._id} value={u._id}>
+                                      {[u.firstName, u.lastName]
+                                        .filter(Boolean)
+                                        .join(" ")}
+                                      {u.email ? ` — ${u.email}` : ""}
+                                    </option>
+                                  ))}
+                              </select>
+                            </div>
 
                             {/* SLA hours + unit */}
                             <div
