@@ -1199,19 +1199,44 @@ export async function executeEscalation(
     }
   }
 
-  // If no previous handler found (or forward escalation), use round-robin
+  // If no previous handler found (or forward escalation), assign based on level type
   if (!assignedUser) {
-    console.log(
-      `📤 ${isDeEscalation ? "No previous handler found, using" : "Forward escalation, using"} round-robin assignment`,
-    );
+    // Case A: Level is assigned to a specific user (assigneeType === 'user')
+    if (
+      (targetLevel as any).assigneeType === "user" &&
+      (targetLevel as any).assigneeUserId
+    ) {
+      console.log(
+        `👤 Direct user assignment from level config (Level ${targetLevel.levelNumber})`,
+      );
+      const directUser = await User.findById(
+        (targetLevel as any).assigneeUserId,
+      ).select("firstName lastName email isActive role");
 
-    // Guard: cannot query by role without a valid roleId
-    if (!targetLevel.roleId) {
-      return {
-        success: false,
-        message: "Escalation level has no role configured for round-robin assignment",
-      };
-    }
+      if (!directUser || !directUser.isActive) {
+        return {
+          success: false,
+          message: `The assigned user for level "${targetLevel.levelName}" is inactive or not found`,
+        };
+      }
+
+      assignedUser = directUser;
+      console.log(
+        `✅ Assigned to level-configured user: ${directUser.firstName} ${directUser.lastName}`,
+      );
+    } else {
+      // Case B: Role-based round-robin assignment
+      console.log(
+        `📤 ${isDeEscalation ? "No previous handler found, using" : "Forward escalation, using"} round-robin assignment`,
+      );
+
+      // Guard: cannot query by role without a valid roleId
+      if (!targetLevel.roleId) {
+        return {
+          success: false,
+          message: "Escalation level has no role configured for round-robin assignment",
+        };
+      }
 
     // Build user query
     const userQuery: any = {
@@ -1255,6 +1280,13 @@ export async function executeEscalation(
 
     // Select user for assignment (round-robin: first user in sorted list)
     assignedUser = usersInRole[0];
+    } // end Case B (role-based round-robin)
+  }
+
+  // Safety guard — TypeScript control-flow narrowing: both Case A and Case B either
+  // return early or set assignedUser, so this branch is never actually reached at runtime.
+  if (!assignedUser) {
+    return { success: false, message: "Could not determine assignment target for this escalation level" };
   }
 
   // Step 3: Update ticket
