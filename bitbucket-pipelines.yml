@@ -36,18 +36,4 @@ pipelines:
                 echo "Backend deployed successfully!"
               '
 
-    deploy-nginx:
-      - step:
-          name: Deploy Nginx Config
-          script:
-            - echo "Nginx Config Deployment Started"
-            - ssh -v ubuntu@34.14.157.13 '
-                cd /home/ubuntu/helpdesk &&
-                git checkout dev &&
-                git fetch origin dev &&
-                git reset --hard origin/dev &&
-                sudo cp nginx.conf /etc/nginx/sites-available/helpdesk.hubblehox.ai &&
-                sudo nginx -t &&
-                sudo systemctl reload nginx &&
-                echo "Nginx reloaded successfully!"
-              '
+

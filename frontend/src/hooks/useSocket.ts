@@ -20,7 +20,11 @@ export const getSocket = (): Socket => {
     const token = localStorage.getItem("authToken");
     _socket = io(API_CONFIG.BASE_URL, {
       auth: { token },
-      transports: ["websocket", "polling"],
+      // Start with polling so the handshake succeeds even when WebSocket is
+      // blocked (e.g. HTTP/2 ALPN conflict at the reverse proxy). Socket.IO
+      // will automatically upgrade to WebSocket after the handshake if the
+      // server supports it.
+      transports: ["polling", "websocket"],
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 2000,
