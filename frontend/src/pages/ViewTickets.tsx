@@ -216,28 +216,36 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
   // Build socket rooms: join the project-specific room when a project is locked, else join all-tickets
   const socketRooms = useMemo(() => {
     if (initialProjectId) return [`project-tickets-${initialProjectId}`];
-    return ['all-tickets'];
+    return ["all-tickets"];
   }, [initialProjectId]);
 
   useSocket({
     rooms: socketRooms,
     events: {
-      'ticket-list-update': (payload: { type: string; ticket: any }) => {
-        if (payload.type === 'new-ticket') {
+      "ticket-list-update": (payload: { type: string; ticket: any }) => {
+        if (payload.type === "new-ticket") {
           // Prepend new ticket if on page 1 and no active filters
           setTickets((prev) => {
-            const alreadyExists = prev.some((t) => t._id === payload.ticket._id);
+            const alreadyExists = prev.some(
+              (t) => t._id === payload.ticket._id,
+            );
             if (alreadyExists) return prev;
             if (currentPage === 1) {
-              toast.success(`New ticket: ${payload.ticket.ticketNumber}`, { duration: 4000 });
+              toast.success(`New ticket: ${payload.ticket.ticketNumber}`, {
+                duration: 4000,
+              });
               setTotalTickets((n) => n + 1);
-              return [payload.ticket as Ticket, ...prev.slice(0, pageSize - 1)];
+              // Mark as unread so the amber highlight shows until the agent opens it
+              return [
+                { ...(payload.ticket as Ticket), hasNewReply: true },
+                ...prev.slice(0, pageSize - 1),
+              ];
             }
             // On other pages just show a badge
             setPendingNewTickets((n) => n + 1);
             return prev;
           });
-        } else if (payload.type === 'new-reply') {
+        } else if (payload.type === "new-reply") {
           // Update hasNewReply on the matching ticket row
           setTickets((prev) =>
             prev.map((t) =>
@@ -543,7 +551,8 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
           >
             <span>🔔</span>
             <span>
-              {pendingNewTickets} new ticket{pendingNewTickets > 1 ? "s" : ""} arrived — click to refresh
+              {pendingNewTickets} new ticket{pendingNewTickets > 1 ? "s" : ""}{" "}
+              arrived — click to refresh
             </span>
           </div>
         )}
@@ -947,13 +956,21 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                     )}
                     <div
                       style={{ flex: 1, cursor: "pointer" }}
-                      onClick={() =>
+                      onClick={() => {
+                        // Clear unread highlight when agent opens the ticket
+                        setTickets((prev) =>
+                          prev.map((t) =>
+                            t._id === ticket._id
+                              ? { ...t, hasNewReply: false }
+                              : t,
+                          ),
+                        );
                         navigate(
                           initialProjectId && customUrlPath
                             ? `/${customUrlPath}/portal/tickets/${ticket._id}`
                             : `/tickets/${ticket._id}`,
-                        )
-                      }
+                        );
+                      }}
                     >
                       <span
                         style={{
