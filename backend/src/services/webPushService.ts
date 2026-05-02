@@ -36,22 +36,43 @@ export const ensureWebPushConfiguredAsync = async (): Promise<boolean> => {
 
   // 2 & 3. DB-backed keys (auto-generate if missing)
   try {
-    let setting = await SystemSettings.findOne({ key: VAPID_DB_KEY });
+    // Pre-generate a candidate pair; only stored if no document exists yet.
+    // Using $setOnInsert makes this atomic — concurrent startups won't create
+    // multiple documents or overwrite an existing key pair.
+    const candidateKeys = webPush.generateVAPIDKeys();
+    const setting = await SystemSettings.findOneAndUpdate(
+      { key: VAPID_DB_KEY },
+      {
+        $setOnInsert: {
+          key: VAPID_DB_KEY,
+          value: { publicKey: candidateKeys.publicKey, privateKey: candidateKeys.privateKey },
+          description: "Auto-generated VAPID keys for web push notifications",
+        },
+      },
+      { upsert: true, new: true },
+    );
+
     if (!setting) {
-      // Generate and persist a new VAPID key pair
-      const keys = webPush.generateVAPIDKeys();
-      setting = await SystemSettings.create({
-        key: VAPID_DB_KEY,
-        value: { publicKey: keys.publicKey, privateKey: keys.privateKey },
-        description: "Auto-generated VAPID keys for web push notifications",
-      });
-      console.log("✅ VAPID keys auto-generated and stored in SystemSettings");
+      console.warn("⚠️ VAPID findOneAndUpdate returned null — retrying on next call");
+      return false;
     }
 
     const { publicKey, privateKey } = setting.value as {
       publicKey: string;
       privateKey: string;
     };
+
+    if (!publicKey || !privateKey) {
+      console.warn("⚠️ VAPID keys in DB are empty — removing and retrying on next call");
+      await SystemSettings.deleteOne({ key: VAPID_DB_KEY });
+      return false;
+    }
+
+    if (publicKey === candidateKeys.publicKey) {
+      console.log("✅ VAPID keys auto-generated and stored in SystemSettings");
+    } else {
+      console.log("✅ VAPID keys loaded from SystemSettings (DB)");
+    }
     webPush.setVapidDetails(subject, publicKey, privateKey);
     _cachedPublicKey = publicKey;
     _webPushConfigured = true;

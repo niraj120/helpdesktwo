@@ -197,8 +197,9 @@ export const createNotification = async (data: {
           ? `ticket-${data.ticketId.toString()}`
           : "notification",
       });
-    } catch {
-      // non-fatal — push may not be configured
+    } catch (pushErr: any) {
+      // non-fatal — log so push failures are diagnosable in PM2 logs
+      console.warn(`⚠️ Push notification failed for user ${data.userId}:`, pushErr?.message || pushErr);
     }
 
     return notification;

@@ -39,6 +39,7 @@ import "./models/PushSubscription";
 import "./models/UserDashboardConfig";
 
 import { connectDB } from "./config/database";
+import { ensureWebPushConfiguredAsync } from "./services/webPushService";
 import { errorHandler } from "./middleware/errorHandler";
 import { notFound } from "./middleware/notFound";
 import authRoutes from "./routes/auth";
@@ -420,6 +421,11 @@ httpServer.listen(PORT, async () => {
     // Start attendance sync scheduler (per-project AFT cron jobs)
     console.log("📅 Starting Attendance Sync Scheduler...");
     await attendanceScheduler.start();
+
+    // Warm up VAPID keys now so push notifications work immediately.
+    // Keys are persisted in SystemSettings (MongoDB) — no .env entry needed.
+    console.log("🔔 Initializing Web Push (VAPID)...");
+    await ensureWebPushConfiguredAsync();
   } catch (error) {
     console.error(
       "⚠️  Database initialization failed, but server is still running",

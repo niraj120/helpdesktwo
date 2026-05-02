@@ -179,6 +179,9 @@ export const getEscalationMatrixById = async (
     // Fetch users for each level
     const levelsWithUsers = await Promise.all(
       matrix.levels.map(async (level) => {
+        if (!level.roleId) {
+          return { ...(level as any).toObject(), users: [] };
+        }
         const users = await User.find({
           role: level.roleId,
           isActive: true,
@@ -987,6 +990,19 @@ export const getAllowedEscalations = async (
           console.log(
             `⚠️ De-escalation to Level ${level.levelNumber}: No previous handler found, showing all users`,
           );
+        }
+
+        // Guard: a level with no role configured cannot be queried
+        if (!level.roleId) {
+          console.log(
+            `⚠️ Level ${level.levelNumber} has no roleId — skipping user lookup`,
+          );
+          return {
+            ...level,
+            userCount: 0,
+            users: [],
+            userNames: [],
+          };
         }
 
         // Build user query - filter by center for offline tickets
