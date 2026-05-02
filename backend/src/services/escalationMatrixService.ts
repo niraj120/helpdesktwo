@@ -684,83 +684,45 @@ export async function getEscalationContext(
 export async function getAllowedEscalationLevels(
   ticketId: string,
 ): Promise<AllowedEscalationLevel[]> {
-  const context = await getEscalationContext(ticketId);
-  if (!context) {
+  try {
+    const context = await getEscalationContext(ticketId);
+    if (!context) {
+      console.log(
+        `⚠️ [Escalation] getEscalationContext returned null for ticket ${ticketId}`,
+      );
+      return [];
+    }
+
+    const { matrix, currentLevelNumber, ticket } = context;
     console.log(
-      `⚠️ [Escalation] getEscalationContext returned null for ticket ${ticketId}`,
+      `🔍 [Escalation] ticket=${ticketId} currentLevelNumber=${currentLevelNumber} mode=${matrix.escalationMode} levels=${matrix.levels.length} submissionSource=${(ticket as any).submissionSource}`,
     );
-    return [];
-  }
+    const allowedLevels: AllowedEscalationLevel[] = [];
 
-  const { matrix, currentLevelNumber, ticket } = context;
-  console.log(
-    `🔍 [Escalation] ticket=${ticketId} currentLevelNumber=${currentLevelNumber} mode=${matrix.escalationMode} levels=${matrix.levels.length} submissionSource=${(ticket as any).submissionSource}`,
-  );
-  const allowedLevels: AllowedEscalationLevel[] = [];
+    // Helper to find who was the handler at a specific level
+    // We look for escalation history where fromLevel = targetLevel (person who escalated FROM that level)
+    // OR where toLevelNumber = targetLevel (the person assigned TO that level)
+    const findHandlerAtLevel = async (
+      targetLevel: number,
+    ): Promise<{
+      id?: string;
+      name?: string;
+      email?: string;
+      wasActuallyHandled?: boolean;
+    }> => {
+      const escalationHistory = ticket.escalationHistory || [];
 
-  // Helper to find who was the handler at a specific level
-  // We look for escalation history where fromLevel = targetLevel (person who escalated FROM that level)
-  // OR where toLevelNumber = targetLevel (the person assigned TO that level)
-  const findHandlerAtLevel = async (
-    targetLevel: number,
-  ): Promise<{
-    id?: string;
-    name?: string;
-    email?: string;
-    wasActuallyHandled?: boolean;
-  }> => {
-    const escalationHistory = ticket.escalationHistory || [];
+      // Sort by date descending to get most recent first
+      const sortedHistory = [...escalationHistory].sort(
+        (a, b) =>
+          new Date(b.escalatedAt).getTime() - new Date(a.escalatedAt).getTime(),
+      );
 
-    // Sort by date descending to get most recent first
-    const sortedHistory = [...escalationHistory].sort(
-      (a, b) =>
-        new Date(b.escalatedAt).getTime() - new Date(a.escalatedAt).getTime(),
-    );
-
-    // Method 1: Find escalation that happened FROM the target level
-    // The escalatedBy is the person who had the ticket at that level
-    for (const record of sortedHistory) {
-      if (record.fromLevelNumber === targetLevel) {
-        const handler = await User.findById(record.escalatedBy).select(
-          "firstName lastName email",
-        );
-        if (handler) {
-          return {
-            id: handler._id.toString(),
-            name: `${handler.firstName || ""} ${handler.lastName || ""}`.trim(),
-            email: handler.email,
-            wasActuallyHandled: true,
-          };
-        }
-      }
-    }
-
-    // Method 2: Find escalation that went TO the target level (the escalatedTo is the assigned agent)
-    // This handles cases where an agent was assigned to a level but hasn't escalated yet
-    for (const record of sortedHistory) {
-      if (record.toLevelNumber === targetLevel && record.escalatedTo) {
-        const handler = await User.findById(record.escalatedTo).select(
-          "firstName lastName email",
-        );
-        if (handler) {
-          return {
-            id: handler._id.toString(),
-            name: `${handler.firstName || ""} ${handler.lastName || ""}`.trim(),
-            email: handler.email,
-            wasActuallyHandled: true,
-          };
-        }
-      }
-    }
-
-    // For Level 1: Use the initially assigned agent OR current assignedTo if still at L1
-    if (targetLevel === 1) {
-      // Check if ticket was initially assigned to someone
-      if (ticket.assignedTo && currentLevelNumber !== 1) {
-        // Look for the first escalation from L1 - that person was the L1 handler
-        const l1Escalation = sortedHistory.find((r) => r.fromLevelNumber === 1);
-        if (l1Escalation?.escalatedBy) {
-          const handler = await User.findById(l1Escalation.escalatedBy).select(
+      // Method 1: Find escalation that happened FROM the target level
+      // The escalatedBy is the person who had the ticket at that level
+      for (const record of sortedHistory) {
+        if (record.fromLevelNumber === targetLevel) {
+          const handler = await User.findById(record.escalatedBy).select(
             "firstName lastName email",
           );
           if (handler) {
@@ -774,116 +736,174 @@ export async function getAllowedEscalationLevels(
         }
       }
 
-      // Fallback for L1 - use current assignedTo (they were the L1 handler even if metadata is incomplete)
-      if (ticket.assignedTo) {
-        const handler = await User.findById(ticket.assignedTo).select(
-          "firstName lastName email",
-        );
-        if (handler) {
-          return {
-            id: handler._id.toString(),
-            name: `${handler.firstName || ""} ${handler.lastName || ""}`.trim(),
-            email: handler.email,
-            wasActuallyHandled: true,
-          };
+      // Method 2: Find escalation that went TO the target level (the escalatedTo is the assigned agent)
+      // This handles cases where an agent was assigned to a level but hasn't escalated yet
+      for (const record of sortedHistory) {
+        if (record.toLevelNumber === targetLevel && record.escalatedTo) {
+          const handler = await User.findById(record.escalatedTo).select(
+            "firstName lastName email",
+          );
+          if (handler) {
+            return {
+              id: handler._id.toString(),
+              name: `${handler.firstName || ""} ${handler.lastName || ""}`.trim(),
+              email: handler.email,
+              wasActuallyHandled: true,
+            };
+          }
         }
       }
+
+      // For Level 1: Use the initially assigned agent OR current assignedTo if still at L1
+      if (targetLevel === 1) {
+        // Check if ticket was initially assigned to someone
+        if (ticket.assignedTo && currentLevelNumber !== 1) {
+          // Look for the first escalation from L1 - that person was the L1 handler
+          const l1Escalation = sortedHistory.find(
+            (r) => r.fromLevelNumber === 1,
+          );
+          if (l1Escalation?.escalatedBy) {
+            const handler = await User.findById(
+              l1Escalation.escalatedBy,
+            ).select("firstName lastName email");
+            if (handler) {
+              return {
+                id: handler._id.toString(),
+                name: `${handler.firstName || ""} ${handler.lastName || ""}`.trim(),
+                email: handler.email,
+                wasActuallyHandled: true,
+              };
+            }
+          }
+        }
+
+        // Fallback for L1 - use current assignedTo (they were the L1 handler even if metadata is incomplete)
+        if (ticket.assignedTo) {
+          const handler = await User.findById(ticket.assignedTo).select(
+            "firstName lastName email",
+          );
+          if (handler) {
+            return {
+              id: handler._id.toString(),
+              name: `${handler.firstName || ""} ${handler.lastName || ""}`.trim(),
+              email: handler.email,
+              wasActuallyHandled: true,
+            };
+          }
+        }
+      }
+
+      // If we reach here, this level was SKIPPED (never had a handler)
+      // Return empty - frontend should show "available agents" from this level's role
+      console.log(
+        `⚠️ Level ${targetLevel} was skipped - no previous handler exists`,
+      );
+      return { wasActuallyHandled: false };
+    };
+
+    // Sort levels by levelNumber
+    // Handle both SAME_FOR_ALL and PER_PRIORITY matrices, with fallback for unknown priorities
+    const effectiveLevelsForAllowed: IEscalationLevel[] =
+      getEffectiveLevelsForTicket(matrix, ticket);
+    const sortedLevels = [...effectiveLevelsForAllowed]
+      .filter((l) => l.isActive)
+      .sort((a, b) => a.levelNumber - b.levelNumber);
+
+    if (sortedLevels.length === 0) {
+      console.log(
+        `⚠️ [Escalation] No active levels in matrix for ticket ${ticketId}`,
+      );
+      return [];
     }
-
-    // If we reach here, this level was SKIPPED (never had a handler)
-    // Return empty - frontend should show "available agents" from this level's role
     console.log(
-      `⚠️ Level ${targetLevel} was skipped - no previous handler exists`,
-    );
-    return { wasActuallyHandled: false };
-  };
-
-  // Sort levels by levelNumber
-  // Handle both SAME_FOR_ALL and PER_PRIORITY matrices, with fallback for unknown priorities
-  const effectiveLevelsForAllowed: IEscalationLevel[] =
-    getEffectiveLevelsForTicket(matrix, ticket);
-  const sortedLevels = [...effectiveLevelsForAllowed]
-    .filter((l) => l.isActive)
-    .sort((a, b) => a.levelNumber - b.levelNumber);
-
-  if (sortedLevels.length === 0) {
-    console.log(
-      `⚠️ [Escalation] No active levels in matrix for ticket ${ticketId}`,
-    );
-    return [];
-  }
-  console.log(
-    `🔍 [Escalation] sortedLevels=[${sortedLevels.map((l) => l.levelNumber).join(",")}] currentLevelNumber=${currentLevelNumber}`,
-  );
-
-  if (matrix.escalationMode === "SEQUENTIAL") {
-    // SEQUENTIAL mode: Only allow immediate next level (forward)
-    const nextLevel = sortedLevels.find(
-      (l) => l.levelNumber === currentLevelNumber + 1,
+      `🔍 [Escalation] sortedLevels=[${sortedLevels.map((l) => l.levelNumber).join(",")}] currentLevelNumber=${currentLevelNumber}`,
     );
 
-    if (nextLevel) {
-      const roleData = nextLevel.roleId as any;
-      // Handle both populated and non-populated roleId
-      const roleIdStr = roleData?._id?.toString() || roleData?.toString() || "";
-      allowedLevels.push({
-        levelId: nextLevel._id?.toString() || "",
-        levelNumber: nextLevel.levelNumber,
-        levelName: nextLevel.levelName,
-        roleId: roleIdStr,
-        roleName: roleData?.name || undefined,
-        slaHours: nextLevel.slaHours,
-        slaUnit: nextLevel.slaUnit || "hrs",
-      });
-    }
-
-    // SEQUENTIAL mode: Also allow immediate previous level (backward) if allowBackward is true
-    // In SEQUENTIAL mode, levels are never skipped, so previous level always has a handler
-    if (matrix.allowBackward && currentLevelNumber > 1) {
-      const prevLevel = sortedLevels.find(
-        (l) => l.levelNumber === currentLevelNumber - 1,
+    if (matrix.escalationMode === "SEQUENTIAL") {
+      // SEQUENTIAL mode: Only allow immediate next level (forward)
+      const nextLevel = sortedLevels.find(
+        (l) => l.levelNumber === currentLevelNumber + 1,
       );
 
-      if (prevLevel) {
-        const roleData = prevLevel.roleId as any;
+      if (nextLevel) {
+        const roleData = nextLevel.roleId as any;
         // Handle both populated and non-populated roleId
         const roleIdStr =
           roleData?._id?.toString() || roleData?.toString() || "";
-
-        // Find who was the handler at this specific level
-        const handler = await findHandlerAtLevel(prevLevel.levelNumber);
-
         allowedLevels.push({
-          levelId: prevLevel._id?.toString() || "",
-          levelNumber: prevLevel.levelNumber,
-          levelName: prevLevel.levelName,
+          levelId: nextLevel._id?.toString() || "",
+          levelNumber: nextLevel.levelNumber,
+          levelName: nextLevel.levelName,
           roleId: roleIdStr,
           roleName: roleData?.name || undefined,
-          slaHours: prevLevel.slaHours,
-          slaUnit: prevLevel.slaUnit || "hrs",
-          isDeEscalation: true, // Mark as de-escalation
-          previousHandlerId: handler.id,
-          previousHandlerName: handler.name,
-          previousHandlerEmail: handler.email,
+          slaHours: nextLevel.slaHours,
+          slaUnit: nextLevel.slaUnit || "hrs",
         });
       }
-    }
-  } else {
-    // RANDOM mode: Allow based on configuration
-    for (const level of sortedLevels) {
-      if (level.levelNumber === currentLevelNumber) {
-        // Cannot escalate to same level
-        continue;
-      }
 
-      if (level.levelNumber > currentLevelNumber) {
-        // Forward escalation
-        if (
-          !matrix.allowSkipLevel &&
-          level.levelNumber > currentLevelNumber + 1
-        ) {
-          // Skip level not allowed - only add immediate next
-          if (allowedLevels.length === 0) {
+      // SEQUENTIAL mode: Also allow immediate previous level (backward) if allowBackward is true
+      // In SEQUENTIAL mode, levels are never skipped, so previous level always has a handler
+      if (matrix.allowBackward && currentLevelNumber > 1) {
+        const prevLevel = sortedLevels.find(
+          (l) => l.levelNumber === currentLevelNumber - 1,
+        );
+
+        if (prevLevel) {
+          const roleData = prevLevel.roleId as any;
+          // Handle both populated and non-populated roleId
+          const roleIdStr =
+            roleData?._id?.toString() || roleData?.toString() || "";
+
+          // Find who was the handler at this specific level
+          const handler = await findHandlerAtLevel(prevLevel.levelNumber);
+
+          allowedLevels.push({
+            levelId: prevLevel._id?.toString() || "",
+            levelNumber: prevLevel.levelNumber,
+            levelName: prevLevel.levelName,
+            roleId: roleIdStr,
+            roleName: roleData?.name || undefined,
+            slaHours: prevLevel.slaHours,
+            slaUnit: prevLevel.slaUnit || "hrs",
+            isDeEscalation: true, // Mark as de-escalation
+            previousHandlerId: handler.id,
+            previousHandlerName: handler.name,
+            previousHandlerEmail: handler.email,
+          });
+        }
+      }
+    } else {
+      // RANDOM mode: Allow based on configuration
+      for (const level of sortedLevels) {
+        if (level.levelNumber === currentLevelNumber) {
+          // Cannot escalate to same level
+          continue;
+        }
+
+        if (level.levelNumber > currentLevelNumber) {
+          // Forward escalation
+          if (
+            !matrix.allowSkipLevel &&
+            level.levelNumber > currentLevelNumber + 1
+          ) {
+            // Skip level not allowed - only add immediate next
+            if (allowedLevels.length === 0) {
+              const roleData = level.roleId as any;
+              // Handle both populated and non-populated roleId
+              const roleIdStr =
+                roleData?._id?.toString() || roleData?.toString() || "";
+              allowedLevels.push({
+                levelId: level._id?.toString() || "",
+                levelNumber: level.levelNumber,
+                levelName: level.levelName,
+                roleId: roleIdStr,
+                roleName: roleData?.name || undefined,
+                slaHours: level.slaHours,
+                slaUnit: level.slaUnit || "hrs",
+              });
+            }
+          } else {
+            // Add all forward levels
             const roleData = level.roleId as any;
             // Handle both populated and non-populated roleId
             const roleIdStr =
@@ -898,12 +918,37 @@ export async function getAllowedEscalationLevels(
               slaUnit: level.slaUnit || "hrs",
             });
           }
-        } else {
-          // Add all forward levels
+        } else if (
+          level.levelNumber < currentLevelNumber &&
+          matrix.allowBackward
+        ) {
+          // Backward escalation allowed
           const roleData = level.roleId as any;
           // Handle both populated and non-populated roleId
           const roleIdStr =
             roleData?._id?.toString() || roleData?.toString() || "";
+
+          // Find who was the handler at this specific level
+          const handler = await findHandlerAtLevel(level.levelNumber);
+
+          // If level was skipped, get available users from role
+          let availableUsers:
+            | Array<{ id: string; name: string; email: string }>
+            | undefined;
+          if (!handler.wasActuallyHandled && roleIdStr) {
+            const usersWithRole = await User.find({
+              roleId: toObjectIdStrict(roleIdStr, "roleId"),
+              isActive: true,
+            })
+              .select("firstName lastName email")
+              .lean();
+            availableUsers = usersWithRole.map((u) => ({
+              id: u._id.toString(),
+              name: `${u.firstName || ""} ${u.lastName || ""}`.trim(),
+              email: u.email,
+            }));
+          }
+
           allowedLevels.push({
             levelId: level._id?.toString() || "",
             levelNumber: level.levelNumber,
@@ -912,67 +957,33 @@ export async function getAllowedEscalationLevels(
             roleName: roleData?.name || undefined,
             slaHours: level.slaHours,
             slaUnit: level.slaUnit || "hrs",
+            isDeEscalation: true, // Mark as de-escalation
+            // Use the handler who was at THIS specific level (if level was handled)
+            previousHandlerId: handler.wasActuallyHandled
+              ? handler.id
+              : undefined,
+            previousHandlerName: handler.wasActuallyHandled
+              ? handler.name
+              : undefined,
+            previousHandlerEmail: handler.wasActuallyHandled
+              ? handler.email
+              : undefined,
+            wasLevelSkipped: !handler.wasActuallyHandled,
+            availableUsers,
           });
         }
-      } else if (
-        level.levelNumber < currentLevelNumber &&
-        matrix.allowBackward
-      ) {
-        // Backward escalation allowed
-        const roleData = level.roleId as any;
-        // Handle both populated and non-populated roleId
-        const roleIdStr =
-          roleData?._id?.toString() || roleData?.toString() || "";
-
-        // Find who was the handler at this specific level
-        const handler = await findHandlerAtLevel(level.levelNumber);
-
-        // If level was skipped, get available users from role
-        let availableUsers:
-          | Array<{ id: string; name: string; email: string }>
-          | undefined;
-        if (!handler.wasActuallyHandled && roleIdStr) {
-          const usersWithRole = await User.find({
-            roleId: toObjectIdStrict(roleIdStr, "roleId"),
-            isActive: true,
-          })
-            .select("firstName lastName email")
-            .lean();
-          availableUsers = usersWithRole.map((u) => ({
-            id: u._id.toString(),
-            name: `${u.firstName || ""} ${u.lastName || ""}`.trim(),
-            email: u.email,
-          }));
-        }
-
-        allowedLevels.push({
-          levelId: level._id?.toString() || "",
-          levelNumber: level.levelNumber,
-          levelName: level.levelName,
-          roleId: roleIdStr,
-          roleName: roleData?.name || undefined,
-          slaHours: level.slaHours,
-          slaUnit: level.slaUnit || "hrs",
-          isDeEscalation: true, // Mark as de-escalation
-          // Use the handler who was at THIS specific level (if level was handled)
-          previousHandlerId: handler.wasActuallyHandled
-            ? handler.id
-            : undefined,
-          previousHandlerName: handler.wasActuallyHandled
-            ? handler.name
-            : undefined,
-          previousHandlerEmail: handler.wasActuallyHandled
-            ? handler.email
-            : undefined,
-          wasLevelSkipped: !handler.wasActuallyHandled,
-          availableUsers,
-        });
       }
     }
-  }
 
-  // Sort by level number for consistent ordering
-  return allowedLevels.sort((a, b) => a.levelNumber - b.levelNumber);
+    // Sort by level number for consistent ordering
+    return allowedLevels.sort((a, b) => a.levelNumber - b.levelNumber);
+  } catch (err: any) {
+    console.error(
+      `❌ [Escalation] getAllowedEscalationLevels failed for ticket ${ticketId}:`,
+      err.message,
+    );
+    throw err; // Re-throw so the controller can return a proper error response
+  }
 }
 
 /**
@@ -1209,10 +1220,12 @@ export async function executeEscalation(
     }
 
     // Filter by center for offline tickets
+    // Note: centerId of "online" is a sentinel string for online tickets, not a real ObjectId
     const ticketCenterId = (ticket as any).metadata?.centerId;
+    const isValidCenterId = ticketCenterId && ticketCenterId !== "online";
     const isOfflineTicket =
-      ticket.submissionSource === "offline" || !!ticketCenterId;
-    if (isOfflineTicket && ticketCenterId) {
+      ticket.submissionSource === "offline" || !!isValidCenterId;
+    if (isOfflineTicket && isValidCenterId) {
       userQuery.centers = { $in: [ticketCenterId] };
       console.log(
         `📍 Filtering escalation users by ticket center: ${ticketCenterId}`,
@@ -1545,10 +1558,14 @@ export async function processAutoEscalation(): Promise<{
   const jobStartMs = Date.now();
 
   try {
-    // Find all matrices with autoEscalate enabled
+    // Find all matrices that have auto-escalation enabled.
+    // We use $ne: false so that:
+    //   - Matrices with autoEscalate: true   → included (explicit enable)
+    //   - Matrices with autoEscalate: null/undefined → included (legacy, default-on)
+    //   - Matrices with autoEscalate: false  → excluded  (explicit disable)
     const autoEscalateMatrices = await EscalationMatrix.find({
       isActive: true,
-      autoEscalate: true,
+      autoEscalate: { $ne: false },
     });
 
     if (autoEscalateMatrices.length === 0) {

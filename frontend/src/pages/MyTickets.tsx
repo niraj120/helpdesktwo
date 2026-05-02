@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
 import axios from "axios";
 import { useNavigate, useLocation } from "react-router-dom";
 import DashboardLayout from "../components/DashboardLayout";
@@ -11,6 +17,8 @@ import {
   ArrowsPointingInIcon,
 } from "@heroicons/react/24/outline";
 import { useProjectContext } from "../contexts/ProjectContext";
+import { useSocket } from "../hooks/useSocket";
+import toast from "react-hot-toast";
 
 interface Ticket {
   _id: string;
@@ -162,6 +170,8 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // Real-time: pending new-ticket count for page > 1
+  const [pendingNewTickets, setPendingNewTickets] = useState(0);
   // US-ESC-009: force re-render every 60s so SLA countdowns stay current
   const [, forceUpdate] = React.useReducer((n: number) => n + 1, 0);
   useEffect(() => {
@@ -436,6 +446,60 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
     }
   }, [viewMode]);
 
+  // Real-time: socket rooms — join the project room so new/assigned tickets arrive live
+  const socketRooms = useMemo(() => {
+    const userId = localStorage.getItem("userId");
+    const rooms: string[] = [];
+    // user-{userId} room is auto-joined by the socket server on connect, but
+    // we also join the project room to catch new-ticket events
+    if (currentProjectId) rooms.push(`project-tickets-${currentProjectId}`);
+    else rooms.push("all-tickets");
+    return rooms;
+  }, [currentProjectId]);
+
+  useSocket({
+    rooms: socketRooms,
+    events: {
+      "ticket-list-update": (payload: { type: string; ticket: any }) => {
+        if (payload.type === "new-ticket") {
+          // Only show live-prepend if the new ticket is assigned to the current user
+          const myUserId = localStorage.getItem("userId");
+          const assignedTo =
+            payload.ticket.assignedTo?._id || payload.ticket.assignedTo;
+          if (assignedTo && assignedTo !== myUserId) return;
+
+          setTickets((prev) => {
+            const alreadyExists = prev.some(
+              (t) => t._id === payload.ticket._id,
+            );
+            if (alreadyExists) return prev;
+            if (currentPage === 1) {
+              toast.success(
+                `New ticket assigned: ${payload.ticket.ticketNumber}`,
+                { duration: 4000 },
+              );
+              // Mark unread so the amber highlight shows
+              return [
+                { ...(payload.ticket as Ticket), hasNewReply: true },
+                ...prev.slice(0, pageSize - 1),
+              ];
+            }
+            setPendingNewTickets((n) => n + 1);
+            return prev;
+          });
+        } else if (payload.type === "new-reply") {
+          setTickets((prev) =>
+            prev.map((t) =>
+              t._id === payload.ticket._id
+                ? { ...t, hasNewReply: payload.ticket.hasNewReply }
+                : t,
+            ),
+          );
+        }
+      },
+    },
+  });
+
   console.log("🎯 About to define helper functions");
 
   const getStatusName = (status: string | number) => {
@@ -570,6 +634,11 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
   );
 
   const handleTicketClick = (ticketId: string) => {
+    // Clear unread highlight when agent opens the ticket
+    setTickets((prev) =>
+      prev.map((t) => (t._id === ticketId ? { ...t, hasNewReply: false } : t)),
+    );
+
     // Check if we're in a student context (URL contains /student/)
     if (location.pathname.includes("/student/")) {
       const pathParts = location.pathname.split("/");
@@ -1035,6 +1104,36 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
               </div>
             ) : (
               <>
+                {/* Pending new tickets banner */}
+                {pendingNewTickets > 0 && (
+                  <div
+                    onClick={() => {
+                      setPendingNewTickets(0);
+                      fetchMyTickets();
+                    }}
+                    style={{
+                      background: "#EFF6FF",
+                      border: "1.5px solid #BFDBFE",
+                      borderRadius: "8px",
+                      padding: "10px 16px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      cursor: "pointer",
+                      fontSize: "14px",
+                      color: "#1D4ED8",
+                      fontWeight: 500,
+                      marginBottom: "8px",
+                    }}
+                  >
+                    <span>🔔</span>
+                    <span>
+                      {pendingNewTickets} new ticket
+                      {pendingNewTickets > 1 ? "s" : ""} assigned — click to
+                      refresh
+                    </span>
+                  </div>
+                )}
                 {paginatedTickets.map((ticket) => {
                   const sourceBadge = getSourceBadge(ticket.submissionSource);
                   const projectName =

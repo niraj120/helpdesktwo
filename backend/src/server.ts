@@ -34,6 +34,7 @@ import "./models/MasterData";
 import "./models/EmailLog";
 import "./models/EmailConfig";
 import "./models/FAQ";
+import "./models/PushSubscription";
 // UserReportingHierarchy model removed - using User.reportingManager field directly
 import "./models/UserDashboardConfig";
 
@@ -104,8 +105,10 @@ import reportRoutes from "./routes/reportRoutes";
 import dbMonitoringRoutes from "./routes/dbMonitoringRoutes";
 import publicApiKeysRoutes from "./routes/publicApiKeys";
 import publicApiRoutes from "./routes/publicApi";
+import pushNotificationRoutes from "./routes/pushNotifications";
 // import integrationRoutes from './routes/integrations'; // TODO: Implement
 import { setupSocketHandlers } from "./socket/socketHandlers";
+import { setIo } from "./socket/ioInstance";
 import { initializeDatabase } from "./utils/dbInit";
 import { seedRolesAndPermissions } from "./utils/seedRolesPermissions";
 import { emailPollingService } from "./services/emailPollingService";
@@ -365,6 +368,9 @@ app.use("/api/v1", publicApiRoutes);
 // Cache Management Routes
 app.use("/api/cache", cacheRoutes);
 
+// Web Push Notification Routes
+app.use("/api/push", pushNotificationRoutes);
+
 // Health check endpoint
 app.get("/api/health", (req, res) => {
   res.status(200).json({
@@ -375,6 +381,7 @@ app.get("/api/health", (req, res) => {
 });
 
 // Socket.io setup
+setIo(io);
 setupSocketHandlers(io);
 
 // Error handling middleware

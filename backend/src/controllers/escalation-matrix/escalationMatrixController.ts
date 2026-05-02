@@ -874,14 +874,16 @@ export const getAllowedEscalations = async (
       .lean();
 
     // Determine if center filtering is needed (offline tickets have centerId)
+    // Note: centerId of "online" is a sentinel string for online tickets, not a real ObjectId
     const ticketCenterId = (ticket as any)?.metadata?.centerId;
+    const isValidCenterId = ticketCenterId && ticketCenterId !== "online";
     const isOfflineTicket =
-      ticket?.submissionSource === "offline" || !!ticketCenterId;
+      ticket?.submissionSource === "offline" || !!isValidCenterId;
 
     // Get current user's centers for filtering if no ticket center
     let filterCenters: any[] = [];
     if (isOfflineTicket) {
-      if (ticketCenterId) {
+      if (isValidCenterId) {
         filterCenters = [ticketCenterId];
         console.log(`📍 Offline ticket center filter: ${ticketCenterId}`);
       } else if (currentUserId) {
@@ -1111,6 +1113,37 @@ export const escalateTicketWithMatrix = async (
         assignedTo: result.assignedUser?._id?.toString(),
       },
     });
+
+    // Push notification to the newly assigned agent after escalation
+    if (result.assignedUser?._id) {
+      (async () => {
+        try {
+          const { createNotification } = require("../../controllers/notificationController");
+          const ticketDoc = result.ticket as any;
+          const projId =
+            ticketDoc?.metadata?.projectId?._id?.toString() ||
+            ticketDoc?.metadata?.projectId?.toString() ||
+            ticketDoc?.project?.toString();
+          if (projId) {
+            const isProduction = process.env.NODE_ENV === "production";
+            const frontendUrl = isProduction
+              ? process.env.PRODUCTION_FRONTEND_URL || "https://helpdesk.hubblehox.ai"
+              : process.env.FRONTEND_URL || "http://localhost:3001";
+            await createNotification({
+              userId: new mongoose.Types.ObjectId(result.assignedUser._id.toString()),
+              projectId: new mongoose.Types.ObjectId(projId),
+              type: "info" as const,
+              title: `Ticket Escalated to You: ${ticketDoc.ticketNumber}`,
+              message: ticketDoc.subject || "Ticket escalated",
+              ticketId: ticketDoc._id,
+              link: `${frontendUrl}/tickets/${ticketDoc._id}`,
+            });
+          }
+        } catch (notifErr) {
+          console.error("⚠️ Failed to send escalation push notification:", notifErr);
+        }
+      })();
+    }
 
     res.status(200).json({
       success: true,

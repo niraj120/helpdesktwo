@@ -13,6 +13,7 @@ import { SkipLink } from "./accessible/SkipLink";
 import { LanguageToggle } from "./LanguageToggle";
 import { HeaderProjectSwitcher } from "./HeaderProjectSwitcher";
 import { ViewModeToggle } from "./ViewModeToggle";
+import NotificationPermissionBanner from "./NotificationPermissionBanner";
 import { designSystem } from "../styles/designSystem";
 import { useEmailActivityPolling } from "../hooks/useEmailActivityPolling";
 import { usePermissions } from "../hooks/usePermissions";
@@ -1268,6 +1269,7 @@ const DashboardLayout = ({
           </header>
 
           {/* Main Content */}
+          <NotificationPermissionBanner />
           <div style={{ flex: 1 }}>{children}</div>
 
           {/* Footer with Role Document */}
