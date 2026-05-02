@@ -4337,10 +4337,13 @@ export const reassignTicket = async (req: Request, res: Response) => {
     if (projectId) {
       (async () => {
         try {
-          const { createNotification } = require("../controllers/notificationController");
+          const {
+            createNotification,
+          } = require("../controllers/notificationController");
           const isProduction = process.env.NODE_ENV === "production";
           const frontendUrl = isProduction
-            ? process.env.PRODUCTION_FRONTEND_URL || "https://helpdesk.hubblehox.ai"
+            ? process.env.PRODUCTION_FRONTEND_URL ||
+              "https://helpdesk.hubblehox.ai"
             : process.env.FRONTEND_URL || "http://localhost:3001";
           await createNotification({
             userId: new mongoose.Types.ObjectId(newAgentId),
@@ -4352,7 +4355,10 @@ export const reassignTicket = async (req: Request, res: Response) => {
             link: `${frontendUrl}/tickets/${ticket._id}`,
           });
         } catch (notifErr) {
-          console.error("⚠️ Failed to send reassign push notification:", notifErr);
+          console.error(
+            "⚠️ Failed to send reassign push notification:",
+            notifErr,
+          );
         }
       })();
     }

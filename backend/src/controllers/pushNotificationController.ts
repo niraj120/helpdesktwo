@@ -2,14 +2,14 @@ import { Request, Response } from "express";
 import mongoose from "mongoose";
 import { AuthRequest } from "../middleware/auth";
 import { PushSubscription } from "../models/PushSubscription";
-import { getVapidPublicKey } from "../services/webPushService";
+import { getVapidPublicKeyAsync } from "../services/webPushService";
 
 /**
  * GET /api/push/vapid-public-key
  * Returns the server's VAPID public key so the frontend can subscribe.
  */
-export const getVapidKey = (_req: Request, res: Response) => {
-  const key = getVapidPublicKey();
+export const getVapidKey = async (_req: Request, res: Response) => {
+  const key = await getVapidPublicKeyAsync();
   if (!key) {
     return res
       .status(503)

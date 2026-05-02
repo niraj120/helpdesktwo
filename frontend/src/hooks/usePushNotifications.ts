@@ -54,7 +54,9 @@ export const usePushNotifications = () => {
               Authorization: `Bearer ${token}`,
             },
             body: JSON.stringify(existing.toJSON()),
-          }).catch(() => {/* non-fatal */});
+          }).catch(() => {
+            /* non-fatal */
+          });
         }
       }
     });

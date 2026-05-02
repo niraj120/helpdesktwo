@@ -473,7 +473,9 @@ class AutoEscalationService {
 
     // Push notification to the newly assigned agent
     try {
-      const { createNotification } = require("../controllers/notificationController");
+      const {
+        createNotification,
+      } = require("../controllers/notificationController");
       const projId =
         ticket?.metadata?.projectId?._id?.toString() ||
         ticket?.metadata?.projectId?.toString() ||
@@ -481,7 +483,8 @@ class AutoEscalationService {
       if (projId && escalatedToUser._id) {
         const isProduction = process.env.NODE_ENV === "production";
         const frontendUrl = isProduction
-          ? process.env.PRODUCTION_FRONTEND_URL || "https://helpdesk.hubblehox.ai"
+          ? process.env.PRODUCTION_FRONTEND_URL ||
+            "https://helpdesk.hubblehox.ai"
           : process.env.FRONTEND_URL || "http://localhost:3001";
         await createNotification({
           userId: new mongoose.Types.ObjectId(escalatedToUser._id.toString()),
@@ -494,7 +497,10 @@ class AutoEscalationService {
         });
       }
     } catch (pushErr: any) {
-      console.error(`⚠️  Failed to send auto-escalation push notification:`, pushErr.message);
+      console.error(
+        `⚠️  Failed to send auto-escalation push notification:`,
+        pushErr.message,
+      );
       // Don't throw - escalation still succeeded
     }
   }
