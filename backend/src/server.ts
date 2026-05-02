@@ -167,7 +167,10 @@ const socketAllowedOrigins = allowedOrigins;
 connectDB();
 
 // Initialize Socket.IO with allowed origins from .env
+// Path is /api/socket.io so the existing nginx /api proxy block handles it
+// (avoids needing a separate /socket.io location on the live server)
 const io = new Server(httpServer, {
+  path: "/api/socket.io",
   cors: {
     origin: socketAllowedOrigins,
     methods: ["GET", "POST"],
