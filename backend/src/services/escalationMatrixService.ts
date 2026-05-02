@@ -1205,6 +1205,14 @@ export async function executeEscalation(
       `📤 ${isDeEscalation ? "No previous handler found, using" : "Forward escalation, using"} round-robin assignment`,
     );
 
+    // Guard: cannot query by role without a valid roleId
+    if (!targetLevel.roleId) {
+      return {
+        success: false,
+        message: "Escalation level has no role configured for round-robin assignment",
+      };
+    }
+
     // Build user query
     const userQuery: any = {
       role: new mongoose.Types.ObjectId(targetLevel.roleId),
