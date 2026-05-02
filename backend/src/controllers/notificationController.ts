@@ -1,14 +1,17 @@
-import { Response } from 'express';
-import { AuthRequest } from '../middleware/auth';
-import mongoose from 'mongoose';
-import { getPaginationParams, sendPaginatedResponse } from '../utils/pagination';
+import { Response } from "express";
+import { AuthRequest } from "../middleware/auth";
+import mongoose from "mongoose";
+import {
+  getPaginationParams,
+  sendPaginatedResponse,
+} from "../utils/pagination";
 
 // Notification model (create this model)
 interface INotification {
   _id: string;
   userId: mongoose.Types.ObjectId;
   projectId: mongoose.Types.ObjectId;
-  type: 'info' | 'success' | 'warning' | 'error';
+  type: "info" | "success" | "warning" | "error";
   title: string;
   message: string;
   ticketId?: mongoose.Types.ObjectId;
@@ -28,37 +31,36 @@ export const getNotifications = async (req: AuthRequest, res: Response) => {
     if (!userId) {
       return res.status(401).json({
         success: false,
-        message: 'Unauthorized'
+        message: "Unauthorized",
       });
     }
 
     const { page, limit, skip } = getPaginationParams(req.query);
 
     // Import Notification model (you'll need to create this)
-    const Notification = require('../models/Notification').Notification;
+    const Notification = require("../models/Notification").Notification;
 
     const query = { userId: new mongoose.Types.ObjectId(userId) };
 
     // Get notifications for user with pagination
     const [notifications, total] = await Promise.all([
       Notification.find(query)
-        .populate('projectId', 'name code branding')
-        .populate('ticketId', 'ticketNumber title')
+        .populate("projectId", "name code branding")
+        .populate("ticketId", "ticketNumber title")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
-      Notification.countDocuments(query)
+      Notification.countDocuments(query),
     ]);
 
     return sendPaginatedResponse(res, notifications, total, page, limit);
-
   } catch (error) {
-    console.error('Get notifications error:', error);
+    console.error("Get notifications error:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to fetch notifications',
-      error: error instanceof Error ? error.message : 'Unknown error'
+      message: "Failed to fetch notifications",
+      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
@@ -66,7 +68,10 @@ export const getNotifications = async (req: AuthRequest, res: Response) => {
 /**
  * Mark notification as read
  */
-export const markNotificationAsRead = async (req: AuthRequest, res: Response) => {
+export const markNotificationAsRead = async (
+  req: AuthRequest,
+  res: Response,
+) => {
   try {
     const userId = req.user?.userId;
     const notificationId = req.params.id;
@@ -74,39 +79,38 @@ export const markNotificationAsRead = async (req: AuthRequest, res: Response) =>
     if (!userId) {
       return res.status(401).json({
         success: false,
-        message: 'Unauthorized'
+        message: "Unauthorized",
       });
     }
 
-    const Notification = require('../models/Notification').Notification;
+    const Notification = require("../models/Notification").Notification;
 
     const notification = await Notification.findOneAndUpdate(
       {
         _id: new mongoose.Types.ObjectId(notificationId),
-        userId: new mongoose.Types.ObjectId(userId)
+        userId: new mongoose.Types.ObjectId(userId),
       },
       { read: true },
-      { new: true }
+      { new: true },
     );
 
     if (!notification) {
       return res.status(404).json({
         success: false,
-        message: 'Notification not found'
+        message: "Notification not found",
       });
     }
 
     return res.status(200).json({
       success: true,
-      data: notification
+      data: notification,
     });
-
   } catch (error) {
-    console.error('Mark notification as read error:', error);
+    console.error("Mark notification as read error:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to mark notification as read',
-      error: error instanceof Error ? error.message : 'Unknown error'
+      message: "Failed to mark notification as read",
+      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
@@ -114,38 +118,40 @@ export const markNotificationAsRead = async (req: AuthRequest, res: Response) =>
 /**
  * Mark all notifications as read
  */
-export const markAllNotificationsAsRead = async (req: AuthRequest, res: Response) => {
+export const markAllNotificationsAsRead = async (
+  req: AuthRequest,
+  res: Response,
+) => {
   try {
     const userId = req.user?.userId;
 
     if (!userId) {
       return res.status(401).json({
         success: false,
-        message: 'Unauthorized'
+        message: "Unauthorized",
       });
     }
 
-    const Notification = require('../models/Notification').Notification;
+    const Notification = require("../models/Notification").Notification;
 
     await Notification.updateMany(
       {
         userId: new mongoose.Types.ObjectId(userId),
-        read: false
+        read: false,
       },
-      { read: true }
+      { read: true },
     );
 
     return res.status(200).json({
       success: true,
-      message: 'All notifications marked as read'
+      message: "All notifications marked as read",
     });
-
   } catch (error) {
-    console.error('Mark all notifications as read error:', error);
+    console.error("Mark all notifications as read error:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to mark all notifications as read',
-      error: error instanceof Error ? error.message : 'Unknown error'
+      message: "Failed to mark all notifications as read",
+      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
@@ -156,23 +162,23 @@ export const markAllNotificationsAsRead = async (req: AuthRequest, res: Response
 export const createNotification = async (data: {
   userId: mongoose.Types.ObjectId;
   projectId: mongoose.Types.ObjectId;
-  type: 'info' | 'success' | 'warning' | 'error';
+  type: "info" | "success" | "warning" | "error";
   title: string;
   message: string;
   ticketId?: mongoose.Types.ObjectId;
   link?: string;
 }) => {
   try {
-    const Notification = require('../models/Notification').Notification;
+    const Notification = require("../models/Notification").Notification;
 
     const notification = await Notification.create(data);
 
     // Emit real-time in-app notification via Socket.IO
     try {
-      const { getIo } = require('../socket/ioInstance');
+      const { getIo } = require("../socket/ioInstance");
       const io = getIo();
       if (io) {
-        io.to(`user-${data.userId.toString()}`).emit('notification', {
+        io.to(`user-${data.userId.toString()}`).emit("notification", {
           ...notification.toObject(),
         });
       }
@@ -182,12 +188,14 @@ export const createNotification = async (data: {
 
     // Send web push notification
     try {
-      const { sendPushToUser } = require('../services/webPushService');
+      const { sendPushToUser } = require("../services/webPushService");
       await sendPushToUser(data.userId.toString(), {
         title: data.title,
         body: data.message,
-        url: data.link || '/',
-        tag: data.ticketId ? `ticket-${data.ticketId.toString()}` : 'notification',
+        url: data.link || "/",
+        tag: data.ticketId
+          ? `ticket-${data.ticketId.toString()}`
+          : "notification",
       });
     } catch {
       // non-fatal — push may not be configured
@@ -195,7 +203,7 @@ export const createNotification = async (data: {
 
     return notification;
   } catch (error) {
-    console.error('Create notification error:', error);
+    console.error("Create notification error:", error);
     throw error;
   }
 };

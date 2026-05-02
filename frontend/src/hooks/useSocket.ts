@@ -1,8 +1,12 @@
-import { useEffect, useRef, useCallback } from 'react';
-import { io, Socket } from 'socket.io-client';
-import { API_CONFIG } from '../config/constants';
+import { useEffect, useRef, useCallback } from "react";
+import { io, Socket } from "socket.io-client";
+import { API_CONFIG } from "../config/constants";
 
-type SocketEvent = 'ticket-list-update' | 'ticket-updated' | 'notification' | string;
+type SocketEvent =
+  | "ticket-list-update"
+  | "ticket-updated"
+  | "notification"
+  | string;
 
 let _socket: Socket | null = null;
 
@@ -13,10 +17,10 @@ let _socket: Socket | null = null;
  */
 export const getSocket = (): Socket => {
   if (!_socket || _socket.disconnected) {
-    const token = localStorage.getItem('authToken');
+    const token = localStorage.getItem("authToken");
     _socket = io(API_CONFIG.BASE_URL, {
       auth: { token },
-      transports: ['websocket', 'polling'],
+      transports: ["websocket", "polling"],
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 2000,
@@ -43,32 +47,36 @@ interface UseSocketOptions {
  * Hook to connect to Socket.IO, join rooms, and listen for events.
  * Automatically join/leave on mount/unmount.
  */
-export const useSocket = ({ rooms = [], events = {} }: UseSocketOptions = {}) => {
+export const useSocket = ({
+  rooms = [],
+  events = {},
+}: UseSocketOptions = {}) => {
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
     const socket = getSocket();
     socketRef.current = socket;
 
-    // Join all requested rooms
-    rooms.forEach((room) => {
-      socket.emit(room.startsWith('all-') ? 'join-all-tickets' : `join-${room.replace(/^.*?-/, '')}`, room);
-    });
+    // Helper: join all requested rooms (called on mount AND on every reconnect)
+    const joinRooms = () => {
+      rooms.forEach((roomId) => {
+        if (roomId === "all-tickets") {
+          socket.emit("join-all-tickets");
+        } else if (roomId.startsWith("project-tickets-")) {
+          socket.emit(
+            "join-project-tickets",
+            roomId.replace("project-tickets-", ""),
+          );
+        } else if (roomId.startsWith("ticket-")) {
+          socket.emit("join-ticket", roomId.replace("ticket-", ""));
+        }
+      });
+    };
 
-    // More explicit room joining
-    const joinedRooms: string[] = [];
-    rooms.forEach((roomId) => {
-      if (roomId === 'all-tickets') {
-        socket.emit('join-all-tickets');
-        joinedRooms.push(roomId);
-      } else if (roomId.startsWith('project-tickets-')) {
-        socket.emit('join-project-tickets', roomId.replace('project-tickets-', ''));
-        joinedRooms.push(roomId);
-      } else if (roomId.startsWith('ticket-')) {
-        socket.emit('join-ticket', roomId.replace('ticket-', ''));
-        joinedRooms.push(roomId);
-      }
-    });
+    // Join now (or buffer until connected)
+    joinRooms();
+    // Re-join after every reconnect (server drops room membership on disconnect)
+    socket.on("connect", joinRooms);
 
     // Register event listeners
     const registeredEvents = Object.entries(events);
@@ -77,14 +85,19 @@ export const useSocket = ({ rooms = [], events = {} }: UseSocketOptions = {}) =>
     });
 
     return () => {
+      socket.off("connect", joinRooms);
+
       // Leave rooms
-      joinedRooms.forEach((roomId) => {
-        if (roomId === 'all-tickets') {
-          socket.emit('leave-all-tickets');
-        } else if (roomId.startsWith('project-tickets-')) {
-          socket.emit('leave-project-tickets', roomId.replace('project-tickets-', ''));
-        } else if (roomId.startsWith('ticket-')) {
-          socket.emit('leave-ticket', roomId.replace('ticket-', ''));
+      rooms.forEach((roomId) => {
+        if (roomId === "all-tickets") {
+          socket.emit("leave-all-tickets");
+        } else if (roomId.startsWith("project-tickets-")) {
+          socket.emit(
+            "leave-project-tickets",
+            roomId.replace("project-tickets-", ""),
+          );
+        } else if (roomId.startsWith("ticket-")) {
+          socket.emit("leave-ticket", roomId.replace("ticket-", ""));
         }
       });
 

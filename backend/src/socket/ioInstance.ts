@@ -1,4 +1,4 @@
-import { Server } from 'socket.io';
+import { Server } from "socket.io";
 
 /**
  * Singleton Socket.IO instance.

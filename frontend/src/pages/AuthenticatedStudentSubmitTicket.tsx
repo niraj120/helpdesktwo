@@ -143,10 +143,7 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
         : settingsRes.data;
 
       console.log("📋 Ticket settings received:", settings);
-      console.log(
-        "📝 Online form fields:",
-        settings.onlineFormFields,
-      );
+      console.log("📝 Online form fields:", settings.onlineFormFields);
 
       // Filter out student profile fields (Name, Email, Phone/Mobile Number) and Priority
       const excludeFields = [
@@ -163,8 +160,7 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
         "full name",
         "priority",
       ];
-      let formFields =
-        settings.onlineFormFields || [];
+      let formFields = settings.onlineFormFields || [];
 
       // If no fields configured, use default fields (excluding profile fields)
       if (formFields.length === 0) {

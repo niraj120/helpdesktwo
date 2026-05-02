@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
-import { API_CONFIG } from '../config/constants';
+import { useState, useEffect, useCallback } from "react";
+import { API_CONFIG } from "../config/constants";
 
-type PermissionState = 'default' | 'granted' | 'denied' | 'unsupported';
+type PermissionState = "default" | "granted" | "denied" | "unsupported";
 
 const urlBase64ToUint8Array = (base64String: string): ArrayBuffer => {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
   const rawData = window.atob(base64);
   const buffer = new Uint8Array(rawData.length);
   for (let i = 0; i < rawData.length; i++) buffer[i] = rawData.charCodeAt(i);
@@ -19,37 +19,54 @@ const urlBase64ToUint8Array = (base64String: string): ArrayBuffer => {
  *   const { permission, requestPermission, isSubscribed } = usePushNotifications();
  */
 export const usePushNotifications = () => {
-  const [permission, setPermission] = useState<PermissionState>('default');
+  const [permission, setPermission] = useState<PermissionState>("default");
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   const isSupported =
-    'serviceWorker' in navigator &&
-    'PushManager' in window &&
-    'Notification' in window;
+    "serviceWorker" in navigator &&
+    "PushManager" in window &&
+    "Notification" in window;
 
   useEffect(() => {
     if (!isSupported) {
-      setPermission('unsupported');
+      setPermission("unsupported");
       return;
     }
     setPermission(Notification.permission as PermissionState);
 
-    // Register service worker and check if already subscribed
+    // Register service worker and check if already subscribed.
+    // IMPORTANT: If a subscription already exists in this browser (e.g. another
+    // account enabled notifications), silently re-register it under the currently
+    // logged-in user so the correct userId is stored in the DB.
     registerSW().then(async (reg) => {
       if (!reg) return;
       const existing = await reg.pushManager.getSubscription();
       setIsSubscribed(!!existing);
+      if (existing) {
+        const token = localStorage.getItem("authToken");
+        if (token) {
+          // Non-blocking upsert — ties this browser's endpoint to the current userId
+          fetch(`${API_CONFIG.API_URL}/push/subscribe`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(existing.toJSON()),
+          }).catch(() => {/* non-fatal */});
+        }
+      }
     });
   }, [isSupported]);
 
   const registerSW = async (): Promise<ServiceWorkerRegistration | null> => {
     try {
-      const reg = await navigator.serviceWorker.register('/sw.js');
+      const reg = await navigator.serviceWorker.register("/sw.js");
       await navigator.serviceWorker.ready;
       return reg;
     } catch (err) {
-      console.error('SW registration failed:', err);
+      console.error("SW registration failed:", err);
       return null;
     }
   };
@@ -62,7 +79,7 @@ export const usePushNotifications = () => {
       const keyRes = await fetch(`${API_CONFIG.API_URL}/push/vapid-public-key`);
       const keyData = await keyRes.json();
       if (!keyData.success || !keyData.publicKey) {
-        console.warn('No VAPID public key from server');
+        console.warn("No VAPID public key from server");
         return false;
       }
 
@@ -79,11 +96,11 @@ export const usePushNotifications = () => {
       }
 
       // 3. Send subscription to backend
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const subRes = await fetch(`${API_CONFIG.API_URL}/push/subscribe`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify(subscription.toJSON()),
@@ -95,7 +112,7 @@ export const usePushNotifications = () => {
       }
       return false;
     } catch (err) {
-      console.error('Push subscribe error:', err);
+      console.error("Push subscribe error:", err);
       return false;
     } finally {
       setIsLoading(false);
@@ -104,13 +121,13 @@ export const usePushNotifications = () => {
 
   const requestPermission = useCallback(async (): Promise<boolean> => {
     if (!isSupported) return false;
-    if (Notification.permission === 'denied') {
-      setPermission('denied');
+    if (Notification.permission === "denied") {
+      setPermission("denied");
       return false;
     }
     const result = await Notification.requestPermission();
     setPermission(result as PermissionState);
-    if (result === 'granted') {
+    if (result === "granted") {
       return subscribe();
     }
     return false;
@@ -124,11 +141,11 @@ export const usePushNotifications = () => {
       const subscription = await reg.pushManager.getSubscription();
       if (!subscription) return;
 
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       await fetch(`${API_CONFIG.API_URL}/push/unsubscribe`, {
-        method: 'DELETE',
+        method: "DELETE",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ endpoint: subscription.endpoint }),

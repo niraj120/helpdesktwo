@@ -708,13 +708,43 @@ export const submitTicket = async (req: Request, res: Response) => {
           });
         }
       } catch (socketErr) {
-        console.error("⚠️ Failed to emit ticket-list-update socket event:", socketErr);
+        console.error(
+          "⚠️ Failed to emit ticket-list-update socket event:",
+          socketErr,
+        );
       }
     })();
 
     console.log(
       `✅ Ticket created successfully: ${ticket._id} | Created by: ${studentUserId}${assignedAgent ? ` | Assigned to: ${assignedAgent}` : " | Unassigned"}`,
     );
+
+    // Send in-app + push notification to the assigned agent (non-blocking)
+    if (assignedAgent) {
+      (async () => {
+        try {
+          const {
+            createNotification,
+          } = require("../controllers/notificationController");
+          const isProduction = process.env.NODE_ENV === "production";
+          const frontendUrl = isProduction
+            ? process.env.PRODUCTION_FRONTEND_URL ||
+              "https://helpdesk.hubblehox.ai"
+            : process.env.FRONTEND_URL || "http://localhost:3001";
+          await createNotification({
+            userId: new mongoose.Types.ObjectId(assignedAgent.toString()),
+            projectId: new mongoose.Types.ObjectId(projectId),
+            type: "info" as const,
+            title: `New Ticket: ${ticket.ticketNumber}`,
+            message: ticket.subject,
+            ticketId: ticket._id as mongoose.Types.ObjectId,
+            link: `${frontendUrl}/tickets/${ticket._id}`,
+          });
+        } catch (notifErr) {
+          console.error("⚠️ Failed to send new-ticket notification:", notifErr);
+        }
+      })();
+    }
 
     // US-ASSIGN-001: Record truly-unresolvable fallback (self-assign) in changeHistory for dashboard tracking
     // Note: project-level round-robin is assignedVia='round-robin' and does NOT enter this block
@@ -2780,22 +2810,84 @@ export const replyToTicket = async (req: Request, res: Response) => {
     (() => {
       try {
         const { getIo } = require("../socket/ioInstance");
-        const { emitTicketUpdate, emitTicketListUpdate } = require("../socket/socketHandlers");
+        const {
+          emitTicketUpdate,
+          emitTicketListUpdate,
+        } = require("../socket/socketHandlers");
         const io = getIo();
         if (io) {
           // Notify anyone viewing the specific ticket detail
           emitTicketUpdate(io, id, { type: "new-reply", thread: newThread });
           // Notify ticket list watchers (for hasNewReply badge)
-          const projectId = updatedTicket.project?.toString() || (updatedTicket as any).metadata?.projectId?.toString();
+          const projectId =
+            updatedTicket.project?.toString() ||
+            (updatedTicket as any).metadata?.projectId?.toString();
           if (projectId) {
             emitTicketListUpdate(io, projectId, {
               type: "new-reply",
-              ticket: { _id: updatedTicket._id, ticketNumber: updatedTicket.ticketNumber, hasNewReply: isStudentReply },
+              ticket: {
+                _id: updatedTicket._id,
+                ticketNumber: updatedTicket.ticketNumber,
+                hasNewReply: isStudentReply,
+              },
             });
           }
         }
       } catch (socketErr) {
         console.error("⚠️ Failed to emit reply socket event:", socketErr);
+      }
+    })();
+
+    // Send in-app + push notification to the reply recipient (non-blocking)
+    (async () => {
+      try {
+        const {
+          createNotification,
+        } = require("../controllers/notificationController");
+        const isProduction = process.env.NODE_ENV === "production";
+        const frontendUrl = isProduction
+          ? process.env.PRODUCTION_FRONTEND_URL ||
+            "https://helpdesk.hubblehox.ai"
+          : process.env.FRONTEND_URL || "http://localhost:3001";
+        const ticketLink = `${frontendUrl}/tickets/${(updatedTicket._id as any).toString()}`;
+        const projectId =
+          updatedTicket.project?.toString() ||
+          (updatedTicket as any).metadata?.projectId?.toString();
+
+        if (isStudentReply) {
+          // Student replied → notify assigned agent
+          const assignedAgentId = (ticket as any).assignedTo;
+          if (assignedAgentId && projectId) {
+            await createNotification({
+              userId: new mongoose.Types.ObjectId(assignedAgentId.toString()),
+              projectId: new mongoose.Types.ObjectId(projectId),
+              type: "info" as const,
+              title: `New Reply on ${ticket.ticketNumber}`,
+              message: `${(user as any).firstName || user.email} replied on: ${ticket.subject}`,
+              ticketId: ticket._id as mongoose.Types.ObjectId,
+              link: ticketLink,
+            });
+          }
+        } else {
+          // Agent replied → notify the ticket creator (student) if they have userId
+          const studentUserId =
+            (ticket as any).metadata?.studentUserId ||
+            (ticket as any).submittedBy ||
+            (ticket as any).createdBy; // fallback for tickets created before studentUserId was stored in metadata
+          if (studentUserId && projectId) {
+            await createNotification({
+              userId: new mongoose.Types.ObjectId(studentUserId.toString()),
+              projectId: new mongoose.Types.ObjectId(projectId),
+              type: "info" as const,
+              title: `Reply on your ticket ${ticket.ticketNumber}`,
+              message: `${(user as any).firstName || user.email} replied: ${ticket.subject}`,
+              ticketId: ticket._id as mongoose.Types.ObjectId,
+              link: ticketLink,
+            });
+          }
+        }
+      } catch (notifErr) {
+        console.error("⚠️ Failed to send reply notification:", notifErr);
       }
     })();
 
@@ -4240,6 +4332,30 @@ export const reassignTicket = async (req: Request, res: Response) => {
         console.error("[reassignTicket] Failed to send email to new agent:", e);
       }
     })();
+
+    // Push notification to the newly assigned agent
+    if (projectId) {
+      (async () => {
+        try {
+          const { createNotification } = require("../controllers/notificationController");
+          const isProduction = process.env.NODE_ENV === "production";
+          const frontendUrl = isProduction
+            ? process.env.PRODUCTION_FRONTEND_URL || "https://helpdesk.hubblehox.ai"
+            : process.env.FRONTEND_URL || "http://localhost:3001";
+          await createNotification({
+            userId: new mongoose.Types.ObjectId(newAgentId),
+            projectId: new mongoose.Types.ObjectId(projectId),
+            type: "info" as const,
+            title: `Ticket Assigned to You: ${ticket.ticketNumber}`,
+            message: ticket.subject,
+            ticketId: ticket._id as mongoose.Types.ObjectId,
+            link: `${frontendUrl}/tickets/${ticket._id}`,
+          });
+        } catch (notifErr) {
+          console.error("⚠️ Failed to send reassign push notification:", notifErr);
+        }
+      })();
+    }
 
     const updatedTicket = await Ticket.findById(id)
       .populate("assignedTo", "firstName lastName email")

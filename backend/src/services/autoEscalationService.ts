@@ -470,6 +470,33 @@ class AutoEscalationService {
       );
       // Don't throw - escalation still succeeded
     }
+
+    // Push notification to the newly assigned agent
+    try {
+      const { createNotification } = require("../controllers/notificationController");
+      const projId =
+        ticket?.metadata?.projectId?._id?.toString() ||
+        ticket?.metadata?.projectId?.toString() ||
+        ticket?.project?.toString();
+      if (projId && escalatedToUser._id) {
+        const isProduction = process.env.NODE_ENV === "production";
+        const frontendUrl = isProduction
+          ? process.env.PRODUCTION_FRONTEND_URL || "https://helpdesk.hubblehox.ai"
+          : process.env.FRONTEND_URL || "http://localhost:3001";
+        await createNotification({
+          userId: new mongoose.Types.ObjectId(escalatedToUser._id.toString()),
+          projectId: new mongoose.Types.ObjectId(projId),
+          type: "info" as const,
+          title: `Ticket Auto-Escalated to You: ${ticket.ticketNumber}`,
+          message: ticket.subject || "Ticket auto-escalated",
+          ticketId: ticket._id,
+          link: `${frontendUrl}/tickets/${ticket._id}`,
+        });
+      }
+    } catch (pushErr: any) {
+      console.error(`⚠️  Failed to send auto-escalation push notification:`, pushErr.message);
+      // Don't throw - escalation still succeeded
+    }
   }
 
   /**
