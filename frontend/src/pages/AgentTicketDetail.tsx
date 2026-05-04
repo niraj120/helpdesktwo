@@ -385,11 +385,13 @@ const computeDetailSlaPill = (
   const statusNum = Number((ticket as any).status);
   const isTicketClosed = !!(closedAt || statusNum === 4 || statusNum === 5);
   if (isTicketClosed) {
-    const due = new Date(dueAt).getTime();
+    // For closed tickets, check against the ticket-level resolution SLA, not the
+    // role-level SLA. roleLevelSLA.breachedAt only means the escalation level timed
+    // out (ticket was escalated); it does NOT mean the overall resolution SLA was breached.
+    const resolutionDue = ticket.ticketLevelSLA?.dueAt ?? dueAt;
+    const due = new Date(resolutionDue).getTime();
     const closedMs = closedAt ? new Date(closedAt).getTime() : Date.now();
-    const existingBreachedAt =
-      ticket.roleLevelSLA?.breachedAt ?? ticket.ticketLevelSLA?.breachedAt;
-    const wasBreached = !!(existingBreachedAt || closedMs > due);
+    const wasBreached = !!(ticket.ticketLevelSLA?.breachedAt || closedMs > due);
     if (wasBreached)
       return {
         label: "BREACHED",
