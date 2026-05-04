@@ -11,12 +11,10 @@ import { getVapidPublicKeyAsync } from "../services/webPushService";
 export const getVapidKey = async (_req: Request, res: Response) => {
   const key = await getVapidPublicKeyAsync();
   if (!key) {
-    return res
-      .status(503)
-      .json({
-        success: false,
-        message: "Push notifications not configured on server",
-      });
+    return res.status(503).json({
+      success: false,
+      message: "Push notifications not configured on server",
+    });
   }
   return res.json({ success: true, publicKey: key });
 };

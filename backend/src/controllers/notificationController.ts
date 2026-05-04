@@ -199,7 +199,10 @@ export const createNotification = async (data: {
       });
     } catch (pushErr: any) {
       // non-fatal — log so push failures are diagnosable in PM2 logs
-      console.warn(`⚠️ Push notification failed for user ${data.userId}:`, pushErr?.message || pushErr);
+      console.warn(
+        `⚠️ Push notification failed for user ${data.userId}:`,
+        pushErr?.message || pushErr,
+      );
     }
 
     return notification;

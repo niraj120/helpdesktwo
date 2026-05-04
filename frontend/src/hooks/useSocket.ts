@@ -62,7 +62,10 @@ const emitLeave = (socket: Socket, roomId: string) => {
   if (roomId === "all-tickets") {
     socket.emit("leave-all-tickets");
   } else if (roomId.startsWith("project-tickets-")) {
-    socket.emit("leave-project-tickets", roomId.replace("project-tickets-", ""));
+    socket.emit(
+      "leave-project-tickets",
+      roomId.replace("project-tickets-", ""),
+    );
   } else if (roomId.startsWith("ticket-")) {
     socket.emit("leave-ticket", roomId.replace("ticket-", ""));
   }
@@ -137,4 +140,3 @@ export const useSocket = ({
 
   return { emit };
 };
-
