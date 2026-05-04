@@ -353,7 +353,7 @@ const EscalationMatrixContent: React.FC = () => {
     try {
       const token = localStorage.getItem("authToken");
       const response = await fetch(
-        `${API_CONFIG.API_URL}/users?project=${projectId}&isActive=true&limit=300`,
+        `${API_CONFIG.API_URL}/users?isActive=true&limit=300&sortBy=firstName&sortOrder=asc`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
