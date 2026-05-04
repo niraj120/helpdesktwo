@@ -18,7 +18,7 @@ import {
 class AutoEscalationService {
   private cronJob: cron.ScheduledTask | null = null;
   private isRunning: boolean = false;
-  private checkInterval: string = "*/5 * * * *"; // Check every 5 minutes
+  private checkInterval: string = "*/3 * * * *"; // Check every 3 minutes
 
   /**
    * Start the auto-escalation service
@@ -30,7 +30,7 @@ class AutoEscalationService {
     }
 
     console.log(`🚀 Starting Auto-Escalation Service`);
-    console.log(`   Check Interval: ${this.checkInterval} (every 5 minutes)`);
+    console.log(`   Check Interval: ${this.checkInterval} (every 3 minutes)`);
 
     // Schedule the cron job
     this.cronJob = cron.schedule(this.checkInterval, async () => {

@@ -1670,7 +1670,7 @@ export async function processAutoEscalation(): Promise<{
             : null;
           const graceMins =
             (projectDoc as any)?.configuration?.ticketAssignmentSettings
-              ?.autoEscalateGracePeriodMins ?? 10;
+              ?.autoEscalateGracePeriodMins ?? 2;
           const updatedAt = (ticket as any).updatedAt as Date | undefined;
           if (updatedAt) {
             const now2 = new Date();

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { API_CONFIG } from "../../config/constants";
 import {
   getAllEscalationMatrices,
@@ -124,6 +124,10 @@ const EscalationMatrixContent: React.FC = () => {
     { _id: string; firstName: string; lastName: string; email: string; role?: { code: string } }[]
   >([]);
   const [levelUserSearch, setLevelUserSearch] = useState<Record<number, string>>({});
+  const [levelSearchResults, setLevelSearchResults] = useState<
+    Record<number, Array<{ _id: string; firstName: string; lastName: string; email: string; role?: { code: string } }>>
+  >({});
+  const levelSearchTimeout = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -329,7 +333,7 @@ const EscalationMatrixContent: React.FC = () => {
     try {
       const token = localStorage.getItem("authToken");
       const response = await fetch(
-        `${API_CONFIG.API_URL}/users?isActive=true&limit=200`,
+        `${API_CONFIG.API_URL}/users?isActive=true&limit=500`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -371,6 +375,45 @@ const EscalationMatrixContent: React.FC = () => {
       console.error("Error fetching project users:", err);
       setProjectUsers([]);
     }
+  };
+
+  // Search users server-side when typing in escalation level user picker (min 3 chars)
+  const searchUsersForLevel = (index: number, query: string) => {
+    clearTimeout(levelSearchTimeout.current[index]);
+    if (query.length < 3) {
+      setLevelSearchResults((prev) => {
+        const next = { ...prev };
+        delete next[index];
+        return next;
+      });
+      return;
+    }
+    levelSearchTimeout.current[index] = setTimeout(async () => {
+      try {
+        const token = localStorage.getItem("authToken");
+        const response = await fetch(
+          `${API_CONFIG.API_URL}/users?isActive=true&search=${encodeURIComponent(query)}&limit=20&sortBy=firstName&sortOrder=asc`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            credentials: "include",
+          },
+        );
+        if (response.ok) {
+          const data = await response.json();
+          const list = data.data?.users ?? data.data ?? data.users ?? [];
+          const filtered = (Array.isArray(list) ? list : []).filter(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (u: any) => u.role?.code !== "STUDENT",
+          );
+          setLevelSearchResults((prev) => ({ ...prev, [index]: filtered }));
+        }
+      } catch (err) {
+        console.error("Error searching users for level:", err);
+      }
+    }, 300);
   };
 
   const fetchProjects = async () => {
@@ -3343,14 +3386,16 @@ const EscalationMatrixContent: React.FC = () => {
                             >
                               <input
                                 type="text"
-                                placeholder="Search user..."
+                                placeholder="Type 3+ characters to search user..."
                                 value={levelUserSearch[index] || ""}
-                                onChange={(e) =>
+                                onChange={(e) => {
+                                  const val = e.target.value;
                                   setLevelUserSearch((prev) => ({
                                     ...prev,
-                                    [index]: e.target.value,
-                                  }))
-                                }
+                                    [index]: val,
+                                  }));
+                                  searchUsersForLevel(index, val);
+                                }}
                                 style={{
                                   padding: "6px 10px",
                                   border: "1px solid #d1d5db",
@@ -3360,10 +3405,20 @@ const EscalationMatrixContent: React.FC = () => {
                                   boxSizing: "border-box",
                                 }}
                               />
+                              {(levelUserSearch[index]?.length ?? 0) > 0 &&
+                                (levelUserSearch[index]?.length ?? 0) < 3 && (
+                                  <div style={{ fontSize: "11px", color: "#9ca3af", marginTop: "2px" }}>
+                                    Type at least 3 characters to search
+                                  </div>
+                                )}
                               <select
                                 value={level.assigneeUserId || ""}
                                 onChange={(e) => {
-                                  const user = projectUsers.find(
+                                  const allCandidates = [
+                                    ...(levelSearchResults[index] ?? []),
+                                    ...projectUsers,
+                                  ];
+                                  const user = allCandidates.find(
                                     (u) => u._id === e.target.value,
                                   );
                                   const currentLevels = getCurrentLevels();
@@ -3392,30 +3447,34 @@ const EscalationMatrixContent: React.FC = () => {
                                 }}
                               >
                                 <option value="">Select User</option>
-                                {projectUsers
-                                  .filter(
-                                    (u) => u.role?.code !== "STUDENT",
-                                  )
-                                  .filter((u) => {
-                                    const q = (
-                                      levelUserSearch[index] || ""
-                                    ).toLowerCase();
-                                    if (!q) return true;
-                                    return (
-                                      `${u.firstName} ${u.lastName}`
-                                        .toLowerCase()
-                                        .includes(q) ||
-                                      u.email.toLowerCase().includes(q)
-                                    );
-                                  })
-                                  .map((u) => (
-                                    <option key={u._id} value={u._id}>
-                                      {[u.firstName, u.lastName]
-                                        .filter(Boolean)
-                                        .join(" ")}
-                                      {u.email ? ` — ${u.email}` : ""}
+                                {/* Always show current selection even if not in search results */}
+                                {level.assigneeUserId && level.assigneeUserName &&
+                                  !(levelSearchResults[index] ?? []).find(
+                                    (u) => u._id === level.assigneeUserId,
+                                  ) && (
+                                    <option value={level.assigneeUserId}>
+                                      {level.assigneeUserName}
                                     </option>
-                                  ))}
+                                  )}
+                                {(levelUserSearch[index]?.length ?? 0) >= 3
+                                  ? (levelSearchResults[index] ?? []).map((u) => (
+                                      <option key={u._id} value={u._id}>
+                                        {[u.firstName, u.lastName]
+                                          .filter(Boolean)
+                                          .join(" ")}
+                                        {u.email ? ` — ${u.email}` : ""}
+                                      </option>
+                                    ))
+                                  : projectUsers
+                                      .filter((u) => u.role?.code !== "STUDENT")
+                                      .map((u) => (
+                                        <option key={u._id} value={u._id}>
+                                          {[u.firstName, u.lastName]
+                                            .filter(Boolean)
+                                            .join(" ")}
+                                          {u.email ? ` — ${u.email}` : ""}
+                                        </option>
+                                      ))}
                               </select>
                             </div>
 
