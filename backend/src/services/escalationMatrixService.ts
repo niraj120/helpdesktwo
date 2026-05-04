@@ -1660,17 +1660,10 @@ export async function processAutoEscalation(): Promise<{
         }
 
         // US-ESC-013: Grace period — skip tickets recently updated (agent is mid-response)
+        // Grace period is a fixed system value (2 min), NOT read from project config,
+        // to prevent per-project overrides from defeating the SLA timing.
         if (!(matrix as any).bypassGracePeriod) {
-          const projectDoc = ticket.metadata?.projectId
-            ? await Project.findById(
-                typeof ticket.metadata.projectId === "string"
-                  ? ticket.metadata.projectId
-                  : (ticket.metadata.projectId as any)?._id,
-              ).select("configuration.ticketAssignmentSettings")
-            : null;
-          const graceMins =
-            (projectDoc as any)?.configuration?.ticketAssignmentSettings
-              ?.autoEscalateGracePeriodMins ?? 2;
+          const graceMins = 2;
           const updatedAt = (ticket as any).updatedAt as Date | undefined;
           if (updatedAt) {
             const now2 = new Date();

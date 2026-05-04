@@ -502,7 +502,7 @@ router.get("/services", async (req: AuthRequest, res) => {
         id: "auto_escalation",
         name: "Auto Escalation",
         description:
-          "Checks SLA breaches and escalates overdue tickets every 5 minutes",
+          "Checks SLA breaches and escalates overdue tickets every 3 minutes",
         status:
           escalationStatus.status === "fulfilled"
             ? escalationStatus.value
