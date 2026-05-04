@@ -186,8 +186,8 @@ export const getAllUsers = async (
     const sortOrder = req.query.sortOrder === "asc" ? 1 : -1;
     const sortObj: Record<string, 1 | -1> = { [sortBy]: sortOrder as 1 | -1 };
 
-    // Enforce max limit (300 for bulk picker requests such as escalation matrix user selection)
-    const effectiveLimit = Math.min(limitNum || 20, 300);
+    // Enforce max limit (2000 for bulk picker requests such as escalation matrix user selection)
+    const effectiveLimit = Math.min(limitNum || 20, 2000);
 
     // Build the final query filter
     // Ensure role field is a valid ObjectId (exclude documents with string role values like "agent")
