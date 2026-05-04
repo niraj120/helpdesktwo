@@ -99,6 +99,35 @@ const formatSlaRemaining = (ms: number): string => {
 const getSlaPill = (
   ticket: Ticket,
 ): { label: string; color: string; bg: string; tooltip: string } | null => {
+  // For closed tickets, only the resolution SLA matters — not role-level escalation SLA.
+  // roleLevelSLA.breachedAt means the escalation level timed out (ticket escalated), NOT
+  // that the ticket resolution SLA was breached.
+  const statusNum = Number(ticket.status);
+  const isTicketClosed = statusNum === 4 || statusNum === 5;
+  if (isTicketClosed) {
+    const resolutionDue = ticket.ticketLevelSLA?.dueAt;
+    if (!resolutionDue) return null;
+    const closedAt = (ticket as any).closedAt as string | undefined;
+    const closedMs = closedAt ? new Date(closedAt).getTime() : Date.now();
+    const wasBreached = !!(
+      ticket.ticketLevelSLA?.breachedAt ||
+      closedMs > new Date(resolutionDue).getTime()
+    );
+    if (wasBreached)
+      return {
+        label: "BREACHED",
+        color: "#dc2626",
+        bg: "#fef2f2",
+        tooltip: `SLA breached. Closed: ${new Date(closedAt ?? Date.now()).toLocaleString()}`,
+      };
+    return {
+      label: "MET",
+      color: "#15803d",
+      bg: "#f0fdf4",
+      tooltip: `Closed within SLA at ${new Date(closedAt ?? Date.now()).toLocaleString()}`,
+    };
+  }
+
   const dueAt = ticket.roleLevelSLA?.dueAt ?? ticket.ticketLevelSLA?.dueAt;
   if (!dueAt) return null;
   const isPaused = !!(
