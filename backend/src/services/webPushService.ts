@@ -45,7 +45,10 @@ export const ensureWebPushConfiguredAsync = async (): Promise<boolean> => {
       {
         $setOnInsert: {
           key: VAPID_DB_KEY,
-          value: { publicKey: candidateKeys.publicKey, privateKey: candidateKeys.privateKey },
+          value: {
+            publicKey: candidateKeys.publicKey,
+            privateKey: candidateKeys.privateKey,
+          },
           description: "Auto-generated VAPID keys for web push notifications",
         },
       },
@@ -53,7 +56,9 @@ export const ensureWebPushConfiguredAsync = async (): Promise<boolean> => {
     );
 
     if (!setting) {
-      console.warn("⚠️ VAPID findOneAndUpdate returned null — retrying on next call");
+      console.warn(
+        "⚠️ VAPID findOneAndUpdate returned null — retrying on next call",
+      );
       return false;
     }
 
@@ -63,7 +68,9 @@ export const ensureWebPushConfiguredAsync = async (): Promise<boolean> => {
     };
 
     if (!publicKey || !privateKey) {
-      console.warn("⚠️ VAPID keys in DB are empty — removing and retrying on next call");
+      console.warn(
+        "⚠️ VAPID keys in DB are empty — removing and retrying on next call",
+      );
       await SystemSettings.deleteOne({ key: VAPID_DB_KEY });
       return false;
     }
@@ -88,7 +95,9 @@ export const ensureWebPushConfiguredAsync = async (): Promise<boolean> => {
 const ensureWebPushConfigured = (): boolean => {
   if (_webPushConfigured) return true;
   // Kick off async init; result will be ready for subsequent calls
-  ensureWebPushConfiguredAsync().catch(() => {/* logged inside */});
+  ensureWebPushConfiguredAsync().catch(() => {
+    /* logged inside */
+  });
   return false;
 };
 

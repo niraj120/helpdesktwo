@@ -1234,59 +1234,64 @@ export async function executeEscalation(
       if (!targetLevel.roleId) {
         return {
           success: false,
-          message: "Escalation level has no role configured for round-robin assignment",
+          message:
+            "Escalation level has no role configured for round-robin assignment",
         };
       }
 
-    // Build user query
-    const userQuery: any = {
-      role: new mongoose.Types.ObjectId(targetLevel.roleId),
-      isActive: true,
-    };
-
-    // Filter by project if ticket has one
-    if (ticket.project) {
-      userQuery.$or = [
-        { projects: { $in: [ticket.project] } },
-        { projects: { $size: 0 } }, // Users with no project restriction
-      ];
-    }
-
-    // Filter by center for offline tickets
-    // Note: centerId of "online" is a sentinel string for online tickets, not a real ObjectId
-    const ticketCenterId = (ticket as any).metadata?.centerId;
-    const isValidCenterId = ticketCenterId && ticketCenterId !== "online";
-    const isOfflineTicket =
-      ticket.submissionSource === "offline" || !!isValidCenterId;
-    if (isOfflineTicket && isValidCenterId) {
-      userQuery.centers = { $in: [ticketCenterId] };
-      console.log(
-        `📍 Filtering escalation users by ticket center: ${ticketCenterId}`,
-      );
-    }
-
-    // Step 2: Find users belonging to the target role
-    // Use round-robin or notify all depending on configuration
-    const usersInRole = await User.find(userQuery).sort({
-      "assignments.lastAssignedAt": 1,
-    }); // Round-robin: least recently assigned first
-
-    if (usersInRole.length === 0) {
-      return {
-        success: false,
-        message: `No active users found for the target escalation level (${targetLevel.levelName})${isOfflineTicket ? " in the same center" : ""}`,
+      // Build user query
+      const userQuery: any = {
+        role: new mongoose.Types.ObjectId(targetLevel.roleId),
+        isActive: true,
       };
-    }
 
-    // Select user for assignment (round-robin: first user in sorted list)
-    assignedUser = usersInRole[0];
+      // Filter by project if ticket has one
+      if (ticket.project) {
+        userQuery.$or = [
+          { projects: { $in: [ticket.project] } },
+          { projects: { $size: 0 } }, // Users with no project restriction
+        ];
+      }
+
+      // Filter by center for offline tickets
+      // Note: centerId of "online" is a sentinel string for online tickets, not a real ObjectId
+      const ticketCenterId = (ticket as any).metadata?.centerId;
+      const isValidCenterId = ticketCenterId && ticketCenterId !== "online";
+      const isOfflineTicket =
+        ticket.submissionSource === "offline" || !!isValidCenterId;
+      if (isOfflineTicket && isValidCenterId) {
+        userQuery.centers = { $in: [ticketCenterId] };
+        console.log(
+          `📍 Filtering escalation users by ticket center: ${ticketCenterId}`,
+        );
+      }
+
+      // Step 2: Find users belonging to the target role
+      // Use round-robin or notify all depending on configuration
+      const usersInRole = await User.find(userQuery).sort({
+        "assignments.lastAssignedAt": 1,
+      }); // Round-robin: least recently assigned first
+
+      if (usersInRole.length === 0) {
+        return {
+          success: false,
+          message: `No active users found for the target escalation level (${targetLevel.levelName})${isOfflineTicket ? " in the same center" : ""}`,
+        };
+      }
+
+      // Select user for assignment (round-robin: first user in sorted list)
+      assignedUser = usersInRole[0];
     } // end Case B (role-based round-robin)
   }
 
   // Safety guard — TypeScript control-flow narrowing: both Case A and Case B either
   // return early or set assignedUser, so this branch is never actually reached at runtime.
   if (!assignedUser) {
-    return { success: false, message: "Could not determine assignment target for this escalation level" };
+    return {
+      success: false,
+      message:
+        "Could not determine assignment target for this escalation level",
+    };
   }
 
   // Step 3: Update ticket

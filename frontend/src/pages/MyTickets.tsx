@@ -100,12 +100,13 @@ const computeSlaPill = (
   // For closed tickets, only the resolution SLA matters — not role-level escalation SLA.
   // roleLevelSLA.breachedAt means the escalation level timed out (ticket escalated), NOT
   // that the ticket resolution SLA was breached.
+  // closedAt is the most reliable closed indicator — it works with any custom status code.
+  const closedAt = (ticket as any).closedAt as string | undefined;
   const statusNum = Number(ticket.status);
-  const isTicketClosed = statusNum === 4 || statusNum === 5;
+  const isTicketClosed = !!(closedAt || statusNum === 4 || statusNum === 5);
   if (isTicketClosed) {
     const resolutionDue = ticket.ticketLevelSLA?.dueAt;
     if (!resolutionDue) return null;
-    const closedAt = (ticket as any).closedAt as string | undefined;
     const closedMs = closedAt ? new Date(closedAt).getTime() : Date.now();
     const wasBreached = !!(
       ticket.ticketLevelSLA?.breachedAt ||

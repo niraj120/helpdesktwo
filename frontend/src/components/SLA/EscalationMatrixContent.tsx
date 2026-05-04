@@ -121,13 +121,32 @@ const EscalationMatrixContent: React.FC = () => {
   const [linkedCategoryIds, setLinkedCategoryIds] = useState<string[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState(false);
   const [projectUsers, setProjectUsers] = useState<
-    { _id: string; firstName: string; lastName: string; email: string; role?: { code: string } }[]
+    {
+      _id: string;
+      firstName: string;
+      lastName: string;
+      email: string;
+      role?: { code: string };
+    }[]
   >([]);
-  const [levelUserSearch, setLevelUserSearch] = useState<Record<number, string>>({});
-  const [levelSearchResults, setLevelSearchResults] = useState<
-    Record<number, Array<{ _id: string; firstName: string; lastName: string; email: string; role?: { code: string } }>>
+  const [levelUserSearch, setLevelUserSearch] = useState<
+    Record<number, string>
   >({});
-  const levelSearchTimeout = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+  const [levelSearchResults, setLevelSearchResults] = useState<
+    Record<
+      number,
+      Array<{
+        _id: string;
+        firstName: string;
+        lastName: string;
+        email: string;
+        role?: { code: string };
+      }>
+    >
+  >({});
+  const levelSearchTimeout = useRef<
+    Record<number, ReturnType<typeof setTimeout>>
+  >({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -3310,11 +3329,13 @@ const EscalationMatrixContent: React.FC = () => {
                               }}
                             >
                               <option value="">Select Role</option>
-                              {(roles || []).filter((r) => r.code !== "STUDENT").map((role) => (
-                                <option key={role._id} value={role._id}>
-                                  {role.name}
-                                </option>
-                              ))}
+                              {(roles || [])
+                                .filter((r) => r.code !== "STUDENT")
+                                .map((role) => (
+                                  <option key={role._id} value={role._id}>
+                                    {role.name}
+                                  </option>
+                                ))}
                             </select>
 
                             {/* Assignee type toggle: Role / User */}
@@ -3407,7 +3428,13 @@ const EscalationMatrixContent: React.FC = () => {
                               />
                               {(levelUserSearch[index]?.length ?? 0) > 0 &&
                                 (levelUserSearch[index]?.length ?? 0) < 3 && (
-                                  <div style={{ fontSize: "11px", color: "#9ca3af", marginTop: "2px" }}>
+                                  <div
+                                    style={{
+                                      fontSize: "11px",
+                                      color: "#9ca3af",
+                                      marginTop: "2px",
+                                    }}
+                                  >
                                     Type at least 3 characters to search
                                   </div>
                                 )}
@@ -3448,7 +3475,8 @@ const EscalationMatrixContent: React.FC = () => {
                               >
                                 <option value="">Select User</option>
                                 {/* Always show current selection even if not in search results */}
-                                {level.assigneeUserId && level.assigneeUserName &&
+                                {level.assigneeUserId &&
+                                  level.assigneeUserName &&
                                   !(levelSearchResults[index] ?? []).find(
                                     (u) => u._id === level.assigneeUserId,
                                   ) && (
@@ -3457,14 +3485,16 @@ const EscalationMatrixContent: React.FC = () => {
                                     </option>
                                   )}
                                 {(levelUserSearch[index]?.length ?? 0) >= 3
-                                  ? (levelSearchResults[index] ?? []).map((u) => (
-                                      <option key={u._id} value={u._id}>
-                                        {[u.firstName, u.lastName]
-                                          .filter(Boolean)
-                                          .join(" ")}
-                                        {u.email ? ` — ${u.email}` : ""}
-                                      </option>
-                                    ))
+                                  ? (levelSearchResults[index] ?? []).map(
+                                      (u) => (
+                                        <option key={u._id} value={u._id}>
+                                          {[u.firstName, u.lastName]
+                                            .filter(Boolean)
+                                            .join(" ")}
+                                          {u.email ? ` — ${u.email}` : ""}
+                                        </option>
+                                      ),
+                                    )
                                   : projectUsers
                                       .filter((u) => u.role?.code !== "STUDENT")
                                       .map((u) => (

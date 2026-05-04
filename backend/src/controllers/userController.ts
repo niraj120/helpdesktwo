@@ -204,7 +204,11 @@ export const getAllUsers = async (
       // Users with no role assigned (null/undefined) are still included.
       filter.$and = filter.$and || [];
       filter.$and.push({
-        $or: [{ role: { $type: "objectId" } }, { role: null }, { role: { $exists: false } }],
+        $or: [
+          { role: { $type: "objectId" } },
+          { role: null },
+          { role: { $exists: false } },
+        ],
       });
     }
 

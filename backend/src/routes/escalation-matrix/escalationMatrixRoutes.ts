@@ -68,7 +68,11 @@ router.patch(
 router.get(
   "/:matrixId/levels/:levelId/users",
   authMiddleware,
-  checkPermission(["ESCALATION_MATRIX_VIEW", "TICKET_ESCALATE", "OFFLINE_TICKET_ESCALATE"]),
+  checkPermission([
+    "ESCALATION_MATRIX_VIEW",
+    "TICKET_ESCALATE",
+    "OFFLINE_TICKET_ESCALATE",
+  ]),
   getUsersForLevel,
 );
 
@@ -84,7 +88,11 @@ router.get(
 router.get(
   "/",
   authMiddleware,
-  checkPermission(["ESCALATION_MATRIX_VIEW", "TICKET_ESCALATE", "OFFLINE_TICKET_ESCALATE"]),
+  checkPermission([
+    "ESCALATION_MATRIX_VIEW",
+    "TICKET_ESCALATE",
+    "OFFLINE_TICKET_ESCALATE",
+  ]),
   getAllEscalationMatrices,
 );
 
@@ -92,7 +100,11 @@ router.get(
 router.get(
   "/:id",
   authMiddleware,
-  checkPermission(["ESCALATION_MATRIX_VIEW", "TICKET_ESCALATE", "OFFLINE_TICKET_ESCALATE"]),
+  checkPermission([
+    "ESCALATION_MATRIX_VIEW",
+    "TICKET_ESCALATE",
+    "OFFLINE_TICKET_ESCALATE",
+  ]),
   getEscalationMatrixById,
 );
 
