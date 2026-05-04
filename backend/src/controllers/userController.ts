@@ -200,8 +200,12 @@ export const getAllUsers = async (
       filter.$and.push({ role: { $type: "objectId" } });
       delete filter.role;
     } else {
-      // Just ensure role is a valid ObjectId
-      filter.role = { $type: "objectId" };
+      // Exclude only old-style string roles (e.g. "agent") which cause populate to throw.
+      // Users with no role assigned (null/undefined) are still included.
+      filter.$and = filter.$and || [];
+      filter.$and.push({
+        $or: [{ role: { $type: "objectId" } }, { role: null }, { role: { $exists: false } }],
+      });
     }
 
     const [users, total] = await Promise.all([
