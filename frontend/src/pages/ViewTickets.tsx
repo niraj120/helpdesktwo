@@ -72,6 +72,10 @@ interface Ticket {
     pausedAt?: string;
     pausedDuration?: number;
   };
+  /** Project-specific status name, enriched by the API */
+  statusName?: string;
+  /** Project-specific status color, enriched by the API */
+  statusColor?: string;
 }
 
 interface Project {
@@ -1067,11 +1071,11 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                         borderRadius: "12px",
                         fontSize: "12px",
                         fontWeight: 600,
-                        background: getStatusColor(ticket.status) + "20",
-                        color: getStatusColor(ticket.status),
+                        background: (ticket.statusColor || getStatusColor(ticket.status)) + "20",
+                        color: ticket.statusColor || getStatusColor(ticket.status),
                       }}
                     >
-                      {getStatusDisplayName(ticket.status)}
+                      {ticket.statusName || getStatusDisplayName(ticket.status)}
                     </span>
                     {canMerge && !ticket.isMerged && (
                       <button

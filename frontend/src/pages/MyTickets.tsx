@@ -532,9 +532,11 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
 
   console.log("🎯 About to define helper functions");
 
-  const getStatusName = (status: string | number) => {
+  const getStatusName = (status: string | number, ticket?: any) => {
+    // Prefer the enriched statusName from the API response (project-specific)
+    if (ticket?.statusName) return ticket.statusName;
     const statusCode = typeof status === "number" ? status : Number(status);
-    // First, look up from project-configured statuses (fetched from API)
+    // Second: look up from project-configured statuses (fetched from API for single-project mode)
     const projectStatus = statuses.find((s) => s.code === statusCode);
     if (projectStatus) return projectStatus.name;
     // Fallback for when statuses haven't loaded yet
@@ -548,7 +550,9 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
     return statusNames[statusCode] || `Status ${statusCode}`;
   };
 
-  const getStatusColor = (status: string | number) => {
+  const getStatusColor = (status: string | number, ticket?: any) => {
+    // Prefer the enriched statusColor from the API response (project-specific)
+    if (ticket?.statusColor) return ticket.statusColor;
     // Handle numeric status codes: 1=open, 2=in-progress, 3=on-hold, 4=resolved, 5=closed
     const statusCode = typeof status === "number" ? status : Number(status);
     const colors: Record<number, string> = {
@@ -1358,11 +1362,11 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                               borderRadius: "12px",
                               fontSize: "12px",
                               fontWeight: 600,
-                              background: getStatusColor(ticket.status) + "20",
-                              color: getStatusColor(ticket.status),
+                              background: getStatusColor(ticket.status, ticket) + "20",
+                              color: getStatusColor(ticket.status, ticket),
                             }}
                           >
-                            {getStatusName(ticket.status)}
+                            {getStatusName(ticket.status, ticket)}
                           </span>
                           {canMerge && !ticket.isMerged && (
                             <button

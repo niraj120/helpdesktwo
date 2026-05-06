@@ -6,6 +6,7 @@ import { Role } from "../models/Role";
 import { Permission } from "../models/Permission";
 import { Center } from "../models/Center";
 import { Category } from "../models/Category";
+import { Status } from "../models/Status";
 import SLATracking from "../models/sla-module/SLATracking";
 import EscalationPolicy from "../models/sla-module/EscalationPolicy";
 import { UserReportingHierarchy } from "../models/UserReportingHierarchy";
@@ -1486,7 +1487,7 @@ export const getMyTickets = async (req: Request, res: Response) => {
       ),
     ];
 
-    const [projects, centers] = await Promise.all([
+    const [projects, centers, statusRecords] = await Promise.all([
       projectIds.length > 0
         ? Project.find({ _id: { $in: projectIds } })
             .select("name code")
@@ -1495,6 +1496,11 @@ export const getMyTickets = async (req: Request, res: Response) => {
       centerIds.length > 0
         ? Center.find({ _id: { $in: centerIds } })
             .select("centerName city state")
+            .lean()
+        : Promise.resolve([]),
+      projectIds.length > 0
+        ? Status.find({ projectId: { $in: projectIds }, isActive: true })
+            .select("name code color projectId")
             .lean()
         : Promise.resolve([]),
     ]);
@@ -1509,6 +1515,13 @@ export const getMyTickets = async (req: Request, res: Response) => {
       centers.map((c: any) => [
         c._id.toString(),
         { _id: c._id, centerName: c.centerName, city: c.city, state: c.state },
+      ]),
+    );
+    // statusLookup key: "<projectId>_<statusCode>"
+    const statusLookup = new Map(
+      (statusRecords as any[]).map((s) => [
+        `${s.projectId.toString()}_${s.code}`,
+        { name: s.name, color: s.color },
       ]),
     );
 
@@ -1529,6 +1542,18 @@ export const getMyTickets = async (req: Request, res: Response) => {
         const center = centerMap.get(ticketObj.metadata.centerId.toString());
         if (center) {
           ticketObj.metadata.centerId = center;
+        }
+      }
+      // Enrich with project-specific status name and color
+      const rawProjectId =
+        typeof ticketObj.metadata?.projectId === "object"
+          ? ticketObj.metadata.projectId._id?.toString()
+          : ticketObj.metadata?.projectId?.toString();
+      if (rawProjectId) {
+        const statusEntry = statusLookup.get(`${rawProjectId}_${ticketObj.status}`);
+        if (statusEntry) {
+          ticketObj.statusName = statusEntry.name;
+          ticketObj.statusColor = statusEntry.color;
         }
       }
       return ticketObj;
@@ -2116,7 +2141,7 @@ export const getAllTickets = async (req: Request, res: Response) => {
       ),
     ];
 
-    const [projects, centers] = await Promise.all([
+    const [projects, centers, statusRecordsAll] = await Promise.all([
       projectIds.length > 0
         ? Project.find({ _id: { $in: projectIds } })
             .select("name code")
@@ -2125,6 +2150,11 @@ export const getAllTickets = async (req: Request, res: Response) => {
       centerIds.length > 0
         ? Center.find({ _id: { $in: centerIds } })
             .select("centerName city state")
+            .lean()
+        : Promise.resolve([]),
+      projectIds.length > 0
+        ? Status.find({ projectId: { $in: projectIds }, isActive: true })
+            .select("name code color projectId")
             .lean()
         : Promise.resolve([]),
     ]);
@@ -2139,6 +2169,13 @@ export const getAllTickets = async (req: Request, res: Response) => {
       centers.map((c: any) => [
         c._id.toString(),
         { _id: c._id, centerName: c.centerName, city: c.city, state: c.state },
+      ]),
+    );
+    // statusLookupAll key: "<projectId>_<statusCode>"
+    const statusLookupAll = new Map(
+      (statusRecordsAll as any[]).map((s) => [
+        `${s.projectId.toString()}_${s.code}`,
+        { name: s.name, color: s.color },
       ]),
     );
 
@@ -2163,6 +2200,19 @@ export const getAllTickets = async (req: Request, res: Response) => {
         const center = centerMap.get(ticketObj.metadata.centerId.toString());
         if (center) {
           ticketObj.metadata.centerId = center;
+        }
+      }
+
+      // Enrich with project-specific status name and color
+      const rawProjectIdAll =
+        typeof ticketObj.metadata?.projectId === "object"
+          ? ticketObj.metadata.projectId._id?.toString()
+          : ticketObj.metadata?.projectId?.toString();
+      if (rawProjectIdAll) {
+        const statusEntry = statusLookupAll.get(`${rawProjectIdAll}_${ticketObj.status}`);
+        if (statusEntry) {
+          ticketObj.statusName = statusEntry.name;
+          ticketObj.statusColor = statusEntry.color;
         }
       }
 
