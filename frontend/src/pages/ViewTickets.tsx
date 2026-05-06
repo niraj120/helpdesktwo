@@ -1071,8 +1071,11 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                         borderRadius: "12px",
                         fontSize: "12px",
                         fontWeight: 600,
-                        background: (ticket.statusColor || getStatusColor(ticket.status)) + "20",
-                        color: ticket.statusColor || getStatusColor(ticket.status),
+                        background:
+                          (ticket.statusColor ||
+                            getStatusColor(ticket.status)) + "20",
+                        color:
+                          ticket.statusColor || getStatusColor(ticket.status),
                       }}
                     >
                       {ticket.statusName || getStatusDisplayName(ticket.status)}

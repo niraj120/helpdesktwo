@@ -1362,7 +1362,8 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                               borderRadius: "12px",
                               fontSize: "12px",
                               fontWeight: 600,
-                              background: getStatusColor(ticket.status, ticket) + "20",
+                              background:
+                                getStatusColor(ticket.status, ticket) + "20",
                               color: getStatusColor(ticket.status, ticket),
                             }}
                           >

@@ -1130,7 +1130,7 @@ export const getProjectTicketSettings = async (req: Request, res: Response) => {
           projectId: project._id,
           isActive: true,
         })
-          .select("name code color isDefault isClosed")
+          .select("name code color isDefault isClosed requireClosingRemark")
           .sort({ displayOrder: 1 });
         return statuses;
       })(),

@@ -7,6 +7,7 @@ export interface IStatus extends Document {
   projectId: mongoose.Types.ObjectId;
   isDefault: boolean;
   isClosed: boolean; // Indicates if this status closes the ticket
+  requireClosingRemark: boolean; // If true, agent must provide a remark when applying this status
   displayOrder: number;
   description?: string;
   isActive: boolean;
@@ -45,6 +46,10 @@ const StatusSchema = new Schema<IStatus>(
     isClosed: {
       type: Boolean,
       default: false,
+    },
+    requireClosingRemark: {
+      type: Boolean,
+      default: false, // When true, agent must enter a remark before applying this status
     },
     displayOrder: {
       type: Number,

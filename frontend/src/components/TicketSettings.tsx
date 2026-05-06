@@ -21,6 +21,7 @@ interface TicketStatus {
   color: string;
   isDefault: boolean;
   isClosed: boolean;
+  requireClosingRemark: boolean;
   displayOrder: number;
 }
 
@@ -385,6 +386,7 @@ const TicketSettings: React.FC = () => {
       color: "#3b82f6",
       isDefault: false,
       isClosed: false,
+      requireClosingRemark: false,
       displayOrder: statuses.length + 1,
     });
     setShowStatusModal(true);
@@ -429,6 +431,7 @@ const TicketSettings: React.FC = () => {
           color: editingStatus.color,
           isDefault: editingStatus.isDefault,
           isClosed: editingStatus.isClosed,
+          requireClosingRemark: editingStatus.requireClosingRemark,
           displayOrder: editingStatus.displayOrder,
         }),
       });
@@ -1136,6 +1139,42 @@ const TicketSettings: React.FC = () => {
                               }
                             />
                             This Status Closes Tickets
+                          </label>
+
+                          <label
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "8px",
+                              marginTop: "4px",
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={
+                                editingStatus.requireClosingRemark ?? false
+                              }
+                              onChange={(e) =>
+                                setEditingStatus({
+                                  ...editingStatus,
+                                  requireClosingRemark: e.target.checked,
+                                })
+                              }
+                            />
+                            <span>
+                              Require Remark Before Applying This Status
+                              <span
+                                style={{
+                                  display: "block",
+                                  fontSize: "11px",
+                                  color: "#6b7280",
+                                  fontWeight: 400,
+                                }}
+                              >
+                                Agent must enter a remark + date before this
+                                status is saved
+                              </span>
+                            </span>
                           </label>
                         </div>
 
