@@ -52,7 +52,7 @@ export const getStatusesByProject = async (req: AuthRequest, res: Response) => {
     const statuses = await Status.find(filter)
       .sort({ displayOrder: 1, name: 1 })
       .select(
-        "name code color isDefault isClosed displayOrder description isActive projectId",
+        "name code color isDefault isClosed displayOrder description isActive projectId requireClosingRemark",
       );
 
     console.log(
@@ -92,6 +92,7 @@ export const createStatus = async (req: AuthRequest, res: Response) => {
       color,
       isDefault,
       isClosed,
+      requireClosingRemark,
       displayOrder,
       description,
     } = req.body;
@@ -140,6 +141,7 @@ export const createStatus = async (req: AuthRequest, res: Response) => {
       projectId,
       isDefault: isDefault || false,
       isClosed: isClosed || false,
+      requireClosingRemark: requireClosingRemark || false,
       displayOrder: displayOrder || 0,
       description,
       createdBy: userId,
@@ -199,25 +201,27 @@ export const updateStatus = async (req: AuthRequest, res: Response) => {
       color,
       isDefault,
       isClosed,
+      requireClosingRemark,
       displayOrder,
       description,
       isActive,
     } = req.body;
     const userId = req.user?.userId;
 
-    const status = await Status.findById(statusId);
-    if (!status) {
+    // Load current doc to check isDefault and get projectId
+    const existing = await Status.findById(statusId);
+    if (!existing) {
       return res.status(404).json({
         success: false,
         message: "Status not found",
       });
     }
 
-    // If setting this as default, unset other default statuses
-    if (isDefault && !status.isDefault) {
+    // If setting this as default, unset other default statuses first
+    if (isDefault && !existing.isDefault) {
       await Status.updateMany(
         {
-          projectId: status.projectId,
+          projectId: existing.projectId,
           isDefault: true,
           _id: { $ne: statusId },
         },
@@ -225,34 +229,55 @@ export const updateStatus = async (req: AuthRequest, res: Response) => {
       );
     }
 
-    // Update status fields
-    if (name !== undefined) status.name = name;
-    if (code !== undefined) status.code = Number(code);
-    if (color !== undefined) status.color = color;
-    if (isDefault !== undefined) status.isDefault = isDefault;
-    if (isClosed !== undefined) status.isClosed = isClosed;
-    if (displayOrder !== undefined) status.displayOrder = displayOrder;
-    if (description !== undefined) status.description = description;
-    if (isActive !== undefined) status.isActive = isActive;
-    status.updatedBy = userId as any;
+    // Build the $set payload — only include fields present in request body
+    const $set: Record<string, any> = { updatedBy: userId };
+    if (name !== undefined) $set.name = name;
+    if (code !== undefined) $set.code = Number(code);
+    if (color !== undefined) $set.color = color;
+    if (isDefault !== undefined) $set.isDefault = isDefault;
+    if (isClosed !== undefined) $set.isClosed = isClosed;
+    if (requireClosingRemark !== undefined)
+      $set.requireClosingRemark = requireClosingRemark;
+    if (displayOrder !== undefined) $set.displayOrder = displayOrder;
+    if (description !== undefined) $set.description = description;
+    if (isActive !== undefined) $set.isActive = isActive;
 
-    await status.save();
+    // Use findByIdAndUpdate so ALL fields — including those absent from old docs — are written atomically
+    const updated = await Status.findByIdAndUpdate(
+      statusId,
+      { $set },
+      { new: true, runValidators: true },
+    );
 
     // Log activity
     try {
       const currentUser = req.user;
-      if (currentUser) {
-        const projectData = await Project.findById(status.projectId);
+      if (currentUser && updated) {
+        const projectData = await Project.findById(updated.projectId);
         const changes = [];
         if (name !== undefined)
-          changes.push({ field: "name", oldValue: "previous", newValue: name });
+          changes.push({
+            field: "name",
+            oldValue: existing.name,
+            newValue: name,
+          });
         if (code !== undefined)
-          changes.push({ field: "code", oldValue: "previous", newValue: code });
+          changes.push({
+            field: "code",
+            oldValue: existing.code,
+            newValue: code,
+          });
         if (isDefault !== undefined)
           changes.push({
             field: "isDefault",
-            oldValue: !isDefault,
+            oldValue: existing.isDefault,
             newValue: isDefault,
+          });
+        if (requireClosingRemark !== undefined)
+          changes.push({
+            field: "requireClosingRemark",
+            oldValue: (existing as any).requireClosingRemark,
+            newValue: requireClosingRemark,
           });
 
         await logActivity({
@@ -262,12 +287,12 @@ export const updateStatus = async (req: AuthRequest, res: Response) => {
           userEmail: currentUser.email,
           action: "update",
           entity: "status",
-          entityId: status._id.toString(),
-          entityName: status.name,
-          projectId: status.projectId.toString(),
+          entityId: updated._id.toString(),
+          entityName: updated.name,
+          projectId: updated.projectId.toString(),
           projectName: projectData?.name,
           changes: changes.length > 0 ? changes : undefined,
-          description: `Status ${status.name} updated`,
+          description: `Status ${updated.name} updated`,
           req,
         });
       }
@@ -278,7 +303,7 @@ export const updateStatus = async (req: AuthRequest, res: Response) => {
     return res.json({
       success: true,
       message: "Status updated successfully",
-      data: status,
+      data: updated,
     });
   } catch (error) {
     console.error("Update status error:", error);

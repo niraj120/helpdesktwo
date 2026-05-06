@@ -57,6 +57,7 @@ import {
   ArrowUpIcon,
   TicketIcon,
   ArrowsPointingInIcon,
+  ListBulletIcon,
 } from "@heroicons/react/24/outline";
 
 // SLA Tracking interface for resolution time calculation
@@ -472,7 +473,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
   // US-ESC-009: ticker to keep SLA countdown pill current (updates every 60s)
   const [, setTickNow] = useState(Date.now());
   const [activeTab, setActiveTab] = useState<
-    "details" | "replies" | "notes" | "history" | "emails"
+    "details" | "replies" | "notes" | "history" | "emails" | "audit"
   >("replies"); // Task 6.5: Added 'emails' tab
 
   // Reply states
@@ -540,6 +541,23 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
     to: string;
     onConfirm: () => void;
   }>({ open: false, field: "", from: "", to: "", onConfirm: () => {} });
+
+  // Closing-remark modal state (shown when a status has requireClosingRemark=true)
+  const [remarkModal, setRemarkModal] = useState<{
+    open: boolean;
+    targetStatusCode: number;
+    fromLabel: string;
+    toLabel: string;
+    remark: string;
+    remarkDate: string;
+  }>({
+    open: false,
+    targetStatusCode: 0,
+    fromLabel: "",
+    toLabel: "",
+    remark: "",
+    remarkDate: new Date().toISOString().slice(0, 10),
+  });
   const [successModal, setSuccessModal] = useState<{
     open: boolean;
     message: string;
@@ -1321,7 +1339,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
     });
   };
 
-  const handleUpdateStatus = async (statusOverride?: string | number) => {
+  const handleUpdateStatus = async (
+    statusOverride?: string | number,
+    closingRemark?: string,
+  ) => {
     if (!ticket) return;
 
     const statusToUpdate =
@@ -1343,6 +1364,22 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
     const fromLabel = getStatusDisplayName(ticket.status);
     const toLabel = getStatusDisplayName(statusCode);
 
+    // If the target status requires a remark and one hasn't been supplied yet, open the remark modal
+    const targetStatusOption = statusOptions.find(
+      (s: any) => s.code === statusCode,
+    );
+    if (targetStatusOption?.requireClosingRemark && !closingRemark) {
+      setRemarkModal({
+        open: true,
+        targetStatusCode: statusCode,
+        fromLabel,
+        toLabel,
+        remark: "",
+        remarkDate: new Date().toISOString().slice(0, 10),
+      });
+      return;
+    }
+
     console.log("🔄 Updating status to:", statusToUpdate, "→", statusCode);
     console.log("🔍 Type of statusCode:", typeof statusCode);
     console.log("🔍 Status options available:", statusOptions);
@@ -1350,12 +1387,12 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
     setIsFieldUpdating(true);
     try {
       const token = localStorage.getItem("authToken");
-      console.log("📤 Sending PATCH request with body:", {
-        status: statusCode,
-      });
+      const body: any = { status: statusCode };
+      if (closingRemark) body.closingRemark = closingRemark;
+      console.log("📤 Sending PATCH request with body:", body);
       const response = await axios.patch(
         `${API_CONFIG.API_URL}/tickets/${ticket._id}/status`,
-        { status: statusCode },
+        body,
         {
           headers: { Authorization: `Bearer ${token}` },
         },
@@ -1825,7 +1862,6 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
             </div>
           </div>
         </div>
-
         {/* Merged-into banner — shown when this ticket is a secondary merged ticket */}
         {ticket.isMerged && ticket.mergedInto && (
           <div className="bg-amber-50 border-b border-amber-200 px-4 py-3">
@@ -1852,7 +1888,6 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
             </div>
           </div>
         )}
-
         {/* Main Content */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -2218,6 +2253,19 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                       <ClockIcon className="h-5 w-5 inline-block mr-2" />
                       History
                     </button>
+                    {/* Audit tab — unified activity timeline */}
+                    <button
+                      onClick={() => setActiveTab("audit")}
+                      className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                        activeTab === "audit"
+                          ? "border-blue-500 text-blue-600"
+                          : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                      }`}
+                    >
+                      <ListBulletIcon className="h-5 w-5 inline-block mr-2" />
+                      Audit
+                    </button>
+
                     {/* Task 6.5: Emails tab - only show for email tickets */}
                     {ticket.submissionSource === "email" && (
                       <button
@@ -3227,6 +3275,297 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                             No history yet
                           </p>
                         )}
+                    </div>
+                  )}
+
+                  {/* Audit Tab — unified chronological activity log */}
+                  {activeTab === "audit" && (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-sm font-semibold text-gray-700">
+                          Full Activity Timeline
+                        </h3>
+                        <span className="text-xs text-gray-400">
+                          All events, oldest first
+                        </span>
+                      </div>
+
+                      {/* Build unified event list */}
+                      {(() => {
+                        type AuditEvent =
+                          | { kind: "reply"; ts: number; data: any }
+                          | { kind: "note"; ts: number; data: any }
+                          | { kind: "change"; ts: number; data: any }
+                          | { kind: "escalation"; ts: number; data: any };
+
+                        const events: AuditEvent[] = [
+                          // Replies (threads)
+                          ...((ticket.threads || []) as any[]).map((t) => ({
+                            kind: "reply" as const,
+                            ts: new Date(t.createdAt).getTime(),
+                            data: t,
+                          })),
+                          // Email comments
+                          ...((ticket.comments || []) as any[]).map((c) => ({
+                            kind: "reply" as const,
+                            ts: new Date(c.createdAt).getTime(),
+                            data: { ...c, _isComment: true },
+                          })),
+                          // Internal notes
+                          ...((ticket.internalNotes || []) as any[]).map(
+                            (n) => ({
+                              kind: "note" as const,
+                              ts: new Date(n.createdAt).getTime(),
+                              data: n,
+                            }),
+                          ),
+                          // Change history
+                          ...((ticket.changeHistory || []) as any[]).map(
+                            (c) => ({
+                              kind: "change" as const,
+                              ts: new Date(c.changedAt).getTime(),
+                              data: c,
+                            }),
+                          ),
+                          // Escalation history
+                          ...((ticket.escalationHistory || []) as any[]).map(
+                            (e) => ({
+                              kind: "escalation" as const,
+                              ts: new Date(e.escalatedAt).getTime(),
+                              data: e,
+                            }),
+                          ),
+                        ];
+
+                        events.sort((a, b) => a.ts - b.ts);
+
+                        if (events.length === 0) {
+                          return (
+                            <p className="text-center text-gray-400 py-12 text-sm">
+                              No activity recorded yet.
+                            </p>
+                          );
+                        }
+
+                        const fieldDisplayNames: Record<string, string> = {
+                          status: "Status",
+                          priority: "Priority",
+                          assignedTo: "Assigned Agent",
+                          category: "Category",
+                          tags: "Tags",
+                          subject: "Subject",
+                          description: "Description",
+                        };
+
+                        return (
+                          <div className="relative">
+                            {/* Vertical spine */}
+                            <div className="absolute left-5 top-0 bottom-0 w-px bg-gray-200" />
+
+                            <div className="space-y-3">
+                              {events.map((ev, idx) => {
+                                const timeStr = new Date(
+                                  ev.ts,
+                                ).toLocaleString();
+
+                                /* ── Reply ── */
+                                if (ev.kind === "reply") {
+                                  const d = ev.data;
+                                  const name = d._isComment
+                                    ? d.from || d.createdBy?.firstName
+                                    : `${d.createdBy?.firstName || ""} ${d.createdBy?.lastName || ""}`.trim();
+                                  const body = d._isComment
+                                    ? d.body || d.text
+                                    : d.messageHtml || d.message;
+                                  const isHtml = /<[a-z][\s\S]*>/i.test(
+                                    body || "",
+                                  );
+                                  return (
+                                    <div
+                                      key={idx}
+                                      className="flex gap-4 items-start pl-1"
+                                    >
+                                      <div className="z-10 flex-shrink-0 w-9 h-9 rounded-full bg-blue-100 border-2 border-blue-400 flex items-center justify-center text-blue-700 font-bold text-xs">
+                                        {(name?.[0] || "?").toUpperCase()}
+                                      </div>
+                                      <div className="flex-1 bg-blue-50 border border-blue-200 rounded-lg p-3 min-w-0">
+                                        <div className="flex items-center justify-between flex-wrap gap-1 mb-1">
+                                          <span className="text-xs font-semibold text-blue-800">
+                                            {name}
+                                          </span>
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-200 text-blue-800 font-medium">
+                                              {d._isComment
+                                                ? "Email Reply"
+                                                : "Reply"}
+                                            </span>
+                                            <span className="text-xs text-gray-400">
+                                              {timeStr}
+                                            </span>
+                                          </div>
+                                        </div>
+                                        {isHtml ? (
+                                          <div
+                                            className="text-sm text-gray-700 prose prose-sm max-w-none"
+                                            dangerouslySetInnerHTML={{
+                                              __html: DOMPurify.sanitize(
+                                                body || "",
+                                              ),
+                                            }}
+                                          />
+                                        ) : (
+                                          <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                                            {body}
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                }
+
+                                /* ── Internal Note ── */
+                                if (ev.kind === "note") {
+                                  const d = ev.data;
+                                  const name =
+                                    `${d.createdBy?.firstName || ""} ${d.createdBy?.lastName || ""}`.trim();
+                                  return (
+                                    <div
+                                      key={idx}
+                                      className="flex gap-4 items-start pl-1"
+                                    >
+                                      <div className="z-10 flex-shrink-0 w-9 h-9 rounded-full bg-yellow-100 border-2 border-yellow-400 flex items-center justify-center text-yellow-700 font-bold text-xs">
+                                        {(name?.[0] || "?").toUpperCase()}
+                                      </div>
+                                      <div className="flex-1 bg-yellow-50 border border-yellow-200 rounded-lg p-3 min-w-0">
+                                        <div className="flex items-center justify-between flex-wrap gap-1 mb-1">
+                                          <span className="text-xs font-semibold text-yellow-800">
+                                            {name}
+                                          </span>
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-200 text-yellow-800 font-medium">
+                                              Internal Note
+                                            </span>
+                                            <span className="text-xs text-gray-400">
+                                              {timeStr}
+                                            </span>
+                                          </div>
+                                        </div>
+                                        <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                                          {d.note}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  );
+                                }
+
+                                /* ── Change ── */
+                                if (ev.kind === "change") {
+                                  const d = ev.data;
+                                  const name =
+                                    `${d.changedBy?.firstName || ""} ${d.changedBy?.lastName || ""}`.trim();
+                                  const field =
+                                    fieldDisplayNames[d.field] || d.field;
+                                  return (
+                                    <div
+                                      key={idx}
+                                      className="flex gap-4 items-start pl-1"
+                                    >
+                                      <div className="z-10 flex-shrink-0 w-9 h-9 rounded-full bg-green-100 border-2 border-green-400 flex items-center justify-center">
+                                        <CheckCircleIcon className="h-4 w-4 text-green-600" />
+                                      </div>
+                                      <div className="flex-1 bg-green-50 border border-green-200 rounded-lg p-3 min-w-0">
+                                        <div className="flex items-center justify-between flex-wrap gap-1 mb-1">
+                                          <span className="text-xs font-semibold text-green-800">
+                                            {field} changed by {name}
+                                          </span>
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-xs px-2 py-0.5 rounded-full bg-green-200 text-green-800 font-medium">
+                                              Change
+                                            </span>
+                                            <span className="text-xs text-gray-400">
+                                              {timeStr}
+                                            </span>
+                                          </div>
+                                        </div>
+                                        <div className="flex gap-4 text-xs text-gray-600">
+                                          <span>
+                                            <span className="text-gray-400">
+                                              From:
+                                            </span>{" "}
+                                            <span className="font-medium">
+                                              {formatChangeValue(
+                                                d.field,
+                                                d.oldValue,
+                                              ) || "—"}
+                                            </span>
+                                          </span>
+                                          <span>→</span>
+                                          <span>
+                                            <span className="text-gray-400">
+                                              To:
+                                            </span>{" "}
+                                            <span className="font-medium">
+                                              {formatChangeValue(
+                                                d.field,
+                                                d.newValue,
+                                              ) || "—"}
+                                            </span>
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                }
+
+                                /* ── Escalation ── */
+                                if (ev.kind === "escalation") {
+                                  const d = ev.data;
+                                  const byName = d.escalatedBy
+                                    ? `${d.escalatedBy.firstName} ${d.escalatedBy.lastName}`
+                                    : "System (auto)";
+                                  const toName =
+                                    `${d.escalatedTo?.firstName || ""} ${d.escalatedTo?.lastName || ""}`.trim();
+                                  return (
+                                    <div
+                                      key={idx}
+                                      className="flex gap-4 items-start pl-1"
+                                    >
+                                      <div className="z-10 flex-shrink-0 w-9 h-9 rounded-full bg-orange-100 border-2 border-orange-400 flex items-center justify-center">
+                                        <ArrowUpIcon className="h-4 w-4 text-orange-600" />
+                                      </div>
+                                      <div className="flex-1 bg-orange-50 border border-orange-200 rounded-lg p-3 min-w-0">
+                                        <div className="flex items-center justify-between flex-wrap gap-1 mb-1">
+                                          <span className="text-xs font-semibold text-orange-800">
+                                            Escalated to {toName}
+                                          </span>
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-xs px-2 py-0.5 rounded-full bg-orange-200 text-orange-800 font-medium">
+                                              Escalation
+                                            </span>
+                                            <span className="text-xs text-gray-400">
+                                              {timeStr}
+                                            </span>
+                                          </div>
+                                        </div>
+                                        <p className="text-xs text-gray-600">
+                                          By: {byName}
+                                        </p>
+                                        {d.reason && (
+                                          <p className="text-sm text-gray-700 mt-1">
+                                            {d.reason}
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                }
+
+                                return null;
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
 
@@ -4681,7 +5020,6 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
             </div>
           </div>
         </div>
-
         {/* ── Field-Update Spinner Overlay ──────────────────────────────── */}
         {isFieldUpdating && (
           <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -4713,7 +5051,6 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
             </div>
           </div>
         )}
-
         {/* ── Confirmation Modal ─────────────────────────────────────────── */}
         {confirmModal.open && (
           <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -4780,8 +5117,109 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
             </div>
           </div>
         )}
+        {/* ── Closing-Remark Modal ───────────────────────────────────────── */}
+        {remarkModal.open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+              onClick={() => setRemarkModal((m) => ({ ...m, open: false }))}
+            />
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
+              {/* Icon */}
+              <div className="flex items-center justify-center w-12 h-12 rounded-full bg-blue-100 mx-auto mb-4">
+                <svg
+                  className="h-6 w-6 text-blue-600"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                  />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 text-center mb-1">
+                Closing Remark Required
+              </h3>
+              <p className="text-sm text-gray-500 text-center mb-5">
+                Changing status from{" "}
+                <span className="font-medium text-gray-700">
+                  {remarkModal.fromLabel}
+                </span>{" "}
+                to{" "}
+                <span className="font-medium text-blue-700">
+                  {remarkModal.toLabel}
+                </span>{" "}
+                requires a remark.
+              </p>
 
-        {/* ── Reassign Modal ─────────────────────────────────────────────── */}
+              {/* Date picker */}
+              <div className="mb-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Date <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={remarkModal.remarkDate}
+                  onChange={(e) =>
+                    setRemarkModal((m) => ({
+                      ...m,
+                      remarkDate: e.target.value,
+                    }))
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              {/* Remark textarea */}
+              <div className="mb-5">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Remark <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="Enter your closing remark..."
+                  value={remarkModal.remark}
+                  onChange={(e) =>
+                    setRemarkModal((m) => ({ ...m, remark: e.target.value }))
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setRemarkModal((m) => ({ ...m, open: false }))}
+                  className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  disabled={
+                    !remarkModal.remark.trim() || !remarkModal.remarkDate
+                  }
+                  onClick={() => {
+                    if (!remarkModal.remark.trim() || !remarkModal.remarkDate)
+                      return;
+                    const combinedRemark = `[${remarkModal.remarkDate}] ${remarkModal.remark.trim()}`;
+                    setRemarkModal((m) => ({ ...m, open: false }));
+                    handleUpdateStatus(
+                      remarkModal.targetStatusCode,
+                      combinedRemark,
+                    );
+                  }}
+                  className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Confirm &amp; Change Status
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* ── Reassign Modal ─────────────────────────────────────────────── */}{" "}
         {showReassignModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center">
             <div
@@ -4984,7 +5422,6 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
             </div>
           </div>
         )}
-
         {/* ── Success Modal ──────────────────────────────────────────────── */}
         {successModal.open && (
           <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -5026,7 +5463,6 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
             </div>
           </div>
         )}
-
         {/* ── File Upload Toast ──────────────────────────────────────────── */}
         {fileUploadToast && (
           <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-top-4 fade-in duration-300">

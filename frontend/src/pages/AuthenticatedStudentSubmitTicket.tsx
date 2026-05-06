@@ -365,6 +365,43 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
         }
       }
 
+      // Validate field-level rules (minLength, maxLength, regex) for visible fields
+      for (const field of allFields) {
+        if (!visibleFields.has(field.fieldName)) continue;
+        const v = (field as any).validation;
+        if (!v) continue;
+        const rawValue = formData[field.fieldName];
+        const value = rawValue == null ? "" : String(rawValue);
+        // Skip empty optional fields — required check was already done above
+        if (!value) continue;
+        const label = (field as any).displayLabel || field.fieldName;
+        if (v.minLength != null && value.length < Number(v.minLength)) {
+          setSubmitError(`${label} must be at least ${v.minLength} characters`);
+          window.scrollTo({ top: 0, behavior: "smooth" });
+          setSubmitting(false);
+          return;
+        }
+        if (v.maxLength != null && value.length > Number(v.maxLength)) {
+          setSubmitError(`${label} must be at most ${v.maxLength} characters`);
+          window.scrollTo({ top: 0, behavior: "smooth" });
+          setSubmitting(false);
+          return;
+        }
+        if (v.regex) {
+          try {
+            const re = new RegExp(v.regex);
+            if (!re.test(value)) {
+              setSubmitError(`${label} is not in the correct format`);
+              window.scrollTo({ top: 0, behavior: "smooth" });
+              setSubmitting(false);
+              return;
+            }
+          } catch {
+            // invalid regex pattern — skip silently
+          }
+        }
+      }
+
       // Prepare form data — only send values from visible fields
       const submitData = new FormData();
       submitData.append("projectId", branding?.projectId || "");

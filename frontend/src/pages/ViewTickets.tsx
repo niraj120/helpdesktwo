@@ -4,6 +4,7 @@ import React, {
   useRef,
   useMemo,
   useCallback,
+  useDeferredValue,
 } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import DashboardLayout from "../components/DashboardLayout";
@@ -72,6 +73,10 @@ interface Ticket {
     pausedAt?: string;
     pausedDuration?: number;
   };
+  /** Project-specific status name, enriched by the API */
+  statusName?: string;
+  /** Project-specific status color, enriched by the API */
+  statusColor?: string;
 }
 
 interface Project {
@@ -171,6 +176,14 @@ interface ViewTicketsProps {
   wrapWithLayout?: boolean;
 }
 
+const Wrapper = ({
+  children,
+  wrap,
+}: {
+  children: React.ReactNode;
+  wrap: boolean;
+}) => (wrap ? <DashboardLayout>{children}</DashboardLayout> : <>{children}</>);
+
 const ViewTickets: React.FC<ViewTicketsProps> = ({
   initialProjectId,
   wrapWithLayout = true,
@@ -201,7 +214,11 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     return () => clearInterval(id);
   }, []);
   const [filterStatus, setFilterStatus] = useState("all");
+  const [statuses, setStatuses] = useState<
+    Array<{ code: number; name: string }>
+  >([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const deferredSearchQuery = useDeferredValue(searchQuery);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -299,7 +316,49 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     fetchTickets(1, initialProjectId ?? "all", "all");
     if (!initialProjectId) fetchProjects(); // skip project list when locked to portal project
     fetchAgents();
+    fetchStatuses(initialProjectId ?? null);
   }, []);
+
+  // Re-fetch statuses when project filter changes
+  useEffect(() => {
+    if (filterProject !== "all") fetchStatuses(filterProject);
+    else fetchStatuses(initialProjectId ?? null);
+  }, [filterProject]);
+
+  const fetchStatuses = async (projectId: string | null) => {
+    try {
+      const token = localStorage.getItem("authToken");
+      if (!token) return;
+      // If no specific project, try to resolve from localStorage
+      let pid = projectId;
+      if (!pid) {
+        const ctx = localStorage.getItem("projectContext");
+        if (ctx) {
+          try {
+            pid = JSON.parse(ctx).projectId || null;
+          } catch {
+            /* skip */
+          }
+        }
+      }
+      if (!pid) return;
+      const res = await axios.get(
+        `${API_CONFIG.API_URL}/statuses/project/${pid}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (
+        res.data.success &&
+        Array.isArray(res.data.data) &&
+        res.data.data.length > 0
+      ) {
+        setStatuses(
+          res.data.data.map((s: any) => ({ code: s.code, name: s.name })),
+        );
+      }
+    } catch {
+      // non-fatal — leave statuses empty, dropdown will stay at "All Status"
+    }
+  };
 
   const fetchTickets = async (
     page: number = currentPage,
@@ -398,20 +457,30 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
   const filteredTickets = useMemo(() => {
     return tickets.filter((ticket) => {
       const matchesStatus =
-        filterStatus === "all" || ticket.status === filterStatus;
+        filterStatus === "all" || String(ticket.status) === filterStatus;
+      const sq = deferredSearchQuery.toLowerCase();
       const matchesSearch =
-        ticket.ticketNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        ticket.subject?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        ticket.metadata?.studentEmail
-          ?.toLowerCase()
-          .includes(searchQuery.toLowerCase()) ||
-        ticket.metadata?.projectId?.name
-          ?.toLowerCase()
-          .includes(searchQuery.toLowerCase());
+        !sq ||
+        ticket.ticketNumber.toLowerCase().includes(sq) ||
+        ticket.subject?.toLowerCase().includes(sq) ||
+        ticket.metadata?.studentEmail?.toLowerCase().includes(sq) ||
+        ticket.metadata?.studentName?.toLowerCase().includes(sq) ||
+        ticket.metadata?.projectId?.name?.toLowerCase().includes(sq) ||
+        ticket.priority?.toLowerCase().includes(sq) ||
+        (ticket.statusName || "").toLowerCase().includes(sq) ||
+        (ticket.assignedTo
+          ? `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}`
+              .toLowerCase()
+              .includes(sq)
+          : false) ||
+        ticket.category?.name?.toLowerCase().includes(sq) ||
+        (typeof ticket.metadata?.centerId === "object"
+          ? ticket.metadata.centerId.centerName?.toLowerCase().includes(sq)
+          : false);
 
       return matchesStatus && matchesSearch;
     });
-  }, [tickets, filterStatus, searchQuery]);
+  }, [tickets, filterStatus, deferredSearchQuery]);
 
   // Convert numeric status code to label string
   const getStatusLabel = useCallback((status: string | number): string => {
@@ -526,1077 +595,1122 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     selectedTicketIds.has(t._id),
   );
 
-  if (loading) {
-    const loadingContent = (
-      <div style={{ padding: "24px", textAlign: "center" }}>
-        <p>Loading tickets...</p>
-      </div>
-    );
-    return wrapWithLayout ? (
-      <DashboardLayout>{loadingContent}</DashboardLayout>
-    ) : (
-      loadingContent
-    );
-  }
-
-  const Wrapper = ({ children }: { children: React.ReactNode }) =>
-    wrapWithLayout ? (
-      <DashboardLayout>{children}</DashboardLayout>
-    ) : (
-      <>{children}</>
-    );
+  const loadingContent = (
+    <div style={{ padding: "24px", textAlign: "center" }}>
+      <p>Loading tickets...</p>
+    </div>
+  );
 
   return (
-    <Wrapper>
-      <div style={{ padding: "24px", maxWidth: "1400px", margin: "0 auto" }}>
-        <ModuleHeader
-          title={hasViewAll ? "All Queries" : "My Queries"}
-          subtitle={
-            hasViewAll
-              ? "View and manage all support queries across all projects"
-              : "View and manage queries assigned to you"
-          }
-        />
-
-        {/* Real-time: pending new tickets banner */}
-        {pendingNewTickets > 0 && (
+    <Wrapper wrap={wrapWithLayout}>
+      {loading ? (
+        loadingContent
+      ) : (
+        <>
           <div
-            onClick={() => {
-              setPendingNewTickets(0);
-              fetchTickets(1, filterProject, filterAssignedTo);
-            }}
-            style={{
-              background: "#3b82f6",
-              color: "white",
-              borderRadius: "8px",
-              padding: "10px 16px",
-              marginBottom: "12px",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              fontWeight: 500,
-              fontSize: "14px",
-            }}
+            style={{ padding: "24px", maxWidth: "1400px", margin: "0 auto" }}
           >
-            <span>🔔</span>
-            <span>
-              {pendingNewTickets} new ticket{pendingNewTickets > 1 ? "s" : ""}{" "}
-              arrived — click to refresh
-            </span>
-          </div>
-        )}
-
-        {/* Filters */}
-        <div
-          style={{
-            background: "white",
-            borderRadius: "12px",
-            padding: "20px",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-            marginBottom: "16px",
-          }}
-        >
-          {/* Row 1: Search + Status + Export */}
-          <div
-            style={{
-              display: "flex",
-              gap: "12px",
-              flexWrap: "wrap",
-              alignItems: "center",
-              marginBottom: "12px",
-            }}
-          >
-            <div style={{ flex: 1, minWidth: "200px" }}>
-              <input
-                type="text"
-                placeholder="Search tickets..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  border: "1px solid #D1D5DB",
-                  borderRadius: "8px",
-                  fontSize: "14px",
-                  boxSizing: "border-box",
+            <ModuleHeader
+              title={hasViewAll ? "All Queries" : "My Queries"}
+              subtitle={
+                hasViewAll
+                  ? "View and manage all support queries across all projects"
+                  : "View and manage queries assigned to you"
+              }
+            />
+            {/* Real-time: pending new tickets banner */}
+            {pendingNewTickets > 0 && (
+              <div
+                onClick={() => {
+                  setPendingNewTickets(0);
+                  fetchTickets(1, filterProject, filterAssignedTo);
                 }}
-              />
-            </div>
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              style={{
-                padding: "10px 12px",
-                border: "1px solid #D1D5DB",
-                borderRadius: "8px",
-                fontSize: "14px",
-                minWidth: "130px",
-              }}
-            >
-              <option value="all">All Status</option>
-              <option value="open">Open</option>
-              <option value="in-progress">In Progress</option>
-              <option value="pending">Pending</option>
-              <option value="resolved">Resolved</option>
-              <option value="closed">Closed</option>
-            </select>
-            {canExport && (
-              <button
-                onClick={() => setShowExportModal(true)}
                 style={{
+                  background: "#3b82f6",
+                  color: "white",
+                  borderRadius: "8px",
+                  padding: "10px 16px",
+                  marginBottom: "12px",
+                  cursor: "pointer",
                   display: "flex",
                   alignItems: "center",
                   gap: "8px",
-                  padding: "10px 16px",
-                  background: "#059669",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "8px",
+                  fontWeight: 500,
                   fontSize: "14px",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  transition: "all 0.2s",
-                  whiteSpace: "nowrap",
-                }}
-                onMouseEnter={(e) =>
-                  (e.currentTarget.style.background = "#047857")
-                }
-                onMouseLeave={(e) =>
-                  (e.currentTarget.style.background = "#059669")
-                }
-              >
-                <ArrowDownTrayIcon style={{ width: "16px", height: "16px" }} />
-                Export
-              </button>
-            )}
-          </div>
-
-          {/* Row 2: Project filter + Assigned To filter */}
-          <div
-            style={{
-              display: "flex",
-              gap: "12px",
-              flexWrap: "wrap",
-              alignItems: "center",
-            }}
-          >
-            {/* Hide project dropdown when locked to a portal project */}
-            {!initialProjectId && projects.length > 0 && (
-              <select
-                value={filterProject}
-                onChange={(e) => {
-                  setFilterProject(e.target.value);
-                  fetchTickets(1, e.target.value, filterAssignedTo);
-                }}
-                style={{
-                  padding: "9px 12px",
-                  border: "1px solid #D1D5DB",
-                  borderRadius: "8px",
-                  fontSize: "14px",
-                  minWidth: "180px",
-                  maxWidth: "280px",
                 }}
               >
-                <option value="all">All Projects</option>
-                {projects.map((p) => (
-                  <option key={p._id} value={p._id}>
-                    {p.name} {p.code ? `(${p.code})` : ""}
-                  </option>
-                ))}
-              </select>
-            )}
-            {agents.length > 0 && (
-              <select
-                value={filterAssignedTo}
-                onChange={(e) => {
-                  setFilterAssignedTo(e.target.value);
-                  fetchTickets(1, filterProject, e.target.value);
-                }}
-                style={{
-                  padding: "9px 12px",
-                  border: "1px solid #D1D5DB",
-                  borderRadius: "8px",
-                  fontSize: "14px",
-                  minWidth: "180px",
-                  maxWidth: "260px",
-                }}
-              >
-                <option value="all">All Agents</option>
-                <option value="unassigned">Unassigned</option>
-                {agents.map((a) => (
-                  <option key={a._id} value={a._id}>
-                    {a.firstName} {a.lastName}
-                  </option>
-                ))}
-              </select>
-            )}
-            {((initialProjectId ? false : filterProject !== "all") ||
-              filterAssignedTo !== "all") && (
-              <button
-                onClick={() => {
-                  if (!initialProjectId) setFilterProject("all");
-                  setFilterAssignedTo("all");
-                  fetchTickets(1, initialProjectId ?? "all", "all");
-                }}
-                style={{
-                  padding: "9px 14px",
-                  border: "1px solid #E5E7EB",
-                  borderRadius: "8px",
-                  background: "#F9FAFB",
-                  color: "#6B7280",
-                  fontSize: "13px",
-                  cursor: "pointer",
-                }}
-              >
-                Clear Filters
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Bulk Action Bar */}
-        {selectedTicketIds.size > 0 && (
-          <>
-            <div
-              style={{
-                background: "#1E40AF",
-                color: "white",
-                borderRadius: "10px",
-                padding: "12px 20px",
-                marginBottom: "12px",
-                display: "flex",
-                alignItems: "center",
-                gap: "16px",
-                flexWrap: "wrap",
-              }}
-            >
-              <span style={{ fontWeight: 600, fontSize: "14px" }}>
-                {selectedTicketIds.size} ticket
-                {selectedTicketIds.size !== 1 ? "s" : ""} selected
-              </span>
-              {canMerge && selectedTicketIds.size >= 2 && (
-                <button
-                  onClick={() => {
-                    const sel = filteredTickets.filter((t) =>
-                      selectedTicketIds.has(t._id),
-                    );
-                    const getKey = (t: Ticket) =>
-                      t.metadata?.studentEmail || t.metadata?.studentName || "";
-                    const keys = new Set(sel.map(getKey));
-                    if (keys.size > 1) {
-                      setBulkError(
-                        "Cannot merge tickets from different requestors. Please select tickets raised by the same person.",
-                      );
-                      return;
-                    }
-                    setBulkMergeStep("pick-primary");
-                    setBulkMergePrimaryId("");
-                    setBulkError("");
-                  }}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "6px",
-                    padding: "7px 14px",
-                    background: "rgba(255,255,255,0.2)",
-                    border: "1px solid rgba(255,255,255,0.4)",
-                    color: "white",
-                    borderRadius: "6px",
-                    fontSize: "13px",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                  }}
-                >
-                  <ArrowsPointingInIcon
-                    style={{ width: "15px", height: "15px" }}
-                  />
-                  Merge Selected
-                </button>
-              )}
-              {canDelete && (
-                <button
-                  onClick={() => {
-                    setShowBulkDeleteConfirm(true);
-                    setBulkError("");
-                  }}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "6px",
-                    padding: "7px 14px",
-                    background: "rgba(239,68,68,0.8)",
-                    border: "1px solid rgba(239,68,68,0.4)",
-                    color: "white",
-                    borderRadius: "6px",
-                    fontSize: "13px",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                  }}
-                >
-                  <TrashIcon style={{ width: "15px", height: "15px" }} />
-                  Delete Selected
-                </button>
-              )}
-              <button
-                onClick={() => {
-                  setSelectedTicketIds(new Set());
-                  setBulkError("");
-                }}
-                style={{
-                  marginLeft: "auto",
-                  background: "transparent",
-                  border: "none",
-                  color: "rgba(255,255,255,0.7)",
-                  cursor: "pointer",
-                  fontSize: "13px",
-                }}
-              >
-                Clear selection
-              </button>
-            </div>
-            {bulkMergeStep === "idle" && bulkError && (
-              <div
-                style={{
-                  background: "#FEF2F2",
-                  border: "1px solid #FECACA",
-                  borderRadius: "8px",
-                  padding: "10px 14px",
-                  color: "#B91C1C",
-                  fontSize: "13px",
-                  marginBottom: "12px",
-                }}
-              >
-                {bulkError}
+                <span>🔔</span>
+                <span>
+                  {pendingNewTickets} new ticket
+                  {pendingNewTickets > 1 ? "s" : ""} arrived — click to refresh
+                </span>
               </div>
             )}
-          </>
-        )}
 
-        {/* Tickets Grid */}
-        <div style={{ display: "grid", gap: "16px" }}>
-          {/* Select-all row */}
-          {filteredTickets.length > 0 && (canMerge || canDelete) && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "10px",
-                padding: "8px 12px",
-                background: "#F8FAFC",
-                borderRadius: "8px",
-                border: "1px solid #E5E7EB",
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={
-                  filteredTickets.length > 0 &&
-                  selectedTicketIds.size === filteredTickets.length
-                }
-                onChange={toggleSelectAll}
-                style={{ width: "16px", height: "16px", cursor: "pointer" }}
-              />
-              <span style={{ fontSize: "13px", color: "#6B7280" }}>
-                Select all on this page ({filteredTickets.length})
-              </span>
-            </div>
-          )}
-          {filteredTickets.length === 0 ? (
+            {/* Filters */}
             <div
               style={{
                 background: "white",
                 borderRadius: "12px",
-                padding: "48px",
-                textAlign: "center",
+                padding: "20px",
                 boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                marginBottom: "16px",
               }}
             >
-              <p style={{ color: "#6B7280" }}>No tickets found</p>
-            </div>
-          ) : (
-            filteredTickets.map((ticket) => (
+              {/* Row 1: Search + Status + Export */}
               <div
-                key={ticket._id}
                 style={{
-                  background: selectedTicketIds.has(ticket._id)
-                    ? "#EFF6FF"
-                    : ticket.hasNewReply
-                      ? "#FFFBEB"
-                      : "white",
-                  borderRadius: "12px",
-                  padding: "20px",
-                  boxShadow: ticket.hasNewReply
-                    ? "0 1px 6px rgba(245,158,11,0.25)"
-                    : "0 1px 3px rgba(0,0,0,0.1)",
-                  transition: "all 0.2s",
-                  border: selectedTicketIds.has(ticket._id)
-                    ? "1.5px solid #3B82F6"
-                    : ticket.hasNewReply
-                      ? "1.5px solid #F59E0B"
-                      : "1.5px solid transparent",
-                  borderLeft:
-                    ticket.hasNewReply && !selectedTicketIds.has(ticket._id)
-                      ? "4px solid #F59E0B"
-                      : undefined,
-                }}
-                onMouseEnter={(e) => {
-                  if (!selectedTicketIds.has(ticket._id)) {
-                    e.currentTarget.style.boxShadow =
-                      "0 4px 12px rgba(0,0,0,0.15)";
-                    e.currentTarget.style.transform = "translateY(-2px)";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.1)";
-                  e.currentTarget.style.transform = "translateY(0)";
+                  display: "flex",
+                  gap: "12px",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  marginBottom: "12px",
                 }}
               >
+                <div style={{ flex: 1, minWidth: "200px" }}>
+                  <input
+                    type="text"
+                    placeholder="Search tickets..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px",
+                      border: "1px solid #D1D5DB",
+                      borderRadius: "8px",
+                      fontSize: "14px",
+                      boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  style={{
+                    padding: "10px 12px",
+                    border: "1px solid #D1D5DB",
+                    borderRadius: "8px",
+                    fontSize: "14px",
+                    minWidth: "130px",
+                  }}
+                >
+                  <option value="all">All Status</option>
+                  {statuses.map((s) => (
+                    <option key={s.code} value={String(s.code)}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+                {canExport && (
+                  <button
+                    onClick={() => setShowExportModal(true)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      padding: "10px 16px",
+                      background: "#059669",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "8px",
+                      fontSize: "14px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      transition: "all 0.2s",
+                      whiteSpace: "nowrap",
+                    }}
+                    onMouseEnter={(e) =>
+                      (e.currentTarget.style.background = "#047857")
+                    }
+                    onMouseLeave={(e) =>
+                      (e.currentTarget.style.background = "#059669")
+                    }
+                  >
+                    <ArrowDownTrayIcon
+                      style={{ width: "16px", height: "16px" }}
+                    />
+                    Export
+                  </button>
+                )}
+              </div>
+
+              {/* Row 2: Project filter + Assigned To filter */}
+              <div
+                style={{
+                  display: "flex",
+                  gap: "12px",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                }}
+              >
+                {/* Hide project dropdown when locked to a portal project */}
+                {!initialProjectId && projects.length > 0 && (
+                  <select
+                    value={filterProject}
+                    onChange={(e) => {
+                      setFilterProject(e.target.value);
+                      fetchTickets(1, e.target.value, filterAssignedTo);
+                    }}
+                    style={{
+                      padding: "9px 12px",
+                      border: "1px solid #D1D5DB",
+                      borderRadius: "8px",
+                      fontSize: "14px",
+                      minWidth: "180px",
+                      maxWidth: "280px",
+                    }}
+                  >
+                    <option value="all">All Projects</option>
+                    {projects.map((p) => (
+                      <option key={p._id} value={p._id}>
+                        {p.name} {p.code ? `(${p.code})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {agents.length > 0 && (
+                  <select
+                    value={filterAssignedTo}
+                    onChange={(e) => {
+                      setFilterAssignedTo(e.target.value);
+                      fetchTickets(1, filterProject, e.target.value);
+                    }}
+                    style={{
+                      padding: "9px 12px",
+                      border: "1px solid #D1D5DB",
+                      borderRadius: "8px",
+                      fontSize: "14px",
+                      minWidth: "180px",
+                      maxWidth: "260px",
+                    }}
+                  >
+                    <option value="all">All Agents</option>
+                    <option value="unassigned">Unassigned</option>
+                    {agents.map((a) => (
+                      <option key={a._id} value={a._id}>
+                        {a.firstName} {a.lastName}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {((initialProjectId ? false : filterProject !== "all") ||
+                  filterAssignedTo !== "all") && (
+                  <button
+                    onClick={() => {
+                      if (!initialProjectId) setFilterProject("all");
+                      setFilterAssignedTo("all");
+                      fetchTickets(1, initialProjectId ?? "all", "all");
+                    }}
+                    style={{
+                      padding: "9px 14px",
+                      border: "1px solid #E5E7EB",
+                      borderRadius: "8px",
+                      background: "#F9FAFB",
+                      color: "#6B7280",
+                      fontSize: "13px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Clear Filters
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Bulk Action Bar */}
+            {selectedTicketIds.size > 0 && (
+              <>
+                <div
+                  style={{
+                    background: "#1E40AF",
+                    color: "white",
+                    borderRadius: "10px",
+                    padding: "12px 20px",
+                    marginBottom: "12px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "16px",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <span style={{ fontWeight: 600, fontSize: "14px" }}>
+                    {selectedTicketIds.size} ticket
+                    {selectedTicketIds.size !== 1 ? "s" : ""} selected
+                  </span>
+                  {canMerge && selectedTicketIds.size >= 2 && (
+                    <button
+                      onClick={() => {
+                        const sel = filteredTickets.filter((t) =>
+                          selectedTicketIds.has(t._id),
+                        );
+                        const getKey = (t: Ticket) =>
+                          t.metadata?.studentEmail ||
+                          t.metadata?.studentName ||
+                          "";
+                        const keys = new Set(sel.map(getKey));
+                        if (keys.size > 1) {
+                          setBulkError(
+                            "Cannot merge tickets from different requestors. Please select tickets raised by the same person.",
+                          );
+                          return;
+                        }
+                        setBulkMergeStep("pick-primary");
+                        setBulkMergePrimaryId("");
+                        setBulkError("");
+                      }}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        padding: "7px 14px",
+                        background: "rgba(255,255,255,0.2)",
+                        border: "1px solid rgba(255,255,255,0.4)",
+                        color: "white",
+                        borderRadius: "6px",
+                        fontSize: "13px",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <ArrowsPointingInIcon
+                        style={{ width: "15px", height: "15px" }}
+                      />
+                      Merge Selected
+                    </button>
+                  )}
+                  {canDelete && (
+                    <button
+                      onClick={() => {
+                        setShowBulkDeleteConfirm(true);
+                        setBulkError("");
+                      }}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        padding: "7px 14px",
+                        background: "rgba(239,68,68,0.8)",
+                        border: "1px solid rgba(239,68,68,0.4)",
+                        color: "white",
+                        borderRadius: "6px",
+                        fontSize: "13px",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <TrashIcon style={{ width: "15px", height: "15px" }} />
+                      Delete Selected
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      setSelectedTicketIds(new Set());
+                      setBulkError("");
+                    }}
+                    style={{
+                      marginLeft: "auto",
+                      background: "transparent",
+                      border: "none",
+                      color: "rgba(255,255,255,0.7)",
+                      cursor: "pointer",
+                      fontSize: "13px",
+                    }}
+                  >
+                    Clear selection
+                  </button>
+                </div>
+                {bulkMergeStep === "idle" && bulkError && (
+                  <div
+                    style={{
+                      background: "#FEF2F2",
+                      border: "1px solid #FECACA",
+                      borderRadius: "8px",
+                      padding: "10px 14px",
+                      color: "#B91C1C",
+                      fontSize: "13px",
+                      marginBottom: "12px",
+                    }}
+                  >
+                    {bulkError}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Tickets Grid */}
+            <div style={{ display: "grid", gap: "16px" }}>
+              {/* Select-all row */}
+              {filteredTickets.length > 0 && (canMerge || canDelete) && (
                 <div
                   style={{
                     display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "flex-start",
-                    marginBottom: "12px",
+                    alignItems: "center",
+                    gap: "10px",
+                    padding: "8px 12px",
+                    background: "#F8FAFC",
+                    borderRadius: "8px",
+                    border: "1px solid #E5E7EB",
                   }}
                 >
-                  {/* Checkbox + ticket info */}
+                  <input
+                    type="checkbox"
+                    checked={
+                      filteredTickets.length > 0 &&
+                      selectedTicketIds.size === filteredTickets.length
+                    }
+                    onChange={toggleSelectAll}
+                    style={{ width: "16px", height: "16px", cursor: "pointer" }}
+                  />
+                  <span style={{ fontSize: "13px", color: "#6B7280" }}>
+                    Select all on this page ({filteredTickets.length})
+                  </span>
+                </div>
+              )}
+              {filteredTickets.length === 0 ? (
+                <div
+                  style={{
+                    background: "white",
+                    borderRadius: "12px",
+                    padding: "48px",
+                    textAlign: "center",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                  }}
+                >
+                  <p style={{ color: "#6B7280" }}>No tickets found</p>
+                </div>
+              ) : (
+                filteredTickets.map((ticket) => (
                   <div
+                    key={ticket._id}
                     style={{
-                      display: "flex",
-                      alignItems: "flex-start",
-                      gap: "12px",
-                      flex: 1,
+                      background: selectedTicketIds.has(ticket._id)
+                        ? "#EFF6FF"
+                        : ticket.hasNewReply
+                          ? "#FFFBEB"
+                          : "white",
+                      borderRadius: "12px",
+                      padding: "20px",
+                      boxShadow: ticket.hasNewReply
+                        ? "0 1px 6px rgba(245,158,11,0.25)"
+                        : "0 1px 3px rgba(0,0,0,0.1)",
+                      transition: "all 0.2s",
+                      border: selectedTicketIds.has(ticket._id)
+                        ? "1.5px solid #3B82F6"
+                        : ticket.hasNewReply
+                          ? "1.5px solid #F59E0B"
+                          : "1.5px solid transparent",
+                      borderLeft:
+                        ticket.hasNewReply && !selectedTicketIds.has(ticket._id)
+                          ? "4px solid #F59E0B"
+                          : undefined,
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!selectedTicketIds.has(ticket._id)) {
+                        e.currentTarget.style.boxShadow =
+                          "0 4px 12px rgba(0,0,0,0.15)";
+                        e.currentTarget.style.transform = "translateY(-2px)";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.boxShadow =
+                        "0 1px 3px rgba(0,0,0,0.1)";
+                      e.currentTarget.style.transform = "translateY(0)";
                     }}
                   >
-                    {(canMerge || canDelete) && (
-                      <input
-                        type="checkbox"
-                        checked={selectedTicketIds.has(ticket._id)}
-                        onChange={() => toggleTicketSelect(ticket._id)}
-                        onClick={(e) => e.stopPropagation()}
-                        style={{
-                          width: "16px",
-                          height: "16px",
-                          cursor: "pointer",
-                          marginTop: "4px",
-                          flexShrink: 0,
-                        }}
-                      />
-                    )}
                     <div
-                      style={{ flex: 1, cursor: "pointer" }}
-                      onClick={() => {
-                        // Clear unread highlight when agent opens the ticket
-                        setTickets((prev) =>
-                          prev.map((t) =>
-                            t._id === ticket._id
-                              ? { ...t, hasNewReply: false }
-                              : t,
-                          ),
-                        );
-                        navigate(
-                          initialProjectId && customUrlPath
-                            ? `/${customUrlPath}/portal/tickets/${ticket._id}`
-                            : `/tickets/${ticket._id}`,
-                        );
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "flex-start",
+                        marginBottom: "12px",
                       }}
                     >
-                      <span
+                      {/* Checkbox + ticket info */}
+                      <div
                         style={{
-                          fontSize: "14px",
-                          fontWeight: 600,
-                          color: "#2563EB",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "6px",
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: "12px",
+                          flex: 1,
                         }}
                       >
-                        #{ticket.ticketNumber}
-                        {ticket.hasNewReply && (
-                          <span
-                            title="New / unread reply"
+                        {(canMerge || canDelete) && (
+                          <input
+                            type="checkbox"
+                            checked={selectedTicketIds.has(ticket._id)}
+                            onChange={() => toggleTicketSelect(ticket._id)}
+                            onClick={(e) => e.stopPropagation()}
                             style={{
-                              display: "inline-block",
-                              width: "8px",
-                              height: "8px",
-                              borderRadius: "50%",
-                              background: "#F59E0B",
+                              width: "16px",
+                              height: "16px",
+                              cursor: "pointer",
+                              marginTop: "4px",
                               flexShrink: 0,
                             }}
                           />
                         )}
-                        {ticket.mergedTickets &&
-                          ticket.mergedTickets.length > 0 && (
-                            <span
-                              style={{
-                                fontSize: "12px",
-                                fontWeight: 500,
-                                color: "#7C3AED",
-                                marginLeft: "6px",
-                              }}
-                            >
-                              ({ticket.mergedTickets.length} ticket
-                              {ticket.mergedTickets.length > 1 ? "s" : ""}{" "}
-                              merged)
-                            </span>
-                          )}
-                      </span>
-                      <h3
-                        style={{
-                          fontSize: "16px",
-                          fontWeight: ticket.hasNewReply ? 700 : 600,
-                          color: ticket.hasNewReply ? "#1F2937" : "#111827",
-                          margin: "4px 0",
-                        }}
-                      >
-                        {ticket.subject || "No subject"}
-                      </h3>
-                    </div>
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: "8px",
-                      alignItems: "center",
-                    }}
-                  >
-                    <span
-                      style={{
-                        padding: "4px 12px",
-                        borderRadius: "12px",
-                        fontSize: "12px",
-                        fontWeight: 600,
-                        background: getStatusColor(ticket.status) + "20",
-                        color: getStatusColor(ticket.status),
-                      }}
-                    >
-                      {getStatusDisplayName(ticket.status)}
-                    </span>
-                    {canMerge && !ticket.isMerged && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedTicket(ticket);
-                          setShowMergeModal(true);
-                        }}
+                        <div
+                          style={{ flex: 1, cursor: "pointer" }}
+                          onClick={() => {
+                            // Clear unread highlight when agent opens the ticket
+                            setTickets((prev) =>
+                              prev.map((t) =>
+                                t._id === ticket._id
+                                  ? { ...t, hasNewReply: false }
+                                  : t,
+                              ),
+                            );
+                            navigate(
+                              initialProjectId && customUrlPath
+                                ? `/${customUrlPath}/portal/tickets/${ticket._id}`
+                                : `/tickets/${ticket._id}`,
+                            );
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize: "14px",
+                              fontWeight: 600,
+                              color: "#2563EB",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "6px",
+                            }}
+                          >
+                            #{ticket.ticketNumber}
+                            {ticket.hasNewReply && (
+                              <span
+                                title="New / unread reply"
+                                style={{
+                                  display: "inline-block",
+                                  width: "8px",
+                                  height: "8px",
+                                  borderRadius: "50%",
+                                  background: "#F59E0B",
+                                  flexShrink: 0,
+                                }}
+                              />
+                            )}
+                            {ticket.mergedTickets &&
+                              ticket.mergedTickets.length > 0 && (
+                                <span
+                                  style={{
+                                    fontSize: "12px",
+                                    fontWeight: 500,
+                                    color: "#7C3AED",
+                                    marginLeft: "6px",
+                                  }}
+                                >
+                                  ({ticket.mergedTickets.length} ticket
+                                  {ticket.mergedTickets.length > 1
+                                    ? "s"
+                                    : ""}{" "}
+                                  merged)
+                                </span>
+                              )}
+                          </span>
+                          <h3
+                            style={{
+                              fontSize: "16px",
+                              fontWeight: ticket.hasNewReply ? 700 : 600,
+                              color: ticket.hasNewReply ? "#1F2937" : "#111827",
+                              margin: "4px 0",
+                            }}
+                          >
+                            {ticket.subject || "No subject"}
+                          </h3>
+                        </div>
+                      </div>
+                      <div
                         style={{
                           display: "flex",
+                          gap: "8px",
                           alignItems: "center",
-                          gap: "4px",
-                          padding: "6px 12px",
-                          background: "#3B82F6",
-                          color: "white",
-                          border: "none",
-                          borderRadius: "6px",
-                          fontSize: "12px",
-                          fontWeight: 600,
-                          cursor: "pointer",
-                          transition: "all 0.2s",
                         }}
-                        onMouseEnter={(e) =>
-                          (e.currentTarget.style.background = "#2563EB")
-                        }
-                        onMouseLeave={(e) =>
-                          (e.currentTarget.style.background = "#3B82F6")
-                        }
-                        title="Merge this ticket with others"
                       >
-                        <ArrowsPointingInIcon
-                          style={{ width: "14px", height: "14px" }}
-                        />
-                        Merge
-                      </button>
-                    )}
-                  </div>
-                </div>
+                        <span
+                          style={{
+                            padding: "4px 12px",
+                            borderRadius: "12px",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            background:
+                              (ticket.statusColor ||
+                                getStatusColor(ticket.status)) + "20",
+                            color:
+                              ticket.statusColor ||
+                              getStatusColor(ticket.status),
+                          }}
+                        >
+                          {ticket.statusName ||
+                            getStatusDisplayName(ticket.status)}
+                        </span>
+                        {canMerge && !ticket.isMerged && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedTicket(ticket);
+                              setShowMergeModal(true);
+                            }}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "4px",
+                              padding: "6px 12px",
+                              background: "#3B82F6",
+                              color: "white",
+                              border: "none",
+                              borderRadius: "6px",
+                              fontSize: "12px",
+                              fontWeight: 600,
+                              cursor: "pointer",
+                              transition: "all 0.2s",
+                            }}
+                            onMouseEnter={(e) =>
+                              (e.currentTarget.style.background = "#2563EB")
+                            }
+                            onMouseLeave={(e) =>
+                              (e.currentTarget.style.background = "#3B82F6")
+                            }
+                            title="Merge this ticket with others"
+                          >
+                            <ArrowsPointingInIcon
+                              style={{ width: "14px", height: "14px" }}
+                            />
+                            Merge
+                          </button>
+                        )}
+                      </div>
+                    </div>
 
-                <div
-                  style={{
-                    display: "flex",
-                    gap: "24px",
-                    fontSize: "14px",
-                    color: "#6B7280",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <div>
-                    <span style={{ fontWeight: 600 }}>Priority:</span>{" "}
-                    <span style={{ textTransform: "capitalize" }}>
-                      {ticket.priority}
-                    </span>
-                  </div>
-                  {/* US-ESC-009: SLA countdown pill */}
-                  {(() => {
-                    const pill = getSlaPill(ticket);
-                    if (!pill) return null;
-                    return (
-                      <div title={pill.tooltip}>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "24px",
+                        fontSize: "14px",
+                        color: "#6B7280",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <div>
+                        <span style={{ fontWeight: 600 }}>Priority:</span>{" "}
+                        <span style={{ textTransform: "capitalize" }}>
+                          {ticket.priority}
+                        </span>
+                      </div>
+                      {/* US-ESC-009: SLA countdown pill */}
+                      {(() => {
+                        const pill = getSlaPill(ticket);
+                        if (!pill) return null;
+                        return (
+                          <div title={pill.tooltip}>
+                            <span
+                              style={{
+                                padding: "2px 8px",
+                                borderRadius: "10px",
+                                fontSize: "12px",
+                                fontWeight: 600,
+                                color: pill.color,
+                                backgroundColor: pill.bg,
+                                border: `1px solid ${pill.color}30`,
+                              }}
+                            >
+                              ⏱ {pill.label}
+                            </span>
+                          </div>
+                        );
+                      })()}
+                      <div>
+                        <span style={{ fontWeight: 600 }}>Center:</span>{" "}
                         <span
                           style={{
                             padding: "2px 8px",
-                            borderRadius: "10px",
+                            background:
+                              ticket.metadata?.centerId === "online" ||
+                              ticket.metadata?.submissionType === "online"
+                                ? "#DBEAFE"
+                                : "#FEF3C7",
+                            color:
+                              ticket.metadata?.centerId === "online" ||
+                              ticket.metadata?.submissionType === "online"
+                                ? "#1E40AF"
+                                : "#92400E",
+                            borderRadius: "4px",
                             fontSize: "12px",
                             fontWeight: 600,
-                            color: pill.color,
-                            backgroundColor: pill.bg,
-                            border: `1px solid ${pill.color}30`,
                           }}
                         >
-                          ⏱ {pill.label}
+                          {ticket.metadata?.centerId === "online" ||
+                          ticket.metadata?.submissionType === "online"
+                            ? "Online"
+                            : typeof ticket.metadata?.centerId === "object"
+                              ? `${ticket.metadata.centerId.centerName}${ticket.metadata.centerId.city ? ` (${ticket.metadata.centerId.city})` : ""}`
+                              : "Online"}
                         </span>
                       </div>
-                    );
-                  })()}
-                  <div>
-                    <span style={{ fontWeight: 600 }}>Center:</span>{" "}
-                    <span
-                      style={{
-                        padding: "2px 8px",
-                        background:
-                          ticket.metadata?.centerId === "online" ||
-                          ticket.metadata?.submissionType === "online"
-                            ? "#DBEAFE"
-                            : "#FEF3C7",
-                        color:
-                          ticket.metadata?.centerId === "online" ||
-                          ticket.metadata?.submissionType === "online"
-                            ? "#1E40AF"
-                            : "#92400E",
-                        borderRadius: "4px",
-                        fontSize: "12px",
-                        fontWeight: 600,
-                      }}
-                    >
-                      {ticket.metadata?.centerId === "online" ||
-                      ticket.metadata?.submissionType === "online"
-                        ? "Online"
-                        : typeof ticket.metadata?.centerId === "object"
-                          ? `${ticket.metadata.centerId.centerName}${ticket.metadata.centerId.city ? ` (${ticket.metadata.centerId.city})` : ""}`
-                          : "Online"}
-                    </span>
+                      {(ticket.metadata?.studentName ||
+                        ticket.metadata?.studentEmail) && (
+                        <div>
+                          <span style={{ fontWeight: 600 }}>Requested By:</span>{" "}
+                          {ticket.metadata?.studentName ||
+                            ticket.metadata?.studentEmail}
+                        </div>
+                      )}
+                      {ticket.metadata?.studentEmail && (
+                        <div>
+                          <span style={{ fontWeight: 600 }}>Email:</span>{" "}
+                          <a
+                            href={`mailto:${ticket.metadata.studentEmail}`}
+                            onClick={(e) => e.stopPropagation()}
+                            style={{ color: "#3B82F6", textDecoration: "none" }}
+                          >
+                            {ticket.metadata.studentEmail}
+                          </a>
+                        </div>
+                      )}
+                      {ticket.assignedTo && (
+                        <div>
+                          <span style={{ fontWeight: 600 }}>Assigned To:</span>{" "}
+                          {ticket.assignedTo.firstName}{" "}
+                          {ticket.assignedTo.lastName}
+                        </div>
+                      )}
+                      {ticket.category && (
+                        <div>
+                          <span style={{ fontWeight: 600 }}>Category:</span>{" "}
+                          {ticket.category.name}
+                        </div>
+                      )}
+                      {ticket.createdAt && (
+                        <div>
+                          <span style={{ fontWeight: 600 }}>Created At:</span>{" "}
+                          {new Date(ticket.createdAt).toLocaleString()}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  {ticket.metadata?.studentEmail && (
-                    <div>
-                      <span style={{ fontWeight: 600 }}>Created By:</span>{" "}
-                      {ticket.metadata?.studentName ||
-                        ticket.metadata.studentEmail}
-                    </div>
-                  )}
-                  {ticket.assignedTo && (
-                    <div>
-                      <span style={{ fontWeight: 600 }}>Assigned To:</span>{" "}
-                      {ticket.assignedTo.firstName} {ticket.assignedTo.lastName}
-                    </div>
-                  )}
-                  {ticket.category && (
-                    <div>
-                      <span style={{ fontWeight: 600 }}>Category:</span>{" "}
-                      {ticket.category.name}
-                    </div>
-                  )}
-                  {ticket.createdAt && (
-                    <div>
-                      <span style={{ fontWeight: 600 }}>Created At:</span>{" "}
-                      {new Date(ticket.createdAt).toLocaleString()}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
+                ))
+              )}
+            </div>
 
-        {/* Pagination and Summary */}
-        <div
-          style={{
-            marginTop: "16px",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            fontSize: "14px",
-            color: "#6B7280",
-          }}
-        >
-          {/* Pagination Controls */}
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <button
-              onClick={() =>
-                fetchTickets(currentPage - 1, filterProject, filterAssignedTo)
-              }
-              disabled={currentPage <= 1 || loading}
-              style={{
-                padding: "6px 12px",
-                borderRadius: "6px",
-                border: "1px solid #D1D5DB",
-                background: currentPage <= 1 ? "#F3F4F6" : "white",
-                color: currentPage <= 1 ? "#9CA3AF" : "#374151",
-                cursor: currentPage <= 1 ? "not-allowed" : "pointer",
-                fontSize: "13px",
-              }}
-            >
-              ← Previous
-            </button>
-
-            <span style={{ padding: "0 12px" }}>
-              Page {currentPage} of {totalPages}
-            </span>
-
-            <button
-              onClick={() =>
-                fetchTickets(currentPage + 1, filterProject, filterAssignedTo)
-              }
-              disabled={currentPage >= totalPages || loading}
-              style={{
-                padding: "6px 12px",
-                borderRadius: "6px",
-                border: "1px solid #D1D5DB",
-                background: currentPage >= totalPages ? "#F3F4F6" : "white",
-                color: currentPage >= totalPages ? "#9CA3AF" : "#374151",
-                cursor: currentPage >= totalPages ? "not-allowed" : "pointer",
-                fontSize: "13px",
-              }}
-            >
-              Next →
-            </button>
-          </div>
-
-          {/* Summary */}
-          <div>
-            Showing {totalTickets > 0 ? (currentPage - 1) * pageSize + 1 : 0}-
-            {Math.min(currentPage * pageSize, totalTickets)} of {totalTickets}{" "}
-            tickets
-          </div>
-        </div>
-      </div>
-
-      {/* Export Modal */}
-      {showExportModal && (
-        <TicketExportModal
-          isOpen={showExportModal}
-          onClose={() => setShowExportModal(false)}
-          filters={{
-            status: filterStatus,
-            projectId: filterProject !== "all" ? filterProject : undefined,
-            assignedTo:
-              filterAssignedTo !== "all" ? filterAssignedTo : undefined,
-          }}
-        />
-      )}
-
-      {/* Single-ticket Merge Modal */}
-      {showMergeModal && selectedTicket && (
-        <TicketMergeModal
-          isOpen={showMergeModal}
-          onClose={() => {
-            setShowMergeModal(false);
-            setSelectedTicket(null);
-          }}
-          primaryTicket={selectedTicket}
-          onMergeComplete={() => {
-            fetchTickets(1, filterProject, filterAssignedTo);
-            setShowMergeModal(false);
-            setSelectedTicket(null);
-          }}
-        />
-      )}
-
-      {/* Bulk Merge — Pick Primary Dialog */}
-      {bulkMergeStep === "pick-primary" && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.5)",
-            zIndex: 1000,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "16px",
-          }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setBulkMergeStep("idle");
-          }}
-        >
-          <div
-            style={{
-              background: "white",
-              borderRadius: "16px",
-              padding: "28px",
-              width: "100%",
-              maxWidth: "520px",
-              boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
-            }}
-          >
-            <h2
-              style={{ margin: "0 0 8px", fontSize: "18px", fontWeight: 700 }}
-            >
-              Select Primary Ticket
-            </h2>
-            <p
-              style={{ margin: "0 0 20px", color: "#6B7280", fontSize: "14px" }}
-            >
-              The primary ticket will be kept. All other selected tickets will
-              be merged into it.
-            </p>
-            {bulkError && (
-              <div
-                style={{
-                  padding: "10px 14px",
-                  background: "#FEF2F2",
-                  border: "1px solid #FECACA",
-                  borderRadius: "8px",
-                  color: "#B91C1C",
-                  fontSize: "13px",
-                  marginBottom: "16px",
-                }}
-              >
-                {bulkError}
-              </div>
-            )}
+            {/* Pagination and Summary */}
             <div
               style={{
-                display: "grid",
-                gap: "8px",
-                maxHeight: "320px",
-                overflowY: "auto",
-                marginBottom: "20px",
+                marginTop: "16px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                fontSize: "14px",
+                color: "#6B7280",
               }}
             >
-              {selectedTickets.map((t) => (
-                <label
-                  key={t._id}
+              {/* Pagination Controls */}
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "8px" }}
+              >
+                <button
+                  onClick={() =>
+                    fetchTickets(
+                      currentPage - 1,
+                      filterProject,
+                      filterAssignedTo,
+                    )
+                  }
+                  disabled={currentPage <= 1 || loading}
                   style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: "12px",
-                    padding: "12px 14px",
-                    border: `2px solid ${bulkMergePrimaryId === t._id ? "#3B82F6" : "#E5E7EB"}`,
-                    borderRadius: "8px",
-                    cursor: "pointer",
-                    background:
-                      bulkMergePrimaryId === t._id ? "#EFF6FF" : "white",
-                    transition: "all 0.15s",
+                    padding: "6px 12px",
+                    borderRadius: "6px",
+                    border: "1px solid #D1D5DB",
+                    background: currentPage <= 1 ? "#F3F4F6" : "white",
+                    color: currentPage <= 1 ? "#9CA3AF" : "#374151",
+                    cursor: currentPage <= 1 ? "not-allowed" : "pointer",
+                    fontSize: "13px",
                   }}
                 >
-                  <input
-                    type="radio"
-                    name="primaryTicket"
-                    value={t._id}
-                    checked={bulkMergePrimaryId === t._id}
-                    onChange={() => setBulkMergePrimaryId(t._id)}
-                    style={{ marginTop: "2px", flexShrink: 0 }}
-                  />
-                  <div>
-                    <div
-                      style={{
-                        fontWeight: 600,
-                        color: "#2563EB",
-                        fontSize: "13px",
-                      }}
-                    >
-                      #{t.ticketNumber}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "14px",
-                        color: "#111827",
-                        marginTop: "2px",
-                      }}
-                    >
-                      {t.subject || "No subject"}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "12px",
-                        color: "#9CA3AF",
-                        marginTop: "2px",
-                      }}
-                    >
-                      {getStatusDisplayName(t.status)} · Priority: {t.priority}
-                    </div>
-                  </div>
-                </label>
-              ))}
-            </div>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: "12px",
-              }}
-            >
-              <button
-                onClick={() => {
-                  setBulkMergeStep("idle");
-                  setBulkError("");
-                }}
-                style={{
-                  padding: "9px 18px",
-                  border: "1px solid #D1D5DB",
-                  borderRadius: "8px",
-                  background: "white",
-                  fontSize: "14px",
-                  cursor: "pointer",
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmBulkMerge}
-                disabled={!bulkMergePrimaryId || bulkLoading}
-                style={{
-                  padding: "9px 18px",
-                  background: bulkMergePrimaryId ? "#2563EB" : "#93C5FD",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "8px",
-                  fontSize: "14px",
-                  fontWeight: 600,
-                  cursor: bulkMergePrimaryId ? "pointer" : "not-allowed",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                }}
-              >
-                <ArrowsPointingInIcon
-                  style={{ width: "15px", height: "15px" }}
-                />
-                {bulkLoading
-                  ? "Merging…"
-                  : `Merge ${selectedTicketIds.size} Tickets`}
-              </button>
+                  ← Previous
+                </button>
+
+                <span style={{ padding: "0 12px" }}>
+                  Page {currentPage} of {totalPages}
+                </span>
+
+                <button
+                  onClick={() =>
+                    fetchTickets(
+                      currentPage + 1,
+                      filterProject,
+                      filterAssignedTo,
+                    )
+                  }
+                  disabled={currentPage >= totalPages || loading}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: "6px",
+                    border: "1px solid #D1D5DB",
+                    background: currentPage >= totalPages ? "#F3F4F6" : "white",
+                    color: currentPage >= totalPages ? "#9CA3AF" : "#374151",
+                    cursor:
+                      currentPage >= totalPages ? "not-allowed" : "pointer",
+                    fontSize: "13px",
+                  }}
+                >
+                  Next →
+                </button>
+              </div>
+
+              {/* Summary */}
+              <div>
+                Showing{" "}
+                {totalTickets > 0 ? (currentPage - 1) * pageSize + 1 : 0}-
+                {Math.min(currentPage * pageSize, totalTickets)} of{" "}
+                {totalTickets} tickets
+              </div>
             </div>
           </div>
-        </div>
-      )}
 
-      {/* Bulk Delete Confirmation Dialog */}
-      {showBulkDeleteConfirm && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.5)",
-            zIndex: 1000,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "16px",
-          }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setShowBulkDeleteConfirm(false);
-          }}
-        >
-          <div
-            style={{
-              background: "white",
-              borderRadius: "16px",
-              padding: "28px",
-              width: "100%",
-              maxWidth: "420px",
-              boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
-            }}
-          >
+          {/* Export Modal */}
+          {showExportModal && (
+            <TicketExportModal
+              isOpen={showExportModal}
+              onClose={() => setShowExportModal(false)}
+              filters={{
+                status: filterStatus,
+                projectId: filterProject !== "all" ? filterProject : undefined,
+                assignedTo:
+                  filterAssignedTo !== "all" ? filterAssignedTo : undefined,
+              }}
+            />
+          )}
+
+          {/* Single-ticket Merge Modal */}
+          {showMergeModal && selectedTicket && (
+            <TicketMergeModal
+              isOpen={showMergeModal}
+              onClose={() => {
+                setShowMergeModal(false);
+                setSelectedTicket(null);
+              }}
+              primaryTicket={selectedTicket}
+              onMergeComplete={() => {
+                fetchTickets(1, filterProject, filterAssignedTo);
+                setShowMergeModal(false);
+                setSelectedTicket(null);
+              }}
+            />
+          )}
+
+          {/* Bulk Merge — Pick Primary Dialog */}
+          {bulkMergeStep === "pick-primary" && (
             <div
               style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(0,0,0,0.5)",
+                zIndex: 1000,
                 display: "flex",
                 alignItems: "center",
-                gap: "12px",
-                marginBottom: "12px",
+                justifyContent: "center",
+                padding: "16px",
+              }}
+              onClick={(e) => {
+                if (e.target === e.currentTarget) setBulkMergeStep("idle");
               }}
             >
               <div
                 style={{
-                  width: "44px",
-                  height: "44px",
-                  background: "#FEF2F2",
-                  borderRadius: "50%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
+                  background: "white",
+                  borderRadius: "16px",
+                  padding: "28px",
+                  width: "100%",
+                  maxWidth: "520px",
+                  boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
                 }}
               >
-                <TrashIcon
-                  style={{ width: "22px", height: "22px", color: "#DC2626" }}
-                />
+                <h2
+                  style={{
+                    margin: "0 0 8px",
+                    fontSize: "18px",
+                    fontWeight: 700,
+                  }}
+                >
+                  Select Primary Ticket
+                </h2>
+                <p
+                  style={{
+                    margin: "0 0 20px",
+                    color: "#6B7280",
+                    fontSize: "14px",
+                  }}
+                >
+                  The primary ticket will be kept. All other selected tickets
+                  will be merged into it.
+                </p>
+                {bulkError && (
+                  <div
+                    style={{
+                      padding: "10px 14px",
+                      background: "#FEF2F2",
+                      border: "1px solid #FECACA",
+                      borderRadius: "8px",
+                      color: "#B91C1C",
+                      fontSize: "13px",
+                      marginBottom: "16px",
+                    }}
+                  >
+                    {bulkError}
+                  </div>
+                )}
+                <div
+                  style={{
+                    display: "grid",
+                    gap: "8px",
+                    maxHeight: "320px",
+                    overflowY: "auto",
+                    marginBottom: "20px",
+                  }}
+                >
+                  {selectedTickets.map((t) => (
+                    <label
+                      key={t._id}
+                      style={{
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: "12px",
+                        padding: "12px 14px",
+                        border: `2px solid ${bulkMergePrimaryId === t._id ? "#3B82F6" : "#E5E7EB"}`,
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        background:
+                          bulkMergePrimaryId === t._id ? "#EFF6FF" : "white",
+                        transition: "all 0.15s",
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="primaryTicket"
+                        value={t._id}
+                        checked={bulkMergePrimaryId === t._id}
+                        onChange={() => setBulkMergePrimaryId(t._id)}
+                        style={{ marginTop: "2px", flexShrink: 0 }}
+                      />
+                      <div>
+                        <div
+                          style={{
+                            fontWeight: 600,
+                            color: "#2563EB",
+                            fontSize: "13px",
+                          }}
+                        >
+                          #{t.ticketNumber}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: "14px",
+                            color: "#111827",
+                            marginTop: "2px",
+                          }}
+                        >
+                          {t.subject || "No subject"}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: "12px",
+                            color: "#9CA3AF",
+                            marginTop: "2px",
+                          }}
+                        >
+                          {getStatusDisplayName(t.status)} · Priority:{" "}
+                          {t.priority}
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    gap: "12px",
+                  }}
+                >
+                  <button
+                    onClick={() => {
+                      setBulkMergeStep("idle");
+                      setBulkError("");
+                    }}
+                    style={{
+                      padding: "9px 18px",
+                      border: "1px solid #D1D5DB",
+                      borderRadius: "8px",
+                      background: "white",
+                      fontSize: "14px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleConfirmBulkMerge}
+                    disabled={!bulkMergePrimaryId || bulkLoading}
+                    style={{
+                      padding: "9px 18px",
+                      background: bulkMergePrimaryId ? "#2563EB" : "#93C5FD",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "8px",
+                      fontSize: "14px",
+                      fontWeight: 600,
+                      cursor: bulkMergePrimaryId ? "pointer" : "not-allowed",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    <ArrowsPointingInIcon
+                      style={{ width: "15px", height: "15px" }}
+                    />
+                    {bulkLoading
+                      ? "Merging…"
+                      : `Merge ${selectedTicketIds.size} Tickets`}
+                  </button>
+                </div>
               </div>
-              <h2 style={{ margin: 0, fontSize: "18px", fontWeight: 700 }}>
-                Delete {selectedTicketIds.size} Ticket
-                {selectedTicketIds.size !== 1 ? "s" : ""}?
-              </h2>
             </div>
-            <p
-              style={{
-                color: "#6B7280",
-                fontSize: "14px",
-                margin: "0 0 16px",
-                lineHeight: "1.5",
-              }}
-            >
-              This action is permanent and cannot be undone. All selected
-              tickets, their comments, and attachments will be deleted.
-            </p>
-            {bulkError && (
-              <div
-                style={{
-                  padding: "10px 14px",
-                  background: "#FEF2F2",
-                  border: "1px solid #FECACA",
-                  borderRadius: "8px",
-                  color: "#B91C1C",
-                  fontSize: "13px",
-                  marginBottom: "16px",
-                }}
-              >
-                {bulkError}
-              </div>
-            )}
+          )}
+
+          {/* Bulk Delete Confirmation Dialog */}
+          {showBulkDeleteConfirm && (
             <div
               style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(0,0,0,0.5)",
+                zIndex: 1000,
                 display: "flex",
-                justifyContent: "flex-end",
-                gap: "12px",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "16px",
+              }}
+              onClick={(e) => {
+                if (e.target === e.currentTarget)
+                  setShowBulkDeleteConfirm(false);
               }}
             >
-              <button
-                onClick={() => setShowBulkDeleteConfirm(false)}
-                disabled={bulkLoading}
+              <div
                 style={{
-                  padding: "9px 18px",
-                  border: "1px solid #D1D5DB",
-                  borderRadius: "8px",
                   background: "white",
-                  fontSize: "14px",
-                  cursor: "pointer",
+                  borderRadius: "16px",
+                  padding: "28px",
+                  width: "100%",
+                  maxWidth: "420px",
+                  boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
                 }}
               >
-                Cancel
-              </button>
-              <button
-                onClick={handleBulkDelete}
-                disabled={bulkLoading}
-                style={{
-                  padding: "9px 18px",
-                  background: "#DC2626",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "8px",
-                  fontSize: "14px",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                }}
-              >
-                <TrashIcon style={{ width: "15px", height: "15px" }} />
-                {bulkLoading ? "Deleting…" : "Yes, Delete"}
-              </button>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "12px",
+                    marginBottom: "12px",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "44px",
+                      height: "44px",
+                      background: "#FEF2F2",
+                      borderRadius: "50%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <TrashIcon
+                      style={{
+                        width: "22px",
+                        height: "22px",
+                        color: "#DC2626",
+                      }}
+                    />
+                  </div>
+                  <h2 style={{ margin: 0, fontSize: "18px", fontWeight: 700 }}>
+                    Delete {selectedTicketIds.size} Ticket
+                    {selectedTicketIds.size !== 1 ? "s" : ""}?
+                  </h2>
+                </div>
+                <p
+                  style={{
+                    color: "#6B7280",
+                    fontSize: "14px",
+                    margin: "0 0 16px",
+                    lineHeight: "1.5",
+                  }}
+                >
+                  This action is permanent and cannot be undone. All selected
+                  tickets, their comments, and attachments will be deleted.
+                </p>
+                {bulkError && (
+                  <div
+                    style={{
+                      padding: "10px 14px",
+                      background: "#FEF2F2",
+                      border: "1px solid #FECACA",
+                      borderRadius: "8px",
+                      color: "#B91C1C",
+                      fontSize: "13px",
+                      marginBottom: "16px",
+                    }}
+                  >
+                    {bulkError}
+                  </div>
+                )}
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    gap: "12px",
+                  }}
+                >
+                  <button
+                    onClick={() => setShowBulkDeleteConfirm(false)}
+                    disabled={bulkLoading}
+                    style={{
+                      padding: "9px 18px",
+                      border: "1px solid #D1D5DB",
+                      borderRadius: "8px",
+                      background: "white",
+                      fontSize: "14px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleBulkDelete}
+                    disabled={bulkLoading}
+                    style={{
+                      padding: "9px 18px",
+                      background: "#DC2626",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "8px",
+                      fontSize: "14px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    <TrashIcon style={{ width: "15px", height: "15px" }} />
+                    {bulkLoading ? "Deleting…" : "Yes, Delete"}
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          )}
+        </>
       )}
     </Wrapper>
   );
