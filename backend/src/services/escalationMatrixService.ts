@@ -450,6 +450,10 @@ export interface AllowedEscalationLevel {
   levelName: string;
   roleId: string;
   roleName?: string;
+  /** Carried through from the matrix level — 'role' (round-robin) or 'user' (fixed assignment) */
+  assigneeType?: "role" | "user";
+  /** Carried through from the matrix level — specific user ObjectId when assigneeType='user' */
+  assigneeUserId?: string;
   slaHours: number;
   slaUnit?: string; // 'mins', 'hrs', 'days'
   // For de-escalation: the specific previous handler at this level
@@ -836,6 +840,8 @@ export async function getAllowedEscalationLevels(
           levelName: nextLevel.levelName,
           roleId: roleIdStr,
           roleName: roleData?.name || undefined,
+          assigneeType: (nextLevel as any).assigneeType || "role",
+          assigneeUserId: (nextLevel as any).assigneeUserId?.toString() || undefined,
           slaHours: nextLevel.slaHours,
           slaUnit: nextLevel.slaUnit || "hrs",
         });
@@ -863,6 +869,8 @@ export async function getAllowedEscalationLevels(
             levelName: prevLevel.levelName,
             roleId: roleIdStr,
             roleName: roleData?.name || undefined,
+            assigneeType: (prevLevel as any).assigneeType || "role",
+            assigneeUserId: (prevLevel as any).assigneeUserId?.toString() || undefined,
             slaHours: prevLevel.slaHours,
             slaUnit: prevLevel.slaUnit || "hrs",
             isDeEscalation: true, // Mark as de-escalation
@@ -898,6 +906,8 @@ export async function getAllowedEscalationLevels(
                 levelName: level.levelName,
                 roleId: roleIdStr,
                 roleName: roleData?.name || undefined,
+                assigneeType: (level as any).assigneeType || "role",
+                assigneeUserId: (level as any).assigneeUserId?.toString() || undefined,
                 slaHours: level.slaHours,
                 slaUnit: level.slaUnit || "hrs",
               });
@@ -914,6 +924,8 @@ export async function getAllowedEscalationLevels(
               levelName: level.levelName,
               roleId: roleIdStr,
               roleName: roleData?.name || undefined,
+              assigneeType: (level as any).assigneeType || "role",
+              assigneeUserId: (level as any).assigneeUserId?.toString() || undefined,
               slaHours: level.slaHours,
               slaUnit: level.slaUnit || "hrs",
             });
@@ -955,6 +967,8 @@ export async function getAllowedEscalationLevels(
             levelName: level.levelName,
             roleId: roleIdStr,
             roleName: roleData?.name || undefined,
+            assigneeType: (level as any).assigneeType || "role",
+            assigneeUserId: (level as any).assigneeUserId?.toString() || undefined,
             slaHours: level.slaHours,
             slaUnit: level.slaUnit || "hrs",
             isDeEscalation: true, // Mark as de-escalation
