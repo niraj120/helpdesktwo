@@ -4,6 +4,7 @@ import React, {
   useRef,
   useCallback,
   useMemo,
+  useDeferredValue,
 } from "react";
 import axios from "axios";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -216,6 +217,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
   const hasFetchedTickets = useRef(false);
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const deferredSearchTerm = useDeferredValue(searchTerm);
   const [showExportModal, setShowExportModal] = useState(false);
   const [showMergeModal, setShowMergeModal] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
@@ -634,15 +636,30 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
       const matchesProject =
         projectFilter === "all" || ticketProjectId === projectFilter;
 
+      const sq = deferredSearchTerm.toLowerCase();
       const matchesSearch =
+        !sq ||
         (ticket.ticketNumber &&
-          ticket.ticketNumber
-            .toLowerCase()
-            .includes(searchTerm.toLowerCase())) ||
-        (ticket.subject &&
-          ticket.subject.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (ticket.description &&
-          ticket.description.toLowerCase().includes(searchTerm.toLowerCase()));
+          ticket.ticketNumber.toLowerCase().includes(sq)) ||
+        (ticket.subject && ticket.subject.toLowerCase().includes(sq)) ||
+        (ticket.description && ticket.description.toLowerCase().includes(sq)) ||
+        ticket.metadata?.studentEmail?.toLowerCase().includes(sq) ||
+        ticket.metadata?.studentName?.toLowerCase().includes(sq) ||
+        ticket.metadata?.createdByName?.toLowerCase().includes(sq) ||
+        ticket.sourceEmail?.toLowerCase().includes(sq) ||
+        ticket.priority?.toLowerCase().includes(sq) ||
+        (ticket.assignedTo
+          ? `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}`
+              .toLowerCase()
+              .includes(sq)
+          : false) ||
+        ticket.category?.name?.toLowerCase().includes(sq) ||
+        (typeof ticket.metadata?.projectId === "object"
+          ? ticket.metadata.projectId.name?.toLowerCase().includes(sq)
+          : false) ||
+        (typeof ticket.metadata?.centerId === "object"
+          ? ticket.metadata.centerId.centerName?.toLowerCase().includes(sq)
+          : ticket.metadata?.centerName?.toLowerCase().includes(sq));
 
       return (
         matchesStatus &&
@@ -831,10 +848,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
               type="text"
               placeholder="Search queries..."
               value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
-                setCurrentPage(1);
-              }}
+              onChange={(e) => setSearchTerm(e.target.value)}
               style={{
                 width: "100%",
                 padding: "10px 12px",
@@ -1498,10 +1512,27 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                             {requestedBy}
                           </div>
                         )}
+                        {ticket.metadata?.studentEmail && (
+                          <div>
+                            <span style={{ fontWeight: 600 }}>Email:</span>{" "}
+                            <a
+                              href={`mailto:${ticket.metadata.studentEmail}`}
+                              onClick={(e) => e.stopPropagation()}
+                              style={{
+                                color: "#3B82F6",
+                                textDecoration: "none",
+                              }}
+                            >
+                              {ticket.metadata.studentEmail}
+                            </a>
+                          </div>
+                        )}
                         {ticket.submissionSource === "email" &&
                           ticket.sourceEmail && (
                             <div>
-                              <span style={{ fontWeight: 600 }}>Email:</span>{" "}
+                              <span style={{ fontWeight: 600 }}>
+                                Sender Email:
+                              </span>{" "}
                               <a
                                 href={`mailto:${ticket.sourceEmail}`}
                                 onClick={(e) => e.stopPropagation()}

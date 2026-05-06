@@ -236,7 +236,8 @@ export const updateStatus = async (req: AuthRequest, res: Response) => {
     if (color !== undefined) $set.color = color;
     if (isDefault !== undefined) $set.isDefault = isDefault;
     if (isClosed !== undefined) $set.isClosed = isClosed;
-    if (requireClosingRemark !== undefined) $set.requireClosingRemark = requireClosingRemark;
+    if (requireClosingRemark !== undefined)
+      $set.requireClosingRemark = requireClosingRemark;
     if (displayOrder !== undefined) $set.displayOrder = displayOrder;
     if (description !== undefined) $set.description = description;
     if (isActive !== undefined) $set.isActive = isActive;
@@ -255,13 +256,29 @@ export const updateStatus = async (req: AuthRequest, res: Response) => {
         const projectData = await Project.findById(updated.projectId);
         const changes = [];
         if (name !== undefined)
-          changes.push({ field: "name", oldValue: existing.name, newValue: name });
+          changes.push({
+            field: "name",
+            oldValue: existing.name,
+            newValue: name,
+          });
         if (code !== undefined)
-          changes.push({ field: "code", oldValue: existing.code, newValue: code });
+          changes.push({
+            field: "code",
+            oldValue: existing.code,
+            newValue: code,
+          });
         if (isDefault !== undefined)
-          changes.push({ field: "isDefault", oldValue: existing.isDefault, newValue: isDefault });
+          changes.push({
+            field: "isDefault",
+            oldValue: existing.isDefault,
+            newValue: isDefault,
+          });
         if (requireClosingRemark !== undefined)
-          changes.push({ field: "requireClosingRemark", oldValue: (existing as any).requireClosingRemark, newValue: requireClosingRemark });
+          changes.push({
+            field: "requireClosingRemark",
+            oldValue: (existing as any).requireClosingRemark,
+            newValue: requireClosingRemark,
+          });
 
         await logActivity({
           userId: currentUser.userId,
