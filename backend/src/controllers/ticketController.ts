@@ -515,24 +515,48 @@ export const submitTicket = async (req: Request, res: Response) => {
     const categoryValue = rawCategory || ticketData.Category || null;
 
     try {
-      // Use mongoose.models to ensure the model is available
       const CategoryModel = mongoose.models.Category || Category;
+      const HierarchyConfigModel =
+        mongoose.models.HierarchyConfig ||
+        require("../models/HierarchyConfig").HierarchyConfig;
+
+      // Load the project's hierarchy config to determine which level drives priority
+      const hierarchyConfig = await HierarchyConfigModel.findOne({
+        projectId,
+      })
+        .select("priorityFromLevel")
+        .lean();
+      const priorityFromLevel: number =
+        (hierarchyConfig as any)?.priorityFromLevel || 0;
+
+      // Pick the category ID that should supply the priority based on priorityFromLevel
+      // 0 = manual (use L1 as before), 1 = L1, 2 = L2, 3 = L3, 4 = L4
+      let priorityCategoryId: string | null = categoryValue;
+      if (priorityFromLevel >= 2 && rawCategoryHierarchyFromBody) {
+        const levelKey = `level${priorityFromLevel}` as
+          | "level2"
+          | "level3"
+          | "level4";
+        priorityCategoryId =
+          rawCategoryHierarchyFromBody[levelKey] || categoryValue;
+      }
+
+      console.log(
+        `🔍 Priority lookup: priorityFromLevel=${priorityFromLevel}, priorityCategoryId=${priorityCategoryId}`,
+      );
 
       let category;
-      // Check if categoryValue is an ObjectId (24 hex chars) or a name string
       if (
-        mongoose.Types.ObjectId.isValid(categoryValue) &&
-        categoryValue.length === 24
+        priorityCategoryId &&
+        mongoose.Types.ObjectId.isValid(priorityCategoryId) &&
+        priorityCategoryId.length === 24
       ) {
-        // Search by ObjectId
         category = await CategoryModel.findOne({
-          _id: categoryValue,
-          projectId: projectId,
+          _id: priorityCategoryId,
           isActive: true,
         });
-        console.log(`🔍 Looking up category by ID: ${categoryValue}`);
-      } else {
-        // Search by name
+        console.log(`🔍 Looking up category by ID: ${priorityCategoryId}`);
+      } else if (categoryValue) {
         category = await CategoryModel.findOne({
           name: categoryValue,
           projectId: projectId,
@@ -555,7 +579,7 @@ export const submitTicket = async (req: Request, res: Response) => {
       if (category && category.defaultPriority) {
         ticketPriority = category.defaultPriority.toLowerCase();
         console.log(
-          `✅ Using category default priority: ${ticketPriority} (from category: ${category.name})`,
+          `✅ Using category default priority: ${ticketPriority} (from category: ${category.name}, level: ${priorityFromLevel || 1})`,
         );
       } else if (category) {
         console.log(
@@ -563,7 +587,7 @@ export const submitTicket = async (req: Request, res: Response) => {
         );
       } else {
         console.log(
-          `⚠️ Category not found: ${categoryValue}, using fallback: ${ticketPriority}`,
+          `⚠️ Category not found: ${priorityCategoryId}, using fallback: ${ticketPriority}`,
         );
       }
     } catch (error) {
@@ -604,6 +628,41 @@ export const submitTicket = async (req: Request, res: Response) => {
     // Snapshot the form schema at the moment of submission (US-7)
     const formSchemaSnapshot =
       project.configuration?.ticketSubmissionSettings?.onlineFormFields || [];
+
+    // Validate field-level rules (minLength, maxLength, regex) from the schema
+    for (const field of formSchemaSnapshot as any[]) {
+      const v = field.validation;
+      if (!v) continue;
+      const rawVal = ticketData[field.fieldName];
+      const value = rawVal == null ? "" : String(rawVal);
+      if (!value) continue; // required check already done above
+      const label = field.displayLabel || field.fieldName;
+      if (v.minLength != null && value.length < Number(v.minLength)) {
+        return res.status(400).json({
+          success: false,
+          message: `${label} must be at least ${v.minLength} characters`,
+        });
+      }
+      if (v.maxLength != null && value.length > Number(v.maxLength)) {
+        return res.status(400).json({
+          success: false,
+          message: `${label} must be at most ${v.maxLength} characters`,
+        });
+      }
+      if (v.regex) {
+        try {
+          const re = new RegExp(v.regex);
+          if (!re.test(value)) {
+            return res.status(400).json({
+              success: false,
+              message: `${label} is not in the correct format`,
+            });
+          }
+        } catch {
+          // invalid regex — skip
+        }
+      }
+    }
 
     // Build categoryHierarchy from the body — prefer the parsed hierarchy object;
     // at minimum populate level1 from the resolved categoryObjectId so SLA lookups work.
@@ -1550,7 +1609,9 @@ export const getMyTickets = async (req: Request, res: Response) => {
           ? ticketObj.metadata.projectId._id?.toString()
           : ticketObj.metadata?.projectId?.toString();
       if (rawProjectId) {
-        const statusEntry = statusLookup.get(`${rawProjectId}_${ticketObj.status}`);
+        const statusEntry = statusLookup.get(
+          `${rawProjectId}_${ticketObj.status}`,
+        );
         if (statusEntry) {
           ticketObj.statusName = statusEntry.name;
           ticketObj.statusColor = statusEntry.color;
@@ -2209,7 +2270,9 @@ export const getAllTickets = async (req: Request, res: Response) => {
           ? ticketObj.metadata.projectId._id?.toString()
           : ticketObj.metadata?.projectId?.toString();
       if (rawProjectIdAll) {
-        const statusEntry = statusLookupAll.get(`${rawProjectIdAll}_${ticketObj.status}`);
+        const statusEntry = statusLookupAll.get(
+          `${rawProjectIdAll}_${ticketObj.status}`,
+        );
         if (statusEntry) {
           ticketObj.statusName = statusEntry.name;
           ticketObj.statusColor = statusEntry.color;
@@ -3230,7 +3293,7 @@ export const reopenTicket = async (req: Request, res: Response) => {
 export const updateTicketStatus = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { status } = req.body;
+    const { status, closingRemark } = req.body;
     const userId = (req as any).user?.userId;
     const user = (req as any).user;
 
@@ -3288,6 +3351,14 @@ export const updateTicketStatus = async (req: Request, res: Response) => {
     const statusDoc =
       projectStatuses.find((s: any) => s.code === statusNum) ?? null;
 
+    // Enforce closing remark requirement
+    if (statusDoc?.requireClosingRemark && !closingRemark?.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "A closing remark is required before applying this status.",
+      });
+    }
+
     const oldStatus = ticket.status;
     const now = new Date();
 
@@ -3330,12 +3401,42 @@ export const updateTicketStatus = async (req: Request, res: Response) => {
       changeType: "update",
     };
 
+    // If a closing remark was provided, build a separate history entry for it
+    const remarkHistoryEntry = closingRemark?.trim()
+      ? {
+          _id: new mongoose.Types.ObjectId(),
+          field: "closingRemark",
+          oldValue: "",
+          newValue: closingRemark.trim(),
+          changedBy: userId,
+          changedAt: now,
+          changeType: "remark",
+        }
+      : null;
+
     // Use findByIdAndUpdate to avoid full document validation (bypasses subdocument validation issues)
+    const pushPayload: any = {
+      changeHistory: changeHistoryEntry,
+    };
+    if (remarkHistoryEntry) {
+      // Push remark as a separate changeHistory entry AND as an internal note
+      pushPayload.changeHistory = [
+        changeHistoryEntry,
+        remarkHistoryEntry,
+      ] as any;
+      pushPayload.internalNotes = {
+        _id: new mongoose.Types.ObjectId(),
+        content: `[Closing Remark] ${closingRemark.trim()}`,
+        createdBy: userId,
+        createdAt: now,
+        isInternal: true,
+      };
+    }
     const updatedTicket = await Ticket.findByIdAndUpdate(
       id,
       {
         $set: updateFields,
-        $push: { changeHistory: changeHistoryEntry },
+        $push: pushPayload,
       },
       { new: true, runValidators: false }, // runValidators: false to skip validation on existing subdocuments
     );
