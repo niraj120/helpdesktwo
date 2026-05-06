@@ -52,7 +52,7 @@ export const getStatusesByProject = async (req: AuthRequest, res: Response) => {
     const statuses = await Status.find(filter)
       .sort({ displayOrder: 1, name: 1 })
       .select(
-        "name code color isDefault isClosed displayOrder description isActive projectId",
+        "name code color isDefault isClosed displayOrder description isActive projectId requireClosingRemark",
       );
 
     console.log(
@@ -92,6 +92,7 @@ export const createStatus = async (req: AuthRequest, res: Response) => {
       color,
       isDefault,
       isClosed,
+      requireClosingRemark,
       displayOrder,
       description,
     } = req.body;
@@ -140,6 +141,7 @@ export const createStatus = async (req: AuthRequest, res: Response) => {
       projectId,
       isDefault: isDefault || false,
       isClosed: isClosed || false,
+      requireClosingRemark: requireClosingRemark || false,
       displayOrder: displayOrder || 0,
       description,
       createdBy: userId,
@@ -199,6 +201,7 @@ export const updateStatus = async (req: AuthRequest, res: Response) => {
       color,
       isDefault,
       isClosed,
+      requireClosingRemark,
       displayOrder,
       description,
       isActive,
@@ -231,6 +234,7 @@ export const updateStatus = async (req: AuthRequest, res: Response) => {
     if (color !== undefined) status.color = color;
     if (isDefault !== undefined) status.isDefault = isDefault;
     if (isClosed !== undefined) status.isClosed = isClosed;
+    if (requireClosingRemark !== undefined) (status as any).requireClosingRemark = requireClosingRemark;
     if (displayOrder !== undefined) status.displayOrder = displayOrder;
     if (description !== undefined) status.description = description;
     if (isActive !== undefined) status.isActive = isActive;
