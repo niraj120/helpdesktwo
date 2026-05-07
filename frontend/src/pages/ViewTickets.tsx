@@ -16,6 +16,10 @@ import {
   ArrowDownTrayIcon,
   ArrowsPointingInIcon,
   TrashIcon,
+  MagnifyingGlassIcon,
+  ChevronDownIcon,
+  CalendarDaysIcon,
+  XMarkIcon,
 } from "@heroicons/react/24/outline";
 import { API_CONFIG } from "../config/constants";
 import { useSocket } from "../hooks/useSocket";
@@ -214,6 +218,9 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     return () => clearInterval(id);
   }, []);
   const [filterStatus, setFilterStatus] = useState("all");
+  const [filterPriority, setFilterPriority] = useState("all");
+  const [filterDateFrom, setFilterDateFrom] = useState("");
+  const [filterDateTo, setFilterDateTo] = useState("");
   const [statuses, setStatuses] = useState<
     Array<{ code: number; name: string }>
   >([]);
@@ -325,11 +332,23 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     else fetchStatuses(initialProjectId ?? null);
   }, [filterProject]);
 
+  // Re-fetch tickets (from page 1) whenever a server-side filter changes
+  const filterChangeRef = useRef(false);
+  useEffect(() => {
+    if (!filterChangeRef.current) {
+      filterChangeRef.current = true;
+      return; // skip initial mount
+    }
+    setCurrentPage(1);
+    fetchTickets(1, filterProject, filterAssignedTo);
+  }, [filterStatus, filterPriority, filterDateFrom, filterDateTo, deferredSearchQuery, filterProject, filterAssignedTo]);
+
   const fetchStatuses = async (projectId: string | null) => {
     try {
       const token = localStorage.getItem("authToken");
       if (!token) return;
-      // If no specific project, try to resolve from localStorage
+
+      // Resolve project ID — check argument first, then localStorage context
       let pid = projectId;
       if (!pid) {
         const ctx = localStorage.getItem("projectContext");
@@ -341,22 +360,42 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
           }
         }
       }
-      if (!pid) return;
-      const res = await axios.get(
-        `${API_CONFIG.API_URL}/statuses/project/${pid}`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      if (
-        res.data.success &&
-        Array.isArray(res.data.data) &&
-        res.data.data.length > 0
-      ) {
-        setStatuses(
-          res.data.data.map((s: any) => ({ code: s.code, name: s.name })),
+
+      if (pid) {
+        // Project-specific statuses
+        const res = await axios.get(
+          `${API_CONFIG.API_URL}/statuses/project/${pid}`,
+          { headers: { Authorization: `Bearer ${token}` } },
         );
+        if (
+          res.data.success &&
+          Array.isArray(res.data.data) &&
+          res.data.data.length > 0
+        ) {
+          setStatuses(
+            res.data.data.map((s: any) => ({ code: s.code, name: s.name })),
+          );
+        }
+      } else {
+        // No project context (super admin or global view) — fetch all statuses and deduplicate by code
+        const res = await axios.get(
+          `${API_CONFIG.API_URL}/statuses/all`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        if (res.data.success && Array.isArray(res.data.data)) {
+          const seen = new Set<number>();
+          const unique = res.data.data
+            .filter((s: any) => {
+              if (seen.has(s.code)) return false;
+              seen.add(s.code);
+              return true;
+            })
+            .map((s: any) => ({ code: s.code, name: s.name }));
+          if (unique.length > 0) setStatuses(unique);
+        }
       }
-    } catch {
-      // non-fatal — leave statuses empty, dropdown will stay at "All Status"
+    } catch (err) {
+      console.error("[fetchStatuses] failed:", err);
     }
   };
 
@@ -381,6 +420,12 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
       if (projectFilter !== "all") params.projectId = projectFilter;
       if (assignedToFilter === "unassigned") params.assignedTo = "unassigned";
       else if (assignedToFilter !== "all") params.assignedTo = assignedToFilter;
+      // Server-side filter params — read from current state via closure
+      if (filterStatus !== "all") params.status = filterStatus;
+      if (filterPriority !== "all") params.priority = filterPriority;
+      if (filterDateFrom) params.createdAfter = filterDateFrom;
+      if (filterDateTo) params.createdBefore = filterDateTo;
+      if (deferredSearchQuery.trim()) params.search = deferredSearchQuery.trim();
 
       const response = await axios.get(`${API_CONFIG.API_URL}/tickets`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -453,34 +498,8 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     }
   };
 
-  // Memoized filtered tickets to prevent recalculation on every render
-  const filteredTickets = useMemo(() => {
-    return tickets.filter((ticket) => {
-      const matchesStatus =
-        filterStatus === "all" || String(ticket.status) === filterStatus;
-      const sq = deferredSearchQuery.toLowerCase();
-      const matchesSearch =
-        !sq ||
-        ticket.ticketNumber.toLowerCase().includes(sq) ||
-        ticket.subject?.toLowerCase().includes(sq) ||
-        ticket.metadata?.studentEmail?.toLowerCase().includes(sq) ||
-        ticket.metadata?.studentName?.toLowerCase().includes(sq) ||
-        ticket.metadata?.projectId?.name?.toLowerCase().includes(sq) ||
-        ticket.priority?.toLowerCase().includes(sq) ||
-        (ticket.statusName || "").toLowerCase().includes(sq) ||
-        (ticket.assignedTo
-          ? `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}`
-              .toLowerCase()
-              .includes(sq)
-          : false) ||
-        ticket.category?.name?.toLowerCase().includes(sq) ||
-        (typeof ticket.metadata?.centerId === "object"
-          ? ticket.metadata.centerId.centerName?.toLowerCase().includes(sq)
-          : false);
-
-      return matchesStatus && matchesSearch;
-    });
-  }, [tickets, filterStatus, deferredSearchQuery]);
+  // All filtering is done server-side; filteredTickets is the current page returned by the API.
+  const filteredTickets = useMemo(() => tickets, [tickets]);
 
   // Convert numeric status code to label string
   const getStatusLabel = useCallback((status: string | number): string => {
@@ -652,63 +671,322 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
               style={{
                 background: "white",
                 borderRadius: "12px",
-                padding: "20px",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                padding: "12px 16px",
+                boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+                border: "1px solid #F3F4F6",
                 marginBottom: "16px",
               }}
             >
-              {/* Row 1: Search + Status + Export */}
               <div
                 style={{
                   display: "flex",
-                  gap: "12px",
+                  gap: "8px",
                   flexWrap: "wrap",
                   alignItems: "center",
-                  marginBottom: "12px",
                 }}
               >
-                <div style={{ flex: 1, minWidth: "200px" }}>
+                {/* Search */}
+                <div style={{ position: "relative", flex: 1, minWidth: "220px" }}>
+                  <MagnifyingGlassIcon
+                    style={{
+                      position: "absolute",
+                      left: "10px",
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      width: "15px",
+                      height: "15px",
+                      color: "#9CA3AF",
+                      pointerEvents: "none",
+                    }}
+                  />
                   <input
                     type="text"
-                    placeholder="Search tickets..."
+                    placeholder="Search by ticket #, subject, student..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     style={{
                       width: "100%",
-                      padding: "10px 12px",
-                      border: "1px solid #D1D5DB",
+                      paddingTop: "9px",
+                      paddingBottom: "9px",
+                      paddingLeft: "32px",
+                      paddingRight: searchQuery ? "30px" : "12px",
+                      border: "1px solid #E5E7EB",
                       borderRadius: "8px",
                       fontSize: "14px",
                       boxSizing: "border-box",
+                      background: "#F9FAFB",
+                      outline: "none",
+                    }}
+                    onFocus={(e) => (e.target.style.borderColor = "#3B82F6")}
+                    onBlur={(e) => (e.target.style.borderColor = "#E5E7EB")}
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery("")}
+                      style={{
+                        position: "absolute",
+                        right: "8px",
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        color: "#9CA3AF",
+                        padding: "2px",
+                        display: "flex",
+                        alignItems: "center",
+                      }}
+                    >
+                      <XMarkIcon style={{ width: "14px", height: "14px" }} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Status */}
+                <div style={{ position: "relative" }}>
+                  <select
+                    value={filterStatus}
+                    onChange={(e) => setFilterStatus(e.target.value)}
+                    style={{
+                      paddingTop: "9px",
+                      paddingBottom: "9px",
+                      paddingLeft: "10px",
+                      paddingRight: "28px",
+                      border: filterStatus !== "all" ? "1.5px solid #3B82F6" : "1px solid #E5E7EB",
+                      borderRadius: "8px",
+                      fontSize: "14px",
+                      minWidth: "120px",
+                      background: filterStatus !== "all" ? "#EFF6FF" : "#F9FAFB",
+                      color: filterStatus !== "all" ? "#1D4ED8" : "#374151",
+                      cursor: "pointer",
+                      appearance: "none" as const,
+                      WebkitAppearance: "none" as const,
+                      fontWeight: filterStatus !== "all" ? 500 : 400,
+                      outline: "none",
+                    }}
+                  >
+                    <option value="all">All Status</option>
+                    {statuses.map((s) => (
+                      <option key={s.code} value={String(s.code)}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDownIcon
+                    style={{
+                      position: "absolute",
+                      right: "8px",
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      width: "13px",
+                      height: "13px",
+                      pointerEvents: "none",
+                      color: filterStatus !== "all" ? "#3B82F6" : "#6B7280",
                     }}
                   />
                 </div>
-                <select
-                  value={filterStatus}
-                  onChange={(e) => setFilterStatus(e.target.value)}
+
+                {/* Priority */}
+                <div style={{ position: "relative" }}>
+                  <select
+                    value={filterPriority}
+                    onChange={(e) => setFilterPriority(e.target.value)}
+                    style={{
+                      paddingTop: "9px",
+                      paddingBottom: "9px",
+                      paddingLeft: "10px",
+                      paddingRight: "28px",
+                      border: filterPriority !== "all" ? "1.5px solid #3B82F6" : "1px solid #E5E7EB",
+                      borderRadius: "8px",
+                      fontSize: "14px",
+                      minWidth: "120px",
+                      background: filterPriority !== "all" ? "#EFF6FF" : "#F9FAFB",
+                      color: filterPriority !== "all" ? "#1D4ED8" : "#374151",
+                      cursor: "pointer",
+                      appearance: "none" as const,
+                      WebkitAppearance: "none" as const,
+                      fontWeight: filterPriority !== "all" ? 500 : 400,
+                      outline: "none",
+                    }}
+                  >
+                    <option value="all">All Priority</option>
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="critical">Critical</option>
+                  </select>
+                  <ChevronDownIcon
+                    style={{
+                      position: "absolute",
+                      right: "8px",
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      width: "13px",
+                      height: "13px",
+                      pointerEvents: "none",
+                      color: filterPriority !== "all" ? "#3B82F6" : "#6B7280",
+                    }}
+                  />
+                </div>
+
+                {/* Project — hidden when locked to a portal project */}
+                {!initialProjectId && projects.length > 0 && (
+                  <div style={{ position: "relative" }}>
+                    <select
+                      value={filterProject}
+                      onChange={(e) => setFilterProject(e.target.value)}
+                      style={{
+                        paddingTop: "9px",
+                        paddingBottom: "9px",
+                        paddingLeft: "10px",
+                        paddingRight: "28px",
+                        border: filterProject !== "all" ? "1.5px solid #3B82F6" : "1px solid #E5E7EB",
+                        borderRadius: "8px",
+                        fontSize: "14px",
+                        minWidth: "150px",
+                        maxWidth: "240px",
+                        background: filterProject !== "all" ? "#EFF6FF" : "#F9FAFB",
+                        color: filterProject !== "all" ? "#1D4ED8" : "#374151",
+                        cursor: "pointer",
+                        appearance: "none" as const,
+                        WebkitAppearance: "none" as const,
+                        fontWeight: filterProject !== "all" ? 500 : 400,
+                        outline: "none",
+                      }}
+                    >
+                      <option value="all">All Projects</option>
+                      {projects.map((p) => (
+                        <option key={p._id} value={p._id}>
+                          {p.name} {p.code ? `(${p.code})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDownIcon
+                      style={{
+                        position: "absolute",
+                        right: "8px",
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        width: "13px",
+                        height: "13px",
+                        pointerEvents: "none",
+                        color: filterProject !== "all" ? "#3B82F6" : "#6B7280",
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* Assigned Agent */}
+                {agents.length > 0 && (
+                  <div style={{ position: "relative" }}>
+                    <select
+                      value={filterAssignedTo}
+                      onChange={(e) => setFilterAssignedTo(e.target.value)}
+                      style={{
+                        paddingTop: "9px",
+                        paddingBottom: "9px",
+                        paddingLeft: "10px",
+                        paddingRight: "28px",
+                        border: filterAssignedTo !== "all" ? "1.5px solid #3B82F6" : "1px solid #E5E7EB",
+                        borderRadius: "8px",
+                        fontSize: "14px",
+                        minWidth: "150px",
+                        maxWidth: "220px",
+                        background: filterAssignedTo !== "all" ? "#EFF6FF" : "#F9FAFB",
+                        color: filterAssignedTo !== "all" ? "#1D4ED8" : "#374151",
+                        cursor: "pointer",
+                        appearance: "none" as const,
+                        WebkitAppearance: "none" as const,
+                        fontWeight: filterAssignedTo !== "all" ? 500 : 400,
+                        outline: "none",
+                      }}
+                    >
+                      <option value="all">All Agents</option>
+                      <option value="unassigned">Unassigned</option>
+                      {agents.map((a) => (
+                        <option key={a._id} value={a._id}>
+                          {a.firstName} {a.lastName}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDownIcon
+                      style={{
+                        position: "absolute",
+                        right: "8px",
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        width: "13px",
+                        height: "13px",
+                        pointerEvents: "none",
+                        color: filterAssignedTo !== "all" ? "#3B82F6" : "#6B7280",
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* Date range — combined pill */}
+                <div
                   style={{
-                    padding: "10px 12px",
-                    border: "1px solid #D1D5DB",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    background: filterDateFrom || filterDateTo ? "#EFF6FF" : "#F9FAFB",
+                    border: `${filterDateFrom || filterDateTo ? "1.5px" : "1px"} solid ${filterDateFrom || filterDateTo ? "#3B82F6" : "#E5E7EB"}`,
                     borderRadius: "8px",
-                    fontSize: "14px",
-                    minWidth: "130px",
+                    padding: "5px 10px",
                   }}
                 >
-                  <option value="all">All Status</option>
-                  {statuses.map((s) => (
-                    <option key={s.code} value={String(s.code)}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
+                  <CalendarDaysIcon
+                    style={{
+                      width: "14px",
+                      height: "14px",
+                      color: filterDateFrom || filterDateTo ? "#3B82F6" : "#9CA3AF",
+                      flexShrink: 0,
+                    }}
+                  />
+                  <input
+                    type="date"
+                    value={filterDateFrom}
+                    onChange={(e) => setFilterDateFrom(e.target.value)}
+                    style={{
+                      border: "none",
+                      background: "transparent",
+                      fontSize: "13px",
+                      outline: "none",
+                      color: filterDateFrom ? "#1D4ED8" : "#6B7280",
+                      width: "120px",
+                      cursor: "pointer",
+                    }}
+                  />
+                  <span style={{ color: "#D1D5DB", fontSize: "11px", fontWeight: 600 }}>–</span>
+                  <input
+                    type="date"
+                    value={filterDateTo}
+                    onChange={(e) => setFilterDateTo(e.target.value)}
+                    style={{
+                      border: "none",
+                      background: "transparent",
+                      fontSize: "13px",
+                      outline: "none",
+                      color: filterDateTo ? "#1D4ED8" : "#6B7280",
+                      width: "120px",
+                      cursor: "pointer",
+                    }}
+                  />
+                </div>
+
+                {/* Push export + clear to the right */}
+                <div style={{ flex: 1, minWidth: "0" }} />
+
+                {/* Export */}
                 {canExport && (
                   <button
                     onClick={() => setShowExportModal(true)}
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: "8px",
-                      padding: "10px 16px",
+                      gap: "6px",
+                      padding: "9px 14px",
                       background: "#059669",
                       color: "white",
                       border: "none",
@@ -716,102 +994,60 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                       fontSize: "14px",
                       fontWeight: 600,
                       cursor: "pointer",
-                      transition: "all 0.2s",
                       whiteSpace: "nowrap",
                     }}
-                    onMouseEnter={(e) =>
-                      (e.currentTarget.style.background = "#047857")
-                    }
-                    onMouseLeave={(e) =>
-                      (e.currentTarget.style.background = "#059669")
-                    }
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#047857")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "#059669")}
                   >
-                    <ArrowDownTrayIcon
-                      style={{ width: "16px", height: "16px" }}
-                    />
+                    <ArrowDownTrayIcon style={{ width: "15px", height: "15px" }} />
                     Export
                   </button>
                 )}
-              </div>
 
-              {/* Row 2: Project filter + Assigned To filter */}
-              <div
-                style={{
-                  display: "flex",
-                  gap: "12px",
-                  flexWrap: "wrap",
-                  alignItems: "center",
-                }}
-              >
-                {/* Hide project dropdown when locked to a portal project */}
-                {!initialProjectId && projects.length > 0 && (
-                  <select
-                    value={filterProject}
-                    onChange={(e) => {
-                      setFilterProject(e.target.value);
-                      fetchTickets(1, e.target.value, filterAssignedTo);
-                    }}
-                    style={{
-                      padding: "9px 12px",
-                      border: "1px solid #D1D5DB",
-                      borderRadius: "8px",
-                      fontSize: "14px",
-                      minWidth: "180px",
-                      maxWidth: "280px",
-                    }}
-                  >
-                    <option value="all">All Projects</option>
-                    {projects.map((p) => (
-                      <option key={p._id} value={p._id}>
-                        {p.name} {p.code ? `(${p.code})` : ""}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                {agents.length > 0 && (
-                  <select
-                    value={filterAssignedTo}
-                    onChange={(e) => {
-                      setFilterAssignedTo(e.target.value);
-                      fetchTickets(1, filterProject, e.target.value);
-                    }}
-                    style={{
-                      padding: "9px 12px",
-                      border: "1px solid #D1D5DB",
-                      borderRadius: "8px",
-                      fontSize: "14px",
-                      minWidth: "180px",
-                      maxWidth: "260px",
-                    }}
-                  >
-                    <option value="all">All Agents</option>
-                    <option value="unassigned">Unassigned</option>
-                    {agents.map((a) => (
-                      <option key={a._id} value={a._id}>
-                        {a.firstName} {a.lastName}
-                      </option>
-                    ))}
-                  </select>
-                )}
+                {/* Clear filters */}
                 {((initialProjectId ? false : filterProject !== "all") ||
-                  filterAssignedTo !== "all") && (
+                  filterAssignedTo !== "all" ||
+                  filterStatus !== "all" ||
+                  filterPriority !== "all" ||
+                  filterDateFrom ||
+                  filterDateTo ||
+                  searchQuery) && (
                   <button
                     onClick={() => {
                       if (!initialProjectId) setFilterProject("all");
                       setFilterAssignedTo("all");
-                      fetchTickets(1, initialProjectId ?? "all", "all");
+                      setFilterStatus("all");
+                      setFilterPriority("all");
+                      setFilterDateFrom("");
+                      setFilterDateTo("");
+                      setSearchQuery("");
                     }}
                     style={{
-                      padding: "9px 14px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "4px",
+                      padding: "9px 12px",
                       border: "1px solid #E5E7EB",
                       borderRadius: "8px",
-                      background: "#F9FAFB",
+                      background: "white",
                       color: "#6B7280",
                       fontSize: "13px",
                       cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = "#FEF2F2";
+                      e.currentTarget.style.color = "#DC2626";
+                      e.currentTarget.style.borderColor = "#FCA5A5";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "white";
+                      e.currentTarget.style.color = "#6B7280";
+                      e.currentTarget.style.borderColor = "#E5E7EB";
                     }}
                   >
-                    Clear Filters
+                    <XMarkIcon style={{ width: "13px", height: "13px" }} />
+                    Clear
                   </button>
                 )}
               </div>
@@ -1374,11 +1610,37 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
               isOpen={showExportModal}
               onClose={() => setShowExportModal(false)}
               filters={{
-                status: filterStatus,
+                status: filterStatus !== "all" ? filterStatus : undefined,
+                priority: filterPriority !== "all" ? filterPriority : undefined,
+                assignedTo: filterAssignedTo !== "all" ? filterAssignedTo : undefined,
                 projectId: filterProject !== "all" ? filterProject : undefined,
-                assignedTo:
-                  filterAssignedTo !== "all" ? filterAssignedTo : undefined,
+                dateFrom: filterDateFrom || undefined,
+                dateTo: filterDateTo || undefined,
+                search: searchQuery || undefined,
               }}
+              filterLabels={{
+                status:
+                  filterStatus !== "all"
+                    ? statuses.find((s) => String(s.code) === filterStatus)?.name
+                    : undefined,
+                priority:
+                  filterPriority !== "all"
+                    ? filterPriority.charAt(0).toUpperCase() + filterPriority.slice(1)
+                    : undefined,
+                assignedTo: (() => {
+                  if (filterAssignedTo === "all") return undefined;
+                  const a = agents.find((ag) => ag._id === filterAssignedTo);
+                  return a ? `${a.firstName} ${a.lastName}` : undefined;
+                })(),
+                project:
+                  filterProject !== "all"
+                    ? projects.find((p) => p._id === filterProject)?.name
+                    : undefined,
+                dateFrom: filterDateFrom || undefined,
+                dateTo: filterDateTo || undefined,
+                search: searchQuery || undefined,
+              }}
+              ticketCount={totalTickets}
             />
           )}
 

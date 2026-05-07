@@ -6028,20 +6028,22 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
       });
     }
 
-    // Use the agent's first center (if available) as the ticket's center
-    // This ensures the ticket is mapped to the same center as the agent creating it
+    // Determine ticket center — priority: explicit centerId from request (user-selected center)
+    // then fall back to agent's first assigned center, then null (no center).
     let ticketCenterId: any = null;
 
-    if (agentDetails.centers && agentDetails.centers.length > 0) {
-      // Agent has centers assigned - use the first one
-      ticketCenterId = agentDetails.centers[0];
-      console.log(`📍 Using agent's first center: ${ticketCenterId}`);
-    } else if (centerId) {
-      // No agent centers, but centerId provided in request
+    if (centerId) {
+      // Use the centerId explicitly provided by the frontend (agent selected their operating center)
       ticketCenterId = centerId;
       console.log(`📍 Using centerId from request: ${ticketCenterId}`);
+    } else if (agentDetails.centers && agentDetails.centers.length > 0) {
+      // Fallback: use agent's first assigned center when no centerId in request
+      ticketCenterId = agentDetails.centers[0];
+      console.log(
+        `📍 No centerId in request, using agent's first center: ${ticketCenterId}`,
+      );
     } else {
-      // No center available - this will be an online ticket
+      // No center available - ticket will have no center assignment
       ticketCenterId = null;
       console.log(`📍 No center available - ticket will be marked as online`);
     }
@@ -6058,6 +6060,43 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
         success: false,
         message: "Project not found",
       });
+    }
+
+    // Validate custom field-level rules (minLength, maxLength, regex) for offline submissions
+    const offlineFormFields: any[] =
+      project.configuration?.ticketSubmissionSettings?.onlineFormFields || [];
+    for (const field of offlineFormFields) {
+      const v = field.validation;
+      if (!v) continue;
+      const rawVal = req.body[field.fieldName];
+      const value = rawVal == null ? "" : String(rawVal);
+      if (!value) continue; // required check already done above
+      const label = field.displayLabel || field.fieldName;
+      if (v.minLength != null && value.length < Number(v.minLength)) {
+        return res.status(400).json({
+          success: false,
+          message: `${label} must be at least ${v.minLength} characters`,
+        });
+      }
+      if (v.maxLength != null && value.length > Number(v.maxLength)) {
+        return res.status(400).json({
+          success: false,
+          message: `${label} must be at most ${v.maxLength} characters`,
+        });
+      }
+      if (v.regex) {
+        try {
+          const re = new RegExp(v.regex);
+          if (!re.test(value)) {
+            return res.status(400).json({
+              success: false,
+              message: `${label} is not in the correct format`,
+            });
+          }
+        } catch {
+          // invalid regex — skip
+        }
+      }
     }
 
     // Generate ticket number using offline configuration
@@ -6729,6 +6768,20 @@ export const getAssignableAgents = async (req: Request, res: Response) => {
 
     // Check if user is Super Admin - they can see all agents
     const isSuperAdmin = (userRole as any).code === "SUPER_ADMIN";
+
+    // Super Admin: immediately return ALL active agents — no project/hierarchy scoping
+    if (isSuperAdmin) {
+      const allAgents = await User.find({ isActive: true })
+        .populate("role", "name isAgent code")
+        .select("_id firstName lastName email role")
+        .sort({ firstName: 1, lastName: 1 });
+      console.log(`👑 Super Admin - returning all ${allAgents.length} active users as assignable agents`);
+      return res.status(200).json({
+        success: true,
+        data: allAgents,
+        mode: "super_admin",
+      });
+    }
 
     console.log("🔍 Fetching assignable agents for user:", {
       userId,

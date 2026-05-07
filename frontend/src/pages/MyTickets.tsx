@@ -16,6 +16,10 @@ import { TicketMergeModal } from "../components/tickets/TicketMergeModal";
 import {
   ArrowDownTrayIcon,
   ArrowsPointingInIcon,
+  MagnifyingGlassIcon,
+  ChevronDownIcon,
+  CalendarDaysIcon,
+  XMarkIcon,
 } from "@heroicons/react/24/outline";
 import { useProjectContext } from "../contexts/ProjectContext";
 import { useSocket } from "../hooks/useSocket";
@@ -216,6 +220,8 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
   // Ref to prevent duplicate API calls from React.StrictMode
   const hasFetchedTickets = useRef(false);
   const [priorityFilter, setPriorityFilter] = useState("all");
+  const [dateFromFilter, setDateFromFilter] = useState("");
+  const [dateToFilter, setDateToFilter] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const deferredSearchTerm = useDeferredValue(searchTerm);
   const [showExportModal, setShowExportModal] = useState(false);
@@ -269,41 +275,38 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
       }
       if (!projectId) projectId = localStorage.getItem("projectId") || "";
       if (!projectId && currentProjectId) projectId = currentProjectId;
-      if (!projectId) return;
 
-      // Fetch statuses using existing API: /api/statuses/project/:projectId
-      const statusResponse = await axios.get(
-        `${API_BASE_URL}/statuses/project/${projectId}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
-      if (
-        statusResponse.data.success &&
-        Array.isArray(statusResponse.data.data)
-      ) {
-        // Use code (numeric) to match ticket.status field
-        const statusData = statusResponse.data.data.map((s: any) => ({
-          code: s.code, // s.code is the numeric value (1=Open,2=In Progress...5=Close)
-          name: s.name,
-        }));
-
-        // If no statuses found, use default standard statuses
-        if (statusData.length === 0) {
-          console.warn("âš ï¸ No statuses found for project, using defaults");
-          setStatuses([
-            { code: 1, name: "Open" },
-            { code: 2, name: "In Progress" },
-            { code: 3, name: "On Hold" },
-            { code: 4, name: "Resolved" },
-            { code: 5, name: "Closed" },
-          ]);
+      // Fetch statuses — project-specific if available, otherwise fetch all (super admin / no project context)
+      try {
+        let statusData: Array<{ code: number; name: string }> = [];
+        if (projectId) {
+          const statusResponse = await axios.get(
+            `${API_BASE_URL}/statuses/project/${projectId}`,
+            { headers: { Authorization: `Bearer ${token}` } },
+          );
+          if (statusResponse.data.success && Array.isArray(statusResponse.data.data)) {
+            statusData = statusResponse.data.data.map((s: any) => ({ code: s.code, name: s.name }));
+          }
         } else {
-          setStatuses(statusData);
+          const statusResponse = await axios.get(
+            `${API_BASE_URL}/statuses/all`,
+            { headers: { Authorization: `Bearer ${token}` } },
+          );
+          if (statusResponse.data.success && Array.isArray(statusResponse.data.data)) {
+            const seen = new Set<number>();
+            statusData = statusResponse.data.data
+              .filter((s: any) => { if (seen.has(s.code)) return false; seen.add(s.code); return true; })
+              .map((s: any) => ({ code: s.code, name: s.name }));
+          }
         }
-      } else {
-        // API failed, use defaults
-        console.warn("âš ï¸ Status API failed, using defaults");
+        setStatuses(statusData.length > 0 ? statusData : [
+          { code: 1, name: "Open" },
+          { code: 2, name: "In Progress" },
+          { code: 3, name: "On Hold" },
+          { code: 4, name: "Resolved" },
+          { code: 5, name: "Closed" },
+        ]);
+      } catch {
         setStatuses([
           { code: 1, name: "Open" },
           { code: 2, name: "In Progress" },
@@ -313,10 +316,10 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
         ]);
       }
 
-      // Fetch priorities from SLA rules (independent â€” failure falls back to defaults)
+      // Fetch priorities from SLA rules
       try {
-        const slaResponse = await axios.get(
-          `${API_BASE_URL}/sla-rules?projectId=${projectId}&isActive=true`,
+        const slaUrl = projectId ? `${API_BASE_URL}/sla-rules?projectId=${projectId}&isActive=true` : `${API_BASE_URL}/sla-rules?isActive=true`;
+        const slaResponse = await axios.get(slaUrl,
           {
             headers: { Authorization: `Bearer ${token}` },
           },
@@ -661,11 +664,21 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
           ? ticket.metadata.centerId.centerName?.toLowerCase().includes(sq)
           : ticket.metadata?.centerName?.toLowerCase().includes(sq));
 
+      const matchesDateFrom =
+        !dateFromFilter ||
+        new Date(ticket.createdAt) >= new Date(dateFromFilter);
+      const matchesDateTo =
+        !dateToFilter ||
+        new Date(ticket.createdAt) <=
+          new Date(new Date(dateToFilter).setHours(23, 59, 59, 999));
+
       return (
         matchesStatus &&
         matchesPriority &&
         matchesSource &&
         matchesProject &&
+        matchesDateFrom &&
+        matchesDateTo &&
         matchesSearch
       );
     } catch (err) {
@@ -827,23 +840,34 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
         style={{
           background: "white",
           borderRadius: "12px",
-          padding: "20px",
-          boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+          padding: "12px 16px",
+          boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+          border: "1px solid #F3F4F6",
           marginBottom: "16px",
         }}
       >
-        {/* Row 1: Search + Status + Priority + Source + Export */}
         <div
           style={{
             display: "flex",
-            gap: "12px",
+            gap: "8px",
             flexWrap: "wrap",
             alignItems: "center",
-            marginBottom:
-              viewMode === "unified" && userProjects.length > 1 ? "12px" : "0",
           }}
         >
-          <div style={{ flex: 1, minWidth: "200px" }}>
+          {/* Search */}
+          <div style={{ position: "relative", flex: 1, minWidth: "220px" }}>
+            <MagnifyingGlassIcon
+              style={{
+                position: "absolute",
+                left: "10px",
+                top: "50%",
+                transform: "translateY(-50%)",
+                width: "15px",
+                height: "15px",
+                color: "#9CA3AF",
+                pointerEvents: "none",
+              }}
+            />
             <input
               type="text"
               placeholder="Search queries..."
@@ -851,83 +875,282 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
               onChange={(e) => setSearchTerm(e.target.value)}
               style={{
                 width: "100%",
-                padding: "10px 12px",
-                border: "1px solid #D1D5DB",
+                paddingTop: "9px",
+                paddingBottom: "9px",
+                paddingLeft: "32px",
+                paddingRight: searchTerm ? "30px" : "12px",
+                border: "1px solid #E5E7EB",
                 borderRadius: "8px",
                 fontSize: "14px",
                 boxSizing: "border-box",
+                background: "#F9FAFB",
+                outline: "none",
+              }}
+              onFocus={(e) => (e.target.style.borderColor = "#3B82F6")}
+              onBlur={(e) => (e.target.style.borderColor = "#E5E7EB")}
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm("")}
+                style={{
+                  position: "absolute",
+                  right: "8px",
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "#9CA3AF",
+                  padding: "2px",
+                  display: "flex",
+                  alignItems: "center",
+                }}
+              >
+                <XMarkIcon style={{ width: "14px", height: "14px" }} />
+              </button>
+            )}
+          </div>
+
+          {/* Status */}
+          <div style={{ position: "relative" }}>
+            <select
+              value={statusFilter}
+              onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+              style={{
+                paddingTop: "9px",
+                paddingBottom: "9px",
+                paddingLeft: "10px",
+                paddingRight: "28px",
+                border: statusFilter !== "all" ? "1.5px solid #3B82F6" : "1px solid #E5E7EB",
+                borderRadius: "8px",
+                fontSize: "14px",
+                minWidth: "120px",
+                background: statusFilter !== "all" ? "#EFF6FF" : "#F9FAFB",
+                color: statusFilter !== "all" ? "#1D4ED8" : "#374151",
+                cursor: "pointer",
+                appearance: "none" as const,
+                WebkitAppearance: "none" as const,
+                fontWeight: statusFilter !== "all" ? 500 : 400,
+                outline: "none",
+              }}
+            >
+              <option value="all">All Status</option>
+              {statuses.map((s, i) => (
+                <option key={`s-${s.code}-${i}`} value={s.code}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+            <ChevronDownIcon
+              style={{
+                position: "absolute",
+                right: "8px",
+                top: "50%",
+                transform: "translateY(-50%)",
+                width: "13px",
+                height: "13px",
+                pointerEvents: "none",
+                color: statusFilter !== "all" ? "#3B82F6" : "#6B7280",
               }}
             />
           </div>
-          <select
-            value={statusFilter}
-            onChange={(e) => {
-              setStatusFilter(e.target.value);
-              setCurrentPage(1);
-            }}
+
+          {/* Priority */}
+          <div style={{ position: "relative" }}>
+            <select
+              value={priorityFilter}
+              onChange={(e) => { setPriorityFilter(e.target.value); setCurrentPage(1); }}
+              style={{
+                paddingTop: "9px",
+                paddingBottom: "9px",
+                paddingLeft: "10px",
+                paddingRight: "28px",
+                border: priorityFilter !== "all" ? "1.5px solid #3B82F6" : "1px solid #E5E7EB",
+                borderRadius: "8px",
+                fontSize: "14px",
+                minWidth: "120px",
+                background: priorityFilter !== "all" ? "#EFF6FF" : "#F9FAFB",
+                color: priorityFilter !== "all" ? "#1D4ED8" : "#374151",
+                cursor: "pointer",
+                appearance: "none" as const,
+                WebkitAppearance: "none" as const,
+                fontWeight: priorityFilter !== "all" ? 500 : 400,
+                outline: "none",
+              }}
+            >
+              <option value="all">All Priority</option>
+              {priorities.map((p, i) => (
+                <option key={`p-${p.code}-${i}`} value={p.code}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <ChevronDownIcon
+              style={{
+                position: "absolute",
+                right: "8px",
+                top: "50%",
+                transform: "translateY(-50%)",
+                width: "13px",
+                height: "13px",
+                pointerEvents: "none",
+                color: priorityFilter !== "all" ? "#3B82F6" : "#6B7280",
+              }}
+            />
+          </div>
+
+          {/* Source */}
+          <div style={{ position: "relative" }}>
+            <select
+              value={sourceFilter}
+              onChange={(e) => { setSourceFilter(e.target.value); setCurrentPage(1); }}
+              style={{
+                paddingTop: "9px",
+                paddingBottom: "9px",
+                paddingLeft: "10px",
+                paddingRight: "28px",
+                border: sourceFilter !== "all" ? "1.5px solid #3B82F6" : "1px solid #E5E7EB",
+                borderRadius: "8px",
+                fontSize: "14px",
+                minWidth: "120px",
+                background: sourceFilter !== "all" ? "#EFF6FF" : "#F9FAFB",
+                color: sourceFilter !== "all" ? "#1D4ED8" : "#374151",
+                cursor: "pointer",
+                appearance: "none" as const,
+                WebkitAppearance: "none" as const,
+                fontWeight: sourceFilter !== "all" ? 500 : 400,
+                outline: "none",
+              }}
+            >
+              <option value="all">All Sources</option>
+              <option value="online">🌐 Online</option>
+              <option value="offline">📍 Offline</option>
+              <option value="email">📧 Email</option>
+            </select>
+            <ChevronDownIcon
+              style={{
+                position: "absolute",
+                right: "8px",
+                top: "50%",
+                transform: "translateY(-50%)",
+                width: "13px",
+                height: "13px",
+                pointerEvents: "none",
+                color: sourceFilter !== "all" ? "#3B82F6" : "#6B7280",
+              }}
+            />
+          </div>
+
+          {/* Project — unified mode only */}
+          {viewMode === "unified" && userProjects.length > 1 && (
+            <div style={{ position: "relative" }}>
+              <select
+                value={projectFilter}
+                onChange={(e) => { setProjectFilter(e.target.value); setCurrentPage(1); }}
+                style={{
+                  paddingTop: "9px",
+                  paddingBottom: "9px",
+                  paddingLeft: "10px",
+                  paddingRight: "28px",
+                  border: projectFilter !== "all" ? "1.5px solid #3B82F6" : "1px solid #E5E7EB",
+                  borderRadius: "8px",
+                  fontSize: "14px",
+                  minWidth: "150px",
+                  maxWidth: "220px",
+                  background: projectFilter !== "all" ? "#EFF6FF" : "#F9FAFB",
+                  color: projectFilter !== "all" ? "#1D4ED8" : "#374151",
+                  cursor: "pointer",
+                  appearance: "none" as const,
+                  WebkitAppearance: "none" as const,
+                  fontWeight: projectFilter !== "all" ? 500 : 400,
+                  outline: "none",
+                }}
+              >
+                <option value="all">All Projects</option>
+                {userProjects.map((p) => (
+                  <option key={p._id} value={p._id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDownIcon
+                style={{
+                  position: "absolute",
+                  right: "8px",
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  width: "13px",
+                  height: "13px",
+                  pointerEvents: "none",
+                  color: projectFilter !== "all" ? "#3B82F6" : "#6B7280",
+                }}
+              />
+            </div>
+          )}
+
+          {/* Date range — combined pill */}
+          <div
             style={{
-              padding: "10px 12px",
-              border: "1px solid #D1D5DB",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              background: dateFromFilter || dateToFilter ? "#EFF6FF" : "#F9FAFB",
+              border: `${dateFromFilter || dateToFilter ? "1.5px" : "1px"} solid ${dateFromFilter || dateToFilter ? "#3B82F6" : "#E5E7EB"}`,
               borderRadius: "8px",
-              fontSize: "14px",
-              minWidth: "130px",
+              padding: "5px 10px",
             }}
           >
-            <option value="all">All Status</option>
-            {statuses.map((s, i) => (
-              <option key={`s-${s.code}-${i}`} value={s.code}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-          <select
-            value={priorityFilter}
-            onChange={(e) => {
-              setPriorityFilter(e.target.value);
-              setCurrentPage(1);
-            }}
-            style={{
-              padding: "10px 12px",
-              border: "1px solid #D1D5DB",
-              borderRadius: "8px",
-              fontSize: "14px",
-              minWidth: "130px",
-            }}
-          >
-            <option value="all">All Priority</option>
-            {priorities.map((p, i) => (
-              <option key={`p-${p.code}-${i}`} value={p.code}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-          <select
-            value={sourceFilter}
-            onChange={(e) => {
-              setSourceFilter(e.target.value);
-              setCurrentPage(1);
-            }}
-            style={{
-              padding: "10px 12px",
-              border: "1px solid #D1D5DB",
-              borderRadius: "8px",
-              fontSize: "14px",
-              minWidth: "130px",
-            }}
-          >
-            <option value="all">All Sources</option>
-            <option value="online">🌐 Online</option>
-            <option value="offline">📍 Offline</option>
-            <option value="email">📧 Email</option>
-          </select>
+            <CalendarDaysIcon
+              style={{
+                width: "14px",
+                height: "14px",
+                color: dateFromFilter || dateToFilter ? "#3B82F6" : "#9CA3AF",
+                flexShrink: 0,
+              }}
+            />
+            <input
+              type="date"
+              value={dateFromFilter}
+              onChange={(e) => { setDateFromFilter(e.target.value); setCurrentPage(1); }}
+              style={{
+                border: "none",
+                background: "transparent",
+                fontSize: "13px",
+                outline: "none",
+                color: dateFromFilter ? "#1D4ED8" : "#6B7280",
+                width: "120px",
+                cursor: "pointer",
+              }}
+            />
+            <span style={{ color: "#D1D5DB", fontSize: "11px", fontWeight: 600 }}>–</span>
+            <input
+              type="date"
+              value={dateToFilter}
+              onChange={(e) => { setDateToFilter(e.target.value); setCurrentPage(1); }}
+              style={{
+                border: "none",
+                background: "transparent",
+                fontSize: "13px",
+                outline: "none",
+                color: dateToFilter ? "#1D4ED8" : "#6B7280",
+                width: "120px",
+                cursor: "pointer",
+              }}
+            />
+          </div>
+
+          {/* Push export + clear to the right */}
+          <div style={{ flex: 1, minWidth: "0" }} />
+
+          {/* Export */}
           {canExport && (
             <button
               onClick={() => setShowExportModal(true)}
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: "8px",
-                padding: "10px 16px",
+                gap: "6px",
+                padding: "9px 14px",
                 background: "#059669",
                 color: "white",
                 border: "none",
@@ -937,71 +1160,62 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                 cursor: "pointer",
                 whiteSpace: "nowrap",
               }}
-              onMouseEnter={(e) =>
-                (e.currentTarget.style.background = "#047857")
-              }
-              onMouseLeave={(e) =>
-                (e.currentTarget.style.background = "#059669")
-              }
+              onMouseEnter={(e) => (e.currentTarget.style.background = "#047857")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "#059669")}
             >
-              <ArrowDownTrayIcon style={{ width: "16px", height: "16px" }} />
+              <ArrowDownTrayIcon style={{ width: "15px", height: "15px" }} />
               Export
             </button>
           )}
-        </div>
-        {/* Row 2: Project filter (unified mode) */}
-        {viewMode === "unified" && userProjects.length > 1 && (
-          <div
-            style={{
-              display: "flex",
-              gap: "12px",
-              flexWrap: "wrap",
-              alignItems: "center",
-            }}
-          >
-            <select
-              value={projectFilter}
-              onChange={(e) => {
-                setProjectFilter(e.target.value);
+
+          {/* Clear filters */}
+          {(searchTerm ||
+            statusFilter !== "all" ||
+            priorityFilter !== "all" ||
+            sourceFilter !== "all" ||
+            (viewMode === "unified" && projectFilter !== "all") ||
+            dateFromFilter ||
+            dateToFilter) && (
+            <button
+              onClick={() => {
+                setSearchTerm("");
+                setStatusFilter("all");
+                setPriorityFilter("all");
+                setSourceFilter("all");
+                setProjectFilter("all");
+                setDateFromFilter("");
+                setDateToFilter("");
                 setCurrentPage(1);
               }}
               style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
                 padding: "9px 12px",
-                border: "1px solid #D1D5DB",
+                border: "1px solid #E5E7EB",
                 borderRadius: "8px",
-                fontSize: "14px",
-                minWidth: "180px",
-                maxWidth: "280px",
+                background: "white",
+                color: "#6B7280",
+                fontSize: "13px",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "#FEF2F2";
+                e.currentTarget.style.color = "#DC2626";
+                e.currentTarget.style.borderColor = "#FCA5A5";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "white";
+                e.currentTarget.style.color = "#6B7280";
+                e.currentTarget.style.borderColor = "#E5E7EB";
               }}
             >
-              <option value="all">All Projects</option>
-              {userProjects.map((p) => (
-                <option key={p._id} value={p._id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-            {projectFilter !== "all" && (
-              <button
-                onClick={() => {
-                  setProjectFilter("all");
-                  setCurrentPage(1);
-                }}
-                style={{
-                  padding: "9px 14px",
-                  border: "1px solid #E5E7EB",
-                  borderRadius: "8px",
-                  background: "#F9FAFB",
-                  color: "#6B7280",
-                  fontSize: "13px",
-                  cursor: "pointer",
-                }}
-              >
-                Clear Filters
-              </button>
-            )}
-          </div>
-        )}
+              <XMarkIcon style={{ width: "13px", height: "13px" }} />
+              Clear
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Bulk action bar */}
@@ -1674,7 +1888,28 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
           onClose={() => setShowExportModal(false)}
           filters={{
             status: statusFilter !== "all" ? statusFilter : undefined,
+            priority: priorityFilter !== "all" ? priorityFilter : undefined,
+            dateFrom: dateFromFilter || undefined,
+            dateTo: dateToFilter || undefined,
+            search: searchTerm || undefined,
           }}
+          filterLabels={{
+            status: (() => {
+              const map: Record<string, string> = {
+                "1": "Open", "2": "In Progress", "3": "On Hold",
+                "4": "Resolved", "5": "Closed",
+              };
+              return statusFilter !== "all" ? map[statusFilter] || statusFilter : undefined;
+            })(),
+            priority:
+              priorityFilter !== "all"
+                ? priorityFilter.charAt(0).toUpperCase() + priorityFilter.slice(1)
+                : undefined,
+            dateFrom: dateFromFilter || undefined,
+            dateTo: dateToFilter || undefined,
+            search: searchTerm || undefined,
+          }}
+          ticketCount={filteredTickets.length}
         />
       )}
 

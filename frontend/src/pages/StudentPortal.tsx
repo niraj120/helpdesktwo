@@ -831,6 +831,40 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
         return;
       }
 
+      // Validate field-level rules (minLength, maxLength, regex) for visible fields
+      for (const field of allFields) {
+        if (!visibleFields.has(field.fieldName)) continue;
+        const v = (field as any).validation;
+        if (!v) continue;
+        const rawValue = formData[field.fieldName];
+        const value = rawValue == null ? "" : String(rawValue);
+        // Skip empty optional fields — required check was already done above
+        if (!value) continue;
+        const label = (field as any).displayLabel || field.fieldName;
+        if (v.minLength != null && value.length < Number(v.minLength)) {
+          setSubmitError(`${label} must be at least ${v.minLength} characters`);
+          setSubmitting(false);
+          return;
+        }
+        if (v.maxLength != null && value.length > Number(v.maxLength)) {
+          setSubmitError(`${label} must be at most ${v.maxLength} characters`);
+          setSubmitting(false);
+          return;
+        }
+        if (v.regex) {
+          try {
+            const re = new RegExp(v.regex);
+            if (!re.test(value)) {
+              setSubmitError(`${label} is not in the correct format`);
+              setSubmitting(false);
+              return;
+            }
+          } catch {
+            // invalid regex pattern — skip silently
+          }
+        }
+      }
+
       // Prepare form data — only include values for visible fields
       const submitData = new FormData();
       submitData.append("projectId", projectBranding?.projectId || "");
@@ -898,11 +932,26 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
         return (
           <input
             key={field.fieldName}
-            type={field.fieldType === "url" ? "url" : field.fieldType}
+            type={
+              field.fieldType === "number"
+                ? "text"
+                : field.fieldType === "url"
+                  ? "url"
+                  : field.fieldType
+            }
+            inputMode={field.fieldType === "number" ? "numeric" : undefined}
             placeholder={field.placeholder}
             value={value}
-            onChange={(e) => handleInputChange(field.fieldName, e.target.value)}
+            onChange={(e) => {
+              let val = e.target.value;
+              if (field.fieldType === "number") {
+                val = val.replace(/[^0-9]/g, "");
+              }
+              handleInputChange(field.fieldName, val);
+            }}
             required={field.required}
+            maxLength={(field as any).validation?.maxLength ?? undefined}
+            minLength={(field as any).validation?.minLength ?? undefined}
             className={`${commonClasses} focus:ring-2`}
             style={{
               borderColor: "#e5e7eb",
@@ -919,6 +968,8 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
             onChange={(e) => handleInputChange(field.fieldName, e.target.value)}
             required={field.required}
             rows={4}
+            maxLength={(field as any).validation?.maxLength ?? undefined}
+            minLength={(field as any).validation?.minLength ?? undefined}
             className={`${commonClasses} focus:ring-2`}
             style={{
               borderColor: "#e5e7eb",

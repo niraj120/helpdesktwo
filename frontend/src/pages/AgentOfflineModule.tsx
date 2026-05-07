@@ -880,15 +880,16 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                     ? "email"
                     : field.fieldType === "phone"
                       ? "tel"
-                      : field.fieldType === "number"
-                        ? "number"
-                        : "text"
+                      : "text"
                 }
+                inputMode={field.fieldType === "number" ? "numeric" : undefined}
                 required={isRequired}
                 value={value || ""}
                 onChange={(e) => {
                   let val = e.target.value;
-                  if (isNameField) {
+                  if (field.fieldType === "number") {
+                    val = val.replace(/[^0-9]/g, "");
+                  } else if (isNameField) {
                     val = val.replace(/[0-9]/g, "").replace(/^\s+/, "");
                   } else if (field.fieldType === "text") {
                     val = val.replace(/^\s+/, "");

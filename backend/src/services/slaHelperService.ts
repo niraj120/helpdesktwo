@@ -89,31 +89,41 @@ export const initializeSLATracking = async (
       ? await EscalationPolicy.findById(slaRule.escalationPolicyId)
       : null;
 
-    // Calculate resolution deadline - use first level's time if escalation policy exists
+    // Calculate resolution deadline — use sum of ALL level times so the overall
+    // SLA clock is never reset when the ticket escalates between levels.
     let resolutionDeadline: Date;
     let nextEscalationDue: Date | undefined = undefined;
 
     if (escalationPolicy && escalationPolicy.levels.length > 0) {
       const firstLevel = escalationPolicy.levels.find((l) => l.level === 1);
-      if (firstLevel) {
-        // Use escalation policy's first level time as the initial SLA
-        resolutionDeadline = calculateDeadline(
+
+      // Sum every level's escalateAfter duration to get the true overall deadline
+      const totalMs = escalationPolicy.levels.reduce((sum, l) => {
+        const after = (l as any).escalateAfter;
+        if (!after?.value) return sum;
+        const hrs =
+          after.unit === "minutes"
+            ? after.value / 60
+            : after.unit === "days"
+              ? after.value * 24
+              : after.value;
+        return sum + hrs * 3600000;
+      }, 0);
+
+      resolutionDeadline =
+        totalMs > 0
+          ? new Date(new Date(createdAt).getTime() + totalMs)
+          : calculateDeadline(createdAt, slaRule.resolutionTime);
+
+      console.log(
+        `📅 Overall SLA deadline (sum of all ${escalationPolicy.levels.length} level(s)): ${resolutionDeadline.toISOString()}`,
+      );
+
+      // nextEscalationDue = when L1 SLA expires (triggers first escalation)
+      if (firstLevel && firstLevel.escalationMode === "auto") {
+        nextEscalationDue = calculateDeadline(
           createdAt,
           firstLevel.escalateAfter,
-        );
-        console.log(
-          `📅 Using L1 escalation time for resolution deadline: ${resolutionDeadline.toISOString()}`,
-        );
-
-        // Set next escalation due for auto-escalation
-        if (firstLevel.escalationMode === "auto") {
-          nextEscalationDue = resolutionDeadline; // Same as resolution deadline for L1
-        }
-      } else {
-        // Fallback to SLA rule resolution time
-        resolutionDeadline = calculateDeadline(
-          createdAt,
-          slaRule.resolutionTime,
         );
       }
     } else {
