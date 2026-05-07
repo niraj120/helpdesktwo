@@ -381,9 +381,19 @@ export async function autoAssignMatrixToTicket(
       `🎯 Role-level SLA initialized: L${startLevel.levelNumber} deadline = ${roleLevelDueAt.toISOString()} (${startLevel.slaHours} ${startLevel.slaUnit || "hrs"})`,
     );
 
-    // Also update legacy SLA tracking for backward compatibility
+    // Also update legacy SLA tracking for backward compatibility.
+    // resolutionDeadline = sum of ALL matrix level SLA times so the overall
+    // deadline is never reset on subsequent escalations.
     if (startLevel.slaHours > 0) {
+      const totalSlaMs = sortedLevels.reduce(
+        (sum, l) => sum + slaToMs(l.slaHours, l.slaUnit),
+        0,
+      );
       const resolutionDeadline = new Date(
+        new Date(escalationStartTime).getTime() + totalSlaMs,
+      );
+      // nextEscalationDue = when the START level's SLA expires (triggers first escalation)
+      const nextEscalationDue = new Date(
         new Date(escalationStartTime).getTime() +
           slaToMs(startLevel.slaHours, startLevel.slaUnit),
       );
@@ -394,7 +404,7 @@ export async function autoAssignMatrixToTicket(
           $set: {
             resolutionDeadline: resolutionDeadline,
             currentEscalationLevel: startLevel.levelNumber - 1, // 0-indexed for compatibility
-            nextEscalationDue: resolutionDeadline,
+            nextEscalationDue: nextEscalationDue,
           },
           $setOnInsert: {
             ticketId: new mongoose.Types.ObjectId(ticketId.toString()),
@@ -1386,10 +1396,13 @@ export async function executeEscalation(
 
   await ticket.save();
 
-  // Step 5: Update legacy SLA tracking with new level's SLA hours
+  // Step 5: Update SLA tracking level info.
+  // resolutionDeadline is intentionally NOT changed here — it was set at ticket
+  // creation as the sum of all levels and must remain fixed throughout escalation.
+  // Only nextEscalationDue is updated (per-level trigger for the cron job).
   if (targetLevel.slaHours > 0) {
     const now = new Date();
-    const newResolutionDeadline = new Date(
+    const nextEscalationDue = new Date(
       now.getTime() + slaToMs(targetLevel.slaHours, targetLevel.slaUnit),
     );
 
@@ -1397,9 +1410,8 @@ export async function executeEscalation(
       { ticketId: ticket._id },
       {
         $set: {
-          resolutionDeadline: newResolutionDeadline,
           currentEscalationLevel: targetLevel.levelNumber - 1, // 0-indexed for compatibility
-          nextEscalationDue: newResolutionDeadline,
+          nextEscalationDue: nextEscalationDue,
         },
         $push: {
           escalationHistory: {
@@ -1414,7 +1426,7 @@ export async function executeEscalation(
     );
 
     console.log(
-      `✅ SLA deadline reset for escalation to Level ${targetLevel.levelNumber}: ${targetLevel.slaHours}h from now, new deadline: ${newResolutionDeadline.toISOString()}`,
+      `✅ SLA tracking updated for Level ${targetLevel.levelNumber}: next escalation due in ${targetLevel.slaHours}h (overall resolutionDeadline preserved)`,
     );
   }
 

@@ -13,17 +13,45 @@ export const exportTickets = async (req: Request, res: Response) => {
 
     // Build query from filters
     const query: any = {};
-    
+
     if (filters) {
-      if (filters.status) query.status = filters.status;
-      if (filters.priority) query.priority = filters.priority;
-      if (filters.category) query.category = filters.category;
-      if (filters.assignedTo) query.assignedTo = filters.assignedTo;
-      
+      // status is stored as a Number — skip if "all" or missing
+      if (filters.status && filters.status !== 'all') {
+        const statusNum = Number(filters.status);
+        if (!isNaN(statusNum)) query.status = statusNum;
+      }
+
+      // priority is stored as a lowercase string
+      if (filters.priority && filters.priority !== 'all') {
+        query.priority = filters.priority.toLowerCase();
+      }
+
+      // projectId is stored under metadata.projectId
+      if (filters.projectId && filters.projectId !== 'all') {
+        query['metadata.projectId'] = filters.projectId;
+      }
+
+      // assignedTo is an ObjectId — only add if it looks like a valid id
+      if (filters.assignedTo && filters.assignedTo !== 'all') {
+        query.assignedTo = filters.assignedTo;
+      }
+
+      // Date range on createdAt
       if (filters.dateFrom || filters.dateTo) {
         query.createdAt = {};
         if (filters.dateFrom) query.createdAt.$gte = new Date(filters.dateFrom);
-        if (filters.dateTo) query.createdAt.$lte = new Date(filters.dateTo);
+        if (filters.dateTo) {
+          // Include the whole day
+          const to = new Date(filters.dateTo);
+          to.setHours(23, 59, 59, 999);
+          query.createdAt.$lte = to;
+        }
+      }
+
+      // Free-text search on subject / ticketNumber
+      if (filters.search) {
+        const re = new RegExp(filters.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+        query.$or = [{ subject: re }, { ticketNumber: re }];
       }
     }
 
@@ -31,12 +59,7 @@ export const exportTickets = async (req: Request, res: Response) => {
     const tickets = await Ticket.find(query)
       .populate('createdBy', 'firstName lastName email')
       .populate('assignedTo', 'firstName lastName email')
-      .populate('project', 'name')
       .populate('category', 'name')
-      .populate('status', 'name')
-      .populate('priority', 'name')
-      .populate('comments.createdBy', 'firstName lastName email')
-      .populate('attachments.uploadedBy', 'firstName lastName email')
       .sort({ createdAt: -1 });
 
     if (format === 'csv') {
@@ -64,17 +87,18 @@ export const exportTickets = async (req: Request, res: Response) => {
       csvRows.push(headers.join(','));
 
       // Data rows
+      const statusLabel: Record<number, string> = { 1: 'Open', 2: 'In Progress', 3: 'On Hold', 4: 'Resolved', 5: 'Closed' };
       tickets.forEach(ticket => {
         const row = [
-          ticket.ticketNumber,
-          `"${ticket.subject.replace(/"/g, '""')}"`,
-          `"${ticket.description?.replace(/"/g, '""') || ''}"`,
-          (ticket.status as any)?.name || '',
-          (ticket.priority as any)?.name || '',
+          ticket.ticketNumber || '',
+          `"${(ticket.subject || '').replace(/"/g, '""')}"`,
+          `"${(ticket.description || '').replace(/"/g, '""')}"`,
+          statusLabel[ticket.status as number] || String(ticket.status || ''),
+          ticket.priority || '',
           (ticket.category as any)?.name || '',
-          `"${(ticket.createdBy as any)?.firstName} ${(ticket.createdBy as any)?.lastName}"`,
-          ticket.assignedTo ? `"${(ticket.assignedTo as any)?.firstName} ${(ticket.assignedTo as any)?.lastName}"` : 'Unassigned',
-          (ticket.project as any)?.name || '',
+          `"${(ticket.createdBy as any)?.firstName || ''} ${(ticket.createdBy as any)?.lastName || ''}"`,
+          ticket.assignedTo ? `"${(ticket.assignedTo as any)?.firstName || ''} ${(ticket.assignedTo as any)?.lastName || ''}"` : 'Unassigned',
+          (ticket.metadata as any)?.projectId || '',
           ticket.createdAt.toISOString(),
           ticket.updatedAt.toISOString()
         ];
@@ -126,17 +150,18 @@ export const exportTickets = async (req: Request, res: Response) => {
       };
 
       // Add data rows
+      const statusLabelXl: Record<number, string> = { 1: 'Open', 2: 'In Progress', 3: 'On Hold', 4: 'Resolved', 5: 'Closed' };
       tickets.forEach(ticket => {
         const row: any = {
-          ticketNumber: ticket.ticketNumber,
-          subject: ticket.subject,
+          ticketNumber: ticket.ticketNumber || '',
+          subject: ticket.subject || '',
           description: ticket.description || '',
-          status: (ticket.status as any)?.name || '',
-          priority: (ticket.priority as any)?.name || '',
+          status: statusLabelXl[ticket.status as number] || String(ticket.status || ''),
+          priority: ticket.priority || '',
           category: (ticket.category as any)?.name || '',
-          createdBy: `${(ticket.createdBy as any)?.firstName} ${(ticket.createdBy as any)?.lastName}`,
-          assignedTo: ticket.assignedTo ? `${(ticket.assignedTo as any)?.firstName} ${(ticket.assignedTo as any)?.lastName}` : 'Unassigned',
-          project: (ticket.project as any)?.name || '',
+          createdBy: `${(ticket.createdBy as any)?.firstName || ''} ${(ticket.createdBy as any)?.lastName || ''}`.trim(),
+          assignedTo: ticket.assignedTo ? `${(ticket.assignedTo as any)?.firstName || ''} ${(ticket.assignedTo as any)?.lastName || ''}`.trim() : 'Unassigned',
+          project: (ticket.metadata as any)?.projectId || '',
           createdAt: ticket.createdAt,
           updatedAt: ticket.updatedAt
         };

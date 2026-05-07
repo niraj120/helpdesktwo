@@ -317,13 +317,14 @@ class AutoEscalationService {
       };
       const unsetFields: any = {};
 
-      // Update resolution deadline based on the new level's SLA time
+      // Calculate per-level deadline (used only for nextEscalationDue trigger).
+      // resolutionDeadline is intentionally NOT updated here — it was set at ticket
+      // creation as the sum of all levels and must remain fixed throughout escalation.
       if (levelConfig.escalateAfter) {
         const escalationTime = new Date();
-        const newResolutionDeadline = this.calculateEscalationDeadline(
+        const nextLevelDeadline = this.calculateEscalationDeadline(
           levelConfig.escalateAfter,
         );
-        setFields.resolutionDeadline = newResolutionDeadline;
 
         const slaHours =
           levelConfig.escalateAfter.unit === "hours"
@@ -332,14 +333,11 @@ class AutoEscalationService {
               ? levelConfig.escalateAfter.value / 60
               : levelConfig.escalateAfter.value * 24;
 
-        console.log(`📅 L${nextLevel} SLA Timing:`);
+        console.log(`📅 L${nextLevel} per-level SLA Timing:`);
         console.log(`   ↳ Escalation Time: ${escalationTime.toISOString()}`);
-        console.log(`   ↳ SLA Duration: ${slaHours} hours`);
+        console.log(`   ↳ Level SLA Duration: ${slaHours} hours`);
         console.log(
-          `   ↳ Resolution Deadline: ${newResolutionDeadline.toISOString()}`,
-        );
-        console.log(
-          `   ↳ Calculation: NOW (${escalationTime.toISOString()}) + ${slaHours}h = ${newResolutionDeadline.toISOString()}`,
+          `   ↳ Level Deadline: ${nextLevelDeadline.toISOString()} (overall resolutionDeadline unchanged)`,
         );
 
         // If there's a subsequent level and current mode is auto, set next escalation trigger
@@ -347,9 +345,9 @@ class AutoEscalationService {
           (l: any) => l.level === nextLevel + 1,
         );
         if (subsequentLevel && levelConfig.escalationMode === "auto") {
-          setFields.nextEscalationDue = newResolutionDeadline;
+          setFields.nextEscalationDue = nextLevelDeadline;
           console.log(
-            `   ↳ Next escalation due: ${newResolutionDeadline.toISOString()} (when L${nextLevel} SLA expires)`,
+            `   ↳ Next escalation due: ${nextLevelDeadline.toISOString()} (when L${nextLevel} SLA expires)`,
           );
         } else {
           unsetFields.nextEscalationDue = 1;

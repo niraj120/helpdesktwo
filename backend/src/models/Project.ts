@@ -632,6 +632,12 @@ const projectSchema = new Schema<IProject>(
             },
             requiredConditions: [{ type: Schema.Types.Mixed }],
             includeInPublicApi: { type: Boolean, default: false },
+            validation: {
+              minLength: { type: Number },
+              maxLength: { type: Number },
+              pattern: { type: String },
+            },
+            displayLabel: { type: String },
             _id: false, // Disable auto _id generation for subdocuments
           },
         ],
@@ -731,6 +737,12 @@ const projectSchema = new Schema<IProject>(
             order: { type: Number },
             hierarchyLevel: { type: Number }, // For hierarchy level fields (1-4)
             requireOtpVerification: { type: Boolean, default: false }, // For phone/email OTP verification
+            validation: {
+              minLength: { type: Number },
+              maxLength: { type: Number },
+              pattern: { type: String },
+            },
+            displayLabel: { type: String },
           },
         ],
         allowAgentToMarkResolved: { type: Boolean, default: true },

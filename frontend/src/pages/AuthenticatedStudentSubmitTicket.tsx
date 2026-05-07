@@ -694,11 +694,20 @@ const AuthenticatedStudentSubmitTicket: React.FC<{ hideHeader?: boolean }> = ({
       default:
         return (
           <input
-            type={field.fieldType}
+            type={field.fieldType === "number" ? "text" : field.fieldType}
+            inputMode={field.fieldType === "number" ? "numeric" : undefined}
             placeholder={field.placeholder}
             value={value}
-            onChange={(e) => handleInputChange(field.fieldName, e.target.value)}
+            onChange={(e) => {
+              let val = e.target.value;
+              if (field.fieldType === "number") {
+                val = val.replace(/[^0-9]/g, "");
+              }
+              handleInputChange(field.fieldName, val);
+            }}
             required={field.required}
+            maxLength={(field as any).validation?.maxLength ?? undefined}
+            minLength={(field as any).validation?.minLength ?? undefined}
             className={commonClasses}
             style={{ ["--tw-ring-color" as any]: branding?.primaryColor }}
           />

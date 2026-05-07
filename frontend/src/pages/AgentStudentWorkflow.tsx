@@ -93,10 +93,190 @@ interface OfflineSettings {
   };
 }
 
+interface Center {
+  _id: string;
+  centerName: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  isActive?: boolean;
+}
+
 type WorkflowStep = "search" | "register" | "ticket";
 
 // localStorage key for persisting the in-progress registration form
 const REG_DRAFT_KEY = "sac_offline_reg_draft";
+// sessionStorage key for center selection (persists across page refreshes within the session)
+const CENTER_SESSION_KEY = "sac_offline_selected_center";
+
+// ── Searchable center picker ──────────────────────────────────────────────────
+const CenterPickerScreen: React.FC<{
+  centers: Center[];
+  onSelect: (c: Center) => void;
+}> = ({ centers, onSelect }) => {
+  const [query, setQuery] = React.useState("");
+  const [activeIndex, setActiveIndex] = React.useState(-1);
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  const filtered = query.trim()
+    ? centers.filter(
+        (c) =>
+          c.centerName.toLowerCase().includes(query.toLowerCase()) ||
+          (c.city || "").toLowerCase().includes(query.toLowerCase()) ||
+          (c.state || "").toLowerCase().includes(query.toLowerCase()) ||
+          (c.address || "").toLowerCase().includes(query.toLowerCase()),
+      )
+    : centers;
+
+  const handleKey = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIndex((i) => Math.min(i + 1, filtered.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIndex((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Enter" && activeIndex >= 0 && filtered[activeIndex]) {
+      onSelect(filtered[activeIndex]);
+    }
+  };
+
+  React.useEffect(() => {
+    setActiveIndex(-1);
+  }, [query]);
+
+  React.useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  return (
+    <div className="p-6 max-w-2xl mx-auto">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900">
+          Candidate Management Workflow
+        </h1>
+        <p className="text-gray-600 mt-2">
+          Please select the center you are operating from to continue.
+        </p>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-md p-8">
+        <h2 className="text-xl font-bold text-gray-900 mb-1">
+          Select Your Center
+        </h2>
+        <p className="text-gray-500 text-sm mb-6">
+          You are assigned to {centers.length} centers. Search by name, city, or
+          address and select the one where you are currently located.
+        </p>
+
+        {/* Search input */}
+        <div className="relative mb-2">
+          <svg
+            className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M21 21l-4.35-4.35M17 11A6 6 0 105 11a6 6 0 0012 0z"
+            />
+          </svg>
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={handleKey}
+            placeholder="Search by center name, city, or address…"
+            className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+          {query && (
+            <button
+              onClick={() => setQuery("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
+        {/* Result count */}
+        {query && (
+          <p className="text-xs text-gray-400 mb-3">
+            {filtered.length} result{filtered.length !== 1 ? "s" : ""} for "
+            {query}"
+          </p>
+        )}
+
+        {/* List */}
+        <div className="border border-gray-200 rounded-lg overflow-hidden divide-y divide-gray-100 max-h-80 overflow-y-auto">
+          {filtered.length === 0 ? (
+            <div className="px-4 py-8 text-center text-gray-500 text-sm">
+              No centers match your search.
+            </div>
+          ) : (
+            filtered.map((center, idx) => (
+              <button
+                key={center._id}
+                onClick={() => onSelect(center)}
+                onMouseEnter={() => setActiveIndex(idx)}
+                className={`w-full text-left px-4 py-3 flex items-center gap-3 transition-colors ${
+                  activeIndex === idx ? "bg-blue-50" : "hover:bg-gray-50"
+                }`}
+              >
+                <svg
+                  className="h-4 w-4 text-blue-500 flex-shrink-0"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+                  />
+                </svg>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">
+                    {center.centerName}
+                  </p>
+                  {(center.city || center.state) && (
+                    <p className="text-xs text-gray-500 truncate">
+                      {[center.city, center.state].filter(Boolean).join(", ")}
+                    </p>
+                  )}
+                </div>
+                <svg
+                  className="h-4 w-4 text-gray-300 flex-shrink-0"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 5l7 7-7 7"
+                  />
+                </svg>
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+// ─────────────────────────────────────────────────────────────────────────────
 
 const AgentStudentWorkflow: React.FC = () => {
   // Get customUrlPath from URL
@@ -194,6 +374,11 @@ const AgentStudentWorkflow: React.FC = () => {
   // Inline per-field validation errors (keyed by field.id)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
+  // Center selection states
+  const [selectedCenter, setSelectedCenter] = useState<Center | null>(null);
+  const [mappedCenters, setMappedCenters] = useState<Center[]>([]);
+  const [centersLoading, setCentersLoading] = useState(false);
+
   /** Requires at least one dot in the domain part with 2+ chars after it. */
   const validateEmail = (email: string): string => {
     if (!email) return "";
@@ -241,6 +426,7 @@ const AgentStudentWorkflow: React.FC = () => {
   useEffect(() => {
     if (projectId) {
       fetchOfflineSettings();
+      fetchCenterData();
     }
   }, [projectId]);
 
@@ -343,6 +529,80 @@ const AgentStudentWorkflow: React.FC = () => {
       );
     } finally {
       setSettingsLoading(false);
+    }
+  };
+
+  const fetchCenterData = async () => {
+    setCentersLoading(true);
+    try {
+      const token = localStorage.getItem("authToken");
+
+      const [meRes, centersRes] = await Promise.all([
+        axios.get(`${API_CONFIG.API_URL}/auth/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        axios.get(
+          `${API_CONFIG.API_URL}/centers?projectId=${projectId}&isActive=true`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        ),
+      ]);
+
+      const allProjectCenters: Center[] = centersRes.data.data || [];
+      if (allProjectCenters.length === 0) {
+        setMappedCenters([]);
+        return;
+      }
+
+      const userCenterRefs: any[] = meRes.data?.data?.centers || [];
+      const userCenterIds = new Set(
+        userCenterRefs.map((c: any) =>
+          typeof c === "string" ? c : c._id?.toString() || c.toString(),
+        ),
+      );
+
+      // Intersect user's assigned centers with project centers
+      let accessible: Center[] =
+        userCenterIds.size > 0
+          ? allProjectCenters.filter((c) => userCenterIds.has(c._id.toString()))
+          : allProjectCenters;
+
+      // If no intersection, fall back to all project centers
+      if (accessible.length === 0) accessible = allProjectCenters;
+      setMappedCenters(accessible);
+
+      // Restore from sessionStorage if still valid
+      try {
+        const stored = sessionStorage.getItem(CENTER_SESSION_KEY);
+        if (stored) {
+          const storedCenter: Center = JSON.parse(stored);
+          const found = accessible.find((c) => c._id === storedCenter._id);
+          if (found) {
+            setSelectedCenter(found);
+            return;
+          }
+        }
+      } catch {
+        /* ignore corrupt session */
+      }
+
+      // Auto-select if only one accessible center
+      if (accessible.length === 1) {
+        setSelectedCenter(accessible[0]);
+        try {
+          sessionStorage.setItem(
+            CENTER_SESSION_KEY,
+            JSON.stringify(accessible[0]),
+          );
+        } catch {
+          /* ignore */
+        }
+      }
+      // If 2+ centers: selectedCenter stays null → center picker will show
+    } catch (error) {
+      console.error("Error fetching center data:", error);
+      setMappedCenters([]);
+    } finally {
+      setCentersLoading(false);
     }
   };
 
@@ -894,6 +1154,42 @@ const AgentStudentWorkflow: React.FC = () => {
         return;
       }
 
+      // Validate field-level rules (minLength, maxLength, regex)
+      for (const field of offlineSettings?.ticketFields || []) {
+        const v = (field as any).validation;
+        if (!v) continue;
+        const fieldValue = ticketForm[field.fieldName];
+        if (fieldValue == null || fieldValue === "") continue; // required check already done
+        const value = String(fieldValue);
+        const label = (field as any).displayLabel || field.fieldName;
+        if (v.minLength != null && value.length < Number(v.minLength)) {
+          setTicketMessage(
+            `${label} must be at least ${v.minLength} characters`,
+          );
+          setCreatingTicket(false);
+          return;
+        }
+        if (v.maxLength != null && value.length > Number(v.maxLength)) {
+          setTicketMessage(
+            `${label} must be at most ${v.maxLength} characters`,
+          );
+          setCreatingTicket(false);
+          return;
+        }
+        if (v.regex) {
+          try {
+            const re = new RegExp(v.regex);
+            if (!re.test(value)) {
+              setTicketMessage(`${label} is not in the correct format`);
+              setCreatingTicket(false);
+              return;
+            }
+          } catch {
+            // invalid regex — skip
+          }
+        }
+      }
+
       // Validate mandatory hierarchy levels (Subcategory / Topic)
       if (hierarchyConfig && hierarchyConfig.levelCount > 1) {
         const offlineVisibleLevels = new Set(
@@ -933,6 +1229,9 @@ const AgentStudentWorkflow: React.FC = () => {
       formData.append("studentId", currentStudent._id);
       formData.append("projectId", projectId);
       formData.append("submissionType", "offline");
+      if (selectedCenter) {
+        formData.append("centerId", selectedCenter._id);
+      }
 
       if (ticketForm.markAsResolved) {
         formData.append("status", "resolved");
@@ -1000,6 +1299,16 @@ const AgentStudentWorkflow: React.FC = () => {
 
   // Clear the persisted registration draft from localStorage
   const clearRegDraft = () => localStorage.removeItem(REG_DRAFT_KEY);
+
+  // Select a center for this session and persist to sessionStorage
+  const handleCenterSelect = (center: Center) => {
+    setSelectedCenter(center);
+    try {
+      sessionStorage.setItem(CENTER_SESSION_KEY, JSON.stringify(center));
+    } catch {
+      /* ignore */
+    }
+  };
 
   // Go back to search
   const resetWorkflow = () => {
@@ -1215,14 +1524,17 @@ const AgentStudentWorkflow: React.FC = () => {
           field.fieldName === "firstName" || field.fieldName === "lastName";
         return (
           <input
-            type={field.fieldType === "number" ? "number" : "text"}
+            type="text"
+            inputMode={field.fieldType === "number" ? "numeric" : undefined}
             required={isRequired}
             value={value || ""}
             onChange={(e) => {
               let val = e.target.value;
-              if (isNameField) {
+              if (field.fieldType === "number") {
+                val = val.replace(/[^0-9]/g, "");
+              } else if (isNameField) {
                 val = val.replace(/[0-9]/g, "").replace(/^\s+/, "");
-              } else if (field.fieldType === "text") {
+              } else {
                 val = val.replace(/^\s+/, "");
               }
               onChange(val);
@@ -1482,7 +1794,7 @@ const AgentStudentWorkflow: React.FC = () => {
     }
   };
 
-  if (projectLoading || settingsLoading) {
+  if (projectLoading || settingsLoading || centersLoading) {
     return (
       <div className="p-6 max-w-6xl mx-auto flex items-center justify-center min-h-[400px]">
         <div className="text-center">
@@ -1490,7 +1802,9 @@ const AgentStudentWorkflow: React.FC = () => {
           <p className="text-gray-600">
             {projectLoading
               ? "Loading project..."
-              : "Loading workflow settings..."}
+              : centersLoading
+                ? "Loading center data..."
+                : "Loading workflow settings..."}
           </p>
         </div>
       </div>
@@ -1511,6 +1825,16 @@ const AgentStudentWorkflow: React.FC = () => {
           </p>
         </div>
       </div>
+    );
+  }
+
+  // Center picker screen — shown when user is assigned to multiple centers and hasn't selected one yet
+  if (mappedCenters.length > 1 && !selectedCenter) {
+    return (
+      <CenterPickerScreen
+        centers={mappedCenters}
+        onSelect={handleCenterSelect}
+      />
     );
   }
 
@@ -1575,6 +1899,54 @@ const AgentStudentWorkflow: React.FC = () => {
         <p className="text-gray-600 mt-2">
           Search, register, and create queries for walk-in candidates
         </p>
+        {selectedCenter && (
+          <div className="mt-3 flex items-center gap-3 flex-wrap">
+            <div className="inline-flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-full px-4 py-1.5">
+              <svg
+                className="h-4 w-4 text-blue-600 flex-shrink-0"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+                />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+                />
+              </svg>
+              <span className="text-sm font-medium text-blue-800">
+                {selectedCenter.centerName}
+              </span>
+              {selectedCenter.city && (
+                <span className="text-xs text-blue-600">
+                  · {selectedCenter.city}
+                </span>
+              )}
+            </div>
+            {mappedCenters.length > 1 && (
+              <button
+                onClick={() => {
+                  setSelectedCenter(null);
+                  try {
+                    sessionStorage.removeItem(CENTER_SESSION_KEY);
+                  } catch {
+                    /* ignore */
+                  }
+                }}
+                className="text-sm text-gray-500 hover:text-gray-700 underline"
+              >
+                Change Center
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Workflow Progress */}
