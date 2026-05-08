@@ -4,6 +4,8 @@ import axios from "axios";
 import DOMPurify from "dompurify";
 import { API_CONFIG } from "../config/constants";
 import FeedbackSubmission from "../components/FeedbackSubmission";
+import { useSocket } from "../hooks/useSocket";
+import toast from "react-hot-toast";
 import {
   ArrowLeftIcon,
   PaperClipIcon,
@@ -20,6 +22,10 @@ interface Ticket {
   subject: string;
   description: string;
   status: number; // 1=Open, 2=In Progress, 3=On Hold, 4=Resolved, 5=Closed
+  statusName?: string;
+  statusColor?: string;
+  isClosedStatus?: boolean;
+  closedAt?: string;
   priority: "low" | "medium" | "high" | "urgent";
   category: string | { _id: string; name: string };
   createdAt: string;
@@ -179,6 +185,39 @@ const StudentTicketDetail: React.FC = () => {
     }
   };
 
+  useSocket({
+    rooms: ticketId ? [`ticket-${ticketId}`] : [],
+    events: {
+      "ticket-updated": (payload: any) => {
+        const payloadTicketId = payload?.ticket?._id || payload?.ticketId;
+        if (payloadTicketId && ticketId && payloadTicketId !== ticketId) return;
+
+        fetchData();
+
+        if (payload?.type === "reassigned") {
+          toast.success("Your query assignment has been updated", {
+            duration: 5000,
+          });
+        }
+      },
+      notification: (payload: any) => {
+        if (!payload) return;
+        const notificationTicketId = payload.ticketId?.toString?.();
+        if (
+          notificationTicketId &&
+          ticketId &&
+          notificationTicketId !== ticketId
+        )
+          return;
+
+        const text = payload.title || payload.message;
+        if (text) {
+          toast.success(text, { duration: 5000 });
+        }
+      },
+    },
+  });
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       setReplyFiles(Array.from(e.target.files));
@@ -287,6 +326,7 @@ const StudentTicketDetail: React.FC = () => {
   };
 
   const getStatusName = (status: string | number): string => {
+    if (ticket?.statusName) return ticket.statusName;
     const statusCode = typeof status === "number" ? status : Number(status);
     const statusNames: Record<number, string> = {
       1: "Open",
@@ -359,6 +399,8 @@ const StudentTicketDetail: React.FC = () => {
       </div>
     );
   }
+
+  const isTicketClosed = Boolean(ticket.isClosedStatus || ticket.closedAt);
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -655,7 +697,7 @@ const StudentTicketDetail: React.FC = () => {
             )}
 
             {/* Reopen Button (only if ticket is closed) */}
-            {ticket.status === 5 && (
+            {isTicketClosed && (
               <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6">
                 <div className="flex items-start">
                   <ExclamationCircleIcon className="h-6 w-6 text-yellow-600 mr-3 flex-shrink-0" />
@@ -681,7 +723,7 @@ const StudentTicketDetail: React.FC = () => {
 
             {/* Reply Form (only if ticket is not closed) */}
             {/* 5 = Closed */}
-            {ticket.status !== 5 && (
+            {!isTicketClosed && (
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">
                   Add Reply
@@ -807,24 +849,23 @@ const StudentTicketDetail: React.FC = () => {
 
             {/* Close Query Button */}
             {/* 5 = Closed */}
-            {ticketSettings?.allowStudentToCloseTicket &&
-              ticket.status !== 5 && (
-                <div className="bg-white rounded-xl shadow-sm p-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-3">
-                    Actions
-                  </h3>
-                  <button
-                    onClick={handleCloseTicket}
-                    disabled={closingTicket}
-                    className="w-full py-2 px-4 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {closingTicket ? "Closing..." : "Close Query"}
-                  </button>
-                  <p className="text-xs text-gray-500 mt-2">
-                    Once closed, you won't be able to reopen this query.
-                  </p>
-                </div>
-              )}
+            {ticketSettings?.allowStudentToCloseTicket && !isTicketClosed && (
+              <div className="bg-white rounded-xl shadow-sm p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                  Actions
+                </h3>
+                <button
+                  onClick={handleCloseTicket}
+                  disabled={closingTicket}
+                  className="w-full py-2 px-4 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {closingTicket ? "Closing..." : "Close Query"}
+                </button>
+                <p className="text-xs text-gray-500 mt-2">
+                  Once closed, you won't be able to reopen this query.
+                </p>
+              </div>
+            )}
           </div>
         </div>
 

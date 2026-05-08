@@ -341,7 +341,15 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     }
     setCurrentPage(1);
     fetchTickets(1, filterProject, filterAssignedTo);
-  }, [filterStatus, filterPriority, filterDateFrom, filterDateTo, deferredSearchQuery, filterProject, filterAssignedTo]);
+  }, [
+    filterStatus,
+    filterPriority,
+    filterDateFrom,
+    filterDateTo,
+    deferredSearchQuery,
+    filterProject,
+    filterAssignedTo,
+  ]);
 
   const fetchStatuses = async (projectId: string | null) => {
     try {
@@ -378,10 +386,9 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
         }
       } else {
         // No project context (super admin or global view) — fetch all statuses and deduplicate by code
-        const res = await axios.get(
-          `${API_CONFIG.API_URL}/statuses/all`,
-          { headers: { Authorization: `Bearer ${token}` } },
-        );
+        const res = await axios.get(`${API_CONFIG.API_URL}/statuses/all`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         if (res.data.success && Array.isArray(res.data.data)) {
           const seen = new Set<number>();
           const unique = res.data.data
@@ -425,7 +432,8 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
       if (filterPriority !== "all") params.priority = filterPriority;
       if (filterDateFrom) params.createdAfter = filterDateFrom;
       if (filterDateTo) params.createdBefore = filterDateTo;
-      if (deferredSearchQuery.trim()) params.search = deferredSearchQuery.trim();
+      if (deferredSearchQuery.trim())
+        params.search = deferredSearchQuery.trim();
 
       const response = await axios.get(`${API_CONFIG.API_URL}/tickets`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -471,7 +479,11 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
         },
       );
       if (response.data.success) {
-        const data = response.data.data || response.data.projects || [];
+        const data =
+          response.data.data?.projects ||
+          response.data.data ||
+          response.data.projects ||
+          [];
         setProjects(Array.isArray(data) ? data : []);
       }
     } catch {
@@ -686,7 +698,9 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                 }}
               >
                 {/* Search */}
-                <div style={{ position: "relative", flex: 1, minWidth: "220px" }}>
+                <div
+                  style={{ position: "relative", flex: 1, minWidth: "220px" }}
+                >
                   <MagnifyingGlassIcon
                     style={{
                       position: "absolute",
@@ -752,11 +766,15 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                       paddingBottom: "9px",
                       paddingLeft: "10px",
                       paddingRight: "28px",
-                      border: filterStatus !== "all" ? "1.5px solid #3B82F6" : "1px solid #E5E7EB",
+                      border:
+                        filterStatus !== "all"
+                          ? "1.5px solid #3B82F6"
+                          : "1px solid #E5E7EB",
                       borderRadius: "8px",
                       fontSize: "14px",
                       minWidth: "120px",
-                      background: filterStatus !== "all" ? "#EFF6FF" : "#F9FAFB",
+                      background:
+                        filterStatus !== "all" ? "#EFF6FF" : "#F9FAFB",
                       color: filterStatus !== "all" ? "#1D4ED8" : "#374151",
                       cursor: "pointer",
                       appearance: "none" as const,
@@ -796,11 +814,15 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                       paddingBottom: "9px",
                       paddingLeft: "10px",
                       paddingRight: "28px",
-                      border: filterPriority !== "all" ? "1.5px solid #3B82F6" : "1px solid #E5E7EB",
+                      border:
+                        filterPriority !== "all"
+                          ? "1.5px solid #3B82F6"
+                          : "1px solid #E5E7EB",
                       borderRadius: "8px",
                       fontSize: "14px",
                       minWidth: "120px",
-                      background: filterPriority !== "all" ? "#EFF6FF" : "#F9FAFB",
+                      background:
+                        filterPriority !== "all" ? "#EFF6FF" : "#F9FAFB",
                       color: filterPriority !== "all" ? "#1D4ED8" : "#374151",
                       cursor: "pointer",
                       appearance: "none" as const,
@@ -840,12 +862,16 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                         paddingBottom: "9px",
                         paddingLeft: "10px",
                         paddingRight: "28px",
-                        border: filterProject !== "all" ? "1.5px solid #3B82F6" : "1px solid #E5E7EB",
+                        border:
+                          filterProject !== "all"
+                            ? "1.5px solid #3B82F6"
+                            : "1px solid #E5E7EB",
                         borderRadius: "8px",
                         fontSize: "14px",
                         minWidth: "150px",
                         maxWidth: "240px",
-                        background: filterProject !== "all" ? "#EFF6FF" : "#F9FAFB",
+                        background:
+                          filterProject !== "all" ? "#EFF6FF" : "#F9FAFB",
                         color: filterProject !== "all" ? "#1D4ED8" : "#374151",
                         cursor: "pointer",
                         appearance: "none" as const,
@@ -887,13 +913,18 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                         paddingBottom: "9px",
                         paddingLeft: "10px",
                         paddingRight: "28px",
-                        border: filterAssignedTo !== "all" ? "1.5px solid #3B82F6" : "1px solid #E5E7EB",
+                        border:
+                          filterAssignedTo !== "all"
+                            ? "1.5px solid #3B82F6"
+                            : "1px solid #E5E7EB",
                         borderRadius: "8px",
                         fontSize: "14px",
                         minWidth: "150px",
                         maxWidth: "220px",
-                        background: filterAssignedTo !== "all" ? "#EFF6FF" : "#F9FAFB",
-                        color: filterAssignedTo !== "all" ? "#1D4ED8" : "#374151",
+                        background:
+                          filterAssignedTo !== "all" ? "#EFF6FF" : "#F9FAFB",
+                        color:
+                          filterAssignedTo !== "all" ? "#1D4ED8" : "#374151",
                         cursor: "pointer",
                         appearance: "none" as const,
                         WebkitAppearance: "none" as const,
@@ -918,7 +949,8 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                         width: "13px",
                         height: "13px",
                         pointerEvents: "none",
-                        color: filterAssignedTo !== "all" ? "#3B82F6" : "#6B7280",
+                        color:
+                          filterAssignedTo !== "all" ? "#3B82F6" : "#6B7280",
                       }}
                     />
                   </div>
@@ -930,7 +962,8 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                     display: "flex",
                     alignItems: "center",
                     gap: "6px",
-                    background: filterDateFrom || filterDateTo ? "#EFF6FF" : "#F9FAFB",
+                    background:
+                      filterDateFrom || filterDateTo ? "#EFF6FF" : "#F9FAFB",
                     border: `${filterDateFrom || filterDateTo ? "1.5px" : "1px"} solid ${filterDateFrom || filterDateTo ? "#3B82F6" : "#E5E7EB"}`,
                     borderRadius: "8px",
                     padding: "5px 10px",
@@ -940,7 +973,8 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                     style={{
                       width: "14px",
                       height: "14px",
-                      color: filterDateFrom || filterDateTo ? "#3B82F6" : "#9CA3AF",
+                      color:
+                        filterDateFrom || filterDateTo ? "#3B82F6" : "#9CA3AF",
                       flexShrink: 0,
                     }}
                   />
@@ -958,7 +992,15 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                       cursor: "pointer",
                     }}
                   />
-                  <span style={{ color: "#D1D5DB", fontSize: "11px", fontWeight: 600 }}>–</span>
+                  <span
+                    style={{
+                      color: "#D1D5DB",
+                      fontSize: "11px",
+                      fontWeight: 600,
+                    }}
+                  >
+                    –
+                  </span>
                   <input
                     type="date"
                     value={filterDateTo}
@@ -996,10 +1038,16 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                       cursor: "pointer",
                       whiteSpace: "nowrap",
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = "#047857")}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = "#059669")}
+                    onMouseEnter={(e) =>
+                      (e.currentTarget.style.background = "#047857")
+                    }
+                    onMouseLeave={(e) =>
+                      (e.currentTarget.style.background = "#059669")
+                    }
                   >
-                    <ArrowDownTrayIcon style={{ width: "15px", height: "15px" }} />
+                    <ArrowDownTrayIcon
+                      style={{ width: "15px", height: "15px" }}
+                    />
                     Export
                   </button>
                 )}
@@ -1612,7 +1660,8 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
               filters={{
                 status: filterStatus !== "all" ? filterStatus : undefined,
                 priority: filterPriority !== "all" ? filterPriority : undefined,
-                assignedTo: filterAssignedTo !== "all" ? filterAssignedTo : undefined,
+                assignedTo:
+                  filterAssignedTo !== "all" ? filterAssignedTo : undefined,
                 projectId: filterProject !== "all" ? filterProject : undefined,
                 dateFrom: filterDateFrom || undefined,
                 dateTo: filterDateTo || undefined,
@@ -1621,11 +1670,13 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
               filterLabels={{
                 status:
                   filterStatus !== "all"
-                    ? statuses.find((s) => String(s.code) === filterStatus)?.name
+                    ? statuses.find((s) => String(s.code) === filterStatus)
+                        ?.name
                     : undefined,
                 priority:
                   filterPriority !== "all"
-                    ? filterPriority.charAt(0).toUpperCase() + filterPriority.slice(1)
+                    ? filterPriority.charAt(0).toUpperCase() +
+                      filterPriority.slice(1)
                     : undefined,
                 assignedTo: (() => {
                   if (filterAssignedTo === "all") return undefined;

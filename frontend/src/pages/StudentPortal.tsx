@@ -758,14 +758,14 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
     if (!files || files.length === 0) return;
 
     const filesArray = Array.from(files);
-    const maxSize = (field.maxFileSizeMB || 10) * 1024 * 1024;
+    const maxSize = (field.maxFileSizeMB || 50) * 1024 * 1024;
     const allowedTypes = field.allowedFileTypes || [];
 
     // Validate file size
     const oversizedFiles = filesArray.filter((file) => file.size > maxSize);
     if (oversizedFiles.length > 0) {
       setSubmitError(
-        `Some files for "${fieldName}" exceed the maximum size of ${field.maxFileSizeMB || 10} MB`,
+        `Some files for "${fieldName}" exceed the maximum size of ${field.maxFileSizeMB || 50} MB`,
       );
       return;
     }
@@ -1108,7 +1108,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
                 />
               </label>
               <p className="text-xs text-gray-500 mt-1">
-                Max size: {field.maxFileSizeMB || 10} MB
+                Max size: {field.maxFileSizeMB || 50} MB
                 {(field.allowedFileTypes || []).length > 0 &&
                   ` | Allowed: ${field.allowedFileTypes?.join(", ")}`}
               </p>

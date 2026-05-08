@@ -11,7 +11,7 @@ const unlinkAsync = promisify(fs.unlink);
 // Memory storage — file buffer available for GCS upload
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
   fileFilter: (req, file, cb) => {
     // Allow common file types
     const allowedMimes = [
@@ -28,6 +28,11 @@ const upload = multer({
       "application/x-rar-compressed",
       "text/plain",
       "text/csv",
+      "video/mp4",
+      "video/quicktime",
+      "video/x-msvideo",
+      "video/x-matroska",
+      "video/webm",
     ];
 
     if (allowedMimes.includes(file.mimetype)) {
@@ -35,7 +40,7 @@ const upload = multer({
     } else {
       cb(
         new Error(
-          "Invalid file type. Only images, PDFs, documents, spreadsheets, and archives are allowed.",
+          "Invalid file type. Only images, videos, PDFs, documents, spreadsheets, and archives are allowed.",
         ),
       );
     }

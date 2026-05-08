@@ -615,13 +615,13 @@ const StudentDashboard: React.FC = () => {
     if (!files) return;
 
     const fileArray = Array.from(files);
-    const maxSize = (field.maxFileSizeMB || 10) * 1024 * 1024;
+    const maxSize = (field.maxFileSizeMB || 50) * 1024 * 1024;
 
     // Validate file size
     for (const file of fileArray) {
       if (file.size > maxSize) {
         setSubmitError(
-          `File "${file.name}" exceeds maximum size of ${field.maxFileSizeMB || 10}MB`,
+          `File "${file.name}" exceeds maximum size of ${field.maxFileSizeMB || 50}MB`,
         );
         return;
       }
@@ -797,7 +797,7 @@ const StudentDashboard: React.FC = () => {
                 />
               </label>
               <p className="text-xs text-gray-500 mt-1">
-                Max size: {field.maxFileSizeMB || 10} MB
+                Max size: {field.maxFileSizeMB || 50} MB
                 {(field.allowedFileTypes || []).length > 0 &&
                   ` | Allowed: ${field.allowedFileTypes?.join(", ")}`}
               </p>

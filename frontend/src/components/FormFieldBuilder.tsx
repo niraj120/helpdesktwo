@@ -83,7 +83,7 @@ function createField(order: number): FormFieldSchema {
     options: [],
     order,
     allowedFileTypes: [],
-    maxFileSizeMB: 5,
+    maxFileSizeMB: 50,
     allowMultiple: false,
     conditions: [],
     conditionAction: "show",
@@ -157,6 +157,8 @@ const RuleBuilder: React.FC<RuleBuilderProps> = ({
   const remove = (idx: number) =>
     onConditionsChange(conditions.filter((_, i) => i !== idx));
 
+  const actionOptions: Array<"show" | "hide"> = ["show", "hide"];
+
   return (
     <div>
       <div
@@ -172,7 +174,7 @@ const RuleBuilder: React.FC<RuleBuilderProps> = ({
         </span>
         {onActionChange && (
           <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
-            {(["show", "hide"] as const).map((a) => (
+            {actionOptions.map((a) => (
               <button
                 key={a}
                 type="button"
@@ -665,8 +667,16 @@ const FieldConfigPanel: React.FC<FieldConfigPanelProps> = ({
                     ".jpeg",
                     ".png",
                     ".gif",
+                    ".webp",
                     ".txt",
                     ".zip",
+                    ".rar",
+                    ".csv",
+                    ".mp4",
+                    ".mov",
+                    ".avi",
+                    ".mkv",
+                    ".webm",
                   ].map((ext) => {
                     const checked = (field.allowedFileTypes || []).includes(
                       ext,
@@ -724,9 +734,11 @@ const FieldConfigPanel: React.FC<FieldConfigPanelProps> = ({
                     type="number"
                     min={1}
                     max={200}
-                    value={field.maxFileSizeMB || 5}
+                    value={field.maxFileSizeMB || 50}
                     onChange={(e) =>
-                      onUpdate({ maxFileSizeMB: parseInt(e.target.value) || 5 })
+                      onUpdate({
+                        maxFileSizeMB: parseInt(e.target.value) || 50,
+                      })
                     }
                     style={{
                       width: "80px",

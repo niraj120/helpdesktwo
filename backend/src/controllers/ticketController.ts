@@ -56,6 +56,81 @@ const getStatusName = (statusCode: number): string => {
   return statusMap[statusCode] || `Status ${statusCode}`;
 };
 
+const emitTicketRealtimeUpdate = async (
+  ticketDoc: any,
+  eventType: string = "ticket-updated",
+  extraTicketFields: Record<string, any> = {},
+) => {
+  try {
+    const ticketId = ticketDoc?._id?.toString();
+    if (!ticketId) return;
+
+    const projectIdRaw =
+      ticketDoc?.project?.toString() ||
+      ticketDoc?.metadata?.projectId?._id?.toString?.() ||
+      ticketDoc?.metadata?.projectId?.toString?.();
+
+    let statusName: string | undefined;
+    let statusColor: string | undefined;
+    let isClosedStatus: boolean | undefined;
+
+    const statusNum = Number(ticketDoc?.status);
+    if (
+      projectIdRaw &&
+      mongoose.Types.ObjectId.isValid(projectIdRaw) &&
+      !Number.isNaN(statusNum)
+    ) {
+      const statusDoc = await Status.findOne({
+        projectId: new mongoose.Types.ObjectId(projectIdRaw),
+        code: statusNum,
+        isActive: true,
+      })
+        .select("name color isClosed")
+        .lean();
+
+      if (statusDoc) {
+        statusName = (statusDoc as any).name;
+        statusColor = (statusDoc as any).color;
+        isClosedStatus = !!(statusDoc as any).isClosed;
+      }
+    }
+
+    const payloadTicket = {
+      _id: ticketId,
+      ticketNumber: ticketDoc?.ticketNumber,
+      status: ticketDoc?.status,
+      updatedAt: ticketDoc?.updatedAt,
+      assignedTo: ticketDoc?.assignedTo,
+      statusName,
+      statusColor,
+      isClosedStatus,
+      ...extraTicketFields,
+    };
+
+    const { getIo } = require("../socket/ioInstance");
+    const {
+      emitTicketUpdate,
+      emitTicketListUpdate,
+    } = require("../socket/socketHandlers");
+    const io = getIo();
+    if (!io) return;
+
+    emitTicketUpdate(io, ticketId, {
+      type: eventType,
+      ticket: payloadTicket,
+    });
+
+    if (projectIdRaw) {
+      emitTicketListUpdate(io, projectIdRaw, {
+        type: "ticket-updated",
+        ticket: payloadTicket,
+      });
+    }
+  } catch (socketErr) {
+    console.error("⚠️ Failed to emit ticket realtime update:", socketErr);
+  }
+};
+
 /**
  * Check if user has authorization to modify a ticket
  * Authorized users:
@@ -2585,17 +2660,29 @@ export const getAgentAssignedTickets = async (req: Request, res: Response) => {
 export const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB
+    fileSize: 50 * 1024 * 1024, // 50MB
   },
   fileFilter: (req, file, cb) => {
     const allowedTypes = [
       ".pdf",
       ".doc",
       ".docx",
+      ".xls",
+      ".xlsx",
       ".jpg",
       ".jpeg",
       ".png",
+      ".gif",
+      ".webp",
       ".txt",
+      ".csv",
+      ".zip",
+      ".rar",
+      ".mp4",
+      ".mov",
+      ".avi",
+      ".mkv",
+      ".webm",
     ];
     const ext = path.extname(file.originalname).toLowerCase();
     if (allowedTypes.includes(ext)) {
@@ -2719,6 +2806,36 @@ export const getTicketById = async (req: Request, res: Response) => {
     if (isAgent && ticket.hasNewReply) {
       await Ticket.findByIdAndUpdate(id, { hasNewReply: false });
       ticketData.hasNewReply = false;
+    }
+
+    // Enrich with project-specific status metadata so detail view matches list view labels/colors.
+    try {
+      const rawProjectId =
+        (ticketData as any).metadata?.projectId?._id?.toString?.() ||
+        (ticketData as any).metadata?.projectId?.toString?.();
+      const statusNum = Number((ticketData as any).status);
+
+      if (
+        rawProjectId &&
+        mongoose.Types.ObjectId.isValid(rawProjectId) &&
+        !Number.isNaN(statusNum)
+      ) {
+        const statusDoc = await Status.findOne({
+          projectId: new mongoose.Types.ObjectId(rawProjectId),
+          code: statusNum,
+          isActive: true,
+        })
+          .select("name color isClosed")
+          .lean();
+
+        if (statusDoc) {
+          (ticketData as any).statusName = (statusDoc as any).name;
+          (ticketData as any).statusColor = (statusDoc as any).color;
+          (ticketData as any).isClosedStatus = !!(statusDoc as any).isClosed;
+        }
+      }
+    } catch (statusErr) {
+      console.error("Failed to enrich ticket status metadata:", statusErr);
     }
 
     // Add escalation matrix name if available
@@ -3187,6 +3304,8 @@ export const closeTicket = async (req: Request, res: Response) => {
 
     console.log(`✅ Ticket closed by student: ${ticket._id} by ${user.email}`);
 
+    await emitTicketRealtimeUpdate(ticket, "status-changed");
+
     return res.status(200).json({
       success: true,
       message: "Ticket closed successfully",
@@ -3271,6 +3390,10 @@ export const reopenTicket = async (req: Request, res: Response) => {
     console.log(
       `✅ Ticket reopened by student: ${ticket._id} by ${user.email}`,
     );
+
+    await emitTicketRealtimeUpdate(ticket, "status-changed", {
+      hasNewReply: ticket.hasNewReply,
+    });
 
     return res.status(200).json({
       success: true,
@@ -3535,6 +3658,47 @@ export const updateTicketStatus = async (req: Request, res: Response) => {
         console.error("Failed to log activity:", logError);
       }
     }
+
+    // Push notification to the assigned agent about status change (non-blocking)
+    // Only notify if someone other than the assigned agent made the change
+    (async () => {
+      try {
+        const assignedAgentId = ticket.assignedTo?.toString();
+        const ticketProjectId = ticket.metadata?.projectId?.toString();
+        if (
+          assignedAgentId &&
+          ticketProjectId &&
+          mongoose.Types.ObjectId.isValid(assignedAgentId) &&
+          assignedAgentId !== userId
+        ) {
+          const {
+            createNotification,
+          } = require("../controllers/notificationController");
+          const statusLabel = statusDoc?.name || String(statusNum);
+          const isProduction = process.env.NODE_ENV === "production";
+          const frontendUrl = isProduction
+            ? process.env.PRODUCTION_FRONTEND_URL ||
+              "https://helpdesk.hubblehox.ai"
+            : process.env.FRONTEND_URL || "http://localhost:3001";
+          await createNotification({
+            userId: new mongoose.Types.ObjectId(assignedAgentId),
+            projectId: new mongoose.Types.ObjectId(ticketProjectId),
+            type: "info" as const,
+            title: `Status Updated: ${ticket.ticketNumber}`,
+            message: `Status changed to "${statusLabel}" on: ${ticket.subject}`,
+            ticketId: ticket._id as mongoose.Types.ObjectId,
+            link: `${frontendUrl}/tickets/${ticket._id}`,
+          });
+        }
+      } catch (notifErr) {
+        console.error(
+          "⚠️ Failed to send status change push notification:",
+          notifErr,
+        );
+      }
+    })();
+
+    await emitTicketRealtimeUpdate(updatedTicket, "status-changed");
 
     return res.status(200).json({
       success: true,
@@ -4336,7 +4500,11 @@ export const assignTicket = async (req: Request, res: Response) => {
     })();
 
     // Notify assigned agent via email (non-blocking)
-    const projectId = (projectInfo as any)?._id?.toString();
+    // Resolve projectId robustly (handles both populated object and raw ObjectId)
+    const projectId =
+      (projectInfo as any)?._id?.toString() ||
+      ticket.metadata?.projectId?.toString() ||
+      (ticket as any).project?.toString();
     const ticketSubject = ticket.subject || "";
     const studentName =
       ticket.metadata?.studentName ||
@@ -4362,10 +4530,42 @@ export const assignTicket = async (req: Request, res: Response) => {
       }
     })();
 
+    // Push notification to the assigned agent (in-app + push, non-blocking)
+    if (projectId) {
+      (async () => {
+        try {
+          const {
+            createNotification,
+          } = require("../controllers/notificationController");
+          const isProduction = process.env.NODE_ENV === "production";
+          const frontendUrl = isProduction
+            ? process.env.PRODUCTION_FRONTEND_URL ||
+              "https://helpdesk.hubblehox.ai"
+            : process.env.FRONTEND_URL || "http://localhost:3001";
+          await createNotification({
+            userId: new mongoose.Types.ObjectId(agentId),
+            projectId: new mongoose.Types.ObjectId(projectId),
+            type: "info" as const,
+            title: `Ticket Assigned to You: ${ticket.ticketNumber}`,
+            message: ticket.subject,
+            ticketId: ticket._id as mongoose.Types.ObjectId,
+            link: `${frontendUrl}/tickets/${ticket._id}`,
+          });
+        } catch (notifErr) {
+          console.error(
+            "⚠️ Failed to send assign push notification:",
+            notifErr,
+          );
+        }
+      })();
+    }
+
     // Populate assignedTo for response
     const updatedTicket = await Ticket.findById(id)
       .populate("assignedTo", "firstName lastName email")
       .populate("metadata.projectId", "name");
+
+    await emitTicketRealtimeUpdate(updatedTicket, "reassigned");
 
     return res.status(200).json({
       success: true,
@@ -4496,6 +4696,9 @@ export const reassignTicket = async (req: Request, res: Response) => {
             ? process.env.PRODUCTION_FRONTEND_URL ||
               "https://helpdesk.hubblehox.ai"
             : process.env.FRONTEND_URL || "http://localhost:3001";
+
+          const notificationLink = `${frontendUrl}/tickets/${ticket._id}`;
+
           await createNotification({
             userId: new mongoose.Types.ObjectId(newAgentId),
             projectId: new mongoose.Types.ObjectId(projectId),
@@ -4503,7 +4706,7 @@ export const reassignTicket = async (req: Request, res: Response) => {
             title: `Ticket Assigned to You: ${ticket.ticketNumber}`,
             message: ticket.subject,
             ticketId: ticket._id as mongoose.Types.ObjectId,
-            link: `${frontendUrl}/tickets/${ticket._id}`,
+            link: notificationLink,
           });
         } catch (notifErr) {
           console.error(
@@ -4518,6 +4721,8 @@ export const reassignTicket = async (req: Request, res: Response) => {
       .populate("assignedTo", "firstName lastName email")
       .populate("category", "name")
       .populate("changeHistory.changedBy", "firstName lastName email");
+
+    await emitTicketRealtimeUpdate(updatedTicket, "reassigned");
 
     return res.status(200).json({
       success: true,
@@ -6775,7 +6980,9 @@ export const getAssignableAgents = async (req: Request, res: Response) => {
         .populate("role", "name isAgent code")
         .select("_id firstName lastName email role")
         .sort({ firstName: 1, lastName: 1 });
-      console.log(`👑 Super Admin - returning all ${allAgents.length} active users as assignable agents`);
+      console.log(
+        `👑 Super Admin - returning all ${allAgents.length} active users as assignable agents`,
+      );
       return res.status(200).json({
         success: true,
         data: allAgents,
