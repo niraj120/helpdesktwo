@@ -284,28 +284,45 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
             `${API_BASE_URL}/statuses/project/${projectId}`,
             { headers: { Authorization: `Bearer ${token}` } },
           );
-          if (statusResponse.data.success && Array.isArray(statusResponse.data.data)) {
-            statusData = statusResponse.data.data.map((s: any) => ({ code: s.code, name: s.name }));
+          if (
+            statusResponse.data.success &&
+            Array.isArray(statusResponse.data.data)
+          ) {
+            statusData = statusResponse.data.data.map((s: any) => ({
+              code: s.code,
+              name: s.name,
+            }));
           }
         } else {
           const statusResponse = await axios.get(
             `${API_BASE_URL}/statuses/all`,
             { headers: { Authorization: `Bearer ${token}` } },
           );
-          if (statusResponse.data.success && Array.isArray(statusResponse.data.data)) {
+          if (
+            statusResponse.data.success &&
+            Array.isArray(statusResponse.data.data)
+          ) {
             const seen = new Set<number>();
             statusData = statusResponse.data.data
-              .filter((s: any) => { if (seen.has(s.code)) return false; seen.add(s.code); return true; })
+              .filter((s: any) => {
+                if (seen.has(s.code)) return false;
+                seen.add(s.code);
+                return true;
+              })
               .map((s: any) => ({ code: s.code, name: s.name }));
           }
         }
-        setStatuses(statusData.length > 0 ? statusData : [
-          { code: 1, name: "Open" },
-          { code: 2, name: "In Progress" },
-          { code: 3, name: "On Hold" },
-          { code: 4, name: "Resolved" },
-          { code: 5, name: "Closed" },
-        ]);
+        setStatuses(
+          statusData.length > 0
+            ? statusData
+            : [
+                { code: 1, name: "Open" },
+                { code: 2, name: "In Progress" },
+                { code: 3, name: "On Hold" },
+                { code: 4, name: "Resolved" },
+                { code: 5, name: "Closed" },
+              ],
+        );
       } catch {
         setStatuses([
           { code: 1, name: "Open" },
@@ -318,12 +335,12 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
 
       // Fetch priorities from SLA rules
       try {
-        const slaUrl = projectId ? `${API_BASE_URL}/sla-rules?projectId=${projectId}&isActive=true` : `${API_BASE_URL}/sla-rules?isActive=true`;
-        const slaResponse = await axios.get(slaUrl,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          },
-        );
+        const slaUrl = projectId
+          ? `${API_BASE_URL}/sla-rules?projectId=${projectId}&isActive=true`
+          : `${API_BASE_URL}/sla-rules?isActive=true`;
+        const slaResponse = await axios.get(slaUrl, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
 
         if (
           slaResponse.data.success &&
@@ -530,7 +547,25 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                 : t,
             ),
           );
+        } else if (payload.type === "ticket-updated") {
+          setTickets((prev) =>
+            prev.map((t) =>
+              t._id === payload.ticket._id
+                ? {
+                    ...t,
+                    ...payload.ticket,
+                    status: payload.ticket.status ?? t.status,
+                    updatedAt: payload.ticket.updatedAt ?? t.updatedAt,
+                  }
+                : t,
+            ),
+          );
         }
+      },
+      notification: (payload: any) => {
+        if (!payload) return;
+        const text = payload.title || payload.message;
+        if (text) toast.success(text, { duration: 5000 });
       },
     },
   });
@@ -915,13 +950,19 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
           <div style={{ position: "relative" }}>
             <select
               value={statusFilter}
-              onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setCurrentPage(1);
+              }}
               style={{
                 paddingTop: "9px",
                 paddingBottom: "9px",
                 paddingLeft: "10px",
                 paddingRight: "28px",
-                border: statusFilter !== "all" ? "1.5px solid #3B82F6" : "1px solid #E5E7EB",
+                border:
+                  statusFilter !== "all"
+                    ? "1.5px solid #3B82F6"
+                    : "1px solid #E5E7EB",
                 borderRadius: "8px",
                 fontSize: "14px",
                 minWidth: "120px",
@@ -959,13 +1000,19 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
           <div style={{ position: "relative" }}>
             <select
               value={priorityFilter}
-              onChange={(e) => { setPriorityFilter(e.target.value); setCurrentPage(1); }}
+              onChange={(e) => {
+                setPriorityFilter(e.target.value);
+                setCurrentPage(1);
+              }}
               style={{
                 paddingTop: "9px",
                 paddingBottom: "9px",
                 paddingLeft: "10px",
                 paddingRight: "28px",
-                border: priorityFilter !== "all" ? "1.5px solid #3B82F6" : "1px solid #E5E7EB",
+                border:
+                  priorityFilter !== "all"
+                    ? "1.5px solid #3B82F6"
+                    : "1px solid #E5E7EB",
                 borderRadius: "8px",
                 fontSize: "14px",
                 minWidth: "120px",
@@ -1003,13 +1050,19 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
           <div style={{ position: "relative" }}>
             <select
               value={sourceFilter}
-              onChange={(e) => { setSourceFilter(e.target.value); setCurrentPage(1); }}
+              onChange={(e) => {
+                setSourceFilter(e.target.value);
+                setCurrentPage(1);
+              }}
               style={{
                 paddingTop: "9px",
                 paddingBottom: "9px",
                 paddingLeft: "10px",
                 paddingRight: "28px",
-                border: sourceFilter !== "all" ? "1.5px solid #3B82F6" : "1px solid #E5E7EB",
+                border:
+                  sourceFilter !== "all"
+                    ? "1.5px solid #3B82F6"
+                    : "1px solid #E5E7EB",
                 borderRadius: "8px",
                 fontSize: "14px",
                 minWidth: "120px",
@@ -1046,13 +1099,19 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
             <div style={{ position: "relative" }}>
               <select
                 value={projectFilter}
-                onChange={(e) => { setProjectFilter(e.target.value); setCurrentPage(1); }}
+                onChange={(e) => {
+                  setProjectFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
                 style={{
                   paddingTop: "9px",
                   paddingBottom: "9px",
                   paddingLeft: "10px",
                   paddingRight: "28px",
-                  border: projectFilter !== "all" ? "1.5px solid #3B82F6" : "1px solid #E5E7EB",
+                  border:
+                    projectFilter !== "all"
+                      ? "1.5px solid #3B82F6"
+                      : "1px solid #E5E7EB",
                   borderRadius: "8px",
                   fontSize: "14px",
                   minWidth: "150px",
@@ -1094,7 +1153,8 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
               display: "flex",
               alignItems: "center",
               gap: "6px",
-              background: dateFromFilter || dateToFilter ? "#EFF6FF" : "#F9FAFB",
+              background:
+                dateFromFilter || dateToFilter ? "#EFF6FF" : "#F9FAFB",
               border: `${dateFromFilter || dateToFilter ? "1.5px" : "1px"} solid ${dateFromFilter || dateToFilter ? "#3B82F6" : "#E5E7EB"}`,
               borderRadius: "8px",
               padding: "5px 10px",
@@ -1111,7 +1171,10 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
             <input
               type="date"
               value={dateFromFilter}
-              onChange={(e) => { setDateFromFilter(e.target.value); setCurrentPage(1); }}
+              onChange={(e) => {
+                setDateFromFilter(e.target.value);
+                setCurrentPage(1);
+              }}
               style={{
                 border: "none",
                 background: "transparent",
@@ -1122,11 +1185,18 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                 cursor: "pointer",
               }}
             />
-            <span style={{ color: "#D1D5DB", fontSize: "11px", fontWeight: 600 }}>–</span>
+            <span
+              style={{ color: "#D1D5DB", fontSize: "11px", fontWeight: 600 }}
+            >
+              –
+            </span>
             <input
               type="date"
               value={dateToFilter}
-              onChange={(e) => { setDateToFilter(e.target.value); setCurrentPage(1); }}
+              onChange={(e) => {
+                setDateToFilter(e.target.value);
+                setCurrentPage(1);
+              }}
               style={{
                 border: "none",
                 background: "transparent",
@@ -1160,8 +1230,12 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                 cursor: "pointer",
                 whiteSpace: "nowrap",
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "#047857")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "#059669")}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.background = "#047857")
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.background = "#059669")
+              }
             >
               <ArrowDownTrayIcon style={{ width: "15px", height: "15px" }} />
               Export
@@ -1896,14 +1970,20 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
           filterLabels={{
             status: (() => {
               const map: Record<string, string> = {
-                "1": "Open", "2": "In Progress", "3": "On Hold",
-                "4": "Resolved", "5": "Closed",
+                "1": "Open",
+                "2": "In Progress",
+                "3": "On Hold",
+                "4": "Resolved",
+                "5": "Closed",
               };
-              return statusFilter !== "all" ? map[statusFilter] || statusFilter : undefined;
+              return statusFilter !== "all"
+                ? map[statusFilter] || statusFilter
+                : undefined;
             })(),
             priority:
               priorityFilter !== "all"
-                ? priorityFilter.charAt(0).toUpperCase() + priorityFilter.slice(1)
+                ? priorityFilter.charAt(0).toUpperCase() +
+                  priorityFilter.slice(1)
                 : undefined,
             dateFrom: dateFromFilter || undefined,
             dateTo: dateToFilter || undefined,

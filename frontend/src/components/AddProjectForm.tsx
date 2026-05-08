@@ -106,8 +106,28 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
     ticketSuccessMessage:
       "Your ticket has been successfully submitted. We will get back to you soon.",
     allowTicketAttachments: true,
-    maxTicketAttachmentSize: 10, // in MB
-    allowedTicketFileTypes: [".pdf", ".doc", ".docx", ".jpg", ".jpeg", ".png"],
+    maxTicketAttachmentSize: 50, // in MB
+    allowedTicketFileTypes: [
+      ".pdf",
+      ".doc",
+      ".docx",
+      ".xls",
+      ".xlsx",
+      ".jpg",
+      ".jpeg",
+      ".png",
+      ".gif",
+      ".webp",
+      ".txt",
+      ".csv",
+      ".zip",
+      ".rar",
+      ".mp4",
+      ".mov",
+      ".avi",
+      ".mkv",
+      ".webm",
+    ],
     onlineFormFields: [] as Array<{
       fieldName: string;
       fieldType:
@@ -653,15 +673,28 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
           true,
         maxTicketAttachmentSize:
           project?.configuration?.ticketSubmissionSettings?.maxAttachmentSize ||
-          10,
+          50,
         allowedTicketFileTypes: project?.configuration?.ticketSubmissionSettings
           ?.allowedFileTypes || [
           ".pdf",
           ".doc",
           ".docx",
+          ".xls",
+          ".xlsx",
           ".jpg",
           ".jpeg",
           ".png",
+          ".gif",
+          ".webp",
+          ".txt",
+          ".csv",
+          ".zip",
+          ".rar",
+          ".mp4",
+          ".mov",
+          ".avi",
+          ".mkv",
+          ".webm",
         ],
         onlineFormFields:
           project?.configuration?.ticketSubmissionSettings?.onlineFormFields ||
@@ -4480,7 +4513,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                     options: [],
                                     // file-specific defaults (used when fieldType === 'file')
                                     allowedFileTypes: [],
-                                    maxFileSizeMB: 5,
+                                    maxFileSizeMB: 50,
                                     allowMultiple: false,
                                   },
                                 ],
@@ -4512,8 +4545,10 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                               fontSize: "14px",
                             }}
                           >
-                            No custom fields added. Default fields (Name, Email,
-                            Phone, Subject, Description) will be used.
+                            ".webp", No custom fields added. Default fields
+                            (Name, Email, Phone, Subject, Description) will be
+                            used. ".rar", ".csv", ".mp4", ".mov", ".avi",
+                            ".mkv", ".webm",
                           </div>
                         ) : (
                           <div
@@ -4932,13 +4967,13 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                         type="number"
                                         min="1"
                                         max="100"
-                                        value={field.maxFileSizeMB || 5}
+                                        value={field.maxFileSizeMB || 50}
                                         onChange={(e) => {
                                           const newFields = [
                                             ...formData.onlineFormFields,
                                           ];
                                           newFields[index].maxFileSizeMB =
-                                            parseInt(e.target.value) || 5;
+                                            parseInt(e.target.value) || 50;
                                           setFormData({
                                             ...formData,
                                             onlineFormFields: newFields,

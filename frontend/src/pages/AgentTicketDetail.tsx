@@ -367,11 +367,27 @@ interface AgentTicketDetailProps {
  * The tab is opened BEFORE the async call so browsers don't block it as a popup. */
 // US-ESC-009: SLA countdown helpers for ticket detail header
 const _formatSlaMsDetail = (ms: number): string => {
-  const h = Math.floor(ms / 3600000);
-  const m = Math.floor((ms % 3600000) / 60000);
-  if (h > 24) return `${Math.floor(h / 24)}d ${h % 24}h`;
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const hh = String(hours).padStart(2, "0");
+  const mm = String(minutes).padStart(2, "0");
+  const ss = String(seconds).padStart(2, "0");
+
+  if (days > 0) return `${days}d ${hh}:${mm}:${ss}`;
+  return `${hh}:${mm}:${ss}`;
+};
+
+const _formatDueTimestamp = (date: Date): string => {
+  const time = date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const sameDay = new Date().toDateString() === date.toDateString();
+  return sameDay ? time : `${date.toLocaleDateString()} ${time}`;
 };
 
 const computeDetailSlaPill = (
@@ -889,9 +905,9 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
     fetchWorkingCalendar();
   }, [ticket]);
 
-  // US-ESC-009: force re-render every 60s so SLA countdowns stay current
+  // US-ESC-009: force re-render every second so SLA countdowns include seconds
   useEffect(() => {
-    const timer = setInterval(() => setTickNow(Date.now()), 60000);
+    const timer = setInterval(() => setTickNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
 
@@ -4119,6 +4135,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                     let borderColor = "";
                     let iconColor = "";
                     let waitingForWorkingHours = false;
+                    let dueInfo = "";
 
                     if (isComplete) {
                       // Ticket is resolved - show time taken vs allowed
@@ -4131,16 +4148,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                         completedAt.getTime() - slaStartedAt.getTime();
                       isBreached = timeTakenMs > resolutionMs;
 
-                      const totalHours = Math.floor(
-                        timeTakenMs / (1000 * 60 * 60),
-                      );
-                      const minutes = Math.floor(
-                        (timeTakenMs % (1000 * 60 * 60)) / (1000 * 60),
-                      );
-
                       displayText = isBreached
-                        ? `Resolved in ${totalHours}h ${minutes}m (exceeded ${totalResolutionDisplay})`
-                        : `Resolved in ${totalHours}h ${minutes}m (within ${totalResolutionDisplay})`;
+                        ? `Resolved in ${_formatSlaMsDetail(timeTakenMs)} (exceeded ${totalResolutionDisplay})`
+                        : `Resolved in ${_formatSlaMsDetail(timeTakenMs)} (within ${totalResolutionDisplay})`;
+                      dueInfo = `Closed at ${_formatDueTimestamp(completedAt)}`;
 
                       bgColor = isBreached ? "bg-red-50" : "bg-green-50";
                       borderColor = isBreached
@@ -4161,17 +4172,8 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                         // SLA hasn't started yet - show "Starts in X" with blue styling
                         const startsInMs =
                           slaStartedAt.getTime() - now.getTime();
-                        const totalHours = Math.floor(
-                          startsInMs / (1000 * 60 * 60),
-                        );
-                        const minutes = Math.floor(
-                          (startsInMs % (1000 * 60 * 60)) / (1000 * 60),
-                        );
-
-                        displayText =
-                          totalHours > 0
-                            ? `Starts in ${totalHours}h ${minutes}m`
-                            : `Starts in ${minutes}m`;
+                        displayText = `Starts in ${_formatSlaMsDetail(startsInMs)}`;
+                        dueInfo = `Starts at ${_formatDueTimestamp(slaStartedAt)}`;
 
                         bgColor = "bg-blue-50";
                         borderColor = "border-blue-300";
@@ -4183,18 +4185,14 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                         const diffMs =
                           priorityDeadline.getTime() - now.getTime();
                         isBreached = diffMs < 0;
-
                         const absDiffMs = Math.abs(diffMs);
-                        const totalHours = Math.floor(
-                          absDiffMs / (1000 * 60 * 60),
-                        );
-                        const minutes = Math.floor(
-                          (absDiffMs % (1000 * 60 * 60)) / (1000 * 60),
-                        );
 
                         displayText = isBreached
-                          ? `Overdue by ${totalHours}h ${minutes}m`
-                          : `${totalHours}h ${minutes}m remaining`;
+                          ? `Overdue by ${_formatSlaMsDetail(absDiffMs)}`
+                          : `${_formatSlaMsDetail(absDiffMs)} remaining`;
+                        dueInfo = isBreached
+                          ? `Was due at ${_formatDueTimestamp(priorityDeadline)}`
+                          : `Due at ${_formatDueTimestamp(priorityDeadline)}`;
 
                         bgColor = isBreached ? "bg-red-50" : "bg-purple-50";
                         borderColor = isBreached
@@ -4242,6 +4240,11 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                               <p className="text-xs text-blue-500 mt-1">
                                 <span className="inline-block w-2 h-2 bg-blue-400 rounded-full mr-1"></span>
                                 Waiting for working hours
+                              </p>
+                            )}
+                            {dueInfo && (
+                              <p className="text-xs text-gray-600 mt-1">
+                                🕒 {dueInfo}
                               </p>
                             )}
                           </div>
@@ -4382,6 +4385,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                     let textColor = "";
                     let borderColor = "";
                     let nextEscalationInfo = "";
+                    let escalateAtInfo = "";
 
                     if (isComplete) {
                       // Ticket is resolved or closed - show time taken
@@ -4392,16 +4396,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                       );
                       const timeTakenMs =
                         completedAt.getTime() - levelStartTime.getTime();
-                      const totalHours = Math.floor(
-                        Math.abs(timeTakenMs) / (1000 * 60 * 60),
-                      );
-                      const minutes = Math.floor(
-                        (Math.abs(timeTakenMs) % (1000 * 60 * 60)) /
-                          (1000 * 60),
-                      );
 
                       isBreached = timeTakenMs > levelSlaMs;
-                      displayText = `Resolved in ${totalHours}h ${minutes}m`;
+                      displayText = `Resolved in ${_formatSlaMsDetail(Math.abs(timeTakenMs))}`;
+                      escalateAtInfo = `Closed at ${_formatDueTimestamp(completedAt)}`;
 
                       bgColor = isBreached ? "bg-red-50" : "bg-green-50";
                       borderColor = isBreached
@@ -4413,37 +4411,26 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                     } else if (slaNotStartedYet) {
                       // SLA hasn't started yet (outside working hours)
                       const startsInMs = slaStartTime.getTime() - now.getTime();
-                      const startsInMinutes = Math.ceil(
-                        startsInMs / (1000 * 60),
-                      );
-                      const startsInHours = Math.floor(startsInMinutes / 60);
-                      const startsInMins = startsInMinutes % 60;
-
-                      displayText =
-                        startsInHours > 0
-                          ? `Starts in ${startsInHours}h ${startsInMins}m`
-                          : `Starts in ${startsInMins}m`;
+                      displayText = `Starts in ${_formatSlaMsDetail(startsInMs)}`;
 
                       bgColor = "bg-blue-50";
                       borderColor = "border-blue-300";
                       textColor = "text-blue-600";
                       nextEscalationInfo = "Waiting for working hours";
+                      escalateAtInfo = `Starts at ${_formatDueTimestamp(slaStartTime)}`;
                     } else {
                       // Ticket is still open and SLA has started - show remaining time for this level
                       const diffMs = levelDeadline.getTime() - now.getTime();
                       isBreached = diffMs < 0;
 
                       const absDiffMs = Math.abs(diffMs);
-                      const totalHours = Math.floor(
-                        absDiffMs / (1000 * 60 * 60),
-                      );
-                      const minutes = Math.floor(
-                        (absDiffMs % (1000 * 60 * 60)) / (1000 * 60),
-                      );
 
                       displayText = isBreached
-                        ? `Overdue by ${totalHours}h ${minutes}m`
-                        : `${totalHours}h ${minutes}m remaining`;
+                        ? `Overdue by ${_formatSlaMsDetail(absDiffMs)}`
+                        : `${_formatSlaMsDetail(absDiffMs)} remaining`;
+                      escalateAtInfo = isBreached
+                        ? `Escalation due was ${_formatDueTimestamp(levelDeadline)}`
+                        : `Auto-escalates at ${_formatDueTimestamp(levelDeadline)}`;
 
                       bgColor = isBreached ? "bg-red-50" : "bg-blue-50";
                       borderColor = isBreached
@@ -4457,7 +4444,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                         escalationMatrix.autoEscalate === true &&
                         currentLevelIndex < escalationMatrix.levels.length - 1
                       ) {
-                        nextEscalationInfo = `Auto-escalates in ${totalHours}h ${minutes}m`;
+                        nextEscalationInfo = `Auto-escalates in ${_formatSlaMsDetail(absDiffMs)}`;
                       }
                     }
 
@@ -4477,6 +4464,11 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                             {nextEscalationInfo && (
                               <p className="text-xs text-orange-600 mt-1">
                                 ⬆️ {nextEscalationInfo}
+                              </p>
+                            )}
+                            {escalateAtInfo && (
+                              <p className="text-xs text-gray-600 mt-1">
+                                🕒 {escalateAtInfo}
                               </p>
                             )}
                             {currentLevelIndex > 0 && (
