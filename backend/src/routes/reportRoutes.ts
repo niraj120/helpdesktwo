@@ -23,6 +23,7 @@ import {
   updateReportAssignment,
   deleteReportAssignment,
   getMyReports,
+  getAssignableReportUsers,
 } from "../controllers/reports/reportController";
 
 const router = express.Router();
@@ -159,5 +160,13 @@ router.delete(
 
 // ── My assigned reports (no permission gate beyond auth) ─────────────────────
 router.get("/mine", auth, getMyReports);
+
+// ── Project-scoped users for Assign Reports UI ───────────────────────────────
+router.get(
+  "/project-users",
+  auth,
+  checkPermission("REPORT_VIEW_TICKETS"),
+  getAssignableReportUsers,
+);
 
 export default router;

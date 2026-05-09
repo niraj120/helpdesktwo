@@ -33,6 +33,24 @@ async function getUserRoleInfo(userId: string) {
 
 const ADMIN_ROLE_CODES = ["SUPER_ADMIN", "ACCOUNT_OWNER", "SUPPORT_ADMIN"];
 
+/**
+ * Returns the list of project IDs the caller is allowed to access.
+ * Returns null for admins (all projects allowed).
+ */
+async function getCallerAllowedProjectIds(
+  userId: string,
+): Promise<string[] | null> {
+  const User = mongoose.model("User");
+  const user = await User.findById(userId)
+    .populate({ path: "role", populate: { path: "projects", select: "_id" } })
+    .lean();
+  if (!user) return [];
+  const role = (user as any).role as any;
+  if (!role || ADMIN_ROLE_CODES.includes(role.code)) return null; // null = unrestricted
+  const projects: any[] = role.projects ?? [];
+  return projects.map((p: any) => p._id?.toString() ?? p.toString());
+}
+
 /** Returns the ReportModulePermission for the user's role, or admin defaults for admin roles. */
 async function getEffectiveModulePerms(userId: string) {
   const roleInfo = await getUserRoleInfo(userId);
@@ -483,11 +501,29 @@ export const createSavedReport = async (req: Request, res: Response) => {
         .json({ success: false, message: "name and dataPoints are required" });
     }
 
+    // Enforce project scoping for non-admin callers
+    const allowedProjectIds = await getCallerAllowedProjectIds(userId);
+    let effectiveProjectId: string | undefined = projectId;
+    if (allowedProjectIds !== null) {
+      if (!effectiveProjectId) {
+        return res.status(400).json({
+          success: false,
+          message: "Please select a project scope for this report.",
+        });
+      }
+      if (!allowedProjectIds.includes(effectiveProjectId.toString())) {
+        return res.status(403).json({
+          success: false,
+          message: "You do not have access to the selected project.",
+        });
+      }
+    }
+
     const report = await SavedReport.create({
       name,
       description,
       createdBy: userId,
-      projectId: projectId || undefined,
+      projectId: effectiveProjectId || undefined,
       dataPoints,
       filters: filters ?? [],
       sortBy,
@@ -651,6 +687,25 @@ export const previewReport = async (req: Request, res: Response) => {
         .json({ success: false, message: "dataPoints are required" });
     }
 
+    // Enforce project scoping for non-admin callers
+    const allowedProjectIds = await getCallerAllowedProjectIds(userId);
+    let effectiveProjectId: string | undefined = projectId;
+    if (allowedProjectIds !== null) {
+      // Caller has restricted project access
+      if (!effectiveProjectId) {
+        return res.status(400).json({
+          success: false,
+          message: "Please select a project scope for this report.",
+        });
+      }
+      if (!allowedProjectIds.includes(effectiveProjectId.toString())) {
+        return res.status(403).json({
+          success: false,
+          message: "You do not have access to the selected project.",
+        });
+      }
+    }
+
     const roleInfo = await getUserRoleInfo(userId);
     const access = await ReportDataPointAccess.findOne({
       roleId: roleInfo?.roleId,
@@ -673,7 +728,7 @@ export const previewReport = async (req: Request, res: Response) => {
       filters,
       sortBy,
       sortOrder,
-      projectId,
+      effectiveProjectId,
       1,
       10, // preview is always 10 rows
     );
@@ -785,11 +840,73 @@ export const exportReport = async (req: Request, res: Response) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * GET /api/reports/project-users
+ * Returns users scoped to the caller's allowed projects (for the Assign Reports UI).
+ * Super-admins get all active users.
+ */
+export const getAssignableReportUsers = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const allowedProjectIds = await getCallerAllowedProjectIds(userId);
+    const User = mongoose.model("User");
+
+    let users: any[];
+    if (allowedProjectIds === null) {
+      // Admin — return all active users
+      users = await User.find({ isActive: true })
+        .select("_id firstName lastName email")
+        .sort({ firstName: 1 })
+        .lean();
+    } else {
+      // Non-admin — return users whose role belongs to any of their allowed projects
+      const Role = mongoose.model("Role");
+      const rolesInProjects = await Role.find({
+        projects: {
+          $in: allowedProjectIds.map((id) => new mongoose.Types.ObjectId(id)),
+        },
+        isActive: true,
+      })
+        .select("_id")
+        .lean();
+      const roleIds = rolesInProjects.map((r: any) => r._id);
+      users = await User.find({ isActive: true, role: { $in: roleIds } })
+        .select("_id firstName lastName email")
+        .sort({ firstName: 1 })
+        .lean();
+    }
+
+    return res.status(200).json({ success: true, data: users });
+  } catch (err: any) {
+    console.error("getAssignableReportUsers error:", err);
+    return res
+      .status(500)
+      .json({ success: false, message: "Server error", error: err.message });
+  }
+};
+
+/**
  * GET /api/reports/assignments
  */
 export const getAssignments = async (req: Request, res: Response) => {
   try {
-    const assignments = await ReportAssignment.find({})
+    const userId = req.user?.userId;
+    const roleInfo = await getUserRoleInfo(userId);
+    // Non-admins only see assignments for reports they created
+    const reportFilter: any = {};
+    if (
+      !roleInfo?.isSuperAdmin &&
+      !ADMIN_ROLE_CODES.includes(roleInfo?.roleCode ?? "")
+    ) {
+      const myReports = await (mongoose.model("SavedReport") as any)
+        .find({
+          createdBy: new mongoose.Types.ObjectId(userId),
+          isActive: true,
+        })
+        .select("_id")
+        .lean();
+      reportFilter.reportId = { $in: myReports.map((r: any) => r._id) };
+    }
+    const assignments = await ReportAssignment.find(reportFilter)
       .populate("reportId", "name description")
       .populate("assignedToUsers", "firstName lastName email")
       .populate("assignedToRoles", "name code")

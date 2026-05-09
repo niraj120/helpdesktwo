@@ -2942,23 +2942,44 @@ export const replyToTicket = async (req: Request, res: Response) => {
     // Check if user has permission to reply:
     // 1. Student who created the ticket
     // 2. Assigned agent
-    // 3. User with appropriate role permissions (Super Admin, Support Manager, etc.)
+    // 3. User with TICKET_VIEW_ALL + (TICKET_ADD_COMMENT or TICKET_ADD_ATTACHMENT or TICKET_REPLY)
+    // 4. Backward-compat role-code fallback for legacy setups
     const isTicketCreator = ticket.metadata?.studentEmail === user.email;
     const isAssignedAgent =
       ticket.assignedTo && ticket.assignedTo._id.toString() === userId;
-    const userRole = user.role?.toString();
 
-    // Get user's role to check permissions
-    const populatedUser = await User.findById(userId).populate("role", "code");
+    // Get user's role with permissions to enforce RBAC-based reply checks
+    const populatedUser = await User.findById(userId).populate({
+      path: "role",
+      select: "code permissions",
+      populate: { path: "permissions", select: "code name" },
+    });
     const roleCode = (populatedUser?.role as any)?.code;
-    const hasAgentPermission = [
+    const rolePermissions = (
+      (populatedUser?.role as any)?.permissions ?? []
+    ).map((p: any) => (typeof p === "string" ? p : p?.code || p?.name));
+
+    const hasViewAllPermission = rolePermissions.includes("TICKET_VIEW_ALL");
+    const hasReplyCapabilityPermission =
+      rolePermissions.includes("TICKET_ADD_COMMENT") ||
+      rolePermissions.includes("TICKET_ADD_ATTACHMENT") ||
+      rolePermissions.includes("TICKET_REPLY");
+    const hasRbacReplyAccess =
+      hasViewAllPermission && hasReplyCapabilityPermission;
+
+    const hasLegacyRoleReplyAccess = [
       "SUPER_ADMIN",
       "SUPPORT_MANAGER",
       "AGENT",
       "SUPPORT_AGENT",
     ].includes(roleCode || "");
 
-    if (!isTicketCreator && !isAssignedAgent && !hasAgentPermission) {
+    if (
+      !isTicketCreator &&
+      !isAssignedAgent &&
+      !hasRbacReplyAccess &&
+      !hasLegacyRoleReplyAccess
+    ) {
       return res.status(403).json({
         success: false,
         message: "You do not have permission to reply to this ticket",
@@ -6974,14 +6995,29 @@ export const getAssignableAgents = async (req: Request, res: Response) => {
     // Check if user is Super Admin - they can see all agents
     const isSuperAdmin = (userRole as any).code === "SUPER_ADMIN";
 
-    // Super Admin: immediately return ALL active agents — no project/hierarchy scoping
+    // Super Admin: return all active agents, but respect projectId filter if provided
     if (isSuperAdmin) {
-      const allAgents = await User.find({ isActive: true })
+      let superAdminQuery: any = { isActive: true };
+      if (projectId) {
+        const projectObjectId = new mongoose.Types.ObjectId(
+          projectId as string,
+        );
+        const rolesInProject = await Role.find({
+          projects: projectObjectId,
+          isActive: true,
+        }).select("_id");
+        const roleIdsInProject = rolesInProject.map((r) => r._id);
+        superAdminQuery.role = { $in: roleIdsInProject };
+        console.log(
+          `👑 Super Admin - filtering by project ${projectId} - roles found: ${roleIdsInProject.length}`,
+        );
+      }
+      const allAgents = await User.find(superAdminQuery)
         .populate("role", "name isAgent code")
         .select("_id firstName lastName email role")
         .sort({ firstName: 1, lastName: 1 });
       console.log(
-        `👑 Super Admin - returning all ${allAgents.length} active users as assignable agents`,
+        `👑 Super Admin - returning ${allAgents.length} users as assignable agents`,
       );
       return res.status(200).json({
         success: true,

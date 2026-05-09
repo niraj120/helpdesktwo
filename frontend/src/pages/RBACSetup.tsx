@@ -5,6 +5,7 @@ import {
   MdEdit,
   MdDelete,
   MdContentCopy,
+  MdSearch,
   MdStar,
   MdStarBorder,
   MdClose,
@@ -13,7 +14,6 @@ import {
   MdExpandLess,
 } from "react-icons/md";
 import DashboardLayout from "../components/DashboardLayout";
-import ModuleHeader from "../components/ModuleHeader";
 import { API_CONFIG } from "../config/constants";
 
 interface Permission {
@@ -114,6 +114,22 @@ const RBACSetup = () => {
   );
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [showRoleProjectDropdown, setShowRoleProjectDropdown] = useState(false);
+  const [roleProjectSearchTerm, setRoleProjectSearchTerm] = useState("");
+  const [showCloneProjectDropdown, setShowCloneProjectDropdown] =
+    useState(false);
+  const [cloneProjectSearchTerm, setCloneProjectSearchTerm] = useState("");
+  const [viewportWidth, setViewportWidth] = useState<number>(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1280,
+  );
+
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const isMobile = viewportWidth <= 768;
 
   useEffect(() => {
     // Prevent duplicate calls from React.StrictMode
@@ -259,6 +275,8 @@ const RBACSetup = () => {
 
       setShowRoleModal(false);
       setEditingRole(null);
+      setShowRoleProjectDropdown(false);
+      setRoleProjectSearchTerm("");
       resetForm();
       fetchData();
     } catch (error: any) {
@@ -284,6 +302,8 @@ const RBACSetup = () => {
       );
       setShowCloneModal(false);
       setCloneMasterRole(null);
+      setShowCloneProjectDropdown(false);
+      setCloneProjectSearchTerm("");
       resetForm();
       fetchData();
     } catch (error: any) {
@@ -379,6 +399,8 @@ const RBACSetup = () => {
     console.log("🔍 Available projects in state:", projects);
 
     setEditingRole(role);
+    setShowRoleProjectDropdown(false);
+    setRoleProjectSearchTerm("");
     setFormData({
       name: role.name,
       code: role.code,
@@ -407,6 +429,8 @@ const RBACSetup = () => {
 
   const openCloneModal = (role: Role) => {
     setCloneMasterRole(role);
+    setShowCloneProjectDropdown(false);
+    setCloneProjectSearchTerm("");
     setFormData({
       name: `${role.name} (Copy)`,
       code: "",
@@ -442,17 +466,15 @@ const RBACSetup = () => {
   ): GroupedPermissions => {
     const filtered: GroupedPermissions = {};
 
-    // Report permissions that are managed internally by the Report module
-    // (Assign is handled by Report > Assign Reports; others are internal)
-    // Only REPORT_VIEW_TICKETS is exposed in RBAC so admins can gate access to the module.
+    // Report permissions that are managed internally by the Report module.
+    // REPORT_CREATE_CUSTOM and REPORT_ASSIGN are exposed so sub-admins can be
+    // granted Report Builder + Assign access directly from RBAC Setup.
     const REPORT_PERMISSIONS_HIDDEN_IN_RBAC = new Set([
       "REPORT_VIEW_AGENT_PERFORMANCE",
       "REPORT_VIEW_CSAT",
       "REPORT_VIEW_SLA",
       "REPORT_EXPORT",
-      "REPORT_CREATE_CUSTOM",
       "REPORT_SCHEDULE",
-      "REPORT_ASSIGN",
       "REPORT_DELETE",
       "REPORT_PERMISSIONS_MANAGE",
       "REPORT_DATA_POINTS_MANAGE",
@@ -602,6 +624,134 @@ const RBACSetup = () => {
     return matchesSearch && matchesFilter && matchesProject;
   });
 
+  const roleProjectOptions = projects.filter((project) => {
+    const term = roleProjectSearchTerm.trim().toLowerCase();
+    if (!term) return true;
+    return (
+      project.name.toLowerCase().includes(term) ||
+      project.code.toLowerCase().includes(term)
+    );
+  });
+
+  const cloneProjectOptions = projects.filter((project) => {
+    const term = cloneProjectSearchTerm.trim().toLowerCase();
+    if (!term) return true;
+    return (
+      project.name.toLowerCase().includes(term) ||
+      project.code.toLowerCase().includes(term)
+    );
+  });
+
+  const filteredPermissionGroups = getFilteredPermissions(
+    groupedPermissions,
+    formData.roleType,
+  );
+  const permissionCategoryStats = Object.entries(filteredPermissionGroups).map(
+    ([category, modules]) => {
+      const allPermissions = Object.values(modules).flat();
+      const total = allPermissions.length;
+      const selected = allPermissions.filter((permission) =>
+        formData.permissions.includes(permission._id),
+      ).length;
+
+      return {
+        category,
+        modules,
+        total,
+        selected,
+      };
+    },
+  );
+  const totalFilteredPermissionCount = permissionCategoryStats.reduce(
+    (sum, entry) => sum + entry.total,
+    0,
+  );
+  const selectedFilteredPermissionCount = permissionCategoryStats.reduce(
+    (sum, entry) => sum + entry.selected,
+    0,
+  );
+
+  const totalPermissionCatalog = Object.values(groupedPermissions).reduce(
+    (categoryAcc, modules) =>
+      categoryAcc +
+      Object.values(modules as Record<string, Permission[]>).reduce(
+        (moduleAcc, perms) => moduleAcc + perms.length,
+        0,
+      ),
+    0,
+  );
+  const systemRoleCount = roles.filter((role) => role.type === "system").length;
+  const customRoleCount = roles.filter((role) => role.type === "custom").length;
+  const masterRoleCount = roles.filter((role) => role.isMaster).length;
+  const projectMappedRoleCount = roles.filter(
+    (role) => (role.projects?.length ?? 0) > 0,
+  ).length;
+  const totalAssignedAgents = roles.reduce(
+    (sum, role) => sum + (role.agentCount || 0),
+    0,
+  );
+  const avgPermissionsPerRole =
+    roles.length > 0
+      ? Math.round(
+          (roles.reduce(
+            (sum, role) =>
+              sum + (Array.isArray(role.permissions) ? role.permissions.length : 0),
+            0,
+          ) /
+            roles.length) *
+            10,
+        ) / 10
+      : 0;
+  const roleProjectCoveragePct =
+    roles.length > 0
+      ? Math.round((projectMappedRoleCount / roles.length) * 100)
+      : 0;
+
+  const rbacStatsCards = [
+    {
+      title: "Total Roles",
+      value: String(roles.length),
+      subtitle: `${systemRoleCount} system • ${customRoleCount} custom`,
+      accent: "#2563eb",
+      bg: "#eff6ff",
+    },
+    {
+      title: "Master Roles",
+      value: String(masterRoleCount),
+      subtitle: `${roles.length > 0 ? Math.round((masterRoleCount / roles.length) * 100) : 0}% of all roles`,
+      accent: "#d97706",
+      bg: "#fffbeb",
+    },
+    {
+      title: "Project Coverage",
+      value: `${roleProjectCoveragePct}%`,
+      subtitle: `${projectMappedRoleCount}/${roles.length || 0} roles mapped`,
+      accent: "#0284c7",
+      bg: "#ecfeff",
+    },
+    {
+      title: "Assigned Agents",
+      value: String(totalAssignedAgents),
+      subtitle: "Users linked to current roles",
+      accent: "#059669",
+      bg: "#ecfdf5",
+    },
+    {
+      title: "Permission Catalog",
+      value: String(totalPermissionCatalog),
+      subtitle: "Available RBAC permissions",
+      accent: "#7c3aed",
+      bg: "#f5f3ff",
+    },
+    {
+      title: "Avg Permissions",
+      value: String(avgPermissionsPerRole),
+      subtitle: "Per role assignment average",
+      accent: "#dc2626",
+      bg: "#fef2f2",
+    },
+  ];
+
   if (loading) {
     return (
       <DashboardLayout>
@@ -621,15 +771,129 @@ const RBACSetup = () => {
 
   return (
     <DashboardLayout>
-      <div style={{ padding: "24px" }}>
-        <ModuleHeader
-          title="RBAC Setup"
-          subtitle="Manage roles and permissions"
-        />
+      <div
+        style={{
+          padding: isMobile ? "16px" : "24px 20px 32px",
+          maxWidth: "1380px",
+          margin: "0 auto",
+          background: "#f6f8fc",
+          minHeight: "100vh",
+          fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+        }}
+      >
+        <div
+          style={{
+            background: "#ffffff",
+            padding: isMobile ? "16px" : "22px 24px",
+            borderRadius: "14px",
+            marginBottom: "16px",
+            border: "1px solid #e7ebf3",
+            boxShadow: "0 4px 18px rgba(15, 23, 42, 0.05)",
+          }}
+        >
+          <h1
+            style={{
+              margin: "0 0 6px 0",
+              fontSize: isMobile ? "20px" : "24px",
+              fontWeight: 700,
+              color: "#111827",
+              letterSpacing: "-0.01em",
+              fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+            }}
+          >
+            RBAC Setup
+          </h1>
+          <p
+            style={{
+              margin: 0,
+              fontSize: "14px",
+              color: "#6b7280",
+              fontWeight: 400,
+            }}
+          >
+            Manage roles and permissions with project-wise mapping
+          </p>
+        </div>
 
         <div
           style={{
-            marginBottom: "24px",
+            marginBottom: "16px",
+            display: "grid",
+            gridTemplateColumns: isMobile
+              ? "1fr"
+              : "repeat(auto-fit, minmax(170px, 1fr))",
+            gap: "10px",
+          }}
+        >
+          {rbacStatsCards.map((card) => (
+            <div
+              key={card.title}
+              style={{
+                background: "#ffffff",
+                border: "1px solid #e7ebf3",
+                borderRadius: "12px",
+                padding: "12px",
+                boxShadow: "0 2px 10px rgba(15, 23, 42, 0.05)",
+              }}
+            >
+              <div
+                style={{
+                  width: "30px",
+                  height: "6px",
+                  borderRadius: "999px",
+                  backgroundColor: card.accent,
+                  marginBottom: "8px",
+                }}
+              />
+              <div
+                style={{
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  color: "#64748b",
+                  marginBottom: "6px",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.02em",
+                }}
+              >
+                {card.title}
+              </div>
+              <div
+                style={{
+                  fontSize: "22px",
+                  fontWeight: 800,
+                  color: "#0f172a",
+                  lineHeight: 1.15,
+                  marginBottom: "4px",
+                }}
+              >
+                {card.value}
+              </div>
+              <div
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  padding: "2px 7px",
+                  borderRadius: "999px",
+                  background: card.bg,
+                  color: card.accent,
+                  fontSize: "11px",
+                  fontWeight: 600,
+                }}
+              >
+                {card.subtitle}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div
+          style={{
+            marginBottom: "16px",
+            background: "#ffffff",
+            borderRadius: "14px",
+            border: "1px solid #e7ebf3",
+            padding: "14px",
+            boxShadow: "0 4px 16px rgba(15, 23, 42, 0.04)",
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
@@ -644,15 +908,16 @@ const RBACSetup = () => {
                 display: "flex",
                 alignItems: "center",
                 gap: "8px",
-                padding: "10px 20px",
+                height: "42px",
+                padding: "0 16px",
                 background: "#ef4444",
                 color: "white",
                 border: "none",
-                borderRadius: "12px",
+                borderRadius: "10px",
                 fontSize: "14px",
                 fontWeight: "600",
                 cursor: "pointer",
-                boxShadow: "0 4px 15px rgba(239, 68, 68, 0.35)",
+                boxShadow: "0 4px 15px rgba(239, 68, 68, 0.28)",
               }}
             >
               <MdDelete size={18} />
@@ -663,6 +928,8 @@ const RBACSetup = () => {
             <button
               onClick={() => {
                 setEditingRole(null);
+                setShowRoleProjectDropdown(false);
+                setRoleProjectSearchTerm("");
                 resetForm();
                 setShowRoleModal(true);
               }}
@@ -670,11 +937,12 @@ const RBACSetup = () => {
                 display: "flex",
                 alignItems: "center",
                 gap: "8px",
-                padding: "10px 20px",
+                height: "42px",
+                padding: "0 16px",
                 background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
                 color: "white",
                 border: "none",
-                borderRadius: "12px",
+                borderRadius: "10px",
                 fontSize: "14px",
                 fontWeight: "600",
                 cursor: "pointer",
@@ -701,39 +969,104 @@ const RBACSetup = () => {
         {/* Filters */}
         <div
           style={{
-            marginBottom: "24px",
-            display: "flex",
-            gap: "16px",
-            flexWrap: "wrap",
+            marginBottom: "16px",
+            background: "#ffffff",
+            borderRadius: "14px",
+            border: "1px solid #e7ebf3",
+            padding: "14px",
+            boxShadow: "0 4px 16px rgba(15, 23, 42, 0.04)",
           }}
         >
-          <input
-            type="text"
-            placeholder="Search roles..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+          <div
             style={{
-              flex: "1",
-              minWidth: "250px",
-              padding: "10px 16px",
-              border: "1px solid #d1d5db",
-              borderRadius: "6px",
-              fontSize: "14px",
+              display: "flex",
+              gap: "12px",
+              alignItems: "center",
+              marginBottom: "12px",
+              flexWrap: isMobile ? "wrap" : "nowrap",
             }}
-          />
-          <div style={{ display: "flex", gap: "8px" }}>
+          >
+            <div
+              style={{
+                position: "relative",
+                flex: 1,
+                minWidth: isMobile ? "100%" : "260px",
+              }}
+            >
+              <MdSearch
+                size={16}
+                style={{
+                  position: "absolute",
+                  left: "14px",
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  color: "#9CA3AF",
+                }}
+              />
+              <input
+                type="text"
+                placeholder="Search by role name or code..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={{
+                  width: "100%",
+                  height: "42px",
+                  padding: "10px 14px 10px 40px",
+                  border: "1px solid #d7deea",
+                  borderRadius: "10px",
+                  fontSize: "14px",
+                  boxSizing: "border-box",
+                  background: "white",
+                  outline: "none",
+                  boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
+                }}
+              />
+            </div>
+            <select
+              value={filterProject}
+              onChange={(e) => setFilterProject(e.target.value)}
+              style={{
+                height: "42px",
+                padding: "8px 12px",
+                border:
+                  filterProject !== "all"
+                    ? "1px solid #84caff"
+                    : "1px solid #d7deea",
+                borderRadius: "10px",
+                fontSize: "14px",
+                color: filterProject !== "all" ? "#1d4ed8" : "#6b7280",
+                background: filterProject !== "all" ? "#eff6ff" : "white",
+                cursor: "pointer",
+                minWidth: isMobile ? "100%" : "200px",
+                fontWeight: filterProject !== "all" ? 500 : 400,
+              }}
+            >
+              <option value="all">All Projects</option>
+              {projects.map((p) => (
+                <option key={p._id} value={p._id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
             {["all", "master", "system", "custom"].map((type) => (
               <button
                 key={type}
                 onClick={() => setFilterType(type as any)}
                 style={{
-                  padding: "10px 16px",
-                  backgroundColor: filterType === type ? "#3b82f6" : "white",
-                  color: filterType === type ? "white" : "#374151",
-                  border: "1px solid #d1d5db",
-                  borderRadius: "6px",
+                  height: "38px",
+                  padding: "0 14px",
+                  backgroundColor: filterType === type ? "#eff6ff" : "white",
+                  color: filterType === type ? "#1d4ed8" : "#374151",
+                  border:
+                    filterType === type
+                      ? "1px solid #84caff"
+                      : "1px solid #d7deea",
+                  borderRadius: "10px",
                   fontSize: "14px",
-                  fontWeight: "500",
+                  fontWeight: filterType === type ? 600 : 500,
                   cursor: "pointer",
                   textTransform: "capitalize",
                 }}
@@ -742,332 +1075,330 @@ const RBACSetup = () => {
               </button>
             ))}
           </div>
-          <select
-            value={filterProject}
-            onChange={(e) => setFilterProject(e.target.value)}
-            style={{
-              padding: "10px 16px",
-              border: "1px solid #d1d5db",
-              borderRadius: "6px",
-              fontSize: "14px",
-              color: filterProject === "all" ? "#6b7280" : "#111827",
-              background: "white",
-              cursor: "pointer",
-              minWidth: "180px",
-            }}
-          >
-            <option value="all">All Projects</option>
-            {projects.map((p) => (
-              <option key={p._id} value={p._id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
         </div>
 
         {/* Roles Table */}
         <div
           style={{
             backgroundColor: "white",
-            borderRadius: "8px",
-            border: "1px solid #e5e7eb",
+            borderRadius: "10px",
+            border: "1px solid #E4E7EC",
             overflow: "hidden",
+            boxShadow: "0 1px 3px rgba(0,0,0,.06)",
           }}
         >
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr
-                style={{
-                  backgroundColor: "#f9fafb",
-                  borderBottom: "1px solid #e5e7eb",
-                }}
-              >
-                <th style={{ padding: "12px 16px", width: "40px" }}>
-                  <input
-                    type="checkbox"
-                    title="Select all deletable roles"
-                    checked={
-                      filteredRoles.filter((r) => r.type === "custom").length >
-                        0 &&
-                      filteredRoles
-                        .filter((r) => r.type === "custom")
-                        .every((r) => selectedRoleIds.has(r._id))
-                    }
-                    onChange={toggleSelectAllRoles}
-                    style={{ cursor: "pointer", width: "16px", height: "16px" }}
-                  />
-                </th>
-                <th
-                  style={{
-                    padding: "12px 16px",
-                    textAlign: "left",
-                    fontSize: "12px",
-                    fontWeight: "600",
-                    color: "#6b7280",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  Master
-                </th>
-                <th
-                  style={{
-                    padding: "12px 16px",
-                    textAlign: "left",
-                    fontSize: "12px",
-                    fontWeight: "600",
-                    color: "#6b7280",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  Role Name
-                </th>
-                <th
-                  style={{
-                    padding: "12px 16px",
-                    textAlign: "left",
-                    fontSize: "12px",
-                    fontWeight: "600",
-                    color: "#6b7280",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  Code
-                </th>
-                <th
-                  style={{
-                    padding: "12px 16px",
-                    textAlign: "left",
-                    fontSize: "12px",
-                    fontWeight: "600",
-                    color: "#6b7280",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  Type
-                </th>
-                <th
-                  style={{
-                    padding: "12px 16px",
-                    textAlign: "left",
-                    fontSize: "12px",
-                    fontWeight: "600",
-                    color: "#6b7280",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  Permissions
-                </th>
-                <th
-                  style={{
-                    padding: "12px 16px",
-                    textAlign: "left",
-                    fontSize: "12px",
-                    fontWeight: "600",
-                    color: "#6b7280",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  Projects
-                </th>
-                <th
-                  style={{
-                    padding: "12px 16px",
-                    textAlign: "left",
-                    fontSize: "12px",
-                    fontWeight: "600",
-                    color: "#6b7280",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  Agents
-                </th>
-                <th
-                  style={{
-                    padding: "12px 16px",
-                    textAlign: "right",
-                    fontSize: "12px",
-                    fontWeight: "600",
-                    color: "#6b7280",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRoles.map((role) => (
+          <div style={{ overflowX: "auto" }}>
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                minWidth: "980px",
+              }}
+            >
+              <thead>
                 <tr
-                  key={role._id}
                   style={{
-                    borderBottom: "1px solid #e5e7eb",
-                    background: selectedRoleIds.has(role._id)
-                      ? "#fef2f2"
-                      : "white",
+                    backgroundColor: "#f9fafb",
+                    borderBottom: "1px solid #E4E7EC",
                   }}
                 >
-                  <td style={{ padding: "12px 16px" }}>
-                    {role.type === "custom" ? (
-                      <input
-                        type="checkbox"
-                        checked={selectedRoleIds.has(role._id)}
-                        onChange={() => toggleRoleSelection(role._id)}
-                        style={{
-                          cursor: "pointer",
-                          width: "16px",
-                          height: "16px",
-                        }}
-                      />
-                    ) : (
-                      <span
-                        style={{ display: "inline-block", width: "16px" }}
-                      />
-                    )}
-                  </td>
-                  <td style={{ padding: "12px 16px" }}>
-                    <button
-                      onClick={() =>
-                        role.type === "custom" && toggleMasterRole(role)
+                  <th style={{ padding: "12px 16px", width: "40px" }}>
+                    <input
+                      type="checkbox"
+                      title="Select all deletable roles"
+                      checked={
+                        filteredRoles.filter((r) => r.type === "custom")
+                          .length > 0 &&
+                        filteredRoles
+                          .filter((r) => r.type === "custom")
+                          .every((r) => selectedRoleIds.has(r._id))
                       }
-                      disabled={role.type === "system"}
+                      onChange={toggleSelectAllRoles}
                       style={{
-                        background: "none",
-                        border: "none",
-                        cursor:
-                          role.type === "custom" ? "pointer" : "not-allowed",
-                        color: role.isMaster ? "#f59e0b" : "#d1d5db",
+                        cursor: "pointer",
+                        width: "16px",
+                        height: "16px",
                       }}
-                      title={role.isMaster ? "Master Role" : "Mark as Master"}
-                    >
-                      {role.isMaster ? (
-                        <MdStar size={20} />
-                      ) : (
-                        <MdStarBorder size={20} />
-                      )}
-                    </button>
-                  </td>
-                  <td style={{ padding: "12px 16px" }}>
-                    <div>
-                      <div style={{ fontWeight: "500", color: "#111827" }}>
-                        {role.name}
-                      </div>
-                      {role.description && (
-                        <div style={{ fontSize: "12px", color: "#6b7280" }}>
-                          {role.description}
-                        </div>
-                      )}
-                    </div>
-                  </td>
-                  <td
+                    />
+                  </th>
+                  <th
                     style={{
                       padding: "12px 16px",
+                      textAlign: "left",
+                      fontSize: "12px",
+                      fontWeight: "600",
                       color: "#6b7280",
-                      fontSize: "14px",
+                      textTransform: "uppercase",
                     }}
                   >
-                    {role.code}
-                  </td>
-                  <td style={{ padding: "12px 16px" }}>
-                    <span
-                      style={{
-                        padding: "4px 8px",
-                        borderRadius: "4px",
-                        fontSize: "12px",
-                        fontWeight: "500",
-                        backgroundColor:
-                          role.type === "system" ? "#dbeafe" : "#fef3c7",
-                        color: role.type === "system" ? "#1e40af" : "#92400e",
-                      }}
-                    >
-                      {role.type}
-                    </span>
-                  </td>
-                  <td
+                    Master
+                  </th>
+                  <th
                     style={{
                       padding: "12px 16px",
+                      textAlign: "left",
+                      fontSize: "12px",
+                      fontWeight: "600",
                       color: "#6b7280",
-                      fontSize: "14px",
+                      textTransform: "uppercase",
                     }}
                   >
-                    {Array.isArray(role.permissions)
-                      ? role.permissions.length
-                      : 0}
-                  </td>
-                  <td
+                    Role Name
+                  </th>
+                  <th
                     style={{
                       padding: "12px 16px",
+                      textAlign: "left",
+                      fontSize: "12px",
+                      fontWeight: "600",
                       color: "#6b7280",
-                      fontSize: "14px",
+                      textTransform: "uppercase",
                     }}
                   >
-                    {role.projects?.length || 0}
-                  </td>
-                  <td
+                    Code
+                  </th>
+                  <th
                     style={{
                       padding: "12px 16px",
+                      textAlign: "left",
+                      fontSize: "12px",
+                      fontWeight: "600",
                       color: "#6b7280",
-                      fontSize: "14px",
+                      textTransform: "uppercase",
                     }}
                   >
-                    {role.agentCount || 0}
-                  </td>
-                  <td style={{ padding: "12px 16px", textAlign: "right" }}>
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: "8px",
-                        justifyContent: "flex-end",
-                      }}
-                    >
-                      {role.isMaster && (
-                        <button
-                          onClick={() => openCloneModal(role)}
-                          style={{
-                            padding: "6px",
-                            backgroundColor: "transparent",
-                            border: "none",
-                            cursor: "pointer",
-                            color: "#10b981",
-                          }}
-                          title="Clone Role"
-                        >
-                          <MdContentCopy size={18} />
-                        </button>
-                      )}
-                      <button
-                        onClick={() => openEditModal(role)}
-                        style={{
-                          padding: "6px",
-                          backgroundColor: "transparent",
-                          border: "none",
-                          cursor: "pointer",
-                          color: "#3b82f6",
-                        }}
-                        title="Edit Role"
-                      >
-                        <MdEdit size={18} />
-                      </button>
-                      {role.type === "custom" && (
-                        <button
-                          onClick={() => handleDeleteRole(role._id)}
-                          style={{
-                            padding: "6px",
-                            backgroundColor: "transparent",
-                            border: "none",
-                            cursor: "pointer",
-                            color: "#ef4444",
-                          }}
-                          title="Delete Role"
-                        >
-                          <MdDelete size={18} />
-                        </button>
-                      )}
-                    </div>
-                  </td>
+                    Type
+                  </th>
+                  <th
+                    style={{
+                      padding: "12px 16px",
+                      textAlign: "left",
+                      fontSize: "12px",
+                      fontWeight: "600",
+                      color: "#6b7280",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Permissions
+                  </th>
+                  <th
+                    style={{
+                      padding: "12px 16px",
+                      textAlign: "left",
+                      fontSize: "12px",
+                      fontWeight: "600",
+                      color: "#6b7280",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Projects
+                  </th>
+                  <th
+                    style={{
+                      padding: "12px 16px",
+                      textAlign: "left",
+                      fontSize: "12px",
+                      fontWeight: "600",
+                      color: "#6b7280",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Agents
+                  </th>
+                  <th
+                    style={{
+                      padding: "12px 16px",
+                      textAlign: "right",
+                      fontSize: "12px",
+                      fontWeight: "600",
+                      color: "#6b7280",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Actions
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filteredRoles.map((role) => (
+                  <tr
+                    key={role._id}
+                    style={{
+                      borderBottom: "1px solid #F2F4F7",
+                      background: selectedRoleIds.has(role._id)
+                        ? "#EFF6FF"
+                        : "white",
+                    }}
+                  >
+                    <td style={{ padding: "12px 16px" }}>
+                      {role.type === "custom" ? (
+                        <input
+                          type="checkbox"
+                          checked={selectedRoleIds.has(role._id)}
+                          onChange={() => toggleRoleSelection(role._id)}
+                          style={{
+                            cursor: "pointer",
+                            width: "16px",
+                            height: "16px",
+                          }}
+                        />
+                      ) : (
+                        <span
+                          style={{ display: "inline-block", width: "16px" }}
+                        />
+                      )}
+                    </td>
+                    <td style={{ padding: "12px 16px" }}>
+                      <button
+                        onClick={() =>
+                          role.type === "custom" && toggleMasterRole(role)
+                        }
+                        disabled={role.type === "system"}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          cursor:
+                            role.type === "custom" ? "pointer" : "not-allowed",
+                          color: role.isMaster ? "#f59e0b" : "#d1d5db",
+                        }}
+                        title={role.isMaster ? "Master Role" : "Mark as Master"}
+                      >
+                        {role.isMaster ? (
+                          <MdStar size={20} />
+                        ) : (
+                          <MdStarBorder size={20} />
+                        )}
+                      </button>
+                    </td>
+                    <td style={{ padding: "12px 16px" }}>
+                      <div>
+                        <div style={{ fontWeight: "500", color: "#111827" }}>
+                          {role.name}
+                        </div>
+                        {role.description && (
+                          <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                            {role.description}
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                    <td
+                      style={{
+                        padding: "12px 16px",
+                        color: "#6b7280",
+                        fontSize: "14px",
+                        fontFamily: '"Fira Code", "Consolas", monospace',
+                        letterSpacing: "0.02em",
+                      }}
+                    >
+                      {role.code}
+                    </td>
+                    <td style={{ padding: "12px 16px" }}>
+                      <span
+                        style={{
+                          padding: "4px 8px",
+                          borderRadius: "999px",
+                          fontSize: "12px",
+                          fontWeight: "600",
+                          backgroundColor:
+                            role.type === "system" ? "#dbeafe" : "#fef3c7",
+                          color: role.type === "system" ? "#1e40af" : "#92400e",
+                          textTransform: "capitalize",
+                        }}
+                      >
+                        {role.type}
+                      </span>
+                    </td>
+                    <td
+                      style={{
+                        padding: "12px 16px",
+                        color: "#6b7280",
+                        fontSize: "14px",
+                      }}
+                    >
+                      {Array.isArray(role.permissions)
+                        ? role.permissions.length
+                        : 0}
+                    </td>
+                    <td
+                      style={{
+                        padding: "12px 16px",
+                        color: "#6b7280",
+                        fontSize: "14px",
+                      }}
+                    >
+                      {role.projects?.length || 0}
+                    </td>
+                    <td
+                      style={{
+                        padding: "12px 16px",
+                        color: "#6b7280",
+                        fontSize: "14px",
+                      }}
+                    >
+                      {role.agentCount || 0}
+                    </td>
+                    <td style={{ padding: "12px 16px", textAlign: "right" }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: "8px",
+                          justifyContent: "flex-end",
+                        }}
+                      >
+                        {role.isMaster && (
+                          <button
+                            onClick={() => openCloneModal(role)}
+                            style={{
+                              padding: "6px 8px",
+                              backgroundColor: "#ecfdf5",
+                              border: "1px solid #bbf7d0",
+                              borderRadius: "8px",
+                              cursor: "pointer",
+                              color: "#047857",
+                            }}
+                            title="Clone Role"
+                          >
+                            <MdContentCopy size={18} />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => openEditModal(role)}
+                          style={{
+                            padding: "6px 8px",
+                            backgroundColor: "#eff6ff",
+                            border: "1px solid #bfdbfe",
+                            borderRadius: "8px",
+                            cursor: "pointer",
+                            color: "#1d4ed8",
+                          }}
+                          title="Edit Role"
+                        >
+                          <MdEdit size={18} />
+                        </button>
+                        {role.type === "custom" && (
+                          <button
+                            onClick={() => handleDeleteRole(role._id)}
+                            style={{
+                              padding: "6px 8px",
+                              backgroundColor: "#fef2f2",
+                              border: "1px solid #fecaca",
+                              borderRadius: "8px",
+                              cursor: "pointer",
+                              color: "#b91c1c",
+                            }}
+                            title="Delete Role"
+                          >
+                            <MdDelete size={18} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         {/* Create/Edit Role Modal */}
@@ -1079,45 +1410,65 @@ const RBACSetup = () => {
               left: 0,
               right: 0,
               bottom: 0,
-              backgroundColor: "rgba(0, 0, 0, 0.5)",
+              backgroundColor: "rgba(15, 23, 42, 0.45)",
+              backdropFilter: "blur(3px)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              zIndex: 1000,
+              zIndex: 1200,
+              padding: isMobile ? "12px" : "20px",
             }}
           >
             <div
               style={{
                 backgroundColor: "white",
-                borderRadius: "8px",
-                width: "90%",
+                borderRadius: "16px",
+                width: "100%",
                 maxWidth: "900px",
                 maxHeight: "90vh",
                 overflow: "auto",
+                border: "1px solid #e5eaf4",
+                boxShadow: "0 26px 70px rgba(15, 23, 42, 0.24)",
               }}
             >
               <div
                 style={{
-                  padding: "20px 24px",
-                  borderBottom: "1px solid #e5e7eb",
+                  padding: isMobile ? "16px" : "18px 24px",
+                  borderBottom: "1px solid #e6ebf3",
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
+                  background: "linear-gradient(180deg, #fbfcff 0%, #f6f9ff 100%)",
                 }}
               >
-                <h2 style={{ fontSize: "20px", fontWeight: "600" }}>
+                <h2
+                  style={{
+                    fontSize: isMobile ? "18px" : "20px",
+                    fontWeight: 700,
+                    margin: 0,
+                    color: "#111827",
+                  }}
+                >
                   {editingRole ? "Edit Role" : "Create New Role"}
                 </h2>
                 <button
                   onClick={() => {
                     setShowRoleModal(false);
                     setEditingRole(null);
+                    setShowRoleProjectDropdown(false);
+                    setRoleProjectSearchTerm("");
                     resetForm();
                   }}
                   style={{
-                    background: "none",
-                    border: "none",
+                    background: "#f3f4f6",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: "8px",
+                    width: "34px",
+                    height: "34px",
                     cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
                   }}
                 >
                   <MdClose size={24} />
@@ -1127,14 +1478,23 @@ const RBACSetup = () => {
               <form
                 onSubmit={editingRole ? handleUpdateRole : handleCreateRole}
               >
-                <div style={{ padding: "24px" }}>
+                <div style={{ padding: isMobile ? "14px" : "20px 24px" }}>
                   {/* Basic Info */}
-                  <div style={{ marginBottom: "24px" }}>
+                  <div
+                    style={{
+                      marginBottom: "18px",
+                      border: "1px solid #e8edf5",
+                      borderRadius: "12px",
+                      padding: isMobile ? "12px" : "14px",
+                      backgroundColor: "#fbfdff",
+                    }}
+                  >
                     <h3
                       style={{
                         fontSize: "16px",
-                        fontWeight: "600",
-                        marginBottom: "16px",
+                        fontWeight: "700",
+                        margin: "0 0 14px 0",
+                        color: "#1f2937",
                       }}
                     >
                       Basic Information
@@ -1142,7 +1502,7 @@ const RBACSetup = () => {
                     <div
                       style={{
                         display: "grid",
-                        gridTemplateColumns: "1fr 1fr",
+                        gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
                         gap: "16px",
                       }}
                     >
@@ -1176,10 +1536,12 @@ const RBACSetup = () => {
                           }}
                           style={{
                             width: "100%",
+                            height: "40px",
                             padding: "8px 12px",
-                            border: "1px solid #d1d5db",
-                            borderRadius: "6px",
+                            border: "1px solid #d7deea",
+                            borderRadius: "10px",
                             fontSize: "14px",
+                            boxSizing: "border-box",
                           }}
                         />
                       </div>
@@ -1216,10 +1578,12 @@ const RBACSetup = () => {
                           disabled={editingRole?.type === "system"}
                           style={{
                             width: "100%",
+                            height: "40px",
                             padding: "8px 12px",
-                            border: "1px solid #d1d5db",
-                            borderRadius: "6px",
+                            border: "1px solid #d7deea",
+                            borderRadius: "10px",
                             fontSize: "14px",
+                            boxSizing: "border-box",
                             backgroundColor:
                               editingRole?.type === "system"
                                 ? "#f3f4f6"
@@ -1252,10 +1616,12 @@ const RBACSetup = () => {
                         style={{
                           width: "100%",
                           padding: "8px 12px",
-                          border: "1px solid #d1d5db",
-                          borderRadius: "6px",
+                          border: "1px solid #d7deea",
+                          borderRadius: "10px",
                           fontSize: "14px",
                           resize: "vertical",
+                          boxSizing: "border-box",
+                          minHeight: "88px",
                         }}
                       />
                     </div>
@@ -1288,12 +1654,14 @@ const RBACSetup = () => {
                           style={{
                             padding: "12px",
                             backgroundColor: "#eff6ff",
-                            border: "1px solid #3b82f6",
-                            borderRadius: "6px",
+                            border: "1px solid #bfdbfe",
+                            borderRadius: "10px",
                             marginBottom: "8px",
                             display: "flex",
                             justifyContent: "space-between",
                             alignItems: "center",
+                            gap: "8px",
+                            flexWrap: isMobile ? "wrap" : "nowrap",
                           }}
                         >
                           <div>
@@ -1348,10 +1716,10 @@ const RBACSetup = () => {
                             style={{
                               padding: "6px 12px",
                               fontSize: "12px",
-                              backgroundColor: "#ef4444",
+                              backgroundColor: "#dc2626",
                               color: "white",
                               border: "none",
-                              borderRadius: "4px",
+                              borderRadius: "8px",
                               cursor: "pointer",
                             }}
                           >
@@ -1372,9 +1740,10 @@ const RBACSetup = () => {
                         style={{
                           width: "100%",
                           padding: "8px",
-                          border: "1px solid #d1d5db",
-                          borderRadius: "6px",
+                          border: "1px solid #d7deea",
+                          borderRadius: "10px",
                           fontSize: "14px",
+                          boxSizing: "border-box",
                         }}
                       />
                       {selectedDocument && (
@@ -1422,11 +1791,13 @@ const RBACSetup = () => {
                         }
                         style={{
                           width: "100%",
+                          height: "40px",
                           padding: "8px 12px",
-                          border: "1px solid #d1d5db",
-                          borderRadius: "6px",
+                          border: "1px solid #d7deea",
+                          borderRadius: "10px",
                           fontSize: "14px",
                           backgroundColor: "white",
+                          boxSizing: "border-box",
                         }}
                       >
                         <option value="custom">Custom (All Permissions)</option>
@@ -1531,12 +1902,21 @@ const RBACSetup = () => {
 
                   {/* Project Mapping */}
                   {editingRole?.type !== "system" && (
-                    <div style={{ marginBottom: "24px" }}>
+                    <div
+                      style={{
+                        marginBottom: "18px",
+                        border: "1px solid #e8edf5",
+                        borderRadius: "12px",
+                        padding: isMobile ? "12px" : "14px",
+                        backgroundColor: "#fbfdff",
+                      }}
+                    >
                       <h3
                         style={{
                           fontSize: "16px",
-                          fontWeight: "600",
+                          fontWeight: "700",
                           marginBottom: "8px",
+                          marginTop: 0,
                         }}
                       >
                         Project Mapping
@@ -1581,80 +1961,175 @@ const RBACSetup = () => {
                       ) : (
                         <div
                           style={{
-                            display: "grid",
-                            gridTemplateColumns:
-                              "repeat(auto-fill, minmax(250px, 1fr))",
-                            gap: "12px",
-                            padding: "16px",
-                            backgroundColor: "#f9fafb",
-                            borderRadius: "6px",
-                            border: "1px solid #e5e7eb",
+                            position: "relative",
+                            padding: "10px",
+                            backgroundColor: "#f8fbff",
+                            borderRadius: "10px",
+                            border: "1px solid #e2e8f0",
                           }}
                         >
-                          {projects.map((project) => (
-                            <label
-                              key={project._id}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setShowRoleProjectDropdown((prev) => !prev)
+                            }
+                            style={{
+                              width: "100%",
+                              height: "40px",
+                              borderRadius: "10px",
+                              border: "1px solid #d7deea",
+                              background: "white",
+                              cursor: "pointer",
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              padding: "0 12px",
+                              fontSize: "14px",
+                              color: "#1f2937",
+                              fontWeight: 500,
+                            }}
+                          >
+                            <span>
+                              {formData.projects.length === 0
+                                ? "Select projects"
+                                : `${formData.projects.length} project${formData.projects.length > 1 ? "s" : ""} selected`}
+                            </span>
+                            <MdExpandMore
+                              size={20}
                               style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "10px",
-                                cursor: "pointer",
-                                padding: "8px 12px",
-                                backgroundColor: formData.projects.includes(
-                                  project._id,
-                                )
-                                  ? "#eff6ff"
-                                  : "white",
-                                borderRadius: "6px",
-                                border: formData.projects.includes(project._id)
-                                  ? "1px solid #3b82f6"
-                                  : "1px solid #e5e7eb",
-                                transition: "all 0.2s",
+                                transform: showRoleProjectDropdown
+                                  ? "rotate(180deg)"
+                                  : "rotate(0deg)",
+                                transition: "transform 0.2s",
+                                color: "#64748b",
+                              }}
+                            />
+                          </button>
+
+                          {showRoleProjectDropdown && (
+                            <div
+                              style={{
+                                marginTop: "10px",
+                                border: "1px solid #d7deea",
+                                borderRadius: "10px",
+                                background: "white",
+                                overflow: "hidden",
                               }}
                             >
-                              <input
-                                type="checkbox"
-                                checked={formData.projects.includes(
-                                  project._id,
-                                )}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setFormData({
-                                      ...formData,
-                                      projects: [
-                                        ...formData.projects,
-                                        project._id,
-                                      ],
-                                    });
-                                  } else {
-                                    setFormData({
-                                      ...formData,
-                                      projects: formData.projects.filter(
-                                        (id) => id !== project._id,
-                                      ),
-                                    });
-                                  }
-                                }}
+                              <div
                                 style={{
-                                  width: "18px",
-                                  height: "18px",
-                                  cursor: "pointer",
-                                }}
-                              />
-                              <span
-                                style={{
-                                  fontSize: "14px",
-                                  fontWeight: formData.projects.includes(
-                                    project._id,
-                                  )
-                                    ? "500"
-                                    : "400",
+                                  padding: "10px",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "8px",
                                 }}
                               >
-                                {project.name}
-                              </span>
-                            </label>
-                          ))}
+                                <MdSearch size={16} color="#64748b" />
+                                <input
+                                  type="text"
+                                  value={roleProjectSearchTerm}
+                                  onChange={(e) =>
+                                    setRoleProjectSearchTerm(e.target.value)
+                                  }
+                                  placeholder="Search project name or code..."
+                                  style={{
+                                    width: "100%",
+                                    height: "36px",
+                                    borderRadius: "8px",
+                                    border: "1px solid #d7deea",
+                                    padding: "0 10px",
+                                    fontSize: "13px",
+                                    boxSizing: "border-box",
+                                  }}
+                                />
+                              </div>
+
+                              <div
+                                style={{
+                                  maxHeight: "220px",
+                                  overflowY: "auto",
+                                  borderTop: "1px solid #eef2f7",
+                                  padding: "8px",
+                                  display: "grid",
+                                  gap: "6px",
+                                }}
+                              >
+                                {roleProjectOptions.length === 0 && (
+                                  <div
+                                    style={{
+                                      fontSize: "12px",
+                                      color: "#64748b",
+                                      padding: "6px 4px",
+                                    }}
+                                  >
+                                    No projects found.
+                                  </div>
+                                )}
+
+                                {roleProjectOptions.map((project) => (
+                                  <label
+                                    key={project._id}
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: "8px",
+                                      cursor: "pointer",
+                                      border: "1px solid #e5e7eb",
+                                      borderRadius: "8px",
+                                      padding: "8px 10px",
+                                      backgroundColor: formData.projects.includes(
+                                        project._id,
+                                      )
+                                        ? "#eff6ff"
+                                        : "#fff",
+                                    }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={formData.projects.includes(
+                                        project._id,
+                                      )}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setFormData({
+                                            ...formData,
+                                            projects: [
+                                              ...formData.projects,
+                                              project._id,
+                                            ],
+                                          });
+                                        } else {
+                                          setFormData({
+                                            ...formData,
+                                            projects: formData.projects.filter(
+                                              (id) => id !== project._id,
+                                            ),
+                                          });
+                                        }
+                                      }}
+                                    />
+                                    <span style={{ fontSize: "14px" }}>
+                                      {project.name}
+                                    </span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {formData.projects.length > 0 && (
+                            <div
+                              style={{
+                                marginTop: "8px",
+                                fontSize: "12px",
+                                color: "#2563eb",
+                                fontWeight: 500,
+                              }}
+                            >
+                              Selected: {formData.projects.length} project
+                              {formData.projects.length > 1 ? "s" : ""}
+                            </div>
+                          )}
                         </div>
                       )}
                       <p
@@ -1680,31 +2155,51 @@ const RBACSetup = () => {
                   )}
 
                   {/* Permissions */}
-                  <div>
+                  <div
+                    style={{
+                      border: "1px solid #e8edf5",
+                      borderRadius: "12px",
+                      padding: isMobile ? "12px" : "14px",
+                      backgroundColor: "#fbfdff",
+                    }}
+                  >
                     <h3
                       style={{
                         fontSize: "16px",
-                        fontWeight: "600",
-                        marginBottom: "16px",
+                        fontWeight: "700",
+                        marginBottom: "14px",
+                        marginTop: 0,
                       }}
                     >
                       Permissions{" "}
                       {formData.roleType !== "custom" &&
                         `(${formData.roleType.replace("_", " ").toUpperCase()} role)`}
+                      <span
+                        style={{
+                          marginLeft: "10px",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          color: "#1d4ed8",
+                          backgroundColor: "#eff6ff",
+                          border: "1px solid #bfdbfe",
+                          borderRadius: "999px",
+                          padding: "2px 8px",
+                          verticalAlign: "middle",
+                        }}
+                      >
+                        {selectedFilteredPermissionCount}/
+                        {totalFilteredPermissionCount} selected
+                      </span>
                     </h3>
                     <div
                       style={{
-                        border: "1px solid #e5e7eb",
-                        borderRadius: "6px",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: "10px",
                         overflow: "hidden",
                       }}
                     >
-                      {Object.entries(
-                        getFilteredPermissions(
-                          groupedPermissions,
-                          formData.roleType,
-                        ),
-                      ).map(([category, modules]) => (
+                      {permissionCategoryStats.map(
+                        ({ category, modules, total, selected }) => (
                         <div
                           key={category}
                           style={{ borderBottom: "1px solid #e5e7eb" }}
@@ -1715,7 +2210,7 @@ const RBACSetup = () => {
                             style={{
                               width: "100%",
                               padding: "12px 16px",
-                              backgroundColor: "#f9fafb",
+                              backgroundColor: "#f7f9fc",
                               border: "none",
                               display: "flex",
                               justifyContent: "space-between",
@@ -1727,11 +2222,37 @@ const RBACSetup = () => {
                             }}
                           >
                             <span>{getCategoryLabel(category)}</span>
-                            {expandedCategories.has(category) ? (
-                              <MdExpandLess size={20} />
-                            ) : (
-                              <MdExpandMore size={20} />
-                            )}
+                            <span
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "8px",
+                                color: "#475569",
+                                fontSize: "12px",
+                                fontWeight: 600,
+                              }}
+                            >
+                              <span
+                                style={{
+                                  color: selected > 0 ? "#1d4ed8" : "#64748b",
+                                  backgroundColor:
+                                    selected > 0 ? "#eff6ff" : "#f1f5f9",
+                                  border:
+                                    selected > 0
+                                      ? "1px solid #bfdbfe"
+                                      : "1px solid #e2e8f0",
+                                  borderRadius: "999px",
+                                  padding: "2px 8px",
+                                }}
+                              >
+                                {selected}/{total}
+                              </span>
+                              {expandedCategories.has(category) ? (
+                                <MdExpandLess size={20} />
+                              ) : (
+                                <MdExpandMore size={20} />
+                              )}
+                            </span>
                           </button>
                           {expandedCategories.has(category) && (
                             <div style={{ padding: "16px" }}>
@@ -1857,11 +2378,12 @@ const RBACSetup = () => {
 
                 <div
                   style={{
-                    padding: "16px 24px",
-                    borderTop: "1px solid #e5e7eb",
+                    padding: isMobile ? "12px" : "14px 24px",
+                    borderTop: "1px solid #e6ebf3",
                     display: "flex",
                     justifyContent: "flex-end",
                     gap: "12px",
+                    backgroundColor: "#fbfcff",
                   }}
                 >
                   <button
@@ -1869,16 +2391,19 @@ const RBACSetup = () => {
                     onClick={() => {
                       setShowRoleModal(false);
                       setEditingRole(null);
+                      setShowRoleProjectDropdown(false);
+                      setRoleProjectSearchTerm("");
                       resetForm();
                     }}
                     style={{
-                      padding: "8px 16px",
+                      height: "40px",
+                      padding: "0 16px",
                       backgroundColor: "white",
                       color: "#374151",
-                      border: "1px solid #d1d5db",
-                      borderRadius: "6px",
+                      border: "1px solid #d7deea",
+                      borderRadius: "10px",
                       fontSize: "14px",
-                      fontWeight: "500",
+                      fontWeight: "600",
                       cursor: "pointer",
                     }}
                   >
@@ -1890,14 +2415,16 @@ const RBACSetup = () => {
                       display: "flex",
                       alignItems: "center",
                       gap: "8px",
-                      padding: "8px 16px",
-                      backgroundColor: "#3b82f6",
+                      height: "40px",
+                      padding: "0 16px",
+                      backgroundColor: "#2563eb",
                       color: "white",
                       border: "none",
-                      borderRadius: "6px",
+                      borderRadius: "10px",
                       fontSize: "14px",
-                      fontWeight: "500",
+                      fontWeight: "600",
                       cursor: "pointer",
+                      boxShadow: "0 4px 14px rgba(37, 99, 235, 0.25)",
                     }}
                   >
                     <MdSave size={18} />
@@ -1918,56 +2445,96 @@ const RBACSetup = () => {
               left: 0,
               right: 0,
               bottom: 0,
-              backgroundColor: "rgba(0, 0, 0, 0.5)",
+              backgroundColor: "rgba(15, 23, 42, 0.45)",
+              backdropFilter: "blur(3px)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              zIndex: 1000,
+              zIndex: 1200,
+              padding: isMobile ? "12px" : "20px",
             }}
           >
             <div
               style={{
                 backgroundColor: "white",
-                borderRadius: "8px",
-                width: "90%",
+                borderRadius: "16px",
+                width: "100%",
                 maxWidth: "500px",
+                maxHeight: "90vh",
+                border: "1px solid #e5eaf4",
+                boxShadow: "0 26px 70px rgba(15, 23, 42, 0.24)",
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
               }}
             >
               <div
                 style={{
-                  padding: "20px 24px",
-                  borderBottom: "1px solid #e5e7eb",
+                  padding: isMobile ? "16px" : "18px 24px",
+                  borderBottom: "1px solid #e6ebf3",
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
+                  background: "linear-gradient(180deg, #fbfcff 0%, #f6f9ff 100%)",
                 }}
               >
-                <h2 style={{ fontSize: "20px", fontWeight: "600" }}>
+                <h2
+                  style={{
+                    fontSize: isMobile ? "18px" : "20px",
+                    fontWeight: 700,
+                    margin: 0,
+                    color: "#111827",
+                  }}
+                >
                   Clone Role
                 </h2>
                 <button
                   onClick={() => {
                     setShowCloneModal(false);
                     setCloneMasterRole(null);
+                    setShowCloneProjectDropdown(false);
+                    setCloneProjectSearchTerm("");
                     resetForm();
                   }}
                   style={{
-                    background: "none",
-                    border: "none",
+                    background: "#f3f4f6",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: "8px",
+                    width: "34px",
+                    height: "34px",
                     cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
                   }}
                 >
                   <MdClose size={24} />
                 </button>
               </div>
 
-              <form onSubmit={handleCloneRole}>
-                <div style={{ padding: "24px" }}>
+              <form
+                onSubmit={handleCloneRole}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  minHeight: 0,
+                  flex: 1,
+                }}
+              >
+                <div
+                  style={{
+                    padding: isMobile ? "14px" : "18px 24px",
+                    overflowY: "auto",
+                    flex: 1,
+                    minHeight: 0,
+                  }}
+                >
                   <div
                     style={{
                       padding: "12px",
                       backgroundColor: "#eff6ff",
-                      borderRadius: "6px",
+                      border: "1px solid #bfdbfe",
+                      borderRadius: "10px",
                       marginBottom: "16px",
                       fontSize: "14px",
                       color: "#1e40af",
@@ -2008,10 +2575,12 @@ const RBACSetup = () => {
                       }}
                       style={{
                         width: "100%",
+                        height: "40px",
                         padding: "8px 12px",
-                        border: "1px solid #d1d5db",
-                        borderRadius: "6px",
+                        border: "1px solid #d7deea",
+                        borderRadius: "10px",
                         fontSize: "14px",
+                        boxSizing: "border-box",
                       }}
                     />
                   </div>
@@ -2048,11 +2617,13 @@ const RBACSetup = () => {
                       }
                       style={{
                         width: "100%",
+                        height: "40px",
                         padding: "8px 12px",
-                        border: "1px solid #d1d5db",
-                        borderRadius: "6px",
+                        border: "1px solid #d7deea",
+                        borderRadius: "10px",
                         fontSize: "14px",
                         backgroundColor: "#f9fafb",
+                        boxSizing: "border-box",
                       }}
                       placeholder="Auto-generated from name"
                     />
@@ -2081,10 +2652,12 @@ const RBACSetup = () => {
                       style={{
                         width: "100%",
                         padding: "8px 12px",
-                        border: "1px solid #d1d5db",
-                        borderRadius: "6px",
+                        border: "1px solid #d7deea",
+                        borderRadius: "10px",
                         fontSize: "14px",
                         resize: "vertical",
+                        boxSizing: "border-box",
+                        minHeight: "88px",
                       }}
                     />
                   </div>
@@ -2100,52 +2673,189 @@ const RBACSetup = () => {
                     >
                       Assign to Projects
                     </label>
-                    <div style={{ display: "grid", gap: "8px" }}>
-                      {projects.map((project) => (
-                        <label
-                          key={project._id}
+                    <div
+                      style={{
+                        position: "relative",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: "10px",
+                        padding: "10px",
+                        backgroundColor: "#f8fbff",
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setShowCloneProjectDropdown((prev) => !prev)
+                        }
+                        style={{
+                          width: "100%",
+                          height: "40px",
+                          borderRadius: "10px",
+                          border: "1px solid #d7deea",
+                          background: "white",
+                          cursor: "pointer",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          padding: "0 12px",
+                          fontSize: "14px",
+                          color: "#1f2937",
+                          fontWeight: 500,
+                        }}
+                      >
+                        <span>
+                          {formData.projects.length === 0
+                            ? "Select projects"
+                            : `${formData.projects.length} project${formData.projects.length > 1 ? "s" : ""} selected`}
+                        </span>
+                        <MdExpandMore
+                          size={20}
                           style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "8px",
-                            cursor: "pointer",
+                            transform: showCloneProjectDropdown
+                              ? "rotate(180deg)"
+                              : "rotate(0deg)",
+                            transition: "transform 0.2s",
+                            color: "#64748b",
+                          }}
+                        />
+                      </button>
+
+                      {showCloneProjectDropdown && (
+                        <div
+                          style={{
+                            marginTop: "10px",
+                            border: "1px solid #d7deea",
+                            borderRadius: "10px",
+                            background: "white",
+                            overflow: "hidden",
                           }}
                         >
-                          <input
-                            type="checkbox"
-                            checked={formData.projects.includes(project._id)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setFormData({
-                                  ...formData,
-                                  projects: [...formData.projects, project._id],
-                                });
-                              } else {
-                                setFormData({
-                                  ...formData,
-                                  projects: formData.projects.filter(
-                                    (id) => id !== project._id,
-                                  ),
-                                });
-                              }
+                          <div
+                            style={{
+                              padding: "10px",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "8px",
                             }}
-                          />
-                          <span style={{ fontSize: "14px" }}>
-                            {project.name}
-                          </span>
-                        </label>
-                      ))}
+                          >
+                            <MdSearch size={16} color="#64748b" />
+                            <input
+                              type="text"
+                              value={cloneProjectSearchTerm}
+                              onChange={(e) =>
+                                setCloneProjectSearchTerm(e.target.value)
+                              }
+                              placeholder="Search project name or code..."
+                              style={{
+                                width: "100%",
+                                height: "36px",
+                                borderRadius: "8px",
+                                border: "1px solid #d7deea",
+                                padding: "0 10px",
+                                fontSize: "13px",
+                                boxSizing: "border-box",
+                              }}
+                            />
+                          </div>
+
+                          <div
+                            style={{
+                              maxHeight: "220px",
+                              overflowY: "auto",
+                              borderTop: "1px solid #eef2f7",
+                              padding: "8px",
+                              display: "grid",
+                              gap: "6px",
+                            }}
+                          >
+                            {cloneProjectOptions.length === 0 && (
+                              <div
+                                style={{
+                                  fontSize: "12px",
+                                  color: "#64748b",
+                                  padding: "6px 4px",
+                                }}
+                              >
+                                No projects found.
+                              </div>
+                            )}
+
+                            {cloneProjectOptions.map((project) => (
+                              <label
+                                key={project._id}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "8px",
+                                  cursor: "pointer",
+                                  border: "1px solid #e5e7eb",
+                                  borderRadius: "8px",
+                                  padding: "8px 10px",
+                                  backgroundColor: formData.projects.includes(
+                                    project._id,
+                                  )
+                                    ? "#eff6ff"
+                                    : "#fff",
+                                }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={formData.projects.includes(
+                                    project._id,
+                                  )}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setFormData({
+                                        ...formData,
+                                        projects: [
+                                          ...formData.projects,
+                                          project._id,
+                                        ],
+                                      });
+                                    } else {
+                                      setFormData({
+                                        ...formData,
+                                        projects: formData.projects.filter(
+                                          (id) => id !== project._id,
+                                        ),
+                                      });
+                                    }
+                                  }}
+                                />
+                                <span style={{ fontSize: "14px" }}>
+                                  {project.name}
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {formData.projects.length > 0 && (
+                        <div
+                          style={{
+                            marginTop: "8px",
+                            fontSize: "12px",
+                            color: "#2563eb",
+                            fontWeight: 500,
+                          }}
+                        >
+                          Selected: {formData.projects.length} project
+                          {formData.projects.length > 1 ? "s" : ""}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
 
                 <div
                   style={{
-                    padding: "16px 24px",
-                    borderTop: "1px solid #e5e7eb",
+                    padding: isMobile ? "12px" : "14px 24px",
+                    borderTop: "1px solid #e6ebf3",
                     display: "flex",
                     justifyContent: "flex-end",
                     gap: "12px",
+                    backgroundColor: "#fbfcff",
                   }}
                 >
                   <button
@@ -2153,16 +2863,19 @@ const RBACSetup = () => {
                     onClick={() => {
                       setShowCloneModal(false);
                       setCloneMasterRole(null);
+                      setShowCloneProjectDropdown(false);
+                      setCloneProjectSearchTerm("");
                       resetForm();
                     }}
                     style={{
-                      padding: "8px 16px",
+                      height: "40px",
+                      padding: "0 16px",
                       backgroundColor: "white",
                       color: "#374151",
-                      border: "1px solid #d1d5db",
-                      borderRadius: "6px",
+                      border: "1px solid #d7deea",
+                      borderRadius: "10px",
                       fontSize: "14px",
-                      fontWeight: "500",
+                      fontWeight: "600",
                       cursor: "pointer",
                     }}
                   >
@@ -2174,14 +2887,16 @@ const RBACSetup = () => {
                       display: "flex",
                       alignItems: "center",
                       gap: "8px",
-                      padding: "8px 16px",
-                      backgroundColor: "#10b981",
+                      height: "40px",
+                      padding: "0 16px",
+                      backgroundColor: "#059669",
                       color: "white",
                       border: "none",
-                      borderRadius: "6px",
+                      borderRadius: "10px",
                       fontSize: "14px",
-                      fontWeight: "500",
+                      fontWeight: "600",
                       cursor: "pointer",
+                      boxShadow: "0 4px 14px rgba(5, 150, 105, 0.25)",
                     }}
                   >
                     <MdContentCopy size={18} />

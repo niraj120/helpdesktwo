@@ -95,10 +95,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
-  const [filterRole, setFilterRole] = useState("");
-  const [filterStatus, setFilterStatus] = useState("");
-  const [filterProject, setFilterProject] = useState("");
-  const [filterCenter, setFilterCenter] = useState("");
+  const [filterRoles, setFilterRoles] = useState<string[]>([]);
+  const [filterStatuses, setFilterStatuses] = useState<string[]>([]);
+  const [filterProjects, setFilterProjects] = useState<string[]>([]);
+  const [filterCenters, setFilterCenters] = useState<string[]>([]);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -187,6 +187,34 @@ const UserManagement: React.FC<UserManagementProps> = ({
     return [];
   }, [formData.primaryProject, centers]);
 
+  // Hierarchical filter scope: project is the parent filter.
+  // In single-project mode, currentProjectId acts as the selected scope.
+  const projectScopeForFilters = useMemo(() => {
+    if (filterProjects.length > 0) return filterProjects;
+    if (viewMode === "single" && currentProjectId) return [currentProjectId];
+    return [] as string[];
+  }, [filterProjects, viewMode, currentProjectId]);
+
+  const availableFilterRoles = useMemo(() => {
+    if (projectScopeForFilters.length === 0) return [];
+
+    return roles.filter((role) => {
+      if (role.type === "system") return true;
+
+      if (role.projects && role.projects.length > 0) {
+        return role.projects.some((p: any) => {
+          const projectId = p?._id?.toString?.() ?? p?.toString?.();
+          return projectScopeForFilters.includes(projectId);
+        });
+      }
+
+      if (role.projectId)
+        return projectScopeForFilters.includes(role.projectId);
+
+      return false;
+    });
+  }, [roles, projectScopeForFilters]);
+
   // Filtered reporting managers - simple exclusion of self and students
   const filteredReportingManagers = useMemo(() => {
     return reportingManagersList.filter((u) => {
@@ -238,9 +266,21 @@ const UserManagement: React.FC<UserManagementProps> = ({
   );
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [viewportWidth, setViewportWidth] = useState<number>(
+    typeof window !== "undefined" ? window.innerWidth : 1280,
+  );
 
   // Ref to prevent duplicate API calls from React.StrictMode
   const hasFetchedInitialData = useRef(false);
+
+  const isMobileViewport = viewportWidth <= 768;
+  const isTabletViewport = viewportWidth > 768 && viewportWidth <= 1024;
+
+  useEffect(() => {
+    const handleResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   // Watch for primary project changes and fetch reporting managers
   useEffect(() => {
@@ -325,15 +365,16 @@ const UserManagement: React.FC<UserManagementProps> = ({
       params.append("page", currentPage.toString());
       params.append("limit", usersPerPage.toString());
       if (searchQuery) params.append("search", searchQuery);
-      if (filterRole) params.append("role", filterRole);
-      if (filterStatus) params.append("isActive", filterStatus);
+      if (filterRoles.length > 0) params.append("role", filterRoles.join(","));
+      if (filterStatuses.length > 0)
+        params.append("isActive", filterStatuses.join(","));
 
       // Add project filter from dropdown
-      if (filterProject) {
-        params.append("project", filterProject);
+      if (filterProjects.length > 0) {
+        params.append("project", filterProjects.join(","));
         console.log(
-          "👤 [USER MGMT] Filtering by dropdown project:",
-          filterProject,
+          "👤 [USER MGMT] Filtering by dropdown projects:",
+          filterProjects,
         );
       }
       // Filter by project based on viewMode from context (if no dropdown filter)
@@ -347,9 +388,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
       }
 
       // Add center filter from dropdown
-      if (filterCenter) {
-        params.append("center", filterCenter);
-        console.log("👤 [USER MGMT] Filtering by center:", filterCenter);
+      if (filterCenters.length > 0) {
+        params.append("centers", filterCenters.join(","));
+        console.log("👤 [USER MGMT] Filtering by centers:", filterCenters);
       }
 
       const token = localStorage.getItem("authToken");
@@ -569,36 +610,24 @@ const UserManagement: React.FC<UserManagementProps> = ({
   }, [searchQuery]);
 
   useEffect(() => {
-    // Prevent duplicate calls from React.StrictMode on initial load
-    if (
-      !hasFetchedInitialData.current &&
-      !debouncedSearchQuery &&
-      !filterRole &&
-      !filterStatus &&
-      !filterProject &&
-      !filterCenter
-    ) {
+    // Initial load
+    if (!hasFetchedInitialData.current) {
       hasFetchedInitialData.current = true;
       fetchUsers();
       fetchRolesAndProjects();
-    } else if (
-      debouncedSearchQuery ||
-      filterRole ||
-      filterStatus ||
-      filterProject ||
-      filterCenter
-    ) {
-      // Allow re-fetching when filters change
-      setCurrentPage(1); // Reset to first page when filters change
-      fetchUsers();
-      fetchRolesAndProjects();
+      return;
     }
+
+    // Refresh for any filter/search/view mode change, including clear-all state
+    setCurrentPage(1);
+    fetchUsers();
+    fetchRolesAndProjects();
   }, [
     debouncedSearchQuery,
-    filterRole,
-    filterStatus,
-    filterProject,
-    filterCenter,
+    filterRoles,
+    filterStatuses,
+    filterProjects,
+    filterCenters,
     viewMode,
     currentProjectId,
   ]); // Added viewMode and currentProjectId
@@ -715,35 +744,71 @@ const UserManagement: React.FC<UserManagementProps> = ({
     }
   };
 
-  // Fetch centers when filterProject changes
+  // Fetch centers when project scope changes
   useEffect(() => {
     const fetchCentersForFilter = async () => {
-      if (filterProject) {
-        try {
-          const token = localStorage.getItem("authToken");
-          const centersRes = await fetch(
-            `${API_CONFIG.API_URL}/offline-module/${filterProject}/centers`,
-            {
-              headers: {
-                Authorization: `Bearer ${token}`,
-                "Content-Type": "application/json",
+      if (projectScopeForFilters.length === 0) {
+        setCenters([]);
+        return;
+      }
+
+      try {
+        const token = localStorage.getItem("authToken");
+        const centerResponses = await Promise.all(
+          projectScopeForFilters.map(async (projectId) => {
+            const centersRes = await fetch(
+              `${API_CONFIG.API_URL}/offline-module/${projectId}/centers`,
+              {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  "Content-Type": "application/json",
+                },
               },
-            },
-          );
+            );
+            const centersData = await centersRes.json();
+            if (centersData.success && Array.isArray(centersData.centers)) {
+              return centersData.centers as Center[];
+            }
+            return [] as Center[];
+          }),
+        );
 
-          const centersData = await centersRes.json();
-
-          if (centersData.success && Array.isArray(centersData.centers)) {
-            setCenters(centersData.centers);
-          }
-        } catch (error) {
-          console.error("Error fetching centers for filter:", error);
-        }
+        const allCenters = centerResponses.flat();
+        const dedupedCenters = Array.from(
+          new Map(allCenters.map((center) => [center._id, center])).values(),
+        );
+        setCenters(dedupedCenters);
+      } catch (error) {
+        console.error("Error fetching centers for filter:", error);
       }
     };
 
     fetchCentersForFilter();
-  }, [filterProject]);
+  }, [projectScopeForFilters]);
+
+  useEffect(() => {
+    // Remove selected centers that are no longer visible for chosen projects
+    if (filterCenters.length === 0) return;
+    const centerIds = new Set(centers.map((c) => c._id));
+    const validSelectedCenters = filterCenters.filter((id) =>
+      centerIds.has(id),
+    );
+    if (validSelectedCenters.length !== filterCenters.length) {
+      setFilterCenters(validSelectedCenters);
+    }
+  }, [centers, filterCenters]);
+
+  useEffect(() => {
+    // Remove selected roles that are no longer valid for current project scope
+    if (filterRoles.length === 0) return;
+    const allowedRoleIds = new Set(availableFilterRoles.map((r) => r._id));
+    const validSelectedRoles = filterRoles.filter((id) =>
+      allowedRoleIds.has(id),
+    );
+    if (validSelectedRoles.length !== filterRoles.length) {
+      setFilterRoles(validSelectedRoles);
+    }
+  }, [availableFilterRoles, filterRoles]);
 
   // Handle create user
   const handleOpenCreateModal = () => {
@@ -1470,6 +1535,57 @@ const UserManagement: React.FC<UserManagementProps> = ({
     return true;
   });
 
+  const userStats = useMemo(() => {
+    const activeCount = users.filter((u) => u.isActive).length;
+    const inactiveCount = users.length - activeCount;
+    const uniqueProjects = new Set(
+      users.flatMap((u) => (u.projects || []).map((p) => p._id)),
+    ).size;
+
+    return {
+      total: users.length,
+      active: activeCount,
+      inactive: inactiveCount,
+      projects: uniqueProjects,
+    };
+  }, [users]);
+
+  const SELECT_ALL_VALUE = "__select_all__";
+  const allProjectIds = useMemo(() => projects.map((p) => p._id), [projects]);
+  const allRoleIds = useMemo(
+    () => availableFilterRoles.map((r) => r._id),
+    [availableFilterRoles],
+  );
+  const allCenterIds = useMemo(() => centers.map((c) => c._id), [centers]);
+  const allStatusValues = ["true", "false"];
+
+  const allProjectsSelected =
+    allProjectIds.length > 0 &&
+    allProjectIds.every((id) => filterProjects.includes(id));
+  const allRolesSelected =
+    allRoleIds.length > 0 && allRoleIds.every((id) => filterRoles.includes(id));
+  const allStatusesSelected = allStatusValues.every((value) =>
+    filterStatuses.includes(value),
+  );
+  const allCentersSelected =
+    allCenterIds.length > 0 &&
+    allCenterIds.every((id) => filterCenters.includes(id));
+
+  const getMultiSelectValues = (
+    event: React.ChangeEvent<HTMLSelectElement>,
+  ): string[] =>
+    Array.from(event.target.selectedOptions, (option) => option.value);
+
+  const clearAllUserFilters = () => {
+    setSearchQuery("");
+    setDebouncedSearchQuery("");
+    setFilterRoles([]);
+    setFilterStatuses([]);
+    setFilterProjects([]);
+    setFilterCenters([]);
+    setCurrentPage(1);
+  };
+
   if (loading) {
     const loadingContent = (
       <div
@@ -1545,10 +1661,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
   const mainContent = (
     <div
       style={{
-        padding: "32px 24px",
-        maxWidth: "1440px",
+        padding: isMobileViewport ? "14px 10px 20px" : "24px 20px 32px",
+        maxWidth: "1380px",
         margin: "0 auto",
-        background: "#F9FAFB",
+        background: "#f6f8fc",
         minHeight: "100vh",
         fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
       }}
@@ -1556,20 +1672,21 @@ const UserManagement: React.FC<UserManagementProps> = ({
       {/* Header */}
       <div
         style={{
-          background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-          padding: "32px 40px",
-          borderRadius: "16px",
-          marginBottom: "32px",
-          boxShadow: "0 10px 40px rgba(102, 126, 234, 0.2)",
+          background: "#ffffff",
+          padding: "22px 24px",
+          borderRadius: "14px",
+          marginBottom: "16px",
+          border: "1px solid #e7ebf3",
+          boxShadow: "0 4px 18px rgba(15, 23, 42, 0.05)",
         }}
       >
         <h1
           style={{
-            margin: "0 0 8px 0",
-            fontSize: "32px",
-            fontWeight: 800,
-            color: "#ffffff",
-            letterSpacing: "-0.02em",
+            margin: "0 0 6px 0",
+            fontSize: "24px",
+            fontWeight: 700,
+            color: "#111827",
+            letterSpacing: "-0.01em",
             fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
           }}
         >
@@ -1582,8 +1699,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
         <p
           style={{
             margin: 0,
-            fontSize: "15px",
-            color: "rgba(255, 255, 255, 0.9)",
+            fontSize: "14px",
+            color: "#6b7280",
             fontWeight: 400,
             fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
           }}
@@ -1596,21 +1713,106 @@ const UserManagement: React.FC<UserManagementProps> = ({
         </p>
       </div>
 
+      {/* Stats */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+          gap: "12px",
+          marginBottom: "16px",
+        }}
+      >
+        {[
+          {
+            label: getText("Total Users", "एकूण वापरकर्ते", "एकूण वापरकर्ते"),
+            value: userStats.total,
+            color: "#1d4ed8",
+            bg: "#eff6ff",
+          },
+          {
+            label: getText("Active", "सक्रिय", "सक्रिय"),
+            value: userStats.active,
+            color: "#047857",
+            bg: "#ecfdf5",
+          },
+          {
+            label: getText("Inactive", "निष्क्रिय", "निष्क्रिय"),
+            value: userStats.inactive,
+            color: "#9f1239",
+            bg: "#fff1f2",
+          },
+          {
+            label: getText("Projects", "प्रकल्प", "प्रकल्प"),
+            value: userStats.projects,
+            color: "#7c3aed",
+            bg: "#f5f3ff",
+          },
+        ].map((stat) => (
+          <div
+            key={stat.label}
+            style={{
+              background: "#ffffff",
+              border: "1px solid #e7ebf3",
+              borderRadius: "12px",
+              padding: "14px 16px",
+              boxShadow: "0 2px 10px rgba(15, 23, 42, 0.04)",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "12px",
+                color: "#6b7280",
+                marginBottom: "8px",
+                fontWeight: 600,
+                textTransform: "uppercase",
+                letterSpacing: "0.04em",
+              }}
+            >
+              {stat.label}
+            </div>
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "4px 10px",
+                borderRadius: "999px",
+                background: stat.bg,
+                color: stat.color,
+                fontWeight: 700,
+                fontSize: "20px",
+                lineHeight: 1,
+              }}
+            >
+              {stat.value}
+            </div>
+          </div>
+        ))}
+      </div>
+
       {/* Actions Bar */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr auto",
-          gap: "20px",
+          gridTemplateColumns:
+            isTabletViewport || isMobileViewport ? "1fr" : "1fr auto",
+          gap: "16px",
           alignItems: "start",
-          marginBottom: "24px",
+          marginBottom: "16px",
+          background: "#ffffff",
+          borderRadius: "14px",
+          border: "1px solid #e7ebf3",
+          padding: "14px",
+          boxShadow: "0 4px 16px rgba(15, 23, 42, 0.04)",
         }}
       >
         {/* Filters Section */}
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            gridTemplateColumns: isMobileViewport
+              ? "1fr"
+              : "repeat(auto-fit, minmax(190px, 1fr))",
             gap: "12px",
             alignItems: "center",
           }}
@@ -1619,8 +1821,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
           <div
             style={{
               position: "relative",
-              gridColumn: "span 2",
-              minWidth: "300px",
+              gridColumn: isMobileViewport ? "span 1" : "span 2",
+              minWidth: isMobileViewport ? "0" : "280px",
             }}
           >
             <svg
@@ -1654,90 +1856,199 @@ const UserManagement: React.FC<UserManagementProps> = ({
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{
                 width: "100%",
-                padding: "12px 16px 12px 48px",
-                border: "2px solid #E5E7EB",
-                borderRadius: "12px",
+                height: "42px",
+                padding: "10px 14px 10px 44px",
+                border: "1px solid #d7deea",
+                borderRadius: "10px",
                 fontSize: "14px",
                 outline: "none",
                 transition: "all 0.2s ease",
                 fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
                 background: "white",
-                boxShadow: "0 2px 8px rgba(0, 0, 0, 0.04)",
+                boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
               }}
               onFocus={(e) => {
-                e.target.style.borderColor = "#667eea";
+                e.target.style.borderColor = "#84caff";
                 e.target.style.boxShadow =
-                  "0 4px 16px rgba(102, 126, 234, 0.15)";
+                  "0 0 0 3px rgba(132, 202, 255, 0.25)";
               }}
               onBlur={(e) => {
-                e.target.style.borderColor = "#E5E7EB";
-                e.target.style.boxShadow = "0 2px 8px rgba(0, 0, 0, 0.04)";
+                e.target.style.borderColor = "#d7deea";
+                e.target.style.boxShadow = "0 1px 3px rgba(0, 0, 0, 0.04)";
               }}
             />
           </div>
 
-          {/* Role Filter */}
+          {/* Project Filter - parent filter */}
           <select
-            value={filterRole}
-            onChange={(e) => setFilterRole(e.target.value)}
+            value={
+              allProjectsSelected
+                ? [SELECT_ALL_VALUE, ...filterProjects]
+                : filterProjects
+            }
+            onChange={(e) => {
+              const selectedValues = getMultiSelectValues(e);
+              const nextProjects = selectedValues.includes(SELECT_ALL_VALUE)
+                ? allProjectsSelected
+                  ? []
+                  : [...allProjectIds]
+                : selectedValues.filter((value) => value !== SELECT_ALL_VALUE);
+
+              setFilterProjects(nextProjects);
+              setFilterRoles([]);
+              setFilterStatuses([]);
+              setFilterCenters([]);
+            }}
+            multiple
+            size={1}
             style={{
-              padding: "12px 16px",
-              border: "2px solid #E5E7EB",
-              borderRadius: "12px",
+              height: "42px",
+              padding: "8px 10px",
+              border: "1px solid #d7deea",
+              borderRadius: "10px",
               fontSize: "14px",
               outline: "none",
               backgroundColor: "white",
               fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
               cursor: "pointer",
               transition: "all 0.2s ease",
-              boxShadow: "0 2px 8px rgba(0, 0, 0, 0.04)",
+              boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
             }}
             onFocus={(e) => {
-              e.target.style.borderColor = "#667eea";
-              e.target.style.boxShadow = "0 4px 16px rgba(102, 126, 234, 0.15)";
+              e.target.style.borderColor = "#84caff";
+              e.target.style.boxShadow = "0 0 0 3px rgba(132, 202, 255, 0.25)";
             }}
             onBlur={(e) => {
-              e.target.style.borderColor = "#E5E7EB";
-              e.target.style.boxShadow = "0 2px 8px rgba(0, 0, 0, 0.04)";
+              e.target.style.borderColor = "#d7deea";
+              e.target.style.boxShadow = "0 1px 3px rgba(0, 0, 0, 0.04)";
             }}
           >
-            <option value="">
-              {getText("All Roles", "सर्व रोल", "सर्व रोल")}
+            <option value={SELECT_ALL_VALUE}>
+              {getText(
+                "Select All Projects",
+                "सर्व प्रकल्प निवडा",
+                "सर्व प्रकल्प निवडा",
+              )}
             </option>
-            {roles.map((role) => (
+            {projects.map((project) => (
+              <option key={project._id} value={project._id}>
+                {project.name}
+              </option>
+            ))}
+          </select>
+
+          {/* Role Filter (depends on selected project) */}
+          <select
+            value={
+              allRolesSelected
+                ? [SELECT_ALL_VALUE, ...filterRoles]
+                : filterRoles
+            }
+            onChange={(e) => {
+              const selectedValues = getMultiSelectValues(e);
+              const nextRoles = selectedValues.includes(SELECT_ALL_VALUE)
+                ? allRolesSelected
+                  ? []
+                  : [...allRoleIds]
+                : selectedValues.filter((value) => value !== SELECT_ALL_VALUE);
+
+              setFilterRoles(nextRoles);
+            }}
+            multiple
+            size={1}
+            disabled={projectScopeForFilters.length === 0}
+            style={{
+              height: "42px",
+              padding: "8px 10px",
+              border: "1px solid #d7deea",
+              borderRadius: "10px",
+              fontSize: "14px",
+              outline: "none",
+              backgroundColor:
+                projectScopeForFilters.length === 0 ? "#f3f4f6" : "white",
+              fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+              cursor:
+                projectScopeForFilters.length === 0 ? "not-allowed" : "pointer",
+              transition: "all 0.2s ease",
+              opacity: projectScopeForFilters.length === 0 ? 0.6 : 1,
+              boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
+            }}
+            onFocus={(e) => {
+              if (projectScopeForFilters.length > 0) {
+                e.target.style.borderColor = "#84caff";
+                e.target.style.boxShadow =
+                  "0 0 0 3px rgba(132, 202, 255, 0.25)";
+              }
+            }}
+            onBlur={(e) => {
+              e.target.style.borderColor = "#d7deea";
+              e.target.style.boxShadow = "0 1px 3px rgba(0, 0, 0, 0.04)";
+            }}
+          >
+            <option value={SELECT_ALL_VALUE}>
+              {getText("Select All Roles", "सर्व रोल निवडा", "सर्व रोल निवडा")}
+            </option>
+            {availableFilterRoles.map((role) => (
               <option key={role._id} value={role._id}>
                 {role.name}
               </option>
             ))}
           </select>
 
-          {/* Status Filter */}
+          {/* Status Filter (depends on selected project) */}
           <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
+            value={
+              allStatusesSelected
+                ? [SELECT_ALL_VALUE, ...filterStatuses]
+                : filterStatuses
+            }
+            onChange={(e) => {
+              const selectedValues = getMultiSelectValues(e);
+              const nextStatuses = selectedValues.includes(SELECT_ALL_VALUE)
+                ? allStatusesSelected
+                  ? []
+                  : [...allStatusValues]
+                : selectedValues.filter((value) => value !== SELECT_ALL_VALUE);
+
+              setFilterStatuses(nextStatuses);
+            }}
+            multiple
+            size={1}
+            disabled={projectScopeForFilters.length === 0}
             style={{
-              padding: "12px 16px",
-              border: "2px solid #E5E7EB",
-              borderRadius: "12px",
+              height: "42px",
+              padding: "8px 10px",
+              border: "1px solid #d7deea",
+              borderRadius: "10px",
               fontSize: "14px",
               outline: "none",
-              backgroundColor: "white",
+              backgroundColor:
+                projectScopeForFilters.length === 0 ? "#f3f4f6" : "white",
               fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
-              cursor: "pointer",
+              cursor:
+                projectScopeForFilters.length === 0 ? "not-allowed" : "pointer",
               transition: "all 0.2s ease",
-              boxShadow: "0 2px 8px rgba(0, 0, 0, 0.04)",
+              opacity: projectScopeForFilters.length === 0 ? 0.6 : 1,
+              boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
             }}
             onFocus={(e) => {
-              e.target.style.borderColor = "#667eea";
-              e.target.style.boxShadow = "0 4px 16px rgba(102, 126, 234, 0.15)";
+              if (projectScopeForFilters.length > 0) {
+                e.target.style.borderColor = "#84caff";
+                e.target.style.boxShadow =
+                  "0 0 0 3px rgba(132, 202, 255, 0.25)";
+              }
             }}
             onBlur={(e) => {
-              e.target.style.borderColor = "#E5E7EB";
-              e.target.style.boxShadow = "0 2px 8px rgba(0, 0, 0, 0.04)";
+              e.target.style.borderColor = "#d7deea";
+              e.target.style.boxShadow = "0 1px 3px rgba(0, 0, 0, 0.04)";
             }}
           >
-            <option value="">
-              {getText("All Status", "सर्व स्थिती", "सर्व स्थिती")}
+            <option value={SELECT_ALL_VALUE}>
+              {getText(
+                "Select All Status",
+                "सर्व स्थिती निवडा",
+                "सर्व स्थिती निवडा",
+              )}
             </option>
             <option value="true">
               {getText("Active", "सक्रिय", "सक्रिय")}
@@ -1747,96 +2058,120 @@ const UserManagement: React.FC<UserManagementProps> = ({
             </option>
           </select>
 
-          {/* Project Filter */}
+          {/* Center Filter (depends on selected project) */}
           <select
-            value={filterProject}
+            value={
+              allCentersSelected
+                ? [SELECT_ALL_VALUE, ...filterCenters]
+                : filterCenters
+            }
             onChange={(e) => {
-              setFilterProject(e.target.value);
-              setFilterCenter(""); // Reset center filter when project changes
+              const selectedValues = getMultiSelectValues(e);
+              const nextCenters = selectedValues.includes(SELECT_ALL_VALUE)
+                ? allCentersSelected
+                  ? []
+                  : [...allCenterIds]
+                : selectedValues.filter((value) => value !== SELECT_ALL_VALUE);
+
+              setFilterCenters(nextCenters);
             }}
+            disabled={projectScopeForFilters.length === 0}
+            multiple
+            size={1}
             style={{
-              padding: "12px 16px",
-              border: "2px solid #E5E7EB",
-              borderRadius: "12px",
+              height: "42px",
+              padding: "8px 10px",
+              border: "1px solid #d7deea",
+              borderRadius: "10px",
               fontSize: "14px",
               outline: "none",
-              backgroundColor: "white",
+              backgroundColor:
+                projectScopeForFilters.length === 0 ? "#f3f4f6" : "white",
               fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
-              cursor: "pointer",
+              cursor:
+                projectScopeForFilters.length === 0 ? "not-allowed" : "pointer",
               transition: "all 0.2s ease",
-              boxShadow: "0 2px 8px rgba(0, 0, 0, 0.04)",
+              opacity: projectScopeForFilters.length === 0 ? 0.6 : 1,
+              boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
             }}
             onFocus={(e) => {
-              e.target.style.borderColor = "#667eea";
-              e.target.style.boxShadow = "0 4px 16px rgba(102, 126, 234, 0.15)";
+              if (projectScopeForFilters.length > 0) {
+                e.target.style.borderColor = "#84caff";
+                e.target.style.boxShadow =
+                  "0 0 0 3px rgba(132, 202, 255, 0.25)";
+              }
             }}
             onBlur={(e) => {
-              e.target.style.borderColor = "#E5E7EB";
-              e.target.style.boxShadow = "0 2px 8px rgba(0, 0, 0, 0.04)";
+              e.target.style.borderColor = "#d7deea";
+              e.target.style.boxShadow = "0 1px 3px rgba(0, 0, 0, 0.04)";
             }}
           >
-            <option value="">
-              {getText("All Projects", "सर्व प्रकल्प", "सर्व प्रकल्प")}
+            <option value={SELECT_ALL_VALUE}>
+              {getText(
+                "Select All Centers",
+                "सर्व केंद्रे निवडा",
+                "सर्व केंद्रे निवडा",
+              )}
             </option>
-            {projects.map((project) => (
-              <option key={project._id} value={project._id}>
-                {project.name}
+            {centers.map((center) => (
+              <option key={center._id} value={center._id}>
+                {center.centerName} - {center.city}
               </option>
             ))}
           </select>
 
-          {/* Center Filter */}
-          <select
-            value={filterCenter}
-            onChange={(e) => setFilterCenter(e.target.value)}
-            disabled={!filterProject}
+          <div
             style={{
-              padding: "12px 16px",
-              border: "2px solid #E5E7EB",
-              borderRadius: "12px",
-              fontSize: "14px",
-              outline: "none",
-              backgroundColor: !filterProject ? "#f3f4f6" : "white",
-              fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
-              cursor: !filterProject ? "not-allowed" : "pointer",
-              transition: "all 0.2s ease",
-              opacity: !filterProject ? 0.6 : 1,
-              boxShadow: "0 2px 8px rgba(0, 0, 0, 0.04)",
-            }}
-            onFocus={(e) => {
-              if (filterProject) {
-                e.target.style.borderColor = "#667eea";
-                e.target.style.boxShadow =
-                  "0 4px 16px rgba(102, 126, 234, 0.15)";
-              }
-            }}
-            onBlur={(e) => {
-              e.target.style.borderColor = "#E5E7EB";
-              e.target.style.boxShadow = "0 2px 8px rgba(0, 0, 0, 0.04)";
+              gridColumn: "1 / -1",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "flex-start",
+              flexWrap: "wrap",
+              gap: "12px",
+              fontSize: "12px",
+              color: "#6B7280",
             }}
           >
-            <option value="">
-              {!filterProject
-                ? getText(
-                    "Select project first",
-                    "प्रथम प्रोजेक्ट निवडा",
-                    "प्रथम प्रोजेक्ट निवडा",
-                  )
-                : getText("All Centers", "सर्व केंद्रे", "सर्व केंद्रे")}
-            </option>
-            {filterProject &&
-              centers
-                .filter((center) => center.projectId === filterProject)
-                .map((center) => (
-                  <option key={center._id} value={center._id}>
-                    {center.centerName} - {center.city}
-                  </option>
-                ))}
-          </select>
+            <span>
+              {getText(
+                "Filter order: Project -> Role -> Status/Center. Use Ctrl/Cmd for multi-select.",
+                "फिल्टर क्रम: प्रोजेक्ट -> रोल -> स्थिती/केंद्र. मल्टी-सेलेक्टसाठी Ctrl/Cmd वापरा.",
+                "फिल्टर क्रम: प्रोजेक्ट -> रोल -> स्थिती/केंद्र. मल्टी-सेलेक्टसाठी Ctrl/Cmd वापरा.",
+              )}
+            </span>
+            <button
+              type="button"
+              onClick={clearAllUserFilters}
+              style={{
+                border: "none",
+                background: "transparent",
+                color: "#2563EB",
+                cursor: "pointer",
+                fontSize: "12px",
+                fontWeight: 600,
+                padding: 0,
+                marginLeft: "4px",
+              }}
+            >
+              {getText(
+                "Clear all filters",
+                "सर्व फिल्टर साफ करा",
+                "सर्व फिल्टर साफ करा",
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Buttons Section */}
-        <div style={{ display: "flex", gap: "12px", flexShrink: 0 }}>
+        <div
+          style={{
+            display: "flex",
+            gap: "12px",
+            flexShrink: 0,
+            flexWrap: "wrap",
+            justifyContent: isMobileViewport ? "stretch" : "flex-start",
+          }}
+        >
           {hasPermission("USER_CREATE") && (
             <button
               onClick={() => setShowHRMSModal(true)}
@@ -2039,10 +2374,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
       <div
         style={{
           background: "white",
-          borderRadius: "16px",
-          border: "1px solid #E5E7EB",
+          borderRadius: "14px",
+          border: "1px solid #e7ebf3",
           overflow: "hidden",
-          boxShadow: "0 4px 20px rgba(0, 0, 0, 0.08)",
+          boxShadow: "0 4px 16px rgba(15, 23, 42, 0.05)",
         }}
       >
         {filteredUsers.length === 0 ? (
@@ -2114,6 +2449,218 @@ const UserManagement: React.FC<UserManagementProps> = ({
               )}
             </p>
           </div>
+        ) : isMobileViewport ? (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "10px",
+              padding: "10px",
+            }}
+          >
+            {filteredUsers.map((user) => (
+              <div
+                key={user._id}
+                style={{
+                  border: "1px solid #e5e7eb",
+                  borderRadius: "12px",
+                  padding: "12px",
+                  background: selectedUserIds.has(user._id)
+                    ? "#fff1f2"
+                    : "#ffffff",
+                  boxShadow: "0 1px 4px rgba(15,23,42,0.05)",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: "10px",
+                    alignItems: "start",
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: "15px",
+                        fontWeight: 700,
+                        color: "#111827",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {user.firstName} {user.lastName}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        color: "#6b7280",
+                        marginTop: "2px",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {user.email}
+                    </div>
+                  </div>
+                  {hasPermission("USER_DELETE") && (
+                    <input
+                      type="checkbox"
+                      checked={selectedUserIds.has(user._id)}
+                      onChange={() => toggleUserSelection(user._id)}
+                      style={{
+                        width: "16px",
+                        height: "16px",
+                        cursor: "pointer",
+                      }}
+                    />
+                  )}
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: "8px",
+                    marginTop: "10px",
+                  }}
+                >
+                  <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                    {getText("Role", "रोल", "रोल")}:{" "}
+                    {user.role?.name ||
+                      getText("No Role", "भूमिका नाही", "भूमिका नाही")}
+                  </div>
+                  <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                    {getText("Employee", "कर्मचारी", "कर्मचारी")}:{" "}
+                    {user.employeeCode || "-"}
+                  </div>
+                  <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                    {getText("Projects", "प्रकल्प", "प्रकल्प")}:{" "}
+                    {user.projects?.length || 0}
+                  </div>
+                  <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                    {getText("Centers", "केंद्रे", "केंद्रे")}:{" "}
+                    {user.centers?.length || 0}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginTop: "10px",
+                    gap: "8px",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <label
+                      style={{
+                        position: "relative",
+                        display: "inline-block",
+                        width: "40px",
+                        height: "22px",
+                        cursor: hasPermission("USER_EDIT")
+                          ? "pointer"
+                          : "not-allowed",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={user.isActive}
+                        onChange={() => handleToggleStatus(user._id)}
+                        disabled={!hasPermission("USER_EDIT")}
+                        style={{
+                          opacity: 0,
+                          width: 0,
+                          height: 0,
+                          position: "absolute",
+                        }}
+                      />
+                      <span
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          backgroundColor: user.isActive
+                            ? "#10B981"
+                            : "#D1D5DB",
+                          borderRadius: "24px",
+                        }}
+                      >
+                        <span
+                          style={{
+                            position: "absolute",
+                            height: "16px",
+                            width: "16px",
+                            left: user.isActive ? "21px" : "3px",
+                            bottom: "3px",
+                            backgroundColor: "white",
+                            borderRadius: "50%",
+                          }}
+                        ></span>
+                      </span>
+                    </label>
+                    <span
+                      style={{
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        color: user.isActive ? "#047857" : "#6B7280",
+                      }}
+                    >
+                      {user.isActive
+                        ? getText("Active", "सक्रिय", "सक्रिय")
+                        : getText("Inactive", "निष्क्रिय", "निष्क्रिय")}
+                    </span>
+                  </div>
+
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    {hasPermission("USER_EDIT") && (
+                      <button
+                        onClick={() => handleEditUser(user)}
+                        style={{
+                          padding: "6px 8px",
+                          border: "1px solid #d1d5db",
+                          borderRadius: "8px",
+                          background: "#ffffff",
+                          cursor: "pointer",
+                          fontSize: "12px",
+                          color: "#2563eb",
+                        }}
+                      >
+                        {getText("Edit", "संपादित", "संपादित")}
+                      </button>
+                    )}
+                    {hasPermission("USER_DELETE") && (
+                      <button
+                        onClick={() => handleDeleteUser(user._id)}
+                        style={{
+                          padding: "6px 8px",
+                          border: "1px solid #fecaca",
+                          borderRadius: "8px",
+                          background: "#fff1f2",
+                          cursor: "pointer",
+                          fontSize: "12px",
+                          color: "#dc2626",
+                        }}
+                      >
+                        {getText("Delete", "हटवा", "हटवा")}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         ) : (
           <div style={{ overflowX: "auto", width: "100%" }}>
             <table
@@ -2127,8 +2674,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
               <thead>
                 <tr
                   style={{
-                    background: "#F9FAFB",
-                    borderBottom: "1px solid #E5E7EB",
+                    background: "#f8fafc",
+                    borderBottom: "1px solid #e7ebf3",
                   }}
                 >
                   {hasPermission("USER_DELETE") && (
@@ -2766,13 +3313,14 @@ const UserManagement: React.FC<UserManagementProps> = ({
       {!loading && filteredUsers.length > 0 && (
         <div
           style={{
-            marginTop: "24px",
-            padding: "16px",
+            marginTop: "16px",
+            padding: "14px 16px",
             background: "white",
             borderRadius: "12px",
-            boxShadow: "0 2px 8px rgba(0, 0, 0, 0.04)",
+            border: "1px solid #e7ebf3",
+            boxShadow: "0 2px 8px rgba(0, 0, 0, 0.03)",
             display: "flex",
-            justifyContent: "space-between",
+            justifyContent: isMobileViewport ? "center" : "space-between",
             alignItems: "center",
             flexWrap: "wrap",
             gap: "16px",
@@ -2797,6 +3345,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
               display: "flex",
               gap: "8px",
               alignItems: "center",
+              flexWrap: "wrap",
+              justifyContent: isMobileViewport ? "center" : "flex-start",
             }}
           >
             <button
@@ -2991,78 +3541,112 @@ const UserManagement: React.FC<UserManagementProps> = ({
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            backgroundColor: "rgba(15, 23, 42, 0.45)",
+            backdropFilter: "blur(2px)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            zIndex: 1000,
-            padding: "20px",
+            zIndex: 1100,
+            padding: isMobileViewport ? "8px" : "20px",
           }}
         >
           <div
             style={{
               backgroundColor: "white",
-              borderRadius: "12px",
-              maxWidth: "700px",
+              borderRadius: "16px",
+              maxWidth: isMobileViewport ? "100%" : "920px",
               width: "100%",
-              maxHeight: "90vh",
+              maxHeight: isMobileViewport ? "96vh" : "92vh",
               overflow: "hidden",
               display: "flex",
               flexDirection: "column",
+              border: "1px solid #e5e7eb",
+              boxShadow: "0 24px 60px rgba(15, 23, 42, 0.2)",
             }}
           >
             <div
               style={{
-                padding: "24px",
+                padding: isMobileViewport ? "14px 12px" : "18px 24px",
                 borderBottom: "1px solid #e5e7eb",
                 display: "flex",
                 justifyContent: "space-between",
-                alignItems: "center",
+                alignItems: isMobileViewport ? "start" : "center",
+                flexDirection: isMobileViewport ? "column" : "row",
+                gap: isMobileViewport ? "10px" : "0",
+                background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
               }}
             >
-              <h2
-                style={{
-                  fontSize: "20px",
-                  fontWeight: "600",
-                  color: "#1f2937",
-                  margin: 0,
-                }}
-              >
-                {editingUser
-                  ? getText(
-                      "Edit User",
-                      "वापरकर्ता संपादित करा",
-                      "वापरकर्ता संपादित करा",
-                    )
-                  : getText(
-                      "Create User",
-                      "वापरकर्ता तयार करा",
-                      "वापरकर्ता तयार करा",
-                    )}
-              </h2>
+              <div>
+                <h2
+                  style={{
+                    fontSize: "20px",
+                    fontWeight: "700",
+                    color: "#111827",
+                    margin: 0,
+                    letterSpacing: "-0.01em",
+                  }}
+                >
+                  {editingUser
+                    ? getText(
+                        "Edit User",
+                        "वापरकर्ता संपादित करा",
+                        "वापरकर्ता संपादित करा",
+                      )
+                    : getText(
+                        "Create User",
+                        "वापरकर्ता तयार करा",
+                        "वापरकर्ता तयार करा",
+                      )}
+                </h2>
+                <p
+                  style={{
+                    margin: "4px 0 0 0",
+                    fontSize: "13px",
+                    color: "#6b7280",
+                  }}
+                >
+                  {getText(
+                    "Fill required details and assign role, projects, and centers.",
+                    "आवश्यक तपशील भरा आणि भूमिका, प्रकल्प व केंद्रे नियुक्त करा.",
+                    "आवश्यक तपशील भरा आणि भूमिका, प्रकल्प व केंद्रे नियुक्त करा.",
+                  )}
+                </p>
+              </div>
               <button
                 onClick={() => setShowUserModal(false)}
                 style={{
-                  background: "none",
-                  border: "none",
-                  fontSize: "24px",
+                  width: "34px",
+                  height: "34px",
+                  borderRadius: "999px",
+                  background: "#f3f4f6",
+                  border: "1px solid #e5e7eb",
+                  fontSize: "20px",
+                  lineHeight: 1,
                   cursor: "pointer",
                   color: "#6b7280",
                 }}
+                title={getText("Close", "बंद करा", "बंद करा")}
               >
                 ✕
               </button>
             </div>
 
-            <div style={{ padding: "24px", overflowY: "auto", flex: 1 }}>
+            <div
+              style={{
+                padding: isMobileViewport ? "12px" : "20px 24px",
+                overflowY: "auto",
+                flex: 1,
+                background: "#f8fafc",
+              }}
+            >
               {/* Primary Project Selection - FIRST */}
               <div
                 style={{
-                  marginBottom: "24px",
+                  marginBottom: "20px",
                   padding: "16px",
-                  backgroundColor: "#fef3c7",
-                  border: "2px solid #fbbf24",
-                  borderRadius: "8px",
+                  backgroundColor: "#f0f7ff",
+                  border: "1px solid #bfdbfe",
+                  borderRadius: "12px",
                 }}
               >
                 <label
@@ -3070,11 +3654,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     display: "block",
                     fontSize: "14px",
                     fontWeight: "600",
-                    color: "#92400e",
+                    color: "#1e3a8a",
                     marginBottom: "8px",
                   }}
                 >
-                  🏢{" "}
                   {getText(
                     "Select Project",
                     "प्रोजेक्ट निवडा",
@@ -3135,9 +3718,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   }}
                   style={{
                     width: "100%",
-                    padding: "12px",
-                    border: "2px solid #fbbf24",
-                    borderRadius: "6px",
+                    padding: "10px 12px",
+                    border: "1px solid #93c5fd",
+                    borderRadius: "10px",
                     fontSize: "14px",
                     outline: "none",
                     boxSizing: "border-box",
@@ -3171,12 +3754,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 <p
                   style={{
                     fontSize: "12px",
-                    color: "#92400e",
+                    color: "#1e40af",
                     marginTop: "8px",
                     fontStyle: "italic",
                   }}
                 >
-                  💡{" "}
                   {getText(
                     "Roles and centers will be filtered based on this project",
                     "या प्रोजेक्टच्या आधारे भूमिका आणि केंद्रे फिल्टर केली जातील",
@@ -3204,7 +3786,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
+                  gridTemplateColumns: isMobileViewport ? "1fr" : "1fr 1fr",
                   gap: "16px",
                 }}
               >
@@ -3326,7 +3908,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
+                  gridTemplateColumns: isMobileViewport ? "1fr" : "1fr 1fr",
                   gap: "16px",
                   marginTop: "16px",
                 }}
@@ -3414,7 +3996,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
+                  gridTemplateColumns: isMobileViewport ? "1fr" : "1fr 1fr",
                   gap: "16px",
                   marginTop: "16px",
                 }}
@@ -3631,7 +4213,6 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     marginBottom: "6px",
                   }}
                 >
-                  🏢{" "}
                   {getText(
                     "Assigned Projects",
                     "नियुक्त प्रकल्प",
@@ -3661,7 +4242,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     maxHeight: "180px",
                     overflowY: "auto",
                     border: "1px solid #d1d5db",
-                    borderRadius: "6px",
+                    borderRadius: "10px",
                     padding: "8px",
                     backgroundColor: "white",
                   }}
@@ -3806,8 +4387,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: "16px",
+                  gridTemplateColumns: "1fr",
+                  gap: "14px",
                   marginTop: "16px",
                 }}
               >
@@ -3858,11 +4439,15 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               display: "flex",
                               alignItems: "center",
                               gap: "12px",
+                              padding: "8px 10px",
+                              border: "1px solid #e5e7eb",
+                              borderRadius: "8px",
+                              background: "#ffffff",
                             }}
                           >
                             <span
                               style={{
-                                minWidth: "200px",
+                                minWidth: isMobileViewport ? "120px" : "200px",
                                 fontSize: "13px",
                                 color: "#374151",
                                 fontWeight: "500",
@@ -3938,20 +4523,34 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     onChange={(e) =>
                       setFormData({ ...formData, designation: e.target.value })
                     }
+                    placeholder={getText(
+                      "Enter designation",
+                      "पदनाम लिहा",
+                      "पदनाम लिहा",
+                    )}
                     style={{
                       width: "100%",
                       padding: "12px",
                       border: "1px solid #d1d5db",
-                      borderRadius: "6px",
+                      borderRadius: "10px",
                       fontSize: "14px",
                       outline: "none",
                       boxSizing: "border-box",
+                      background: "#ffffff",
                     }}
                   />
                 </div>
               </div>
 
-              <div style={{ marginTop: "16px" }}>
+              <div
+                style={{
+                  marginTop: "16px",
+                  padding: "14px",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: "10px",
+                  background: "#ffffff",
+                }}
+              >
                 <label
                   style={{
                     display: "block",
@@ -4076,7 +4675,15 @@ const UserManagement: React.FC<UserManagementProps> = ({
               </div>
 
               {/* Center Assignment - Multi-select with checkboxes */}
-              <div style={{ marginTop: "16px" }}>
+              <div
+                style={{
+                  marginTop: "16px",
+                  padding: "14px",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: "10px",
+                  background: "#ffffff",
+                }}
+              >
                 <label
                   style={{
                     display: "block",
@@ -4086,7 +4693,6 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     marginBottom: "6px",
                   }}
                 >
-                  🏢{" "}
                   {getText(
                     "Assigned Centers (Offline Module)",
                     "नियुक्त केंद्रे (ऑफलाइन मॉड्यूल)",
@@ -4116,7 +4722,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     maxHeight: "200px",
                     overflowY: "auto",
                     border: "1px solid #d1d5db",
-                    borderRadius: "6px",
+                    borderRadius: "10px",
                     padding: "8px",
                     backgroundColor: !formData.primaryProject
                       ? "#f3f4f6"
@@ -4230,20 +4836,22 @@ const UserManagement: React.FC<UserManagementProps> = ({
 
             <div
               style={{
-                padding: "16px 24px",
+                padding: isMobileViewport ? "12px" : "14px 24px",
                 borderTop: "1px solid #e5e7eb",
                 display: "flex",
                 justifyContent: "flex-end",
                 gap: "12px",
+                background: "#ffffff",
+                flexWrap: "wrap",
               }}
             >
               <button
                 onClick={() => setShowUserModal(false)}
                 disabled={saving}
                 style={{
-                  padding: "10px 20px",
+                  padding: "10px 18px",
                   border: "1px solid #d1d5db",
-                  borderRadius: "6px",
+                  borderRadius: "10px",
                   backgroundColor: "white",
                   color: "#374151",
                   fontSize: "14px",
@@ -4264,9 +4872,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   !formData.role
                 }
                 style={{
-                  padding: "10px 20px",
+                  padding: "10px 18px",
                   border: "none",
-                  borderRadius: "6px",
+                  borderRadius: "10px",
                   backgroundColor:
                     !formData.firstName ||
                     !formData.lastName ||

@@ -122,6 +122,14 @@ export const useAdminProjects = (): UseAdminProjectsResult => {
   // Get selected project object
   const selectedProject = projects.find(p => p._id === selectedProjectId);
 
+  // Non-super-admin users should automatically land on their first assigned project.
+  // Super Admin keeps manual selection behavior.
+  useEffect(() => {
+    if (!isSuperAdmin && !selectedProjectId && projects.length > 0) {
+      setSelectedProjectId(projects[0]._id);
+    }
+  }, [isSuperAdmin, selectedProjectId, projects]);
+
   return {
     projects,
     selectedProjectId,

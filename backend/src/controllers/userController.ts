@@ -63,46 +63,73 @@ export const getAllUsers = async (
     }
 
     if (role) {
-      // Check if role is a valid 24-character hex ObjectId
-      const isValidObjectId =
-        typeof role === "string" &&
-        role.length === 24 &&
-        /^[0-9a-fA-F]{24}$/.test(role);
+      const roleTokens = String(role)
+        .split(",")
+        .map((r) => r.trim())
+        .filter(Boolean);
 
-      if (isValidObjectId) {
-        filter.role = new mongoose.Types.ObjectId(role as string);
-      } else {
-        // If not a valid ObjectId, treat it as a role code and look up the role
-        const roleDoc = await Role.findOne({
-          code: { $regex: new RegExp(`^${role}$`, "i") },
-        }).select("_id");
-        if (roleDoc) {
-          filter.role = roleDoc._id;
+      const roleIds: mongoose.Types.ObjectId[] = [];
+      const roleCodes: string[] = [];
+
+      for (const roleToken of roleTokens) {
+        const isValidObjectId =
+          roleToken.length === 24 && /^[0-9a-fA-F]{24}$/.test(roleToken);
+
+        if (isValidObjectId) {
+          roleIds.push(new mongoose.Types.ObjectId(roleToken));
         } else {
-          // Role code not found, return empty results
-          res.json({
-            success: true,
-            data: [],
-            pagination: {
-              page: parseInt(page as string),
-              limit: parseInt(limit as string),
-              total: 0,
-              pages: 0,
-            },
-          });
-          return;
+          roleCodes.push(roleToken);
         }
       }
+
+      if (roleCodes.length > 0) {
+        const roleDocs = await Role.find({
+          code: { $in: roleCodes.map((r) => new RegExp(`^${r}$`, "i")) },
+        }).select("_id");
+        roleIds.push(...roleDocs.map((r) => r._id as mongoose.Types.ObjectId));
+      }
+
+      if (roleIds.length === 0) {
+        res.json({
+          success: true,
+          data: [],
+          pagination: {
+            page: parseInt(page as string),
+            limit: parseInt(limit as string),
+            total: 0,
+            pages: 0,
+          },
+        });
+        return;
+      }
+
+      filter.role = roleIds.length === 1 ? roleIds[0] : { $in: roleIds };
     }
 
     if (isActive !== "") {
-      filter.isActive = isActive === "true";
+      const activeTokens = String(isActive)
+        .split(",")
+        .map((s) => s.trim().toLowerCase())
+        .filter((s) => s === "true" || s === "false");
+
+      // Apply filter only when exactly one status type is selected.
+      // If both are selected, it means "all".
+      if (activeTokens.length === 1) {
+        filter.isActive = activeTokens[0] === "true";
+      }
     }
 
     if (project) {
-      // Only use project filter if it's a valid ObjectId
-      if (mongoose.Types.ObjectId.isValid(project as string)) {
-        filter.projects = project;
+      const projectIds = String(project)
+        .split(",")
+        .map((p) => p.trim())
+        .filter((p) => mongoose.Types.ObjectId.isValid(p))
+        .map((p) => new mongoose.Types.ObjectId(p));
+
+      if (projectIds.length === 1) {
+        filter.projects = projectIds[0];
+      } else if (projectIds.length > 1) {
+        filter.projects = { $in: projectIds };
       }
     }
 
@@ -158,12 +185,14 @@ export const getAllUsers = async (
       );
       if (filter.projects) {
         // A specific ?project= filter was also supplied — honour intersection
+        const selectedProjectIds = filter.projects?.$in
+          ? filter.projects.$in
+          : [filter.projects];
+
         filter.projects = {
-          $in: [filter.projects]
-            .flat()
-            .filter((id: any) =>
-              allowedProjectIds.some((a: any) => a.equals(id)),
-            ),
+          $in: selectedProjectIds.filter((id: any) =>
+            allowedProjectIds.some((a: any) => a.equals(id)),
+          ),
         };
       } else {
         filter.projects = { $in: allowedProjectIds };

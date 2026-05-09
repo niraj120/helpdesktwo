@@ -95,6 +95,17 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({
   const [totalPages, setTotalPages] = useState(1);
   const [totalTickets, setTotalTickets] = useState(0);
   const pageSize = 20;
+  const [viewportWidth, setViewportWidth] = useState<number>(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1280,
+  );
+
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const isMobile = viewportWidth <= 768;
 
   useEffect(() => {
     checkUserRole();
@@ -364,6 +375,13 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({
     );
   });
 
+  const assignmentStats = {
+    total: tickets.length,
+    assigned: tickets.filter((t) => !!t.assignedTo).length,
+    unassigned: tickets.filter((t) => !t.assignedTo).length,
+    open: tickets.filter((t) => Number(t.status) === 1).length,
+  };
+
   const getStatusColor = (status: string | number) => {
     const colors: Record<string, string> = {
       open: "#3B82F6",
@@ -413,20 +431,111 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({
   }
 
   const content = (
-    <div style={{ padding: "24px", maxWidth: "1400px", margin: "0 auto" }}>
+    <div
+      style={{
+        padding: isMobile ? "16px" : "24px",
+        maxWidth: "1400px",
+        margin: "0 auto",
+      }}
+    >
       <ModuleHeader
         title="Query Assignment"
         subtitle="Select queries and assign them to agents"
       />
+
+      <div
+        style={{
+          display: "flex",
+          gap: "16px",
+          marginBottom: "20px",
+          flexWrap: "wrap",
+        }}
+      >
+        {[
+          {
+            label: "Total",
+            value: assignmentStats.total,
+            bg: "#F4F3FF",
+            icon: "🎫",
+          },
+          {
+            label: "Assigned",
+            value: assignmentStats.assigned,
+            bg: "#EFF8FF",
+            icon: "👤",
+          },
+          {
+            label: "Unassigned",
+            value: assignmentStats.unassigned,
+            bg: "#FFFAEB",
+            icon: "📭",
+          },
+          {
+            label: "Open",
+            value: assignmentStats.open,
+            bg: "#ECFDF3",
+            icon: "📬",
+          },
+        ].map((stat) => (
+          <div
+            key={stat.label}
+            style={{
+              flex: isMobile ? "1 1 140px" : "1 1 180px",
+              background: "white",
+              borderRadius: "10px",
+              padding: isMobile ? "14px" : "20px 24px",
+              border: "1px solid #E4E7EC",
+              boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+              display: "flex",
+              alignItems: "center",
+              gap: isMobile ? "10px" : "16px",
+            }}
+          >
+            <div
+              style={{
+                width: isMobile ? "38px" : "48px",
+                height: isMobile ? "38px" : "48px",
+                borderRadius: "50%",
+                background: stat.bg,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: isMobile ? "16px" : "20px",
+                flexShrink: 0,
+              }}
+            >
+              {stat.icon}
+            </div>
+            <div>
+              <div
+                style={{
+                  fontSize: isMobile ? "20px" : "28px",
+                  fontWeight: 700,
+                  color: "#101828",
+                  lineHeight: 1.2,
+                }}
+              >
+                {stat.value.toLocaleString()}
+              </div>
+              <div
+                style={{ fontSize: "13px", color: "#667085", marginTop: "2px" }}
+              >
+                {stat.label}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
 
       {/* Assignment Panel */}
       <div
         style={{
           background: "white",
           borderRadius: "12px",
-          padding: "24px",
-          boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-          marginBottom: "24px",
+          padding: isMobile ? "14px" : "18px",
+          boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+          border: "1px solid #F3F4F6",
+          marginBottom: "16px",
         }}
       >
         <div
@@ -456,10 +565,11 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({
                 onChange={(e) => setSelectedProject(e.target.value)}
                 style={{
                   width: "100%",
-                  padding: "10px 12px",
-                  border: "1px solid #D1D5DB",
+                  padding: "9px 10px",
+                  border: "1px solid #E5E7EB",
                   borderRadius: "8px",
                   fontSize: "14px",
+                  background: "#F9FAFB",
                 }}
               >
                 <option value="all">All Projects</option>
@@ -491,10 +601,11 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({
               onChange={(e) => setSelectedAgent(e.target.value)}
               style={{
                 width: "100%",
-                padding: "10px 12px",
-                border: "1px solid #D1D5DB",
+                padding: "9px 10px",
+                border: "1px solid #E5E7EB",
                 borderRadius: "8px",
                 fontSize: "14px",
+                background: "#F9FAFB",
               }}
             >
               <option value="">Select user</option>
@@ -522,7 +633,7 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({
               !selectedAgent || selectedTickets.length === 0 || assigning
             }
             style={{
-              padding: "10px 24px",
+              padding: "9px 16px",
               background:
                 selectedAgent && selectedTickets.length > 0
                   ? "#2563EB"
@@ -537,6 +648,7 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({
                   ? "pointer"
                   : "not-allowed",
               transition: "all 0.2s",
+              whiteSpace: "nowrap",
             }}
           >
             {assigning
@@ -551,12 +663,20 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({
         style={{
           background: "white",
           borderRadius: "12px",
-          padding: "20px",
-          boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-          marginBottom: "24px",
+          padding: "12px 16px",
+          boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+          border: "1px solid #F3F4F6",
+          marginBottom: "16px",
         }}
       >
-        <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: "8px",
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
           <div style={{ flex: 1, minWidth: "200px" }}>
             <input
               type="text"
@@ -565,10 +685,11 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{
                 width: "100%",
-                padding: "10px 12px",
-                border: "1px solid #D1D5DB",
+                padding: "9px 12px",
+                border: "1px solid #E5E7EB",
                 borderRadius: "8px",
                 fontSize: "14px",
+                background: "#F9FAFB",
               }}
             />
           </div>
@@ -579,11 +700,12 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
               style={{
-                padding: "10px 12px",
-                border: "1px solid #D1D5DB",
+                padding: "9px 10px",
+                border: "1px solid #E5E7EB",
                 borderRadius: "8px",
                 fontSize: "14px",
                 minWidth: "120px",
+                background: "#F9FAFB",
               }}
             >
               <option value="all">All Status</option>
@@ -601,11 +723,12 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({
               value={filterAssignment}
               onChange={(e) => setFilterAssignment(e.target.value)}
               style={{
-                padding: "10px 12px",
-                border: "1px solid #D1D5DB",
+                padding: "9px 10px",
+                border: "1px solid #E5E7EB",
                 borderRadius: "8px",
                 fontSize: "14px",
                 minWidth: "140px",
+                background: "#F9FAFB",
               }}
             >
               <option value="all">All Queries</option>
@@ -620,11 +743,12 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({
               value={filterCounselor}
               onChange={(e) => setFilterCounselor(e.target.value)}
               style={{
-                padding: "10px 12px",
-                border: "1px solid #D1D5DB",
+                padding: "9px 10px",
+                border: "1px solid #E5E7EB",
                 borderRadius: "8px",
                 fontSize: "14px",
                 minWidth: "180px",
+                background: "#F9FAFB",
               }}
             >
               <option value="all">All Counselors</option>
@@ -652,239 +776,251 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({
       <div
         style={{
           background: "white",
-          borderRadius: "12px",
+          borderRadius: "10px",
           overflow: "hidden",
-          boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+          boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+          border: "1px solid #E4E7EC",
         }}
       >
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead
-            style={{ background: "#F9FAFB", borderBottom: "1px solid #E5E7EB" }}
+        <div style={{ overflowX: "auto" }}>
+          <table
+            style={{
+              width: "100%",
+              borderCollapse: "collapse",
+              minWidth: isMobile ? "980px" : "1120px",
+            }}
           >
-            <tr>
-              <th style={{ padding: "12px 16px", textAlign: "left" }}>
-                <input
-                  type="checkbox"
-                  checked={
-                    selectedTickets.length === filteredTickets.length &&
-                    filteredTickets.length > 0
-                  }
-                  onChange={(e) => handleSelectAll(e.target.checked)}
-                  style={{ cursor: "pointer" }}
-                />
-              </th>
-              <th
-                style={{
-                  padding: "12px 16px",
-                  textAlign: "left",
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  color: "#6B7280",
-                  textTransform: "uppercase",
-                }}
-              >
-                Query #
-              </th>
-              <th
-                style={{
-                  padding: "12px 16px",
-                  textAlign: "left",
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  color: "#6B7280",
-                  textTransform: "uppercase",
-                }}
-              >
-                Subject
-              </th>
-              <th
-                style={{
-                  padding: "12px 16px",
-                  textAlign: "left",
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  color: "#6B7280",
-                  textTransform: "uppercase",
-                }}
-              >
-                Priority
-              </th>
-              <th
-                style={{
-                  padding: "12px 16px",
-                  textAlign: "left",
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  color: "#6B7280",
-                  textTransform: "uppercase",
-                }}
-              >
-                Center
-              </th>
-              <th
-                style={{
-                  padding: "12px 16px",
-                  textAlign: "left",
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  color: "#6B7280",
-                  textTransform: "uppercase",
-                }}
-              >
-                Currently Assigned
-              </th>
-              <th
-                style={{
-                  padding: "12px 16px",
-                  textAlign: "left",
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  color: "#6B7280",
-                  textTransform: "uppercase",
-                }}
-              >
-                Requester
-              </th>
-              <th
-                style={{
-                  padding: "12px 16px",
-                  textAlign: "left",
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  color: "#6B7280",
-                  textTransform: "uppercase",
-                }}
-              >
-                Status
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {!filteredTickets || filteredTickets.length === 0 ? (
+            <thead
+              style={{
+                background: "#F9FAFB",
+                borderBottom: "1px solid #E4E7EC",
+              }}
+            >
               <tr>
-                <td
-                  colSpan={8}
+                <th style={{ padding: "12px 16px", textAlign: "left" }}>
+                  <input
+                    type="checkbox"
+                    checked={
+                      selectedTickets.length === filteredTickets.length &&
+                      filteredTickets.length > 0
+                    }
+                    onChange={(e) => handleSelectAll(e.target.checked)}
+                    style={{ cursor: "pointer" }}
+                  />
+                </th>
+                <th
                   style={{
-                    padding: "48px",
-                    textAlign: "center",
+                    padding: "12px 16px",
+                    textAlign: "left",
+                    fontSize: "12px",
+                    fontWeight: 600,
                     color: "#6B7280",
+                    textTransform: "uppercase",
                   }}
                 >
-                  No tickets found
-                </td>
-              </tr>
-            ) : (
-              filteredTickets.map((ticket) => (
-                <tr
-                  key={ticket._id}
+                  Query #
+                </th>
+                <th
                   style={{
-                    borderBottom: "1px solid #F3F4F6",
-                    background: selectedTickets.includes(ticket._id)
-                      ? "#F0F9FF"
-                      : "white",
+                    padding: "12px 16px",
+                    textAlign: "left",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    color: "#6B7280",
+                    textTransform: "uppercase",
                   }}
                 >
-                  <td style={{ padding: "12px 16px" }}>
-                    <input
-                      type="checkbox"
-                      checked={selectedTickets.includes(ticket._id)}
-                      onChange={() => handleSelectTicket(ticket._id)}
-                      style={{ cursor: "pointer" }}
-                    />
-                  </td>
+                  Subject
+                </th>
+                <th
+                  style={{
+                    padding: "12px 16px",
+                    textAlign: "left",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    color: "#6B7280",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Priority
+                </th>
+                <th
+                  style={{
+                    padding: "12px 16px",
+                    textAlign: "left",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    color: "#6B7280",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Center
+                </th>
+                <th
+                  style={{
+                    padding: "12px 16px",
+                    textAlign: "left",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    color: "#6B7280",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Currently Assigned
+                </th>
+                <th
+                  style={{
+                    padding: "12px 16px",
+                    textAlign: "left",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    color: "#6B7280",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Requester
+                </th>
+                <th
+                  style={{
+                    padding: "12px 16px",
+                    textAlign: "left",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    color: "#6B7280",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Status
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {!filteredTickets || filteredTickets.length === 0 ? (
+                <tr>
                   <td
+                    colSpan={8}
                     style={{
-                      padding: "12px 16px",
-                      fontSize: "14px",
-                      fontWeight: 600,
-                      color: "#2563EB",
+                      padding: "48px",
+                      textAlign: "center",
+                      color: "#667085",
                     }}
                   >
-                    #{ticket.ticketNumber}
-                  </td>
-                  <td
-                    style={{
-                      padding: "12px 16px",
-                      fontSize: "14px",
-                      color: "#111827",
-                    }}
-                  >
-                    {ticket.subject || "No subject"}
-                  </td>
-                  <td style={{ padding: "12px 16px" }}>
-                    <span
-                      style={{
-                        padding: "4px 12px",
-                        borderRadius: "12px",
-                        fontSize: "12px",
-                        fontWeight: 600,
-                        background: getPriorityColor(ticket.priority) + "20",
-                        color: getPriorityColor(ticket.priority),
-                      }}
-                    >
-                      {ticket.priority || "N/A"}
-                    </span>
-                  </td>
-                  <td
-                    style={{
-                      padding: "12px 16px",
-                      fontSize: "14px",
-                      color: "#6B7280",
-                    }}
-                  >
-                    {(() => {
-                      const centerId = ticket.metadata?.centerId;
-                      if (!centerId || centerId === "online") return "Online";
-                      if (typeof centerId === "object") {
-                        return (
-                          centerId.centerName +
-                          (centerId.city ? `, ${centerId.city}` : "")
-                        );
-                      }
-                      return ticket.metadata?.centerName || "Online";
-                    })()}
-                  </td>
-                  <td
-                    style={{
-                      padding: "12px 16px",
-                      fontSize: "14px",
-                      color: "#6B7280",
-                    }}
-                  >
-                    {ticket.assignedTo
-                      ? `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}`
-                      : "Unassigned"}
-                  </td>
-                  <td
-                    style={{
-                      padding: "12px 16px",
-                      fontSize: "14px",
-                      color: "#6B7280",
-                    }}
-                  >
-                    {ticket.metadata?.studentName ||
-                      ticket.metadata?.studentEmail ||
-                      "N/A"}
-                  </td>
-                  <td style={{ padding: "12px 16px" }}>
-                    <span
-                      style={{
-                        padding: "4px 12px",
-                        borderRadius: "12px",
-                        fontSize: "12px",
-                        fontWeight: 600,
-                        background: getStatusColor(ticket.status) + "20",
-                        color: getStatusColor(ticket.status),
-                      }}
-                    >
-                      {getStatusName(ticket.status)}
-                    </span>
+                    No tickets found
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : (
+                filteredTickets.map((ticket) => (
+                  <tr
+                    key={ticket._id}
+                    style={{
+                      borderBottom: "1px solid #F2F4F7",
+                      background: selectedTickets.includes(ticket._id)
+                        ? "#F0F9FF"
+                        : "white",
+                    }}
+                  >
+                    <td style={{ padding: "12px 16px" }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedTickets.includes(ticket._id)}
+                        onChange={() => handleSelectTicket(ticket._id)}
+                        style={{ cursor: "pointer" }}
+                      />
+                    </td>
+                    <td
+                      style={{
+                        padding: "12px 16px",
+                        fontSize: "14px",
+                        fontWeight: 600,
+                        color: "#2563EB",
+                      }}
+                    >
+                      #{ticket.ticketNumber}
+                    </td>
+                    <td
+                      style={{
+                        padding: "12px 16px",
+                        fontSize: "14px",
+                        color: "#111827",
+                      }}
+                    >
+                      {ticket.subject || "No subject"}
+                    </td>
+                    <td style={{ padding: "12px 16px" }}>
+                      <span
+                        style={{
+                          padding: "4px 12px",
+                          borderRadius: "12px",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          background: getPriorityColor(ticket.priority) + "20",
+                          color: getPriorityColor(ticket.priority),
+                        }}
+                      >
+                        {ticket.priority || "N/A"}
+                      </span>
+                    </td>
+                    <td
+                      style={{
+                        padding: "12px 16px",
+                        fontSize: "14px",
+                        color: "#6B7280",
+                      }}
+                    >
+                      {(() => {
+                        const centerId = ticket.metadata?.centerId;
+                        if (!centerId || centerId === "online") return "Online";
+                        if (typeof centerId === "object") {
+                          return (
+                            centerId.centerName +
+                            (centerId.city ? `, ${centerId.city}` : "")
+                          );
+                        }
+                        return ticket.metadata?.centerName || "Online";
+                      })()}
+                    </td>
+                    <td
+                      style={{
+                        padding: "12px 16px",
+                        fontSize: "14px",
+                        color: "#6B7280",
+                      }}
+                    >
+                      {ticket.assignedTo
+                        ? `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}`
+                        : "Unassigned"}
+                    </td>
+                    <td
+                      style={{
+                        padding: "12px 16px",
+                        fontSize: "14px",
+                        color: "#6B7280",
+                      }}
+                    >
+                      {ticket.metadata?.studentName ||
+                        ticket.metadata?.studentEmail ||
+                        "N/A"}
+                    </td>
+                    <td style={{ padding: "12px 16px" }}>
+                      <span
+                        style={{
+                          padding: "4px 12px",
+                          borderRadius: "12px",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          background: getStatusColor(ticket.status) + "20",
+                          color: getStatusColor(ticket.status),
+                        }}
+                      >
+                        {getStatusName(ticket.status)}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Pagination and Summary */}
@@ -893,7 +1029,9 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({
           marginTop: "16px",
           display: "flex",
           justifyContent: "space-between",
-          alignItems: "center",
+          alignItems: isMobile ? "flex-start" : "center",
+          flexDirection: isMobile ? "column" : "row",
+          gap: isMobile ? "10px" : "0",
           fontSize: "14px",
           color: "#6B7280",
         }}
@@ -913,7 +1051,7 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({
               fontSize: "13px",
             }}
           >
-            ← Previous
+            {isMobile ? "←" : "← Previous"}
           </button>
 
           <span style={{ padding: "0 12px" }}>
@@ -933,7 +1071,7 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({
               fontSize: "13px",
             }}
           >
-            Next →
+            {isMobile ? "→" : "Next →"}
           </button>
         </div>
 
