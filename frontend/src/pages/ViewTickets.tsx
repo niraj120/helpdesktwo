@@ -8,7 +8,6 @@ import React, {
 } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import DashboardLayout from "../components/DashboardLayout";
-import ModuleHeader from "../components/ModuleHeader";
 import axios from "axios";
 import { TicketExportModal } from "../components/tickets/TicketExportModal";
 import { TicketMergeModal } from "../components/tickets/TicketMergeModal";
@@ -267,6 +266,22 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
   // Real-time: track pending new-ticket badge so the user sees a refresh hint
   const [pendingNewTickets, setPendingNewTickets] = useState(0);
 
+  // Stats cards — keyed by "total" and each status code (as string)
+  const [ticketStats, setTicketStats] = useState<Record<string, number>>({
+    total: 0,
+  });
+
+  // Per-row action menu (only one open at a time)
+  const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
+
+  // Close action menu on outside click
+  useEffect(() => {
+    if (!openActionMenuId) return;
+    const handler = () => setOpenActionMenuId(null);
+    document.addEventListener("click", handler);
+    return () => document.removeEventListener("click", handler);
+  }, [openActionMenuId]);
+
   // Build socket rooms: join the project-specific room when a project is locked, else join all-tickets
   const socketRooms = useMemo(() => {
     if (initialProjectId) return [`project-tickets-${initialProjectId}`];
@@ -322,15 +337,36 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     hasFetchedTickets.current = true;
     fetchTickets(1, initialProjectId ?? "all", "all");
     if (!initialProjectId) fetchProjects(); // skip project list when locked to portal project
-    fetchAgents();
+    fetchAgents(initialProjectId ?? undefined);
+    fetchStats([], {});
     fetchStatuses(initialProjectId ?? null);
   }, []);
 
-  // Re-fetch statuses when project filter changes
+  // Re-fetch statuses when project filter changes, and reset dependent filters
   useEffect(() => {
-    if (filterProject !== "all") fetchStatuses(filterProject);
-    else fetchStatuses(initialProjectId ?? null);
+    if (filterProject !== "all") {
+      fetchStatuses(filterProject);
+      fetchAgents(filterProject);
+    } else {
+      fetchStatuses(initialProjectId ?? null);
+      fetchAgents(initialProjectId ?? undefined);
+    }
+    // Reset dependent dropdowns when project changes
+    setFilterStatus("all");
+    setFilterAssignedTo("all");
   }, [filterProject]);
+
+  // Re-run stats whenever the statuses list is (re)loaded
+  useEffect(() => {
+    if (statuses.length === 0) return;
+    fetchStats(statuses, {
+      project: filterProject,
+      assignedTo: filterAssignedTo,
+      priority: filterPriority,
+      dateFrom: filterDateFrom,
+      dateTo: filterDateTo,
+    });
+  }, [statuses]);
 
   // Re-fetch tickets (from page 1) whenever a server-side filter changes
   const filterChangeRef = useRef(false);
@@ -341,6 +377,13 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     }
     setCurrentPage(1);
     fetchTickets(1, filterProject, filterAssignedTo);
+    fetchStats(statuses, {
+      project: filterProject,
+      assignedTo: filterAssignedTo,
+      priority: filterPriority,
+      dateFrom: filterDateFrom,
+      dateTo: filterDateTo,
+    });
   }, [
     filterStatus,
     filterPriority,
@@ -491,14 +534,19 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     }
   };
 
-  const fetchAgents = async () => {
+  const fetchAgents = async (projectId?: string) => {
     try {
       const token = localStorage.getItem("authToken");
       if (!token) return;
+      const pid =
+        projectId && projectId !== "all"
+          ? projectId
+          : (initialProjectId ?? undefined);
       const response = await axios.get(
         `${API_CONFIG.API_URL}/tickets/assignable-agents`,
         {
           headers: { Authorization: `Bearer ${token}` },
+          params: pid ? { projectId: pid } : {},
         },
       );
       if (response.data.success) {
@@ -507,6 +555,61 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
       }
     } catch {
       // non-fatal
+    }
+  };
+
+  const fetchStats = async (
+    statusList: Array<{ code: number; name: string }>,
+    opts: {
+      project?: string;
+      assignedTo?: string;
+      priority?: string;
+      dateFrom?: string;
+      dateTo?: string;
+    },
+  ) => {
+    try {
+      const token = localStorage.getItem("authToken");
+      if (!token) return;
+      const base = `${API_CONFIG.API_URL}/tickets`;
+      const headers = { Authorization: `Bearer ${token}` };
+      const pid =
+        initialProjectId ?? (opts.project !== "all" ? opts.project : undefined);
+      const sharedParams: Record<string, string> = {};
+      if (pid) sharedParams.projectId = pid;
+      if (opts.assignedTo && opts.assignedTo !== "all")
+        sharedParams.assignedTo = opts.assignedTo;
+      if (opts.priority && opts.priority !== "all")
+        sharedParams.priority = opts.priority;
+      if (opts.dateFrom) sharedParams.dateFrom = opts.dateFrom;
+      if (opts.dateTo) sharedParams.dateTo = opts.dateTo;
+      const [allRes, ...statusRes] = await Promise.all([
+        axios.get(base, {
+          headers,
+          params: { limit: 1, page: 1, ...sharedParams },
+        }),
+        ...statusList.map((s) =>
+          axios.get(base, {
+            headers,
+            params: {
+              limit: 1,
+              page: 1,
+              status: String(s.code),
+              ...sharedParams,
+            },
+          }),
+        ),
+      ]);
+      const newStats: Record<string, number> = {
+        total: allRes.data.data?.pagination?.total ?? 0,
+      };
+      statusList.forEach((s, i) => {
+        newStats[String(s.code)] =
+          statusRes[i].data.data?.pagination?.total ?? 0;
+      });
+      setTicketStats(newStats);
+    } catch {
+      // non-fatal — stats are display-only
     }
   };
 
@@ -632,6 +735,35 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     </div>
   );
 
+  const STATUS_COLOR_PALETTE = [
+    { color: "#047857", bg: "#ecfdf5", borderActive: "#6ee7b7" },
+    { color: "#b45309", bg: "#fffbeb", borderActive: "#fcd34d" },
+    { color: "#7c3aed", bg: "#f5f3ff", borderActive: "#c4b5fd" },
+    { color: "#0369a1", bg: "#f0f9ff", borderActive: "#7dd3fc" },
+    { color: "#be123c", bg: "#fff1f2", borderActive: "#fda4af" },
+    { color: "#15803d", bg: "#f0fdf4", borderActive: "#86efac" },
+    { color: "#9a3412", bg: "#fff7ed", borderActive: "#fdba74" },
+    { color: "#1e40af", bg: "#eff6ff", borderActive: "#93c5fd" },
+  ];
+  const statsCards = [
+    {
+      label: "Total Queries",
+      sub: "All statuses",
+      value: ticketStats.total ?? 0,
+      color: "#1d4ed8",
+      bg: "#eff6ff",
+      borderActive: "#93c5fd",
+      statusFilter: "all",
+    },
+    ...statuses.map((s, i) => ({
+      label: s.name,
+      sub: "Click to filter",
+      value: ticketStats[String(s.code)] ?? 0,
+      statusFilter: String(s.code),
+      ...STATUS_COLOR_PALETTE[i % STATUS_COLOR_PALETTE.length],
+    })),
+  ];
+
   return (
     <Wrapper wrap={wrapWithLayout}>
       {loading ? (
@@ -639,16 +771,53 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
       ) : (
         <>
           <div
-            style={{ padding: "24px", maxWidth: "1400px", margin: "0 auto" }}
+            style={{
+              padding: "24px 20px 32px",
+              maxWidth: "1380px",
+              margin: "0 auto",
+              background: "#f6f8fc",
+              minHeight: "100vh",
+              fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+            }}
           >
-            <ModuleHeader
-              title={hasViewAll ? "All Queries" : "My Queries"}
-              subtitle={
-                hasViewAll
+            <div
+              style={{
+                background: "#ffffff",
+                padding: "22px 24px",
+                borderRadius: "14px",
+                marginBottom: "16px",
+                border: "1px solid #e7ebf3",
+                boxShadow: "0 4px 18px rgba(15, 23, 42, 0.05)",
+              }}
+            >
+              <h1
+                style={{
+                  margin: "0 0 6px 0",
+                  fontSize: "24px",
+                  fontWeight: 700,
+                  color: "#111827",
+                  letterSpacing: "-0.01em",
+                  fontFamily:
+                    '"Noto Sans", system-ui, -apple-system, sans-serif',
+                }}
+              >
+                {hasViewAll ? "All Queries" : "My Queries"}
+              </h1>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: "14px",
+                  color: "#6b7280",
+                  fontWeight: 400,
+                  fontFamily:
+                    '"Noto Sans", system-ui, -apple-system, sans-serif',
+                }}
+              >
+                {hasViewAll
                   ? "View and manage all support queries across all projects"
-                  : "View and manage queries assigned to you"
-              }
-            />
+                  : "View and manage queries assigned to you"}
+              </p>
+            </div>
             {/* Real-time: pending new tickets banner */}
             {pendingNewTickets > 0 && (
               <div
@@ -678,37 +847,146 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
               </div>
             )}
 
-            {/* Filters */}
+            {/* Stats Cards */}
             <div
               style={{
-                background: "white",
-                borderRadius: "12px",
-                padding: "12px 16px",
-                boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
-                border: "1px solid #F3F4F6",
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+                gap: "12px",
                 marginBottom: "16px",
               }}
             >
+              {statsCards.map((stat) => {
+                const isActive = filterStatus === stat.statusFilter;
+                return (
+                  <div
+                    key={stat.label}
+                    onClick={() => setFilterStatus(stat.statusFilter)}
+                    style={{
+                      background: isActive ? stat.bg : "#ffffff",
+                      border: isActive
+                        ? `2px solid ${stat.borderActive}`
+                        : "1px solid #e7ebf3",
+                      borderRadius: "12px",
+                      padding: isActive ? "13px 15px" : "14px 16px",
+                      boxShadow: isActive
+                        ? `0 0 0 3px ${stat.bg}`
+                        : "0 2px 10px rgba(15, 23, 42, 0.04)",
+                      cursor: "pointer",
+                      transition: "all 0.15s ease",
+                      userSelect: "none" as const,
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isActive) {
+                        e.currentTarget.style.borderColor = stat.borderActive;
+                        e.currentTarget.style.boxShadow = `0 4px 16px rgba(15, 23, 42, 0.08)`;
+                        e.currentTarget.style.transform = "translateY(-1px)";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isActive) {
+                        e.currentTarget.style.borderColor = "#e7ebf3";
+                        e.currentTarget.style.boxShadow =
+                          "0 2px 10px rgba(15, 23, 42, 0.04)";
+                        e.currentTarget.style.transform = "translateY(0)";
+                      }
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        marginBottom: "4px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: "11px",
+                          color: isActive ? stat.color : "#6b7280",
+                          fontWeight: 600,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.04em",
+                        }}
+                      >
+                        {stat.label}
+                      </div>
+                      {isActive && (
+                        <span
+                          style={{
+                            fontSize: "10px",
+                            background: stat.color,
+                            color: "white",
+                            borderRadius: "999px",
+                            padding: "1px 7px",
+                            fontWeight: 700,
+                            letterSpacing: "0.04em",
+                          }}
+                        >
+                          Active
+                        </span>
+                      )}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "11px",
+                        color: "#9ca3af",
+                        marginBottom: "8px",
+                      }}
+                    >
+                      {stat.sub}
+                    </div>
+                    <div
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        padding: "4px 10px",
+                        borderRadius: "999px",
+                        background: stat.bg,
+                        color: stat.color,
+                        fontWeight: 700,
+                        fontSize: "20px",
+                        lineHeight: 1,
+                      }}
+                    >
+                      {stat.value.toLocaleString()}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Filters */}
+            <div
+              style={{
+                background: "#ffffff",
+                borderRadius: "14px",
+                border: "1px solid #e7ebf3",
+                padding: "14px",
+                boxShadow: "0 4px 16px rgba(15, 23, 42, 0.04)",
+                marginBottom: "16px",
+              }}
+            >
+              {/* Row 1: Search + action buttons */}
               <div
                 style={{
                   display: "flex",
-                  gap: "8px",
-                  flexWrap: "wrap",
+                  gap: "12px",
                   alignItems: "center",
+                  marginBottom: "12px",
                 }}
               >
                 {/* Search */}
-                <div
-                  style={{ position: "relative", flex: 1, minWidth: "220px" }}
-                >
+                <div style={{ position: "relative", flex: 1 }}>
                   <MagnifyingGlassIcon
                     style={{
                       position: "absolute",
-                      left: "10px",
+                      left: "14px",
                       top: "50%",
                       transform: "translateY(-50%)",
-                      width: "15px",
-                      height: "15px",
+                      width: "16px",
+                      height: "16px",
                       color: "#9CA3AF",
                       pointerEvents: "none",
                     }}
@@ -720,26 +998,34 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                     onChange={(e) => setSearchQuery(e.target.value)}
                     style={{
                       width: "100%",
-                      paddingTop: "9px",
-                      paddingBottom: "9px",
-                      paddingLeft: "32px",
-                      paddingRight: searchQuery ? "30px" : "12px",
-                      border: "1px solid #E5E7EB",
-                      borderRadius: "8px",
+                      height: "42px",
+                      padding: `10px ${searchQuery ? "36px" : "14px"} 10px 40px`,
+                      border: "1px solid #d7deea",
+                      borderRadius: "10px",
                       fontSize: "14px",
                       boxSizing: "border-box",
-                      background: "#F9FAFB",
+                      background: "white",
                       outline: "none",
+                      boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
+                      transition: "all 0.2s ease",
                     }}
-                    onFocus={(e) => (e.target.style.borderColor = "#3B82F6")}
-                    onBlur={(e) => (e.target.style.borderColor = "#E5E7EB")}
+                    onFocus={(e) => {
+                      e.target.style.borderColor = "#84caff";
+                      e.target.style.boxShadow =
+                        "0 0 0 3px rgba(132, 202, 255, 0.25)";
+                    }}
+                    onBlur={(e) => {
+                      e.target.style.borderColor = "#d7deea";
+                      e.target.style.boxShadow =
+                        "0 1px 3px rgba(0, 0, 0, 0.04)";
+                    }}
                   />
                   {searchQuery && (
                     <button
                       onClick={() => setSearchQuery("")}
                       style={{
                         position: "absolute",
-                        right: "8px",
+                        right: "10px",
                         top: "50%",
                         transform: "translateY(-50%)",
                         background: "none",
@@ -756,270 +1042,6 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                   )}
                 </div>
 
-                {/* Status */}
-                <div style={{ position: "relative" }}>
-                  <select
-                    value={filterStatus}
-                    onChange={(e) => setFilterStatus(e.target.value)}
-                    style={{
-                      paddingTop: "9px",
-                      paddingBottom: "9px",
-                      paddingLeft: "10px",
-                      paddingRight: "28px",
-                      border:
-                        filterStatus !== "all"
-                          ? "1.5px solid #3B82F6"
-                          : "1px solid #E5E7EB",
-                      borderRadius: "8px",
-                      fontSize: "14px",
-                      minWidth: "120px",
-                      background:
-                        filterStatus !== "all" ? "#EFF6FF" : "#F9FAFB",
-                      color: filterStatus !== "all" ? "#1D4ED8" : "#374151",
-                      cursor: "pointer",
-                      appearance: "none" as const,
-                      WebkitAppearance: "none" as const,
-                      fontWeight: filterStatus !== "all" ? 500 : 400,
-                      outline: "none",
-                    }}
-                  >
-                    <option value="all">All Status</option>
-                    {statuses.map((s) => (
-                      <option key={s.code} value={String(s.code)}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDownIcon
-                    style={{
-                      position: "absolute",
-                      right: "8px",
-                      top: "50%",
-                      transform: "translateY(-50%)",
-                      width: "13px",
-                      height: "13px",
-                      pointerEvents: "none",
-                      color: filterStatus !== "all" ? "#3B82F6" : "#6B7280",
-                    }}
-                  />
-                </div>
-
-                {/* Priority */}
-                <div style={{ position: "relative" }}>
-                  <select
-                    value={filterPriority}
-                    onChange={(e) => setFilterPriority(e.target.value)}
-                    style={{
-                      paddingTop: "9px",
-                      paddingBottom: "9px",
-                      paddingLeft: "10px",
-                      paddingRight: "28px",
-                      border:
-                        filterPriority !== "all"
-                          ? "1.5px solid #3B82F6"
-                          : "1px solid #E5E7EB",
-                      borderRadius: "8px",
-                      fontSize: "14px",
-                      minWidth: "120px",
-                      background:
-                        filterPriority !== "all" ? "#EFF6FF" : "#F9FAFB",
-                      color: filterPriority !== "all" ? "#1D4ED8" : "#374151",
-                      cursor: "pointer",
-                      appearance: "none" as const,
-                      WebkitAppearance: "none" as const,
-                      fontWeight: filterPriority !== "all" ? 500 : 400,
-                      outline: "none",
-                    }}
-                  >
-                    <option value="all">All Priority</option>
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                    <option value="critical">Critical</option>
-                  </select>
-                  <ChevronDownIcon
-                    style={{
-                      position: "absolute",
-                      right: "8px",
-                      top: "50%",
-                      transform: "translateY(-50%)",
-                      width: "13px",
-                      height: "13px",
-                      pointerEvents: "none",
-                      color: filterPriority !== "all" ? "#3B82F6" : "#6B7280",
-                    }}
-                  />
-                </div>
-
-                {/* Project — hidden when locked to a portal project */}
-                {!initialProjectId && projects.length > 0 && (
-                  <div style={{ position: "relative" }}>
-                    <select
-                      value={filterProject}
-                      onChange={(e) => setFilterProject(e.target.value)}
-                      style={{
-                        paddingTop: "9px",
-                        paddingBottom: "9px",
-                        paddingLeft: "10px",
-                        paddingRight: "28px",
-                        border:
-                          filterProject !== "all"
-                            ? "1.5px solid #3B82F6"
-                            : "1px solid #E5E7EB",
-                        borderRadius: "8px",
-                        fontSize: "14px",
-                        minWidth: "150px",
-                        maxWidth: "240px",
-                        background:
-                          filterProject !== "all" ? "#EFF6FF" : "#F9FAFB",
-                        color: filterProject !== "all" ? "#1D4ED8" : "#374151",
-                        cursor: "pointer",
-                        appearance: "none" as const,
-                        WebkitAppearance: "none" as const,
-                        fontWeight: filterProject !== "all" ? 500 : 400,
-                        outline: "none",
-                      }}
-                    >
-                      <option value="all">All Projects</option>
-                      {projects.map((p) => (
-                        <option key={p._id} value={p._id}>
-                          {p.name} {p.code ? `(${p.code})` : ""}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDownIcon
-                      style={{
-                        position: "absolute",
-                        right: "8px",
-                        top: "50%",
-                        transform: "translateY(-50%)",
-                        width: "13px",
-                        height: "13px",
-                        pointerEvents: "none",
-                        color: filterProject !== "all" ? "#3B82F6" : "#6B7280",
-                      }}
-                    />
-                  </div>
-                )}
-
-                {/* Assigned Agent */}
-                {agents.length > 0 && (
-                  <div style={{ position: "relative" }}>
-                    <select
-                      value={filterAssignedTo}
-                      onChange={(e) => setFilterAssignedTo(e.target.value)}
-                      style={{
-                        paddingTop: "9px",
-                        paddingBottom: "9px",
-                        paddingLeft: "10px",
-                        paddingRight: "28px",
-                        border:
-                          filterAssignedTo !== "all"
-                            ? "1.5px solid #3B82F6"
-                            : "1px solid #E5E7EB",
-                        borderRadius: "8px",
-                        fontSize: "14px",
-                        minWidth: "150px",
-                        maxWidth: "220px",
-                        background:
-                          filterAssignedTo !== "all" ? "#EFF6FF" : "#F9FAFB",
-                        color:
-                          filterAssignedTo !== "all" ? "#1D4ED8" : "#374151",
-                        cursor: "pointer",
-                        appearance: "none" as const,
-                        WebkitAppearance: "none" as const,
-                        fontWeight: filterAssignedTo !== "all" ? 500 : 400,
-                        outline: "none",
-                      }}
-                    >
-                      <option value="all">All Agents</option>
-                      <option value="unassigned">Unassigned</option>
-                      {agents.map((a) => (
-                        <option key={a._id} value={a._id}>
-                          {a.firstName} {a.lastName}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDownIcon
-                      style={{
-                        position: "absolute",
-                        right: "8px",
-                        top: "50%",
-                        transform: "translateY(-50%)",
-                        width: "13px",
-                        height: "13px",
-                        pointerEvents: "none",
-                        color:
-                          filterAssignedTo !== "all" ? "#3B82F6" : "#6B7280",
-                      }}
-                    />
-                  </div>
-                )}
-
-                {/* Date range — combined pill */}
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "6px",
-                    background:
-                      filterDateFrom || filterDateTo ? "#EFF6FF" : "#F9FAFB",
-                    border: `${filterDateFrom || filterDateTo ? "1.5px" : "1px"} solid ${filterDateFrom || filterDateTo ? "#3B82F6" : "#E5E7EB"}`,
-                    borderRadius: "8px",
-                    padding: "5px 10px",
-                  }}
-                >
-                  <CalendarDaysIcon
-                    style={{
-                      width: "14px",
-                      height: "14px",
-                      color:
-                        filterDateFrom || filterDateTo ? "#3B82F6" : "#9CA3AF",
-                      flexShrink: 0,
-                    }}
-                  />
-                  <input
-                    type="date"
-                    value={filterDateFrom}
-                    onChange={(e) => setFilterDateFrom(e.target.value)}
-                    style={{
-                      border: "none",
-                      background: "transparent",
-                      fontSize: "13px",
-                      outline: "none",
-                      color: filterDateFrom ? "#1D4ED8" : "#6B7280",
-                      width: "120px",
-                      cursor: "pointer",
-                    }}
-                  />
-                  <span
-                    style={{
-                      color: "#D1D5DB",
-                      fontSize: "11px",
-                      fontWeight: 600,
-                    }}
-                  >
-                    –
-                  </span>
-                  <input
-                    type="date"
-                    value={filterDateTo}
-                    onChange={(e) => setFilterDateTo(e.target.value)}
-                    style={{
-                      border: "none",
-                      background: "transparent",
-                      fontSize: "13px",
-                      outline: "none",
-                      color: filterDateTo ? "#1D4ED8" : "#6B7280",
-                      width: "120px",
-                      cursor: "pointer",
-                    }}
-                  />
-                </div>
-
-                {/* Push export + clear to the right */}
-                <div style={{ flex: 1, minWidth: "0" }} />
-
                 {/* Export */}
                 {canExport && (
                   <button
@@ -1028,15 +1050,17 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                       display: "flex",
                       alignItems: "center",
                       gap: "6px",
-                      padding: "9px 14px",
+                      height: "42px",
+                      padding: "0 16px",
                       background: "#059669",
                       color: "white",
                       border: "none",
-                      borderRadius: "8px",
+                      borderRadius: "10px",
                       fontSize: "14px",
                       fontWeight: 600,
                       cursor: "pointer",
                       whiteSpace: "nowrap",
+                      flexShrink: 0,
                     }}
                     onMouseEnter={(e) =>
                       (e.currentTarget.style.background = "#047857")
@@ -1074,14 +1098,17 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                       display: "flex",
                       alignItems: "center",
                       gap: "4px",
-                      padding: "9px 12px",
-                      border: "1px solid #E5E7EB",
-                      borderRadius: "8px",
+                      height: "42px",
+                      padding: "0 14px",
+                      border: "1px solid #d7deea",
+                      borderRadius: "10px",
                       background: "white",
                       color: "#6B7280",
                       fontSize: "13px",
+                      fontWeight: 600,
                       cursor: "pointer",
                       whiteSpace: "nowrap",
+                      flexShrink: 0,
                     }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.background = "#FEF2F2";
@@ -1091,252 +1118,503 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                     onMouseLeave={(e) => {
                       e.currentTarget.style.background = "white";
                       e.currentTarget.style.color = "#6B7280";
-                      e.currentTarget.style.borderColor = "#E5E7EB";
+                      e.currentTarget.style.borderColor = "#d7deea";
                     }}
                   >
                     <XMarkIcon style={{ width: "13px", height: "13px" }} />
-                    Clear
+                    Clear filters
                   </button>
                 )}
               </div>
-            </div>
 
-            {/* Bulk Action Bar */}
-            {selectedTicketIds.size > 0 && (
-              <>
-                <div
-                  style={{
-                    background: "#1E40AF",
-                    color: "white",
-                    borderRadius: "10px",
-                    padding: "12px 20px",
-                    marginBottom: "12px",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "16px",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <span style={{ fontWeight: 600, fontSize: "14px" }}>
-                    {selectedTicketIds.size} ticket
-                    {selectedTicketIds.size !== 1 ? "s" : ""} selected
-                  </span>
-                  {canMerge && selectedTicketIds.size >= 2 && (
-                    <button
-                      onClick={() => {
-                        const sel = filteredTickets.filter((t) =>
-                          selectedTicketIds.has(t._id),
-                        );
-                        const getKey = (t: Ticket) =>
-                          t.metadata?.studentEmail ||
-                          t.metadata?.studentName ||
-                          "";
-                        const keys = new Set(sel.map(getKey));
-                        if (keys.size > 1) {
-                          setBulkError(
-                            "Cannot merge tickets from different requestors. Please select tickets raised by the same person.",
-                          );
-                          return;
-                        }
-                        setBulkMergeStep("pick-primary");
-                        setBulkMergePrimaryId("");
-                        setBulkError("");
-                      }}
+              {/* Row 2: Hierarchical filter grid — Project (parent) → Status → Priority → Assignee → Date From → Date To */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+                  gap: "12px",
+                  alignItems: "center",
+                }}
+              >
+                {/* 1. Project — parent filter, shown only when not locked to a portal project */}
+                {!initialProjectId && projects.length > 0 && (
+                  <div style={{ position: "relative" }}>
+                    <select
+                      value={filterProject}
+                      onChange={(e) => setFilterProject(e.target.value)}
                       style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "6px",
-                        padding: "7px 14px",
-                        background: "rgba(255,255,255,0.2)",
-                        border: "1px solid rgba(255,255,255,0.4)",
-                        color: "white",
-                        borderRadius: "6px",
-                        fontSize: "13px",
-                        fontWeight: 600,
+                        width: "100%",
+                        height: "42px",
+                        padding: "8px 36px 8px 10px",
+                        border:
+                          filterProject !== "all"
+                            ? "1px solid #84caff"
+                            : "1px solid #d7deea",
+                        borderRadius: "10px",
+                        fontSize: "14px",
+                        background:
+                          filterProject !== "all" ? "#eff6ff" : "white",
+                        color: filterProject !== "all" ? "#1d4ed8" : "#374151",
                         cursor: "pointer",
+                        appearance: "none" as const,
+                        WebkitAppearance: "none" as const,
+                        fontWeight: filterProject !== "all" ? 500 : 400,
+                        outline: "none",
+                        boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
                       }}
                     >
-                      <ArrowsPointingInIcon
-                        style={{ width: "15px", height: "15px" }}
-                      />
-                      Merge Selected
-                    </button>
-                  )}
-                  {canDelete && (
-                    <button
-                      onClick={() => {
-                        setShowBulkDeleteConfirm(true);
-                        setBulkError("");
-                      }}
+                      <option value="all">All Projects</option>
+                      {projects.map((p) => (
+                        <option key={p._id} value={p._id}>
+                          {p.name} {p.code ? `(${p.code})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDownIcon
                       style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "6px",
-                        padding: "7px 14px",
-                        background: "rgba(239,68,68,0.8)",
-                        border: "1px solid rgba(239,68,68,0.4)",
-                        color: "white",
-                        borderRadius: "6px",
-                        fontSize: "13px",
-                        fontWeight: 600,
-                        cursor: "pointer",
+                        position: "absolute",
+                        right: "12px",
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        width: "13px",
+                        height: "13px",
+                        pointerEvents: "none",
+                        color: filterProject !== "all" ? "#1d4ed8" : "#6B7280",
                       }}
-                    >
-                      <TrashIcon style={{ width: "15px", height: "15px" }} />
-                      Delete Selected
-                    </button>
-                  )}
-                  <button
-                    onClick={() => {
-                      setSelectedTicketIds(new Set());
-                      setBulkError("");
-                    }}
-                    style={{
-                      marginLeft: "auto",
-                      background: "transparent",
-                      border: "none",
-                      color: "rgba(255,255,255,0.7)",
-                      cursor: "pointer",
-                      fontSize: "13px",
-                    }}
-                  >
-                    Clear selection
-                  </button>
-                </div>
-                {bulkMergeStep === "idle" && bulkError && (
-                  <div
-                    style={{
-                      background: "#FEF2F2",
-                      border: "1px solid #FECACA",
-                      borderRadius: "8px",
-                      padding: "10px 14px",
-                      color: "#B91C1C",
-                      fontSize: "13px",
-                      marginBottom: "12px",
-                    }}
-                  >
-                    {bulkError}
+                    />
                   </div>
                 )}
-              </>
-            )}
 
-            {/* Tickets Grid */}
-            <div style={{ display: "grid", gap: "16px" }}>
-              {/* Select-all row */}
-              {filteredTickets.length > 0 && (canMerge || canDelete) && (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "10px",
-                    padding: "8px 12px",
-                    background: "#F8FAFC",
-                    borderRadius: "8px",
-                    border: "1px solid #E5E7EB",
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={
-                      filteredTickets.length > 0 &&
-                      selectedTicketIds.size === filteredTickets.length
-                    }
-                    onChange={toggleSelectAll}
-                    style={{ width: "16px", height: "16px", cursor: "pointer" }}
-                  />
-                  <span style={{ fontSize: "13px", color: "#6B7280" }}>
-                    Select all on this page ({filteredTickets.length})
-                  </span>
-                </div>
-              )}
-              {filteredTickets.length === 0 ? (
-                <div
-                  style={{
-                    background: "white",
-                    borderRadius: "12px",
-                    padding: "48px",
-                    textAlign: "center",
-                    boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-                  }}
-                >
-                  <p style={{ color: "#6B7280" }}>No tickets found</p>
-                </div>
-              ) : (
-                filteredTickets.map((ticket) => (
-                  <div
-                    key={ticket._id}
+                {/* 2. Status */}
+                <div style={{ position: "relative" }}>
+                  <select
+                    value={filterStatus}
+                    onChange={(e) => setFilterStatus(e.target.value)}
                     style={{
-                      background: selectedTicketIds.has(ticket._id)
-                        ? "#EFF6FF"
-                        : ticket.hasNewReply
-                          ? "#FFFBEB"
-                          : "white",
-                      borderRadius: "12px",
-                      padding: "20px",
-                      boxShadow: ticket.hasNewReply
-                        ? "0 1px 6px rgba(245,158,11,0.25)"
-                        : "0 1px 3px rgba(0,0,0,0.1)",
-                      transition: "all 0.2s",
-                      border: selectedTicketIds.has(ticket._id)
-                        ? "1.5px solid #3B82F6"
-                        : ticket.hasNewReply
-                          ? "1.5px solid #F59E0B"
-                          : "1.5px solid transparent",
-                      borderLeft:
-                        ticket.hasNewReply && !selectedTicketIds.has(ticket._id)
-                          ? "4px solid #F59E0B"
-                          : undefined,
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!selectedTicketIds.has(ticket._id)) {
-                        e.currentTarget.style.boxShadow =
-                          "0 4px 12px rgba(0,0,0,0.15)";
-                        e.currentTarget.style.transform = "translateY(-2px)";
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.boxShadow =
-                        "0 1px 3px rgba(0,0,0,0.1)";
-                      e.currentTarget.style.transform = "translateY(0)";
+                      width: "100%",
+                      height: "42px",
+                      padding: "8px 36px 8px 10px",
+                      border:
+                        filterStatus !== "all"
+                          ? "1px solid #84caff"
+                          : "1px solid #d7deea",
+                      borderRadius: "10px",
+                      fontSize: "14px",
+                      background: filterStatus !== "all" ? "#eff6ff" : "white",
+                      color: filterStatus !== "all" ? "#1d4ed8" : "#374151",
+                      cursor: "pointer",
+                      appearance: "none" as const,
+                      WebkitAppearance: "none" as const,
+                      fontWeight: filterStatus !== "all" ? 500 : 400,
+                      outline: "none",
+                      boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
                     }}
                   >
-                    <div
+                    <option value="all">All Status</option>
+                    {statuses.map((s) => (
+                      <option key={s.code} value={String(s.code)}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDownIcon
+                    style={{
+                      position: "absolute",
+                      right: "12px",
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      width: "13px",
+                      height: "13px",
+                      pointerEvents: "none",
+                      color: filterStatus !== "all" ? "#1d4ed8" : "#6B7280",
+                    }}
+                  />
+                </div>
+
+                {/* 3. Priority */}
+                <div style={{ position: "relative" }}>
+                  <select
+                    value={filterPriority}
+                    onChange={(e) => setFilterPriority(e.target.value)}
+                    style={{
+                      width: "100%",
+                      height: "42px",
+                      padding: "8px 36px 8px 10px",
+                      border:
+                        filterPriority !== "all"
+                          ? "1px solid #84caff"
+                          : "1px solid #d7deea",
+                      borderRadius: "10px",
+                      fontSize: "14px",
+                      background:
+                        filterPriority !== "all" ? "#eff6ff" : "white",
+                      color: filterPriority !== "all" ? "#1d4ed8" : "#374151",
+                      cursor: "pointer",
+                      appearance: "none" as const,
+                      WebkitAppearance: "none" as const,
+                      fontWeight: filterPriority !== "all" ? 500 : 400,
+                      outline: "none",
+                      boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
+                    }}
+                  >
+                    <option value="all">All Priority</option>
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="critical">Critical</option>
+                  </select>
+                  <ChevronDownIcon
+                    style={{
+                      position: "absolute",
+                      right: "12px",
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      width: "13px",
+                      height: "13px",
+                      pointerEvents: "none",
+                      color: filterPriority !== "all" ? "#1d4ed8" : "#6B7280",
+                    }}
+                  />
+                </div>
+
+                {/* 4. Assigned Agent */}
+                {agents.length > 0 && (
+                  <div style={{ position: "relative" }}>
+                    <select
+                      value={filterAssignedTo}
+                      onChange={(e) => setFilterAssignedTo(e.target.value)}
                       style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "flex-start",
-                        marginBottom: "12px",
+                        width: "100%",
+                        height: "42px",
+                        padding: "8px 36px 8px 10px",
+                        border:
+                          filterAssignedTo !== "all"
+                            ? "1px solid #84caff"
+                            : "1px solid #d7deea",
+                        borderRadius: "10px",
+                        fontSize: "14px",
+                        background:
+                          filterAssignedTo !== "all" ? "#eff6ff" : "white",
+                        color:
+                          filterAssignedTo !== "all" ? "#1d4ed8" : "#374151",
+                        cursor: "pointer",
+                        appearance: "none" as const,
+                        WebkitAppearance: "none" as const,
+                        fontWeight: filterAssignedTo !== "all" ? 500 : 400,
+                        outline: "none",
+                        boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
                       }}
                     >
-                      {/* Checkbox + ticket info */}
-                      <div
+                      <option value="all">All Agents</option>
+                      <option value="unassigned">Unassigned</option>
+                      {agents.map((a) => (
+                        <option key={a._id} value={a._id}>
+                          {a.firstName} {a.lastName}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDownIcon
+                      style={{
+                        position: "absolute",
+                        right: "12px",
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        width: "13px",
+                        height: "13px",
+                        pointerEvents: "none",
+                        color:
+                          filterAssignedTo !== "all" ? "#1d4ed8" : "#6B7280",
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* 5. Date From — separate labeled field */}
+                <div style={{ position: "relative" }}>
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: "-9px",
+                      left: "10px",
+                      fontSize: "10px",
+                      fontWeight: 700,
+                      color: "#9ca3af",
+                      background: "white",
+                      padding: "0 4px",
+                      zIndex: 1,
+                      letterSpacing: "0.04em",
+                      textTransform: "uppercase" as const,
+                    }}
+                  >
+                    From
+                  </span>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      height: "42px",
+                      border: filterDateFrom
+                        ? "1px solid #84caff"
+                        : "1px solid #d7deea",
+                      borderRadius: "10px",
+                      padding: "0 10px",
+                      background: filterDateFrom ? "#eff6ff" : "white",
+                      boxShadow: "0 1px 3px rgba(0,0,0,.04)",
+                      gap: "6px",
+                    }}
+                  >
+                    <CalendarDaysIcon
+                      style={{
+                        width: "14px",
+                        height: "14px",
+                        color: filterDateFrom ? "#1d4ed8" : "#9CA3AF",
+                        flexShrink: 0,
+                      }}
+                    />
+                    <input
+                      type="date"
+                      value={filterDateFrom}
+                      onChange={(e) => setFilterDateFrom(e.target.value)}
+                      style={{
+                        border: "none",
+                        background: "transparent",
+                        fontSize: "13px",
+                        outline: "none",
+                        color: filterDateFrom ? "#1d4ed8" : "#6B7280",
+                        width: "100%",
+                        cursor: "pointer",
+                        fontWeight: filterDateFrom ? 500 : 400,
+                      }}
+                    />
+                    {filterDateFrom && (
+                      <button
+                        onClick={() => setFilterDateFrom("")}
                         style={{
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          color: "#9CA3AF",
+                          padding: 0,
                           display: "flex",
-                          alignItems: "flex-start",
-                          gap: "12px",
-                          flex: 1,
+                          flexShrink: 0,
                         }}
                       >
-                        {(canMerge || canDelete) && (
-                          <input
-                            type="checkbox"
-                            checked={selectedTicketIds.has(ticket._id)}
-                            onChange={() => toggleTicketSelect(ticket._id)}
-                            onClick={(e) => e.stopPropagation()}
-                            style={{
-                              width: "16px",
-                              height: "16px",
-                              cursor: "pointer",
-                              marginTop: "4px",
-                              flexShrink: 0,
-                            }}
-                          />
-                        )}
-                        <div
-                          style={{ flex: 1, cursor: "pointer" }}
+                        <XMarkIcon style={{ width: "12px", height: "12px" }} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* 6. Date To — separate labeled field */}
+                <div style={{ position: "relative" }}>
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: "-9px",
+                      left: "10px",
+                      fontSize: "10px",
+                      fontWeight: 700,
+                      color: "#9ca3af",
+                      background: "white",
+                      padding: "0 4px",
+                      zIndex: 1,
+                      letterSpacing: "0.04em",
+                      textTransform: "uppercase" as const,
+                    }}
+                  >
+                    To
+                  </span>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      height: "42px",
+                      border: filterDateTo
+                        ? "1px solid #84caff"
+                        : "1px solid #d7deea",
+                      borderRadius: "10px",
+                      padding: "0 10px",
+                      background: filterDateTo ? "#eff6ff" : "white",
+                      boxShadow: "0 1px 3px rgba(0,0,0,.04)",
+                      gap: "6px",
+                    }}
+                  >
+                    <CalendarDaysIcon
+                      style={{
+                        width: "14px",
+                        height: "14px",
+                        color: filterDateTo ? "#1d4ed8" : "#9CA3AF",
+                        flexShrink: 0,
+                      }}
+                    />
+                    <input
+                      type="date"
+                      value={filterDateTo}
+                      onChange={(e) => setFilterDateTo(e.target.value)}
+                      style={{
+                        border: "none",
+                        background: "transparent",
+                        fontSize: "13px",
+                        outline: "none",
+                        color: filterDateTo ? "#1d4ed8" : "#6B7280",
+                        width: "100%",
+                        cursor: "pointer",
+                        fontWeight: filterDateTo ? 500 : 400,
+                      }}
+                    />
+                    {filterDateTo && (
+                      <button
+                        onClick={() => setFilterDateTo("")}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          color: "#9CA3AF",
+                          padding: 0,
+                          display: "flex",
+                          flexShrink: 0,
+                        }}
+                      >
+                        <XMarkIcon style={{ width: "12px", height: "12px" }} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Row 3: Hint */}
+              <div
+                style={{
+                  marginTop: "10px",
+                  fontSize: "12px",
+                  color: "#6b7280",
+                }}
+              >
+                Filter order:{" "}
+                <strong style={{ fontWeight: 600, color: "#374151" }}>
+                  Project
+                </strong>{" "}
+                → Status → Priority → Assignee → Date range
+              </div>
+            </div>
+
+            {/* Tickets Table */}
+            <div
+              style={{
+                background: "white",
+                borderRadius: "10px",
+                border: "1px solid #E4E7EC",
+                boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+                overflow: "hidden",
+              }}
+            >
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  fontSize: "14px",
+                }}
+              >
+                <thead>
+                  <tr
+                    style={{
+                      background: "#F9FAFB",
+                      borderBottom: "1px solid #E4E7EC",
+                    }}
+                  >
+                    {(canMerge || canDelete) && (
+                      <th
+                        style={{
+                          padding: "12px 16px",
+                          width: "40px",
+                          textAlign: "center",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={
+                            filteredTickets.length > 0 &&
+                            selectedTicketIds.size === filteredTickets.length
+                          }
+                          onChange={toggleSelectAll}
+                          style={{
+                            width: "16px",
+                            height: "16px",
+                            cursor: "pointer",
+                          }}
+                        />
+                      </th>
+                    )}
+                    {[
+                      "Ticket #",
+                      "Subject",
+                      "Requested By",
+                      "Assignee",
+                      "Priority",
+                      "Status",
+                      "SLA",
+                      "Created",
+                      "Action",
+                    ].map((col) => (
+                      <th
+                        key={col}
+                        style={{
+                          padding: "12px 16px",
+                          textAlign:
+                            col === "Action"
+                              ? ("right" as const)
+                              : ("left" as const),
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          color: "#667085",
+                          textTransform: "uppercase" as const,
+                          letterSpacing: "0.5px",
+                          whiteSpace: "nowrap" as const,
+                        }}
+                      >
+                        {col}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredTickets.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={canMerge || canDelete ? 10 : 9}
+                        style={{
+                          padding: "48px",
+                          textAlign: "center",
+                          color: "#667085",
+                        }}
+                      >
+                        No tickets found
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredTickets.map((ticket) => {
+                      const isSelected = selectedTicketIds.has(ticket._id);
+                      const isHighlighted = !!(
+                        ticket.hasNewReply && !isSelected
+                      );
+                      const pill = getSlaPill(ticket);
+                      const priorityMap: Record<
+                        string,
+                        { bg: string; color: string }
+                      > = {
+                        low: { bg: "#ECFDF3", color: "#027A48" },
+                        medium: { bg: "#FFFAEB", color: "#B54708" },
+                        high: { bg: "#FFF1F3", color: "#C01048" },
+                        critical: { bg: "#F4F3FF", color: "#5925DC" },
+                        urgent: { bg: "#F4F3FF", color: "#5925DC" },
+                      };
+                      const pStyle = priorityMap[
+                        ticket.priority?.toLowerCase()
+                      ] || { bg: "#F2F4F7", color: "#344054" };
+                      return (
+                        <tr
+                          key={ticket._id}
                           onClick={() => {
-                            // Clear unread highlight when agent opens the ticket
                             setTickets((prev) =>
                               prev.map((t) =>
                                 t._id === ticket._id
@@ -1350,234 +1628,409 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                                 : `/tickets/${ticket._id}`,
                             );
                           }}
+                          onMouseEnter={(e) => {
+                            if (!isSelected)
+                              e.currentTarget.style.background = isHighlighted
+                                ? "#FFF7E0"
+                                : "#F9FAFB";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = isSelected
+                              ? "#EFF6FF"
+                              : isHighlighted
+                                ? "#FFFBEB"
+                                : "white";
+                          }}
+                          style={{
+                            background: isSelected
+                              ? "#EFF6FF"
+                              : isHighlighted
+                                ? "#FFFBEB"
+                                : "white",
+                            borderBottom: "1px solid #F2F4F7",
+                            borderLeft: isHighlighted
+                              ? "3px solid #F59E0B"
+                              : "3px solid transparent",
+                            cursor: "pointer",
+                            transition: "background 0.12s",
+                          }}
                         >
-                          <span
-                            style={{
-                              fontSize: "14px",
-                              fontWeight: 600,
-                              color: "#2563EB",
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: "6px",
-                            }}
-                          >
-                            #{ticket.ticketNumber}
-                            {ticket.hasNewReply && (
-                              <span
-                                title="New / unread reply"
+                          {(canMerge || canDelete) && (
+                            <td
+                              style={{
+                                padding: "12px 16px",
+                                textAlign: "center",
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleTicketSelect(ticket._id)}
                                 style={{
-                                  display: "inline-block",
-                                  width: "8px",
-                                  height: "8px",
-                                  borderRadius: "50%",
-                                  background: "#F59E0B",
-                                  flexShrink: 0,
+                                  width: "16px",
+                                  height: "16px",
+                                  cursor: "pointer",
                                 }}
                               />
-                            )}
-                            {ticket.mergedTickets &&
-                              ticket.mergedTickets.length > 0 && (
-                                <span
-                                  style={{
-                                    fontSize: "12px",
-                                    fontWeight: 500,
-                                    color: "#7C3AED",
-                                    marginLeft: "6px",
-                                  }}
-                                >
-                                  ({ticket.mergedTickets.length} ticket
-                                  {ticket.mergedTickets.length > 1
-                                    ? "s"
-                                    : ""}{" "}
-                                  merged)
-                                </span>
-                              )}
-                          </span>
-                          <h3
+                            </td>
+                          )}
+                          <td
                             style={{
-                              fontSize: "16px",
-                              fontWeight: ticket.hasNewReply ? 700 : 600,
-                              color: ticket.hasNewReply ? "#1F2937" : "#111827",
-                              margin: "4px 0",
+                              padding: "12px 16px",
+                              whiteSpace: "nowrap" as const,
                             }}
                           >
-                            {ticket.subject || "No subject"}
-                          </h3>
-                        </div>
-                      </div>
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: "8px",
-                          alignItems: "center",
-                        }}
-                      >
-                        <span
-                          style={{
-                            padding: "4px 12px",
-                            borderRadius: "12px",
-                            fontSize: "12px",
-                            fontWeight: 600,
-                            background:
-                              (ticket.statusColor ||
-                                getStatusColor(ticket.status)) + "20",
-                            color:
-                              ticket.statusColor ||
-                              getStatusColor(ticket.status),
-                          }}
-                        >
-                          {ticket.statusName ||
-                            getStatusDisplayName(ticket.status)}
-                        </span>
-                        {canMerge && !ticket.isMerged && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedTicket(ticket);
-                              setShowMergeModal(true);
-                            }}
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "4px",
-                              padding: "6px 12px",
-                              background: "#3B82F6",
-                              color: "white",
-                              border: "none",
-                              borderRadius: "6px",
-                              fontSize: "12px",
-                              fontWeight: 600,
-                              cursor: "pointer",
-                              transition: "all 0.2s",
-                            }}
-                            onMouseEnter={(e) =>
-                              (e.currentTarget.style.background = "#2563EB")
-                            }
-                            onMouseLeave={(e) =>
-                              (e.currentTarget.style.background = "#3B82F6")
-                            }
-                            title="Merge this ticket with others"
-                          >
-                            <ArrowsPointingInIcon
-                              style={{ width: "14px", height: "14px" }}
-                            />
-                            Merge
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: "24px",
-                        fontSize: "14px",
-                        color: "#6B7280",
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <div>
-                        <span style={{ fontWeight: 600 }}>Priority:</span>{" "}
-                        <span style={{ textTransform: "capitalize" }}>
-                          {ticket.priority}
-                        </span>
-                      </div>
-                      {/* US-ESC-009: SLA countdown pill */}
-                      {(() => {
-                        const pill = getSlaPill(ticket);
-                        if (!pill) return null;
-                        return (
-                          <div title={pill.tooltip}>
                             <span
                               style={{
-                                padding: "2px 8px",
-                                borderRadius: "10px",
-                                fontSize: "12px",
                                 fontWeight: 600,
-                                color: pill.color,
-                                backgroundColor: pill.bg,
-                                border: `1px solid ${pill.color}30`,
+                                color: "#2563EB",
+                                fontSize: "13px",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "5px",
                               }}
                             >
-                              ⏱ {pill.label}
+                              #{ticket.ticketNumber}
+                              {ticket.hasNewReply && (
+                                <span
+                                  style={{
+                                    display: "inline-block",
+                                    width: "7px",
+                                    height: "7px",
+                                    borderRadius: "50%",
+                                    background: "#F59E0B",
+                                    flexShrink: 0,
+                                  }}
+                                  title="Unread reply"
+                                />
+                              )}
+                              {ticket.mergedTickets &&
+                                ticket.mergedTickets.length > 0 && (
+                                  <span
+                                    style={{
+                                      fontSize: "11px",
+                                      color: "#7C3AED",
+                                      fontWeight: 500,
+                                      marginLeft: "2px",
+                                    }}
+                                  >
+                                    +{ticket.mergedTickets.length}
+                                  </span>
+                                )}
                             </span>
-                          </div>
-                        );
-                      })()}
-                      <div>
-                        <span style={{ fontWeight: 600 }}>Center:</span>{" "}
-                        <span
-                          style={{
-                            padding: "2px 8px",
-                            background:
-                              ticket.metadata?.centerId === "online" ||
-                              ticket.metadata?.submissionType === "online"
-                                ? "#DBEAFE"
-                                : "#FEF3C7",
-                            color:
-                              ticket.metadata?.centerId === "online" ||
-                              ticket.metadata?.submissionType === "online"
-                                ? "#1E40AF"
-                                : "#92400E",
-                            borderRadius: "4px",
-                            fontSize: "12px",
-                            fontWeight: 600,
-                          }}
-                        >
-                          {ticket.metadata?.centerId === "online" ||
-                          ticket.metadata?.submissionType === "online"
-                            ? "Online"
-                            : typeof ticket.metadata?.centerId === "object"
-                              ? `${ticket.metadata.centerId.centerName}${ticket.metadata.centerId.city ? ` (${ticket.metadata.centerId.city})` : ""}`
-                              : "Online"}
-                        </span>
-                      </div>
-                      {(ticket.metadata?.studentName ||
-                        ticket.metadata?.studentEmail) && (
-                        <div>
-                          <span style={{ fontWeight: 600 }}>Requested By:</span>{" "}
-                          {ticket.metadata?.studentName ||
-                            ticket.metadata?.studentEmail}
-                        </div>
-                      )}
-                      {ticket.metadata?.studentEmail && (
-                        <div>
-                          <span style={{ fontWeight: 600 }}>Email:</span>{" "}
-                          <a
-                            href={`mailto:${ticket.metadata.studentEmail}`}
-                            onClick={(e) => e.stopPropagation()}
-                            style={{ color: "#3B82F6", textDecoration: "none" }}
+                          </td>
+                          <td
+                            style={{ padding: "12px 16px", maxWidth: "260px" }}
                           >
-                            {ticket.metadata.studentEmail}
-                          </a>
-                        </div>
-                      )}
-                      {ticket.assignedTo && (
-                        <div>
-                          <span style={{ fontWeight: 600 }}>Assigned To:</span>{" "}
-                          {ticket.assignedTo.firstName}{" "}
-                          {ticket.assignedTo.lastName}
-                        </div>
-                      )}
-                      {ticket.category && (
-                        <div>
-                          <span style={{ fontWeight: 600 }}>Category:</span>{" "}
-                          {ticket.category.name}
-                        </div>
-                      )}
-                      {ticket.createdAt && (
-                        <div>
-                          <span style={{ fontWeight: 600 }}>Created At:</span>{" "}
-                          {new Date(ticket.createdAt).toLocaleString()}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))
-              )}
+                            <div
+                              style={{
+                                fontWeight: ticket.hasNewReply ? 700 : 500,
+                                color: "#101828",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap" as const,
+                              }}
+                            >
+                              {ticket.subject || "No subject"}
+                            </div>
+                            {ticket.category && (
+                              <div
+                                style={{
+                                  fontSize: "12px",
+                                  color: "#667085",
+                                  marginTop: "2px",
+                                }}
+                              >
+                                {ticket.category.name}
+                              </div>
+                            )}
+                          </td>
+                          <td
+                            style={{
+                              padding: "12px 16px",
+                              whiteSpace: "nowrap" as const,
+                            }}
+                          >
+                            <div style={{ fontSize: "13px", color: "#344054" }}>
+                              {ticket.metadata?.studentName ||
+                                ticket.metadata?.studentEmail ||
+                                "—"}
+                            </div>
+                            {ticket.metadata?.studentName &&
+                              ticket.metadata?.studentEmail && (
+                                <div
+                                  style={{
+                                    fontSize: "11px",
+                                    color: "#667085",
+                                    marginTop: "1px",
+                                  }}
+                                >
+                                  {ticket.metadata.studentEmail}
+                                </div>
+                              )}
+                          </td>
+                          <td
+                            style={{
+                              padding: "12px 16px",
+                              whiteSpace: "nowrap" as const,
+                            }}
+                          >
+                            {ticket.assignedTo ? (
+                              <div
+                                style={{ fontSize: "13px", color: "#344054" }}
+                              >
+                                {ticket.assignedTo.firstName}{" "}
+                                {ticket.assignedTo.lastName}
+                              </div>
+                            ) : (
+                              <span
+                                style={{
+                                  fontSize: "12px",
+                                  color: "#9CA3AF",
+                                  fontStyle: "italic",
+                                }}
+                              >
+                                Unassigned
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ padding: "12px 16px" }}>
+                            <span
+                              style={{
+                                padding: "3px 10px",
+                                borderRadius: "20px",
+                                fontSize: "12px",
+                                fontWeight: 600,
+                                background: pStyle.bg,
+                                color: pStyle.color,
+                                textTransform: "capitalize" as const,
+                                whiteSpace: "nowrap" as const,
+                              }}
+                            >
+                              {ticket.priority || "—"}
+                            </span>
+                          </td>
+                          <td style={{ padding: "12px 16px" }}>
+                            <span
+                              style={{
+                                padding: "3px 10px",
+                                borderRadius: "20px",
+                                fontSize: "12px",
+                                fontWeight: 600,
+                                background:
+                                  (ticket.statusColor ||
+                                    getStatusColor(ticket.status)) + "20",
+                                color:
+                                  ticket.statusColor ||
+                                  getStatusColor(ticket.status),
+                                whiteSpace: "nowrap" as const,
+                              }}
+                            >
+                              {ticket.statusName ||
+                                getStatusDisplayName(ticket.status)}
+                            </span>
+                          </td>
+                          <td style={{ padding: "12px 16px" }}>
+                            {pill ? (
+                              <span
+                                title={pill.tooltip}
+                                style={{
+                                  padding: "3px 8px",
+                                  borderRadius: "20px",
+                                  fontSize: "11px",
+                                  fontWeight: 600,
+                                  color: pill.color,
+                                  background: pill.bg,
+                                  border: `1px solid ${pill.color}30`,
+                                  whiteSpace: "nowrap" as const,
+                                }}
+                              >
+                                ⏱ {pill.label}
+                              </span>
+                            ) : (
+                              <span
+                                style={{ color: "#9CA3AF", fontSize: "13px" }}
+                              >
+                                —
+                              </span>
+                            )}
+                          </td>
+                          <td
+                            style={{
+                              padding: "12px 16px",
+                              whiteSpace: "nowrap" as const,
+                              color: "#667085",
+                              fontSize: "13px",
+                            }}
+                          >
+                            {new Date(ticket.createdAt).toLocaleDateString()}
+                          </td>
+                          <td
+                            style={{
+                              padding: "12px 16px",
+                              textAlign: "right" as const,
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div
+                              style={{
+                                position: "relative",
+                                display: "inline-block",
+                              }}
+                            >
+                              <button
+                                onClick={() =>
+                                  setOpenActionMenuId(
+                                    openActionMenuId === ticket._id
+                                      ? null
+                                      : ticket._id,
+                                  )
+                                }
+                                style={{
+                                  background: "none",
+                                  border: "1px solid #E4E7EC",
+                                  borderRadius: "6px",
+                                  padding: "5px 10px",
+                                  cursor: "pointer",
+                                  color: "#667085",
+                                  fontSize: "15px",
+                                  lineHeight: 1,
+                                  letterSpacing: "2px",
+                                }}
+                                title="Actions"
+                              >
+                                •••
+                              </button>
+                              {openActionMenuId === ticket._id && (
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    right: 0,
+                                    top: "calc(100% + 4px)",
+                                    background: "white",
+                                    border: "1px solid #E4E7EC",
+                                    borderRadius: "8px",
+                                    boxShadow: "0 4px 16px rgba(0,0,0,.12)",
+                                    zIndex: 100,
+                                    minWidth: "140px",
+                                    padding: "4px 0",
+                                    overflow: "hidden",
+                                  }}
+                                >
+                                  <button
+                                    onClick={() => {
+                                      setOpenActionMenuId(null);
+                                      setTickets((prev) =>
+                                        prev.map((t) =>
+                                          t._id === ticket._id
+                                            ? { ...t, hasNewReply: false }
+                                            : t,
+                                        ),
+                                      );
+                                      navigate(
+                                        initialProjectId && customUrlPath
+                                          ? `/${customUrlPath}/portal/tickets/${ticket._id}`
+                                          : `/tickets/${ticket._id}`,
+                                      );
+                                    }}
+                                    style={{
+                                      display: "block",
+                                      width: "100%",
+                                      padding: "9px 16px",
+                                      background: "none",
+                                      border: "none",
+                                      textAlign: "left" as const,
+                                      fontSize: "13px",
+                                      cursor: "pointer",
+                                      color: "#344054",
+                                    }}
+                                    onMouseEnter={(e) =>
+                                      (e.currentTarget.style.background =
+                                        "#F9FAFB")
+                                    }
+                                    onMouseLeave={(e) =>
+                                      (e.currentTarget.style.background =
+                                        "none")
+                                    }
+                                  >
+                                    View
+                                  </button>
+                                  {canMerge && !ticket.isMerged && (
+                                    <button
+                                      onClick={() => {
+                                        setOpenActionMenuId(null);
+                                        setSelectedTicket(ticket);
+                                        setShowMergeModal(true);
+                                      }}
+                                      style={{
+                                        display: "block",
+                                        width: "100%",
+                                        padding: "9px 16px",
+                                        background: "none",
+                                        border: "none",
+                                        textAlign: "left" as const,
+                                        fontSize: "13px",
+                                        cursor: "pointer",
+                                        color: "#344054",
+                                      }}
+                                      onMouseEnter={(e) =>
+                                        (e.currentTarget.style.background =
+                                          "#F9FAFB")
+                                      }
+                                      onMouseLeave={(e) =>
+                                        (e.currentTarget.style.background =
+                                          "none")
+                                      }
+                                    >
+                                      Merge
+                                    </button>
+                                  )}
+                                  {canDelete && (
+                                    <button
+                                      onClick={() => {
+                                        setOpenActionMenuId(null);
+                                        setSelectedTicketIds(
+                                          new Set([ticket._id]),
+                                        );
+                                        setShowBulkDeleteConfirm(true);
+                                      }}
+                                      style={{
+                                        display: "block",
+                                        width: "100%",
+                                        padding: "9px 16px",
+                                        background: "none",
+                                        border: "none",
+                                        textAlign: "left" as const,
+                                        fontSize: "13px",
+                                        cursor: "pointer",
+                                        color: "#DC2626",
+                                      }}
+                                      onMouseEnter={(e) =>
+                                        (e.currentTarget.style.background =
+                                          "#FEF2F2")
+                                      }
+                                      onMouseLeave={(e) =>
+                                        (e.currentTarget.style.background =
+                                          "none")
+                                      }
+                                    >
+                                      Delete
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
 
-            {/* Pagination and Summary */}
+            {/* Pagination */}
             <div
               style={{
                 marginTop: "16px",
@@ -1588,7 +2041,6 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                 color: "#6B7280",
               }}
             >
-              {/* Pagination Controls */}
               <div
                 style={{ display: "flex", alignItems: "center", gap: "8px" }}
               >
@@ -1613,11 +2065,9 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                 >
                   ← Previous
                 </button>
-
                 <span style={{ padding: "0 12px" }}>
                   Page {currentPage} of {totalPages}
                 </span>
-
                 <button
                   onClick={() =>
                     fetchTickets(
@@ -1641,75 +2091,149 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                   Next →
                 </button>
               </div>
-
-              {/* Summary */}
               <div>
                 Showing{" "}
-                {totalTickets > 0 ? (currentPage - 1) * pageSize + 1 : 0}-
+                {totalTickets > 0 ? (currentPage - 1) * pageSize + 1 : 0}–
                 {Math.min(currentPage * pageSize, totalTickets)} of{" "}
                 {totalTickets} tickets
               </div>
             </div>
           </div>
 
-          {/* Export Modal */}
-          {showExportModal && (
-            <TicketExportModal
-              isOpen={showExportModal}
-              onClose={() => setShowExportModal(false)}
-              filters={{
-                status: filterStatus !== "all" ? filterStatus : undefined,
-                priority: filterPriority !== "all" ? filterPriority : undefined,
-                assignedTo:
-                  filterAssignedTo !== "all" ? filterAssignedTo : undefined,
-                projectId: filterProject !== "all" ? filterProject : undefined,
-                dateFrom: filterDateFrom || undefined,
-                dateTo: filterDateTo || undefined,
-                search: searchQuery || undefined,
+          {/* Floating Bulk Action Bar */}
+          {selectedTicketIds.size > 0 && (
+            <div
+              style={{
+                position: "fixed",
+                bottom: "28px",
+                left: "50%",
+                transform: "translateX(-50%)",
+                background: "#1E293B",
+                color: "white",
+                borderRadius: "12px",
+                padding: "12px 20px",
+                display: "flex",
+                alignItems: "center",
+                gap: "12px",
+                boxShadow: "0 8px 32px rgba(0,0,0,.3)",
+                zIndex: 200,
+                whiteSpace: "nowrap" as const,
               }}
-              filterLabels={{
-                status:
-                  filterStatus !== "all"
-                    ? statuses.find((s) => String(s.code) === filterStatus)
-                        ?.name
-                    : undefined,
-                priority:
-                  filterPriority !== "all"
-                    ? filterPriority.charAt(0).toUpperCase() +
-                      filterPriority.slice(1)
-                    : undefined,
-                assignedTo: (() => {
-                  if (filterAssignedTo === "all") return undefined;
-                  const a = agents.find((ag) => ag._id === filterAssignedTo);
-                  return a ? `${a.firstName} ${a.lastName}` : undefined;
-                })(),
-                project:
-                  filterProject !== "all"
-                    ? projects.find((p) => p._id === filterProject)?.name
-                    : undefined,
-                dateFrom: filterDateFrom || undefined,
-                dateTo: filterDateTo || undefined,
-                search: searchQuery || undefined,
-              }}
-              ticketCount={totalTickets}
-            />
-          )}
-
-          {/* Single-ticket Merge Modal */}
-          {showMergeModal && selectedTicket && (
-            <TicketMergeModal
-              isOpen={showMergeModal}
-              onClose={() => {
-                setShowMergeModal(false);
-                setSelectedTicket(null);
-              }}
-              primaryTicket={selectedTicket}
-              onMergeComplete={() => {
-                fetchTickets(1, filterProject, filterAssignedTo);
-                setShowMergeModal(false);
-                setSelectedTicket(null);
-              }}
-            />
+            >
+              <span style={{ fontWeight: 600, fontSize: "14px" }}>
+                {selectedTicketIds.size} ticket
+                {selectedTicketIds.size !== 1 ? "s" : ""} selected
+              </span>
+              <div
+                style={{
+                  width: "1px",
+                  height: "20px",
+                  background: "rgba(255,255,255,.2)",
+                }}
+              />
+              {canMerge && selectedTicketIds.size >= 2 && (
+                <button
+                  onClick={() => {
+                    const sel = filteredTickets.filter((t) =>
+                      selectedTicketIds.has(t._id),
+                    );
+                    const keys = new Set(
+                      sel.map(
+                        (t) =>
+                          t.metadata?.studentEmail ||
+                          t.metadata?.studentName ||
+                          "",
+                      ),
+                    );
+                    if (keys.size > 1) {
+                      setBulkError(
+                        "Cannot merge tickets from different requestors. Please select tickets raised by the same person.",
+                      );
+                      return;
+                    }
+                    setBulkMergeStep("pick-primary");
+                    setBulkMergePrimaryId("");
+                    setBulkError("");
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "7px 14px",
+                    background: "rgba(255,255,255,.15)",
+                    border: "1px solid rgba(255,255,255,.3)",
+                    color: "white",
+                    borderRadius: "8px",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  <ArrowsPointingInIcon
+                    style={{ width: "14px", height: "14px" }}
+                  />
+                  Merge
+                </button>
+              )}
+              {canDelete && (
+                <button
+                  onClick={() => {
+                    setShowBulkDeleteConfirm(true);
+                    setBulkError("");
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "7px 14px",
+                    background: "rgba(239,68,68,.8)",
+                    border: "1px solid rgba(239,68,68,.4)",
+                    color: "white",
+                    borderRadius: "8px",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  <TrashIcon style={{ width: "14px", height: "14px" }} />
+                  Delete
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  setSelectedTicketIds(new Set());
+                  setBulkError("");
+                }}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "rgba(255,255,255,.7)",
+                  cursor: "pointer",
+                  fontSize: "13px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px",
+                }}
+              >
+                <XMarkIcon style={{ width: "14px", height: "14px" }} />
+                Clear
+              </button>
+              {bulkError && (
+                <div
+                  style={{
+                    background: "#FEF2F2",
+                    border: "1px solid #FECACA",
+                    borderRadius: "6px",
+                    padding: "6px 10px",
+                    color: "#B91C1C",
+                    fontSize: "12px",
+                    maxWidth: "280px",
+                  }}
+                >
+                  {bulkError}
+                </div>
+              )}
+            </div>
           )}
 
           {/* Bulk Merge — Pick Primary Dialog */}
@@ -2025,6 +2549,46 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
           )}
         </>
       )}
+      {/* Export Modal */}
+      <TicketExportModal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        filters={{
+          status: filterStatus !== "all" ? filterStatus : undefined,
+          priority: filterPriority !== "all" ? filterPriority : undefined,
+          assignedTo: filterAssignedTo !== "all" ? filterAssignedTo : undefined,
+          projectId:
+            filterProject !== "all"
+              ? filterProject
+              : (initialProjectId ?? undefined),
+          dateFrom: filterDateFrom || undefined,
+          dateTo: filterDateTo || undefined,
+          search: searchQuery || undefined,
+        }}
+        filterLabels={{
+          status:
+            filterStatus !== "all"
+              ? statuses.find(
+                  (s: { code: number; name: string }) =>
+                    String(s.code) === filterStatus,
+                )?.name
+              : undefined,
+          priority: filterPriority !== "all" ? filterPriority : undefined,
+          assignedTo:
+            filterAssignedTo !== "all"
+              ? (agents as any[]).find((a) => a._id === filterAssignedTo)
+                  ?.firstName
+              : undefined,
+          project:
+            filterProject !== "all"
+              ? (projects as any[]).find((p) => p._id === filterProject)?.name
+              : undefined,
+          dateFrom: filterDateFrom || undefined,
+          dateTo: filterDateTo || undefined,
+          search: searchQuery || undefined,
+        }}
+        ticketCount={ticketStats.total}
+      />
     </Wrapper>
   );
 };

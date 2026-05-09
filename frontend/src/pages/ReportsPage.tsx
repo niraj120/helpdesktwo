@@ -874,10 +874,12 @@ function ReportBuilderSection({
   onSaved,
   editingReport,
   onCancelEdit,
+  isAdmin,
 }: {
   onSaved?: () => void;
   editingReport?: SavedReport | null;
   onCancelEdit?: () => void;
+  isAdmin?: boolean;
 }) {
   const [dataPoints, setDataPoints] = useState<DataPoint[]>([]);
   const [dpLoading, setDpLoading] = useState(true);
@@ -896,6 +898,8 @@ function ReportBuilderSection({
   const [projectOptions, setProjectOptions] = useState<
     { _id: string; name: string }[]
   >([]);
+  // Project scope — required for non-admins so data stays within their project
+  const [selectedProjectScope, setSelectedProjectScope] = useState<string>("");
   const [openProjectPicker, setOpenProjectPicker] = useState<number | null>(
     null,
   );
@@ -903,18 +907,28 @@ function ReportBuilderSection({
     {},
   );
 
-  // Load user's projects for the project filter dropdown
+  // Load user's projects for the project scope + filter dropdowns
   useEffect(() => {
     fetch(`${API_CONFIG.API_URL}/projects/my-projects`, {
       headers: authHeaders(),
     })
       .then((r) => r.json())
       .then((d) => {
-        const list = d.projects ?? d.data ?? [];
+        const list = Array.isArray(d?.projects)
+          ? d.projects
+          : Array.isArray(d?.data)
+            ? d.data
+            : Array.isArray(d?.data?.projects)
+              ? d.data.projects
+              : [];
         setProjectOptions(list);
+        // Auto-select the first project for non-admins
+        if (!isAdmin && list.length === 1 && !selectedProjectScope) {
+          setSelectedProjectScope(list[0]._id);
+        }
       })
       .catch(() => {});
-  }, []);
+  }, [isAdmin]);
 
   // Pre-populate form when editing an existing report
   useEffect(() => {
@@ -925,6 +939,7 @@ function ReportBuilderSection({
       setFilters(editingReport.filters ? [...editingReport.filters] : []);
       setSortBy(editingReport.sortBy ?? "ticket_created_at");
       setSortOrder((editingReport.sortOrder as "asc" | "desc") ?? "desc");
+      setSelectedProjectScope((editingReport as any).projectId ?? "");
       setPreviewRows([]);
       setError("");
       setSuccess("");
@@ -1006,6 +1021,8 @@ function ReportBuilderSection({
   const handlePreview = async () => {
     if (selectedKeys.length === 0)
       return setError("Select at least one data point.");
+    if (!isAdmin && !selectedProjectScope)
+      return setError("Please select a project scope before previewing.");
     setPreviewLoading(true);
     setError("");
     try {
@@ -1017,6 +1034,7 @@ function ReportBuilderSection({
           filters,
           sortBy,
           sortOrder,
+          projectId: selectedProjectScope || undefined,
         }),
       });
       const d = await res.json();
@@ -1051,6 +1069,7 @@ function ReportBuilderSection({
           filters,
           sortBy,
           sortOrder,
+          projectId: selectedProjectScope || undefined,
         }),
       });
       const d = await res.json();
@@ -1206,6 +1225,59 @@ function ReportBuilderSection({
             }}
           />
         </div>
+      </div>
+
+      {/* Project Scope — required for non-admins, optional for admins */}
+      <div style={{ marginBottom: 20 }}>
+        <label
+          style={{
+            fontSize: 12,
+            fontWeight: 600,
+            color: "#374151",
+            display: "block",
+            marginBottom: 4,
+          }}
+        >
+          Project Scope{" "}
+          {!isAdmin && <span style={{ color: "#dc2626" }}>*</span>}
+          {isAdmin && (
+            <span style={{ fontWeight: 400, color: "#9ca3af", marginLeft: 6 }}>
+              (leave blank to include all projects)
+            </span>
+          )}
+        </label>
+        <select
+          value={selectedProjectScope}
+          onChange={(e) => setSelectedProjectScope(e.target.value)}
+          style={{
+            padding: "8px 12px",
+            border: `1px solid ${!isAdmin && !selectedProjectScope ? "#fca5a5" : "#d1d5db"}`,
+            borderRadius: 8,
+            fontSize: 13,
+            background: "#fff",
+            color: selectedProjectScope ? "#111827" : "#9ca3af",
+            minWidth: 280,
+          }}
+        >
+          {isAdmin && <option value="">All Projects</option>}
+          {!isAdmin && <option value="">— Select a project —</option>}
+          {projectOptions.map((p) => (
+            <option key={p._id} value={p._id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+        {!isAdmin && !selectedProjectScope && (
+          <div style={{ fontSize: 11, color: "#ef4444", marginTop: 4 }}>
+            You must select a project. Report data will be scoped to this
+            project only.
+          </div>
+        )}
+        {!isAdmin && selectedProjectScope && (
+          <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
+            Report data will be limited to tickets from this project.
+          </div>
+        )}
       </div>
 
       <div
@@ -3667,7 +3739,7 @@ function AssignReportsSection() {
       fetch(`${API_CONFIG.API_URL}/reports/assignments`, {
         headers: authHeaders(),
       }).then((r) => r.json()),
-      fetch(`${API_CONFIG.API_URL}/users?limit=500`, {
+      fetch(`${API_CONFIG.API_URL}/reports/project-users`, {
         headers: authHeaders(),
       }).then((r) => r.json()),
       fetch(`${API_CONFIG.API_URL}/roles`, { headers: authHeaders() }).then(
@@ -3683,7 +3755,7 @@ function AssignReportsSection() {
           });
           setAssignments(map);
         }
-        if (ud.success) setUsers(ud.data?.users ?? ud.data ?? []);
+        if (ud.success) setUsers(ud.data ?? []);
         if (roled.success) setRoles(roled.data ?? []);
       })
       .catch(() => setError("Failed to load data"))
@@ -4129,8 +4201,16 @@ const ReportsPage: React.FC<{ wrapWithLayout?: boolean }> = ({
     roleCode === "SUPPORT_ADMIN";
   const canManagePerms = isAdmin;
   const canManageDPs = isAdmin;
-  const canCreate = myModulePerms.canCreate || isAdmin;
-  const canAssign = myModulePerms.canAssign || isAdmin;
+  // Also honour the granular RBAC permissions (REPORT_CREATE_CUSTOM / REPORT_ASSIGN)
+  // so sub-admins granted these in RBAC Setup automatically get access.
+  const canCreate =
+    myModulePerms.canCreate ||
+    isAdmin ||
+    hasPermission(PERMISSIONS.REPORT_CREATE_CUSTOM);
+  const canAssign =
+    myModulePerms.canAssign ||
+    isAdmin ||
+    hasPermission(PERMISSIONS.REPORT_ASSIGN);
   const canExport = myModulePerms.canExport || isAdmin;
 
   const moduleNavItems: {
@@ -4271,6 +4351,7 @@ const ReportsPage: React.FC<{ wrapWithLayout?: boolean }> = ({
             {activeSection === "report-builder" && (
               <ReportBuilderSection
                 editingReport={editingReport}
+                isAdmin={isAdmin}
                 onCancelEdit={() => {
                   setEditingReport(null);
                   setActiveSection("saved-reports");

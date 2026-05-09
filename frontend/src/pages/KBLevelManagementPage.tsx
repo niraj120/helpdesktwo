@@ -37,8 +37,8 @@ const KBLevelManagementPage: React.FC<KBLevelManagementPageProps> = ({ wrapWithL
 
   const content = (
     <div style={{ padding: '20px' }}>
-      {/* Project Selector - Always show for Super Admin */}
-      {isSuperAdmin && projects.length > 0 && (
+      {/* Project Selector - show for any user with accessible projects */}
+      {projects.length > 0 && (
         <div style={{
           backgroundColor: '#f8fafc',
           padding: '16px 20px',
@@ -55,7 +55,7 @@ const KBLevelManagementPage: React.FC<KBLevelManagementPageProps> = ({ wrapWithL
               alignItems: 'center',
               gap: '8px'
             }}>
-              📁 Select Project:
+              📁 {isSuperAdmin ? 'Select Project:' : 'Assigned Project:'}
             </label>
             <select
               value={selectedProjectId}
@@ -105,10 +105,12 @@ const KBLevelManagementPage: React.FC<KBLevelManagementPageProps> = ({ wrapWithL
         }}>
           <div style={{ fontSize: '48px', marginBottom: '12px' }}>📋</div>
           <h3 style={{ color: '#92400e', marginBottom: '8px', fontSize: '18px' }}>
-            Select a Project
+            {projects.length === 0 ? 'No Project Assigned' : 'Select a Project'}
           </h3>
           <p style={{ color: '#b45309', fontSize: '14px' }}>
-            Please select a project from the dropdown above to manage its Knowledge Base levels.
+            {projects.length === 0
+              ? 'Your role does not currently have any active project mapping. Please contact admin to assign a project.'
+              : 'Please select a project from the dropdown above to manage its Knowledge Base levels.'}
           </p>
         </div>
       )}

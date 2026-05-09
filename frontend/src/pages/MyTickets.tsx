@@ -9,7 +9,6 @@ import React, {
 import axios from "axios";
 import { useNavigate, useLocation } from "react-router-dom";
 import DashboardLayout from "../components/DashboardLayout";
-import ModuleHeader from "../components/ModuleHeader";
 import API_BASE_URL from "../config/api";
 import { TicketExportModal } from "../components/tickets/TicketExportModal";
 import { TicketMergeModal } from "../components/tickets/TicketMergeModal";
@@ -37,6 +36,7 @@ interface Ticket {
     name: string;
   };
   assignedTo?: {
+    _id?: string;
     firstName: string;
     lastName: string;
     email: string;
@@ -214,7 +214,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
     return () => clearInterval(id);
   }, []);
   const [statusFilter, setStatusFilter] = useState("all");
-  const [sourceFilter, setSourceFilter] = useState("all"); // Task 6.1: Source filter
+  const [assignedToFilter, setAssignedToFilter] = useState("all");
   const [projectFilter, setProjectFilter] = useState("all"); // Project filter for All Projects mode
 
   // Ref to prevent duplicate API calls from React.StrictMode
@@ -245,6 +245,18 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
   const [priorities, setPriorities] = useState<
     Array<{ code: string; name: string }>
   >([]);
+  const [viewportWidth, setViewportWidth] = useState<number>(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1280,
+  );
+
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const isMobile = viewportWidth <= 768;
+  const isTablet = viewportWidth > 768 && viewportWidth <= 1024;
 
   console.log("🎯 State initialized");
 
@@ -662,9 +674,12 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
         (ticket.priority &&
           ticket.priority.toLowerCase() === priorityFilter.toLowerCase());
 
-      // Task 6.1: Source filter
-      const matchesSource =
-        sourceFilter === "all" || ticket.submissionSource === sourceFilter;
+      // Assignee filter (matches ViewTickets behavior)
+      const matchesAssignedTo =
+        assignedToFilter === "all" ||
+        (assignedToFilter === "unassigned" && !ticket.assignedTo) ||
+        (assignedToFilter !== "unassigned" &&
+          ticket.assignedTo?._id === assignedToFilter);
 
       // Project filter (only in All Projects mode)
       const ticketProjectId =
@@ -710,7 +725,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
       return (
         matchesStatus &&
         matchesPriority &&
-        matchesSource &&
+        matchesAssignedTo &&
         matchesProject &&
         matchesDateFrom &&
         matchesDateTo &&
@@ -731,6 +746,43 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
   const hasEmailSource = filteredTickets.some(
     (t) => t.submissionSource === "email",
   );
+  const assigneeOptions = Array.from(
+    new Map(
+      tickets
+        .filter((t) => t.assignedTo?._id)
+        .map((t) => [
+          t.assignedTo!._id,
+          {
+            _id: t.assignedTo!._id,
+            name: `${t.assignedTo!.firstName} ${t.assignedTo!.lastName}`,
+          },
+        ]),
+    ).values(),
+  );
+  const projectOptions = (
+    userProjects?.length
+      ? userProjects.map((p: any) => ({ _id: p._id, name: p.name }))
+      : Array.from(
+          new Map(
+            tickets
+              .map((t) => {
+                const p = t.metadata?.projectId;
+                if (!p || typeof p !== "object") return null;
+                return [p._id, { _id: p._id, name: p.name }];
+              })
+              .filter(Boolean) as Array<
+              [string, { _id: string; name: string }]
+            >,
+          ).values(),
+        )
+  ) as Array<{ _id: string; name: string }>;
+  const showRequestedBy = !isMobile;
+  const showSenderEmail = hasEmailSource && !isTablet;
+  const showAssignee = !isMobile;
+  const showSource = !isMobile;
+  const showSla = !isTablet;
+  const showCenter = !isTablet;
+  const showProjectColumn = viewMode === "unified" && !isTablet;
 
   const handleTicketClick = (ticketId: string) => {
     // Clear unread highlight when agent opens the ticket
@@ -851,9 +903,143 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
     selectedTicketIds.has(t._id),
   );
 
+  const ticketStats = {
+    total: tickets.length,
+    open: tickets.filter((t) => Number(t.status) === 1).length,
+    pending: tickets.filter((t) => Number(t.status) === 3).length,
+    closed: tickets.filter((t) => Number(t.status) === 5).length,
+  };
+
   const content = (
-    <div style={{ padding: "24px", maxWidth: "1400px", margin: "0 auto" }}>
-      <ModuleHeader title={getPageTitle()} subtitle={getPageSubtitle()} />
+    <div
+      style={{
+        padding: isMobile ? "16px" : "24px",
+        maxWidth: "1400px",
+        margin: "0 auto",
+      }}
+    >
+      <div
+        style={{
+          background: "#ffffff",
+          padding: isMobile ? "16px" : "22px 24px",
+          borderRadius: "14px",
+          marginBottom: "16px",
+          border: "1px solid #e7ebf3",
+          boxShadow: "0 4px 18px rgba(15, 23, 42, 0.05)",
+        }}
+      >
+        <h1
+          style={{
+            margin: "0 0 6px 0",
+            fontSize: isMobile ? "20px" : "24px",
+            fontWeight: 700,
+            color: "#111827",
+            letterSpacing: "-0.01em",
+            fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+          }}
+        >
+          {getPageTitle()}
+        </h1>
+        <p
+          style={{
+            margin: 0,
+            fontSize: "14px",
+            color: "#6b7280",
+            fontWeight: 400,
+            fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+          }}
+        >
+          {getPageSubtitle()}
+        </p>
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          gap: "16px",
+          marginBottom: "20px",
+          flexWrap: "wrap",
+        }}
+      >
+        {[
+          {
+            label: "Total",
+            value: ticketStats.total,
+            bg: "#F4F3FF",
+            color: "#5925DC",
+            icon: "🎫",
+          },
+          {
+            label: "Open",
+            value: ticketStats.open,
+            bg: "#EFF8FF",
+            color: "#175CD3",
+            icon: "📬",
+          },
+          {
+            label: "Pending",
+            value: ticketStats.pending,
+            bg: "#FFFAEB",
+            color: "#B54708",
+            icon: "⏳",
+          },
+          {
+            label: "Closed",
+            value: ticketStats.closed,
+            bg: "#ECFDF3",
+            color: "#027A48",
+            icon: "✅",
+          },
+        ].map((stat) => (
+          <div
+            key={stat.label}
+            style={{
+              flex: isMobile ? "1 1 140px" : "1 1 180px",
+              background: "white",
+              borderRadius: "10px",
+              padding: isMobile ? "14px 14px" : "20px 24px",
+              border: "1px solid #E4E7EC",
+              boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+              display: "flex",
+              alignItems: "center",
+              gap: isMobile ? "10px" : "16px",
+            }}
+          >
+            <div
+              style={{
+                width: isMobile ? "38px" : "48px",
+                height: isMobile ? "38px" : "48px",
+                borderRadius: "50%",
+                background: stat.bg,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: isMobile ? "16px" : "20px",
+                flexShrink: 0,
+              }}
+            >
+              {stat.icon}
+            </div>
+            <div>
+              <div
+                style={{
+                  fontSize: isMobile ? "20px" : "28px",
+                  fontWeight: 700,
+                  color: "#101828",
+                  lineHeight: 1.2,
+                }}
+              >
+                {stat.value.toLocaleString()}
+              </div>
+              <div
+                style={{ fontSize: "13px", color: "#667085", marginTop: "2px" }}
+              >
+                {stat.label}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
 
       {error && !error.includes("Not Found") && (
         <div
@@ -873,63 +1059,67 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
       {/* Filters */}
       <div
         style={{
-          background: "white",
-          borderRadius: "12px",
-          padding: "12px 16px",
-          boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
-          border: "1px solid #F3F4F6",
+          background: "#ffffff",
+          borderRadius: "14px",
+          border: "1px solid #e7ebf3",
+          padding: "14px",
+          boxShadow: "0 4px 16px rgba(15, 23, 42, 0.04)",
           marginBottom: "16px",
         }}
       >
+        {/* Row 1: Search + actions */}
         <div
           style={{
             display: "flex",
-            gap: "8px",
-            flexWrap: "wrap",
+            gap: "12px",
             alignItems: "center",
+            marginBottom: "12px",
+            flexWrap: isMobile ? "wrap" : "nowrap",
           }}
         >
-          {/* Search */}
-          <div style={{ position: "relative", flex: 1, minWidth: "220px" }}>
+          <div
+            style={{
+              position: "relative",
+              flex: 1,
+              minWidth: isMobile ? "100%" : "220px",
+            }}
+          >
             <MagnifyingGlassIcon
               style={{
                 position: "absolute",
-                left: "10px",
+                left: "14px",
                 top: "50%",
                 transform: "translateY(-50%)",
-                width: "15px",
-                height: "15px",
+                width: "16px",
+                height: "16px",
                 color: "#9CA3AF",
                 pointerEvents: "none",
               }}
             />
             <input
               type="text"
-              placeholder="Search queries..."
+              placeholder="Search by ticket #, subject, student..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               style={{
                 width: "100%",
-                paddingTop: "9px",
-                paddingBottom: "9px",
-                paddingLeft: "32px",
-                paddingRight: searchTerm ? "30px" : "12px",
-                border: "1px solid #E5E7EB",
-                borderRadius: "8px",
+                height: "42px",
+                padding: `10px ${searchTerm ? "36px" : "14px"} 10px 40px`,
+                border: "1px solid #d7deea",
+                borderRadius: "10px",
                 fontSize: "14px",
                 boxSizing: "border-box",
-                background: "#F9FAFB",
+                background: "white",
                 outline: "none",
+                boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
               }}
-              onFocus={(e) => (e.target.style.borderColor = "#3B82F6")}
-              onBlur={(e) => (e.target.style.borderColor = "#E5E7EB")}
             />
             {searchTerm && (
               <button
                 onClick={() => setSearchTerm("")}
                 style={{
                   position: "absolute",
-                  right: "8px",
+                  right: "10px",
                   top: "50%",
                   transform: "translateY(-50%)",
                   background: "none",
@@ -946,7 +1136,133 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
             )}
           </div>
 
-          {/* Status */}
+          {canExport && (
+            <button
+              onClick={() => setShowExportModal(true)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                height: "42px",
+                padding: "0 16px",
+                background: "#059669",
+                color: "white",
+                border: "none",
+                borderRadius: "10px",
+                fontSize: "14px",
+                fontWeight: 600,
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+                width: isMobile ? "100%" : "auto",
+                justifyContent: "center",
+              }}
+            >
+              <ArrowDownTrayIcon style={{ width: "15px", height: "15px" }} />
+              Export
+            </button>
+          )}
+
+          {(searchTerm ||
+            statusFilter !== "all" ||
+            priorityFilter !== "all" ||
+            assignedToFilter !== "all" ||
+            projectFilter !== "all" ||
+            dateFromFilter ||
+            dateToFilter) && (
+            <button
+              onClick={() => {
+                setSearchTerm("");
+                setStatusFilter("all");
+                setPriorityFilter("all");
+                setAssignedToFilter("all");
+                setProjectFilter("all");
+                setDateFromFilter("");
+                setDateToFilter("");
+                setCurrentPage(1);
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+                height: "42px",
+                padding: "0 14px",
+                border: "1px solid #d7deea",
+                borderRadius: "10px",
+                background: "white",
+                color: "#6B7280",
+                fontSize: "13px",
+                fontWeight: 600,
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+                width: isMobile ? "100%" : "auto",
+                justifyContent: "center",
+              }}
+            >
+              <XMarkIcon style={{ width: "13px", height: "13px" }} />
+              Clear filters
+            </button>
+          )}
+        </div>
+
+        {/* Row 2: Filter grid */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+            gap: "12px",
+            alignItems: "center",
+          }}
+        >
+          {projectOptions.length > 0 && (
+            <div style={{ position: "relative" }}>
+              <select
+                value={projectFilter}
+                onChange={(e) => {
+                  setProjectFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
+                style={{
+                  width: "100%",
+                  height: "42px",
+                  padding: "8px 36px 8px 10px",
+                  border:
+                    projectFilter !== "all"
+                      ? "1px solid #84caff"
+                      : "1px solid #d7deea",
+                  borderRadius: "10px",
+                  fontSize: "14px",
+                  background: projectFilter !== "all" ? "#eff6ff" : "white",
+                  color: projectFilter !== "all" ? "#1d4ed8" : "#374151",
+                  cursor: "pointer",
+                  appearance: "none" as const,
+                  WebkitAppearance: "none" as const,
+                  fontWeight: projectFilter !== "all" ? 500 : 400,
+                  outline: "none",
+                  boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
+                }}
+              >
+                <option value="all">All Projects</option>
+                {projectOptions.map((p) => (
+                  <option key={p._id} value={p._id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDownIcon
+                style={{
+                  position: "absolute",
+                  right: "12px",
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  width: "13px",
+                  height: "13px",
+                  pointerEvents: "none",
+                  color: projectFilter !== "all" ? "#1d4ed8" : "#6B7280",
+                }}
+              />
+            </div>
+          )}
+
           <div style={{ position: "relative" }}>
             <select
               value={statusFilter}
@@ -955,24 +1271,23 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                 setCurrentPage(1);
               }}
               style={{
-                paddingTop: "9px",
-                paddingBottom: "9px",
-                paddingLeft: "10px",
-                paddingRight: "28px",
+                width: "100%",
+                height: "42px",
+                padding: "8px 36px 8px 10px",
                 border:
                   statusFilter !== "all"
-                    ? "1.5px solid #3B82F6"
-                    : "1px solid #E5E7EB",
-                borderRadius: "8px",
+                    ? "1px solid #84caff"
+                    : "1px solid #d7deea",
+                borderRadius: "10px",
                 fontSize: "14px",
-                minWidth: "120px",
-                background: statusFilter !== "all" ? "#EFF6FF" : "#F9FAFB",
-                color: statusFilter !== "all" ? "#1D4ED8" : "#374151",
+                background: statusFilter !== "all" ? "#eff6ff" : "white",
+                color: statusFilter !== "all" ? "#1d4ed8" : "#374151",
                 cursor: "pointer",
                 appearance: "none" as const,
                 WebkitAppearance: "none" as const,
                 fontWeight: statusFilter !== "all" ? 500 : 400,
                 outline: "none",
+                boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
               }}
             >
               <option value="all">All Status</option>
@@ -985,18 +1300,17 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
             <ChevronDownIcon
               style={{
                 position: "absolute",
-                right: "8px",
+                right: "12px",
                 top: "50%",
                 transform: "translateY(-50%)",
                 width: "13px",
                 height: "13px",
                 pointerEvents: "none",
-                color: statusFilter !== "all" ? "#3B82F6" : "#6B7280",
+                color: statusFilter !== "all" ? "#1d4ed8" : "#6B7280",
               }}
             />
           </div>
 
-          {/* Priority */}
           <div style={{ position: "relative" }}>
             <select
               value={priorityFilter}
@@ -1005,24 +1319,23 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                 setCurrentPage(1);
               }}
               style={{
-                paddingTop: "9px",
-                paddingBottom: "9px",
-                paddingLeft: "10px",
-                paddingRight: "28px",
+                width: "100%",
+                height: "42px",
+                padding: "8px 36px 8px 10px",
                 border:
                   priorityFilter !== "all"
-                    ? "1.5px solid #3B82F6"
-                    : "1px solid #E5E7EB",
-                borderRadius: "8px",
+                    ? "1px solid #84caff"
+                    : "1px solid #d7deea",
+                borderRadius: "10px",
                 fontSize: "14px",
-                minWidth: "120px",
-                background: priorityFilter !== "all" ? "#EFF6FF" : "#F9FAFB",
-                color: priorityFilter !== "all" ? "#1D4ED8" : "#374151",
+                background: priorityFilter !== "all" ? "#eff6ff" : "white",
+                color: priorityFilter !== "all" ? "#1d4ed8" : "#374151",
                 cursor: "pointer",
                 appearance: "none" as const,
                 WebkitAppearance: "none" as const,
                 fontWeight: priorityFilter !== "all" ? 500 : 400,
                 outline: "none",
+                boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
               }}
             >
               <option value="all">All Priority</option>
@@ -1035,412 +1348,269 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
             <ChevronDownIcon
               style={{
                 position: "absolute",
-                right: "8px",
+                right: "12px",
                 top: "50%",
                 transform: "translateY(-50%)",
                 width: "13px",
                 height: "13px",
                 pointerEvents: "none",
-                color: priorityFilter !== "all" ? "#3B82F6" : "#6B7280",
+                color: priorityFilter !== "all" ? "#1d4ed8" : "#6B7280",
               }}
             />
           </div>
 
-          {/* Source */}
           <div style={{ position: "relative" }}>
             <select
-              value={sourceFilter}
+              value={assignedToFilter}
               onChange={(e) => {
-                setSourceFilter(e.target.value);
+                setAssignedToFilter(e.target.value);
                 setCurrentPage(1);
               }}
               style={{
-                paddingTop: "9px",
-                paddingBottom: "9px",
-                paddingLeft: "10px",
-                paddingRight: "28px",
+                width: "100%",
+                height: "42px",
+                padding: "8px 36px 8px 10px",
                 border:
-                  sourceFilter !== "all"
-                    ? "1.5px solid #3B82F6"
-                    : "1px solid #E5E7EB",
-                borderRadius: "8px",
+                  assignedToFilter !== "all"
+                    ? "1px solid #84caff"
+                    : "1px solid #d7deea",
+                borderRadius: "10px",
                 fontSize: "14px",
-                minWidth: "120px",
-                background: sourceFilter !== "all" ? "#EFF6FF" : "#F9FAFB",
-                color: sourceFilter !== "all" ? "#1D4ED8" : "#374151",
+                background: assignedToFilter !== "all" ? "#eff6ff" : "white",
+                color: assignedToFilter !== "all" ? "#1d4ed8" : "#374151",
                 cursor: "pointer",
                 appearance: "none" as const,
                 WebkitAppearance: "none" as const,
-                fontWeight: sourceFilter !== "all" ? 500 : 400,
+                fontWeight: assignedToFilter !== "all" ? 500 : 400,
                 outline: "none",
+                boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
               }}
             >
-              <option value="all">All Sources</option>
-              <option value="online">🌐 Online</option>
-              <option value="offline">📍 Offline</option>
-              <option value="email">📧 Email</option>
+              <option value="all">All Agents</option>
+              <option value="unassigned">Unassigned</option>
+              {assigneeOptions.map((a) => (
+                <option key={a._id} value={a._id}>
+                  {a.name}
+                </option>
+              ))}
             </select>
             <ChevronDownIcon
               style={{
                 position: "absolute",
-                right: "8px",
+                right: "12px",
                 top: "50%",
                 transform: "translateY(-50%)",
                 width: "13px",
                 height: "13px",
                 pointerEvents: "none",
-                color: sourceFilter !== "all" ? "#3B82F6" : "#6B7280",
+                color: assignedToFilter !== "all" ? "#1d4ed8" : "#6B7280",
               }}
             />
           </div>
 
-          {/* Project — unified mode only */}
-          {viewMode === "unified" && userProjects.length > 1 && (
-            <div style={{ position: "relative" }}>
-              <select
-                value={projectFilter}
+          <div style={{ position: "relative" }}>
+            <span
+              style={{
+                position: "absolute",
+                top: "-9px",
+                left: "10px",
+                fontSize: "10px",
+                fontWeight: 700,
+                color: "#9ca3af",
+                background: "white",
+                padding: "0 4px",
+                zIndex: 1,
+                letterSpacing: "0.04em",
+                textTransform: "uppercase" as const,
+              }}
+            >
+              From
+            </span>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                height: "42px",
+                border: dateFromFilter
+                  ? "1px solid #84caff"
+                  : "1px solid #d7deea",
+                borderRadius: "10px",
+                padding: "0 10px",
+                background: dateFromFilter ? "#eff6ff" : "white",
+                boxShadow: "0 1px 3px rgba(0,0,0,.04)",
+                gap: "6px",
+              }}
+            >
+              <CalendarDaysIcon
+                style={{
+                  width: "14px",
+                  height: "14px",
+                  color: dateFromFilter ? "#1d4ed8" : "#9CA3AF",
+                  flexShrink: 0,
+                }}
+              />
+              <input
+                type="date"
+                value={dateFromFilter}
                 onChange={(e) => {
-                  setProjectFilter(e.target.value);
+                  setDateFromFilter(e.target.value);
                   setCurrentPage(1);
                 }}
                 style={{
-                  paddingTop: "9px",
-                  paddingBottom: "9px",
-                  paddingLeft: "10px",
-                  paddingRight: "28px",
-                  border:
-                    projectFilter !== "all"
-                      ? "1.5px solid #3B82F6"
-                      : "1px solid #E5E7EB",
-                  borderRadius: "8px",
-                  fontSize: "14px",
-                  minWidth: "150px",
-                  maxWidth: "220px",
-                  background: projectFilter !== "all" ? "#EFF6FF" : "#F9FAFB",
-                  color: projectFilter !== "all" ? "#1D4ED8" : "#374151",
-                  cursor: "pointer",
-                  appearance: "none" as const,
-                  WebkitAppearance: "none" as const,
-                  fontWeight: projectFilter !== "all" ? 500 : 400,
+                  border: "none",
+                  background: "transparent",
+                  fontSize: "13px",
                   outline: "none",
-                }}
-              >
-                <option value="all">All Projects</option>
-                {userProjects.map((p) => (
-                  <option key={p._id} value={p._id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-              <ChevronDownIcon
-                style={{
-                  position: "absolute",
-                  right: "8px",
-                  top: "50%",
-                  transform: "translateY(-50%)",
-                  width: "13px",
-                  height: "13px",
-                  pointerEvents: "none",
-                  color: projectFilter !== "all" ? "#3B82F6" : "#6B7280",
+                  color: dateFromFilter ? "#1d4ed8" : "#6B7280",
+                  width: "100%",
+                  cursor: "pointer",
+                  fontWeight: dateFromFilter ? 500 : 400,
                 }}
               />
+              {dateFromFilter && (
+                <button
+                  onClick={() => setDateFromFilter("")}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    color: "#9CA3AF",
+                    padding: 0,
+                    display: "flex",
+                    flexShrink: 0,
+                  }}
+                >
+                  <XMarkIcon style={{ width: "12px", height: "12px" }} />
+                </button>
+              )}
             </div>
-          )}
-
-          {/* Date range — combined pill */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              background:
-                dateFromFilter || dateToFilter ? "#EFF6FF" : "#F9FAFB",
-              border: `${dateFromFilter || dateToFilter ? "1.5px" : "1px"} solid ${dateFromFilter || dateToFilter ? "#3B82F6" : "#E5E7EB"}`,
-              borderRadius: "8px",
-              padding: "5px 10px",
-            }}
-          >
-            <CalendarDaysIcon
-              style={{
-                width: "14px",
-                height: "14px",
-                color: dateFromFilter || dateToFilter ? "#3B82F6" : "#9CA3AF",
-                flexShrink: 0,
-              }}
-            />
-            <input
-              type="date"
-              value={dateFromFilter}
-              onChange={(e) => {
-                setDateFromFilter(e.target.value);
-                setCurrentPage(1);
-              }}
-              style={{
-                border: "none",
-                background: "transparent",
-                fontSize: "13px",
-                outline: "none",
-                color: dateFromFilter ? "#1D4ED8" : "#6B7280",
-                width: "120px",
-                cursor: "pointer",
-              }}
-            />
-            <span
-              style={{ color: "#D1D5DB", fontSize: "11px", fontWeight: 600 }}
-            >
-              –
-            </span>
-            <input
-              type="date"
-              value={dateToFilter}
-              onChange={(e) => {
-                setDateToFilter(e.target.value);
-                setCurrentPage(1);
-              }}
-              style={{
-                border: "none",
-                background: "transparent",
-                fontSize: "13px",
-                outline: "none",
-                color: dateToFilter ? "#1D4ED8" : "#6B7280",
-                width: "120px",
-                cursor: "pointer",
-              }}
-            />
           </div>
 
-          {/* Push export + clear to the right */}
-          <div style={{ flex: 1, minWidth: "0" }} />
-
-          {/* Export */}
-          {canExport && (
-            <button
-              onClick={() => setShowExportModal(true)}
+          <div style={{ position: "relative" }}>
+            <span
               style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "9px 14px",
-                background: "#059669",
-                color: "white",
-                border: "none",
-                borderRadius: "8px",
-                fontSize: "14px",
-                fontWeight: 600,
-                cursor: "pointer",
-                whiteSpace: "nowrap",
-              }}
-              onMouseEnter={(e) =>
-                (e.currentTarget.style.background = "#047857")
-              }
-              onMouseLeave={(e) =>
-                (e.currentTarget.style.background = "#059669")
-              }
-            >
-              <ArrowDownTrayIcon style={{ width: "15px", height: "15px" }} />
-              Export
-            </button>
-          )}
-
-          {/* Clear filters */}
-          {(searchTerm ||
-            statusFilter !== "all" ||
-            priorityFilter !== "all" ||
-            sourceFilter !== "all" ||
-            (viewMode === "unified" && projectFilter !== "all") ||
-            dateFromFilter ||
-            dateToFilter) && (
-            <button
-              onClick={() => {
-                setSearchTerm("");
-                setStatusFilter("all");
-                setPriorityFilter("all");
-                setSourceFilter("all");
-                setProjectFilter("all");
-                setDateFromFilter("");
-                setDateToFilter("");
-                setCurrentPage(1);
-              }}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "4px",
-                padding: "9px 12px",
-                border: "1px solid #E5E7EB",
-                borderRadius: "8px",
+                position: "absolute",
+                top: "-9px",
+                left: "10px",
+                fontSize: "10px",
+                fontWeight: 700,
+                color: "#9ca3af",
                 background: "white",
-                color: "#6B7280",
-                fontSize: "13px",
-                cursor: "pointer",
-                whiteSpace: "nowrap",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "#FEF2F2";
-                e.currentTarget.style.color = "#DC2626";
-                e.currentTarget.style.borderColor = "#FCA5A5";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "white";
-                e.currentTarget.style.color = "#6B7280";
-                e.currentTarget.style.borderColor = "#E5E7EB";
+                padding: "0 4px",
+                zIndex: 1,
+                letterSpacing: "0.04em",
+                textTransform: "uppercase" as const,
               }}
             >
-              <XMarkIcon style={{ width: "13px", height: "13px" }} />
-              Clear
-            </button>
-          )}
+              To
+            </span>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                height: "42px",
+                border: dateToFilter
+                  ? "1px solid #84caff"
+                  : "1px solid #d7deea",
+                borderRadius: "10px",
+                padding: "0 10px",
+                background: dateToFilter ? "#eff6ff" : "white",
+                boxShadow: "0 1px 3px rgba(0,0,0,.04)",
+                gap: "6px",
+              }}
+            >
+              <CalendarDaysIcon
+                style={{
+                  width: "14px",
+                  height: "14px",
+                  color: dateToFilter ? "#1d4ed8" : "#9CA3AF",
+                  flexShrink: 0,
+                }}
+              />
+              <input
+                type="date"
+                value={dateToFilter}
+                onChange={(e) => {
+                  setDateToFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  fontSize: "13px",
+                  outline: "none",
+                  color: dateToFilter ? "#1d4ed8" : "#6B7280",
+                  width: "100%",
+                  cursor: "pointer",
+                  fontWeight: dateToFilter ? 500 : 400,
+                }}
+              />
+              {dateToFilter && (
+                <button
+                  onClick={() => setDateToFilter("")}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    color: "#9CA3AF",
+                    padding: 0,
+                    display: "flex",
+                    flexShrink: 0,
+                  }}
+                >
+                  <XMarkIcon style={{ width: "12px", height: "12px" }} />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+        <div style={{ marginTop: "8px", fontSize: "11px", color: "#6B7280" }}>
+          Filter order:{" "}
+          <strong style={{ fontWeight: 600, color: "#374151" }}>Project</strong>{" "}
+          → Status → Priority → Assignee → Date range
         </div>
       </div>
 
-      {/* Bulk action bar */}
-      {canMerge && selectedTicketIds.size > 0 && (
-        <>
-          <div
-            style={{
-              background: "#1E40AF",
-              color: "white",
-              borderRadius: "10px",
-              padding: "12px 20px",
-              marginBottom: "12px",
-              display: "flex",
-              alignItems: "center",
-              gap: "16px",
-              flexWrap: "wrap",
-            }}
-          >
-            <span style={{ fontWeight: 600, fontSize: "14px" }}>
-              {selectedTicketIds.size} ticket
-              {selectedTicketIds.size !== 1 ? "s" : ""} selected
-            </span>
-            {selectedTicketIds.size >= 2 && (
-              <button
-                onClick={() => {
-                  const sel = filteredTickets.filter((t) =>
-                    selectedTicketIds.has(t._id),
-                  );
-                  const getKey = (t: Ticket) =>
-                    t.metadata?.studentEmail ||
-                    t.metadata?.createdByName ||
-                    t.metadata?.studentName ||
-                    "";
-                  const keys = new Set(sel.map(getKey));
-                  if (keys.size > 1) {
-                    setBulkError(
-                      "Cannot merge tickets from different requestors. Please select tickets raised by the same person.",
-                    );
-                    return;
-                  }
-                  setBulkMergeStep("pick-primary");
-                  setBulkMergePrimaryId("");
-                  setBulkError("");
-                }}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  padding: "7px 14px",
-                  background: "rgba(255,255,255,0.2)",
-                  border: "1px solid rgba(255,255,255,0.4)",
-                  color: "white",
-                  borderRadius: "6px",
-                  fontSize: "13px",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
-              >
-                <ArrowsPointingInIcon
-                  style={{ width: "15px", height: "15px" }}
-                />
-                Merge Selected
-              </button>
-            )}
-            <button
-              onClick={() => {
-                setSelectedTicketIds(new Set());
-                setBulkError("");
-              }}
-              style={{
-                marginLeft: "auto",
-                background: "transparent",
-                border: "none",
-                color: "rgba(255,255,255,0.7)",
-                cursor: "pointer",
-                fontSize: "13px",
-              }}
-            >
-              Clear selection
-            </button>
-          </div>
-          {bulkMergeStep === "idle" && bulkError && (
-            <div
-              style={{
-                background: "#FEF2F2",
-                border: "1px solid #FECACA",
-                borderRadius: "8px",
-                padding: "10px 14px",
-                color: "#B91C1C",
-                fontSize: "13px",
-                marginBottom: "12px",
-              }}
-            >
-              {bulkError}
-            </div>
-          )}
-        </>
+      {bulkMergeStep === "idle" && bulkError && (
+        <div
+          style={{
+            background: "#FEF2F2",
+            border: "1px solid #FECACA",
+            borderRadius: "8px",
+            padding: "10px 14px",
+            color: "#B91C1C",
+            fontSize: "13px",
+            marginBottom: "12px",
+          }}
+        >
+          {bulkError}
+        </div>
       )}
 
-      {/* Ticket Cards */}
       {(() => {
         const totalPages = Math.ceil(filteredTickets.length / pageSize);
         const paginatedTickets = filteredTickets.slice(
           (currentPage - 1) * pageSize,
           currentPage * pageSize,
         );
-        return (
-          <div style={{ display: "grid", gap: "16px" }}>
-            {/* Select-all row */}
-            {filteredTickets.length > 0 && canMerge && (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "10px",
-                  padding: "8px 12px",
-                  background: "#F8FAFC",
-                  borderRadius: "8px",
-                  border: "1px solid #E5E7EB",
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={
-                    filteredTickets.length > 0 &&
-                    selectedTicketIds.size === filteredTickets.length
-                  }
-                  onChange={toggleSelectAll}
-                  style={{ width: "16px", height: "16px", cursor: "pointer" }}
-                />
-                <span style={{ fontSize: "13px", color: "#6B7280" }}>
-                  Select all on this page ({filteredTickets.length})
-                </span>
-              </div>
-            )}
 
+        return (
+          <>
             {filteredTickets.length === 0 ? (
               <div
                 style={{
                   background: "white",
-                  borderRadius: "12px",
+                  borderRadius: "10px",
                   padding: "48px",
                   textAlign: "center",
-                  boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                  border: "1px solid #E4E7EC",
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
                 }}
               >
-                <p style={{ color: "#6B7280" }}>No queries found</p>
+                <p style={{ color: "#667085", margin: 0 }}>No queries found</p>
               </div>
             ) : (
               <>
-                {/* Pending new tickets banner */}
                 {pendingNewTickets > 0 && (
                   <div
                     onClick={() => {
@@ -1459,438 +1629,687 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                       fontSize: "14px",
                       color: "#1D4ED8",
                       fontWeight: 500,
-                      marginBottom: "8px",
+                      marginBottom: "10px",
                     }}
                   >
                     <span>🔔</span>
                     <span>
                       {pendingNewTickets} new ticket
-                      {pendingNewTickets > 1 ? "s" : ""} assigned — click to
+                      {pendingNewTickets > 1 ? "s" : ""} assigned, click to
                       refresh
                     </span>
                   </div>
                 )}
-                {paginatedTickets.map((ticket) => {
-                  const sourceBadge = getSourceBadge(ticket.submissionSource);
-                  const projectName =
-                    typeof ticket.metadata?.projectId === "object"
-                      ? ticket.metadata.projectId.name ||
-                        ticket.metadata.projectId.code
-                      : null;
-                  const centerName =
-                    !ticket.metadata?.centerId ||
-                    ticket.metadata.centerId === "online"
-                      ? "Online"
-                      : typeof ticket.metadata.centerId === "object"
-                        ? ticket.metadata.centerId.centerName
-                        : ticket.metadata?.centerName || "Online";
-                  const requestedBy =
-                    ticket.metadata?.createdByName ||
-                    ticket.metadata?.studentName ||
-                    (ticket.submissionSource === "email"
-                      ? ticket.sourceEmail
-                      : null) ||
-                    null;
 
-                  return (
-                    <div
-                      key={ticket._id}
+                <div
+                  style={{
+                    background: "#FFFFFF",
+                    borderRadius: "10px",
+                    border: "1px solid #E4E7EC",
+                    boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+                    overflow: "hidden",
+                  }}
+                >
+                  <div style={{ overflowX: "auto" }}>
+                    <table
                       style={{
-                        background: selectedTicketIds.has(ticket._id)
-                          ? "#EFF6FF"
-                          : ticket.hasNewReply
-                            ? "#FFFBEB"
-                            : "white",
-                        borderRadius: "12px",
-                        padding: "20px",
-                        boxShadow: ticket.hasNewReply
-                          ? "0 2px 8px rgba(245,158,11,0.25)"
-                          : "0 1px 3px rgba(0,0,0,0.1)",
-                        transition: "all 0.2s",
-                        border: selectedTicketIds.has(ticket._id)
-                          ? "1.5px solid #3B82F6"
-                          : ticket.hasNewReply
-                            ? "1.5px solid #F59E0B"
-                            : "1.5px solid transparent",
-                        borderLeft:
-                          ticket.hasNewReply &&
-                          !selectedTicketIds.has(ticket._id)
-                            ? "4px solid #F59E0B"
-                            : undefined,
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!selectedTicketIds.has(ticket._id)) {
-                          e.currentTarget.style.boxShadow = ticket.hasNewReply
-                            ? "0 4px 12px rgba(245,158,11,0.35)"
-                            : "0 4px 12px rgba(0,0,0,0.15)";
-                          e.currentTarget.style.transform = "translateY(-2px)";
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.boxShadow = ticket.hasNewReply
-                          ? "0 2px 8px rgba(245,158,11,0.25)"
-                          : "0 1px 3px rgba(0,0,0,0.1)";
-                        e.currentTarget.style.transform = "translateY(0)";
+                        width: "100%",
+                        borderCollapse: "separate",
+                        borderSpacing: 0,
+                        minWidth: isMobile
+                          ? "980px"
+                          : isTablet
+                            ? hasEmailSource
+                              ? "1220px"
+                              : "1120px"
+                            : hasEmailSource
+                              ? "1400px"
+                              : "1280px",
                       }}
                     >
-                      {/* Top row: checkbox + ticket info | status + actions */}
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "flex-start",
-                          marginBottom: "12px",
-                        }}
-                      >
-                        <div
+                      <thead>
+                        <tr
                           style={{
-                            display: "flex",
-                            alignItems: "flex-start",
-                            gap: "12px",
-                            flex: 1,
+                            background: "#F9FAFB",
+                            borderBottom: "1px solid #E4E7EC",
                           }}
                         >
                           {canMerge && (
-                            <input
-                              type="checkbox"
-                              checked={selectedTicketIds.has(ticket._id)}
-                              onChange={() => toggleTicketSelect(ticket._id)}
-                              onClick={(e) => e.stopPropagation()}
-                              style={{
-                                width: "16px",
-                                height: "16px",
-                                cursor: "pointer",
-                                marginTop: "4px",
-                                flexShrink: 0,
-                              }}
-                            />
+                            <th style={{ padding: "12px 12px", width: 36 }}>
+                              <input
+                                type="checkbox"
+                                checked={
+                                  filteredTickets.length > 0 &&
+                                  selectedTicketIds.size ===
+                                    filteredTickets.length
+                                }
+                                onChange={toggleSelectAll}
+                                style={{
+                                  width: "16px",
+                                  height: "16px",
+                                  cursor: "pointer",
+                                }}
+                              />
+                            </th>
                           )}
-                          <div
-                            style={{ flex: 1, cursor: "pointer" }}
-                            onClick={() => handleTicketClick(ticket._id)}
+                          <th
+                            style={{
+                              padding: "12px 16px",
+                              fontSize: 12,
+                              fontWeight: 600,
+                              color: "#667085",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.5px",
+                              textAlign: "left",
+                            }}
                           >
-                            <div
+                            Ticket #
+                          </th>
+                          <th
+                            style={{
+                              padding: "12px 16px",
+                              fontSize: 12,
+                              fontWeight: 600,
+                              color: "#667085",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.5px",
+                              textAlign: "left",
+                            }}
+                          >
+                            Subject
+                          </th>
+                          {showRequestedBy && (
+                            <th
                               style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "6px",
-                                flexWrap: "wrap",
-                                marginBottom: "4px",
+                                padding: "12px 16px",
+                                fontSize: 12,
+                                fontWeight: 600,
+                                color: "#667085",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.5px",
+                                textAlign: "left",
                               }}
                             >
-                              <span
+                              Requested By
+                            </th>
+                          )}
+                          {showSenderEmail && (
+                            <th
+                              style={{
+                                padding: "12px 16px",
+                                fontSize: 12,
+                                fontWeight: 600,
+                                color: "#667085",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.5px",
+                                textAlign: "left",
+                              }}
+                            >
+                              Sender Email
+                            </th>
+                          )}
+                          {showAssignee && (
+                            <th
+                              style={{
+                                padding: "12px 16px",
+                                fontSize: 12,
+                                fontWeight: 600,
+                                color: "#667085",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.5px",
+                                textAlign: "left",
+                              }}
+                            >
+                              Assignee
+                            </th>
+                          )}
+                          {showSource && (
+                            <th
+                              style={{
+                                padding: "12px 16px",
+                                fontSize: 12,
+                                fontWeight: 600,
+                                color: "#667085",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.5px",
+                                textAlign: "left",
+                              }}
+                            >
+                              Source
+                            </th>
+                          )}
+                          <th
+                            style={{
+                              padding: "12px 16px",
+                              fontSize: 12,
+                              fontWeight: 600,
+                              color: "#667085",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.5px",
+                              textAlign: "left",
+                            }}
+                          >
+                            Priority
+                          </th>
+                          <th
+                            style={{
+                              padding: "12px 16px",
+                              fontSize: 12,
+                              fontWeight: 600,
+                              color: "#667085",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.5px",
+                              textAlign: "left",
+                            }}
+                          >
+                            Status
+                          </th>
+                          {showSla && (
+                            <th
+                              style={{
+                                padding: "12px 16px",
+                                fontSize: 12,
+                                fontWeight: 600,
+                                color: "#667085",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.5px",
+                                textAlign: "left",
+                              }}
+                            >
+                              SLA
+                            </th>
+                          )}
+                          <th
+                            style={{
+                              padding: "12px 16px",
+                              fontSize: 12,
+                              fontWeight: 600,
+                              color: "#667085",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.5px",
+                              textAlign: "left",
+                            }}
+                          >
+                            Created
+                          </th>
+                          {showCenter && (
+                            <th
+                              style={{
+                                padding: "12px 16px",
+                                fontSize: 12,
+                                fontWeight: 600,
+                                color: "#667085",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.5px",
+                                textAlign: "left",
+                              }}
+                            >
+                              Center
+                            </th>
+                          )}
+                          {showProjectColumn && (
+                            <th
+                              style={{
+                                padding: "12px 16px",
+                                fontSize: 12,
+                                fontWeight: 600,
+                                color: "#667085",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.5px",
+                                textAlign: "left",
+                              }}
+                            >
+                              Project
+                            </th>
+                          )}
+                          <th
+                            style={{
+                              padding: "12px 16px",
+                              fontSize: 12,
+                              fontWeight: 600,
+                              color: "#667085",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.5px",
+                              textAlign: "right",
+                            }}
+                          >
+                            Action
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {paginatedTickets.map((ticket) => {
+                          const isSelected = selectedTicketIds.has(ticket._id);
+                          const isHighlighted =
+                            !!ticket.hasNewReply && !isSelected;
+                          const sourceBadge = getSourceBadge(
+                            ticket.submissionSource,
+                          );
+                          const projectName =
+                            typeof ticket.metadata?.projectId === "object"
+                              ? ticket.metadata.projectId.name ||
+                                ticket.metadata.projectId.code
+                              : null;
+                          const centerName =
+                            !ticket.metadata?.centerId ||
+                            ticket.metadata.centerId === "online"
+                              ? "Online"
+                              : typeof ticket.metadata.centerId === "object"
+                                ? ticket.metadata.centerId.centerName
+                                : ticket.metadata?.centerName || "Online";
+                          const requestedBy =
+                            ticket.metadata?.createdByName ||
+                            ticket.metadata?.studentName ||
+                            (ticket.submissionSource === "email"
+                              ? ticket.sourceEmail
+                              : null) ||
+                            "-";
+                          const slaPill = computeSlaPill(ticket);
+
+                          return (
+                            <tr
+                              key={ticket._id}
+                              onClick={() => handleTicketClick(ticket._id)}
+                              style={{
+                                background: isSelected
+                                  ? "#EFF6FF"
+                                  : isHighlighted
+                                    ? "#FFFBEB"
+                                    : "#FFFFFF",
+                                borderBottom: "1px solid #F2F4F7",
+                                cursor: "pointer",
+                                borderLeft: isHighlighted
+                                  ? "3px solid #F59E0B"
+                                  : "3px solid transparent",
+                              }}
+                              onMouseEnter={(e) => {
+                                if (!isSelected && !isHighlighted) {
+                                  e.currentTarget.style.background = "#F9FAFB";
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (!isSelected && !isHighlighted) {
+                                  e.currentTarget.style.background = "#FFFFFF";
+                                }
+                              }}
+                            >
+                              {canMerge && (
+                                <td
+                                  style={{
+                                    padding: isMobile
+                                      ? "10px 10px"
+                                      : "12px 12px",
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() =>
+                                      toggleTicketSelect(ticket._id)
+                                    }
+                                    style={{
+                                      width: "16px",
+                                      height: "16px",
+                                      cursor: "pointer",
+                                    }}
+                                  />
+                                </td>
+                              )}
+                              <td
                                 style={{
-                                  fontSize: "14px",
-                                  fontWeight: 600,
+                                  padding: isMobile ? "10px 12px" : "12px 16px",
+                                  fontSize: 13,
                                   color: "#2563EB",
+                                  fontWeight: 600,
+                                  whiteSpace: "nowrap",
                                 }}
                               >
                                 #{ticket.ticketNumber}
-                              </span>
-                              {ticket.hasNewReply && (
-                                <span
+                              </td>
+                              <td
+                                style={{
+                                  padding: isMobile ? "10px 12px" : "12px 16px",
+                                  minWidth: isMobile ? 180 : 220,
+                                }}
+                              >
+                                <div
                                   style={{
-                                    width: "8px",
-                                    height: "8px",
-                                    borderRadius: "50%",
-                                    background: "#F59E0B",
-                                    display: "inline-block",
-                                    flexShrink: 0,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 6,
+                                    marginBottom: 2,
                                   }}
-                                />
-                              )}
-                              {ticket.mergedTickets &&
-                                ticket.mergedTickets.length > 0 && (
+                                >
                                   <span
                                     style={{
-                                      fontSize: "11px",
-                                      fontWeight: 500,
-                                      color: "#7C3AED",
-                                      background: "#F3E8FF",
-                                      padding: "1px 6px",
-                                      borderRadius: "8px",
+                                      fontSize: 13,
+                                      color: "#101828",
+                                      fontWeight: isHighlighted ? 700 : 600,
+                                    }}
+                                  >
+                                    {ticket.subject || "No subject"}
+                                  </span>
+                                  {ticket.hasNewReply && (
+                                    <span
+                                      style={{
+                                        width: 8,
+                                        height: 8,
+                                        borderRadius: "50%",
+                                        background: "#F59E0B",
+                                        display: "inline-block",
+                                      }}
+                                    />
+                                  )}
+                                </div>
+                                {ticket.category?.name && (
+                                  <div
+                                    style={{ fontSize: 12, color: "#667085" }}
+                                  >
+                                    {ticket.category.name}
+                                  </div>
+                                )}
+                              </td>
+                              {showRequestedBy && (
+                                <td
+                                  style={{
+                                    padding: isMobile
+                                      ? "10px 12px"
+                                      : "12px 16px",
+                                    fontSize: 13,
+                                    color: "#344054",
+                                  }}
+                                >
+                                  {requestedBy}
+                                </td>
+                              )}
+                              {showSenderEmail && (
+                                <td
+                                  style={{
+                                    padding: isMobile
+                                      ? "10px 12px"
+                                      : "12px 16px",
+                                    fontSize: 13,
+                                    color: "#344054",
+                                  }}
+                                >
+                                  {ticket.submissionSource === "email" &&
+                                  ticket.sourceEmail ? (
+                                    <a
+                                      href={`mailto:${ticket.sourceEmail}`}
+                                      onClick={(e) => e.stopPropagation()}
+                                      style={{
+                                        color: "#175CD3",
+                                        textDecoration: "none",
+                                      }}
+                                    >
+                                      {ticket.sourceEmail}
+                                    </a>
+                                  ) : (
+                                    <span style={{ color: "#98A2B3" }}>-</span>
+                                  )}
+                                </td>
+                              )}
+                              {showAssignee && (
+                                <td
+                                  style={{
+                                    padding: isMobile
+                                      ? "10px 12px"
+                                      : "12px 16px",
+                                    fontSize: 13,
+                                    color: "#344054",
+                                  }}
+                                >
+                                  {ticket.assignedTo
+                                    ? `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}`
+                                    : "Unassigned"}
+                                </td>
+                              )}
+                              {showSource && (
+                                <td
+                                  style={{
+                                    padding: isMobile
+                                      ? "10px 12px"
+                                      : "12px 16px",
+                                  }}
+                                >
+                                  <span
+                                    style={{
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: 4,
+                                      padding: "3px 10px",
+                                      borderRadius: "20px",
+                                      fontSize: 12,
+                                      fontWeight: 600,
+                                      color: sourceBadge.color,
+                                      backgroundColor: sourceBadge.bgColor,
                                       whiteSpace: "nowrap",
                                     }}
                                   >
-                                    {ticket.mergedTickets.length} ticket
-                                    {ticket.mergedTickets.length > 1
-                                      ? "s"
-                                      : ""}{" "}
-                                    merged
+                                    {sourceBadge.icon} {sourceBadge.label}
                                   </span>
-                                )}
-                              {ticket.isMerged && (
+                                </td>
+                              )}
+                              <td
+                                style={{
+                                  padding: isMobile ? "10px 12px" : "12px 16px",
+                                }}
+                              >
                                 <span
                                   style={{
-                                    fontSize: "11px",
-                                    fontWeight: 500,
-                                    color: "#9CA3AF",
-                                    background: "#F3F4F6",
-                                    padding: "1px 6px",
-                                    borderRadius: "8px",
+                                    padding: "3px 10px",
+                                    borderRadius: "20px",
+                                    fontSize: "12px",
+                                    fontWeight: 600,
+                                    color: "white",
+                                    background: getPriorityColor(
+                                      ticket.priority,
+                                    ),
+                                    textTransform: "capitalize",
                                     whiteSpace: "nowrap",
                                   }}
                                 >
-                                  merged
+                                  {ticket.priority || "N/A"}
                                 </span>
+                              </td>
+                              <td
+                                style={{
+                                  padding: isMobile ? "10px 12px" : "12px 16px",
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    padding: "3px 10px",
+                                    borderRadius: "20px",
+                                    fontSize: "12px",
+                                    fontWeight: 600,
+                                    background:
+                                      (getStatusColor(ticket.status, ticket) ||
+                                        "#6B7280") + "20",
+                                    color: getStatusColor(
+                                      ticket.status,
+                                      ticket,
+                                    ),
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  {getStatusName(ticket.status, ticket)}
+                                </span>
+                              </td>
+                              {showSla && (
+                                <td
+                                  style={{
+                                    padding: isMobile
+                                      ? "10px 12px"
+                                      : "12px 16px",
+                                  }}
+                                >
+                                  {slaPill ? (
+                                    <span
+                                      title={slaPill.tooltip}
+                                      style={{
+                                        padding: "3px 8px",
+                                        borderRadius: "20px",
+                                        fontSize: "11px",
+                                        fontWeight: 600,
+                                        color: slaPill.color,
+                                        background: slaPill.bg,
+                                        border: `1px solid ${slaPill.color}30`,
+                                        whiteSpace: "nowrap",
+                                      }}
+                                    >
+                                      ⏱ {slaPill.label}
+                                    </span>
+                                  ) : (
+                                    <span
+                                      style={{ color: "#98A2B3", fontSize: 12 }}
+                                    >
+                                      -
+                                    </span>
+                                  )}
+                                </td>
                               )}
-                            </div>
-                            <h3
-                              style={{
-                                fontSize: "16px",
-                                fontWeight: ticket.hasNewReply ? 700 : 600,
-                                color: ticket.hasNewReply
-                                  ? "#1F2937"
-                                  : "#111827",
-                                margin: 0,
-                              }}
-                            >
-                              {ticket.subject || "No subject"}
-                            </h3>
-                          </div>
-                        </div>
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: "8px",
-                            alignItems: "center",
-                            flexShrink: 0,
-                            marginLeft: "12px",
-                          }}
-                        >
-                          <span
-                            style={{
-                              padding: "4px 12px",
-                              borderRadius: "12px",
-                              fontSize: "12px",
-                              fontWeight: 600,
-                              background:
-                                getStatusColor(ticket.status, ticket) + "20",
-                              color: getStatusColor(ticket.status, ticket),
-                            }}
-                          >
-                            {getStatusName(ticket.status, ticket)}
-                          </span>
-                          {canMerge && !ticket.isMerged && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedTicket(ticket);
-                                setShowMergeModal(true);
-                              }}
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "4px",
-                                padding: "6px 12px",
-                                background: "#3B82F6",
-                                color: "white",
-                                border: "none",
-                                borderRadius: "6px",
-                                fontSize: "12px",
-                                fontWeight: 600,
-                                cursor: "pointer",
-                              }}
-                              onMouseEnter={(e) =>
-                                (e.currentTarget.style.background = "#2563EB")
-                              }
-                              onMouseLeave={(e) =>
-                                (e.currentTarget.style.background = "#3B82F6")
-                              }
-                            >
-                              <ArrowsPointingInIcon
-                                style={{ width: "14px", height: "14px" }}
-                              />
-                              Merge
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Bottom metadata row */}
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: "20px",
-                          fontSize: "13px",
-                          color: "#6B7280",
-                          flexWrap: "wrap",
-                          alignItems: "center",
-                        }}
-                      >
-                        <span
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "4px",
-                            padding: "2px 8px",
-                            borderRadius: "10px",
-                            fontSize: "12px",
-                            fontWeight: 500,
-                            color: sourceBadge.color,
-                            backgroundColor: sourceBadge.bgColor,
-                          }}
-                        >
-                          {sourceBadge.icon} {sourceBadge.label}
-                        </span>
-                        <div>
-                          <span style={{ fontWeight: 600 }}>Priority:</span>{" "}
-                          <span
-                            style={{
-                              padding: "2px 8px",
-                              borderRadius: "10px",
-                              fontSize: "12px",
-                              fontWeight: 500,
-                              color: "white",
-                              backgroundColor: getPriorityColor(
-                                ticket.priority,
-                              ),
-                            }}
-                          >
-                            {ticket.priority
-                              ? ticket.priority.charAt(0).toUpperCase() +
-                                ticket.priority.slice(1).toLowerCase()
-                              : "N/A"}
-                          </span>
-                        </div>
-                        {/* US-ESC-009: SLA countdown pill */}
-                        {(() => {
-                          const pill = computeSlaPill(ticket);
-                          if (!pill) return null;
-                          return (
-                            <div title={pill.tooltip}>
-                              <span
+                              <td
                                 style={{
-                                  padding: "2px 8px",
-                                  borderRadius: "10px",
-                                  fontSize: "12px",
-                                  fontWeight: 600,
-                                  color: pill.color,
-                                  backgroundColor: pill.bg,
-                                  border: `1px solid ${pill.color}30`,
+                                  padding: isMobile ? "10px 12px" : "12px 16px",
+                                  fontSize: 13,
+                                  color: "#344054",
+                                  whiteSpace: "nowrap",
                                 }}
                               >
-                                ⏱ {pill.label}
-                              </span>
-                            </div>
-                          );
-                        })()}
-                        <div>
-                          <span style={{ fontWeight: 600 }}>Center:</span>{" "}
-                          <span
-                            style={{
-                              padding: "2px 8px",
-                              background:
-                                centerName === "Online" ? "#DBEAFE" : "#FEF3C7",
-                              color:
-                                centerName === "Online" ? "#1E40AF" : "#92400E",
-                              borderRadius: "4px",
-                              fontSize: "12px",
-                              fontWeight: 600,
-                            }}
-                          >
-                            {centerName}
-                          </span>
-                        </div>
-                        {requestedBy && (
-                          <div>
-                            <span style={{ fontWeight: 600 }}>
-                              Requested By:
-                            </span>{" "}
-                            {requestedBy}
-                          </div>
-                        )}
-                        {ticket.metadata?.studentEmail && (
-                          <div>
-                            <span style={{ fontWeight: 600 }}>Email:</span>{" "}
-                            <a
-                              href={`mailto:${ticket.metadata.studentEmail}`}
-                              onClick={(e) => e.stopPropagation()}
-                              style={{
-                                color: "#3B82F6",
-                                textDecoration: "none",
-                              }}
-                            >
-                              {ticket.metadata.studentEmail}
-                            </a>
-                          </div>
-                        )}
-                        {ticket.submissionSource === "email" &&
-                          ticket.sourceEmail && (
-                            <div>
-                              <span style={{ fontWeight: 600 }}>
-                                Sender Email:
-                              </span>{" "}
-                              <a
-                                href={`mailto:${ticket.sourceEmail}`}
+                                {new Date(ticket.createdAt).toLocaleString(
+                                  undefined,
+                                  {
+                                    day: "2-digit",
+                                    month: "short",
+                                    year: "numeric",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                    hour12: true,
+                                  },
+                                )}
+                              </td>
+                              {showCenter && (
+                                <td
+                                  style={{
+                                    padding: isMobile
+                                      ? "10px 12px"
+                                      : "12px 16px",
+                                  }}
+                                >
+                                  <span
+                                    style={{
+                                      padding: "3px 10px",
+                                      borderRadius: "20px",
+                                      fontSize: "12px",
+                                      fontWeight: 600,
+                                      background:
+                                        centerName === "Online"
+                                          ? "#DBEAFE"
+                                          : "#FEF3C7",
+                                      color:
+                                        centerName === "Online"
+                                          ? "#1E40AF"
+                                          : "#92400E",
+                                      whiteSpace: "nowrap",
+                                    }}
+                                  >
+                                    {centerName}
+                                  </span>
+                                </td>
+                              )}
+                              {showProjectColumn && (
+                                <td
+                                  style={{
+                                    padding: isMobile
+                                      ? "10px 12px"
+                                      : "12px 16px",
+                                    fontSize: 13,
+                                    color: "#344054",
+                                  }}
+                                >
+                                  {projectName ? (
+                                    <span
+                                      style={{
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        padding: "3px 10px",
+                                        borderRadius: "20px",
+                                        fontSize: "12px",
+                                        fontWeight: 600,
+                                        color: "#5925DC",
+                                        background: "#F4F3FF",
+                                        whiteSpace: "nowrap",
+                                      }}
+                                    >
+                                      {projectName}
+                                    </span>
+                                  ) : (
+                                    <span style={{ color: "#98A2B3" }}>-</span>
+                                  )}
+                                </td>
+                              )}
+                              <td
+                                style={{
+                                  padding: isMobile ? "10px 12px" : "12px 16px",
+                                  textAlign: "right",
+                                }}
                                 onClick={(e) => e.stopPropagation()}
-                                style={{
-                                  color: "#3B82F6",
-                                  textDecoration: "none",
-                                }}
                               >
-                                {ticket.sourceEmail}
-                              </a>
-                            </div>
-                          )}
-                        <div>
-                          <span style={{ fontWeight: 600 }}>Assigned To:</span>{" "}
-                          {ticket.assignedTo
-                            ? `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}`
-                            : "Unassigned"}
-                        </div>
-                        {ticket.createdAt && (
-                          <div>
-                            <span style={{ fontWeight: 600 }}>Created:</span>{" "}
-                            {new Date(ticket.createdAt).toLocaleString(
-                              undefined,
-                              {
-                                day: "2-digit",
-                                month: "short",
-                                year: "numeric",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                                hour12: true,
-                              },
-                            )}
-                          </div>
-                        )}
-                        {ticket.category && (
-                          <div>
-                            <span style={{ fontWeight: 600 }}>Category:</span>{" "}
-                            {ticket.category.name}
-                          </div>
-                        )}
-                        {viewMode === "unified" && projectName && (
-                          <span
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              padding: "2px 8px",
-                              borderRadius: "10px",
-                              fontSize: "12px",
-                              fontWeight: 500,
-                              color: "#6366F1",
-                              backgroundColor: "#EEF2FF",
-                            }}
-                          >
-                            {projectName}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+                                {canMerge && !ticket.isMerged ? (
+                                  <button
+                                    onClick={() => {
+                                      setSelectedTicket(ticket);
+                                      setShowMergeModal(true);
+                                    }}
+                                    style={{
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: "6px",
+                                      padding: isMobile
+                                        ? "6px 8px"
+                                        : "6px 10px",
+                                      background: "#3B82F6",
+                                      color: "white",
+                                      border: "none",
+                                      borderRadius: "8px",
+                                      fontSize: "12px",
+                                      fontWeight: 600,
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    <ArrowsPointingInIcon
+                                      style={{ width: "14px", height: "14px" }}
+                                    />
+                                    {isMobile ? "" : "Merge"}
+                                  </button>
+                                ) : (
+                                  <span
+                                    style={{ color: "#98A2B3", fontSize: 12 }}
+                                  >
+                                    -
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
 
-                {/* Pagination */}
                 <div
                   style={{
+                    marginTop: "16px",
                     display: "flex",
                     justifyContent: "space-between",
-                    alignItems: "center",
+                    alignItems: isMobile ? "flex-start" : "center",
+                    flexDirection: isMobile ? "column" : "row",
+                    gap: isMobile ? "10px" : "0",
                     fontSize: "14px",
                     color: "#6B7280",
-                    marginTop: "4px",
                   }}
                 >
                   <div
@@ -1910,10 +2329,9 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                         background: currentPage <= 1 ? "#F3F4F6" : "white",
                         color: currentPage <= 1 ? "#9CA3AF" : "#374151",
                         cursor: currentPage <= 1 ? "not-allowed" : "pointer",
-                        fontSize: "13px",
                       }}
                     >
-                      {"<"} Previous
+                      {isMobile ? "←" : "← Previous"}
                     </button>
                     <span style={{ padding: "0 12px" }}>
                       Page {currentPage} of {Math.max(1, totalPages)}
@@ -1933,10 +2351,9 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                           currentPage >= totalPages ? "#9CA3AF" : "#374151",
                         cursor:
                           currentPage >= totalPages ? "not-allowed" : "pointer",
-                        fontSize: "13px",
                       }}
                     >
-                      Next {">"}
+                      {isMobile ? "→" : "Next →"}
                     </button>
                   </div>
                   <div>
@@ -1951,9 +2368,107 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                 </div>
               </>
             )}
-          </div>
+          </>
         );
       })()}
+
+      {canMerge && selectedTicketIds.size > 0 && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: isMobile ? "16px" : "28px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "#1E293B",
+            color: "white",
+            borderRadius: "12px",
+            padding: isMobile ? "10px 12px" : "12px 20px",
+            display: "flex",
+            alignItems: "center",
+            gap: isMobile ? "8px" : "12px",
+            flexWrap: "wrap",
+            justifyContent: "center",
+            boxShadow: "0 8px 32px rgba(0,0,0,.3)",
+            zIndex: 200,
+            whiteSpace: isMobile ? "normal" : "nowrap",
+            width: isMobile ? "calc(100% - 20px)" : "auto",
+            maxWidth: isMobile ? "580px" : "none",
+          }}
+        >
+          <span style={{ fontWeight: 600, fontSize: "14px" }}>
+            {selectedTicketIds.size} ticket
+            {selectedTicketIds.size !== 1 ? "s" : ""} selected
+          </span>
+          <div
+            style={{
+              width: "1px",
+              height: "20px",
+              background: "rgba(255,255,255,.2)",
+            }}
+          />
+          {selectedTicketIds.size >= 2 && (
+            <button
+              onClick={() => {
+                const sel = filteredTickets.filter((t) =>
+                  selectedTicketIds.has(t._id),
+                );
+                const getKey = (t: Ticket) =>
+                  t.metadata?.studentEmail ||
+                  t.metadata?.createdByName ||
+                  t.metadata?.studentName ||
+                  "";
+                const keys = new Set(sel.map(getKey));
+                if (keys.size > 1) {
+                  setBulkError(
+                    "Cannot merge tickets from different requestors. Please select tickets raised by the same person.",
+                  );
+                  return;
+                }
+                setBulkMergeStep("pick-primary");
+                setBulkMergePrimaryId("");
+                setBulkError("");
+              }}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "6px 12px",
+                background: "rgba(255,255,255,.18)",
+                color: "white",
+                border: "1px solid rgba(255,255,255,.35)",
+                borderRadius: "8px",
+                cursor: "pointer",
+                fontSize: "13px",
+                fontWeight: 600,
+              }}
+            >
+              <ArrowsPointingInIcon style={{ width: "14px", height: "14px" }} />
+              Merge Selected
+            </button>
+          )}
+          <button
+            onClick={() => {
+              setSelectedTicketIds(new Set());
+              setBulkError("");
+            }}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "4px",
+              padding: "6px 10px",
+              background: "transparent",
+              border: "1px solid rgba(255,255,255,.28)",
+              borderRadius: "8px",
+              color: "#E5E7EB",
+              cursor: "pointer",
+              fontSize: "13px",
+            }}
+          >
+            <XMarkIcon style={{ width: "12px", height: "12px" }} />
+            Clear
+          </button>
+        </div>
+      )}
 
       {/* Export Modal */}
       {canExport && showExportModal && (

@@ -732,20 +732,66 @@ const ProjectPortalLogin: React.FC = () => {
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
+                      overflow: "hidden",
                     }}
                   >
-                    <svg
-                      width="32"
-                      height="32"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="white"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                    </svg>
+                    {projectBranding?.branding?.logo ? (
+                      projectBranding?.branding?.logoLinkbackUrl ? (
+                        <a
+                          href={
+                            projectBranding.branding.logoLinkbackUrl.startsWith(
+                              "http",
+                            )
+                              ? projectBranding.branding.logoLinkbackUrl
+                              : `https://${projectBranding.branding.logoLinkbackUrl}`
+                          }
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ width: "100%", height: "100%" }}
+                        >
+                          <img
+                            src={projectBranding.branding.logo}
+                            alt={`${projectBranding?.name || "Portal"} logo`}
+                            loading="lazy"
+                            style={{
+                              width: "100%",
+                              height: "100%",
+                              objectFit: "contain",
+                              background: "white",
+                              padding: "6px",
+                              cursor: "pointer",
+                            }}
+                            className="hover:opacity-80 transition-opacity"
+                          />
+                        </a>
+                      ) : (
+                        <img
+                          src={projectBranding.branding.logo}
+                          alt={`${projectBranding?.name || "Portal"} logo`}
+                          loading="lazy"
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "contain",
+                            background: "white",
+                            padding: "6px",
+                          }}
+                        />
+                      )
+                    ) : (
+                      <svg
+                        width="32"
+                        height="32"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="white"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                      </svg>
+                    )}
                   </div>
                   <h1
                     style={{
