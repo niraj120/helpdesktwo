@@ -20,8 +20,6 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
-
-    /* Path mapping */
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]

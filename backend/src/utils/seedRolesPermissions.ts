@@ -609,6 +609,13 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     description: "Can create and manage ticket templates",
     category: "ticket-configuration",
   },
+  {
+    module: "Ticket Configuration",
+    name: "Manage Table Columns",
+    code: "TICKET_CONFIG_MANAGE_TABLE_COLUMNS",
+    description: "Can configure query table columns by project",
+    category: "ticket-configuration",
+  },
   // =====================================================
   // KNOWLEDGE BASE CATEGORY - Legacy System (DEPRECATED)
   // =====================================================

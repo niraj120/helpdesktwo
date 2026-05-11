@@ -1195,6 +1195,8 @@ export const getProjectTicketSettings = async (req: Request, res: Response) => {
       data: settings,
       ticketConfig: {
         numbering,
+        tableColumns:
+          project.configuration?.ticketSubmissionSettings?.tableColumns || [],
       },
     });
   } catch (error) {
@@ -1500,11 +1502,16 @@ export const updateProjectTicketSettings = async (
 ) => {
   try {
     const { projectId } = req.params;
-    const { numbering, statuses, types, onlineFormFields } = req.body;
+    const { numbering, statuses, types, onlineFormFields, tableColumns } =
+      req.body;
 
     console.log(
       "💾 Saving ticket settings:",
-      JSON.stringify({ numbering, statuses, types, onlineFormFields }, null, 2),
+      JSON.stringify(
+        { numbering, statuses, types, onlineFormFields, tableColumns },
+        null,
+        2,
+      ),
     );
 
     const project = await Project.findById(projectId);
@@ -1579,6 +1586,18 @@ export const updateProjectTicketSettings = async (
       (project as any).configuration.ticketSubmissionSettings.types = types;
     }
 
+    if (tableColumns !== undefined) {
+      if (!(project as any).configuration.ticketSubmissionSettings) {
+        (project as any).configuration.ticketSubmissionSettings = {};
+      }
+      (project as any).configuration.ticketSubmissionSettings.tableColumns =
+        Array.isArray(tableColumns)
+          ? tableColumns
+              .map((col: any) => String(col || "").trim())
+              .filter(Boolean)
+          : [];
+    }
+
     // Update online form fields
     if (onlineFormFields !== undefined) {
       if (!(project as any).configuration.ticketSubmissionSettings) {
@@ -1620,6 +1639,8 @@ export const updateProjectTicketSettings = async (
         statuses: (project as any).configuration?.ticketSubmissionSettings
           ?.statuses,
         types: (project as any).configuration?.ticketSubmissionSettings?.types,
+        tableColumns: (project as any).configuration?.ticketSubmissionSettings
+          ?.tableColumns,
       },
     });
   } catch (error) {
@@ -2082,6 +2103,10 @@ export const getWhatsappWidgetConfig = async (req: Request, res: Response) => {
       data: {
         enabled: true,
         visibility: widget.visibility || "always",
+        roleVisibility: widget.roleVisibility || "all",
+        visibleRoles: Array.isArray(widget.visibleRoles)
+          ? widget.visibleRoles
+          : [],
         phoneNumber: widget.phoneNumber || "",
         whatsappUrl: `https://wa.me/${widget.phoneNumber}`,
         predefinedMessage: widget.predefinedMessage || "",
@@ -2109,6 +2134,8 @@ export const updateWhatsappWidgetSettings = async (
     const {
       enabled,
       visibility,
+      roleVisibility,
+      visibleRoles,
       phoneNumber,
       predefinedMessage,
       position,
@@ -2131,9 +2158,40 @@ export const updateWhatsappWidgetSettings = async (
       ? String(phoneNumber).replace(/\D/g, "")
       : "";
 
+    const cleanVisibleRoles = Array.isArray(visibleRoles)
+      ? Array.from(
+          new Set(
+            visibleRoles
+              .map((role: any) =>
+                String(role || "")
+                  .trim()
+                  .replace(/\s+/g, "_")
+                  .toUpperCase(),
+              )
+              .filter(Boolean),
+          ),
+        )
+      : [];
+
+    const effectiveRoleVisibility =
+      roleVisibility === "roles" ? "roles" : "all";
+
+    if (
+      !!enabled &&
+      effectiveRoleVisibility === "roles" &&
+      cleanVisibleRoles.length === 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Please select at least one role for role-based visibility",
+      });
+    }
+
     project.configuration.whatsappWidget = {
       enabled: !!enabled,
       visibility: visibility || "always",
+      roleVisibility: effectiveRoleVisibility,
+      visibleRoles: cleanVisibleRoles,
       phoneNumber: cleanPhone,
       predefinedMessage: predefinedMessage || "",
       position: position || "bottom-right",

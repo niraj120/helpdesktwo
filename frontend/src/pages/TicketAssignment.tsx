@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from "react";
 import DashboardLayout from "../components/DashboardLayout";
-import ModuleHeader from "../components/ModuleHeader";
 import axios from "axios";
 // import { usePermissions } from '../hooks/usePermissions'; // Commented out - not used
 import { API_CONFIG } from "../config/constants";
 import { useProjectContext } from "../contexts/ProjectContext";
 import { useBranding } from "../contexts/BrandingContext";
+import { MdSearch } from "react-icons/md";
 
 interface TicketAssignmentProps {
   wrapWithLayout?: boolean;
@@ -436,12 +436,44 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({
         padding: isMobile ? "16px" : "24px",
         maxWidth: "1400px",
         margin: "0 auto",
+        background: "#F8F9FC",
+        minHeight: "100vh",
       }}
     >
-      <ModuleHeader
-        title="Query Assignment"
-        subtitle="Select queries and assign them to agents"
-      />
+      <div
+        style={{
+          background: "#ffffff",
+          padding: isMobile ? "16px" : "22px 24px",
+          borderRadius: "14px",
+          marginBottom: "16px",
+          border: "1px solid #e7ebf3",
+          boxShadow: "0 4px 18px rgba(15, 23, 42, 0.05)",
+        }}
+      >
+        <h1
+          style={{
+            margin: "0 0 6px 0",
+            fontSize: isMobile ? "20px" : "24px",
+            fontWeight: 700,
+            color: "#111827",
+            letterSpacing: "-0.01em",
+            fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+          }}
+        >
+          Query Assignment
+        </h1>
+        <p
+          style={{
+            margin: 0,
+            fontSize: "14px",
+            color: "#6b7280",
+            fontWeight: 400,
+            fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+          }}
+        >
+          Select, filter, and assign queries with project-level control
+        </p>
+      </div>
 
       <div
         style={{
@@ -530,14 +562,26 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({
       {/* Assignment Panel */}
       <div
         style={{
-          background: "white",
-          borderRadius: "12px",
-          padding: isMobile ? "14px" : "18px",
-          boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
-          border: "1px solid #F3F4F6",
+          background: "#ffffff",
+          borderRadius: "14px",
+          border: "1px solid #e7ebf3",
+          padding: isMobile ? "14px" : "16px",
+          boxShadow: "0 4px 16px rgba(15, 23, 42, 0.04)",
           marginBottom: "16px",
         }}
       >
+        <div
+          style={{
+            fontSize: "13px",
+            fontWeight: 700,
+            color: "#475467",
+            marginBottom: "10px",
+            textTransform: "uppercase",
+            letterSpacing: "0.04em",
+          }}
+        >
+          Assignment Controls
+        </div>
         <div
           style={{
             display: "flex",
@@ -565,11 +609,12 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({
                 onChange={(e) => setSelectedProject(e.target.value)}
                 style={{
                   width: "100%",
-                  padding: "9px 10px",
-                  border: "1px solid #E5E7EB",
-                  borderRadius: "8px",
+                  height: "42px",
+                  padding: "8px 12px",
+                  border: "1px solid #d7deea",
+                  borderRadius: "10px",
                   fontSize: "14px",
-                  background: "#F9FAFB",
+                  background: "#F9FBFF",
                 }}
               >
                 <option value="all">All Projects</option>
@@ -601,11 +646,12 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({
               onChange={(e) => setSelectedAgent(e.target.value)}
               style={{
                 width: "100%",
-                padding: "9px 10px",
-                border: "1px solid #E5E7EB",
-                borderRadius: "8px",
+                height: "42px",
+                padding: "8px 12px",
+                border: "1px solid #d7deea",
+                borderRadius: "10px",
                 fontSize: "14px",
-                background: "#F9FAFB",
+                background: "#F9FBFF",
               }}
             >
               <option value="">Select user</option>
@@ -633,14 +679,15 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({
               !selectedAgent || selectedTickets.length === 0 || assigning
             }
             style={{
-              padding: "9px 16px",
+              height: "42px",
+              padding: "0 16px",
               background:
                 selectedAgent && selectedTickets.length > 0
-                  ? "#2563EB"
+                  ? "#175CD3"
                   : "#9CA3AF",
               color: "white",
               border: "none",
-              borderRadius: "8px",
+              borderRadius: "10px",
               fontSize: "14px",
               fontWeight: 600,
               cursor:
@@ -661,14 +708,26 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({
       {/* Filters */}
       <div
         style={{
-          background: "white",
-          borderRadius: "12px",
-          padding: "12px 16px",
-          boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
-          border: "1px solid #F3F4F6",
+          background: "#ffffff",
+          borderRadius: "14px",
+          border: "1px solid #e7ebf3",
+          padding: "14px",
+          boxShadow: "0 4px 16px rgba(15, 23, 42, 0.04)",
           marginBottom: "16px",
         }}
       >
+        <div
+          style={{
+            fontSize: "13px",
+            fontWeight: 700,
+            color: "#475467",
+            marginBottom: "10px",
+            textTransform: "uppercase",
+            letterSpacing: "0.04em",
+          }}
+        >
+          Filter Queries
+        </div>
         <div
           style={{
             display: "flex",
@@ -677,7 +736,17 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({
             alignItems: "center",
           }}
         >
-          <div style={{ flex: 1, minWidth: "200px" }}>
+          <div style={{ flex: 1, minWidth: "200px", position: "relative" }}>
+            <MdSearch
+              size={16}
+              style={{
+                position: "absolute",
+                left: "14px",
+                top: "50%",
+                transform: "translateY(-50%)",
+                color: "#9CA3AF",
+              }}
+            />
             <input
               type="text"
               placeholder="Search by query number, subject, or email..."
@@ -685,11 +754,13 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{
                 width: "100%",
-                padding: "9px 12px",
-                border: "1px solid #E5E7EB",
-                borderRadius: "8px",
+                height: "42px",
+                padding: "10px 12px 10px 40px",
+                border: "1px solid #d7deea",
+                borderRadius: "10px",
                 fontSize: "14px",
-                background: "#F9FAFB",
+                background: "#F9FBFF",
+                boxSizing: "border-box",
               }}
             />
           </div>
@@ -700,12 +771,13 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
               style={{
-                padding: "9px 10px",
-                border: "1px solid #E5E7EB",
-                borderRadius: "8px",
+                height: "42px",
+                padding: "8px 12px",
+                border: "1px solid #d7deea",
+                borderRadius: "10px",
                 fontSize: "14px",
                 minWidth: "120px",
-                background: "#F9FAFB",
+                background: "#F9FBFF",
               }}
             >
               <option value="all">All Status</option>
@@ -723,12 +795,13 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({
               value={filterAssignment}
               onChange={(e) => setFilterAssignment(e.target.value)}
               style={{
-                padding: "9px 10px",
-                border: "1px solid #E5E7EB",
-                borderRadius: "8px",
+                height: "42px",
+                padding: "8px 12px",
+                border: "1px solid #d7deea",
+                borderRadius: "10px",
                 fontSize: "14px",
                 minWidth: "140px",
-                background: "#F9FAFB",
+                background: "#F9FBFF",
               }}
             >
               <option value="all">All Queries</option>
@@ -743,12 +816,13 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({
               value={filterCounselor}
               onChange={(e) => setFilterCounselor(e.target.value)}
               style={{
-                padding: "9px 10px",
-                border: "1px solid #E5E7EB",
-                borderRadius: "8px",
+                height: "42px",
+                padding: "8px 12px",
+                border: "1px solid #d7deea",
+                borderRadius: "10px",
                 fontSize: "14px",
                 minWidth: "180px",
-                background: "#F9FAFB",
+                background: "#F9FBFF",
               }}
             >
               <option value="all">All Counselors</option>
@@ -775,14 +849,14 @@ const TicketAssignment: React.FC<TicketAssignmentProps> = ({
       {/* Tickets Table */}
       <div
         style={{
-          background: "white",
+          background: "#ffffff",
           borderRadius: "10px",
           overflow: "hidden",
-          boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+          boxShadow: "0 4px 16px rgba(15, 23, 42, 0.04)",
           border: "1px solid #E4E7EC",
         }}
       >
-        <div style={{ overflowX: "auto" }}>
+        <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
           <table
             style={{
               width: "100%",

@@ -6,13 +6,16 @@ import {
   MdEdit,
   MdDelete,
   MdDragIndicator,
+  MdArrowUpward,
+  MdArrowDownward,
 } from "react-icons/md";
 import DashboardLayout from "./DashboardLayout";
-import { useParams } from "react-router-dom";
+import { useLocation, useParams } from "react-router-dom";
 import { API_CONFIG } from "../config/constants";
 import HierarchyConfigManager from "./HierarchyConfigManager";
 import FormFieldBuilder from "./FormFieldBuilder";
 import { FormFieldSchema } from "../utils/conditionEngine";
+import { usePermissions } from "../hooks/usePermissions";
 
 interface TicketStatus {
   _id?: string;
@@ -47,11 +50,116 @@ interface TicketNumberingConfig {
   resetFrequency: "never" | "yearly" | "monthly";
 }
 
+interface TicketTableColumnOption {
+  key: string;
+  label: string;
+  description: string;
+  enabled: boolean;
+}
+
+const AVAILABLE_TICKET_TABLE_COLUMNS: Array<
+  Omit<TicketTableColumnOption, "enabled">
+> = [
+  {
+    key: "ticketNumber",
+    label: "Ticket #",
+    description: "Unique ticket number",
+  },
+  { key: "subject", label: "Subject", description: "Ticket subject" },
+  {
+    key: "requestedBy",
+    label: "Requested By",
+    description: "Student/requester name and email",
+  },
+  {
+    key: "assignee",
+    label: "Assignee",
+    description: "Assigned support user",
+  },
+  {
+    key: "priority",
+    label: "Priority",
+    description: "Priority badge",
+  },
+  { key: "status", label: "Status", description: "Current status" },
+  { key: "sla", label: "SLA", description: "SLA progress/pill" },
+  { key: "createdAt", label: "Created", description: "Created date" },
+  {
+    key: "center",
+    label: "Center",
+    description: "Student center/online source",
+  },
+  {
+    key: "project",
+    label: "Project",
+    description: "Project name (for multi-project views)",
+  },
+  {
+    key: "category",
+    label: "Category",
+    description: "Assigned category",
+  },
+  {
+    key: "source",
+    label: "Source",
+    description: "Submission source",
+  },
+  {
+    key: "mergedCount",
+    label: "Merged",
+    description: "Merged tickets count",
+  },
+];
+
+const DEFAULT_VISIBLE_TICKET_COLUMNS = [
+  "ticketNumber",
+  "subject",
+  "requestedBy",
+  "assignee",
+  "priority",
+  "status",
+  "sla",
+  "createdAt",
+];
+
+const buildTicketColumnOptions = (
+  selectedKeys?: string[],
+): TicketTableColumnOption[] => {
+  const validSelected = Array.isArray(selectedKeys)
+    ? selectedKeys.filter((key) =>
+        AVAILABLE_TICKET_TABLE_COLUMNS.some((col) => col.key === key),
+      )
+    : [];
+
+  const effectiveSelected =
+    validSelected.length > 0 ? validSelected : DEFAULT_VISIBLE_TICKET_COLUMNS;
+
+  const orderedKeys = [
+    ...effectiveSelected,
+    ...AVAILABLE_TICKET_TABLE_COLUMNS.map((col) => col.key).filter(
+      (key) => !effectiveSelected.includes(key),
+    ),
+  ];
+
+  return orderedKeys
+    .map((key) => {
+      const def = AVAILABLE_TICKET_TABLE_COLUMNS.find((col) => col.key === key);
+      if (!def) return null;
+      return {
+        ...def,
+        enabled: effectiveSelected.includes(key),
+      };
+    })
+    .filter(Boolean) as TicketTableColumnOption[];
+};
+
 // FormField schema is now imported from conditionEngine (FormFieldSchema)
 // — includes conditions, conditionAction, requiredMode, requiredConditions
 
 const TicketSettings: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
+  const location = useLocation();
+  const { hasPermission } = usePermissions();
   const [activeTab, setActiveTab] = useState("numbering");
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -87,6 +195,9 @@ const TicketSettings: React.FC = () => {
   // Form Fields State
   const [formFields, setFormFields] = useState<FormFieldSchema[]>([]);
   const [loadingFormFields, setLoadingFormFields] = useState(false);
+  const [tableColumns, setTableColumns] = useState<TicketTableColumnOption[]>(
+    () => buildTicketColumnOptions(),
+  );
 
   // Hierarchy config — drives which fixed fields appear in the form builder
   interface HierarchyLevel {
@@ -293,6 +404,9 @@ const TicketSettings: React.FC = () => {
         if (data.ticketConfig) {
           if (data.ticketConfig.numbering)
             setNumbering(data.ticketConfig.numbering);
+          setTableColumns(
+            buildTicketColumnOptions(data.ticketConfig.tableColumns),
+          );
           // Categories are now loaded from Category API, not project config
         }
       }
@@ -332,6 +446,9 @@ const TicketSettings: React.FC = () => {
             numbering,
             statuses,
             onlineFormFields: formFields, // Save form fields with main save
+            tableColumns: tableColumns
+              .filter((column) => column.enabled)
+              .map((column) => column.key),
           }),
         },
       );
@@ -353,12 +470,53 @@ const TicketSettings: React.FC = () => {
     }
   };
 
+  const canManageTableColumns = hasPermission(
+    "TICKET_CONFIG_MANAGE_TABLE_COLUMNS",
+  );
+
   const tabs = [
     { id: "numbering", label: "Ticket Numbering", labelMr: "तिकीट क्रमांकन" },
     { id: "statuses", label: "Ticket Statuses", labelMr: "तिकीट स्टेटस" },
     { id: "categories", label: "Categories", labelMr: "श्रेणी" },
     { id: "formFields", label: "Form Fields", labelMr: "फॉर्म फील्ड" },
+    ...(canManageTableColumns
+      ? [
+          {
+            id: "tableColumns",
+            label: "Table Columns",
+            labelMr: "टेबल कॉलम",
+          },
+        ]
+      : []),
   ];
+
+  useEffect(() => {
+    const tab = new URLSearchParams(location.search).get("tab");
+    if (tab && tabs.some((t) => t.id === tab)) {
+      setActiveTab(tab);
+    }
+  }, [location.search, canManageTableColumns]);
+
+  const moveTableColumn = (index: number, direction: "up" | "down") => {
+    setTableColumns((prev) => {
+      const targetIndex = direction === "up" ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= prev.length) return prev;
+      const next = [...prev];
+      [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+      return next;
+    });
+  };
+
+  const toggleTableColumn = (key: string) => {
+    setTableColumns((prev) => {
+      const enabledCount = prev.filter((col) => col.enabled).length;
+      return prev.map((col) => {
+        if (col.key !== key) return col;
+        if (col.enabled && enabledCount <= 1) return col;
+        return { ...col, enabled: !col.enabled };
+      });
+    });
+  };
 
   const generatePreview = () => {
     let preview = numbering.prefix;
@@ -1344,6 +1502,134 @@ const TicketSettings: React.FC = () => {
                   )}
                 </div>
               )}
+
+              {activeTab === "tableColumns" && (
+                <div>
+                  <div style={{ marginBottom: "20px" }}>
+                    <h2
+                      style={{
+                        fontSize: "20px",
+                        fontWeight: "600",
+                        marginBottom: "8px",
+                      }}
+                    >
+                      Query Table Columns
+                    </h2>
+                    <p
+                      style={{
+                        fontSize: "14px",
+                        color: "var(--text-secondary)",
+                      }}
+                    >
+                      Enable/disable and reorder table columns for this project.
+                      These columns will be used on View Queries in both
+                      super-admin project view and project portal.
+                    </p>
+                  </div>
+
+                  <div
+                    style={{
+                      padding: "12px 16px",
+                      background: "#f8fafc",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: "8px",
+                      marginBottom: "14px",
+                      fontSize: "13px",
+                      color: "#475467",
+                    }}
+                  >
+                    Keep at least one column enabled. Use arrows to shift
+                    columns left/right in the table order.
+                  </div>
+
+                  <div style={{ display: "grid", gap: "10px" }}>
+                    {tableColumns.map((column, index) => (
+                      <div
+                        key={column.key}
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "28px 1fr auto",
+                          alignItems: "center",
+                          gap: "12px",
+                          padding: "12px",
+                          border: "1px solid var(--border-subtle)",
+                          borderRadius: "8px",
+                          background: column.enabled ? "#ffffff" : "#f9fafb",
+                          opacity: column.enabled ? 1 : 0.75,
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={column.enabled}
+                          onChange={() => toggleTableColumn(column.key)}
+                        />
+
+                        <div>
+                          <div
+                            style={{
+                              fontSize: "14px",
+                              fontWeight: 600,
+                              color: "#111827",
+                            }}
+                          >
+                            {column.label}
+                          </div>
+                          <div style={{ fontSize: "12px", color: "#667085" }}>
+                            {column.description}
+                          </div>
+                        </div>
+
+                        <div style={{ display: "flex", gap: "6px" }}>
+                          <button
+                            type="button"
+                            onClick={() => moveTableColumn(index, "up")}
+                            disabled={index === 0}
+                            style={{
+                              width: "30px",
+                              height: "30px",
+                              borderRadius: "6px",
+                              border: "1px solid #d0d5dd",
+                              background: "white",
+                              color: index === 0 ? "#98a2b3" : "#344054",
+                              cursor: index === 0 ? "not-allowed" : "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}
+                          >
+                            <MdArrowUpward size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveTableColumn(index, "down")}
+                            disabled={index === tableColumns.length - 1}
+                            style={{
+                              width: "30px",
+                              height: "30px",
+                              borderRadius: "6px",
+                              border: "1px solid #d0d5dd",
+                              background: "white",
+                              color:
+                                index === tableColumns.length - 1
+                                  ? "#98a2b3"
+                                  : "#344054",
+                              cursor:
+                                index === tableColumns.length - 1
+                                  ? "not-allowed"
+                                  : "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}
+                          >
+                            <MdArrowDownward size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1857,6 +2143,44 @@ const TicketSettings: React.FC = () => {
                           These fields will appear in the online ticket
                           submission form for students.
                         </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {activeTab === "tableColumns" && (
+                    <div>
+                      <h4
+                        style={{
+                          fontSize: "14px",
+                          fontWeight: "600",
+                          color: "var(--text-secondary)",
+                          marginBottom: "12px",
+                        }}
+                      >
+                        Enabled Columns
+                      </h4>
+                      <div style={{ display: "grid", gap: "8px" }}>
+                        {tableColumns
+                          .filter((col) => col.enabled)
+                          .map((column, idx) => (
+                            <div
+                              key={column.key}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                padding: "8px 10px",
+                                borderRadius: "6px",
+                                background: "#F9FAFB",
+                                border: "1px solid #EAECF0",
+                                fontSize: "13px",
+                              }}
+                            >
+                              <span style={{ color: "#344054" }}>
+                                {idx + 1}. {column.label}
+                              </span>
+                            </div>
+                          ))}
                       </div>
                     </div>
                   )}

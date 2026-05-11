@@ -61,6 +61,37 @@ const Login: React.FC = () => {
   } | null>(null);
   const [loginBackgroundImage, setLoginBackgroundImage] = useState<string>("");
   const [projectFavicon, setProjectFavicon] = useState<string>("");
+  const [viewportWidth, setViewportWidth] = useState<number>(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1280,
+  );
+
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const isMobile = viewportWidth <= 900;
+
+  useEffect(() => {
+    // Ensure login page can always scroll even if a previous screen left body locked.
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevBodyOverflowY = document.body.style.overflowY;
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    const prevHtmlOverflowY = document.documentElement.style.overflowY;
+
+    document.body.style.overflow = "auto";
+    document.body.style.overflowY = "auto";
+    document.documentElement.style.overflow = "auto";
+    document.documentElement.style.overflowY = "auto";
+
+    return () => {
+      document.body.style.overflow = prevBodyOverflow;
+      document.body.style.overflowY = prevBodyOverflowY;
+      document.documentElement.style.overflow = prevHtmlOverflow;
+      document.documentElement.style.overflowY = prevHtmlOverflowY;
+    };
+  }, []);
 
   // Fetch project configuration (announcement banner, background image, favicon)
   // Only for project-specific login pages, not for super admin login
@@ -448,7 +479,11 @@ const Login: React.FC = () => {
       case "login":
         return (
           <div
-            style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "1.25rem",
+            }}
           >
             <div style={{ textAlign: "center" }}>
               <div
@@ -462,6 +497,8 @@ const Login: React.FC = () => {
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
+                  boxShadow: "0 8px 20px rgba(102, 126, 234, 0.4)",
+                  border: "1px solid rgba(255,255,255,0.35)",
                 }}
               >
                 <svg
@@ -483,6 +520,7 @@ const Login: React.FC = () => {
                   fontWeight: 700,
                   color: "#111827",
                   marginBottom: "0.5rem",
+                  letterSpacing: "-0.02em",
                   fontFamily:
                     '"Noto Sans", system-ui, -apple-system, sans-serif',
                 }}
@@ -555,8 +593,9 @@ const Login: React.FC = () => {
                     width: "100%",
                     padding: "0.75rem 1rem",
                     fontSize: "0.875rem",
-                    border: `2px solid ${loginForm.formState.errors.email ? "#EF4444" : "#E5E7EB"}`,
-                    borderRadius: "8px",
+                    border: `1.5px solid ${loginForm.formState.errors.email ? "#EF4444" : "#d1d5db"}`,
+                    borderRadius: "10px",
+                    background: "#f8fafc",
                     outline: "none",
                     transition: "all 0.2s",
                     fontFamily:
@@ -638,8 +677,9 @@ const Login: React.FC = () => {
                       width: "100%",
                       padding: "0.75rem 3rem 0.75rem 1rem",
                       fontSize: "0.875rem",
-                      border: `2px solid ${loginForm.formState.errors.password ? "#EF4444" : "#E5E7EB"}`,
-                      borderRadius: "8px",
+                      border: `1.5px solid ${loginForm.formState.errors.password ? "#EF4444" : "#d1d5db"}`,
+                      borderRadius: "10px",
+                      background: "#f8fafc",
                       outline: "none",
                       transition: "all 0.2s",
                       fontFamily:
@@ -740,32 +780,35 @@ const Login: React.FC = () => {
                 style={{
                   width: "100%",
                   padding: "0.875rem 1.5rem",
-                  background: "#2563EB",
+                  background:
+                    "linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)",
                   color: "white",
                   border: "none",
-                  borderRadius: "8px",
+                  borderRadius: "10px",
                   fontSize: "0.875rem",
                   fontWeight: 600,
                   cursor: isLoading ? "not-allowed" : "pointer",
                   opacity: isLoading ? 0.6 : 1,
-                  boxShadow: "0 2px 6px rgba(37, 99, 235, 0.24)",
+                  boxShadow: "0 8px 18px rgba(37, 99, 235, 0.35)",
                   transition: "all 0.2s ease",
                   fontFamily:
                     '"Noto Sans", system-ui, -apple-system, sans-serif',
                 }}
                 onMouseEnter={(e) => {
                   if (!isLoading) {
-                    e.currentTarget.style.background = "#1d4ed8";
+                    e.currentTarget.style.background =
+                      "linear-gradient(135deg, #1d4ed8 0%, #6d28d9 100%)";
                     e.currentTarget.style.boxShadow =
-                      "0 4px 12px rgba(37, 99, 235, 0.32)";
+                      "0 10px 22px rgba(37, 99, 235, 0.42)";
                     e.currentTarget.style.transform = "translateY(-1px)";
                   }
                 }}
                 onMouseLeave={(e) => {
                   if (!isLoading) {
-                    e.currentTarget.style.background = "#2563EB";
+                    e.currentTarget.style.background =
+                      "linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)";
                     e.currentTarget.style.boxShadow =
-                      "0 2px 6px rgba(37, 99, 235, 0.24)";
+                      "0 8px 18px rgba(37, 99, 235, 0.35)";
                     e.currentTarget.style.transform = "translateY(0)";
                   }
                 }}
@@ -878,8 +921,9 @@ const Login: React.FC = () => {
                   width: "100%",
                   padding: "0.75rem 1rem",
                   fontSize: "0.875rem",
-                  border: "1px solid #D1D5DB",
-                  borderRadius: "8px",
+                  border: "1.5px solid #D1D5DB",
+                  borderRadius: "10px",
+                  background: "#f8fafc",
                   outline: "none",
                   fontFamily:
                     '"Noto Sans", system-ui, -apple-system, sans-serif',
@@ -898,10 +942,13 @@ const Login: React.FC = () => {
               style={{
                 width: "100%",
                 padding: "0.875rem 1.5rem",
-                background: twoFactorOtp.length === 6 ? "#2563EB" : "#9CA3AF",
+                background:
+                  twoFactorOtp.length === 6
+                    ? "linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)"
+                    : "#9CA3AF",
                 color: "white",
                 border: "none",
-                borderRadius: "8px",
+                borderRadius: "10px",
                 fontSize: "0.875rem",
                 fontWeight: 600,
                 cursor:
@@ -909,7 +956,10 @@ const Login: React.FC = () => {
                     ? "pointer"
                     : "not-allowed",
                 opacity: isLoading ? 0.6 : 1,
-                boxShadow: "0 2px 6px rgba(37, 99, 235, 0.24)",
+                boxShadow:
+                  twoFactorOtp.length === 6
+                    ? "0 8px 18px rgba(37, 99, 235, 0.35)"
+                    : "none",
                 transition: "all 0.2s ease",
                 fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
               }}
@@ -1038,8 +1088,9 @@ const Login: React.FC = () => {
                     width: "100%",
                     padding: "0.75rem 1rem",
                     fontSize: "0.875rem",
-                    border: `2px solid ${forgotPasswordForm.formState.errors.email ? "#EF4444" : "#E5E7EB"}`,
-                    borderRadius: "8px",
+                    border: `1.5px solid ${forgotPasswordForm.formState.errors.email ? "#EF4444" : "#d1d5db"}`,
+                    borderRadius: "10px",
+                    background: "#f8fafc",
                     outline: "none",
                     transition: "all 0.2s",
                     fontFamily:
@@ -1067,28 +1118,31 @@ const Login: React.FC = () => {
                 style={{
                   width: "100%",
                   padding: "0.875rem 1.5rem",
-                  background: "#2563EB",
+                  background:
+                    "linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)",
                   color: "white",
                   border: "none",
-                  borderRadius: "8px",
+                  borderRadius: "10px",
                   fontSize: "0.875rem",
                   fontWeight: 600,
                   cursor: isLoading ? "not-allowed" : "pointer",
                   opacity: isLoading ? 0.6 : 1,
-                  boxShadow: "0 2px 6px rgba(37, 99, 235, 0.24)",
+                  boxShadow: "0 8px 18px rgba(37, 99, 235, 0.35)",
                   transition: "all 0.2s ease",
                   fontFamily:
                     '"Noto Sans", system-ui, -apple-system, sans-serif',
                 }}
                 onMouseEnter={(e) => {
                   if (!isLoading) {
-                    e.currentTarget.style.background = "#1d4ed8";
+                    e.currentTarget.style.background =
+                      "linear-gradient(135deg, #1d4ed8 0%, #6d28d9 100%)";
                     e.currentTarget.style.transform = "translateY(-1px)";
                   }
                 }}
                 onMouseLeave={(e) => {
                   if (!isLoading) {
-                    e.currentTarget.style.background = "#2563EB";
+                    e.currentTarget.style.background =
+                      "linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)";
                     e.currentTarget.style.transform = "translateY(0)";
                   }
                 }}
@@ -1334,6 +1388,10 @@ const Login: React.FC = () => {
       className="min-h-screen flex flex-col"
       style={{
         fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+        overflowY: "auto",
+        WebkitOverflowScrolling: "touch",
+        overscrollBehaviorY: "auto",
+        touchAction: "pan-y",
       }}
     >
       {/* Announcement Banner */}
@@ -1363,7 +1421,14 @@ const Login: React.FC = () => {
       )}
 
       {/* Main Content */}
-      <div className="flex-1 flex">
+      <div
+        className="flex-1 flex"
+        style={{
+          flexDirection: isMobile ? "column" : "row",
+          flex: isMobile ? "0 0 auto" : 1,
+          minHeight: 0,
+        }}
+      >
         {/* Skip to main content */}
         <a
           href="#main-content"
@@ -1385,7 +1450,7 @@ const Login: React.FC = () => {
         {/* Left Side - Branding & Image */}
         <div
           style={{
-            flex: 1,
+            flex: isMobile ? "0 0 auto" : 1,
             background: loginBackgroundImage
               ? `url(${loginBackgroundImage}) center/cover no-repeat`
               : "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
@@ -1394,7 +1459,8 @@ const Login: React.FC = () => {
             flexDirection: "column",
             justifyContent: "center",
             alignItems: "center",
-            padding: "4rem",
+            padding: isMobile ? "24px 16px 20px" : "4rem",
+            minHeight: isMobile ? "auto" : "100%",
             color: "white",
           }}
         >
@@ -1434,15 +1500,16 @@ const Login: React.FC = () => {
               position: "relative",
               zIndex: 1,
               textAlign: "center",
-              maxWidth: "500px",
+              maxWidth: isMobile ? "100%" : "500px",
+              width: "100%",
             }}
           >
             {/* Logo/Icon */}
             <div
               style={{
-                width: "120px",
-                height: "120px",
-                margin: "0 auto 2rem",
+                width: isMobile ? "88px" : "120px",
+                height: isMobile ? "88px" : "120px",
+                margin: isMobile ? "0 auto 1rem" : "0 auto 2rem",
                 background: "rgba(255, 255, 255, 0.2)",
                 backdropFilter: "blur(10px)",
                 borderRadius: "24px",
@@ -1454,8 +1521,8 @@ const Login: React.FC = () => {
               }}
             >
               <svg
-                width="64"
-                height="64"
+                width={isMobile ? "48" : "64"}
+                height={isMobile ? "48" : "64"}
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="white"
@@ -1472,11 +1539,12 @@ const Login: React.FC = () => {
             {/* Title */}
             <h1
               style={{
-                fontSize: "2.5rem",
-                fontWeight: 700,
-                marginBottom: "1rem",
+                fontSize: isMobile ? "1.9rem" : "2.5rem",
+                fontWeight: 800,
+                marginBottom: isMobile ? "0.5rem" : "1rem",
                 lineHeight: 1.2,
                 textShadow: "0 2px 10px rgba(0, 0, 0, 0.1)",
+                letterSpacing: "-0.02em",
               }}
             >
               SAC Helpdesk Portal
@@ -1484,8 +1552,8 @@ const Login: React.FC = () => {
 
             <p
               style={{
-                fontSize: "1.125rem",
-                marginBottom: "2rem",
+                fontSize: isMobile ? "0.95rem" : "1.125rem",
+                marginBottom: isMobile ? "1rem" : "2rem",
                 opacity: 0.95,
                 lineHeight: 1.6,
               }}
@@ -1495,7 +1563,13 @@ const Login: React.FC = () => {
             </p>
 
             {/* Features List */}
-            <div style={{ textAlign: "left", marginTop: "3rem" }}>
+            <div
+              style={{
+                textAlign: "left",
+                marginTop: isMobile ? "1rem" : "3rem",
+                display: isMobile ? "none" : "block",
+              }}
+            >
               {[
                 { icon: "🎫", text: "Efficient Query Management" },
                 { icon: "📊", text: "Real-time Analytics Dashboard" },
@@ -1508,12 +1582,13 @@ const Login: React.FC = () => {
                     display: "flex",
                     alignItems: "center",
                     gap: "1rem",
-                    padding: "1rem",
+                    padding: "0.9rem 1rem",
                     marginBottom: "0.75rem",
-                    background: "rgba(255, 255, 255, 0.1)",
+                    background: "rgba(255, 255, 255, 0.12)",
                     backdropFilter: "blur(10px)",
                     borderRadius: "12px",
-                    border: "1px solid rgba(255, 255, 255, 0.2)",
+                    border: "1px solid rgba(255, 255, 255, 0.28)",
+                    boxShadow: "0 8px 18px rgba(0, 0, 0, 0.08)",
                   }}
                 >
                   <span style={{ fontSize: "1.5rem" }}>{feature.icon}</span>
@@ -1528,12 +1603,13 @@ const Login: React.FC = () => {
           {/* Bottom Decoration */}
           <div
             style={{
-              position: "absolute",
-              bottom: "2rem",
-              left: "50%",
-              transform: "translateX(-50%)",
+              position: isMobile ? "static" : "absolute",
+              bottom: isMobile ? undefined : "2rem",
+              left: isMobile ? undefined : "50%",
+              transform: isMobile ? "none" : "translateX(-50%)",
               fontSize: "0.875rem",
               opacity: 0.8,
+              marginTop: isMobile ? "10px" : 0,
             }}
           >
             © 2025 SAC Helpdesk. All rights reserved.
@@ -1543,20 +1619,25 @@ const Login: React.FC = () => {
         {/* Right Side - Login Form */}
         <div
           style={{
-            flex: 1,
-            background: "#FFFFFF",
+            flex: isMobile ? "0 0 auto" : 1,
+            background:
+              "radial-gradient(circle at 92% 8%, #dbeafe 0%, transparent 30%), linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%)",
             display: "flex",
             flexDirection: "column",
             position: "relative",
+            minHeight: isMobile ? "auto" : "100%",
           }}
         >
           {/* Language Selector - Top Right */}
           <div
             style={{
-              position: "absolute",
-              top: "2rem",
-              right: "2rem",
+              position: isMobile ? "static" : "absolute",
+              top: isMobile ? undefined : "2rem",
+              right: isMobile ? undefined : "2rem",
               zIndex: 10,
+              padding: isMobile ? "12px 12px 0" : 0,
+              display: "flex",
+              justifyContent: isMobile ? "flex-end" : "initial",
             }}
           >
             <label htmlFor="language-select" className="sr-only">
@@ -1568,13 +1649,14 @@ const Login: React.FC = () => {
               onChange={(e) => changeLanguage(e.target.value)}
               style={{
                 appearance: "none",
-                background: "#F9FAFB",
-                border: "2px solid #E5E7EB",
-                borderRadius: "8px",
+                background: "#ffffffd9",
+                border: "1.5px solid #d1d5db",
+                borderRadius: "10px",
                 padding: "0.5rem 2rem 0.5rem 0.75rem",
                 fontSize: "0.875rem",
                 cursor: "pointer",
                 outline: "none",
+                boxShadow: "0 6px 14px rgba(15, 23, 42, 0.08)",
                 fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
               }}
               aria-label={t("selectLanguage")}
@@ -1591,24 +1673,35 @@ const Login: React.FC = () => {
           <main
             id="main-content"
             style={{
-              flex: 1,
+              flex: isMobile ? "0 0 auto" : 1,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              padding: "2rem",
+              padding: isMobile ? "14px 12px 18px" : "2.5rem 2rem",
             }}
             role="main"
           >
-            <div style={{ width: "100%", maxWidth: "440px" }}>
+            <div
+              style={{
+                width: "100%",
+                maxWidth: "500px",
+                background: "rgba(255, 255, 255, 0.96)",
+                border: "1px solid #e2e8f0",
+                borderRadius: "20px",
+                boxShadow: "0 24px 50px rgba(15, 23, 42, 0.14)",
+                padding: isMobile ? "20px 14px" : "28px 24px",
+                backdropFilter: "blur(8px)",
+              }}
+            >
               {/* Success Message */}
               {successMessage && (
                 <div
                   style={{
                     marginBottom: "1.5rem",
-                    padding: "1rem",
-                    background: "#DCFCE7",
-                    borderLeft: "4px solid #10B981",
-                    borderRadius: "0 8px 8px 0",
+                    padding: "0.9rem 1rem",
+                    background: "#ecfdf3",
+                    border: "1px solid #86efac",
+                    borderRadius: "10px",
                   }}
                   role="alert"
                   aria-live="polite"
@@ -1630,10 +1723,10 @@ const Login: React.FC = () => {
                 <div
                   style={{
                     marginBottom: "1.5rem",
-                    padding: "1rem",
-                    background: "#FEE2E2",
-                    borderLeft: "4px solid #EF4444",
-                    borderRadius: "0 8px 8px 0",
+                    padding: "0.9rem 1rem",
+                    background: "#fff1f2",
+                    border: "1px solid #fda4af",
+                    borderRadius: "10px",
                   }}
                   role="alert"
                   aria-live="polite"

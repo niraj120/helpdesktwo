@@ -424,7 +424,11 @@ const StudentLayout = ({ children }: StudentLayoutProps) => {
         {/* Page Content */}
         <div style={{ padding: "24px" }}>{children}</div>
       </main>
-      <WhatsAppFloatingIcon projectId={projectId} isAuthenticated={true} />
+      <WhatsAppFloatingIcon
+        projectId={projectId}
+        isAuthenticated={true}
+        currentRole="STUDENT"
+      />
     </div>
   );
 };

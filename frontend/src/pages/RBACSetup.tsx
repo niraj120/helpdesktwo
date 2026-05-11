@@ -686,8 +686,13 @@ const RBACSetup = () => {
   const projectMappedRoleCount = roles.filter(
     (role) => (role.projects?.length ?? 0) > 0,
   ).length;
+  const getRoleAgentDisplayCount = (role: Role) => {
+    const linkedAgents = role.agentCount || 0;
+    if (linkedAgents > 0) return linkedAgents;
+    return role.isAgent ? 1 : 0;
+  };
   const totalAssignedAgents = roles.reduce(
-    (sum, role) => sum + (role.agentCount || 0),
+    (sum, role) => sum + getRoleAgentDisplayCount(role),
     0,
   );
   const avgPermissionsPerRole =
@@ -695,7 +700,8 @@ const RBACSetup = () => {
       ? Math.round(
           (roles.reduce(
             (sum, role) =>
-              sum + (Array.isArray(role.permissions) ? role.permissions.length : 0),
+              sum +
+              (Array.isArray(role.permissions) ? role.permissions.length : 0),
             0,
           ) /
             roles.length) *
@@ -732,7 +738,7 @@ const RBACSetup = () => {
     {
       title: "Assigned Agents",
       value: String(totalAssignedAgents),
-      subtitle: "Users linked to current roles",
+      subtitle: "Linked users + agent-marked roles",
       accent: "#059669",
       bg: "#ecfdf5",
     },
@@ -896,7 +902,7 @@ const RBACSetup = () => {
             boxShadow: "0 4px 16px rgba(15, 23, 42, 0.04)",
             display: "flex",
             justifyContent: "space-between",
-            alignItems: "center",
+            alignItems: isMobile ? "stretch" : "center",
             gap: "12px",
             flexWrap: "wrap",
           }}
@@ -918,13 +924,20 @@ const RBACSetup = () => {
                 fontWeight: "600",
                 cursor: "pointer",
                 boxShadow: "0 4px 15px rgba(239, 68, 68, 0.28)",
+                width: isMobile ? "100%" : "auto",
+                justifyContent: isMobile ? "center" : "flex-start",
               }}
             >
               <MdDelete size={18} />
               Delete Selected ({selectedRoleIds.size})
             </button>
           )}
-          <div style={{ marginLeft: "auto" }}>
+          <div
+            style={{
+              marginLeft: isMobile ? 0 : "auto",
+              width: isMobile ? "100%" : "auto",
+            }}
+          >
             <button
               onClick={() => {
                 setEditingRole(null);
@@ -948,6 +961,8 @@ const RBACSetup = () => {
                 cursor: "pointer",
                 transition: "all 0.2s",
                 boxShadow: "0 4px 15px rgba(102, 126, 234, 0.4)",
+                width: isMobile ? "100%" : "auto",
+                justifyContent: "center",
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.transform = "translateY(-2px)";
@@ -1087,7 +1102,7 @@ const RBACSetup = () => {
             boxShadow: "0 1px 3px rgba(0,0,0,.06)",
           }}
         >
-          <div style={{ overflowX: "auto" }}>
+          <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
             <table
               style={{
                 width: "100%",
@@ -1336,7 +1351,7 @@ const RBACSetup = () => {
                         fontSize: "14px",
                       }}
                     >
-                      {role.agentCount || 0}
+                      {getRoleAgentDisplayCount(role)}
                     </td>
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
                       <div
@@ -1438,7 +1453,8 @@ const RBACSetup = () => {
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
-                  background: "linear-gradient(180deg, #fbfcff 0%, #f6f9ff 100%)",
+                  background:
+                    "linear-gradient(180deg, #fbfcff 0%, #f6f9ff 100%)",
                 }}
               >
                 <h2
@@ -2077,11 +2093,10 @@ const RBACSetup = () => {
                                       border: "1px solid #e5e7eb",
                                       borderRadius: "8px",
                                       padding: "8px 10px",
-                                      backgroundColor: formData.projects.includes(
-                                        project._id,
-                                      )
-                                        ? "#eff6ff"
-                                        : "#fff",
+                                      backgroundColor:
+                                        formData.projects.includes(project._id)
+                                          ? "#eff6ff"
+                                          : "#fff",
                                     }}
                                   >
                                     <input
@@ -2200,178 +2215,181 @@ const RBACSetup = () => {
                     >
                       {permissionCategoryStats.map(
                         ({ category, modules, total, selected }) => (
-                        <div
-                          key={category}
-                          style={{ borderBottom: "1px solid #e5e7eb" }}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => toggleCategory(category)}
-                            style={{
-                              width: "100%",
-                              padding: "12px 16px",
-                              backgroundColor: "#f7f9fc",
-                              border: "none",
-                              display: "flex",
-                              justifyContent: "space-between",
-                              alignItems: "center",
-                              cursor: "pointer",
-                              fontSize: "14px",
-                              fontWeight: "600",
-                              textAlign: "left",
-                            }}
+                          <div
+                            key={category}
+                            style={{ borderBottom: "1px solid #e5e7eb" }}
                           >
-                            <span>{getCategoryLabel(category)}</span>
-                            <span
+                            <button
+                              type="button"
+                              onClick={() => toggleCategory(category)}
                               style={{
-                                display: "inline-flex",
+                                width: "100%",
+                                padding: "12px 16px",
+                                backgroundColor: "#f7f9fc",
+                                border: "none",
+                                display: "flex",
+                                justifyContent: "space-between",
                                 alignItems: "center",
-                                gap: "8px",
-                                color: "#475569",
-                                fontSize: "12px",
-                                fontWeight: 600,
+                                cursor: "pointer",
+                                fontSize: "14px",
+                                fontWeight: "600",
+                                textAlign: "left",
                               }}
                             >
+                              <span>{getCategoryLabel(category)}</span>
                               <span
                                 style={{
-                                  color: selected > 0 ? "#1d4ed8" : "#64748b",
-                                  backgroundColor:
-                                    selected > 0 ? "#eff6ff" : "#f1f5f9",
-                                  border:
-                                    selected > 0
-                                      ? "1px solid #bfdbfe"
-                                      : "1px solid #e2e8f0",
-                                  borderRadius: "999px",
-                                  padding: "2px 8px",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: "8px",
+                                  color: "#475569",
+                                  fontSize: "12px",
+                                  fontWeight: 600,
                                 }}
                               >
-                                {selected}/{total}
+                                <span
+                                  style={{
+                                    color: selected > 0 ? "#1d4ed8" : "#64748b",
+                                    backgroundColor:
+                                      selected > 0 ? "#eff6ff" : "#f1f5f9",
+                                    border:
+                                      selected > 0
+                                        ? "1px solid #bfdbfe"
+                                        : "1px solid #e2e8f0",
+                                    borderRadius: "999px",
+                                    padding: "2px 8px",
+                                  }}
+                                >
+                                  {selected}/{total}
+                                </span>
+                                {expandedCategories.has(category) ? (
+                                  <MdExpandLess size={20} />
+                                ) : (
+                                  <MdExpandMore size={20} />
+                                )}
                               </span>
-                              {expandedCategories.has(category) ? (
-                                <MdExpandLess size={20} />
-                              ) : (
-                                <MdExpandMore size={20} />
-                              )}
-                            </span>
-                          </button>
-                          {expandedCategories.has(category) && (
-                            <div style={{ padding: "16px" }}>
-                              {Object.entries(modules).map(
-                                ([module, permissions]) => {
-                                  const modulePermissionIds = permissions.map(
-                                    (p) => p._id,
-                                  );
-                                  const allSelected = modulePermissionIds.every(
-                                    (id) => formData.permissions.includes(id),
-                                  );
+                            </button>
+                            {expandedCategories.has(category) && (
+                              <div style={{ padding: "16px" }}>
+                                {Object.entries(modules).map(
+                                  ([module, permissions]) => {
+                                    const modulePermissionIds = permissions.map(
+                                      (p) => p._id,
+                                    );
+                                    const allSelected =
+                                      modulePermissionIds.every((id) =>
+                                        formData.permissions.includes(id),
+                                      );
 
-                                  return (
-                                    <div
-                                      key={module}
-                                      style={{ marginBottom: "16px" }}
-                                    >
+                                    return (
                                       <div
-                                        style={{
-                                          display: "flex",
-                                          alignItems: "center",
-                                          gap: "8px",
-                                          marginBottom: "8px",
-                                        }}
+                                        key={module}
+                                        style={{ marginBottom: "16px" }}
                                       >
-                                        <input
-                                          type="checkbox"
-                                          checked={allSelected}
-                                          onChange={() =>
-                                            toggleAllPermissionsInModule(
-                                              permissions,
-                                            )
-                                          }
-                                        />
-                                        <span
+                                        <div
                                           style={{
-                                            fontSize: "14px",
-                                            fontWeight: "600",
-                                            color: "#374151",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: "8px",
+                                            marginBottom: "8px",
                                           }}
                                         >
-                                          {module}
-                                        </span>
-                                      </div>
-                                      <div
-                                        style={{
-                                          marginLeft: "28px",
-                                          display: "grid",
-                                          gap: "8px",
-                                        }}
-                                      >
-                                        {permissions.map((permission) => (
-                                          <label
-                                            key={permission._id}
+                                          <input
+                                            type="checkbox"
+                                            checked={allSelected}
+                                            onChange={() =>
+                                              toggleAllPermissionsInModule(
+                                                permissions,
+                                              )
+                                            }
+                                          />
+                                          <span
                                             style={{
-                                              display: "flex",
-                                              alignItems: "flex-start",
-                                              gap: "8px",
-                                              cursor: "pointer",
+                                              fontSize: "14px",
+                                              fontWeight: "600",
+                                              color: "#374151",
                                             }}
                                           >
-                                            <input
-                                              type="checkbox"
-                                              checked={formData.permissions.includes(
-                                                permission._id,
-                                              )}
-                                              onChange={(e) => {
-                                                if (e.target.checked) {
-                                                  setFormData({
-                                                    ...formData,
-                                                    permissions: [
-                                                      ...formData.permissions,
-                                                      permission._id,
-                                                    ],
-                                                  });
-                                                } else {
-                                                  setFormData({
-                                                    ...formData,
-                                                    permissions:
-                                                      formData.permissions.filter(
-                                                        (id) =>
-                                                          id !== permission._id,
-                                                      ),
-                                                  });
-                                                }
+                                            {module}
+                                          </span>
+                                        </div>
+                                        <div
+                                          style={{
+                                            marginLeft: "28px",
+                                            display: "grid",
+                                            gap: "8px",
+                                          }}
+                                        >
+                                          {permissions.map((permission) => (
+                                            <label
+                                              key={permission._id}
+                                              style={{
+                                                display: "flex",
+                                                alignItems: "flex-start",
+                                                gap: "8px",
+                                                cursor: "pointer",
                                               }}
-                                              style={{ marginTop: "2px" }}
-                                            />
-                                            <div>
-                                              <div
-                                                style={{
-                                                  fontSize: "13px",
-                                                  color: "#374151",
+                                            >
+                                              <input
+                                                type="checkbox"
+                                                checked={formData.permissions.includes(
+                                                  permission._id,
+                                                )}
+                                                onChange={(e) => {
+                                                  if (e.target.checked) {
+                                                    setFormData({
+                                                      ...formData,
+                                                      permissions: [
+                                                        ...formData.permissions,
+                                                        permission._id,
+                                                      ],
+                                                    });
+                                                  } else {
+                                                    setFormData({
+                                                      ...formData,
+                                                      permissions:
+                                                        formData.permissions.filter(
+                                                          (id) =>
+                                                            id !==
+                                                            permission._id,
+                                                        ),
+                                                    });
+                                                  }
                                                 }}
-                                              >
-                                                {permission.name}
-                                              </div>
-                                              {permission.description && (
+                                                style={{ marginTop: "2px" }}
+                                              />
+                                              <div>
                                                 <div
                                                   style={{
-                                                    fontSize: "12px",
-                                                    color: "#6b7280",
+                                                    fontSize: "13px",
+                                                    color: "#374151",
                                                   }}
                                                 >
-                                                  {permission.description}
+                                                  {permission.name}
                                                 </div>
-                                              )}
-                                            </div>
-                                          </label>
-                                        ))}
+                                                {permission.description && (
+                                                  <div
+                                                    style={{
+                                                      fontSize: "12px",
+                                                      color: "#6b7280",
+                                                    }}
+                                                  >
+                                                    {permission.description}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            </label>
+                                          ))}
+                                        </div>
                                       </div>
-                                    </div>
-                                  );
-                                },
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                                    );
+                                  },
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ),
+                      )}
                     </div>
                   </div>
                 </div>
@@ -2475,7 +2493,8 @@ const RBACSetup = () => {
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
-                  background: "linear-gradient(180deg, #fbfcff 0%, #f6f9ff 100%)",
+                  background:
+                    "linear-gradient(180deg, #fbfcff 0%, #f6f9ff 100%)",
                 }}
               >
                 <h2

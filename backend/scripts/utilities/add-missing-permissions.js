@@ -17,6 +17,13 @@ const permissionSchema = new mongoose.Schema({
 
 const Permission = mongoose.model('Permission', permissionSchema);
 
+const roleSchema = new mongoose.Schema({
+  code: { type: String, unique: true },
+  permissions: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Permission' }],
+});
+
+const Role = mongoose.model('Role', roleSchema);
+
 const newPermissions = [
   // TICKET CONFIGURATION CATEGORY
   {
@@ -59,6 +66,13 @@ const newPermissions = [
     name: 'Manage Templates',
     code: 'TICKET_CONFIG_MANAGE_TEMPLATES',
     description: 'Can create and manage ticket templates',
+    category: 'ticket-configuration',
+  },
+  {
+    module: 'Ticket Configuration',
+    name: 'Manage Table Columns',
+    code: 'TICKET_CONFIG_MANAGE_TABLE_COLUMNS',
+    description: 'Can configure query table columns by project',
     category: 'ticket-configuration',
   },
   // KNOWLEDGE BASE CATEGORY
@@ -151,6 +165,33 @@ async function addMissingPermissions() {
     console.log(`   Added: ${addedCount} permissions`);
     console.log(`   Skipped: ${skippedCount} permissions`);
     console.log(`   Total permissions in DB: ${await Permission.countDocuments()}`);
+
+    // Keep Super Admin synced with any newly introduced permissions.
+    const superAdminRole = await Role.findOne({ code: 'SUPER_ADMIN' });
+    if (superAdminRole) {
+      const permissionDocs = await Permission.find({
+        code: { $in: newPermissions.map((p) => p.code) },
+      }).select('_id code');
+
+      const existing = new Set(
+        (superAdminRole.permissions || []).map((id) => id.toString()),
+      );
+      const missingPermissionIds = permissionDocs
+        .map((p) => p._id)
+        .filter((id) => !existing.has(id.toString()));
+
+      if (missingPermissionIds.length > 0) {
+        superAdminRole.permissions.push(...missingPermissionIds);
+        await superAdminRole.save();
+        console.log(
+          `🔑 Added ${missingPermissionIds.length} missing permission(s) to SUPER_ADMIN`,
+        );
+      } else {
+        console.log('🔑 SUPER_ADMIN already has all listed permissions');
+      }
+    } else {
+      console.log('⚠️ SUPER_ADMIN role not found. Permission records were added only.');
+    }
     
     process.exit(0);
   } catch (error) {

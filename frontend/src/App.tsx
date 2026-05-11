@@ -450,6 +450,7 @@ function App() {
                   "TICKET_CONFIG_VIEW",
                   "TICKET_CONFIG_MANAGE_CATEGORIES",
                   "TICKET_CONFIG_MANAGE_STATUSES",
+                  "TICKET_CONFIG_MANAGE_TABLE_COLUMNS",
                 ]}
               >
                 <TicketConfigurationPage />
@@ -463,6 +464,7 @@ function App() {
                 permission={[
                   "TICKET_CONFIG_VIEW",
                   "TICKET_CONFIG_MANAGE_CATEGORIES",
+                  "TICKET_CONFIG_MANAGE_TABLE_COLUMNS",
                 ]}
               >
                 <TicketSettings />

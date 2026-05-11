@@ -173,6 +173,7 @@ export interface IProject extends Document {
       mode?: "online" | "offline" | "both"; // How students can submit tickets
       enableOnlineForm?: boolean;
       enableOfflineCenter?: boolean;
+      tableColumns?: string[]; // Configurable ticket table columns for /tickets/view
       onlineFormFields?: Array<{
         id?: string;
         fieldName: string;
@@ -313,6 +314,8 @@ export interface IProject extends Document {
     whatsappWidget?: {
       enabled: boolean;
       visibility: "always" | "pre-login" | "post-login";
+      roleVisibility?: "all" | "roles";
+      visibleRoles?: string[];
       phoneNumber: string; // stored as digits only, e.g. '919876543210'
       predefinedMessage?: string;
       position: "bottom-right" | "bottom-left";
@@ -589,6 +592,7 @@ const projectSchema = new Schema<IProject>(
         },
         enableOnlineForm: { type: Boolean, default: true },
         enableOfflineCenter: { type: Boolean, default: true },
+        tableColumns: [{ type: String }],
         onlineFormFields: [
           {
             id: { type: String },
@@ -773,6 +777,15 @@ const projectSchema = new Schema<IProject>(
           type: String,
           enum: ["always", "pre-login", "post-login"],
           default: "always",
+        },
+        roleVisibility: {
+          type: String,
+          enum: ["all", "roles"],
+          default: "all",
+        },
+        visibleRoles: {
+          type: [String],
+          default: [],
         },
         phoneNumber: { type: String, trim: true },
         predefinedMessage: { type: String, trim: true, default: "" },

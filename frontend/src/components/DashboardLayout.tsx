@@ -282,6 +282,40 @@ const DashboardLayout = ({
     return en;
   };
 
+  const menuColorPalette = [
+    { iconBg: "#E0EAFF", iconColor: "#2952CC" },
+    { iconBg: "#DFF7E8", iconColor: "#0F8A4B" },
+    { iconBg: "#FFE9D8", iconColor: "#B45309" },
+    { iconBg: "#F3E8FF", iconColor: "#7E22CE" },
+    { iconBg: "#FFE4E6", iconColor: "#BE123C" },
+    { iconBg: "#E0F2FE", iconColor: "#0369A1" },
+    { iconBg: "#FEF3C7", iconColor: "#B45309" },
+    { iconBg: "#DBEAFE", iconColor: "#1D4ED8" },
+  ];
+
+  const getMenuAccent = (seed: string, active: boolean) => {
+    const hash = seed.split("").reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+    const palette = menuColorPalette[hash % menuColorPalette.length];
+
+    if (active) {
+      return {
+        itemBackground: "linear-gradient(135deg, #4F46E5 0%, #2563EB 100%)",
+        itemColor: "#FFFFFF",
+        iconBackground: "rgba(255, 255, 255, 0.18)",
+        iconColor: "#FFFFFF",
+        borderColor: "rgba(79, 70, 229, 0.9)",
+      };
+    }
+
+    return {
+      itemBackground: "transparent",
+      itemColor: "var(--text-primary)",
+      iconBackground: palette.iconBg,
+      iconColor: palette.iconColor,
+      borderColor: "transparent",
+    };
+  };
+
   // Determine if this is a project portal - check both localStorage AND current URL
   const [projectContext, setProjectContext] = useState<{
     customUrlPath: string;
@@ -386,6 +420,44 @@ const DashboardLayout = ({
     return getFilteredMenuItems(menuConfig, permissions);
   }, [isProjectPortal, customUrlPath, permissions]);
 
+  const submenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [submenuHeights, setSubmenuHeights] = useState<Record<string, number>>(
+    {},
+  );
+
+  const measureSubmenuHeights = useCallback(() => {
+    const nextHeights: Record<string, number> = {};
+
+    menuItems.forEach((item) => {
+      if (!item.subItems?.length || !item.label) return;
+      const el = submenuRefs.current[item.label];
+      if (el) {
+        nextHeights[item.label] = el.scrollHeight;
+      }
+    });
+
+    setSubmenuHeights((prev) => {
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(nextHeights);
+      if (prevKeys.length !== nextKeys.length) return nextHeights;
+      for (const key of nextKeys) {
+        if (prev[key] !== nextHeights[key]) return nextHeights;
+      }
+      return prev;
+    });
+  }, [menuItems]);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(measureSubmenuHeights);
+    const onResize = () => measureSubmenuHeights();
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [measureSubmenuHeights, expandedMenus, isSidebarCollapsed]);
+
   const userName = localStorage.getItem("userName") || "Super Admin";
 
   // Get user role for display
@@ -435,7 +507,6 @@ const DashboardLayout = ({
     <>
       {/* Skip Navigation Link for Keyboard Users */}
       <SkipLink />
-
       <div
         style={{
           display: "flex",
@@ -458,8 +529,9 @@ const DashboardLayout = ({
           )}
           style={{
             width: sidebarWidth,
-            background: "var(--background-primary)",
-            borderRight: "1px solid var(--border-light)",
+            background:
+              "linear-gradient(180deg, #FCFDFF 0%, #F8FAFF 46%, #F5F8FF 100%)",
+            borderRight: "1px solid #E6ECF7",
             display: "flex",
             flexDirection: "column",
             position: "fixed",
@@ -468,6 +540,7 @@ const DashboardLayout = ({
             overflowX: "visible",
             transition: "width 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)",
             zIndex: 100,
+            boxShadow: "6px 0 24px rgba(15, 23, 42, 0.06)",
             // Custom scrollbar styles
             scrollbarWidth: "thin",
             scrollbarColor: "rgba(0, 0, 0, 0.1) transparent",
@@ -480,7 +553,7 @@ const DashboardLayout = ({
               height: "64px",
               boxSizing: "border-box",
               padding: isSidebarCollapsed ? "0 12px" : "0 16px",
-              borderBottom: "1px solid var(--border-light)",
+              borderBottom: "1px solid #E6ECF7",
               display: "flex",
               alignItems: "center",
               justifyContent: isSidebarCollapsed ? "center" : "flex-start",
@@ -560,11 +633,12 @@ const DashboardLayout = ({
             <div
               style={{
                 padding: "10px 12px",
-                borderBottom: "1px solid var(--border-light)",
+                borderBottom: "1px solid #E6ECF7",
                 position: "relative",
                 zIndex: 200,
                 overflow: "visible",
                 flexShrink: 0,
+                background: "rgba(255, 255, 255, 0.35)",
               }}
             >
               <LanguageToggle />
@@ -575,7 +649,7 @@ const DashboardLayout = ({
           <div
             style={{
               padding: "6px 12px",
-              borderBottom: "1px solid var(--border-light)",
+              borderBottom: "1px solid #E6ECF7",
               flexShrink: 0,
             }}
           >
@@ -588,10 +662,12 @@ const DashboardLayout = ({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                backgroundColor: "transparent",
-                color: "var(--text-secondary)",
+                backgroundColor: "#F1F5FF",
+                color: "#3B4BC4",
                 fontSize: "20px",
                 cursor: "pointer",
+                borderRadius: "8px",
+                border: "1px solid #D9E3FA",
               }}
               aria-label={
                 isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"
@@ -606,7 +682,7 @@ const DashboardLayout = ({
           <nav
             style={{
               flex: 1,
-              padding: isSidebarCollapsed ? "8px 4px" : "8px 12px",
+              padding: isSidebarCollapsed ? "10px 6px" : "10px 12px",
               overflow: "visible",
               position: "relative",
             }}
@@ -617,6 +693,7 @@ const DashboardLayout = ({
             )}
           >
             {menuItems.map((item, index) => {
+              const submenuKey = item.label || `menu-${index}`;
               const hasSubItems = item.subItems && item.subItems.length > 0;
               const isExpanded =
                 expandedMenus.has(item.label) && !isSidebarCollapsed;
@@ -680,6 +757,10 @@ const DashboardLayout = ({
 
               const showTooltip =
                 isSidebarCollapsed && hoveredItem === item.label;
+              const itemAccent = getMenuAccent(
+                item.path || item.label || String(index),
+                Boolean(isSubItemActive || isActive),
+              );
 
               return (
                 <div
@@ -768,47 +849,43 @@ const DashboardLayout = ({
                         display: "flex",
                         alignItems: "center",
                         gap: isSidebarCollapsed ? "0" : "12px",
-                        padding: isSidebarCollapsed ? "10px" : "12px 16px",
-                        borderRadius: "var(--radius-lg)",
-                        backgroundColor:
-                          isSubItemActive || isActive
-                            ? "var(--primary-main)"
-                            : "transparent",
-                        color:
-                          isSubItemActive || isActive
-                            ? "var(--primary-on)"
-                            : "var(--text-primary)",
+                        padding: isSidebarCollapsed ? "10px" : "10px 12px",
+                        borderRadius: "12px",
+                        background: itemAccent.itemBackground,
+                        color: itemAccent.itemColor,
                         textDecoration: "none",
-                        fontSize: "16px",
-                        fontWeight: "400",
+                        fontSize: "15px",
+                        fontWeight: isSubItemActive || isActive ? "600" : "500",
                         transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
                         cursor: "pointer",
                         userSelect: "none",
                         width: "100%",
-                        border: "none",
+                        border: `1px solid ${itemAccent.borderColor}`,
                         textAlign: "left",
                         justifyContent: isSidebarCollapsed
                           ? "center"
                           : "flex-start",
                         boxShadow:
                           isSubItemActive || isActive
-                            ? "0 1px 3px rgba(0, 0, 0, 0.12)"
+                            ? "0 8px 18px rgba(37, 99, 235, 0.22)"
                             : "none",
                       }}
                       onMouseOver={(e) => {
                         if (!isSubItemActive && !isActive) {
-                          e.currentTarget.style.backgroundColor =
-                            "var(--surface-variant)";
+                          e.currentTarget.style.background = "#F8FAFC";
                           e.currentTarget.style.color = "var(--text-primary)";
                           e.currentTarget.style.boxShadow =
-                            "0 1px 2px rgba(0, 0, 0, 0.08)";
+                            "0 4px 12px rgba(15, 23, 42, 0.08)";
+                          e.currentTarget.style.border = "1px solid #E2E8F0";
                         }
                       }}
                       onMouseOut={(e) => {
                         if (!isSubItemActive && !isActive) {
-                          e.currentTarget.style.backgroundColor = "transparent";
+                          e.currentTarget.style.background = "transparent";
                           e.currentTarget.style.color = "var(--text-primary)";
                           e.currentTarget.style.boxShadow = "none";
+                          e.currentTarget.style.border =
+                            "1px solid transparent";
                         }
                       }}
                       onMouseDown={(e) => {
@@ -831,13 +908,16 @@ const DashboardLayout = ({
                     >
                       <span
                         style={{
-                          fontSize: "24px",
-                          width: "24px",
-                          height: "24px",
+                          fontSize: "20px",
+                          width: isSidebarCollapsed ? "34px" : "32px",
+                          height: isSidebarCollapsed ? "34px" : "32px",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
                           flexShrink: 0,
+                          borderRadius: "10px",
+                          background: itemAccent.iconBackground,
+                          color: itemAccent.iconColor,
                         }}
                         aria-hidden="true"
                       >
@@ -884,41 +964,40 @@ const DashboardLayout = ({
                         display: "flex",
                         alignItems: "center",
                         gap: isSidebarCollapsed ? "0" : "12px",
-                        padding: isSidebarCollapsed ? "10px" : "12px 16px",
-                        borderRadius: "var(--radius-lg)",
-                        backgroundColor: isActive
-                          ? "var(--primary-main)"
-                          : "transparent",
-                        color: isActive
-                          ? "var(--primary-on)"
-                          : "var(--text-primary)",
+                        padding: isSidebarCollapsed ? "10px" : "10px 12px",
+                        borderRadius: "12px",
+                        background: itemAccent.itemBackground,
+                        color: itemAccent.itemColor,
                         textDecoration: "none",
-                        fontSize: "16px",
-                        fontWeight: "400",
+                        fontSize: "15px",
+                        fontWeight: isActive ? "600" : "500",
                         transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
                         cursor: "pointer",
                         justifyContent: isSidebarCollapsed
                           ? "center"
                           : "flex-start",
+                        border: `1px solid ${itemAccent.borderColor}`,
                         boxShadow: isActive
-                          ? "0 1px 3px rgba(0, 0, 0, 0.12)"
+                          ? "0 8px 18px rgba(37, 99, 235, 0.22)"
                           : "none",
                         lineHeight: "1.5",
                       }}
                       onMouseOver={(e) => {
                         if (!isActive) {
-                          e.currentTarget.style.backgroundColor =
-                            "var(--surface-variant)";
+                          e.currentTarget.style.background = "#F8FAFC";
                           e.currentTarget.style.color = "var(--text-primary)";
                           e.currentTarget.style.boxShadow =
-                            "0 1px 2px rgba(0, 0, 0, 0.08)";
+                            "0 4px 12px rgba(15, 23, 42, 0.08)";
+                          e.currentTarget.style.border = "1px solid #E2E8F0";
                         }
                       }}
                       onMouseOut={(e) => {
                         if (!isActive) {
-                          e.currentTarget.style.backgroundColor = "transparent";
+                          e.currentTarget.style.background = "transparent";
                           e.currentTarget.style.color = "var(--text-primary)";
                           e.currentTarget.style.boxShadow = "none";
+                          e.currentTarget.style.border =
+                            "1px solid transparent";
                         }
                       }}
                       onMouseDown={(e) => {
@@ -941,13 +1020,16 @@ const DashboardLayout = ({
                     >
                       <span
                         style={{
-                          fontSize: "24px",
-                          width: "24px",
-                          height: "24px",
+                          fontSize: "20px",
+                          width: isSidebarCollapsed ? "34px" : "32px",
+                          height: isSidebarCollapsed ? "34px" : "32px",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
                           flexShrink: 0,
+                          borderRadius: "10px",
+                          background: itemAccent.iconBackground,
+                          color: itemAccent.iconColor,
                         }}
                         aria-hidden="true"
                       >
@@ -972,11 +1054,14 @@ const DashboardLayout = ({
                   {hasSubItems && !isSidebarCollapsed && (
                     <div
                       id={`submenu-${index}`}
+                      ref={(el) => {
+                        submenuRefs.current[submenuKey] = el;
+                      }}
                       role="group"
                       aria-label={`${getLabel(item)} submenu`}
                       style={{
                         maxHeight: isExpanded
-                          ? `${item.subItems!.length * 44}px`
+                          ? `${submenuHeights[submenuKey] ?? item.subItems!.length * 60}px`
                           : "0px",
                         overflow: "hidden",
                         transition:
@@ -1033,39 +1118,44 @@ const DashboardLayout = ({
                               display: "flex",
                               alignItems: "center",
                               gap: "12px",
-                              padding: "10px 16px 10px 40px",
+                              padding: "9px 12px 9px 36px",
                               marginBottom: "4px",
                               marginLeft: "0px",
-                              borderRadius: "8px",
+                              borderRadius: "10px",
                               background: isSubActive
-                                ? "linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)"
+                                ? "linear-gradient(135deg, rgba(79, 70, 229, 0.12) 0%, rgba(37, 99, 235, 0.12) 100%)"
                                 : "transparent",
                               color: isSubActive
-                                ? "#667eea"
+                                ? "#3347CC"
                                 : "var(--text-primary)",
                               textDecoration: "none",
                               fontSize: "14px",
-                              fontWeight: isSubActive ? "600" : "400",
+                              fontWeight: isSubActive ? "600" : "500",
                               lineHeight: "1.5",
                               transition:
                                 "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
                               cursor: "pointer",
                               borderLeft: isSubActive
-                                ? "3px solid #667eea"
+                                ? "3px solid #4F46E5"
                                 : "3px solid transparent",
+                              border: isSubActive
+                                ? "1px solid rgba(79, 70, 229, 0.25)"
+                                : "1px solid transparent",
                               boxShadow: isSubActive
-                                ? "0 2px 8px rgba(102, 126, 234, 0.15)"
+                                ? "0 6px 14px rgba(37, 99, 235, 0.16)"
                                 : "none",
                             }}
                             onMouseOver={(e) => {
                               if (!isSubActive) {
                                 e.currentTarget.style.backgroundColor =
-                                  "rgba(102, 126, 234, 0.05)";
-                                e.currentTarget.style.color = "#667eea";
+                                  "#F8FAFC";
+                                e.currentTarget.style.color = "#3347CC";
                                 e.currentTarget.style.borderLeft =
-                                  "3px solid rgba(102, 126, 234, 0.3)";
+                                  "3px solid rgba(79, 70, 229, 0.3)";
+                                e.currentTarget.style.border =
+                                  "1px solid #E2E8F0";
                                 e.currentTarget.style.boxShadow =
-                                  "0 1px 4px rgba(102, 126, 234, 0.1)";
+                                  "0 3px 10px rgba(15, 23, 42, 0.08)";
                               }
                             }}
                             onMouseOut={(e) => {
@@ -1076,6 +1166,8 @@ const DashboardLayout = ({
                                   "var(--text-primary)";
                                 e.currentTarget.style.borderLeft =
                                   "3px solid transparent";
+                                e.currentTarget.style.border =
+                                  "1px solid transparent";
                                 e.currentTarget.style.boxShadow = "none";
                               }
                             }}
@@ -1099,13 +1191,18 @@ const DashboardLayout = ({
                           >
                             <span
                               style={{
-                                fontSize: "20px",
-                                width: "20px",
-                                height: "20px",
+                                fontSize: "16px",
+                                width: "26px",
+                                height: "26px",
                                 display: "flex",
                                 alignItems: "center",
                                 justifyContent: "center",
                                 flexShrink: 0,
+                                borderRadius: "8px",
+                                background: isSubActive
+                                  ? "rgba(79, 70, 229, 0.18)"
+                                  : "#EEF2FF",
+                                color: isSubActive ? "#3347CC" : "#4F46E5",
                               }}
                               aria-hidden="true"
                             >
@@ -1137,7 +1234,7 @@ const DashboardLayout = ({
           <div
             style={{
               padding: isSidebarCollapsed ? "12px 4px" : "16px 12px",
-              borderTop: "1px solid var(--border-light)",
+              borderTop: "1px solid #E6ECF7",
               marginTop: "auto",
             }}
           >
@@ -1202,11 +1299,14 @@ const DashboardLayout = ({
                 justifyContent: isSidebarCollapsed ? "center" : "flex-start",
                 gap: isSidebarCollapsed ? "0" : "12px",
                 padding: isSidebarCollapsed ? "12px" : "10px 12px",
-                fontSize: "12px",
-                fontWeight: "400",
+                fontSize: "13px",
+                fontWeight: "500",
                 textTransform: "none",
-                color: "var(--text-secondary)",
-                borderColor: "var(--border-default)",
+                color: "#B42318",
+                background: "#FFF1F1",
+                border: "1px solid #FECACA",
+                borderRadius: "10px",
+                boxShadow: "0 2px 8px rgba(185, 28, 28, 0.08)",
               }}
               aria-label={getText("Logout", "लॉगआउट", "लॉगआउट")}
               title={
@@ -1215,12 +1315,14 @@ const DashboardLayout = ({
             >
               <span
                 style={{
-                  fontSize: "24px",
-                  width: "24px",
-                  height: "24px",
+                  fontSize: "18px",
+                  width: "28px",
+                  height: "28px",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
+                  borderRadius: "8px",
+                  background: "#FEE2E2",
                 }}
               >
                 <MdLogout />
@@ -1307,6 +1409,7 @@ const DashboardLayout = ({
       <WhatsAppFloatingIcon
         projectId={projectContext?.projectId}
         isAuthenticated={true}
+        currentRole={localStorage.getItem("userRole")}
       />
     </>
   );

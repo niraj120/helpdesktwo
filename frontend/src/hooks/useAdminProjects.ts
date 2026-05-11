@@ -1,18 +1,18 @@
 /**
  * useAdminProjects Hook
- * 
+ *
  * This hook is specifically for Super Admin pages that need to select from ALL projects.
- * 
+ *
  * Key differences from ProjectContext:
  * - ProjectContext: For project-specific logins (subdomains/URLs) - provides the single project
  * - useAdminProjects: For Super Admin - fetches ALL projects and lets admin select one
- * 
+ *
  * Use this hook in pages where Super Admin needs to select a project to manage.
  */
 
-import { useState, useEffect, useCallback } from 'react';
-import { API_CONFIG } from '../config/constants';
-import { isSuperAdmin as checkIsSuperAdmin } from '../utils/permissionHelpers';
+import { useState, useEffect, useCallback } from "react";
+import { API_CONFIG } from "../config/constants";
+import { isSuperAdmin as checkIsSuperAdmin } from "../utils/permissionHelpers";
 
 interface Project {
   _id: string;
@@ -46,7 +46,7 @@ interface UseAdminProjectsResult {
  */
 export const useAdminProjects = (): UseAdminProjectsResult => {
   const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,16 +58,16 @@ export const useAdminProjects = (): UseAdminProjectsResult => {
       setIsLoading(true);
       setError(null);
 
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       if (!token) {
-        setError('No authentication token');
+        setError("No authentication token");
         setProjects([]);
         return;
       }
 
       // Super Admin gets ALL projects
       // Regular users get their assigned projects
-      const endpoint = isSuperAdmin 
+      const endpoint = isSuperAdmin
         ? `${API_CONFIG.API_URL}/projects`
         : `${API_CONFIG.API_URL}/projects/my-projects`;
 
@@ -75,17 +75,17 @@ export const useAdminProjects = (): UseAdminProjectsResult => {
 
       const response = await fetch(endpoint, {
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
         },
       });
 
       if (response.ok) {
         const data = await response.json();
-        
+
         // Handle different response formats
         let projectsList: Project[] = [];
-        
+
         if (data.success) {
           if (Array.isArray(data.data)) {
             // /projects returns { success: true, data: [...] }
@@ -97,17 +97,24 @@ export const useAdminProjects = (): UseAdminProjectsResult => {
         }
 
         // Filter to active projects only
-        const activeProjects = projectsList.filter((p: Project) => p.status === 'active');
-        console.log(`✅ useAdminProjects: Fetched ${activeProjects.length} active projects`);
+        const activeProjects = projectsList.filter(
+          (p: Project) => p.status === "active",
+        );
+        console.log(
+          `✅ useAdminProjects: Fetched ${activeProjects.length} active projects`,
+        );
         setProjects(activeProjects);
       } else {
-        console.error('❌ useAdminProjects: Failed to fetch projects, status:', response.status);
-        setError('Failed to fetch projects');
+        console.error(
+          "❌ useAdminProjects: Failed to fetch projects, status:",
+          response.status,
+        );
+        setError("Failed to fetch projects");
         setProjects([]);
       }
     } catch (err) {
-      console.error('❌ useAdminProjects: Error fetching projects:', err);
-      setError('Error fetching projects');
+      console.error("❌ useAdminProjects: Error fetching projects:", err);
+      setError("Error fetching projects");
       setProjects([]);
     } finally {
       setIsLoading(false);
@@ -120,7 +127,7 @@ export const useAdminProjects = (): UseAdminProjectsResult => {
   }, [fetchProjects]);
 
   // Get selected project object
-  const selectedProject = projects.find(p => p._id === selectedProjectId);
+  const selectedProject = projects.find((p) => p._id === selectedProjectId);
 
   // Non-super-admin users should automatically land on their first assigned project.
   // Super Admin keeps manual selection behavior.

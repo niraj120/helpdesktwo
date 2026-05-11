@@ -66,7 +66,38 @@ const ProjectPortalLogin: React.FC = () => {
   const [brandingLoading, setBrandingLoading] = useState(true);
   const [retryCount, setRetryCount] = useState(0);
   const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
+  const [viewportWidth, setViewportWidth] = useState<number>(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1280,
+  );
   const recaptchaRef = useRef<ReCAPTCHA>(null);
+
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const isMobile = viewportWidth <= 900;
+
+  useEffect(() => {
+    // Guard against stale global scroll locks from previous routes/modals.
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevBodyOverflowY = document.body.style.overflowY;
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    const prevHtmlOverflowY = document.documentElement.style.overflowY;
+
+    document.body.style.overflow = "auto";
+    document.body.style.overflowY = "auto";
+    document.documentElement.style.overflow = "auto";
+    document.documentElement.style.overflowY = "auto";
+
+    return () => {
+      document.body.style.overflow = prevBodyOverflow;
+      document.body.style.overflowY = prevBodyOverflowY;
+      document.documentElement.style.overflow = prevHtmlOverflow;
+      document.documentElement.style.overflowY = prevHtmlOverflowY;
+    };
+  }, []);
 
   // Validation schema
   const loginSchema = yup.object({
@@ -363,16 +394,19 @@ const ProjectPortalLogin: React.FC = () => {
       className="min-h-screen flex flex-col"
       style={{
         fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+        overflowY: "auto",
+        WebkitOverflowScrolling: "touch",
+        touchAction: "pan-y",
       }}
     >
       {/* Fixed Announcement Banner */}
       {projectBranding?.announcementBanner?.message && (
         <div
           style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
+            position: isMobile ? "static" : "fixed",
+            top: isMobile ? undefined : 0,
+            left: isMobile ? undefined : 0,
+            right: isMobile ? undefined : 0,
             zIndex: 1100,
             background:
               "linear-gradient(90deg, #1e3a5f 0%, #2d5a87 50%, #1e3a5f 100%)",
@@ -384,6 +418,7 @@ const ProjectPortalLogin: React.FC = () => {
             alignItems: "center",
             justifyContent: "center",
             gap: "10px",
+            flexWrap: "wrap",
           }}
         >
           {/* Info Icon */}
@@ -418,18 +453,29 @@ const ProjectPortalLogin: React.FC = () => {
       <div
         className="flex-1 flex"
         style={{
+          flexDirection: isMobile ? "column" : "row",
+          flex: isMobile ? "0 0 auto" : 1,
           marginTop: projectBranding?.announcementBanner?.message
-            ? "44px"
+            ? isMobile
+              ? "0"
+              : "44px"
             : "0",
         }}
       >
         {/* Language Toggle - Top Right */}
         <div
           style={{
-            position: "fixed",
-            top: projectBranding?.announcementBanner?.message ? "56px" : "1rem",
-            right: "1rem",
+            position: isMobile ? "static" : "fixed",
+            top: isMobile
+              ? undefined
+              : projectBranding?.announcementBanner?.message
+                ? "56px"
+                : "1rem",
+            right: isMobile ? undefined : "1rem",
             zIndex: 1000,
+            display: "flex",
+            justifyContent: isMobile ? "flex-end" : "initial",
+            padding: isMobile ? "12px 12px 0" : 0,
           }}
         >
           <LanguageToggle />
@@ -438,14 +484,14 @@ const ProjectPortalLogin: React.FC = () => {
         {/* Left Side - Branding & Image */}
         <div
           style={{
-            flex: 1,
+            flex: isMobile ? "0 0 auto" : 1,
             background: `linear-gradient(135deg, ${primaryColor} 0%, ${accentColor} 100%)`,
             position: "relative",
             display: "flex",
             flexDirection: "column",
             justifyContent: "center",
             alignItems: "center",
-            padding: "4rem",
+            padding: isMobile ? "20px 14px 18px" : "4rem",
             color: "white",
           }}
         >
@@ -469,14 +515,15 @@ const ProjectPortalLogin: React.FC = () => {
               position: "relative",
               zIndex: 1,
               textAlign: "center",
-              maxWidth: "500px",
+              maxWidth: isMobile ? "100%" : "500px",
+              width: "100%",
             }}
           >
             {/* Logo/Icon */}
             {projectBranding?.branding?.logo ? (
               <div
                 style={{
-                  margin: "0 auto 2rem",
+                  margin: isMobile ? "0 auto 1rem" : "0 auto 2rem",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -499,8 +546,8 @@ const ProjectPortalLogin: React.FC = () => {
                       alt={projectBranding.name}
                       loading="lazy"
                       style={{
-                        maxWidth: "200px",
-                        maxHeight: "120px",
+                        maxWidth: isMobile ? "150px" : "200px",
+                        maxHeight: isMobile ? "88px" : "120px",
                         height: "auto",
                         cursor: "pointer",
                       }}
@@ -513,8 +560,8 @@ const ProjectPortalLogin: React.FC = () => {
                     alt={projectBranding.name}
                     loading="lazy"
                     style={{
-                      maxWidth: "200px",
-                      maxHeight: "120px",
+                      maxWidth: isMobile ? "150px" : "200px",
+                      maxHeight: isMobile ? "88px" : "120px",
                       height: "auto",
                     }}
                   />
@@ -523,9 +570,9 @@ const ProjectPortalLogin: React.FC = () => {
             ) : (
               <div
                 style={{
-                  width: "120px",
-                  height: "120px",
-                  margin: "0 auto 2rem",
+                  width: isMobile ? "88px" : "120px",
+                  height: isMobile ? "88px" : "120px",
+                  margin: isMobile ? "0 auto 1rem" : "0 auto 2rem",
                   background: "rgba(255, 255, 255, 0.2)",
                   backdropFilter: "blur(10px)",
                   borderRadius: "24px",
@@ -537,8 +584,8 @@ const ProjectPortalLogin: React.FC = () => {
                 }}
               >
                 <svg
-                  width="64"
-                  height="64"
+                  width={isMobile ? "48" : "64"}
+                  height={isMobile ? "48" : "64"}
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="white"
@@ -556,11 +603,12 @@ const ProjectPortalLogin: React.FC = () => {
             {/* Title */}
             <h1
               style={{
-                fontSize: "2.5rem",
-                fontWeight: 700,
-                marginBottom: "1rem",
+                fontSize: isMobile ? "1.9rem" : "2.5rem",
+                fontWeight: 800,
+                marginBottom: isMobile ? "0.5rem" : "1rem",
                 lineHeight: 1.2,
                 textShadow: "0 2px 10px rgba(0, 0, 0, 0.1)",
+                letterSpacing: "-0.02em",
               }}
             >
               {projectBranding?.name || "Portal"}
@@ -568,8 +616,8 @@ const ProjectPortalLogin: React.FC = () => {
 
             <p
               style={{
-                fontSize: "1.125rem",
-                marginBottom: "2rem",
+                fontSize: isMobile ? "0.95rem" : "1.125rem",
+                marginBottom: isMobile ? "1rem" : "2rem",
                 opacity: 0.95,
                 lineHeight: 1.6,
               }}
@@ -579,7 +627,13 @@ const ProjectPortalLogin: React.FC = () => {
             </p>
 
             {/* Features List */}
-            <div style={{ textAlign: "left", marginTop: "3rem" }}>
+            <div
+              style={{
+                textAlign: "left",
+                marginTop: isMobile ? "1rem" : "3rem",
+                display: isMobile ? "none" : "block",
+              }}
+            >
               {[
                 { icon: "🎫", text: "Efficient Query Management" },
                 { icon: "📊", text: "Real-time Analytics Dashboard" },
@@ -592,12 +646,13 @@ const ProjectPortalLogin: React.FC = () => {
                     display: "flex",
                     alignItems: "center",
                     gap: "1rem",
-                    padding: "1rem",
+                    padding: "0.9rem 1rem",
                     marginBottom: "0.75rem",
-                    background: "rgba(255, 255, 255, 0.1)",
+                    background: "rgba(255, 255, 255, 0.12)",
                     backdropFilter: "blur(10px)",
                     borderRadius: "12px",
-                    border: "1px solid rgba(255, 255, 255, 0.2)",
+                    border: "1px solid rgba(255, 255, 255, 0.28)",
+                    boxShadow: "0 8px 18px rgba(0, 0, 0, 0.08)",
                   }}
                 >
                   <span style={{ fontSize: "1.5rem" }}>{feature.icon}</span>
@@ -612,12 +667,13 @@ const ProjectPortalLogin: React.FC = () => {
           {/* Bottom Decoration */}
           <div
             style={{
-              position: "absolute",
-              bottom: "2rem",
-              left: "50%",
-              transform: "translateX(-50%)",
+              position: isMobile ? "static" : "absolute",
+              bottom: isMobile ? undefined : "2rem",
+              left: isMobile ? undefined : "50%",
+              transform: isMobile ? "none" : "translateX(-50%)",
               fontSize: "0.875rem",
               opacity: 0.8,
+              marginTop: isMobile ? "10px" : 0,
             }}
           >
             {projectBranding?.branding?.footerText ||
@@ -628,12 +684,13 @@ const ProjectPortalLogin: React.FC = () => {
         {/* Right Side - Login Form */}
         <div
           style={{
-            flex: 1,
+            flex: isMobile ? "0 0 auto" : 1,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            padding: "2rem",
-            background: "#F9FAFB",
+            padding: isMobile ? "14px 12px 18px" : "2.5rem 2rem",
+            background:
+              "radial-gradient(circle at 90% 10%, #dbeafe 0%, transparent 28%), linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%)",
             position: "relative",
           }}
         >
@@ -642,7 +699,13 @@ const ProjectPortalLogin: React.FC = () => {
             id="main-content"
             style={{
               width: "100%",
-              maxWidth: "440px",
+              maxWidth: "500px",
+              background: "rgba(255, 255, 255, 0.96)",
+              border: "1px solid #e2e8f0",
+              borderRadius: "20px",
+              boxShadow: "0 24px 50px rgba(15, 23, 42, 0.14)",
+              padding: isMobile ? "20px 14px" : "28px 24px",
+              backdropFilter: "blur(8px)",
             }}
             role="main"
           >
@@ -651,10 +714,10 @@ const ProjectPortalLogin: React.FC = () => {
               <div
                 style={{
                   marginBottom: "1.5rem",
-                  padding: "1rem",
-                  background: "#DCFCE7",
-                  borderLeft: "4px solid #10B981",
-                  borderRadius: "0 8px 8px 0",
+                  padding: "0.9rem 1rem",
+                  background: "#ecfdf3",
+                  border: "1px solid #86efac",
+                  borderRadius: "10px",
                 }}
                 role="alert"
                 aria-live="polite"
@@ -672,10 +735,10 @@ const ProjectPortalLogin: React.FC = () => {
               <div
                 style={{
                   marginBottom: "1.5rem",
-                  padding: "1rem",
-                  background: "#FEE2E2",
-                  borderLeft: "4px solid #EF4444",
-                  borderRadius: "0 8px 8px 0",
+                  padding: "0.9rem 1rem",
+                  background: "#fff1f2",
+                  border: "1px solid #fda4af",
+                  borderRadius: "10px",
                 }}
                 role="alert"
                 aria-live="polite"
@@ -718,7 +781,7 @@ const ProjectPortalLogin: React.FC = () => {
                 style={{
                   display: "flex",
                   flexDirection: "column",
-                  gap: "1.5rem",
+                  gap: "1.25rem",
                 }}
               >
                 <div style={{ textAlign: "center" }}>
@@ -733,6 +796,8 @@ const ProjectPortalLogin: React.FC = () => {
                       alignItems: "center",
                       justifyContent: "center",
                       overflow: "hidden",
+                      boxShadow: `0 8px 20px ${primaryColor}44`,
+                      border: "1px solid rgba(255,255,255,0.35)",
                     }}
                   >
                     {projectBranding?.branding?.logo ? (
@@ -796,9 +861,10 @@ const ProjectPortalLogin: React.FC = () => {
                   <h1
                     style={{
                       fontSize: "1.875rem",
-                      fontWeight: 600,
+                      fontWeight: 700,
                       color: "#111827",
                       marginBottom: "0.5rem",
+                      letterSpacing: "-0.02em",
                     }}
                   >
                     Welcome to {projectBranding?.name || "Portal"}
@@ -849,8 +915,9 @@ const ProjectPortalLogin: React.FC = () => {
                         fontSize: "0.875rem",
                         border: loginForm.formState.errors.email
                           ? "2px solid #EF4444"
-                          : "2px solid #E5E7EB",
-                        borderRadius: "8px",
+                          : "1.5px solid #d1d5db",
+                        borderRadius: "10px",
+                        background: "#f8fafc",
                         outline: "none",
                         transition: "all 0.2s ease",
                         fontFamily:
@@ -913,8 +980,9 @@ const ProjectPortalLogin: React.FC = () => {
                           fontSize: "0.875rem",
                           border: loginForm.formState.errors.password
                             ? "2px solid #EF4444"
-                            : "2px solid #E5E7EB",
-                          borderRadius: "8px",
+                            : "1.5px solid #d1d5db",
+                          borderRadius: "10px",
+                          background: "#f8fafc",
                           outline: "none",
                           transition: "all 0.2s ease",
                           fontFamily:
@@ -1040,10 +1108,10 @@ const ProjectPortalLogin: React.FC = () => {
                           ?.enableGoogleRecaptcha &&
                           !recaptchaToken)
                           ? "#9CA3AF"
-                          : primaryColor,
+                          : `linear-gradient(135deg, ${primaryColor} 0%, ${accentColor} 100%)`,
                       color: "white",
                       border: "none",
-                      borderRadius: "8px",
+                      borderRadius: "10px",
                       fontSize: "0.875rem",
                       fontWeight: 600,
                       cursor:
@@ -1060,7 +1128,7 @@ const ProjectPortalLogin: React.FC = () => {
                           !recaptchaToken)
                           ? 0.6
                           : 1,
-                      boxShadow: `0 2px 6px ${primaryColor}40`,
+                      boxShadow: `0 8px 18px ${primaryColor}55`,
                       transition: "all 0.2s ease",
                       fontFamily:
                         '"Noto Sans", system-ui, -apple-system, sans-serif',

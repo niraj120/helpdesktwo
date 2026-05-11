@@ -1,8 +1,15 @@
 import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import DashboardLayout from "./DashboardLayout";
-import ModuleHeader from "./ModuleHeader";
-import { MdAdd, MdEdit, MdDelete, MdSave, MdClose } from "react-icons/md";
+import {
+  MdAdd,
+  MdEdit,
+  MdDelete,
+  MdSave,
+  MdClose,
+  MdSearch,
+  MdUploadFile,
+} from "react-icons/md";
 import { usePermissions } from "../hooks/usePermissions";
 import { PERMISSIONS } from "../constants/permissions";
 import { API_CONFIG } from "../config/constants";
@@ -109,6 +116,19 @@ const MasterDataManagement = () => {
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [showBulkUploadModal, setShowBulkUploadModal] = useState(false);
+  const [bulkUploadProjectId, setBulkUploadProjectId] = useState("");
+  const [bulkUploadFile, setBulkUploadFile] = useState<File | null>(null);
+  const [bulkUploading, setBulkUploading] = useState(false);
+  const [bulkUploadResult, setBulkUploadResult] = useState<{
+    success: number;
+    failed: number;
+    errors: string[];
+  } | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [viewportWidth, setViewportWidth] = useState<number>(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1280,
+  );
   const [editingItem, setEditingItem] = useState<MasterItem | null>(null);
   const [formData, setFormData] = useState<any>({
     key: "",
@@ -126,6 +146,14 @@ const MasterDataManagement = () => {
   });
 
   const currentCategory = MASTER_CATEGORIES.find((c) => c.key === activeTab);
+  const isMobile = viewportWidth <= 768;
+  const isNarrowMobile = viewportWidth <= 420;
+
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   // Fetch reference data for dropdowns
   useEffect(() => {
@@ -151,9 +179,63 @@ const MasterDataManagement = () => {
       setItems([]);
       return;
     }
+    setSearchTerm("");
     fetchItems();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, selectedProjectId]);
+
+  const filteredItems = items.filter((item) => {
+    const q = searchTerm.trim().toLowerCase();
+    if (!q) return true;
+    const haystack = [
+      item.key,
+      item.value,
+      item.name,
+      item.code,
+      item.country,
+      item.state,
+      item.description,
+      item.defaultPriority,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(q);
+  });
+
+  const activeItems = items.filter((item) => item.isActive).length;
+  const inactiveItems = items.length - activeItems;
+  const selectedProjectName =
+    projects.find((p) => p._id === selectedProjectId)?.name || "Not selected";
+
+  const statsCards = [
+    {
+      label: "Total Records",
+      value: items.length,
+      icon: "📚",
+      bg: "#F4F3FF",
+    },
+    {
+      label: "Active",
+      value: activeItems,
+      icon: "✅",
+      bg: "#ECFDF3",
+    },
+    {
+      label: "Inactive",
+      value: inactiveItems,
+      icon: "⛔",
+      bg: "#FEF2F2",
+    },
+    {
+      label: currentCategory?.requiresProject
+        ? "Project Scope"
+        : "Master Scope",
+      value: currentCategory?.requiresProject ? selectedProjectName : "Global",
+      icon: currentCategory?.requiresProject ? "🏢" : "🌐",
+      bg: "#EFF8FF",
+    },
+  ];
 
   const fetchProjects = async () => {
     try {
@@ -467,6 +549,441 @@ const MasterDataManagement = () => {
     } catch (error: any) {
       alert(error.response?.data?.message || "Error deleting data");
     }
+  };
+
+  const getColumnCount = () => {
+    if (activeTab === "cities") return 6;
+    if (activeTab === "statuses") return 6;
+    if (activeTab === "assetCategories") return 6;
+    if (activeTab === "countries") return 5;
+    if (activeTab === "states") return 5;
+    if (activeTab === "categories") return 5;
+    if (activeTab === "departments") return 4;
+    return 6;
+  };
+
+  const getBulkTemplateHeaders = () => {
+    switch (activeTab) {
+      case "countries":
+        return ["key", "value", "code", "displayOrder", "isActive"];
+      case "states":
+        return ["country", "key", "value", "displayOrder", "isActive"];
+      case "cities":
+        return ["country", "state", "key", "value", "displayOrder", "isActive"];
+      case "categories":
+        return ["name", "description", "color", "defaultPriority", "isActive"];
+      case "assetCategories":
+        return ["name", "description", "color", "icon", "isActive"];
+      case "statuses":
+        return [
+          "name",
+          "code",
+          "color",
+          "description",
+          "isClosed",
+          "displayOrder",
+          "isActive",
+        ];
+      case "departments":
+        return ["name", "description", "isActive"];
+      default:
+        return ["name", "isActive"];
+    }
+  };
+
+  const downloadBulkTemplate = () => {
+    const headers = getBulkTemplateHeaders();
+    const sampleRow = headers
+      .map((h) => {
+        if (h === "isActive") return "true";
+        if (h === "displayOrder") return "0";
+        if (h === "color") return "#3b82f6";
+        return "";
+      })
+      .join(",");
+    const csvContent = `${headers.join(",")}\n${sampleRow}`;
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${activeTab}-bulk-template.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const parseBoolean = (value: string | undefined, defaultValue = true) => {
+    if (!value) return defaultValue;
+    const normalized = value.toLowerCase().trim();
+    if (["true", "1", "yes", "y"].includes(normalized)) return true;
+    if (["false", "0", "no", "n"].includes(normalized)) return false;
+    return defaultValue;
+  };
+
+  const parseCsvRows = (content: string) => {
+    const lines = content
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (lines.length < 2) return [];
+
+    const headers = lines[0].split(",").map((h) => h.trim());
+    return lines.slice(1).map((line) => {
+      const values = line.split(",").map((v) => v.trim());
+      const row: Record<string, string> = {};
+      headers.forEach((header, idx) => {
+        row[header] = values[idx] || "";
+      });
+      return row;
+    });
+  };
+
+  const mapBulkRowToPayload = (row: Record<string, string>) => {
+    if (activeTab === "countries") {
+      return {
+        key: row.key,
+        value: row.value,
+        code: row.code,
+        displayOrder: Number(row.displayOrder || 0),
+        isActive: parseBoolean(row.isActive, true),
+      };
+    }
+    if (activeTab === "states") {
+      return {
+        country: row.country,
+        key: row.key,
+        value: row.value,
+        displayOrder: Number(row.displayOrder || 0),
+        isActive: parseBoolean(row.isActive, true),
+      };
+    }
+    if (activeTab === "cities") {
+      return {
+        country: row.country,
+        state: row.state,
+        key: row.key,
+        value: row.value,
+        displayOrder: Number(row.displayOrder || 0),
+        isActive: parseBoolean(row.isActive, true),
+      };
+    }
+    if (activeTab === "categories") {
+      return {
+        name: row.name,
+        description: row.description,
+        color: row.color || "#3b82f6",
+        defaultPriority: row.defaultPriority || "",
+        isActive: parseBoolean(row.isActive, true),
+      };
+    }
+    if (activeTab === "assetCategories") {
+      return {
+        name: row.name,
+        description: row.description,
+        color: row.color || "#3b82f6",
+        icon: row.icon || "📦",
+        isActive: parseBoolean(row.isActive, true),
+      };
+    }
+    if (activeTab === "statuses") {
+      return {
+        name: row.name,
+        code: (row.code || "").toUpperCase(),
+        color: row.color || "#3b82f6",
+        description: row.description || "",
+        isClosed: parseBoolean(row.isClosed, false),
+        displayOrder: Number(row.displayOrder || 0),
+        isActive: parseBoolean(row.isActive, true),
+      };
+    }
+    if (activeTab === "departments") {
+      return {
+        name: row.name,
+        description: row.description,
+        isActive: parseBoolean(row.isActive, true),
+      };
+    }
+    return row;
+  };
+
+  const handleBulkUpload = async () => {
+    if (!bulkUploadFile) {
+      alert("Please select a CSV file");
+      return;
+    }
+
+    const effectiveProjectId = currentCategory?.requiresProject
+      ? bulkUploadProjectId || selectedProjectId
+      : "";
+
+    if (currentCategory?.requiresProject && !effectiveProjectId) {
+      alert("Please select a project for bulk upload");
+      return;
+    }
+
+    try {
+      setBulkUploading(true);
+      setBulkUploadResult(null);
+      const token = localStorage.getItem("authToken");
+      const content = await bulkUploadFile.text();
+      const rows = parseCsvRows(content);
+
+      if (!rows.length) {
+        alert("CSV file is empty or invalid");
+        return;
+      }
+
+      const errors: string[] = [];
+      let success = 0;
+      let failed = 0;
+
+      const createUrl = currentCategory?.requiresProject
+        ? `${API_CONFIG.BASE_URL}${currentCategory?.api}/${effectiveProjectId}`
+        : `${API_CONFIG.BASE_URL}${currentCategory?.api}`;
+
+      for (let idx = 0; idx < rows.length; idx += 1) {
+        try {
+          const payload = mapBulkRowToPayload(rows[idx]);
+          await axios.post(createUrl, payload, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          success += 1;
+        } catch (error: any) {
+          failed += 1;
+          const message =
+            error.response?.data?.message || error.message || "Upload failed";
+          if (errors.length < 10) {
+            errors.push(`Row ${idx + 2}: ${message}`);
+          }
+        }
+      }
+
+      setBulkUploadResult({ success, failed, errors });
+      fetchItems();
+      if (activeTab === "countries") fetchCountries();
+      if (activeTab === "states") fetchStates();
+    } finally {
+      setBulkUploading(false);
+    }
+  };
+
+  const renderActiveBadge = (isActive: boolean) => (
+    <span
+      style={{
+        padding: "4px 12px",
+        borderRadius: "12px",
+        fontSize: "12px",
+        background: isActive ? "#dcfce7" : "#fee2e2",
+        color: isActive ? "#166534" : "#991b1b",
+        fontWeight: 600,
+      }}
+    >
+      {isActive ? "Active" : "Inactive"}
+    </span>
+  );
+
+  const renderRow = (label: string, value: React.ReactNode) => (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: isMobile ? "column" : "row",
+        justifyContent: "space-between",
+        alignItems: isMobile ? "flex-start" : "center",
+        gap: "10px",
+        padding: "6px 0",
+        borderBottom: "1px dashed #e5e7eb",
+      }}
+    >
+      <span style={{ fontSize: "12px", color: "#667085", fontWeight: 600 }}>
+        {label}
+      </span>
+      <span
+        style={{
+          fontSize: "13px",
+          color: "#101828",
+          textAlign: isMobile ? "left" : "right",
+          width: isMobile ? "100%" : "auto",
+          wordBreak: "break-word",
+        }}
+      >
+        {value || "-"}
+      </span>
+    </div>
+  );
+
+  const renderActionButtons = (item: MasterItem) => (
+    <div
+      style={{
+        display: "flex",
+        gap: "8px",
+        justifyContent: "flex-end",
+        flexWrap: isMobile ? "wrap" : "nowrap",
+      }}
+    >
+      {hasPermission(PERMISSIONS.MASTER_DATA_EDIT) && (
+        <button
+          onClick={() => handleEdit(item)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "6px",
+            padding: "8px",
+            border: "none",
+            background: "#dbeafe",
+            color: "#1e40af",
+            borderRadius: "6px",
+            cursor: "pointer",
+            flex: isMobile ? "1 1 120px" : "0 0 auto",
+          }}
+        >
+          <MdEdit size={18} />
+          {isMobile && "Edit"}
+        </button>
+      )}
+      {hasPermission(PERMISSIONS.MASTER_DATA_DELETE) && (
+        <button
+          onClick={() => handleDelete(item._id)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "6px",
+            padding: "8px",
+            border: "none",
+            background: "#fee2e2",
+            color: "#991b1b",
+            borderRadius: "6px",
+            cursor: "pointer",
+            flex: isMobile ? "1 1 120px" : "0 0 auto",
+          }}
+        >
+          <MdDelete size={18} />
+          {isMobile && "Delete"}
+        </button>
+      )}
+    </div>
+  );
+
+  const renderMobileCard = (item: MasterItem) => {
+    const priority = priorities.find((p) => p.code === item.defaultPriority);
+    return (
+      <div
+        key={item._id}
+        style={{
+          background: "white",
+          border: "1px solid #E4E7EC",
+          borderRadius: "10px",
+          boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+          padding: "12px",
+          overflow: "hidden",
+        }}
+      >
+        <div style={{ marginBottom: "8px" }}>
+          {renderActiveBadge(item.isActive)}
+        </div>
+
+        {activeTab === "countries" && (
+          <>
+            {renderRow("Key", item.key)}
+            {renderRow("Country", item.value)}
+            {renderRow("ISO Code", item.code)}
+          </>
+        )}
+        {activeTab === "states" && (
+          <>
+            {renderRow("Key", item.key)}
+            {renderRow("State", item.value)}
+            {renderRow(
+              "Country",
+              countries.find((c) => c.key === item.country)?.value ||
+                item.country,
+            )}
+          </>
+        )}
+        {activeTab === "cities" && (
+          <>
+            {renderRow("Key", item.key)}
+            {renderRow("City", item.value)}
+            {renderRow(
+              "State",
+              states.find((s) => s.key === item.state)?.value || item.state,
+            )}
+            {renderRow(
+              "Country",
+              countries.find((c) => c.key === item.country)?.value ||
+                item.country,
+            )}
+          </>
+        )}
+        {activeTab === "categories" && (
+          <>
+            {renderRow("Category", item.name || "N/A")}
+            {renderRow(
+              "Default Priority",
+              priority ? priority.name : "Not set",
+            )}
+            {renderRow(
+              "Color",
+              <span
+                style={{
+                  display: "inline-block",
+                  width: "16px",
+                  height: "16px",
+                  background: item.color || "#cbd5e1",
+                  borderRadius: "4px",
+                }}
+              />,
+            )}
+          </>
+        )}
+        {activeTab === "assetCategories" && (
+          <>
+            {renderRow("Icon", item.icon || "📦")}
+            {renderRow("Category", item.name || "N/A")}
+            {renderRow("Code", item.code)}
+            {renderRow(
+              "Color",
+              <span
+                style={{
+                  display: "inline-block",
+                  width: "16px",
+                  height: "16px",
+                  background: item.color || "#cbd5e1",
+                  borderRadius: "4px",
+                }}
+              />,
+            )}
+          </>
+        )}
+        {activeTab === "statuses" && (
+          <>
+            {renderRow("Status", item.name || item.code || "N/A")}
+            {renderRow("Code", item.code)}
+            {renderRow("Closed", item.isClosed ? "Yes" : "No")}
+            {renderRow(
+              "Color",
+              <span
+                style={{
+                  display: "inline-block",
+                  width: "16px",
+                  height: "16px",
+                  background: item.color || "#cbd5e1",
+                  borderRadius: "4px",
+                }}
+              />,
+            )}
+          </>
+        )}
+        {activeTab === "departments" && (
+          <>
+            {renderRow("Department", item.name || "N/A")}
+            {renderRow("Description", item.description || "—")}
+          </>
+        )}
+
+        <div style={{ marginTop: "10px" }}>{renderActionButtons(item)}</div>
+      </div>
+    );
   };
 
   const renderFormFields = () => {
@@ -1245,33 +1762,168 @@ const MasterDataManagement = () => {
 
   return (
     <DashboardLayout>
-      <div style={{ padding: "24px" }}>
-        <ModuleHeader
-          title="Master Data Management"
-          subtitle="Manage system-wide master data"
-        />
-
-        {/* Tabs */}
+      <div
+        style={{
+          padding: isMobile ? "16px" : "24px",
+          width: "100%",
+          boxSizing: "border-box",
+          maxWidth: "1400px",
+          margin: "0 auto",
+          background: "#F8F9FC",
+          minHeight: "100vh",
+          overflowX: "hidden",
+        }}
+      >
         <div
-          style={{ borderBottom: "2px solid #e5e7eb", marginBottom: "24px" }}
+          style={{
+            background: "#ffffff",
+            padding: isMobile ? "16px" : "22px 24px",
+            borderRadius: "14px",
+            marginBottom: "16px",
+            border: "1px solid #e7ebf3",
+            boxShadow: "0 4px 18px rgba(15, 23, 42, 0.05)",
+          }}
         >
-          <div style={{ display: "flex", gap: "4px" }}>
+          <h1
+            style={{
+              margin: "0 0 6px 0",
+              fontSize: isMobile ? "20px" : "24px",
+              fontWeight: 700,
+              color: "#111827",
+              letterSpacing: "-0.01em",
+              fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+            }}
+          >
+            Master Data Management
+          </h1>
+          <p
+            style={{
+              margin: 0,
+              fontSize: "14px",
+              color: "#6b7280",
+              fontWeight: 400,
+              fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+            }}
+          >
+            Manage global and project-level master records with governed inputs
+          </p>
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            gap: "16px",
+            marginBottom: "16px",
+            flexWrap: "wrap",
+          }}
+        >
+          {statsCards.map((stat) => (
+            <div
+              key={stat.label}
+              style={{
+                flex: isMobile
+                  ? isNarrowMobile
+                    ? "1 1 100%"
+                    : "1 1 calc(50% - 8px)"
+                  : "1 1 180px",
+                minWidth: isMobile
+                  ? isNarrowMobile
+                    ? "100%"
+                    : "calc(50% - 8px)"
+                  : "180px",
+                background: "white",
+                borderRadius: "10px",
+                padding: isMobile ? "14px 14px" : "20px 24px",
+                border: "1px solid #E4E7EC",
+                boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+                display: "flex",
+                alignItems: "center",
+                gap: isMobile ? "10px" : "16px",
+              }}
+            >
+              <div
+                style={{
+                  width: isMobile ? "38px" : "48px",
+                  height: isMobile ? "38px" : "48px",
+                  borderRadius: "50%",
+                  background: stat.bg,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: isMobile ? "16px" : "20px",
+                  flexShrink: 0,
+                }}
+              >
+                {stat.icon}
+              </div>
+              <div>
+                <div
+                  style={{
+                    fontSize: isMobile ? "20px" : "28px",
+                    fontWeight: 700,
+                    color: "#101828",
+                    lineHeight: 1.2,
+                  }}
+                >
+                  {String(stat.value)}
+                </div>
+                <div
+                  style={{
+                    fontSize: "13px",
+                    color: "#667085",
+                    marginTop: "2px",
+                  }}
+                >
+                  {stat.label}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div
+          style={{
+            marginBottom: "16px",
+            background: "#ffffff",
+            borderRadius: "14px",
+            border: "1px solid #e7ebf3",
+            padding: "14px",
+            boxShadow: "0 4px 16px rgba(15, 23, 42, 0.04)",
+          }}
+        >
+          <div
+            style={{
+              display: isMobile ? "grid" : "flex",
+              gridTemplateColumns: isMobile
+                ? isNarrowMobile
+                  ? "1fr"
+                  : "1fr 1fr"
+                : undefined,
+              gap: "8px",
+              overflowX: isMobile ? "visible" : "auto",
+              WebkitOverflowScrolling: isMobile ? "auto" : "touch",
+            }}
+          >
             {MASTER_CATEGORIES.map((category) => (
               <button
                 key={category.key}
                 onClick={() => setActiveTab(category.key)}
                 style={{
-                  padding: "12px 24px",
-                  border: "none",
-                  background:
+                  height: "38px",
+                  padding: "0 14px",
+                  backgroundColor:
+                    activeTab === category.key ? "#eff6ff" : "white",
+                  color: activeTab === category.key ? "#1d4ed8" : "#374151",
+                  border:
                     activeTab === category.key
-                      ? "var(--primary-main)"
-                      : "transparent",
-                  color: activeTab === category.key ? "white" : "#6b7280",
-                  fontWeight: activeTab === category.key ? "600" : "400",
+                      ? "1px solid #84caff"
+                      : "1px solid #d7deea",
+                  borderRadius: "10px",
+                  fontSize: "14px",
+                  fontWeight: activeTab === category.key ? 600 : 500,
                   cursor: "pointer",
-                  borderRadius: "8px 8px 0 0",
-                  transition: "all 0.2s",
+                  whiteSpace: isMobile ? "normal" : "nowrap",
+                  textAlign: "left",
                 }}
               >
                 <span style={{ marginRight: "8px" }}>{category.icon}</span>
@@ -1281,110 +1933,203 @@ const MasterDataManagement = () => {
           </div>
         </div>
 
-        {/* Project Selector - Show only for categories and statuses */}
-        {currentCategory?.requiresProject && (
-          <div
-            style={{
-              marginBottom: "16px",
-              background: "white",
-              padding: "16px",
-              borderRadius: "8px",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-            }}
-          >
-            <label
-              style={{
-                display: "block",
-                marginBottom: "8px",
-                fontWeight: "500",
-                color: "#374151",
-              }}
-            >
-              Select Project *
-            </label>
-            <select
-              value={selectedProjectId}
-              onChange={(e) => setSelectedProjectId(e.target.value)}
-              style={{
-                width: "100%",
-                maxWidth: "400px",
-                padding: "10px",
-                border: "1px solid #d1d5db",
-                borderRadius: "6px",
-                fontSize: "14px",
-                cursor: "pointer",
-              }}
-            >
-              <option value="">-- Select a Project --</option>
-              {projects.map((project) => (
-                <option key={project._id} value={project._id}>
-                  {project.name} ({project.code})
-                </option>
-              ))}
-            </select>
-            {!selectedProjectId && (
-              <p
-                style={{ marginTop: "8px", fontSize: "13px", color: "#ef4444" }}
-              >
-                Please select a project to view and manage{" "}
-                {currentCategory?.label.toLowerCase()}
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* Add Button */}
         <div
           style={{
+            background: "#ffffff",
+            borderRadius: "14px",
+            border: "1px solid #e7ebf3",
+            padding: "14px",
+            boxShadow: "0 4px 16px rgba(15, 23, 42, 0.04)",
             marginBottom: "16px",
-            display: "flex",
-            justifyContent: "flex-end",
           }}
         >
-          {hasPermission(PERMISSIONS.MASTER_DATA_CREATE) && (
-            <button
-              onClick={handleCreate}
-              disabled={currentCategory?.requiresProject && !selectedProjectId}
+          <div
+            style={{
+              display: "flex",
+              gap: "12px",
+              alignItems: "center",
+              marginBottom: "12px",
+              flexWrap: isMobile ? "wrap" : "nowrap",
+            }}
+          >
+            <div
               style={{
-                padding: "10px 20px",
-                background:
-                  currentCategory?.requiresProject && !selectedProjectId
-                    ? "#9ca3af"
-                    : "var(--primary-main)",
-                color: "white",
-                border: "none",
-                borderRadius: "6px",
-                cursor:
-                  currentCategory?.requiresProject && !selectedProjectId
-                    ? "not-allowed"
-                    : "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                fontWeight: "500",
-                opacity:
-                  currentCategory?.requiresProject && !selectedProjectId
-                    ? 0.6
-                    : 1,
+                position: "relative",
+                flex: 1,
+                minWidth: isMobile ? "100%" : "220px",
               }}
             >
-              <MdAdd size={20} />
-              Add {currentCategory?.label}
-            </button>
+              <MdSearch
+                size={16}
+                style={{
+                  position: "absolute",
+                  left: "14px",
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  color: "#9CA3AF",
+                }}
+              />
+              <input
+                type="text"
+                placeholder={`Search ${currentCategory?.label.toLowerCase()}...`}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={{
+                  width: "100%",
+                  height: "42px",
+                  padding: "10px 14px 10px 40px",
+                  border: "1px solid #d7deea",
+                  borderRadius: "10px",
+                  fontSize: "14px",
+                  boxSizing: "border-box",
+                  background: "white",
+                  outline: "none",
+                  boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
+                }}
+              />
+            </div>
+
+            {currentCategory?.requiresProject && (
+              <select
+                value={selectedProjectId}
+                onChange={(e) => setSelectedProjectId(e.target.value)}
+                style={{
+                  height: "42px",
+                  padding: "8px 12px",
+                  border:
+                    selectedProjectId !== ""
+                      ? "1px solid #84caff"
+                      : "1px solid #d7deea",
+                  borderRadius: "10px",
+                  fontSize: "14px",
+                  color: selectedProjectId !== "" ? "#1d4ed8" : "#6b7280",
+                  background: selectedProjectId !== "" ? "#eff6ff" : "white",
+                  cursor: "pointer",
+                  minWidth: isMobile ? "100%" : "240px",
+                }}
+              >
+                <option value="">-- Select a Project --</option>
+                {projects.map((project) => (
+                  <option key={project._id} value={project._id}>
+                    {project.name} ({project.code})
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {hasPermission(PERMISSIONS.MASTER_DATA_CREATE) && (
+              <button
+                onClick={() => {
+                  setBulkUploadResult(null);
+                  setBulkUploadProjectId(selectedProjectId || "");
+                  setBulkUploadFile(null);
+                  setShowBulkUploadModal(true);
+                }}
+                disabled={
+                  currentCategory?.requiresProject && !selectedProjectId
+                }
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  height: "42px",
+                  padding: "0 16px",
+                  background:
+                    currentCategory?.requiresProject && !selectedProjectId
+                      ? "#9ca3af"
+                      : "#7F56D9",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "10px",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  cursor:
+                    currentCategory?.requiresProject && !selectedProjectId
+                      ? "not-allowed"
+                      : "pointer",
+                  width: isMobile ? "100%" : "auto",
+                  justifyContent: "center",
+                  opacity:
+                    currentCategory?.requiresProject && !selectedProjectId
+                      ? 0.7
+                      : 1,
+                }}
+              >
+                <MdUploadFile size={18} />
+                Bulk Upload
+              </button>
+            )}
+
+            {hasPermission(PERMISSIONS.MASTER_DATA_CREATE) && (
+              <button
+                onClick={handleCreate}
+                disabled={
+                  currentCategory?.requiresProject && !selectedProjectId
+                }
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  height: "42px",
+                  padding: "0 16px",
+                  background:
+                    currentCategory?.requiresProject && !selectedProjectId
+                      ? "#9ca3af"
+                      : "#175CD3",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "10px",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  cursor:
+                    currentCategory?.requiresProject && !selectedProjectId
+                      ? "not-allowed"
+                      : "pointer",
+                  width: isMobile ? "100%" : "auto",
+                  justifyContent: "center",
+                  opacity:
+                    currentCategory?.requiresProject && !selectedProjectId
+                      ? 0.7
+                      : 1,
+                }}
+              >
+                <MdAdd size={18} />
+                Add {currentCategory?.label}
+              </button>
+            )}
+          </div>
+
+          {currentCategory?.requiresProject && !selectedProjectId && (
+            <p style={{ margin: 0, fontSize: "13px", color: "#ef4444" }}>
+              Please select a project to view and manage{" "}
+              {currentCategory?.label.toLowerCase()}.
+            </p>
           )}
         </div>
 
         {/* Table */}
         {loading ? (
-          <div style={{ textAlign: "center", padding: "40px" }}>Loading...</div>
+          <div
+            style={{
+              background: "white",
+              borderRadius: "10px",
+              padding: "40px",
+              textAlign: "center",
+              border: "1px solid #E4E7EC",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+            }}
+          >
+            Loading...
+          </div>
         ) : currentCategory?.requiresProject && !selectedProjectId ? (
           <div
             style={{
               background: "white",
-              borderRadius: "8px",
+              borderRadius: "10px",
               padding: "40px",
               textAlign: "center",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+              border: "1px solid #E4E7EC",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
             }}
           >
             <p style={{ fontSize: "16px", color: "#6b7280" }}>
@@ -1392,679 +2137,1022 @@ const MasterDataManagement = () => {
               {currentCategory?.label.toLowerCase()}
             </p>
           </div>
+        ) : isMobile ? (
+          <div style={{ display: "grid", gap: "12px" }}>
+            {filteredItems.length === 0 ? (
+              <div
+                style={{
+                  background: "white",
+                  borderRadius: "10px",
+                  padding: "30px 16px",
+                  textAlign: "center",
+                  border: "1px solid #E4E7EC",
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+                  color: "#6b7280",
+                }}
+              >
+                {searchTerm
+                  ? `No ${currentCategory?.label} matched your search`
+                  : `No ${currentCategory?.label} found`}
+              </div>
+            ) : (
+              filteredItems.map((item) => renderMobileCard(item))
+            )}
+          </div>
         ) : (
           <div
             style={{
               background: "white",
-              borderRadius: "8px",
+              borderRadius: "10px",
               overflow: "hidden",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+              border: "1px solid #E4E7EC",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
             }}
           >
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead
+            <div
+              style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}
+            >
+              <table
                 style={{
-                  background: "#f9fafb",
-                  borderBottom: "2px solid #e5e7eb",
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  minWidth: isMobile ? "940px" : "100%",
                 }}
               >
-                <tr>
-                  {activeTab === "countries" && (
-                    <>
-                      <th style={{ padding: "12px", textAlign: "left" }}>
-                        Key
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "left" }}>
-                        Country Name
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "left" }}>
-                        ISO Code
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "center" }}>
-                        Status
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "center" }}>
-                        Actions
-                      </th>
-                    </>
-                  )}
-                  {activeTab === "states" && (
-                    <>
-                      <th style={{ padding: "12px", textAlign: "left" }}>
-                        Key
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "left" }}>
-                        State Name
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "left" }}>
-                        Country
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "center" }}>
-                        Status
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "center" }}>
-                        Actions
-                      </th>
-                    </>
-                  )}
-                  {activeTab === "cities" && (
-                    <>
-                      <th style={{ padding: "12px", textAlign: "left" }}>
-                        Key
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "left" }}>
-                        City Name
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "left" }}>
-                        State
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "left" }}>
-                        Country
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "center" }}>
-                        Status
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "center" }}>
-                        Actions
-                      </th>
-                    </>
-                  )}
-                  {activeTab === "categories" && (
-                    <>
-                      <th style={{ padding: "12px", textAlign: "left" }}>
-                        Category Name
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "left" }}>
-                        Default Priority
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "center" }}>
-                        Color
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "center" }}>
-                        Status
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "center" }}>
-                        Actions
-                      </th>
-                    </>
-                  )}
-                  {activeTab === "assetCategories" && (
-                    <>
-                      <th style={{ padding: "12px", textAlign: "left" }}>
-                        Icon
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "left" }}>
-                        Category Name
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "left" }}>
-                        Code
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "center" }}>
-                        Color
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "center" }}>
-                        Status
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "center" }}>
-                        Actions
-                      </th>
-                    </>
-                  )}
-                  {activeTab === "statuses" && (
-                    <>
-                      <th style={{ padding: "12px", textAlign: "left" }}>
-                        Status Name
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "left" }}>
-                        Code
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "center" }}>
-                        Color
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "center" }}>
-                        Closed
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "center" }}>
-                        Active
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "center" }}>
-                        Actions
-                      </th>
-                    </>
-                  )}
-                  {activeTab === "departments" && (
-                    <>
-                      <th style={{ padding: "12px", textAlign: "left" }}>
-                        Department Name
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "left" }}>
-                        Description
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "center" }}>
-                        Status
-                      </th>
-                      <th style={{ padding: "12px", textAlign: "center" }}>
-                        Actions
-                      </th>
-                    </>
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {items.length === 0 ? (
+                <thead
+                  style={{
+                    background: "#f9fafb",
+                    borderBottom: "2px solid #e5e7eb",
+                  }}
+                >
                   <tr>
-                    <td
-                      colSpan={6}
-                      style={{
-                        padding: "40px",
-                        textAlign: "center",
-                        color: "#6b7280",
-                      }}
-                    >
-                      No {currentCategory?.label} found
-                    </td>
+                    {activeTab === "countries" && (
+                      <>
+                        <th style={{ padding: "12px", textAlign: "left" }}>
+                          Key
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "left" }}>
+                          Country Name
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "left" }}>
+                          ISO Code
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "center" }}>
+                          Status
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "center" }}>
+                          Actions
+                        </th>
+                      </>
+                    )}
+                    {activeTab === "states" && (
+                      <>
+                        <th style={{ padding: "12px", textAlign: "left" }}>
+                          Key
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "left" }}>
+                          State Name
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "left" }}>
+                          Country
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "center" }}>
+                          Status
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "center" }}>
+                          Actions
+                        </th>
+                      </>
+                    )}
+                    {activeTab === "cities" && (
+                      <>
+                        <th style={{ padding: "12px", textAlign: "left" }}>
+                          Key
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "left" }}>
+                          City Name
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "left" }}>
+                          State
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "left" }}>
+                          Country
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "center" }}>
+                          Status
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "center" }}>
+                          Actions
+                        </th>
+                      </>
+                    )}
+                    {activeTab === "categories" && (
+                      <>
+                        <th style={{ padding: "12px", textAlign: "left" }}>
+                          Category Name
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "left" }}>
+                          Default Priority
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "center" }}>
+                          Color
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "center" }}>
+                          Status
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "center" }}>
+                          Actions
+                        </th>
+                      </>
+                    )}
+                    {activeTab === "assetCategories" && (
+                      <>
+                        <th style={{ padding: "12px", textAlign: "left" }}>
+                          Icon
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "left" }}>
+                          Category Name
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "left" }}>
+                          Code
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "center" }}>
+                          Color
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "center" }}>
+                          Status
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "center" }}>
+                          Actions
+                        </th>
+                      </>
+                    )}
+                    {activeTab === "statuses" && (
+                      <>
+                        <th style={{ padding: "12px", textAlign: "left" }}>
+                          Status Name
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "left" }}>
+                          Code
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "center" }}>
+                          Color
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "center" }}>
+                          Closed
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "center" }}>
+                          Active
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "center" }}>
+                          Actions
+                        </th>
+                      </>
+                    )}
+                    {activeTab === "departments" && (
+                      <>
+                        <th style={{ padding: "12px", textAlign: "left" }}>
+                          Department Name
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "left" }}>
+                          Description
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "center" }}>
+                          Status
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "center" }}>
+                          Actions
+                        </th>
+                      </>
+                    )}
                   </tr>
-                ) : (
-                  items.map((item) => (
-                    <tr
-                      key={item._id}
-                      style={{ borderBottom: "1px solid #e5e7eb" }}
-                    >
-                      {activeTab === "countries" && (
-                        <>
-                          <td style={{ padding: "12px" }}>{item.key}</td>
-                          <td style={{ padding: "12px" }}>{item.value}</td>
-                          <td style={{ padding: "12px" }}>{item.code}</td>
-                          <td style={{ padding: "12px", textAlign: "center" }}>
-                            <span
-                              style={{
-                                padding: "4px 12px",
-                                borderRadius: "12px",
-                                fontSize: "12px",
-                                background: item.isActive
-                                  ? "#dcfce7"
-                                  : "#fee2e2",
-                                color: item.isActive ? "#166534" : "#991b1b",
-                              }}
+                </thead>
+                <tbody>
+                  {filteredItems.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={getColumnCount()}
+                        style={{
+                          padding: "40px",
+                          textAlign: "center",
+                          color: "#6b7280",
+                        }}
+                      >
+                        {searchTerm
+                          ? `No ${currentCategory?.label} matched your search`
+                          : `No ${currentCategory?.label} found`}
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredItems.map((item) => (
+                      <tr
+                        key={item._id}
+                        style={{ borderBottom: "1px solid #e5e7eb" }}
+                      >
+                        {activeTab === "countries" && (
+                          <>
+                            <td style={{ padding: "12px" }}>{item.key}</td>
+                            <td style={{ padding: "12px" }}>{item.value}</td>
+                            <td style={{ padding: "12px" }}>{item.code}</td>
+                            <td
+                              style={{ padding: "12px", textAlign: "center" }}
                             >
-                              {item.isActive ? "Active" : "Inactive"}
-                            </span>
-                          </td>
-                          <td style={{ padding: "12px", textAlign: "center" }}>
-                            {hasPermission(PERMISSIONS.MASTER_DATA_EDIT) && (
-                              <button
-                                onClick={() => handleEdit(item)}
+                              <span
                                 style={{
-                                  marginRight: "8px",
-                                  padding: "6px",
-                                  border: "none",
-                                  background: "#dbeafe",
-                                  color: "#1e40af",
-                                  borderRadius: "4px",
-                                  cursor: "pointer",
+                                  padding: "4px 12px",
+                                  borderRadius: "12px",
+                                  fontSize: "12px",
+                                  background: item.isActive
+                                    ? "#dcfce7"
+                                    : "#fee2e2",
+                                  color: item.isActive ? "#166534" : "#991b1b",
                                 }}
                               >
-                                <MdEdit size={18} />
-                              </button>
-                            )}
-                            {hasPermission(PERMISSIONS.MASTER_DATA_DELETE) && (
-                              <button
-                                onClick={() => handleDelete(item._id)}
-                                style={{
-                                  padding: "6px",
-                                  border: "none",
-                                  background: "#fef2f2",
-                                  color: "#dc2626",
-                                  borderRadius: "4px",
-                                  cursor: "pointer",
-                                }}
-                              >
-                                <MdDelete size={18} />
-                              </button>
-                            )}
-                          </td>
-                        </>
-                      )}
-                      {activeTab === "states" && (
-                        <>
-                          <td style={{ padding: "12px" }}>{item.key}</td>
-                          <td style={{ padding: "12px" }}>{item.value}</td>
-                          <td style={{ padding: "12px" }}>
-                            {countries.find((c) => c.key === item.country)
-                              ?.value || item.country}
-                          </td>
-                          <td style={{ padding: "12px", textAlign: "center" }}>
-                            <span
-                              style={{
-                                padding: "4px 12px",
-                                borderRadius: "12px",
-                                fontSize: "12px",
-                                background: item.isActive
-                                  ? "#dcfce7"
-                                  : "#fee2e2",
-                                color: item.isActive ? "#166534" : "#991b1b",
-                              }}
+                                {item.isActive ? "Active" : "Inactive"}
+                              </span>
+                            </td>
+                            <td
+                              style={{ padding: "12px", textAlign: "center" }}
                             >
-                              {item.isActive ? "Active" : "Inactive"}
-                            </span>
-                          </td>
-                          <td style={{ padding: "12px", textAlign: "center" }}>
-                            {hasPermission(PERMISSIONS.MASTER_DATA_EDIT) && (
-                              <button
-                                onClick={() => handleEdit(item)}
-                                style={{
-                                  marginRight: "8px",
-                                  padding: "6px",
-                                  border: "none",
-                                  background: "#dbeafe",
-                                  color: "#1e40af",
-                                  borderRadius: "4px",
-                                  cursor: "pointer",
-                                }}
-                              >
-                                <MdEdit size={18} />
-                              </button>
-                            )}
-                            {hasPermission(PERMISSIONS.MASTER_DATA_DELETE) && (
-                              <button
-                                onClick={() => handleDelete(item._id)}
-                                style={{
-                                  padding: "6px",
-                                  border: "none",
-                                  background: "#fee2e2",
-                                  color: "#991b1b",
-                                  borderRadius: "4px",
-                                  cursor: "pointer",
-                                }}
-                              >
-                                <MdDelete size={18} />
-                              </button>
-                            )}
-                          </td>
-                        </>
-                      )}
-                      {activeTab === "cities" && (
-                        <>
-                          <td style={{ padding: "12px" }}>{item.key}</td>
-                          <td style={{ padding: "12px" }}>{item.value}</td>
-                          <td style={{ padding: "12px" }}>
-                            {states.find((s) => s.key === item.state)?.value ||
-                              item.state}
-                          </td>
-                          <td style={{ padding: "12px" }}>
-                            {countries.find((c) => c.key === item.country)
-                              ?.value || item.country}
-                          </td>
-                          <td style={{ padding: "12px", textAlign: "center" }}>
-                            <span
-                              style={{
-                                padding: "4px 12px",
-                                borderRadius: "12px",
-                                fontSize: "12px",
-                                background: item.isActive
-                                  ? "#dcfce7"
-                                  : "#fee2e2",
-                                color: item.isActive ? "#166534" : "#991b1b",
-                              }}
+                              {hasPermission(PERMISSIONS.MASTER_DATA_EDIT) && (
+                                <button
+                                  onClick={() => handleEdit(item)}
+                                  style={{
+                                    marginRight: "8px",
+                                    padding: "6px",
+                                    border: "none",
+                                    background: "#dbeafe",
+                                    color: "#1e40af",
+                                    borderRadius: "4px",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  <MdEdit size={18} />
+                                </button>
+                              )}
+                              {hasPermission(
+                                PERMISSIONS.MASTER_DATA_DELETE,
+                              ) && (
+                                <button
+                                  onClick={() => handleDelete(item._id)}
+                                  style={{
+                                    padding: "6px",
+                                    border: "none",
+                                    background: "#fef2f2",
+                                    color: "#dc2626",
+                                    borderRadius: "4px",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  <MdDelete size={18} />
+                                </button>
+                              )}
+                            </td>
+                          </>
+                        )}
+                        {activeTab === "states" && (
+                          <>
+                            <td style={{ padding: "12px" }}>{item.key}</td>
+                            <td style={{ padding: "12px" }}>{item.value}</td>
+                            <td style={{ padding: "12px" }}>
+                              {countries.find((c) => c.key === item.country)
+                                ?.value || item.country}
+                            </td>
+                            <td
+                              style={{ padding: "12px", textAlign: "center" }}
                             >
-                              {item.isActive ? "Active" : "Inactive"}
-                            </span>
-                          </td>
-                          <td style={{ padding: "12px", textAlign: "center" }}>
-                            {hasPermission(PERMISSIONS.MASTER_DATA_EDIT) && (
-                              <button
-                                onClick={() => handleEdit(item)}
+                              <span
                                 style={{
-                                  marginRight: "8px",
-                                  padding: "6px",
-                                  border: "none",
-                                  background: "#dbeafe",
-                                  color: "#1e40af",
-                                  borderRadius: "4px",
-                                  cursor: "pointer",
+                                  padding: "4px 12px",
+                                  borderRadius: "12px",
+                                  fontSize: "12px",
+                                  background: item.isActive
+                                    ? "#dcfce7"
+                                    : "#fee2e2",
+                                  color: item.isActive ? "#166534" : "#991b1b",
                                 }}
                               >
-                                <MdEdit size={18} />
-                              </button>
-                            )}
-                            {hasPermission(PERMISSIONS.MASTER_DATA_DELETE) && (
-                              <button
-                                onClick={() => handleDelete(item._id)}
+                                {item.isActive ? "Active" : "Inactive"}
+                              </span>
+                            </td>
+                            <td
+                              style={{ padding: "12px", textAlign: "center" }}
+                            >
+                              {hasPermission(PERMISSIONS.MASTER_DATA_EDIT) && (
+                                <button
+                                  onClick={() => handleEdit(item)}
+                                  style={{
+                                    marginRight: "8px",
+                                    padding: "6px",
+                                    border: "none",
+                                    background: "#dbeafe",
+                                    color: "#1e40af",
+                                    borderRadius: "4px",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  <MdEdit size={18} />
+                                </button>
+                              )}
+                              {hasPermission(
+                                PERMISSIONS.MASTER_DATA_DELETE,
+                              ) && (
+                                <button
+                                  onClick={() => handleDelete(item._id)}
+                                  style={{
+                                    padding: "6px",
+                                    border: "none",
+                                    background: "#fee2e2",
+                                    color: "#991b1b",
+                                    borderRadius: "4px",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  <MdDelete size={18} />
+                                </button>
+                              )}
+                            </td>
+                          </>
+                        )}
+                        {activeTab === "cities" && (
+                          <>
+                            <td style={{ padding: "12px" }}>{item.key}</td>
+                            <td style={{ padding: "12px" }}>{item.value}</td>
+                            <td style={{ padding: "12px" }}>
+                              {states.find((s) => s.key === item.state)
+                                ?.value || item.state}
+                            </td>
+                            <td style={{ padding: "12px" }}>
+                              {countries.find((c) => c.key === item.country)
+                                ?.value || item.country}
+                            </td>
+                            <td
+                              style={{ padding: "12px", textAlign: "center" }}
+                            >
+                              <span
                                 style={{
-                                  padding: "6px",
-                                  border: "none",
-                                  background: "#fee2e2",
-                                  color: "#991b1b",
-                                  borderRadius: "4px",
-                                  cursor: "pointer",
+                                  padding: "4px 12px",
+                                  borderRadius: "12px",
+                                  fontSize: "12px",
+                                  background: item.isActive
+                                    ? "#dcfce7"
+                                    : "#fee2e2",
+                                  color: item.isActive ? "#166534" : "#991b1b",
                                 }}
                               >
-                                <MdDelete size={18} />
-                              </button>
-                            )}
-                          </td>
-                        </>
-                      )}
-                      {activeTab === "categories" && (
-                        <>
-                          <td style={{ padding: "12px" }}>
-                            {item.name || "N/A"}
-                          </td>
-                          <td style={{ padding: "12px" }}>
-                            {(() => {
-                              const priority = priorities.find(
-                                (p) => p.code === item.defaultPriority,
-                              );
-                              if (priority) {
+                                {item.isActive ? "Active" : "Inactive"}
+                              </span>
+                            </td>
+                            <td
+                              style={{ padding: "12px", textAlign: "center" }}
+                            >
+                              {hasPermission(PERMISSIONS.MASTER_DATA_EDIT) && (
+                                <button
+                                  onClick={() => handleEdit(item)}
+                                  style={{
+                                    marginRight: "8px",
+                                    padding: "6px",
+                                    border: "none",
+                                    background: "#dbeafe",
+                                    color: "#1e40af",
+                                    borderRadius: "4px",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  <MdEdit size={18} />
+                                </button>
+                              )}
+                              {hasPermission(
+                                PERMISSIONS.MASTER_DATA_DELETE,
+                              ) && (
+                                <button
+                                  onClick={() => handleDelete(item._id)}
+                                  style={{
+                                    padding: "6px",
+                                    border: "none",
+                                    background: "#fee2e2",
+                                    color: "#991b1b",
+                                    borderRadius: "4px",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  <MdDelete size={18} />
+                                </button>
+                              )}
+                            </td>
+                          </>
+                        )}
+                        {activeTab === "categories" && (
+                          <>
+                            <td style={{ padding: "12px" }}>
+                              {item.name || "N/A"}
+                            </td>
+                            <td style={{ padding: "12px" }}>
+                              {(() => {
+                                const priority = priorities.find(
+                                  (p) => p.code === item.defaultPriority,
+                                );
+                                if (priority) {
+                                  return (
+                                    <span
+                                      style={{
+                                        padding: "4px 12px",
+                                        borderRadius: "12px",
+                                        fontSize: "12px",
+                                        background: priority.color
+                                          ? `${priority.color}20`
+                                          : "#dbeafe",
+                                        color: priority.color || "#1e40af",
+                                      }}
+                                    >
+                                      {priority.name}
+                                    </span>
+                                  );
+                                }
                                 return (
-                                  <span
-                                    style={{
-                                      padding: "4px 12px",
-                                      borderRadius: "12px",
-                                      fontSize: "12px",
-                                      background: priority.color
-                                        ? `${priority.color}20`
-                                        : "#dbeafe",
-                                      color: priority.color || "#1e40af",
-                                    }}
-                                  >
-                                    {priority.name}
+                                  <span style={{ color: "#9ca3af" }}>
+                                    Not set
                                   </span>
                                 );
-                              }
-                              return (
-                                <span style={{ color: "#9ca3af" }}>
-                                  Not set
-                                </span>
-                              );
-                            })()}
-                          </td>
-                          <td style={{ padding: "12px", textAlign: "center" }}>
-                            <div
+                              })()}
+                            </td>
+                            <td
+                              style={{ padding: "12px", textAlign: "center" }}
+                            >
+                              <div
+                                style={{
+                                  width: "30px",
+                                  height: "30px",
+                                  background: item.color,
+                                  borderRadius: "4px",
+                                  margin: "0 auto",
+                                }}
+                              ></div>
+                            </td>
+                            <td
+                              style={{ padding: "12px", textAlign: "center" }}
+                            >
+                              <span
+                                style={{
+                                  padding: "4px 12px",
+                                  borderRadius: "12px",
+                                  fontSize: "12px",
+                                  background: item.isActive
+                                    ? "#dcfce7"
+                                    : "#fee2e2",
+                                  color: item.isActive ? "#166534" : "#991b1b",
+                                }}
+                              >
+                                {item.isActive ? "Active" : "Inactive"}
+                              </span>
+                            </td>
+                            <td
+                              style={{ padding: "12px", textAlign: "center" }}
+                            >
+                              {hasPermission(PERMISSIONS.MASTER_DATA_EDIT) && (
+                                <button
+                                  onClick={() => handleEdit(item)}
+                                  style={{
+                                    marginRight: "8px",
+                                    padding: "6px",
+                                    border: "none",
+                                    background: "#dbeafe",
+                                    color: "#1e40af",
+                                    borderRadius: "4px",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  <MdEdit size={18} />
+                                </button>
+                              )}
+                              {hasPermission(
+                                PERMISSIONS.MASTER_DATA_DELETE,
+                              ) && (
+                                <button
+                                  onClick={() => handleDelete(item._id)}
+                                  style={{
+                                    padding: "6px",
+                                    border: "none",
+                                    background: "#fee2e2",
+                                    color: "#991b1b",
+                                    borderRadius: "4px",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  <MdDelete size={18} />
+                                </button>
+                              )}
+                            </td>
+                          </>
+                        )}
+                        {activeTab === "assetCategories" && (
+                          <>
+                            <td style={{ padding: "12px", fontSize: "24px" }}>
+                              {item.icon || "📦"}
+                            </td>
+                            <td style={{ padding: "12px" }}>
+                              {item.name || "N/A"}
+                            </td>
+                            <td
                               style={{
-                                width: "30px",
-                                height: "30px",
-                                background: item.color,
-                                borderRadius: "4px",
-                                margin: "0 auto",
-                              }}
-                            ></div>
-                          </td>
-                          <td style={{ padding: "12px", textAlign: "center" }}>
-                            <span
-                              style={{
-                                padding: "4px 12px",
-                                borderRadius: "12px",
-                                fontSize: "12px",
-                                background: item.isActive
-                                  ? "#dcfce7"
-                                  : "#fee2e2",
-                                color: item.isActive ? "#166534" : "#991b1b",
+                                padding: "12px",
+                                fontFamily: "monospace",
                               }}
                             >
-                              {item.isActive ? "Active" : "Inactive"}
-                            </span>
-                          </td>
-                          <td style={{ padding: "12px", textAlign: "center" }}>
-                            {hasPermission(PERMISSIONS.MASTER_DATA_EDIT) && (
-                              <button
-                                onClick={() => handleEdit(item)}
+                              {item.code}
+                            </td>
+                            <td
+                              style={{ padding: "12px", textAlign: "center" }}
+                            >
+                              <div
                                 style={{
-                                  marginRight: "8px",
-                                  padding: "6px",
-                                  border: "none",
-                                  background: "#dbeafe",
-                                  color: "#1e40af",
+                                  width: "30px",
+                                  height: "30px",
+                                  background: item.color,
                                   borderRadius: "4px",
-                                  cursor: "pointer",
+                                  margin: "0 auto",
+                                }}
+                              ></div>
+                            </td>
+                            <td
+                              style={{ padding: "12px", textAlign: "center" }}
+                            >
+                              <span
+                                style={{
+                                  padding: "4px 12px",
+                                  borderRadius: "12px",
+                                  fontSize: "12px",
+                                  background: item.isActive
+                                    ? "#dcfce7"
+                                    : "#fee2e2",
+                                  color: item.isActive ? "#166534" : "#991b1b",
                                 }}
                               >
-                                <MdEdit size={18} />
-                              </button>
-                            )}
-                            {hasPermission(PERMISSIONS.MASTER_DATA_DELETE) && (
-                              <button
-                                onClick={() => handleDelete(item._id)}
+                                {item.isActive ? "Active" : "Inactive"}
+                              </span>
+                            </td>
+                            <td
+                              style={{ padding: "12px", textAlign: "center" }}
+                            >
+                              {hasPermission(PERMISSIONS.MASTER_DATA_EDIT) && (
+                                <button
+                                  onClick={() => handleEdit(item)}
+                                  style={{
+                                    marginRight: "8px",
+                                    padding: "6px",
+                                    border: "none",
+                                    background: "#dbeafe",
+                                    color: "#1e40af",
+                                    borderRadius: "4px",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  <MdEdit size={18} />
+                                </button>
+                              )}
+                              {hasPermission(
+                                PERMISSIONS.MASTER_DATA_DELETE,
+                              ) && (
+                                <button
+                                  onClick={() => handleDelete(item._id)}
+                                  style={{
+                                    padding: "6px",
+                                    border: "none",
+                                    background: "#fee2e2",
+                                    color: "#991b1b",
+                                    borderRadius: "4px",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  <MdDelete size={18} />
+                                </button>
+                              )}
+                            </td>
+                          </>
+                        )}
+                        {activeTab === "statuses" && (
+                          <>
+                            <td style={{ padding: "12px" }}>
+                              {item.name || item.code || "N/A"}
+                            </td>
+                            <td style={{ padding: "12px" }}>{item.code}</td>
+                            <td
+                              style={{ padding: "12px", textAlign: "center" }}
+                            >
+                              <div
                                 style={{
-                                  padding: "6px",
-                                  border: "none",
-                                  background: "#fee2e2",
-                                  color: "#991b1b",
+                                  width: "30px",
+                                  height: "30px",
+                                  background: item.color,
                                   borderRadius: "4px",
-                                  cursor: "pointer",
+                                  margin: "0 auto",
+                                }}
+                              ></div>
+                            </td>
+                            <td
+                              style={{ padding: "12px", textAlign: "center" }}
+                            >
+                              <span
+                                style={{
+                                  padding: "4px 12px",
+                                  borderRadius: "12px",
+                                  fontSize: "12px",
+                                  background: item.isClosed
+                                    ? "#dcfce7"
+                                    : "#e5e7eb",
+                                  color: item.isClosed ? "#166534" : "#374151",
                                 }}
                               >
-                                <MdDelete size={18} />
-                              </button>
-                            )}
-                          </td>
-                        </>
-                      )}
-                      {activeTab === "assetCategories" && (
-                        <>
-                          <td style={{ padding: "12px", fontSize: "24px" }}>
-                            {item.icon || "📦"}
-                          </td>
-                          <td style={{ padding: "12px" }}>
-                            {item.name || "N/A"}
-                          </td>
-                          <td
-                            style={{ padding: "12px", fontFamily: "monospace" }}
-                          >
-                            {item.code}
-                          </td>
-                          <td style={{ padding: "12px", textAlign: "center" }}>
-                            <div
+                                {item.isClosed ? "Yes" : "No"}
+                              </span>
+                            </td>
+                            <td
+                              style={{ padding: "12px", textAlign: "center" }}
+                            >
+                              <span
+                                style={{
+                                  padding: "4px 12px",
+                                  borderRadius: "12px",
+                                  fontSize: "12px",
+                                  background: item.isActive
+                                    ? "#dcfce7"
+                                    : "#fee2e2",
+                                  color: item.isActive ? "#166534" : "#991b1b",
+                                }}
+                              >
+                                {item.isActive ? "Active" : "Inactive"}
+                              </span>
+                            </td>
+                            <td
+                              style={{ padding: "12px", textAlign: "center" }}
+                            >
+                              {hasPermission(PERMISSIONS.MASTER_DATA_EDIT) && (
+                                <button
+                                  onClick={() => handleEdit(item)}
+                                  style={{
+                                    marginRight: "8px",
+                                    padding: "6px",
+                                    border: "none",
+                                    background: "#dbeafe",
+                                    color: "#1e40af",
+                                    borderRadius: "4px",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  <MdEdit size={18} />
+                                </button>
+                              )}
+                              {hasPermission(
+                                PERMISSIONS.MASTER_DATA_DELETE,
+                              ) && (
+                                <button
+                                  onClick={() => handleDelete(item._id)}
+                                  style={{
+                                    padding: "6px",
+                                    border: "none",
+                                    background: "#fee2e2",
+                                    color: "#991b1b",
+                                    borderRadius: "4px",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  <MdDelete size={18} />
+                                </button>
+                              )}
+                            </td>
+                          </>
+                        )}
+                        {activeTab === "departments" && (
+                          <>
+                            <td style={{ padding: "12px" }}>
+                              {item.name || "N/A"}
+                            </td>
+                            <td
                               style={{
-                                width: "30px",
-                                height: "30px",
-                                background: item.color,
-                                borderRadius: "4px",
-                                margin: "0 auto",
-                              }}
-                            ></div>
-                          </td>
-                          <td style={{ padding: "12px", textAlign: "center" }}>
-                            <span
-                              style={{
-                                padding: "4px 12px",
-                                borderRadius: "12px",
-                                fontSize: "12px",
-                                background: item.isActive
-                                  ? "#dcfce7"
-                                  : "#fee2e2",
-                                color: item.isActive ? "#166534" : "#991b1b",
+                                padding: "12px",
+                                color: "#6b7280",
+                                fontSize: "13px",
                               }}
                             >
-                              {item.isActive ? "Active" : "Inactive"}
-                            </span>
-                          </td>
-                          <td style={{ padding: "12px", textAlign: "center" }}>
-                            {hasPermission(PERMISSIONS.MASTER_DATA_EDIT) && (
-                              <button
-                                onClick={() => handleEdit(item)}
-                                style={{
-                                  marginRight: "8px",
-                                  padding: "6px",
-                                  border: "none",
-                                  background: "#dbeafe",
-                                  color: "#1e40af",
-                                  borderRadius: "4px",
-                                  cursor: "pointer",
-                                }}
-                              >
-                                <MdEdit size={18} />
-                              </button>
-                            )}
-                            {hasPermission(PERMISSIONS.MASTER_DATA_DELETE) && (
-                              <button
-                                onClick={() => handleDelete(item._id)}
-                                style={{
-                                  padding: "6px",
-                                  border: "none",
-                                  background: "#fee2e2",
-                                  color: "#991b1b",
-                                  borderRadius: "4px",
-                                  cursor: "pointer",
-                                }}
-                              >
-                                <MdDelete size={18} />
-                              </button>
-                            )}
-                          </td>
-                        </>
-                      )}
-                      {activeTab === "statuses" && (
-                        <>
-                          <td style={{ padding: "12px" }}>
-                            {item.name || item.code || "N/A"}
-                          </td>
-                          <td style={{ padding: "12px" }}>{item.code}</td>
-                          <td style={{ padding: "12px", textAlign: "center" }}>
-                            <div
-                              style={{
-                                width: "30px",
-                                height: "30px",
-                                background: item.color,
-                                borderRadius: "4px",
-                                margin: "0 auto",
-                              }}
-                            ></div>
-                          </td>
-                          <td style={{ padding: "12px", textAlign: "center" }}>
-                            <span
-                              style={{
-                                padding: "4px 12px",
-                                borderRadius: "12px",
-                                fontSize: "12px",
-                                background: item.isClosed
-                                  ? "#dcfce7"
-                                  : "#e5e7eb",
-                                color: item.isClosed ? "#166534" : "#374151",
-                              }}
+                              {item.description || "—"}
+                            </td>
+                            <td
+                              style={{ padding: "12px", textAlign: "center" }}
                             >
-                              {item.isClosed ? "Yes" : "No"}
-                            </span>
-                          </td>
-                          <td style={{ padding: "12px", textAlign: "center" }}>
-                            <span
-                              style={{
-                                padding: "4px 12px",
-                                borderRadius: "12px",
-                                fontSize: "12px",
-                                background: item.isActive
-                                  ? "#dcfce7"
-                                  : "#fee2e2",
-                                color: item.isActive ? "#166534" : "#991b1b",
-                              }}
+                              <span
+                                style={{
+                                  padding: "4px 12px",
+                                  borderRadius: "12px",
+                                  fontSize: "12px",
+                                  background: item.isActive
+                                    ? "#dcfce7"
+                                    : "#fee2e2",
+                                  color: item.isActive ? "#166534" : "#991b1b",
+                                }}
+                              >
+                                {item.isActive ? "Active" : "Inactive"}
+                              </span>
+                            </td>
+                            <td
+                              style={{ padding: "12px", textAlign: "center" }}
                             >
-                              {item.isActive ? "Active" : "Inactive"}
-                            </span>
-                          </td>
-                          <td style={{ padding: "12px", textAlign: "center" }}>
-                            {hasPermission(PERMISSIONS.MASTER_DATA_EDIT) && (
-                              <button
-                                onClick={() => handleEdit(item)}
-                                style={{
-                                  marginRight: "8px",
-                                  padding: "6px",
-                                  border: "none",
-                                  background: "#dbeafe",
-                                  color: "#1e40af",
-                                  borderRadius: "4px",
-                                  cursor: "pointer",
-                                }}
-                              >
-                                <MdEdit size={18} />
-                              </button>
-                            )}
-                            {hasPermission(PERMISSIONS.MASTER_DATA_DELETE) && (
-                              <button
-                                onClick={() => handleDelete(item._id)}
-                                style={{
-                                  padding: "6px",
-                                  border: "none",
-                                  background: "#fee2e2",
-                                  color: "#991b1b",
-                                  borderRadius: "4px",
-                                  cursor: "pointer",
-                                }}
-                              >
-                                <MdDelete size={18} />
-                              </button>
-                            )}
-                          </td>
-                        </>
-                      )}
-                      {activeTab === "departments" && (
-                        <>
-                          <td style={{ padding: "12px" }}>
-                            {item.name || "N/A"}
-                          </td>
-                          <td
-                            style={{
-                              padding: "12px",
-                              color: "#6b7280",
-                              fontSize: "13px",
-                            }}
-                          >
-                            {item.description || "—"}
-                          </td>
-                          <td style={{ padding: "12px", textAlign: "center" }}>
-                            <span
-                              style={{
-                                padding: "4px 12px",
-                                borderRadius: "12px",
-                                fontSize: "12px",
-                                background: item.isActive
-                                  ? "#dcfce7"
-                                  : "#fee2e2",
-                                color: item.isActive ? "#166534" : "#991b1b",
-                              }}
-                            >
-                              {item.isActive ? "Active" : "Inactive"}
-                            </span>
-                          </td>
-                          <td style={{ padding: "12px", textAlign: "center" }}>
-                            {hasPermission(PERMISSIONS.MASTER_DATA_EDIT) && (
-                              <button
-                                onClick={() => handleEdit(item)}
-                                style={{
-                                  marginRight: "8px",
-                                  padding: "6px",
-                                  border: "none",
-                                  background: "#dbeafe",
-                                  color: "#1e40af",
-                                  borderRadius: "4px",
-                                  cursor: "pointer",
-                                }}
-                              >
-                                <MdEdit size={18} />
-                              </button>
-                            )}
-                            {hasPermission(PERMISSIONS.MASTER_DATA_DELETE) && (
-                              <button
-                                onClick={() => handleDelete(item._id)}
-                                style={{
-                                  padding: "6px",
-                                  border: "none",
-                                  background: "#fee2e2",
-                                  color: "#991b1b",
-                                  borderRadius: "4px",
-                                  cursor: "pointer",
-                                }}
-                              >
-                                <MdDelete size={18} />
-                              </button>
-                            )}
-                          </td>
-                        </>
-                      )}
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                              {hasPermission(PERMISSIONS.MASTER_DATA_EDIT) && (
+                                <button
+                                  onClick={() => handleEdit(item)}
+                                  style={{
+                                    marginRight: "8px",
+                                    padding: "6px",
+                                    border: "none",
+                                    background: "#dbeafe",
+                                    color: "#1e40af",
+                                    borderRadius: "4px",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  <MdEdit size={18} />
+                                </button>
+                              )}
+                              {hasPermission(
+                                PERMISSIONS.MASTER_DATA_DELETE,
+                              ) && (
+                                <button
+                                  onClick={() => handleDelete(item._id)}
+                                  style={{
+                                    padding: "6px",
+                                    border: "none",
+                                    background: "#fee2e2",
+                                    color: "#991b1b",
+                                    borderRadius: "4px",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  <MdDelete size={18} />
+                                </button>
+                              )}
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Bulk Upload Modal */}
+        {showBulkUploadModal && (
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: "rgba(0,0,0,0.5)",
+              display: "flex",
+              alignItems: isMobile ? "flex-start" : "center",
+              justifyContent: "center",
+              zIndex: 1000,
+              padding: isMobile ? "10px" : "16px",
+            }}
+          >
+            <div
+              style={{
+                background: "white",
+                borderRadius: "12px",
+                padding: isMobile ? "16px" : "24px",
+                width: "100%",
+                maxWidth: "560px",
+                maxHeight: isMobile ? "calc(100vh - 20px)" : "90vh",
+                overflow: "auto",
+                boxShadow: "0 20px 60px rgba(0,0,0,.3)",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: "16px",
+                  gap: "10px",
+                }}
+              >
+                <h2
+                  style={{
+                    fontSize: isMobile ? "18px" : "20px",
+                    fontWeight: 700,
+                    margin: 0,
+                    lineHeight: 1.3,
+                  }}
+                >
+                  Bulk Upload {currentCategory?.label}
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowBulkUploadModal(false);
+                    setBulkUploadResult(null);
+                  }}
+                  style={{
+                    border: "none",
+                    background: "none",
+                    cursor: "pointer",
+                    padding: "4px",
+                  }}
+                >
+                  <MdClose size={24} />
+                </button>
+              </div>
+
+              <p
+                style={{ marginTop: 0, marginBottom: "14px", color: "#667085" }}
+              >
+                Upload CSV rows for <strong>{currentCategory?.label}</strong>.
+                {currentCategory?.requiresProject
+                  ? " This category is project-scoped."
+                  : " This category is global."}
+              </p>
+
+              {currentCategory?.requiresProject && (
+                <div style={{ marginBottom: "14px" }}>
+                  <label
+                    style={{
+                      display: "block",
+                      marginBottom: "8px",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Project *
+                  </label>
+                  <select
+                    value={bulkUploadProjectId}
+                    onChange={(e) => setBulkUploadProjectId(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "10px",
+                      border: "1px solid #d1d5db",
+                      borderRadius: "8px",
+                      fontSize: "14px",
+                    }}
+                  >
+                    <option value="">-- Select a Project --</option>
+                    {projects.map((project) => (
+                      <option key={project._id} value={project._id}>
+                        {project.name} ({project.code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div
+                style={{
+                  marginBottom: "14px",
+                  padding: "12px",
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "8px",
+                }}
+              >
+                <div
+                  style={{
+                    marginBottom: "8px",
+                    fontSize: "13px",
+                    color: "#334155",
+                  }}
+                >
+                  Required CSV headers:
+                </div>
+                <div
+                  style={{
+                    fontSize: "13px",
+                    color: "#475569",
+                    wordBreak: "break-word",
+                  }}
+                >
+                  {getBulkTemplateHeaders().join(", ")}
+                </div>
+                <button
+                  type="button"
+                  onClick={downloadBulkTemplate}
+                  style={{
+                    marginTop: "10px",
+                    border: "1px solid #cbd5e1",
+                    background: "white",
+                    borderRadius: "8px",
+                    padding: "8px 12px",
+                    cursor: "pointer",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    color: "#334155",
+                  }}
+                >
+                  Download Sample CSV
+                </button>
+              </div>
+
+              <div style={{ marginBottom: "14px" }}>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: "8px",
+                    fontWeight: 600,
+                  }}
+                >
+                  CSV File *
+                </label>
+                <input
+                  type="file"
+                  accept=".csv"
+                  onChange={(e) =>
+                    setBulkUploadFile(e.target.files?.[0] || null)
+                  }
+                  style={{ width: "100%" }}
+                />
+              </div>
+
+              {bulkUploadResult && (
+                <div
+                  style={{
+                    marginBottom: "14px",
+                    padding: "12px",
+                    borderRadius: "8px",
+                    border: "1px solid #e2e8f0",
+                    background: "#f8fafc",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: "14px",
+                      fontWeight: 600,
+                      marginBottom: "6px",
+                    }}
+                  >
+                    Upload summary: {bulkUploadResult.success} success,{" "}
+                    {bulkUploadResult.failed} failed
+                  </div>
+                  {bulkUploadResult.errors.length > 0 && (
+                    <ul
+                      style={{
+                        margin: 0,
+                        paddingLeft: "18px",
+                        color: "#b91c1c",
+                        fontSize: "13px",
+                      }}
+                    >
+                      {bulkUploadResult.errors.map((err, idx) => (
+                        <li key={`${idx}-${err}`}>{err}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: "10px",
+                  flexDirection: isMobile ? "column" : "row",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowBulkUploadModal(false);
+                    setBulkUploadResult(null);
+                  }}
+                  style={{
+                    padding: "10px 16px",
+                    borderRadius: "8px",
+                    border: "1px solid #d1d5db",
+                    background: "white",
+                    cursor: "pointer",
+                    width: isMobile ? "100%" : "auto",
+                  }}
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBulkUpload}
+                  disabled={bulkUploading}
+                  style={{
+                    padding: "10px 16px",
+                    borderRadius: "8px",
+                    border: "none",
+                    background: bulkUploading ? "#9ca3af" : "#7F56D9",
+                    color: "white",
+                    cursor: bulkUploading ? "not-allowed" : "pointer",
+                    fontWeight: 600,
+                    width: isMobile ? "100%" : "auto",
+                  }}
+                >
+                  {bulkUploading ? "Uploading..." : "Upload CSV"}
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -2079,19 +3167,20 @@ const MasterDataManagement = () => {
               bottom: 0,
               background: "rgba(0,0,0,0.5)",
               display: "flex",
-              alignItems: "center",
+              alignItems: isMobile ? "flex-start" : "center",
               justifyContent: "center",
               zIndex: 1000,
+              padding: isMobile ? "10px" : "16px",
             }}
           >
             <div
               style={{
                 background: "white",
                 borderRadius: "8px",
-                padding: "24px",
-                width: "90%",
+                padding: isMobile ? "16px" : "24px",
+                width: "100%",
                 maxWidth: "500px",
-                maxHeight: "90vh",
+                maxHeight: isMobile ? "calc(100vh - 20px)" : "90vh",
                 overflow: "auto",
               }}
             >
@@ -2203,6 +3292,7 @@ const MasterDataManagement = () => {
                     display: "flex",
                     gap: "12px",
                     justifyContent: "flex-end",
+                    flexDirection: isMobile ? "column" : "row",
                   }}
                 >
                   <button
@@ -2214,6 +3304,7 @@ const MasterDataManagement = () => {
                       background: "white",
                       borderRadius: "6px",
                       cursor: "pointer",
+                      width: isMobile ? "100%" : "auto",
                     }}
                   >
                     Cancel
@@ -2229,7 +3320,9 @@ const MasterDataManagement = () => {
                       cursor: "pointer",
                       display: "flex",
                       alignItems: "center",
+                      justifyContent: "center",
                       gap: "8px",
+                      width: isMobile ? "100%" : "auto",
                     }}
                   >
                     <MdSave size={18} />

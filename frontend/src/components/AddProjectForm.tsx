@@ -1189,78 +1189,95 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: "rgba(0,0,0,0.5)",
+        backgroundColor: "rgba(15, 23, 42, 0.55)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         zIndex: 1000,
-        padding: "20px",
+        padding: "16px",
+        backdropFilter: "blur(2px)",
       }}
     >
       <div
         style={{
-          backgroundColor: "white",
-          borderRadius: "12px",
+          backgroundColor: "#FFFFFF",
+          borderRadius: "16px",
+          border: "1px solid #E4E7EC",
           width: "100%",
           maxWidth: "1400px",
-          maxHeight: "90vh",
+          maxHeight: "94vh",
           display: "flex",
           flexDirection: "column",
           boxShadow: "0 20px 60px rgba(0, 0, 0, 0.3)",
+          overflow: "hidden",
         }}
       >
         {/* Modal Header */}
         <div
           style={{
             padding: "20px 24px",
-            borderBottom: "1px solid #e5e7eb",
+            borderBottom: "1px solid #E4E7EC",
             display: "flex",
             justifyContent: "space-between",
-            alignItems: "center",
+            alignItems: "flex-start",
+            background: "#FFFFFF",
           }}
         >
-          <h2
-            style={{
-              fontSize: "20px",
-              fontWeight: "600",
-              color: "#111827",
-              margin: 0,
-            }}
-          >
-            {project
-              ? getText(
-                  "Edit Project",
-                  "à¤ªà¥à¤°à¤•à¤²à¥à¤ª à¤¸à¤‚à¤ªà¤¾à¤¦à¤¿à¤¤ à¤•à¤°à¤¾",
-                  "à¤ªà¥à¤°à¤•à¤²à¥à¤ª à¤¸à¤‚à¤ªà¤¾à¤¦à¤¿à¤¤ à¤•à¤°à¤¾",
-                )
-              : getText(
-                  "Add New Project",
-                  "à¤¨à¤µà¥€à¤¨ à¤ªà¥à¤°à¤•à¤²à¥à¤ª à¤œà¥‹à¤¡à¤¾",
-                  "à¤¨à¤µà¥€à¤¨ à¤ªà¥à¤°à¤•à¤²à¥à¤ª à¤œà¥‹à¤¡à¤¾",
-                )}
-          </h2>
+          <div>
+            <h2
+              style={{
+                fontSize: "24px",
+                fontWeight: 700,
+                color: "#101828",
+                margin: "0 0 4px 0",
+                letterSpacing: "-0.01em",
+              }}
+            >
+              {project
+                ? getText(
+                    "Edit Project",
+                    "à¤ªà¥à¤°à¤•à¤²à¥à¤ª à¤¸à¤‚à¤ªà¤¾à¤¦à¤¿à¤¤ à¤•à¤°à¤¾",
+                    "à¤ªà¥à¤°à¤•à¤²à¥à¤ª à¤¸à¤‚à¤ªà¤¾à¤¦à¤¿à¤¤ à¤•à¤°à¤¾",
+                  )
+                : getText(
+                    "Add New Project",
+                    "à¤¨à¤µà¥€à¤¨ à¤ªà¥à¤°à¤•à¤²à¥à¤ª à¤œà¥‹à¤¡à¤¾",
+                    "à¤¨à¤µà¥€à¤¨ à¤ªà¥à¤°à¤•à¤²à¥à¤ª à¤œà¥‹à¤¡à¤¾",
+                  )}
+            </h2>
+            <p
+              style={{
+                margin: 0,
+                fontSize: "14px",
+                color: "#667085",
+                fontWeight: 400,
+              }}
+            >
+              Configure portal, security, and ticket settings in one place.
+            </p>
+          </div>
           <button
             onClick={onClose}
             type="button"
             style={{
-              width: "32px",
-              height: "32px",
+              width: "36px",
+              height: "36px",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              border: "none",
-              background: "transparent",
-              borderRadius: "6px",
+              border: "1px solid #D0D5DD",
+              background: "#FFFFFF",
+              borderRadius: "8px",
               cursor: "pointer",
               fontSize: "20px",
-              color: "#6b7280",
+              color: "#667085",
               transition: "all 0.2s",
             }}
             onMouseOver={(e) =>
-              (e.currentTarget.style.backgroundColor = "#f3f4f6")
+              (e.currentTarget.style.backgroundColor = "#F9FAFB")
             }
             onMouseOut={(e) =>
-              (e.currentTarget.style.backgroundColor = "transparent")
+              (e.currentTarget.style.backgroundColor = "#FFFFFF")
             }
           >
             ✕
@@ -1272,9 +1289,10 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
           {/* Left Sidebar Navigation */}
           <div
             style={{
-              width: "240px",
-              borderRight: "1px solid #e5e7eb",
-              padding: "16px 0",
+              width: "252px",
+              borderRight: "1px solid #E4E7EC",
+              padding: "16px 10px",
+              background: "#F9FAFB",
               overflowY: "auto",
             }}
           >
@@ -1288,34 +1306,30 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   display: "flex",
                   alignItems: "center",
                   gap: "12px",
-                  padding: "10px 20px",
-                  border: "none",
-                  background:
-                    activeTab === tab.id
-                      ? "rgba(63, 65, 209, 0.1)"
-                      : "transparent",
-                  color: activeTab === tab.id ? "#3F41D1" : "#6b7280",
-                  fontWeight: activeTab === tab.id ? "600" : "400",
+                  padding: "10px 12px",
+                  background: activeTab === tab.id ? "#F4F3FF" : "transparent",
+                  color: activeTab === tab.id ? "#6941C6" : "#475467",
+                  fontWeight: activeTab === tab.id ? "600" : "500",
                   fontSize: "14px",
                   cursor: "pointer",
                   transition: "all 0.2s ease",
                   textAlign: "left",
-                  borderLeft:
+                  borderRadius: "8px",
+                  border:
                     activeTab === tab.id
-                      ? "3px solid #3F41D1"
-                      : "3px solid transparent",
+                      ? "1px solid #DDD6FE"
+                      : "1px solid transparent",
                 }}
                 onMouseOver={(e) => {
                   if (activeTab !== tab.id) {
-                    e.currentTarget.style.backgroundColor =
-                      "rgba(0, 0, 0, 0.02)";
-                    e.currentTarget.style.color = "#111827";
+                    e.currentTarget.style.backgroundColor = "#F2F4F7";
+                    e.currentTarget.style.color = "#101828";
                   }
                 }}
                 onMouseOut={(e) => {
                   if (activeTab !== tab.id) {
                     e.currentTarget.style.backgroundColor = "transparent";
-                    e.currentTarget.style.color = "#6b7280";
+                    e.currentTarget.style.color = "#475467";
                   }
                 }}
               >
@@ -1342,7 +1356,14 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
             onSubmit={handleSubmit}
             style={{ flex: 1, display: "flex", flexDirection: "column" }}
           >
-            <div style={{ flex: 1, overflowY: "auto", padding: "32px 40px" }}>
+            <div
+              style={{
+                flex: 1,
+                overflowY: "auto",
+                padding: "24px 28px",
+                background: "#FFFFFF",
+              }}
+            >
               {activeTab === "general" && (
                 <div
                   style={{
@@ -5528,8 +5549,8 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
             {/* Form Footer - Inside Form */}
             <div
               style={{
-                padding: "20px 40px",
-                borderTop: "1px solid #e5e7eb",
+                padding: "14px 20px",
+                borderTop: "1px solid #E4E7EC",
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
@@ -5582,21 +5603,22 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   className="btn"
                   style={{
                     textTransform: "none",
-                    backgroundColor: "transparent",
-                    border: "1px solid #d1d5db",
-                    color: "#6b7280",
+                    backgroundColor: "#FFFFFF",
+                    border: "1px solid #D0D5DD",
+                    color: "#344054",
                     fontWeight: "500",
                     padding: "10px 20px",
                     height: "40px",
+                    borderRadius: "8px",
                     transition: "all 0.2s ease",
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = "#f9fafb";
-                    e.currentTarget.style.borderColor = "#9ca3af";
+                    e.currentTarget.style.backgroundColor = "#F9FAFB";
+                    e.currentTarget.style.borderColor = "#98A2B3";
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = "transparent";
-                    e.currentTarget.style.borderColor = "#d1d5db";
+                    e.currentTarget.style.backgroundColor = "#FFFFFF";
+                    e.currentTarget.style.borderColor = "#D0D5DD";
                   }}
                 >
                   {getText(
@@ -5611,13 +5633,14 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   className="btn"
                   style={{
                     textTransform: "none",
-                    backgroundColor: saving ? "#9ca3af" : "#3F41D1",
+                    backgroundColor: saving ? "#98A2B3" : "#7F56D9",
                     border: "none",
                     color: "#ffffff",
                     fontWeight: "600",
                     padding: "10px 24px",
                     height: "40px",
                     minWidth: "120px",
+                    borderRadius: "8px",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -5630,14 +5653,14 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   }}
                   onMouseEnter={(e) => {
                     if (!saving) {
-                      e.currentTarget.style.backgroundColor = "#2E31A8";
+                      e.currentTarget.style.backgroundColor = "#6941C6";
                       e.currentTarget.style.boxShadow =
                         "0 2px 4px rgba(0, 0, 0, 0.1)";
                     }
                   }}
                   onMouseLeave={(e) => {
                     if (!saving) {
-                      e.currentTarget.style.backgroundColor = "#3F41D1";
+                      e.currentTarget.style.backgroundColor = "#7F56D9";
                       e.currentTarget.style.boxShadow =
                         "0 1px 2px rgba(0, 0, 0, 0.05)";
                     }
