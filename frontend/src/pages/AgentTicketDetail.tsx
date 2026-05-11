@@ -1074,12 +1074,30 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
           console.warn("⚠️ No categories received from API");
         }
 
-        if (ticketConfig.allowedPriorities?.length > 0) {
-          console.log(
-            "✅ Setting priority options:",
-            ticketConfig.allowedPriorities,
-          );
-          setPriorityOptions(ticketConfig.allowedPriorities);
+        const apiPriorities = Array.isArray(ticketConfig.allowedPriorities)
+          ? ticketConfig.allowedPriorities
+              .map((p: any) => String(p || "").trim().toUpperCase())
+              .filter((p: string) => p.length > 0)
+          : [];
+
+        const currentTicketPriority = String(ticket?.priority || "")
+          .trim()
+          .toUpperCase();
+
+        const mergedPriorities = [
+          ...new Set(
+            [
+              ...apiPriorities,
+              currentTicketPriority && currentTicketPriority.length > 0
+                ? currentTicketPriority
+                : undefined,
+            ].filter(Boolean),
+          ),
+        ] as string[];
+
+        if (mergedPriorities.length > 0) {
+          console.log("✅ Setting priority options:", mergedPriorities);
+          setPriorityOptions(mergedPriorities);
         } else {
           console.warn("⚠️ No priorities received from API");
         }

@@ -3,6 +3,7 @@ import { Project } from "../models/Project";
 import { User } from "../models/User";
 import { Category } from "../models/Category";
 import { Status } from "../models/Status";
+import { Priority } from "../models/master-data/Priority";
 import SLARule from "../models/sla-module/SLARule";
 import { AuthRequest } from "../middleware/auth";
 import { logActivity } from "../utils/logger";
@@ -1134,34 +1135,54 @@ export const getProjectTicketSettings = async (req: Request, res: Response) => {
           .sort({ displayOrder: 1 });
         return statuses;
       })(),
-      // Fetch priorities from SLA Rules
+      // Fetch priorities from Priority master data (project-scoped)
       allowedPriorities: await (async () => {
-        console.log("🔍 Querying SLA rules:");
-        console.log("  Project ID:", project._id);
-        console.log("  Project ID type:", typeof project._id);
-        console.log("  SLARule collection:", SLARule.collection.name);
-
-        const query = {
-          projectIds: { $in: [project._id] }, // Use $in because projectIds is an array
+        const masterPriorities = await Priority.find({
+          projectId: project._id,
           isActive: true,
-        };
-        console.log("  Query:", JSON.stringify(query));
+        })
+          .select("code order isDefault")
+          .sort({ isDefault: -1, order: 1, createdAt: 1 })
+          .lean();
 
-        const slaRules = await SLARule.find(query).select("name priority");
-        console.log("  Raw results:", JSON.stringify(slaRules, null, 2));
-
-        // Extract unique priorities - use priority field if exists, otherwise use name
-        const uniquePriorities = [
+        const priorityCodes = [
           ...new Set(
-            slaRules.map((rule) => rule.priority || rule.name).filter((p) => p),
+            masterPriorities
+              .map((p: any) => String(p.code || "").trim().toUpperCase())
+              .filter((p: string) => p.length > 0),
           ),
         ];
-        console.log(
-          `📊 Found ${uniquePriorities.length} unique priorities from ${slaRules.length} SLA rules for project ${project.name}:`,
-          uniquePriorities,
-        );
 
-        return uniquePriorities;
+        if (priorityCodes.length > 0) {
+          console.log(
+            `📊 Found ${priorityCodes.length} priorities from Priority master for project ${project.name}:`,
+            priorityCodes,
+          );
+          return priorityCodes;
+        }
+
+        // Backward-compat fallback for projects not fully migrated to Priority master.
+        const slaRules = await SLARule.find({
+          projectIds: { $in: [project._id] },
+          isActive: true,
+        })
+          .select("name priority")
+          .lean();
+
+        const fallbackPriorities = [
+          ...new Set(
+            slaRules
+              .map((rule: any) => rule.priority || rule.name)
+              .filter((p: any) => p)
+              .map((p: any) => String(p).trim().toUpperCase()),
+          ),
+        ];
+
+        console.log(
+          `📊 Priority master empty, using ${fallbackPriorities.length} SLA-derived priorities for project ${project.name}:`,
+          fallbackPriorities,
+        );
+        return fallbackPriorities;
       })(),
       // Fetch full SLA rules for resolution time
       slaRules: await (async () => {

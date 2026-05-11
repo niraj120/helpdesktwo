@@ -585,11 +585,27 @@ export const submitTicket = async (req: Request, res: Response) => {
 
     // Fetch category to get default priority
     console.time("⏱️ Category lookup");
-    let ticketPriority = "medium"; // Default fallback
+    let ticketPriority = "NORMAL"; // Dynamic fallback replaced below from project priority master
     // Use the resolved rawCategory (req.body.category takes priority over ticketData.Category)
     const categoryValue = rawCategory || ticketData.Category || null;
 
     try {
+      // Dynamic fallback from project-mapped Priority master (default first, then display order)
+      const projectPriorityDefault = await Priority.findOne({
+        projectId,
+        isActive: true,
+      })
+        .select("code name isDefault order")
+        .sort({ isDefault: -1, order: 1, createdAt: 1 })
+        .lean();
+
+      if (projectPriorityDefault?.code) {
+        ticketPriority = String(projectPriorityDefault.code).trim().toUpperCase();
+        console.log(
+          `✅ Using project default priority fallback: ${ticketPriority} (${projectPriorityDefault.name || projectPriorityDefault.code})`,
+        );
+      }
+
       const CategoryModel = mongoose.models.Category || Category;
       const HierarchyConfigModel =
         mongoose.models.HierarchyConfig ||
@@ -652,7 +668,7 @@ export const submitTicket = async (req: Request, res: Response) => {
       );
 
       if (category && category.defaultPriority) {
-        ticketPriority = category.defaultPriority.toLowerCase();
+        ticketPriority = String(category.defaultPriority).trim().toUpperCase();
         console.log(
           `✅ Using category default priority: ${ticketPriority} (from category: ${category.name}, level: ${priorityFromLevel || 1})`,
         );
@@ -1498,14 +1514,14 @@ export const getMyTickets = async (req: Request, res: Response) => {
       }
     }
 
-    // Priority filter (low, medium, high, critical)
+    // Priority filter (dynamic - accepts any configured project priority code)
     if (req.query.priority) {
       const priorityValues = String(req.query.priority)
         .split(",")
-        .map((p) => p.trim().toLowerCase())
-        .filter((p) => ["low", "medium", "high", "critical"].includes(p));
+        .map((p) => p.trim().toUpperCase())
+        .filter((p) => p.length > 0);
       if (priorityValues.length > 0) {
-        query.priority = { $in: priorityValues };
+        query.priority = { $in: [...new Set(priorityValues)] };
         console.log(`🔍 [FILTER] Priority: ${priorityValues.join(", ")}`);
       }
     }
@@ -2481,14 +2497,14 @@ export const getAgentAssignedTickets = async (req: Request, res: Response) => {
       }
     }
 
-    // Priority filter (low, medium, high, critical)
+    // Priority filter (dynamic - accepts any configured project priority code)
     if (req.query.priority) {
       const priorityValues = String(req.query.priority)
         .split(",")
-        .map((p) => p.trim().toLowerCase())
-        .filter((p) => ["low", "medium", "high", "critical"].includes(p));
+        .map((p) => p.trim().toUpperCase())
+        .filter((p) => p.length > 0);
       if (priorityValues.length > 0) {
-        query.priority = { $in: priorityValues };
+        query.priority = { $in: [...new Set(priorityValues)] };
       }
     }
 
