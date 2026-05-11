@@ -168,10 +168,24 @@ const ProjectLogin: React.FC = () => {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "#F9FAFB",
+          background:
+            "radial-gradient(circle at 88% 12%, #dbeafe 0%, transparent 32%), linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%)",
+          padding: "1.5rem",
         }}
       >
-        <div style={{ textAlign: "center" }}>
+        <div
+          style={{
+            textAlign: "center",
+            background: "rgba(255, 255, 255, 0.96)",
+            border: "1px solid #e2e8f0",
+            borderRadius: "20px",
+            boxShadow: "0 24px 50px rgba(15, 23, 42, 0.14)",
+            padding: "2rem 1.75rem",
+            width: "100%",
+            maxWidth: "420px",
+            backdropFilter: "blur(8px)",
+          }}
+        >
           <div
             style={{
               width: "64px",
@@ -181,9 +195,17 @@ const ProjectLogin: React.FC = () => {
               borderTop: "4px solid #2563EB",
               borderRadius: "50%",
               animation: "spin 1s linear infinite",
+              boxShadow: "0 10px 22px rgba(37, 99, 235, 0.2)",
             }}
           ></div>
-          <p style={{ color: "#6B7280", fontSize: "0.875rem" }}>
+          <p
+            style={{
+              color: "#475569",
+              fontSize: "0.9rem",
+              fontWeight: 500,
+              letterSpacing: "0.01em",
+            }}
+          >
             Loading project...
           </p>
         </div>
@@ -200,17 +222,21 @@ const ProjectLogin: React.FC = () => {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "#F9FAFB",
+          background:
+            "radial-gradient(circle at 88% 12%, #fee2e2 0%, transparent 32%), linear-gradient(180deg, #f8fafc 0%, #fff1f2 100%)",
+          padding: "1.5rem",
         }}
       >
         <div
           style={{
-            maxWidth: "400px",
-            padding: "2rem",
-            background: "white",
-            borderRadius: "12px",
-            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1)",
+            maxWidth: "440px",
+            padding: "2rem 1.75rem",
+            background: "rgba(255, 255, 255, 0.97)",
+            borderRadius: "20px",
+            border: "1px solid #fecdd3",
+            boxShadow: "0 24px 50px rgba(15, 23, 42, 0.14)",
             textAlign: "center",
+            backdropFilter: "blur(8px)",
           }}
         >
           <div
@@ -218,11 +244,12 @@ const ProjectLogin: React.FC = () => {
               width: "64px",
               height: "64px",
               margin: "0 auto 1rem",
-              background: "#FEE2E2",
+              background: "#fff1f2",
               borderRadius: "50%",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
+              border: "1px solid #fda4af",
             }}
           >
             <svg
@@ -241,9 +268,10 @@ const ProjectLogin: React.FC = () => {
           <h2
             style={{
               fontSize: "1.5rem",
-              fontWeight: 600,
+              fontWeight: 700,
               color: "#111827",
               marginBottom: "0.5rem",
+              letterSpacing: "-0.02em",
             }}
           >
             Project Not Found
@@ -262,13 +290,14 @@ const ProjectLogin: React.FC = () => {
             onClick={() => navigate("/")}
             style={{
               padding: "0.75rem 1.5rem",
-              background: "#2563EB",
+              background: "linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)",
               color: "white",
               border: "none",
-              borderRadius: "8px",
+              borderRadius: "10px",
               fontSize: "0.875rem",
               fontWeight: 600,
               cursor: "pointer",
+              boxShadow: "0 8px 18px rgba(37, 99, 235, 0.35)",
             }}
           >
             Go to Home
@@ -450,10 +479,11 @@ const ProjectLogin: React.FC = () => {
             <h1
               style={{
                 fontSize: "2.5rem",
-                fontWeight: 700,
+                fontWeight: 800,
                 marginBottom: "1rem",
                 lineHeight: 1.2,
                 textShadow: "0 2px 10px rgba(0, 0, 0, 0.1)",
+                letterSpacing: "-0.02em",
               }}
             >
               {projectBranding.name}
@@ -485,12 +515,13 @@ const ProjectLogin: React.FC = () => {
                     display: "flex",
                     alignItems: "center",
                     gap: "1rem",
-                    padding: "1rem",
+                    padding: "0.9rem 1rem",
                     marginBottom: "0.75rem",
-                    background: "rgba(255, 255, 255, 0.1)",
+                    background: "rgba(255, 255, 255, 0.12)",
                     backdropFilter: "blur(10px)",
                     borderRadius: "12px",
-                    border: "1px solid rgba(255, 255, 255, 0.2)",
+                    border: "1px solid rgba(255, 255, 255, 0.28)",
+                    boxShadow: "0 8px 18px rgba(0, 0, 0, 0.08)",
                   }}
                 >
                   <span style={{ fontSize: "1.5rem" }}>{feature.icon}</span>
@@ -522,7 +553,8 @@ const ProjectLogin: React.FC = () => {
         <div
           style={{
             flex: 1,
-            background: "#FFFFFF",
+            background:
+              "radial-gradient(circle at 92% 8%, #dbeafe 0%, transparent 30%), linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%)",
             display: "flex",
             flexDirection: "column",
             position: "relative",
@@ -546,13 +578,14 @@ const ProjectLogin: React.FC = () => {
               onChange={(e) => changeLanguage(e.target.value)}
               style={{
                 appearance: "none",
-                background: "#F9FAFB",
-                border: "2px solid #E5E7EB",
-                borderRadius: "8px",
+                background: "#ffffffd9",
+                border: "1.5px solid #d1d5db",
+                borderRadius: "10px",
                 padding: "0.5rem 2rem 0.5rem 0.75rem",
                 fontSize: "0.875rem",
                 cursor: "pointer",
                 outline: "none",
+                boxShadow: "0 6px 14px rgba(15, 23, 42, 0.08)",
                 fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
               }}
               aria-label={t("selectLanguage")}
@@ -573,20 +606,31 @@ const ProjectLogin: React.FC = () => {
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              padding: "2rem",
+              padding: "2.5rem 2rem",
             }}
             role="main"
           >
-            <div style={{ width: "100%", maxWidth: "440px" }}>
+            <div
+              style={{
+                width: "100%",
+                maxWidth: "500px",
+                background: "rgba(255, 255, 255, 0.96)",
+                border: "1px solid #e2e8f0",
+                borderRadius: "20px",
+                boxShadow: "0 24px 50px rgba(15, 23, 42, 0.14)",
+                padding: "28px 24px",
+                backdropFilter: "blur(8px)",
+              }}
+            >
               {/* Success Message */}
               {successMessage && (
                 <div
                   style={{
                     marginBottom: "1.5rem",
-                    padding: "1rem",
-                    background: "#DCFCE7",
-                    borderLeft: "4px solid #10B981",
-                    borderRadius: "0 8px 8px 0",
+                    padding: "0.9rem 1rem",
+                    background: "#ecfdf3",
+                    border: "1px solid #86efac",
+                    borderRadius: "10px",
                   }}
                   role="alert"
                   aria-live="polite"
@@ -608,10 +652,10 @@ const ProjectLogin: React.FC = () => {
                 <div
                   style={{
                     marginBottom: "1.5rem",
-                    padding: "1rem",
-                    background: "#FEE2E2",
-                    borderLeft: "4px solid #EF4444",
-                    borderRadius: "0 8px 8px 0",
+                    padding: "0.9rem 1rem",
+                    background: "#fff1f2",
+                    border: "1px solid #fda4af",
+                    borderRadius: "10px",
                   }}
                   role="alert"
                   aria-live="polite"
@@ -633,7 +677,7 @@ const ProjectLogin: React.FC = () => {
                 style={{
                   display: "flex",
                   flexDirection: "column",
-                  gap: "1.5rem",
+                  gap: "1.25rem",
                 }}
               >
                 <div style={{ textAlign: "center" }}>
@@ -647,6 +691,8 @@ const ProjectLogin: React.FC = () => {
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
+                      boxShadow: `0 8px 20px ${primaryColor}44`,
+                      border: "1px solid rgba(255,255,255,0.35)",
                     }}
                   >
                     <svg
@@ -668,6 +714,7 @@ const ProjectLogin: React.FC = () => {
                       fontWeight: 700,
                       color: "#111827",
                       marginBottom: "0.5rem",
+                      letterSpacing: "-0.02em",
                       fontFamily:
                         '"Noto Sans", system-ui, -apple-system, sans-serif',
                     }}
@@ -740,8 +787,9 @@ const ProjectLogin: React.FC = () => {
                         width: "100%",
                         padding: "0.75rem 1rem",
                         fontSize: "0.875rem",
-                        border: `2px solid ${loginForm.formState.errors.email ? "#EF4444" : "#E5E7EB"}`,
-                        borderRadius: "8px",
+                        border: `1.5px solid ${loginForm.formState.errors.email ? "#EF4444" : "#d1d5db"}`,
+                        borderRadius: "10px",
+                        background: "#f8fafc",
                         outline: "none",
                         transition: "all 0.2s",
                         fontFamily:
@@ -829,8 +877,9 @@ const ProjectLogin: React.FC = () => {
                           width: "100%",
                           padding: "0.75rem 3rem 0.75rem 1rem",
                           fontSize: "0.875rem",
-                          border: `2px solid ${loginForm.formState.errors.password ? "#EF4444" : "#E5E7EB"}`,
-                          borderRadius: "8px",
+                          border: `1.5px solid ${loginForm.formState.errors.password ? "#EF4444" : "#d1d5db"}`,
+                          borderRadius: "10px",
+                          background: "#f8fafc",
                           outline: "none",
                           transition: "all 0.2s",
                           fontFamily:
@@ -934,15 +983,15 @@ const ProjectLogin: React.FC = () => {
                     style={{
                       width: "100%",
                       padding: "0.875rem 1.5rem",
-                      background: primaryColor,
+                      background: `linear-gradient(135deg, ${primaryColor} 0%, ${secondaryColor} 100%)`,
                       color: "white",
                       border: "none",
-                      borderRadius: "8px",
+                      borderRadius: "10px",
                       fontSize: "0.875rem",
                       fontWeight: 600,
                       cursor: isLoading ? "not-allowed" : "pointer",
                       opacity: isLoading ? 0.6 : 1,
-                      boxShadow: `0 2px 6px ${primaryColor}3D`,
+                      boxShadow: `0 8px 18px ${primaryColor}55`,
                       transition: "all 0.2s ease",
                       fontFamily:
                         '"Noto Sans", system-ui, -apple-system, sans-serif',
@@ -957,7 +1006,7 @@ const ProjectLogin: React.FC = () => {
                     onMouseLeave={(e) => {
                       if (!isLoading) {
                         e.currentTarget.style.opacity = "1";
-                        e.currentTarget.style.boxShadow = `0 2px 6px ${primaryColor}3D`;
+                        e.currentTarget.style.boxShadow = `0 8px 18px ${primaryColor}55`;
                         e.currentTarget.style.transform = "translateY(0)";
                       }
                     }}

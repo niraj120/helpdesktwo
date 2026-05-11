@@ -1,7 +1,7 @@
-import React from 'react';
-import KBLevelManagement from '../components/knowledge-base/KBLevelManagement';
-import DashboardLayout from '../components/DashboardLayout';
-import { useAdminProjects } from '../hooks/useAdminProjects';
+import React from "react";
+import KBLevelManagement from "../components/knowledge-base/KBLevelManagement";
+import DashboardLayout from "../components/DashboardLayout";
+import { useAdminProjects } from "../hooks/useAdminProjects";
 
 interface KBLevelManagementPageProps {
   wrapWithLayout?: boolean;
@@ -9,21 +9,23 @@ interface KBLevelManagementPageProps {
 
 /**
  * KB Level Management Page
- * 
+ *
  * For Super Admin: Shows project dropdown to select which project's KB levels to manage
  * For regular users: Would use ProjectContext (if project-specific login via subdomain)
- * 
+ *
  * This page uses useAdminProjects hook which fetches ALL projects for Super Admin,
  * NOT ProjectContext which is meant for project-specific logins only.
  */
-const KBLevelManagementPage: React.FC<KBLevelManagementPageProps> = ({ wrapWithLayout = true }) => {
+const KBLevelManagementPage: React.FC<KBLevelManagementPageProps> = ({
+  wrapWithLayout = true,
+}) => {
   const {
     projects,
     selectedProjectId,
     setSelectedProjectId,
     selectedProject,
     isLoading,
-    isSuperAdmin
+    isSuperAdmin,
   } = useAdminProjects();
 
   if (isLoading) {
@@ -32,42 +34,57 @@ const KBLevelManagementPage: React.FC<KBLevelManagementPageProps> = ({ wrapWithL
         <p className="text-gray-500">Loading projects...</p>
       </div>
     );
-    return wrapWithLayout ? <DashboardLayout>{content}</DashboardLayout> : content;
+    return wrapWithLayout ? (
+      <DashboardLayout>{content}</DashboardLayout>
+    ) : (
+      content
+    );
   }
 
   const content = (
-    <div style={{ padding: '20px' }}>
+    <div style={{ padding: "20px" }}>
       {/* Project Selector - show for any user with accessible projects */}
       {projects.length > 0 && (
-        <div style={{
-          backgroundColor: '#f8fafc',
-          padding: '16px 20px',
-          borderRadius: '8px',
-          border: '1px solid #e2e8f0',
-          marginBottom: '20px'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-            <label style={{ 
-              fontWeight: '600', 
-              color: '#374151',
-              fontSize: '14px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}>
-              📁 {isSuperAdmin ? 'Select Project:' : 'Assigned Project:'}
+        <div
+          style={{
+            backgroundColor: "#f8fafc",
+            padding: "16px 20px",
+            borderRadius: "8px",
+            border: "1px solid #e2e8f0",
+            marginBottom: "20px",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "16px",
+              flexWrap: "wrap",
+            }}
+          >
+            <label
+              style={{
+                fontWeight: "600",
+                color: "#374151",
+                fontSize: "14px",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+              }}
+            >
+              📁 {isSuperAdmin ? "Select Project:" : "Assigned Project:"}
             </label>
             <select
               value={selectedProjectId}
               onChange={(e) => setSelectedProjectId(e.target.value)}
               style={{
-                padding: '10px 16px',
-                borderRadius: '6px',
-                border: '1px solid #d1d5db',
-                fontSize: '14px',
-                minWidth: '280px',
-                backgroundColor: '#fff',
-                cursor: 'pointer'
+                padding: "10px 16px",
+                borderRadius: "6px",
+                border: "1px solid #d1d5db",
+                fontSize: "14px",
+                minWidth: "280px",
+                backgroundColor: "#fff",
+                cursor: "pointer",
               }}
             >
               <option value="">-- Select a Project --</option>
@@ -78,13 +95,15 @@ const KBLevelManagementPage: React.FC<KBLevelManagementPageProps> = ({ wrapWithL
               ))}
             </select>
             {selectedProject && (
-              <span style={{ 
-                color: '#059669', 
-                fontSize: '13px',
-                backgroundColor: '#d1fae5',
-                padding: '4px 10px',
-                borderRadius: '4px'
-              }}>
+              <span
+                style={{
+                  color: "#059669",
+                  fontSize: "13px",
+                  backgroundColor: "#d1fae5",
+                  padding: "4px 10px",
+                  borderRadius: "4px",
+                }}
+              >
                 ✓ Managing KB Levels for: {selectedProject.name}
               </span>
             )}
@@ -96,28 +115,36 @@ const KBLevelManagementPage: React.FC<KBLevelManagementPageProps> = ({ wrapWithL
       {selectedProjectId ? (
         <KBLevelManagement projectId={selectedProjectId} />
       ) : (
-        <div style={{
-          backgroundColor: '#fef3c7',
-          padding: '24px',
-          borderRadius: '8px',
-          border: '1px solid #f59e0b',
-          textAlign: 'center'
-        }}>
-          <div style={{ fontSize: '48px', marginBottom: '12px' }}>📋</div>
-          <h3 style={{ color: '#92400e', marginBottom: '8px', fontSize: '18px' }}>
-            {projects.length === 0 ? 'No Project Assigned' : 'Select a Project'}
+        <div
+          style={{
+            backgroundColor: "#fef3c7",
+            padding: "24px",
+            borderRadius: "8px",
+            border: "1px solid #f59e0b",
+            textAlign: "center",
+          }}
+        >
+          <div style={{ fontSize: "48px", marginBottom: "12px" }}>📋</div>
+          <h3
+            style={{ color: "#92400e", marginBottom: "8px", fontSize: "18px" }}
+          >
+            {projects.length === 0 ? "No Project Assigned" : "Select a Project"}
           </h3>
-          <p style={{ color: '#b45309', fontSize: '14px' }}>
+          <p style={{ color: "#b45309", fontSize: "14px" }}>
             {projects.length === 0
-              ? 'Your role does not currently have any active project mapping. Please contact admin to assign a project.'
-              : 'Please select a project from the dropdown above to manage its Knowledge Base levels.'}
+              ? "Your role does not currently have any active project mapping. Please contact admin to assign a project."
+              : "Please select a project from the dropdown above to manage its Knowledge Base levels."}
           </p>
         </div>
       )}
     </div>
   );
 
-  return wrapWithLayout ? <DashboardLayout>{content}</DashboardLayout> : content;
+  return wrapWithLayout ? (
+    <DashboardLayout>{content}</DashboardLayout>
+  ) : (
+    content
+  );
 };
 
 export default KBLevelManagementPage;

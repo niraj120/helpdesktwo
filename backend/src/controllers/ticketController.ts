@@ -917,7 +917,7 @@ export const submitTicket = async (req: Request, res: Response) => {
 
         // Fallback: If no Priority record exists, try to get resolution time from SLARule
         if (!priority) {
-          const SLARule = (await import("../models/sla-module/SLARule"))
+          const SLARule = (await import("../models/sla-module/SLARule.js"))
             .default;
           const slaRule = await SLARule.findOne({
             projectIds: { $in: [new mongoose.Types.ObjectId(projectId)] },

@@ -95,6 +95,73 @@ interface Agent {
   email?: string;
 }
 
+interface DepartmentOption {
+  _id: string;
+  name: string;
+}
+
+interface PriorityOption {
+  value: string;
+  label: string;
+}
+
+type TicketTableColumnKey =
+  | "ticketNumber"
+  | "subject"
+  | "requestedBy"
+  | "assignee"
+  | "priority"
+  | "status"
+  | "sla"
+  | "createdAt"
+  | "center"
+  | "project"
+  | "category"
+  | "source"
+  | "mergedCount";
+
+const TICKET_TABLE_COLUMN_DEFS: Array<{
+  key: TicketTableColumnKey;
+  label: string;
+}> = [
+  { key: "ticketNumber", label: "Ticket #" },
+  { key: "subject", label: "Subject" },
+  { key: "requestedBy", label: "Requested By" },
+  { key: "assignee", label: "Assignee" },
+  { key: "priority", label: "Priority" },
+  { key: "status", label: "Status" },
+  { key: "sla", label: "SLA" },
+  { key: "createdAt", label: "Created" },
+  { key: "center", label: "Center" },
+  { key: "project", label: "Project" },
+  { key: "category", label: "Category" },
+  { key: "source", label: "Source" },
+  { key: "mergedCount", label: "Merged" },
+];
+
+const DEFAULT_TICKET_TABLE_COLUMNS: TicketTableColumnKey[] = [
+  "ticketNumber",
+  "subject",
+  "requestedBy",
+  "assignee",
+  "priority",
+  "status",
+  "sla",
+  "createdAt",
+];
+
+const normalizeTicketColumns = (columns?: string[]): TicketTableColumnKey[] => {
+  if (!Array.isArray(columns) || columns.length === 0) {
+    return DEFAULT_TICKET_TABLE_COLUMNS;
+  }
+
+  const validKeys = columns.filter((key): key is TicketTableColumnKey =>
+    TICKET_TABLE_COLUMN_DEFS.some((col) => col.key === key),
+  );
+
+  return validKeys.length > 0 ? validKeys : DEFAULT_TICKET_TABLE_COLUMNS;
+};
+
 // US-ESC-009: SLA countdown helpers
 const formatSlaRemaining = (ms: number): string => {
   const h = Math.floor(ms / 3600000);
@@ -196,6 +263,21 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
 
   // Helper function to check permissions from localStorage
   const checkPermission = (permission: string): boolean => {
+    const userStr = localStorage.getItem("user");
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        if (
+          user?.role?.code === "SUPER_ADMIN" ||
+          user?.roleCode === "SUPER_ADMIN"
+        ) {
+          return true;
+        }
+      } catch {
+        // Ignore parse errors and continue with permission list check
+      }
+    }
+
     const userPermissionsStr = localStorage.getItem("userPermissions");
     if (!userPermissionsStr) return false;
     try {
@@ -238,6 +320,16 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
   const [filterAssignedTo, setFilterAssignedTo] = useState("all");
   const [projects, setProjects] = useState<Project[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [priorityOptions, setPriorityOptions] = useState<PriorityOption[]>([
+    { value: "LOW", label: "Low" },
+    { value: "MEDIUM", label: "Medium" },
+    { value: "NORMAL", label: "Normal" },
+    { value: "HIGH", label: "High" },
+    { value: "CRITICAL", label: "Critical" },
+  ]);
+  const [visibleColumns, setVisibleColumns] = useState<TicketTableColumnKey[]>(
+    DEFAULT_TICKET_TABLE_COLUMNS,
+  );
 
   // Multi-select state
   const [selectedTicketIds, setSelectedTicketIds] = useState<Set<string>>(
@@ -248,6 +340,14 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
   );
   const [bulkMergePrimaryId, setBulkMergePrimaryId] = useState("");
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [showBulkAssignModal, setShowBulkAssignModal] = useState(false);
+  const [bulkAssignDepartments, setBulkAssignDepartments] = useState<
+    DepartmentOption[]
+  >([]);
+  const [bulkAssignDepartmentId, setBulkAssignDepartmentId] = useState("");
+  const [bulkAssignAgents, setBulkAssignAgents] = useState<Agent[]>([]);
+  const [bulkAssignAgentId, setBulkAssignAgentId] = useState("");
+  const [bulkAssignLoadingAgents, setBulkAssignLoadingAgents] = useState(false);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkError, setBulkError] = useState("");
 
@@ -260,11 +360,18 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
   const canExport = checkPermission("TICKET_EXPORT");
   const canMerge = checkPermission("TICKET_MERGE");
   const canDelete = checkPermission("TICKET_DELETE");
+  const canAssign = checkPermission("TICKET_REASSIGN");
+  const canConfigureColumns = checkPermission(
+    "TICKET_CONFIG_MANAGE_TABLE_COLUMNS",
+  );
   const hasViewAll = checkPermission("TICKET_VIEW_ALL");
   const userRole = localStorage.getItem("userRole") || "";
 
   // Real-time: track pending new-ticket badge so the user sees a refresh hint
   const [pendingNewTickets, setPendingNewTickets] = useState(0);
+
+  const activeProjectForColumns =
+    initialProjectId ?? (filterProject !== "all" ? filterProject : null);
 
   // Stats cards — keyed by "total" and each status code (as string)
   const [ticketStats, setTicketStats] = useState<Record<string, number>>({
@@ -338,6 +445,7 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     fetchTickets(1, initialProjectId ?? "all", "all");
     if (!initialProjectId) fetchProjects(); // skip project list when locked to portal project
     fetchAgents(initialProjectId ?? undefined);
+    fetchPriorities(initialProjectId ?? null);
     fetchStats([], {});
     fetchStatuses(initialProjectId ?? null);
   }, []);
@@ -347,14 +455,50 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     if (filterProject !== "all") {
       fetchStatuses(filterProject);
       fetchAgents(filterProject);
+      fetchPriorities(filterProject);
     } else {
       fetchStatuses(initialProjectId ?? null);
       fetchAgents(initialProjectId ?? undefined);
+      fetchPriorities(initialProjectId ?? null);
     }
     // Reset dependent dropdowns when project changes
     setFilterStatus("all");
+    setFilterPriority("all");
     setFilterAssignedTo("all");
   }, [filterProject]);
+
+  useEffect(() => {
+    const fetchTicketTableColumns = async () => {
+      if (!activeProjectForColumns) {
+        setVisibleColumns(DEFAULT_TICKET_TABLE_COLUMNS);
+        return;
+      }
+
+      try {
+        const token = localStorage.getItem("authToken");
+        const response = await axios.get(
+          `${API_CONFIG.API_URL}/projects/${activeProjectForColumns}/ticket-settings`,
+          token
+            ? {
+                headers: { Authorization: `Bearer ${token}` },
+              }
+            : undefined,
+        );
+
+        const columnsFromConfig =
+          response.data?.ticketConfig?.tableColumns ||
+          response.data?.data?.ticketTableColumns ||
+          [];
+
+        setVisibleColumns(normalizeTicketColumns(columnsFromConfig));
+      } catch (error) {
+        console.error("[fetchTicketTableColumns] failed:", error);
+        setVisibleColumns(DEFAULT_TICKET_TABLE_COLUMNS);
+      }
+    };
+
+    fetchTicketTableColumns();
+  }, [activeProjectForColumns]);
 
   // Re-run stats whenever the statuses list is (re)loaded
   useEffect(() => {
@@ -558,6 +702,72 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     }
   };
 
+  const fetchPriorities = async (projectId: string | null) => {
+    try {
+      const token = localStorage.getItem("authToken");
+      if (!token) return;
+
+      const pid =
+        projectId && projectId !== "all"
+          ? projectId
+          : (initialProjectId ?? undefined);
+
+      const response = await axios.get(
+        `${API_CONFIG.API_URL}/priorities/active`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          params: pid ? { projectId: pid } : {},
+        },
+      );
+
+      if (response.data.success && Array.isArray(response.data.data)) {
+        const seen = new Set<string>();
+        const options: PriorityOption[] = [];
+
+        for (const p of response.data.data as any[]) {
+          const raw = String(p.code || p.name || "").trim();
+          if (!raw) continue;
+
+          const value = raw.toUpperCase();
+          if (seen.has(value)) continue;
+          seen.add(value);
+
+          const label = p.name
+            ? String(p.name)
+            : raw
+                .toLowerCase()
+                .replace(/_/g, " ")
+                .replace(/\b\w/g, (c: string) => c.toUpperCase());
+
+          options.push({ value, label });
+        }
+
+        if (options.length > 0) {
+          setPriorityOptions(options);
+          return;
+        }
+      }
+
+      // API returned no priorities for this project; fallback keeps filter usable.
+      setPriorityOptions([
+        { value: "LOW", label: "Low" },
+        { value: "MEDIUM", label: "Medium" },
+        { value: "NORMAL", label: "Normal" },
+        { value: "HIGH", label: "High" },
+        { value: "CRITICAL", label: "Critical" },
+      ]);
+    } catch {
+      // non-fatal fallback
+      setPriorityOptions([
+        { value: "LOW", label: "Low" },
+        { value: "MEDIUM", label: "Medium" },
+        { value: "NORMAL", label: "Normal" },
+        { value: "HIGH", label: "High" },
+        { value: "CRITICAL", label: "Critical" },
+      ]);
+    }
+  };
+
   const fetchStats = async (
     statusList: Array<{ code: number; name: string }>,
     opts: {
@@ -725,6 +935,123 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     }
   };
 
+  const getTicketProjectId = (ticket: Ticket): string | null => {
+    const raw = ticket.metadata?.projectId;
+    if (!raw) return null;
+    return typeof raw === "object" ? raw._id || null : null;
+  };
+
+  const fetchBulkAssignableAgents = async (departmentId: string) => {
+    if (!departmentId) {
+      setBulkAssignAgents([]);
+      return;
+    }
+
+    setBulkAssignLoadingAgents(true);
+    try {
+      const token = localStorage.getItem("authToken");
+      const response = await axios.get(
+        `${API_CONFIG.API_URL}/tickets/assignable-agents`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          params: { departmentId },
+        },
+      );
+      setBulkAssignAgents(
+        Array.isArray(response.data?.data) ? response.data.data : [],
+      );
+    } catch {
+      setBulkAssignAgents([]);
+    } finally {
+      setBulkAssignLoadingAgents(false);
+    }
+  };
+
+  const handleOpenBulkAssignModal = async () => {
+    setBulkError("");
+    const selected = filteredTickets.filter((t) =>
+      selectedTicketIds.has(t._id),
+    );
+    if (selected.length === 0) return;
+
+    const projectIds = new Set(
+      selected.map((ticket) => getTicketProjectId(ticket)).filter(Boolean),
+    );
+
+    if (projectIds.size !== 1) {
+      setBulkError(
+        "Bulk assign requires tickets from the same project. Please filter/select tickets from one project.",
+      );
+      return;
+    }
+
+    const projectId = Array.from(projectIds)[0] as string;
+
+    setBulkAssignDepartmentId("");
+    setBulkAssignAgentId("");
+    setBulkAssignAgents([]);
+    setBulkAssignDepartments([]);
+
+    try {
+      const token = localStorage.getItem("authToken");
+      const response = await axios.get(
+        `${API_CONFIG.API_URL}/departments/project/${projectId}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+
+      const departments = Array.isArray(response.data?.data)
+        ? response.data.data
+        : [];
+      setBulkAssignDepartments(departments);
+      setShowBulkAssignModal(true);
+    } catch (err: any) {
+      setBulkError(
+        err?.response?.data?.message ||
+          "Failed to load departments for selected tickets",
+      );
+    }
+  };
+
+  const handleConfirmBulkAssign = async () => {
+    if (!bulkAssignAgentId || selectedTicketIds.size === 0) return;
+    setBulkLoading(true);
+    setBulkError("");
+
+    try {
+      const token = localStorage.getItem("authToken");
+      const ticketIds = Array.from(selectedTicketIds);
+      const results = await Promise.allSettled(
+        ticketIds.map((ticketId) =>
+          axios.patch(
+            `${API_CONFIG.API_URL}/tickets/${ticketId}/reassign`,
+            { newAgentId: bulkAssignAgentId, reason: "Bulk assignment" },
+            { headers: { Authorization: `Bearer ${token}` } },
+          ),
+        ),
+      );
+
+      const failedCount = results.filter((r) => r.status === "rejected").length;
+
+      if (failedCount > 0) {
+        setBulkError(
+          `${failedCount} of ${ticketIds.length} tickets failed to assign. Please retry the failed ones.`,
+        );
+      }
+
+      if (failedCount < ticketIds.length) {
+        setShowBulkAssignModal(false);
+        setSelectedTicketIds(new Set());
+        fetchTickets(1, filterProject, filterAssignedTo);
+      }
+    } catch (err: any) {
+      setBulkError(err?.response?.data?.message || "Failed to assign tickets");
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
   const selectedTickets = filteredTickets.filter((t) =>
     selectedTicketIds.has(t._id),
   );
@@ -763,6 +1090,289 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
       ...STATUS_COLOR_PALETTE[i % STATUS_COLOR_PALETTE.length],
     })),
   ];
+
+  const visibleColumnDefs = useMemo(
+    () =>
+      visibleColumns
+        .map((key) => TICKET_TABLE_COLUMN_DEFS.find((def) => def.key === key))
+        .filter(Boolean) as Array<{ key: TicketTableColumnKey; label: string }>,
+    [visibleColumns],
+  );
+  const tableColumnCount =
+    visibleColumnDefs.length + 1 + (canMerge || canDelete || canAssign ? 1 : 0);
+
+  const renderTicketDataCell = (
+    columnKey: TicketTableColumnKey,
+    ticket: Ticket,
+  ) => {
+    const centerName =
+      !ticket.metadata?.centerId || ticket.metadata.centerId === "online"
+        ? "Online"
+        : typeof ticket.metadata.centerId === "object"
+          ? ticket.metadata.centerId.centerName
+          : ticket.metadata?.centerId || "Online";
+    const projectName =
+      typeof ticket.metadata?.projectId === "object"
+        ? ticket.metadata.projectId.name || ticket.metadata.projectId.code
+        : "-";
+    const sourceRaw =
+      (ticket.metadata?.submissionType || "online").toString() || "online";
+    const sourceLabel =
+      sourceRaw.charAt(0).toUpperCase() + sourceRaw.slice(1).toLowerCase();
+    const pill = getSlaPill(ticket);
+    const priorityMap: Record<string, { bg: string; color: string }> = {
+      low: { bg: "#ECFDF3", color: "#027A48" },
+      medium: { bg: "#FFFAEB", color: "#B54708" },
+      high: { bg: "#FFF1F3", color: "#C01048" },
+      critical: { bg: "#F4F3FF", color: "#5925DC" },
+      urgent: { bg: "#F4F3FF", color: "#5925DC" },
+    };
+    const pStyle = priorityMap[ticket.priority?.toLowerCase()] || {
+      bg: "#F2F4F7",
+      color: "#344054",
+    };
+
+    switch (columnKey) {
+      case "ticketNumber":
+        return (
+          <td style={{ padding: "12px 16px", whiteSpace: "nowrap" }}>
+            <span
+              style={{
+                fontWeight: 600,
+                color: "#2563EB",
+                fontSize: "13px",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+              }}
+            >
+              #{ticket.ticketNumber}
+              {ticket.hasNewReply && (
+                <span
+                  style={{
+                    display: "inline-block",
+                    width: "7px",
+                    height: "7px",
+                    borderRadius: "50%",
+                    background: "#F59E0B",
+                    flexShrink: 0,
+                  }}
+                  title="Unread reply"
+                />
+              )}
+            </span>
+          </td>
+        );
+
+      case "subject":
+        return (
+          <td style={{ padding: "12px 16px", maxWidth: "260px" }}>
+            <div
+              style={{
+                fontWeight: ticket.hasNewReply ? 700 : 500,
+                color: "#101828",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {ticket.subject || "No subject"}
+            </div>
+            {ticket.category && (
+              <div
+                style={{
+                  fontSize: "12px",
+                  color: "#667085",
+                  marginTop: "2px",
+                }}
+              >
+                {ticket.category.name}
+              </div>
+            )}
+          </td>
+        );
+
+      case "requestedBy":
+        return (
+          <td style={{ padding: "12px 16px", whiteSpace: "nowrap" }}>
+            <div style={{ fontSize: "13px", color: "#344054" }}>
+              {ticket.metadata?.studentName ||
+                ticket.metadata?.studentEmail ||
+                "—"}
+            </div>
+            {ticket.metadata?.studentName && ticket.metadata?.studentEmail && (
+              <div
+                style={{
+                  fontSize: "11px",
+                  color: "#667085",
+                  marginTop: "1px",
+                }}
+              >
+                {ticket.metadata.studentEmail}
+              </div>
+            )}
+          </td>
+        );
+
+      case "assignee":
+        return (
+          <td style={{ padding: "12px 16px", whiteSpace: "nowrap" }}>
+            {ticket.assignedTo ? (
+              <div style={{ fontSize: "13px", color: "#344054" }}>
+                {ticket.assignedTo.firstName} {ticket.assignedTo.lastName}
+              </div>
+            ) : (
+              <span
+                style={{
+                  fontSize: "12px",
+                  color: "#9CA3AF",
+                  fontStyle: "italic",
+                }}
+              >
+                Unassigned
+              </span>
+            )}
+          </td>
+        );
+
+      case "priority":
+        return (
+          <td style={{ padding: "12px 16px" }}>
+            <span
+              style={{
+                padding: "3px 10px",
+                borderRadius: "20px",
+                fontSize: "12px",
+                fontWeight: 600,
+                background: pStyle.bg,
+                color: pStyle.color,
+                textTransform: "capitalize",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {ticket.priority || "—"}
+            </span>
+          </td>
+        );
+
+      case "status":
+        return (
+          <td style={{ padding: "12px 16px" }}>
+            <span
+              style={{
+                padding: "3px 10px",
+                borderRadius: "20px",
+                fontSize: "12px",
+                fontWeight: 600,
+                background:
+                  (ticket.statusColor || getStatusColor(ticket.status)) + "20",
+                color: ticket.statusColor || getStatusColor(ticket.status),
+                whiteSpace: "nowrap",
+              }}
+            >
+              {ticket.statusName || getStatusDisplayName(ticket.status)}
+            </span>
+          </td>
+        );
+
+      case "sla":
+        return (
+          <td style={{ padding: "12px 16px" }}>
+            {pill ? (
+              <span
+                title={pill.tooltip}
+                style={{
+                  padding: "3px 8px",
+                  borderRadius: "20px",
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  color: pill.color,
+                  background: pill.bg,
+                  border: `1px solid ${pill.color}30`,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                ⏱ {pill.label}
+              </span>
+            ) : (
+              <span style={{ color: "#9CA3AF", fontSize: "13px" }}>—</span>
+            )}
+          </td>
+        );
+
+      case "createdAt":
+        return (
+          <td
+            style={{
+              padding: "12px 16px",
+              whiteSpace: "nowrap",
+              color: "#667085",
+              fontSize: "13px",
+            }}
+          >
+            {new Date(ticket.createdAt).toLocaleDateString()}
+          </td>
+        );
+
+      case "center":
+        return (
+          <td style={{ padding: "12px 16px" }}>
+            <span
+              style={{
+                padding: "3px 10px",
+                borderRadius: "20px",
+                fontSize: "12px",
+                fontWeight: 600,
+                background: centerName === "Online" ? "#DBEAFE" : "#FEF3C7",
+                color: centerName === "Online" ? "#1E40AF" : "#92400E",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {centerName}
+            </span>
+          </td>
+        );
+
+      case "project":
+        return (
+          <td
+            style={{ padding: "12px 16px", fontSize: "13px", color: "#344054" }}
+          >
+            {projectName}
+          </td>
+        );
+
+      case "category":
+        return (
+          <td
+            style={{ padding: "12px 16px", fontSize: "13px", color: "#344054" }}
+          >
+            {ticket.category?.name || "—"}
+          </td>
+        );
+
+      case "source":
+        return (
+          <td
+            style={{ padding: "12px 16px", fontSize: "13px", color: "#344054" }}
+          >
+            {sourceLabel}
+          </td>
+        );
+
+      case "mergedCount":
+        return (
+          <td
+            style={{ padding: "12px 16px", fontSize: "13px", color: "#344054" }}
+          >
+            {ticket.mergedTickets?.length || 0}
+          </td>
+        );
+
+      default:
+        return <td style={{ padding: "12px 16px", color: "#9CA3AF" }}>—</td>;
+    }
+  };
 
   return (
     <Wrapper wrap={wrapWithLayout}>
@@ -1076,6 +1686,40 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                   </button>
                 )}
 
+                {canConfigureColumns && (
+                  <button
+                    onClick={() => {
+                      if (!activeProjectForColumns) {
+                        toast.error(
+                          "Select a project first to configure columns",
+                        );
+                        return;
+                      }
+                      navigate(
+                        `/ticket-config/settings/${activeProjectForColumns}?tab=tableColumns`,
+                      );
+                    }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      height: "42px",
+                      padding: "0 14px",
+                      background: "#2563EB",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "10px",
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                      flexShrink: 0,
+                    }}
+                  >
+                    Configure Columns
+                  </button>
+                )}
+
                 {/* Clear filters */}
                 {((initialProjectId ? false : filterProject !== "all") ||
                   filterAssignedTo !== "all" ||
@@ -1258,10 +1902,11 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                     }}
                   >
                     <option value="all">All Priority</option>
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                    <option value="critical">Critical</option>
+                    {priorityOptions.map((priority) => (
+                      <option key={priority.value} value={priority.value}>
+                        {priority.label}
+                      </option>
+                    ))}
                   </select>
                   <ChevronDownIcon
                     style={{
@@ -1513,6 +2158,7 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                   width: "100%",
                   borderCollapse: "collapse",
                   fontSize: "14px",
+                  minWidth: `${Math.max(visibleColumnDefs.length * 150, 920)}px`,
                 }}
               >
                 <thead>
@@ -1522,7 +2168,7 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                       borderBottom: "1px solid #E4E7EC",
                     }}
                   >
-                    {(canMerge || canDelete) && (
+                    {(canMerge || canDelete || canAssign) && (
                       <th
                         style={{
                           padding: "12px 16px",
@@ -1545,25 +2191,12 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                         />
                       </th>
                     )}
-                    {[
-                      "Ticket #",
-                      "Subject",
-                      "Requested By",
-                      "Assignee",
-                      "Priority",
-                      "Status",
-                      "SLA",
-                      "Created",
-                      "Action",
-                    ].map((col) => (
+                    {visibleColumnDefs.map((col) => (
                       <th
-                        key={col}
+                        key={col.key}
                         style={{
                           padding: "12px 16px",
-                          textAlign:
-                            col === "Action"
-                              ? ("right" as const)
-                              : ("left" as const),
+                          textAlign: "left",
                           fontSize: "12px",
                           fontWeight: 600,
                           color: "#667085",
@@ -1572,16 +2205,30 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                           whiteSpace: "nowrap" as const,
                         }}
                       >
-                        {col}
+                        {col.label}
                       </th>
                     ))}
+                    <th
+                      style={{
+                        padding: "12px 16px",
+                        textAlign: "right",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        color: "#667085",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      Action
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredTickets.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={canMerge || canDelete ? 10 : 9}
+                        colSpan={tableColumnCount}
                         style={{
                           padding: "48px",
                           textAlign: "center",
@@ -1597,20 +2244,6 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                       const isHighlighted = !!(
                         ticket.hasNewReply && !isSelected
                       );
-                      const pill = getSlaPill(ticket);
-                      const priorityMap: Record<
-                        string,
-                        { bg: string; color: string }
-                      > = {
-                        low: { bg: "#ECFDF3", color: "#027A48" },
-                        medium: { bg: "#FFFAEB", color: "#B54708" },
-                        high: { bg: "#FFF1F3", color: "#C01048" },
-                        critical: { bg: "#F4F3FF", color: "#5925DC" },
-                        urgent: { bg: "#F4F3FF", color: "#5925DC" },
-                      };
-                      const pStyle = priorityMap[
-                        ticket.priority?.toLowerCase()
-                      ] || { bg: "#F2F4F7", color: "#344054" };
                       return (
                         <tr
                           key={ticket._id}
@@ -1655,7 +2288,7 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                             transition: "background 0.12s",
                           }}
                         >
-                          {(canMerge || canDelete) && (
+                          {(canMerge || canDelete || canAssign) && (
                             <td
                               style={{
                                 padding: "12px 16px",
@@ -1675,197 +2308,11 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                               />
                             </td>
                           )}
-                          <td
-                            style={{
-                              padding: "12px 16px",
-                              whiteSpace: "nowrap" as const,
-                            }}
-                          >
-                            <span
-                              style={{
-                                fontWeight: 600,
-                                color: "#2563EB",
-                                fontSize: "13px",
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: "5px",
-                              }}
-                            >
-                              #{ticket.ticketNumber}
-                              {ticket.hasNewReply && (
-                                <span
-                                  style={{
-                                    display: "inline-block",
-                                    width: "7px",
-                                    height: "7px",
-                                    borderRadius: "50%",
-                                    background: "#F59E0B",
-                                    flexShrink: 0,
-                                  }}
-                                  title="Unread reply"
-                                />
-                              )}
-                              {ticket.mergedTickets &&
-                                ticket.mergedTickets.length > 0 && (
-                                  <span
-                                    style={{
-                                      fontSize: "11px",
-                                      color: "#7C3AED",
-                                      fontWeight: 500,
-                                      marginLeft: "2px",
-                                    }}
-                                  >
-                                    +{ticket.mergedTickets.length}
-                                  </span>
-                                )}
-                            </span>
-                          </td>
-                          <td
-                            style={{ padding: "12px 16px", maxWidth: "260px" }}
-                          >
-                            <div
-                              style={{
-                                fontWeight: ticket.hasNewReply ? 700 : 500,
-                                color: "#101828",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                whiteSpace: "nowrap" as const,
-                              }}
-                            >
-                              {ticket.subject || "No subject"}
-                            </div>
-                            {ticket.category && (
-                              <div
-                                style={{
-                                  fontSize: "12px",
-                                  color: "#667085",
-                                  marginTop: "2px",
-                                }}
-                              >
-                                {ticket.category.name}
-                              </div>
-                            )}
-                          </td>
-                          <td
-                            style={{
-                              padding: "12px 16px",
-                              whiteSpace: "nowrap" as const,
-                            }}
-                          >
-                            <div style={{ fontSize: "13px", color: "#344054" }}>
-                              {ticket.metadata?.studentName ||
-                                ticket.metadata?.studentEmail ||
-                                "—"}
-                            </div>
-                            {ticket.metadata?.studentName &&
-                              ticket.metadata?.studentEmail && (
-                                <div
-                                  style={{
-                                    fontSize: "11px",
-                                    color: "#667085",
-                                    marginTop: "1px",
-                                  }}
-                                >
-                                  {ticket.metadata.studentEmail}
-                                </div>
-                              )}
-                          </td>
-                          <td
-                            style={{
-                              padding: "12px 16px",
-                              whiteSpace: "nowrap" as const,
-                            }}
-                          >
-                            {ticket.assignedTo ? (
-                              <div
-                                style={{ fontSize: "13px", color: "#344054" }}
-                              >
-                                {ticket.assignedTo.firstName}{" "}
-                                {ticket.assignedTo.lastName}
-                              </div>
-                            ) : (
-                              <span
-                                style={{
-                                  fontSize: "12px",
-                                  color: "#9CA3AF",
-                                  fontStyle: "italic",
-                                }}
-                              >
-                                Unassigned
-                              </span>
-                            )}
-                          </td>
-                          <td style={{ padding: "12px 16px" }}>
-                            <span
-                              style={{
-                                padding: "3px 10px",
-                                borderRadius: "20px",
-                                fontSize: "12px",
-                                fontWeight: 600,
-                                background: pStyle.bg,
-                                color: pStyle.color,
-                                textTransform: "capitalize" as const,
-                                whiteSpace: "nowrap" as const,
-                              }}
-                            >
-                              {ticket.priority || "—"}
-                            </span>
-                          </td>
-                          <td style={{ padding: "12px 16px" }}>
-                            <span
-                              style={{
-                                padding: "3px 10px",
-                                borderRadius: "20px",
-                                fontSize: "12px",
-                                fontWeight: 600,
-                                background:
-                                  (ticket.statusColor ||
-                                    getStatusColor(ticket.status)) + "20",
-                                color:
-                                  ticket.statusColor ||
-                                  getStatusColor(ticket.status),
-                                whiteSpace: "nowrap" as const,
-                              }}
-                            >
-                              {ticket.statusName ||
-                                getStatusDisplayName(ticket.status)}
-                            </span>
-                          </td>
-                          <td style={{ padding: "12px 16px" }}>
-                            {pill ? (
-                              <span
-                                title={pill.tooltip}
-                                style={{
-                                  padding: "3px 8px",
-                                  borderRadius: "20px",
-                                  fontSize: "11px",
-                                  fontWeight: 600,
-                                  color: pill.color,
-                                  background: pill.bg,
-                                  border: `1px solid ${pill.color}30`,
-                                  whiteSpace: "nowrap" as const,
-                                }}
-                              >
-                                ⏱ {pill.label}
-                              </span>
-                            ) : (
-                              <span
-                                style={{ color: "#9CA3AF", fontSize: "13px" }}
-                              >
-                                —
-                              </span>
-                            )}
-                          </td>
-                          <td
-                            style={{
-                              padding: "12px 16px",
-                              whiteSpace: "nowrap" as const,
-                              color: "#667085",
-                              fontSize: "13px",
-                            }}
-                          >
-                            {new Date(ticket.createdAt).toLocaleDateString()}
-                          </td>
+                          {visibleColumnDefs.map((col) => (
+                            <React.Fragment key={col.key}>
+                              {renderTicketDataCell(col.key, ticket)}
+                            </React.Fragment>
+                          ))}
                           <td
                             style={{
                               padding: "12px 16px",
@@ -2175,6 +2622,26 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                   Merge
                 </button>
               )}
+              {canAssign && (
+                <button
+                  onClick={handleOpenBulkAssignModal}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "7px 14px",
+                    background: "rgba(14,116,144,.85)",
+                    border: "1px solid rgba(14,116,144,.45)",
+                    color: "white",
+                    borderRadius: "8px",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Assign
+                </button>
+              )}
               {canDelete && (
                 <button
                   onClick={() => {
@@ -2409,6 +2876,200 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                     {bulkLoading
                       ? "Merging…"
                       : `Merge ${selectedTicketIds.size} Tickets`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Bulk Assign Modal */}
+          {showBulkAssignModal && (
+            <div
+              style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(0,0,0,0.5)",
+                zIndex: 1000,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "16px",
+              }}
+              onClick={(e) => {
+                if (e.target === e.currentTarget && !bulkLoading) {
+                  setShowBulkAssignModal(false);
+                }
+              }}
+            >
+              <div
+                style={{
+                  background: "white",
+                  borderRadius: "16px",
+                  padding: "24px",
+                  width: "100%",
+                  maxWidth: "480px",
+                  boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+                }}
+              >
+                <h2
+                  style={{
+                    margin: "0 0 6px",
+                    fontSize: "18px",
+                    fontWeight: 700,
+                  }}
+                >
+                  Assign Selected Tickets
+                </h2>
+                <p
+                  style={{
+                    margin: "0 0 16px",
+                    color: "#6B7280",
+                    fontSize: "14px",
+                  }}
+                >
+                  Choose department first, then assign an agent for{" "}
+                  {selectedTicketIds.size} selected ticket
+                  {selectedTicketIds.size !== 1 ? "s" : ""}.
+                </p>
+
+                {bulkError && (
+                  <div
+                    style={{
+                      padding: "10px 14px",
+                      background: "#FEF2F2",
+                      border: "1px solid #FECACA",
+                      borderRadius: "8px",
+                      color: "#B91C1C",
+                      fontSize: "13px",
+                      marginBottom: "14px",
+                    }}
+                  >
+                    {bulkError}
+                  </div>
+                )}
+
+                <div style={{ display: "grid", gap: "12px" }}>
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "13px",
+                        fontWeight: 600,
+                        marginBottom: "6px",
+                        color: "#344054",
+                      }}
+                    >
+                      Department
+                    </label>
+                    <select
+                      value={bulkAssignDepartmentId}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setBulkAssignDepartmentId(value);
+                        setBulkAssignAgentId("");
+                        fetchBulkAssignableAgents(value);
+                      }}
+                      disabled={bulkLoading}
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        border: "1px solid #D0D5DD",
+                        fontSize: "14px",
+                      }}
+                    >
+                      <option value="">Select department</option>
+                      {bulkAssignDepartments.map((department) => (
+                        <option key={department._id} value={department._id}>
+                          {department.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "13px",
+                        fontWeight: 600,
+                        marginBottom: "6px",
+                        color: "#344054",
+                      }}
+                    >
+                      Assign To
+                    </label>
+                    <select
+                      value={bulkAssignAgentId}
+                      onChange={(e) => setBulkAssignAgentId(e.target.value)}
+                      disabled={
+                        !bulkAssignDepartmentId ||
+                        bulkAssignLoadingAgents ||
+                        bulkLoading
+                      }
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        border: "1px solid #D0D5DD",
+                        fontSize: "14px",
+                      }}
+                    >
+                      <option value="">
+                        {bulkAssignLoadingAgents
+                          ? "Loading agents..."
+                          : !bulkAssignDepartmentId
+                            ? "Select department first"
+                            : "Select agent"}
+                      </option>
+                      {bulkAssignAgents.map((agent) => (
+                        <option key={agent._id} value={agent._id}>
+                          {agent.firstName} {agent.lastName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    marginTop: "18px",
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    gap: "10px",
+                  }}
+                >
+                  <button
+                    onClick={() => setShowBulkAssignModal(false)}
+                    disabled={bulkLoading}
+                    style={{
+                      padding: "9px 16px",
+                      border: "1px solid #D1D5DB",
+                      borderRadius: "8px",
+                      background: "white",
+                      fontSize: "14px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleConfirmBulkAssign}
+                    disabled={!bulkAssignAgentId || bulkLoading}
+                    style={{
+                      padding: "9px 16px",
+                      background: !bulkAssignAgentId ? "#93C5FD" : "#2563EB",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "8px",
+                      fontSize: "14px",
+                      fontWeight: 600,
+                      cursor: !bulkAssignAgentId ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    {bulkLoading
+                      ? "Assigning..."
+                      : `Assign ${selectedTicketIds.size} Ticket${selectedTicketIds.size !== 1 ? "s" : ""}`}
                   </button>
                 </div>
               </div>

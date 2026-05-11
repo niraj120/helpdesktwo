@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import DashboardLayout from "./DashboardLayout";
 import AddProjectForm from "./AddProjectForm";
-import { ModuleHeader } from "./ModuleHeader";
 import { usePermissions } from "../hooks/usePermissions";
 import { API_CONFIG } from "../config/constants";
 
@@ -149,27 +148,181 @@ const ProjectManagement = () => {
     }
   };
 
+  const totalPages = Math.max(1, Math.ceil(projects.length / PAGE_SIZE));
+  const paginatedProjects = projects.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE,
+  );
+
+  const statsCards = [
+    {
+      label: "Total Projects",
+      value: projects.length,
+      icon: "📁",
+      bg: "#F4F3FF",
+      color: "#5925DC",
+    },
+    {
+      label: "Active",
+      value: projects.filter((project) => project.isActive).length,
+      icon: "✅",
+      bg: "#ECFDF3",
+      color: "#027A48",
+    },
+    {
+      label: "Inactive",
+      value: projects.filter((project) => !project.isActive).length,
+      icon: "⏸",
+      bg: "#FFF4ED",
+      color: "#B93815",
+    },
+    {
+      label: "With Branding",
+      value: projects.filter((project) => !!project.branding?.logo).length,
+      icon: "🎨",
+      bg: "#EFF8FF",
+      color: "#175CD3",
+    },
+  ];
+
   return (
     <DashboardLayout>
-      <div style={{ padding: "2rem" }}>
+      <div
+        style={{
+          padding: "24px 20px 32px",
+          maxWidth: "1380px",
+          margin: "0 auto",
+          background: "#F8F9FC",
+          minHeight: "100vh",
+          fontFamily:
+            '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        }}
+      >
         <div
           style={{
-            background: "white",
-            borderRadius: "8px",
-            padding: "2rem",
-            boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+            background: "#ffffff",
+            padding: "22px 24px",
+            borderRadius: "14px",
+            marginBottom: "16px",
+            border: "1px solid #E4E7EC",
+            boxShadow: "0 4px 18px rgba(15, 23, 42, 0.05)",
           }}
         >
-          <ModuleHeader
-            title="Projects"
-            subtitle="Manage your projects and their configurations"
-          />
+          <h1
+            style={{
+              margin: "0 0 6px 0",
+              fontSize: "24px",
+              fontWeight: 700,
+              color: "#101828",
+              letterSpacing: "-0.01em",
+            }}
+          >
+            Projects
+          </h1>
+          <p
+            style={{
+              margin: 0,
+              fontSize: "14px",
+              color: "#667085",
+              fontWeight: 400,
+            }}
+          >
+            Manage your projects and their configurations
+          </p>
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            gap: "16px",
+            marginBottom: "20px",
+            flexWrap: "wrap",
+          }}
+        >
+          {statsCards.map((stat) => (
+            <div
+              key={stat.label}
+              style={{
+                flex: "1 1 200px",
+                background: "#ffffff",
+                borderRadius: "10px",
+                padding: "20px 24px",
+                border: "1px solid #E4E7EC",
+                boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+                display: "flex",
+                alignItems: "center",
+                gap: "16px",
+              }}
+            >
+              <div
+                style={{
+                  width: "48px",
+                  height: "48px",
+                  borderRadius: "50%",
+                  background: stat.bg,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "20px",
+                  flexShrink: 0,
+                }}
+              >
+                {stat.icon}
+              </div>
+              <div>
+                <div
+                  style={{
+                    fontSize: "28px",
+                    fontWeight: 700,
+                    color: "#101828",
+                    lineHeight: 1.2,
+                  }}
+                >
+                  {stat.value.toLocaleString()}
+                </div>
+                <div
+                  style={{
+                    fontSize: "13px",
+                    color: stat.color,
+                    marginTop: "2px",
+                  }}
+                >
+                  {stat.label}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: "12px",
+            marginBottom: "16px",
+            background: "#ffffff",
+            borderRadius: "12px",
+            border: "1px solid #E4E7EC",
+            padding: "12px 14px",
+            boxShadow: "0 1px 4px rgba(0,0,0,.06)",
+            flexWrap: "wrap",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "13px",
+              color: "#667085",
+              fontWeight: 500,
+            }}
+          >
+            Status overview and project controls
+          </div>
 
           <div
             style={{
               display: "flex",
               justifyContent: "flex-end",
-              marginBottom: "24px",
             }}
           >
             {hasPermission("PROJECT_CREATE") && (
@@ -178,19 +331,16 @@ const ProjectManagement = () => {
                   display: "flex",
                   alignItems: "center",
                   gap: "8px",
-                  padding: "12px 20px",
-                  background:
-                    "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                  padding: "10px 16px",
+                  background: "#7F56D9",
                   color: "white",
                   border: "none",
-                  borderRadius: "12px",
+                  borderRadius: "8px",
                   fontSize: "14px",
                   fontWeight: 600,
                   cursor: "pointer",
-                  boxShadow: "0 4px 15px rgba(102, 126, 234, 0.3)",
+                  boxShadow: "0 4px 12px rgba(127, 86, 217, 0.28)",
                   transition: "all 0.2s ease",
-                  fontFamily:
-                    '"Noto Sans", system-ui, -apple-system, sans-serif',
                 }}
                 onClick={() => {
                   setSelectedProject(null);
@@ -199,12 +349,12 @@ const ProjectManagement = () => {
                 onMouseEnter={(e) => {
                   e.currentTarget.style.transform = "translateY(-2px)";
                   e.currentTarget.style.boxShadow =
-                    "0 6px 20px rgba(102, 126, 234, 0.4)";
+                    "0 6px 18px rgba(127, 86, 217, 0.35)";
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.transform = "translateY(0)";
                   e.currentTarget.style.boxShadow =
-                    "0 4px 15px rgba(102, 126, 234, 0.3)";
+                    "0 4px 12px rgba(127, 86, 217, 0.28)";
                 }}
               >
                 <svg
@@ -224,491 +374,474 @@ const ProjectManagement = () => {
               </button>
             )}
           </div>
+        </div>
 
-          {loading ? (
+        {loading ? (
+          <div
+            style={{
+              background: "#ffffff",
+              borderRadius: "10px",
+              border: "1px solid #E4E7EC",
+              boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+              textAlign: "center",
+              padding: "56px 24px",
+              color: "#667085",
+            }}
+          >
             <div
               style={{
-                background: "white",
-                borderRadius: "16px",
-                border: "1px solid #E5E7EB",
-                boxShadow: "0 4px 20px rgba(0, 0, 0, 0.08)",
-                textAlign: "center",
-                padding: "80px 40px",
-                color: "#6B7280",
+                width: "34px",
+                height: "34px",
+                borderRadius: "999px",
+                border: "3px solid #E2E8F0",
+                borderTopColor: "#7F56D9",
+                margin: "0 auto 10px",
+                animation: "spin 1s linear infinite",
+              }}
+            />
+            Loading projects...
+          </div>
+        ) : projects.length === 0 ? (
+          <div
+            style={{
+              background: "#ffffff",
+              borderRadius: "10px",
+              border: "1px solid #E4E7EC",
+              boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+              textAlign: "center",
+              padding: "56px 24px",
+            }}
+          >
+            <div
+              style={{
+                width: "96px",
+                height: "96px",
+                margin: "0 auto 24px",
+                background: "linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)",
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <svg
+                width="48"
+                height="48"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#667eea"
+                strokeWidth="1.5"
+              >
+                <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+                <line x1="8" y1="21" x2="16" y2="21" />
+                <line x1="12" y1="17" x2="12" y2="21" />
+              </svg>
+            </div>
+            <h3
+              style={{
+                margin: "0 0 12px 0",
+                fontSize: "20px",
+                fontWeight: 700,
+                color: "#111827",
                 fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
               }}
             >
-              <div
-                style={{
-                  width: "48px",
-                  height: "48px",
-                  border: "3px solid #E5E7EB",
-                  borderTop: "3px solid #667eea",
-                  borderRadius: "50%",
-                  animation: "spin 1s linear infinite",
-                  margin: "0 auto 16px",
-                }}
-              ></div>
-              Loading projects...
-            </div>
-          ) : projects.length === 0 ? (
-            <div
+              No Projects Found
+            </h3>
+            <p
               style={{
-                background: "white",
-                borderRadius: "16px",
-                border: "1px solid #E5E7EB",
-                boxShadow: "0 4px 20px rgba(0, 0, 0, 0.08)",
-                textAlign: "center",
-                padding: "80px 40px",
+                margin: 0,
+                color: "#6B7280",
+                fontSize: "14px",
+                fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
               }}
             >
-              <div
-                style={{
-                  width: "96px",
-                  height: "96px",
-                  margin: "0 auto 24px",
-                  background:
-                    "linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)",
-                  borderRadius: "50%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <svg
-                  width="48"
-                  height="48"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#667eea"
-                  strokeWidth="1.5"
+              Click "Add Project" to create your first project
+            </p>
+          </div>
+        ) : (
+          <div
+            style={{
+              background: "#ffffff",
+              borderRadius: "10px",
+              border: "1px solid #E4E7EC",
+              overflow: "hidden",
+              boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+            }}
+          >
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "collapse",
+              }}
+            >
+              <thead>
+                <tr
+                  style={{
+                    background: "#F9FAFB",
+                    borderBottom: "1px solid #E4E7EC",
+                  }}
                 >
-                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-                  <line x1="8" y1="21" x2="16" y2="21" />
-                  <line x1="12" y1="17" x2="12" y2="21" />
-                </svg>
-              </div>
-              <h3
-                style={{
-                  margin: "0 0 12px 0",
-                  fontSize: "20px",
-                  fontWeight: 700,
-                  color: "#111827",
-                  fontFamily:
-                    '"Noto Sans", system-ui, -apple-system, sans-serif',
-                }}
-              >
-                No Projects Found
-              </h3>
-              <p
-                style={{
-                  margin: 0,
-                  color: "#6B7280",
-                  fontSize: "14px",
-                  fontFamily:
-                    '"Noto Sans", system-ui, -apple-system, sans-serif',
-                }}
-              >
-                Click "Add Project" to create your first project
-              </p>
-            </div>
-          ) : (
-            <div
-              style={{
-                background: "white",
-                borderRadius: "16px",
-                border: "1px solid #E5E7EB",
-                overflow: "hidden",
-                boxShadow: "0 4px 20px rgba(0, 0, 0, 0.08)",
-              }}
-            >
-              <table
-                style={{
-                  width: "100%",
-                  borderCollapse: "collapse",
-                  fontFamily:
-                    '"Noto Sans", system-ui, -apple-system, sans-serif',
-                }}
-              >
-                <thead>
-                  <tr
+                  <th
                     style={{
-                      background: "#F9FAFB",
-                      borderBottom: "1px solid #E5E7EB",
+                      padding: "12px 24px",
+                      textAlign: "left",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#6B7280",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
                     }}
                   >
-                    <th
-                      style={{
-                        padding: "12px 24px",
-                        textAlign: "left",
-                        fontSize: "12px",
-                        fontWeight: 600,
-                        color: "#6B7280",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.05em",
-                      }}
+                    Project ID
+                  </th>
+                  <th
+                    style={{
+                      padding: "12px 24px",
+                      textAlign: "left",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#6B7280",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                    }}
+                  >
+                    Name
+                  </th>
+                  <th
+                    style={{
+                      padding: "12px 24px",
+                      textAlign: "left",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#6B7280",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                    }}
+                  >
+                    Code
+                  </th>
+                  <th
+                    style={{
+                      padding: "12px 24px",
+                      textAlign: "left",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#6B7280",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                    }}
+                  >
+                    Users
+                  </th>
+                  <th
+                    style={{
+                      padding: "12px 24px",
+                      textAlign: "left",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#6B7280",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                    }}
+                  >
+                    Status
+                  </th>
+                  <th
+                    style={{
+                      padding: "12px 24px",
+                      textAlign: "left",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#6B7280",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                    }}
+                  >
+                    Created
+                  </th>
+                  <th
+                    style={{
+                      padding: "12px 24px",
+                      textAlign: "left",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#6B7280",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                    }}
+                  >
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {projects
+                  .slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+                  .map((project) => (
+                    <tr
+                      key={project._id}
+                      style={{ borderBottom: "1px solid #F2F4F7" }}
                     >
-                      Project ID
-                    </th>
-                    <th
-                      style={{
-                        padding: "12px 24px",
-                        textAlign: "left",
-                        fontSize: "12px",
-                        fontWeight: 600,
-                        color: "#6B7280",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.05em",
-                      }}
-                    >
-                      Name
-                    </th>
-                    <th
-                      style={{
-                        padding: "12px 24px",
-                        textAlign: "left",
-                        fontSize: "12px",
-                        fontWeight: 600,
-                        color: "#6B7280",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.05em",
-                      }}
-                    >
-                      Code
-                    </th>
-                    <th
-                      style={{
-                        padding: "12px 24px",
-                        textAlign: "left",
-                        fontSize: "12px",
-                        fontWeight: 600,
-                        color: "#6B7280",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.05em",
-                      }}
-                    >
-                      Users
-                    </th>
-                    <th
-                      style={{
-                        padding: "12px 24px",
-                        textAlign: "left",
-                        fontSize: "12px",
-                        fontWeight: 600,
-                        color: "#6B7280",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.05em",
-                      }}
-                    >
-                      Status
-                    </th>
-                    <th
-                      style={{
-                        padding: "12px 24px",
-                        textAlign: "left",
-                        fontSize: "12px",
-                        fontWeight: 600,
-                        color: "#6B7280",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.05em",
-                      }}
-                    >
-                      Created
-                    </th>
-                    <th
-                      style={{
-                        padding: "12px 24px",
-                        textAlign: "left",
-                        fontSize: "12px",
-                        fontWeight: 600,
-                        color: "#6B7280",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.05em",
-                      }}
-                    >
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {projects
-                    .slice(
-                      (currentPage - 1) * PAGE_SIZE,
-                      currentPage * PAGE_SIZE,
-                    )
-                    .map((project) => (
-                      <tr
-                        key={project._id}
-                        style={{ borderBottom: "1px solid #E5E7EB" }}
+                      <td
+                        style={{
+                          padding: "12px 16px",
+                          fontSize: "13px",
+                          color: "#667085",
+                        }}
                       >
-                        <td
+                        {project.projectId || "N/A"}
+                      </td>
+                      <td
+                        style={{
+                          padding: "12px 16px",
+                          fontSize: "13px",
+                          color: "#101828",
+                          fontWeight: 600,
+                        }}
+                      >
+                        {project.name}
+                      </td>
+                      <td
+                        style={{
+                          padding: "12px 16px",
+                          fontSize: "13px",
+                          color: "#667085",
+                        }}
+                      >
+                        <span
                           style={{
-                            padding: "1rem",
-                            fontSize: "0.875rem",
-                            color: "#6B7280",
+                            padding: "3px 10px",
+                            backgroundColor: "#F2F4F7",
+                            borderRadius: "20px",
+                            fontFamily: "monospace",
+                            fontSize: "12px",
                           }}
                         >
-                          {project.projectId || "N/A"}
-                        </td>
-                        <td
+                          {project.code}
+                        </span>
+                      </td>
+                      <td
+                        style={{
+                          padding: "12px 16px",
+                          fontSize: "13px",
+                          color: "#344054",
+                        }}
+                      >
+                        {project.users || 0}
+                      </td>
+                      <td style={{ padding: "12px 16px" }}>
+                        <span
                           style={{
-                            padding: "1rem",
-                            fontSize: "0.875rem",
-                            color: "#111827",
-                            fontWeight: "500",
+                            padding: "3px 10px",
+                            borderRadius: "20px",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            background: project.isActive
+                              ? "#ECFDF3"
+                              : "#FFF4ED",
+                            color: project.isActive ? "#027A48" : "#B93815",
+                            whiteSpace: "nowrap",
                           }}
                         >
-                          {project.name}
-                        </td>
-                        <td
-                          style={{
-                            padding: "1rem",
-                            fontSize: "0.875rem",
-                            color: "#6B7280",
-                          }}
-                        >
-                          <span
+                          {project.isActive ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                      <td
+                        style={{
+                          padding: "12px 16px",
+                          fontSize: "13px",
+                          color: "#667085",
+                        }}
+                      >
+                        {new Date(project.createdAt).toLocaleDateString()}
+                      </td>
+                      <td
+                        style={{ padding: "12px 16px", whiteSpace: "nowrap" }}
+                      >
+                        {hasPermission("PROJECT_EDIT") && (
+                          <button
+                            onClick={() => fetchProjectDetails(project._id)}
+                            disabled={loadingProject}
                             style={{
-                              padding: "0.25rem 0.5rem",
-                              backgroundColor: "#F3F4F6",
-                              borderRadius: "4px",
-                              fontFamily: "monospace",
-                              fontSize: "0.8125rem",
+                              padding: "7px 12px",
+                              background: loadingProject
+                                ? "#EAECF0"
+                                : "#F9FAFB",
+                              border: "1px solid #D0D5DD",
+                              borderRadius: "8px",
+                              fontSize: "13px",
+                              color: "#344054",
+                              cursor: loadingProject
+                                ? "not-allowed"
+                                : "pointer",
+                              marginRight: "8px",
                             }}
                           >
-                            {project.code}
-                          </span>
-                        </td>
-                        <td
-                          style={{
-                            padding: "1rem",
-                            fontSize: "0.875rem",
-                            color: "#6B7280",
-                          }}
-                        >
-                          {project.users || 0}
-                        </td>
-                        <td style={{ padding: "1rem" }}>
-                          <span
-                            style={{
-                              padding: "0.25rem 0.75rem",
-                              borderRadius: "9999px",
-                              fontSize: "0.75rem",
-                              fontWeight: "500",
-                              background: project.isActive
-                                ? "#DCFCE7"
-                                : "#FEE2E2",
-                              color: project.isActive ? "#047857" : "#DC2626",
+                            {loadingProject ? "Loading..." : "Edit"}
+                          </button>
+                        )}
+                        {hasPermission("PROJECT_DELETE") && (
+                          <button
+                            onClick={() => {
+                              setProjectToDelete(project);
+                              setShowDeleteConfirm(true);
                             }}
+                            style={{
+                              padding: "7px 12px",
+                              background: "#FEF2F2",
+                              color: "#DC2626",
+                              border: "1px solid #FECACA",
+                              borderRadius: "8px",
+                              fontSize: "13px",
+                              cursor: "pointer",
+                              transition: "background 0.2s",
+                            }}
+                            onMouseEnter={(e) =>
+                              (e.currentTarget.style.background = "#FECACA")
+                            }
+                            onMouseLeave={(e) =>
+                              (e.currentTarget.style.background = "#FEE2E2")
+                            }
                           >
-                            {project.isActive ? "Active" : "Inactive"}
-                          </span>
-                        </td>
-                        <td
-                          style={{
-                            padding: "1rem",
-                            fontSize: "0.875rem",
-                            color: "#6B7280",
-                          }}
-                        >
-                          {new Date(project.createdAt).toLocaleDateString()}
-                        </td>
-                        <td style={{ padding: "1rem" }}>
-                          {hasPermission("PROJECT_EDIT") && (
-                            <button
-                              onClick={() => fetchProjectDetails(project._id)}
-                              disabled={loadingProject}
-                              style={{
-                                padding: "0.5rem 1rem",
-                                background: loadingProject
-                                  ? "#E5E7EB"
-                                  : "#F3F4F6",
-                                border: "none",
-                                borderRadius: "4px",
-                                fontSize: "0.875rem",
-                                cursor: loadingProject
-                                  ? "not-allowed"
-                                  : "pointer",
-                                marginRight: "0.5rem",
-                              }}
-                            >
-                              {loadingProject ? "Loading..." : "Edit"}
-                            </button>
-                          )}
-                          {hasPermission("PROJECT_DELETE") && (
-                            <button
-                              onClick={() => {
-                                setProjectToDelete(project);
-                                setShowDeleteConfirm(true);
-                              }}
-                              style={{
-                                padding: "0.5rem 1rem",
-                                background: "#FEE2E2",
-                                color: "#DC2626",
-                                border: "none",
-                                borderRadius: "4px",
-                                fontSize: "0.875rem",
-                                cursor: "pointer",
-                                transition: "background 0.2s",
-                              }}
-                              onMouseEnter={(e) =>
-                                (e.currentTarget.style.background = "#FECACA")
-                              }
-                              onMouseLeave={(e) =>
-                                (e.currentTarget.style.background = "#FEE2E2")
-                              }
-                            >
-                              Delete
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
+                            Delete
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
 
-              {/* Pagination bar */}
-              {projects.length > PAGE_SIZE && (
+            {/* Pagination bar */}
+            {projects.length > PAGE_SIZE && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "14px 24px",
+                  borderTop: "1px solid #E4E7EC",
+                }}
+              >
+                <span style={{ fontSize: "13px", color: "#6B7280" }}>
+                  Showing {(currentPage - 1) * PAGE_SIZE + 1}–
+                  {Math.min(currentPage * PAGE_SIZE, projects.length)} of{" "}
+                  {projects.length} projects
+                </span>
                 <div
                   style={{
                     display: "flex",
+                    gap: "4px",
                     alignItems: "center",
-                    justifyContent: "space-between",
-                    padding: "14px 24px",
-                    borderTop: "1px solid #E5E7EB",
-                    fontFamily:
-                      '"Noto Sans", system-ui, -apple-system, sans-serif',
                   }}
                 >
-                  <span style={{ fontSize: "13px", color: "#6B7280" }}>
-                    Showing {(currentPage - 1) * PAGE_SIZE + 1}–
-                    {Math.min(currentPage * PAGE_SIZE, projects.length)} of{" "}
-                    {projects.length} projects
-                  </span>
-                  <div
+                  {/* Prev */}
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
                     style={{
-                      display: "flex",
-                      gap: "4px",
-                      alignItems: "center",
+                      padding: "6px 10px",
+                      fontSize: "13px",
+                      border: "1px solid #D1D5DB",
+                      borderRadius: "6px",
+                      background: currentPage === 1 ? "#F9FAFB" : "#ffffff",
+                      color: currentPage === 1 ? "#9CA3AF" : "#374151",
+                      cursor: currentPage === 1 ? "not-allowed" : "pointer",
                     }}
                   >
-                    {/* Prev */}
-                    <button
-                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                      disabled={currentPage === 1}
-                      style={{
-                        padding: "6px 10px",
-                        fontSize: "13px",
-                        border: "1px solid #D1D5DB",
-                        borderRadius: "6px",
-                        background: currentPage === 1 ? "#F9FAFB" : "white",
-                        color: currentPage === 1 ? "#9CA3AF" : "#374151",
-                        cursor: currentPage === 1 ? "not-allowed" : "pointer",
-                      }}
-                    >
-                      ‹ Prev
-                    </button>
+                    ‹ Prev
+                  </button>
 
-                    {/* Page number buttons */}
-                    {Array.from(
-                      { length: Math.ceil(projects.length / PAGE_SIZE) },
-                      (_, i) => i + 1,
-                    )
-                      .filter((page) => {
-                        const total = Math.ceil(projects.length / PAGE_SIZE);
-                        return (
-                          page === 1 ||
-                          page === total ||
-                          Math.abs(page - currentPage) <= 1
-                        );
-                      })
-                      .reduce<(number | "...")[]>((acc, page, idx, arr) => {
-                        if (
-                          idx > 0 &&
-                          typeof arr[idx - 1] === "number" &&
-                          (page as number) - (arr[idx - 1] as number) > 1
-                        ) {
-                          acc.push("...");
-                        }
-                        acc.push(page);
-                        return acc;
-                      }, [])
-                      .map((item, idx) =>
-                        item === "..." ? (
-                          <span
-                            key={`ellipsis-${idx}`}
-                            style={{
-                              padding: "6px 4px",
-                              color: "#9CA3AF",
-                              fontSize: "13px",
-                            }}
-                          >
-                            …
-                          </span>
-                        ) : (
-                          <button
-                            key={item}
-                            onClick={() => setCurrentPage(item as number)}
-                            style={{
-                              width: "34px",
-                              height: "34px",
-                              fontSize: "13px",
-                              border: "1px solid",
-                              borderColor:
-                                currentPage === item ? "#667eea" : "#D1D5DB",
-                              borderRadius: "6px",
-                              background:
-                                currentPage === item ? "#667eea" : "white",
-                              color: currentPage === item ? "white" : "#374151",
-                              cursor: "pointer",
-                              fontWeight: currentPage === item ? 600 : 400,
-                            }}
-                          >
-                            {item}
-                          </button>
-                        ),
-                      )}
+                  {/* Page number buttons */}
+                  {Array.from(
+                    { length: Math.ceil(projects.length / PAGE_SIZE) },
+                    (_, i) => i + 1,
+                  )
+                    .filter((page) => {
+                      const total = Math.ceil(projects.length / PAGE_SIZE);
+                      return (
+                        page === 1 ||
+                        page === total ||
+                        Math.abs(page - currentPage) <= 1
+                      );
+                    })
+                    .reduce<(number | "...")[]>((acc, page, idx, arr) => {
+                      if (
+                        idx > 0 &&
+                        typeof arr[idx - 1] === "number" &&
+                        (page as number) - (arr[idx - 1] as number) > 1
+                      ) {
+                        acc.push("...");
+                      }
+                      acc.push(page);
+                      return acc;
+                    }, [])
+                    .map((item, idx) =>
+                      item === "..." ? (
+                        <span
+                          key={`ellipsis-${idx}`}
+                          style={{
+                            padding: "6px 4px",
+                            color: "#9CA3AF",
+                            fontSize: "13px",
+                          }}
+                        >
+                          …
+                        </span>
+                      ) : (
+                        <button
+                          key={item}
+                          onClick={() => setCurrentPage(item as number)}
+                          style={{
+                            width: "34px",
+                            height: "34px",
+                            fontSize: "13px",
+                            border: "1px solid",
+                            borderColor:
+                              currentPage === item ? "#7F56D9" : "#D1D5DB",
+                            borderRadius: "6px",
+                            background:
+                              currentPage === item ? "#7F56D9" : "#ffffff",
+                            color: currentPage === item ? "white" : "#374151",
+                            cursor: "pointer",
+                            fontWeight: currentPage === item ? 600 : 400,
+                          }}
+                        >
+                          {item}
+                        </button>
+                      ),
+                    )}
 
-                    {/* Next */}
-                    <button
-                      onClick={() =>
-                        setCurrentPage((p) =>
-                          Math.min(
-                            Math.ceil(projects.length / PAGE_SIZE),
-                            p + 1,
-                          ),
-                        )
-                      }
-                      disabled={
-                        currentPage === Math.ceil(projects.length / PAGE_SIZE)
-                      }
-                      style={{
-                        padding: "6px 10px",
-                        fontSize: "13px",
-                        border: "1px solid #D1D5DB",
-                        borderRadius: "6px",
-                        background:
-                          currentPage === Math.ceil(projects.length / PAGE_SIZE)
-                            ? "#F9FAFB"
-                            : "white",
-                        color:
-                          currentPage === Math.ceil(projects.length / PAGE_SIZE)
-                            ? "#9CA3AF"
-                            : "#374151",
-                        cursor:
-                          currentPage === Math.ceil(projects.length / PAGE_SIZE)
-                            ? "not-allowed"
-                            : "pointer",
-                      }}
-                    >
-                      Next ›
-                    </button>
-                  </div>
+                  {/* Next */}
+                  <button
+                    onClick={() =>
+                      setCurrentPage((p) =>
+                        Math.min(Math.ceil(projects.length / PAGE_SIZE), p + 1),
+                      )
+                    }
+                    disabled={
+                      currentPage === Math.ceil(projects.length / PAGE_SIZE)
+                    }
+                    style={{
+                      padding: "6px 10px",
+                      fontSize: "13px",
+                      border: "1px solid #D1D5DB",
+                      borderRadius: "6px",
+                      background:
+                        currentPage === totalPages ? "#F9FAFB" : "#ffffff",
+                      color: currentPage === totalPages ? "#9CA3AF" : "#374151",
+                      cursor:
+                        currentPage === totalPages ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    Next ›
+                  </button>
                 </div>
-              )}
-            </div>
-          )}
-        </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <style>{`
           @keyframes spin {

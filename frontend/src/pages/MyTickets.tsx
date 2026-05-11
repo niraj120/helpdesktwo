@@ -15,6 +15,7 @@ import { TicketMergeModal } from "../components/tickets/TicketMergeModal";
 import {
   ArrowDownTrayIcon,
   ArrowsPointingInIcon,
+  Cog6ToothIcon,
   MagnifyingGlassIcon,
   ChevronDownIcon,
   CalendarDaysIcon,
@@ -89,6 +90,74 @@ interface Ticket {
 interface MyTicketsProps {
   wrapWithLayout?: boolean;
 }
+
+interface DepartmentOption {
+  _id: string;
+  name: string;
+}
+
+interface AssignableAgent {
+  _id: string;
+  firstName: string;
+  lastName: string;
+}
+
+type TicketTableColumnKey =
+  | "ticketNumber"
+  | "subject"
+  | "requestedBy"
+  | "assignee"
+  | "priority"
+  | "status"
+  | "sla"
+  | "createdAt"
+  | "center"
+  | "project"
+  | "category"
+  | "source"
+  | "mergedCount";
+
+const TICKET_TABLE_COLUMN_DEFS: Array<{
+  key: TicketTableColumnKey;
+  label: string;
+}> = [
+  { key: "ticketNumber", label: "Ticket #" },
+  { key: "subject", label: "Subject" },
+  { key: "requestedBy", label: "Requested By" },
+  { key: "assignee", label: "Assignee" },
+  { key: "priority", label: "Priority" },
+  { key: "status", label: "Status" },
+  { key: "sla", label: "SLA" },
+  { key: "createdAt", label: "Created" },
+  { key: "center", label: "Center" },
+  { key: "project", label: "Project" },
+  { key: "category", label: "Category" },
+  { key: "source", label: "Source" },
+  { key: "mergedCount", label: "Merged" },
+];
+
+const DEFAULT_TICKET_TABLE_COLUMNS: TicketTableColumnKey[] = [
+  "ticketNumber",
+  "subject",
+  "requestedBy",
+  "assignee",
+  "priority",
+  "status",
+  "sla",
+  "createdAt",
+];
+
+const normalizeTicketColumns = (columns?: string[]): TicketTableColumnKey[] => {
+  if (!Array.isArray(columns) || columns.length === 0) {
+    return DEFAULT_TICKET_TABLE_COLUMNS;
+  }
+
+  const valid = columns.filter((key): key is TicketTableColumnKey =>
+    TICKET_TABLE_COLUMN_DEFS.some((col) => col.key === key),
+  );
+
+  return valid.length > 0 ? valid : DEFAULT_TICKET_TABLE_COLUMNS;
+};
 
 // US-ESC-009: SLA countdown helpers
 const formatSlaMsRemaining = (ms: number): string => {
@@ -190,6 +259,21 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
 
   // Helper function to check permissions from localStorage
   const checkPermission = (permission: string): boolean => {
+    const userStr = localStorage.getItem("user");
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        if (
+          user?.role?.code === "SUPER_ADMIN" ||
+          user?.roleCode === "SUPER_ADMIN"
+        ) {
+          return true;
+        }
+      } catch {
+        // Ignore parse errors and continue with permission list check
+      }
+    }
+
     const userPermissionsStr = localStorage.getItem("userPermissions");
     if (!userPermissionsStr) return false;
     try {
@@ -235,6 +319,16 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
     "idle",
   );
   const [bulkMergePrimaryId, setBulkMergePrimaryId] = useState("");
+  const [showBulkAssignModal, setShowBulkAssignModal] = useState(false);
+  const [bulkAssignDepartments, setBulkAssignDepartments] = useState<
+    DepartmentOption[]
+  >([]);
+  const [bulkAssignDepartmentId, setBulkAssignDepartmentId] = useState("");
+  const [bulkAssignAgents, setBulkAssignAgents] = useState<AssignableAgent[]>(
+    [],
+  );
+  const [bulkAssignAgentId, setBulkAssignAgentId] = useState("");
+  const [bulkAssignLoadingAgents, setBulkAssignLoadingAgents] = useState(false);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkError, setBulkError] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -245,6 +339,9 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
   const [priorities, setPriorities] = useState<
     Array<{ code: string; name: string }>
   >([]);
+  const [visibleColumns, setVisibleColumns] = useState<TicketTableColumnKey[]>(
+    DEFAULT_TICKET_TABLE_COLUMNS,
+  );
   const [viewportWidth, setViewportWidth] = useState<number>(() =>
     typeof window !== "undefined" ? window.innerWidth : 1280,
   );
@@ -262,6 +359,10 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
 
   const canExport = checkPermission("TICKET_EXPORT");
   const canMerge = checkPermission("TICKET_MERGE");
+  const canAssign = checkPermission("TICKET_REASSIGN");
+  const canConfigureColumns = checkPermission(
+    "TICKET_CONFIG_MANAGE_TABLE_COLUMNS",
+  );
 
   console.log(
     "🎯 Permissions checked, canExport:",
@@ -270,23 +371,64 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
     canMerge,
   );
 
+  function resolveMasterDataProjectId() {
+    if (viewMode === "unified" && projectFilter !== "all") {
+      return projectFilter;
+    }
+
+    let projectId = "";
+    const projectContext = localStorage.getItem("projectContext");
+    if (projectContext) {
+      try {
+        projectId = JSON.parse(projectContext).projectId || "";
+      } catch {
+        projectId = "";
+      }
+    }
+    if (!projectId) projectId = localStorage.getItem("projectId") || "";
+    if (!projectId && currentProjectId) projectId = currentProjectId;
+
+    return projectId;
+  }
+
+  const configProjectId = resolveMasterDataProjectId();
+
+  useEffect(() => {
+    const fetchTicketTableColumns = async () => {
+      const projectId = resolveMasterDataProjectId();
+      if (!projectId) {
+        setVisibleColumns(DEFAULT_TICKET_TABLE_COLUMNS);
+        return;
+      }
+
+      try {
+        const token = localStorage.getItem("authToken");
+        const response = await axios.get(
+          `${API_BASE_URL}/projects/${projectId}/ticket-settings`,
+          token
+            ? {
+                headers: { Authorization: `Bearer ${token}` },
+              }
+            : undefined,
+        );
+
+        const columns = response.data?.ticketConfig?.tableColumns || [];
+        setVisibleColumns(normalizeTicketColumns(columns));
+      } catch (error) {
+        console.error("[MyTickets] Failed to load ticket table columns", error);
+        setVisibleColumns(DEFAULT_TICKET_TABLE_COLUMNS);
+      }
+    };
+
+    fetchTicketTableColumns();
+  }, [viewMode, currentProjectId, projectFilter]);
+
   const fetchMasterData = useCallback(async () => {
     try {
       const token = localStorage.getItem("authToken");
       if (!token) return;
 
-      // Resolve projectId: agent portal sets 'projectContext'; student login sets 'projectId'
-      let projectId = "";
-      const projectContext = localStorage.getItem("projectContext");
-      if (projectContext) {
-        try {
-          projectId = JSON.parse(projectContext).projectId || "";
-        } catch {
-          projectId = "";
-        }
-      }
-      if (!projectId) projectId = localStorage.getItem("projectId") || "";
-      if (!projectId && currentProjectId) projectId = currentProjectId;
+      const projectId = resolveMasterDataProjectId();
 
       // Fetch statuses — project-specific if available, otherwise fetch all (super admin / no project context)
       try {
@@ -345,29 +487,67 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
         ]);
       }
 
-      // Fetch priorities from SLA rules
+      // Fetch priorities from priority master data (project-scoped when projectId is present)
       try {
-        const slaUrl = projectId
-          ? `${API_BASE_URL}/sla-rules?projectId=${projectId}&isActive=true`
-          : `${API_BASE_URL}/sla-rules?isActive=true`;
-        const slaResponse = await axios.get(slaUrl, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const priorityResponse = await axios.get(
+          `${API_BASE_URL}/priorities/active`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            params: projectId ? { projectId } : {},
+          },
+        );
 
         if (
-          slaResponse.data.success &&
-          Array.isArray(slaResponse.data.data) &&
-          slaResponse.data.data.length > 0
+          priorityResponse.data.success &&
+          Array.isArray(priorityResponse.data.data)
         ) {
-          const priorityList = slaResponse.data.data.map((sla: any) => ({
-            code: sla.priority,
-            name: sla.name,
-          }));
-          setPriorities(priorityList);
+          const seen = new Set<string>();
+          const priorityList = (priorityResponse.data.data as any[])
+            .map((p: any) => {
+              const code = String(p.code || p.name || "").trim();
+              if (!code) return null;
+              return {
+                code,
+                name: p.name
+                  ? String(p.name)
+                  : code
+                      .toLowerCase()
+                      .replace(/_/g, " ")
+                      .replace(/\b\w/g, (c: string) => c.toUpperCase()),
+              };
+            })
+            .filter(
+              (
+                item: { code: string; name: string } | null,
+              ): item is {
+                code: string;
+                name: string;
+              } => !!item,
+            )
+            .filter((item) => {
+              const key = item.code.toLowerCase();
+              if (seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            });
+
+          if (priorityList.length > 0) {
+            setPriorities(priorityList);
+          } else {
+            setPriorities([
+              { code: "Low", name: "Low" },
+              { code: "Normal", name: "Normal" },
+              { code: "Medium", name: "Medium" },
+              { code: "High", name: "High" },
+              { code: "Urgent", name: "Urgent" },
+              { code: "Critical", name: "Critical" },
+            ]);
+          }
         } else {
           setPriorities([
             { code: "Low", name: "Low" },
             { code: "Normal", name: "Normal" },
+            { code: "Medium", name: "Medium" },
             { code: "High", name: "High" },
             { code: "Urgent", name: "Urgent" },
             { code: "Critical", name: "Critical" },
@@ -377,6 +557,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
         setPriorities([
           { code: "Low", name: "Low" },
           { code: "Normal", name: "Normal" },
+          { code: "Medium", name: "Medium" },
           { code: "High", name: "High" },
           { code: "Urgent", name: "Urgent" },
           { code: "Critical", name: "Critical" },
@@ -395,12 +576,13 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
       setPriorities([
         { code: "Low", name: "Low" },
         { code: "Normal", name: "Normal" },
+        { code: "Medium", name: "Medium" },
         { code: "High", name: "High" },
         { code: "Urgent", name: "Urgent" },
         { code: "Critical", name: "Critical" },
       ]);
     }
-  }, [currentProjectId]);
+  }, [currentProjectId, projectFilter, viewMode]);
 
   const fetchMyTickets = useCallback(async () => {
     console.log("🎯 fetchMyTickets called");
@@ -501,7 +683,21 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
     // Fetch tickets whenever viewMode or currentProjectId changes
     fetchMasterData();
     fetchMyTickets();
-  }, [fetchMyTickets, fetchMasterData, viewMode, currentProjectId]);
+  }, [
+    fetchMyTickets,
+    fetchMasterData,
+    viewMode,
+    currentProjectId,
+    projectFilter,
+  ]);
+
+  // When project changes in unified mode, reset dependent filters to avoid stale values.
+  useEffect(() => {
+    if (viewMode !== "unified") return;
+    setStatusFilter("all");
+    setPriorityFilter("all");
+    setCurrentPage(1);
+  }, [projectFilter, viewMode]);
 
   // Reset project filter when switching to single project mode
   useEffect(() => {
@@ -776,13 +972,329 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
           ).values(),
         )
   ) as Array<{ _id: string; name: string }>;
-  const showRequestedBy = !isMobile;
   const showSenderEmail = hasEmailSource && !isTablet;
-  const showAssignee = !isMobile;
-  const showSource = !isMobile;
-  const showSla = !isTablet;
-  const showCenter = !isTablet;
-  const showProjectColumn = viewMode === "unified" && !isTablet;
+  const visibleColumnDefs = useMemo(() => {
+    const isVisibleOnViewport = (key: TicketTableColumnKey) => {
+      if (isMobile && ["requestedBy", "assignee", "source"].includes(key)) {
+        return false;
+      }
+      if (
+        isTablet &&
+        [
+          "source",
+          "sla",
+          "center",
+          "project",
+          "category",
+          "mergedCount",
+        ].includes(key)
+      ) {
+        return false;
+      }
+      return true;
+    };
+
+    return visibleColumns
+      .map((key) => TICKET_TABLE_COLUMN_DEFS.find((def) => def.key === key))
+      .filter(
+        (def): def is { key: TicketTableColumnKey; label: string } =>
+          !!def && isVisibleOnViewport(def.key),
+      );
+  }, [visibleColumns, isMobile, isTablet]);
+
+  const showSenderEmailColumn =
+    showSenderEmail &&
+    visibleColumnDefs.some((col) => col.key === "requestedBy");
+  const tableDataColumnCount =
+    visibleColumnDefs.length + (showSenderEmailColumn ? 1 : 0);
+
+  const renderTicketDataCell = (
+    columnKey: TicketTableColumnKey,
+    ticket: Ticket,
+    isHighlighted: boolean,
+  ) => {
+    const sourceBadge = getSourceBadge(ticket.submissionSource);
+    const projectName =
+      typeof ticket.metadata?.projectId === "object"
+        ? ticket.metadata.projectId.name || ticket.metadata.projectId.code
+        : null;
+    const centerName =
+      !ticket.metadata?.centerId || ticket.metadata.centerId === "online"
+        ? "Online"
+        : typeof ticket.metadata.centerId === "object"
+          ? ticket.metadata.centerId.centerName
+          : ticket.metadata?.centerName || "Online";
+    const requestedBy =
+      ticket.metadata?.createdByName ||
+      ticket.metadata?.studentName ||
+      (ticket.submissionSource === "email" ? ticket.sourceEmail : null) ||
+      "-";
+    const slaPill = computeSlaPill(ticket);
+
+    switch (columnKey) {
+      case "ticketNumber":
+        return (
+          <td
+            style={{
+              padding: isMobile ? "10px 12px" : "12px 16px",
+              fontSize: 13,
+              color: "#2563EB",
+              fontWeight: 600,
+              whiteSpace: "nowrap",
+            }}
+          >
+            #{ticket.ticketNumber}
+          </td>
+        );
+      case "subject":
+        return (
+          <td
+            style={{
+              padding: isMobile ? "10px 12px" : "12px 16px",
+              minWidth: isMobile ? 180 : 220,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                marginBottom: 2,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 13,
+                  color: "#101828",
+                  fontWeight: isHighlighted ? 700 : 600,
+                }}
+              >
+                {ticket.subject || "No subject"}
+              </span>
+              {ticket.hasNewReply && (
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    background: "#F59E0B",
+                    display: "inline-block",
+                  }}
+                />
+              )}
+            </div>
+            {ticket.category?.name && (
+              <div style={{ fontSize: 12, color: "#667085" }}>
+                {ticket.category.name}
+              </div>
+            )}
+          </td>
+        );
+      case "requestedBy":
+        return (
+          <td
+            style={{
+              padding: isMobile ? "10px 12px" : "12px 16px",
+              fontSize: 13,
+              color: "#344054",
+            }}
+          >
+            {requestedBy}
+          </td>
+        );
+      case "assignee":
+        return (
+          <td
+            style={{
+              padding: isMobile ? "10px 12px" : "12px 16px",
+              fontSize: 13,
+              color: "#344054",
+            }}
+          >
+            {ticket.assignedTo
+              ? `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}`
+              : "Unassigned"}
+          </td>
+        );
+      case "source":
+        return (
+          <td style={{ padding: isMobile ? "10px 12px" : "12px 16px" }}>
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                padding: "3px 10px",
+                borderRadius: "20px",
+                fontSize: 12,
+                fontWeight: 600,
+                color: sourceBadge.color,
+                backgroundColor: sourceBadge.bgColor,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {sourceBadge.icon} {sourceBadge.label}
+            </span>
+          </td>
+        );
+      case "priority":
+        return (
+          <td style={{ padding: isMobile ? "10px 12px" : "12px 16px" }}>
+            <span
+              style={{
+                padding: "3px 10px",
+                borderRadius: "20px",
+                fontSize: "12px",
+                fontWeight: 600,
+                color: "white",
+                background: getPriorityColor(ticket.priority),
+                textTransform: "capitalize",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {ticket.priority || "N/A"}
+            </span>
+          </td>
+        );
+      case "status":
+        return (
+          <td style={{ padding: isMobile ? "10px 12px" : "12px 16px" }}>
+            <span
+              style={{
+                padding: "3px 10px",
+                borderRadius: "20px",
+                fontSize: "12px",
+                fontWeight: 600,
+                background:
+                  (getStatusColor(ticket.status, ticket) || "#6B7280") + "20",
+                color: getStatusColor(ticket.status, ticket),
+                whiteSpace: "nowrap",
+              }}
+            >
+              {getStatusName(ticket.status, ticket)}
+            </span>
+          </td>
+        );
+      case "sla":
+        return (
+          <td style={{ padding: isMobile ? "10px 12px" : "12px 16px" }}>
+            {slaPill ? (
+              <span
+                title={slaPill.tooltip}
+                style={{
+                  padding: "3px 8px",
+                  borderRadius: "20px",
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  color: slaPill.color,
+                  background: slaPill.bg,
+                  border: `1px solid ${slaPill.color}30`,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                ⏱ {slaPill.label}
+              </span>
+            ) : (
+              <span style={{ color: "#98A2B3", fontSize: 12 }}>-</span>
+            )}
+          </td>
+        );
+      case "createdAt":
+        return (
+          <td
+            style={{
+              padding: isMobile ? "10px 12px" : "12px 16px",
+              fontSize: 13,
+              color: "#344054",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {new Date(ticket.createdAt).toLocaleString(undefined, {
+              day: "2-digit",
+              month: "short",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: true,
+            })}
+          </td>
+        );
+      case "center":
+        return (
+          <td style={{ padding: isMobile ? "10px 12px" : "12px 16px" }}>
+            <span
+              style={{
+                padding: "3px 10px",
+                borderRadius: "20px",
+                fontSize: "12px",
+                fontWeight: 600,
+                background: centerName === "Online" ? "#DBEAFE" : "#FEF3C7",
+                color: centerName === "Online" ? "#1E40AF" : "#92400E",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {centerName}
+            </span>
+          </td>
+        );
+      case "project":
+        return (
+          <td
+            style={{
+              padding: isMobile ? "10px 12px" : "12px 16px",
+              fontSize: 13,
+              color: "#344054",
+            }}
+          >
+            {projectName ? (
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  padding: "3px 10px",
+                  borderRadius: "20px",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  color: "#5925DC",
+                  background: "#F4F3FF",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {projectName}
+              </span>
+            ) : (
+              <span style={{ color: "#98A2B3" }}>-</span>
+            )}
+          </td>
+        );
+      case "category":
+        return (
+          <td
+            style={{
+              padding: isMobile ? "10px 12px" : "12px 16px",
+              fontSize: 13,
+              color: "#344054",
+            }}
+          >
+            {ticket.category?.name || "-"}
+          </td>
+        );
+      case "mergedCount":
+        return (
+          <td
+            style={{
+              padding: isMobile ? "10px 12px" : "12px 16px",
+              fontSize: 13,
+              color: "#344054",
+            }}
+          >
+            {ticket.mergedTickets?.length || 0}
+          </td>
+        );
+      default:
+        return null;
+    }
+  };
 
   const handleTicketClick = (ticketId: string) => {
     // Clear unread highlight when agent opens the ticket
@@ -815,6 +1327,15 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
     // Fallback to regular route
     navigate(`/tickets/${ticketId}`);
   };
+
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const ticket of tickets) {
+      const code = String(Number(ticket.status));
+      counts[code] = (counts[code] || 0) + 1;
+    }
+    return counts;
+  }, [tickets]);
 
   console.log("🎯 About to check loading state, loading:", loading);
 
@@ -899,16 +1420,161 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
     }
   };
 
+  const getTicketProjectId = (ticket: Ticket): string | null => {
+    const project = ticket.metadata?.projectId;
+    if (!project) return null;
+    return typeof project === "object" ? project._id : project;
+  };
+
+  const fetchBulkAssignableAgents = async (departmentId: string) => {
+    if (!departmentId) {
+      setBulkAssignAgents([]);
+      return;
+    }
+
+    setBulkAssignLoadingAgents(true);
+    try {
+      const token = localStorage.getItem("authToken");
+      const response = await axios.get(
+        `${API_BASE_URL}/tickets/assignable-agents`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          params: { departmentId },
+        },
+      );
+      setBulkAssignAgents(
+        Array.isArray(response.data?.data) ? response.data.data : [],
+      );
+    } catch {
+      setBulkAssignAgents([]);
+    } finally {
+      setBulkAssignLoadingAgents(false);
+    }
+  };
+
+  const handleOpenBulkAssignModal = async () => {
+    setBulkError("");
+    const selected = filteredTickets.filter((t) =>
+      selectedTicketIds.has(t._id),
+    );
+    if (selected.length === 0) return;
+
+    const projectIds = new Set(
+      selected.map((ticket) => getTicketProjectId(ticket)).filter(Boolean),
+    );
+
+    if (projectIds.size !== 1) {
+      setBulkError(
+        "Bulk assign requires tickets from the same project. Please filter/select one project at a time.",
+      );
+      return;
+    }
+
+    const projectId = Array.from(projectIds)[0] as string;
+
+    setBulkAssignDepartmentId("");
+    setBulkAssignAgentId("");
+    setBulkAssignAgents([]);
+    setBulkAssignDepartments([]);
+
+    try {
+      const token = localStorage.getItem("authToken");
+      const response = await axios.get(
+        `${API_BASE_URL}/departments/project/${projectId}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+
+      setBulkAssignDepartments(
+        Array.isArray(response.data?.data) ? response.data.data : [],
+      );
+      setShowBulkAssignModal(true);
+    } catch (err: any) {
+      setBulkError(
+        err?.response?.data?.message ||
+          "Failed to load departments for selected tickets",
+      );
+    }
+  };
+
+  const handleConfirmBulkAssign = async () => {
+    if (!bulkAssignAgentId || selectedTicketIds.size === 0) return;
+
+    setBulkLoading(true);
+    setBulkError("");
+
+    try {
+      const token = localStorage.getItem("authToken");
+      const ticketIds = Array.from(selectedTicketIds);
+      const results = await Promise.allSettled(
+        ticketIds.map((ticketId) =>
+          axios.patch(
+            `${API_BASE_URL}/tickets/${ticketId}/reassign`,
+            { newAgentId: bulkAssignAgentId, reason: "Bulk assignment" },
+            { headers: { Authorization: `Bearer ${token}` } },
+          ),
+        ),
+      );
+
+      const failedCount = results.filter(
+        (result) => result.status === "rejected",
+      ).length;
+
+      if (failedCount > 0) {
+        setBulkError(
+          `${failedCount} of ${ticketIds.length} tickets failed to assign. Please retry the failed ones.`,
+        );
+      }
+
+      if (failedCount < ticketIds.length) {
+        setShowBulkAssignModal(false);
+        setSelectedTicketIds(new Set());
+        fetchMyTickets();
+      }
+    } catch (err: any) {
+      setBulkError(err?.response?.data?.message || "Failed to assign tickets");
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
   const selectedTickets = filteredTickets.filter((t) =>
     selectedTicketIds.has(t._id),
   );
 
-  const ticketStats = {
-    total: tickets.length,
-    open: tickets.filter((t) => Number(t.status) === 1).length,
-    pending: tickets.filter((t) => Number(t.status) === 3).length,
-    closed: tickets.filter((t) => Number(t.status) === 5).length,
-  };
+  const STATUS_CARD_STYLES = [
+    { bg: "#EFF8FF", color: "#175CD3", icon: "📬" },
+    { bg: "#FFFAEB", color: "#B54708", icon: "⏳" },
+    { bg: "#ECFDF3", color: "#027A48", icon: "✅" },
+    { bg: "#FEF3F2", color: "#B42318", icon: "⚠️" },
+    { bg: "#F4F3FF", color: "#5925DC", icon: "🟣" },
+    { bg: "#F0F9FF", color: "#0369A1", icon: "🔹" },
+  ];
+
+  const statsCards = [
+    {
+      label: "Total",
+      value: tickets.length,
+      bg: "#F4F3FF",
+      color: "#5925DC",
+      icon: "🎫",
+      filterValue: "all",
+      sub: "All statuses",
+    },
+    ...statuses.map((status, index) => {
+      const style = STATUS_CARD_STYLES[index % STATUS_CARD_STYLES.length];
+      return {
+        label: status.name,
+        value: statusCounts[String(status.code)] || 0,
+        bg: style.bg,
+        color: style.color,
+        icon: style.icon,
+        filterValue: String(status.code),
+        sub: "Click to filter",
+      };
+    }),
+  ];
 
   const content = (
     <div
@@ -961,84 +1627,97 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
           flexWrap: "wrap",
         }}
       >
-        {[
-          {
-            label: "Total",
-            value: ticketStats.total,
-            bg: "#F4F3FF",
-            color: "#5925DC",
-            icon: "🎫",
-          },
-          {
-            label: "Open",
-            value: ticketStats.open,
-            bg: "#EFF8FF",
-            color: "#175CD3",
-            icon: "📬",
-          },
-          {
-            label: "Pending",
-            value: ticketStats.pending,
-            bg: "#FFFAEB",
-            color: "#B54708",
-            icon: "⏳",
-          },
-          {
-            label: "Closed",
-            value: ticketStats.closed,
-            bg: "#ECFDF3",
-            color: "#027A48",
-            icon: "✅",
-          },
-        ].map((stat) => (
-          <div
-            key={stat.label}
-            style={{
-              flex: isMobile ? "1 1 140px" : "1 1 180px",
-              background: "white",
-              borderRadius: "10px",
-              padding: isMobile ? "14px 14px" : "20px 24px",
-              border: "1px solid #E4E7EC",
-              boxShadow: "0 1px 3px rgba(0,0,0,.06)",
-              display: "flex",
-              alignItems: "center",
-              gap: isMobile ? "10px" : "16px",
-            }}
-          >
+        {statsCards.map((stat) => {
+          const isActive = statusFilter === stat.filterValue;
+          return (
             <div
+              key={stat.label}
+              onClick={() => {
+                setStatusFilter(stat.filterValue);
+                setCurrentPage(1);
+              }}
               style={{
-                width: isMobile ? "38px" : "48px",
-                height: isMobile ? "38px" : "48px",
-                borderRadius: "50%",
-                background: stat.bg,
+                flex: isMobile ? "1 1 140px" : "1 1 180px",
+                background: isActive ? stat.bg : "white",
+                borderRadius: "10px",
+                padding: isMobile ? "14px 14px" : "20px 24px",
+                border: isActive
+                  ? `2px solid ${stat.color}55`
+                  : "1px solid #E4E7EC",
+                boxShadow: isActive
+                  ? `0 6px 18px ${stat.color}26`
+                  : "0 1px 3px rgba(0,0,0,.06)",
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "center",
-                fontSize: isMobile ? "16px" : "20px",
-                flexShrink: 0,
+                gap: isMobile ? "10px" : "16px",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
               }}
             >
-              {stat.icon}
-            </div>
-            <div>
               <div
                 style={{
-                  fontSize: isMobile ? "20px" : "28px",
-                  fontWeight: 700,
-                  color: "#101828",
-                  lineHeight: 1.2,
+                  width: isMobile ? "38px" : "48px",
+                  height: isMobile ? "38px" : "48px",
+                  borderRadius: "50%",
+                  background: stat.bg,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: isMobile ? "16px" : "20px",
+                  flexShrink: 0,
                 }}
               >
-                {stat.value.toLocaleString()}
+                {stat.icon}
               </div>
-              <div
-                style={{ fontSize: "13px", color: "#667085", marginTop: "2px" }}
-              >
-                {stat.label}
+              <div>
+                <div
+                  style={{
+                    fontSize: isMobile ? "20px" : "28px",
+                    fontWeight: 700,
+                    color: isActive ? stat.color : "#101828",
+                    lineHeight: 1.2,
+                  }}
+                >
+                  {stat.value.toLocaleString()}
+                </div>
+                <div
+                  style={{
+                    fontSize: "13px",
+                    color: isActive ? stat.color : "#667085",
+                    marginTop: "2px",
+                  }}
+                >
+                  {stat.label}
+                </div>
+                <div
+                  style={{
+                    fontSize: "11px",
+                    color: "#98A2B3",
+                    marginTop: "2px",
+                  }}
+                >
+                  {stat.sub}
+                </div>
               </div>
+              {isActive && (
+                <span
+                  style={{
+                    marginLeft: "auto",
+                    alignSelf: "flex-start",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    color: "white",
+                    background: stat.color,
+                    borderRadius: "9999px",
+                    padding: "3px 8px",
+                  }}
+                >
+                  Active
+                </span>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {error && !error.includes("Not Found") && (
@@ -1162,6 +1841,40 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
             </button>
           )}
 
+          {canConfigureColumns && (
+            <button
+              onClick={() => {
+                if (!configProjectId) {
+                  toast.error("Select a project first to configure columns");
+                  return;
+                }
+                navigate(
+                  `/ticket-config/settings/${configProjectId}?tab=tableColumns`,
+                );
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                height: "42px",
+                padding: "0 14px",
+                background: "#2563EB",
+                color: "white",
+                border: "none",
+                borderRadius: "10px",
+                fontSize: "13px",
+                fontWeight: 600,
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+                width: isMobile ? "100%" : "auto",
+                justifyContent: "center",
+              }}
+            >
+              <Cog6ToothIcon style={{ width: "15px", height: "15px" }} />
+              Configure Columns
+            </button>
+          )}
+
           {(searchTerm ||
             statusFilter !== "all" ||
             priorityFilter !== "all" ||
@@ -1208,7 +1921,9 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+            gridTemplateColumns: isMobile
+              ? "1fr"
+              : "repeat(auto-fit, minmax(190px, 1fr))",
             gap: "12px",
             alignItems: "center",
           }}
@@ -1656,15 +2371,13 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                         width: "100%",
                         borderCollapse: "separate",
                         borderSpacing: 0,
-                        minWidth: isMobile
-                          ? "980px"
-                          : isTablet
-                            ? hasEmailSource
-                              ? "1220px"
-                              : "1120px"
-                            : hasEmailSource
-                              ? "1400px"
-                              : "1280px",
+                        minWidth: `${Math.max(
+                          (tableDataColumnCount +
+                            (canMerge || canAssign ? 1 : 0) +
+                            1) *
+                            130,
+                          980,
+                        )}px`,
                       }}
                     >
                       <thead>
@@ -1674,7 +2387,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                             borderBottom: "1px solid #E4E7EC",
                           }}
                         >
-                          {canMerge && (
+                          {(canMerge || canAssign) && (
                             <th style={{ padding: "12px 12px", width: 36 }}>
                               <input
                                 type="checkbox"
@@ -1692,176 +2405,39 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                               />
                             </th>
                           )}
-                          <th
-                            style={{
-                              padding: "12px 16px",
-                              fontSize: 12,
-                              fontWeight: 600,
-                              color: "#667085",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.5px",
-                              textAlign: "left",
-                            }}
-                          >
-                            Ticket #
-                          </th>
-                          <th
-                            style={{
-                              padding: "12px 16px",
-                              fontSize: 12,
-                              fontWeight: 600,
-                              color: "#667085",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.5px",
-                              textAlign: "left",
-                            }}
-                          >
-                            Subject
-                          </th>
-                          {showRequestedBy && (
-                            <th
-                              style={{
-                                padding: "12px 16px",
-                                fontSize: 12,
-                                fontWeight: 600,
-                                color: "#667085",
-                                textTransform: "uppercase",
-                                letterSpacing: "0.5px",
-                                textAlign: "left",
-                              }}
-                            >
-                              Requested By
-                            </th>
-                          )}
-                          {showSenderEmail && (
-                            <th
-                              style={{
-                                padding: "12px 16px",
-                                fontSize: 12,
-                                fontWeight: 600,
-                                color: "#667085",
-                                textTransform: "uppercase",
-                                letterSpacing: "0.5px",
-                                textAlign: "left",
-                              }}
-                            >
-                              Sender Email
-                            </th>
-                          )}
-                          {showAssignee && (
-                            <th
-                              style={{
-                                padding: "12px 16px",
-                                fontSize: 12,
-                                fontWeight: 600,
-                                color: "#667085",
-                                textTransform: "uppercase",
-                                letterSpacing: "0.5px",
-                                textAlign: "left",
-                              }}
-                            >
-                              Assignee
-                            </th>
-                          )}
-                          {showSource && (
-                            <th
-                              style={{
-                                padding: "12px 16px",
-                                fontSize: 12,
-                                fontWeight: 600,
-                                color: "#667085",
-                                textTransform: "uppercase",
-                                letterSpacing: "0.5px",
-                                textAlign: "left",
-                              }}
-                            >
-                              Source
-                            </th>
-                          )}
-                          <th
-                            style={{
-                              padding: "12px 16px",
-                              fontSize: 12,
-                              fontWeight: 600,
-                              color: "#667085",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.5px",
-                              textAlign: "left",
-                            }}
-                          >
-                            Priority
-                          </th>
-                          <th
-                            style={{
-                              padding: "12px 16px",
-                              fontSize: 12,
-                              fontWeight: 600,
-                              color: "#667085",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.5px",
-                              textAlign: "left",
-                            }}
-                          >
-                            Status
-                          </th>
-                          {showSla && (
-                            <th
-                              style={{
-                                padding: "12px 16px",
-                                fontSize: 12,
-                                fontWeight: 600,
-                                color: "#667085",
-                                textTransform: "uppercase",
-                                letterSpacing: "0.5px",
-                                textAlign: "left",
-                              }}
-                            >
-                              SLA
-                            </th>
-                          )}
-                          <th
-                            style={{
-                              padding: "12px 16px",
-                              fontSize: 12,
-                              fontWeight: 600,
-                              color: "#667085",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.5px",
-                              textAlign: "left",
-                            }}
-                          >
-                            Created
-                          </th>
-                          {showCenter && (
-                            <th
-                              style={{
-                                padding: "12px 16px",
-                                fontSize: 12,
-                                fontWeight: 600,
-                                color: "#667085",
-                                textTransform: "uppercase",
-                                letterSpacing: "0.5px",
-                                textAlign: "left",
-                              }}
-                            >
-                              Center
-                            </th>
-                          )}
-                          {showProjectColumn && (
-                            <th
-                              style={{
-                                padding: "12px 16px",
-                                fontSize: 12,
-                                fontWeight: 600,
-                                color: "#667085",
-                                textTransform: "uppercase",
-                                letterSpacing: "0.5px",
-                                textAlign: "left",
-                              }}
-                            >
-                              Project
-                            </th>
-                          )}
+                          {visibleColumnDefs.map((col) => (
+                            <React.Fragment key={`header-${col.key}`}>
+                              <th
+                                style={{
+                                  padding: "12px 16px",
+                                  fontSize: 12,
+                                  fontWeight: 600,
+                                  color: "#667085",
+                                  textTransform: "uppercase",
+                                  letterSpacing: "0.5px",
+                                  textAlign: "left",
+                                }}
+                              >
+                                {col.label}
+                              </th>
+                              {col.key === "requestedBy" &&
+                                showSenderEmailColumn && (
+                                  <th
+                                    style={{
+                                      padding: "12px 16px",
+                                      fontSize: 12,
+                                      fontWeight: 600,
+                                      color: "#667085",
+                                      textTransform: "uppercase",
+                                      letterSpacing: "0.5px",
+                                      textAlign: "left",
+                                    }}
+                                  >
+                                    Sender Email
+                                  </th>
+                                )}
+                            </React.Fragment>
+                          ))}
                           <th
                             style={{
                               padding: "12px 16px",
@@ -1933,7 +2509,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                                 }
                               }}
                             >
-                              {canMerge && (
+                              {(canMerge || canAssign) && (
                                 <td
                                   style={{
                                     padding: isMobile
@@ -1956,300 +2532,47 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                                   />
                                 </td>
                               )}
-                              <td
-                                style={{
-                                  padding: isMobile ? "10px 12px" : "12px 16px",
-                                  fontSize: 13,
-                                  color: "#2563EB",
-                                  fontWeight: 600,
-                                  whiteSpace: "nowrap",
-                                }}
-                              >
-                                #{ticket.ticketNumber}
-                              </td>
-                              <td
-                                style={{
-                                  padding: isMobile ? "10px 12px" : "12px 16px",
-                                  minWidth: isMobile ? 180 : 220,
-                                }}
-                              >
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: 6,
-                                    marginBottom: 2,
-                                  }}
+                              {visibleColumnDefs.map((col) => (
+                                <React.Fragment
+                                  key={`row-${ticket._id}-${col.key}`}
                                 >
-                                  <span
-                                    style={{
-                                      fontSize: 13,
-                                      color: "#101828",
-                                      fontWeight: isHighlighted ? 700 : 600,
-                                    }}
-                                  >
-                                    {ticket.subject || "No subject"}
-                                  </span>
-                                  {ticket.hasNewReply && (
-                                    <span
-                                      style={{
-                                        width: 8,
-                                        height: 8,
-                                        borderRadius: "50%",
-                                        background: "#F59E0B",
-                                        display: "inline-block",
-                                      }}
-                                    />
+                                  {renderTicketDataCell(
+                                    col.key,
+                                    ticket,
+                                    isHighlighted,
                                   )}
-                                </div>
-                                {ticket.category?.name && (
-                                  <div
-                                    style={{ fontSize: 12, color: "#667085" }}
-                                  >
-                                    {ticket.category.name}
-                                  </div>
-                                )}
-                              </td>
-                              {showRequestedBy && (
-                                <td
-                                  style={{
-                                    padding: isMobile
-                                      ? "10px 12px"
-                                      : "12px 16px",
-                                    fontSize: 13,
-                                    color: "#344054",
-                                  }}
-                                >
-                                  {requestedBy}
-                                </td>
-                              )}
-                              {showSenderEmail && (
-                                <td
-                                  style={{
-                                    padding: isMobile
-                                      ? "10px 12px"
-                                      : "12px 16px",
-                                    fontSize: 13,
-                                    color: "#344054",
-                                  }}
-                                >
-                                  {ticket.submissionSource === "email" &&
-                                  ticket.sourceEmail ? (
-                                    <a
-                                      href={`mailto:${ticket.sourceEmail}`}
-                                      onClick={(e) => e.stopPropagation()}
-                                      style={{
-                                        color: "#175CD3",
-                                        textDecoration: "none",
-                                      }}
-                                    >
-                                      {ticket.sourceEmail}
-                                    </a>
-                                  ) : (
-                                    <span style={{ color: "#98A2B3" }}>-</span>
-                                  )}
-                                </td>
-                              )}
-                              {showAssignee && (
-                                <td
-                                  style={{
-                                    padding: isMobile
-                                      ? "10px 12px"
-                                      : "12px 16px",
-                                    fontSize: 13,
-                                    color: "#344054",
-                                  }}
-                                >
-                                  {ticket.assignedTo
-                                    ? `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}`
-                                    : "Unassigned"}
-                                </td>
-                              )}
-                              {showSource && (
-                                <td
-                                  style={{
-                                    padding: isMobile
-                                      ? "10px 12px"
-                                      : "12px 16px",
-                                  }}
-                                >
-                                  <span
-                                    style={{
-                                      display: "inline-flex",
-                                      alignItems: "center",
-                                      gap: 4,
-                                      padding: "3px 10px",
-                                      borderRadius: "20px",
-                                      fontSize: 12,
-                                      fontWeight: 600,
-                                      color: sourceBadge.color,
-                                      backgroundColor: sourceBadge.bgColor,
-                                      whiteSpace: "nowrap",
-                                    }}
-                                  >
-                                    {sourceBadge.icon} {sourceBadge.label}
-                                  </span>
-                                </td>
-                              )}
-                              <td
-                                style={{
-                                  padding: isMobile ? "10px 12px" : "12px 16px",
-                                }}
-                              >
-                                <span
-                                  style={{
-                                    padding: "3px 10px",
-                                    borderRadius: "20px",
-                                    fontSize: "12px",
-                                    fontWeight: 600,
-                                    color: "white",
-                                    background: getPriorityColor(
-                                      ticket.priority,
-                                    ),
-                                    textTransform: "capitalize",
-                                    whiteSpace: "nowrap",
-                                  }}
-                                >
-                                  {ticket.priority || "N/A"}
-                                </span>
-                              </td>
-                              <td
-                                style={{
-                                  padding: isMobile ? "10px 12px" : "12px 16px",
-                                }}
-                              >
-                                <span
-                                  style={{
-                                    padding: "3px 10px",
-                                    borderRadius: "20px",
-                                    fontSize: "12px",
-                                    fontWeight: 600,
-                                    background:
-                                      (getStatusColor(ticket.status, ticket) ||
-                                        "#6B7280") + "20",
-                                    color: getStatusColor(
-                                      ticket.status,
-                                      ticket,
-                                    ),
-                                    whiteSpace: "nowrap",
-                                  }}
-                                >
-                                  {getStatusName(ticket.status, ticket)}
-                                </span>
-                              </td>
-                              {showSla && (
-                                <td
-                                  style={{
-                                    padding: isMobile
-                                      ? "10px 12px"
-                                      : "12px 16px",
-                                  }}
-                                >
-                                  {slaPill ? (
-                                    <span
-                                      title={slaPill.tooltip}
-                                      style={{
-                                        padding: "3px 8px",
-                                        borderRadius: "20px",
-                                        fontSize: "11px",
-                                        fontWeight: 600,
-                                        color: slaPill.color,
-                                        background: slaPill.bg,
-                                        border: `1px solid ${slaPill.color}30`,
-                                        whiteSpace: "nowrap",
-                                      }}
-                                    >
-                                      ⏱ {slaPill.label}
-                                    </span>
-                                  ) : (
-                                    <span
-                                      style={{ color: "#98A2B3", fontSize: 12 }}
-                                    >
-                                      -
-                                    </span>
-                                  )}
-                                </td>
-                              )}
-                              <td
-                                style={{
-                                  padding: isMobile ? "10px 12px" : "12px 16px",
-                                  fontSize: 13,
-                                  color: "#344054",
-                                  whiteSpace: "nowrap",
-                                }}
-                              >
-                                {new Date(ticket.createdAt).toLocaleString(
-                                  undefined,
-                                  {
-                                    day: "2-digit",
-                                    month: "short",
-                                    year: "numeric",
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                    hour12: true,
-                                  },
-                                )}
-                              </td>
-                              {showCenter && (
-                                <td
-                                  style={{
-                                    padding: isMobile
-                                      ? "10px 12px"
-                                      : "12px 16px",
-                                  }}
-                                >
-                                  <span
-                                    style={{
-                                      padding: "3px 10px",
-                                      borderRadius: "20px",
-                                      fontSize: "12px",
-                                      fontWeight: 600,
-                                      background:
-                                        centerName === "Online"
-                                          ? "#DBEAFE"
-                                          : "#FEF3C7",
-                                      color:
-                                        centerName === "Online"
-                                          ? "#1E40AF"
-                                          : "#92400E",
-                                      whiteSpace: "nowrap",
-                                    }}
-                                  >
-                                    {centerName}
-                                  </span>
-                                </td>
-                              )}
-                              {showProjectColumn && (
-                                <td
-                                  style={{
-                                    padding: isMobile
-                                      ? "10px 12px"
-                                      : "12px 16px",
-                                    fontSize: 13,
-                                    color: "#344054",
-                                  }}
-                                >
-                                  {projectName ? (
-                                    <span
-                                      style={{
-                                        display: "inline-flex",
-                                        alignItems: "center",
-                                        padding: "3px 10px",
-                                        borderRadius: "20px",
-                                        fontSize: "12px",
-                                        fontWeight: 600,
-                                        color: "#5925DC",
-                                        background: "#F4F3FF",
-                                        whiteSpace: "nowrap",
-                                      }}
-                                    >
-                                      {projectName}
-                                    </span>
-                                  ) : (
-                                    <span style={{ color: "#98A2B3" }}>-</span>
-                                  )}
-                                </td>
-                              )}
+                                  {col.key === "requestedBy" &&
+                                    showSenderEmailColumn && (
+                                      <td
+                                        style={{
+                                          padding: isMobile
+                                            ? "10px 12px"
+                                            : "12px 16px",
+                                          fontSize: 13,
+                                          color: "#344054",
+                                        }}
+                                      >
+                                        {ticket.submissionSource === "email" &&
+                                        ticket.sourceEmail ? (
+                                          <a
+                                            href={`mailto:${ticket.sourceEmail}`}
+                                            onClick={(e) => e.stopPropagation()}
+                                            style={{
+                                              color: "#175CD3",
+                                              textDecoration: "none",
+                                            }}
+                                          >
+                                            {ticket.sourceEmail}
+                                          </a>
+                                        ) : (
+                                          <span style={{ color: "#98A2B3" }}>
+                                            -
+                                          </span>
+                                        )}
+                                      </td>
+                                    )}
+                                </React.Fragment>
+                              ))}
                               <td
                                 style={{
                                   padding: isMobile ? "10px 12px" : "12px 16px",
@@ -2317,6 +2640,8 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                       display: "flex",
                       alignItems: "center",
                       gap: "8px",
+                      width: isMobile ? "100%" : "auto",
+                      justifyContent: isMobile ? "space-between" : "flex-start",
                     }}
                   >
                     <button
@@ -2356,7 +2681,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                       {isMobile ? "→" : "Next →"}
                     </button>
                   </div>
-                  <div>
+                  <div style={{ width: isMobile ? "100%" : "auto" }}>
                     Showing{" "}
                     {filteredTickets.length > 0
                       ? (currentPage - 1) * pageSize + 1
@@ -2372,7 +2697,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
         );
       })()}
 
-      {canMerge && selectedTicketIds.size > 0 && (
+      {(canMerge || canAssign) && selectedTicketIds.size > 0 && (
         <div
           style={{
             position: "fixed",
@@ -2404,6 +2729,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
               width: "1px",
               height: "20px",
               background: "rgba(255,255,255,.2)",
+              display: isMobile ? "none" : "block",
             }}
           />
           {selectedTicketIds.size >= 2 && (
@@ -2446,6 +2772,26 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
               Merge Selected
             </button>
           )}
+          {canAssign && (
+            <button
+              onClick={handleOpenBulkAssignModal}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "6px 12px",
+                background: "rgba(14,116,144,.85)",
+                color: "white",
+                border: "1px solid rgba(14,116,144,.45)",
+                borderRadius: "8px",
+                cursor: "pointer",
+                fontSize: "13px",
+                fontWeight: 600,
+              }}
+            >
+              Assign Selected
+            </button>
+          )}
           <button
             onClick={() => {
               setSelectedTicketIds(new Set());
@@ -2467,6 +2813,191 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
             <XMarkIcon style={{ width: "12px", height: "12px" }} />
             Clear
           </button>
+        </div>
+      )}
+
+      {/* Bulk Assign Modal */}
+      {showBulkAssignModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            zIndex: 1000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "16px",
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !bulkLoading) {
+              setShowBulkAssignModal(false);
+            }
+          }}
+        >
+          <div
+            style={{
+              background: "white",
+              borderRadius: "16px",
+              padding: "24px",
+              width: "100%",
+              maxWidth: "480px",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+            }}
+          >
+            <h2
+              style={{ margin: "0 0 6px", fontSize: "18px", fontWeight: 700 }}
+            >
+              Assign Selected Tickets
+            </h2>
+            <p
+              style={{ margin: "0 0 16px", color: "#6B7280", fontSize: "14px" }}
+            >
+              Choose department and then user for {selectedTicketIds.size}{" "}
+              selected ticket{selectedTicketIds.size !== 1 ? "s" : ""}.
+            </p>
+
+            {bulkError && (
+              <div
+                style={{
+                  padding: "10px 14px",
+                  background: "#FEF2F2",
+                  border: "1px solid #FECACA",
+                  borderRadius: "8px",
+                  color: "#B91C1C",
+                  fontSize: "13px",
+                  marginBottom: "14px",
+                }}
+              >
+                {bulkError}
+              </div>
+            )}
+
+            <div style={{ display: "grid", gap: "12px" }}>
+              <div>
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    marginBottom: "6px",
+                    color: "#344054",
+                  }}
+                >
+                  Department
+                </label>
+                <select
+                  value={bulkAssignDepartmentId}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setBulkAssignDepartmentId(value);
+                    setBulkAssignAgentId("");
+                    fetchBulkAssignableAgents(value);
+                  }}
+                  disabled={bulkLoading}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid #D0D5DD",
+                    fontSize: "14px",
+                  }}
+                >
+                  <option value="">Select department</option>
+                  {bulkAssignDepartments.map((department) => (
+                    <option key={department._id} value={department._id}>
+                      {department.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    marginBottom: "6px",
+                    color: "#344054",
+                  }}
+                >
+                  Assign To
+                </label>
+                <select
+                  value={bulkAssignAgentId}
+                  onChange={(e) => setBulkAssignAgentId(e.target.value)}
+                  disabled={
+                    !bulkAssignDepartmentId ||
+                    bulkAssignLoadingAgents ||
+                    bulkLoading
+                  }
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid #D0D5DD",
+                    fontSize: "14px",
+                  }}
+                >
+                  <option value="">
+                    {bulkAssignLoadingAgents
+                      ? "Loading agents..."
+                      : !bulkAssignDepartmentId
+                        ? "Select department first"
+                        : "Select agent"}
+                  </option>
+                  {bulkAssignAgents.map((agent) => (
+                    <option key={agent._id} value={agent._id}>
+                      {agent.firstName} {agent.lastName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div
+              style={{
+                marginTop: "18px",
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "10px",
+              }}
+            >
+              <button
+                onClick={() => setShowBulkAssignModal(false)}
+                disabled={bulkLoading}
+                style={{
+                  padding: "9px 16px",
+                  border: "1px solid #D1D5DB",
+                  borderRadius: "8px",
+                  background: "white",
+                  fontSize: "14px",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmBulkAssign}
+                disabled={!bulkAssignAgentId || bulkLoading}
+                style={{
+                  padding: "9px 16px",
+                  background: !bulkAssignAgentId ? "#93C5FD" : "#2563EB",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "8px",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  cursor: !bulkAssignAgentId ? "not-allowed" : "pointer",
+                }}
+              >
+                {bulkLoading
+                  ? "Assigning..."
+                  : `Assign ${selectedTicketIds.size} Ticket${selectedTicketIds.size !== 1 ? "s" : ""}`}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
