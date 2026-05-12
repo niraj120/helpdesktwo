@@ -58,6 +58,7 @@ const SimpleStudentDashboard = lazy(
   () => import("./pages/SimpleStudentDashboard"),
 );
 const StudentTicketDetail = lazy(() => import("./pages/StudentTicketDetail"));
+const PublicFeedbackPage = lazy(() => import("./pages/PublicFeedbackPage"));
 const AuthenticatedStudentSubmitTicket = lazy(
   () => import("./pages/AuthenticatedStudentSubmitTicket"),
 );
@@ -245,6 +246,11 @@ function App() {
                 </StudentLayout>
               </ProtectedRoute>
             }
+          />
+          {/* Public feedback page — no auth required, opened from email link */}
+          <Route
+            path="/:customUrlPath/feedback/:ticketId"
+            element={<PublicFeedbackPage />}
           />
           <Route
             path="/:customUrlPath/student/my-tickets"
