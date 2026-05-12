@@ -25,6 +25,9 @@ export interface IKBArticle extends Document {
   alsoShowOnPublicPortal: boolean; // When true, article also appears on student submit-ticket portal regardless of visibility setting
 
   // Metadata
+  docNumber?: string;
+  pageNumber?: number;
+  uploadedAt?: Date;
   description?: string;
   tags: string[];
   author?: string;
@@ -112,6 +115,18 @@ const KBArticleSchema = new Schema<IKBArticle>(
     },
 
     // Metadata
+    docNumber: {
+      type: String,
+      trim: true,
+      maxlength: [100, "Document number cannot exceed 100 characters"],
+    },
+    pageNumber: {
+      type: Number,
+      min: [0, "Page number cannot be negative"],
+    },
+    uploadedAt: {
+      type: Date,
+    },
     description: {
       type: String,
       trim: true,

@@ -37,6 +37,9 @@ interface KBArticle {
   id: string;
   documentName: string;
   documentType: "pdf" | "html" | "both" | "link";
+  docNumber?: string;
+  pageNumber?: number;
+  searchableText?: string;
   pdfUrl?: string;
   htmlContent?: string;
   externalUrl?: string;
@@ -47,6 +50,10 @@ interface KBArticle {
   publishedAt?: Date;
   viewsCount: number;
   tags: string[];
+}
+
+interface KBArticleWithSnippet extends KBArticle {
+  searchSnippet?: string;
 }
 
 interface KnowledgeBaseViewerProps {
@@ -137,19 +144,80 @@ const KnowledgeBaseViewer: React.FC<KnowledgeBaseViewerProps> = ({
 
     setAppliedSearchQuery(q);
 
-    // Filter already-loaded levels (respects all role/visibility rules applied at load time)
+    const getSearchSnippet = (article: KBArticle, query: string) => {
+      const htmlText = (article.searchableText || article.htmlContent || "")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      const text = [article.description || "", htmlText, article.tags.join(" ")]
+        .join(" ")
+        .trim();
+
+      if (!text) return "";
+
+      const lower = text.toLowerCase();
+      const idx = lower.indexOf(query);
+      if (idx === -1) {
+        return text.slice(0, 140) + (text.length > 140 ? "..." : "");
+      }
+
+      const start = Math.max(0, idx - 60);
+      const end = Math.min(text.length, idx + query.length + 80);
+      const prefix = start > 0 ? "..." : "";
+      const suffix = end < text.length ? "..." : "";
+      return `${prefix}${text.slice(start, end)}${suffix}`;
+    };
+
+    const normalizeHtmlText = (html?: string) => {
+      if (!html) return "";
+      return html
+        .replace(/<style[\s\S]*?<\/style>/gi, " ")
+        .replace(/<script[\s\S]*?<\/script>/gi, " ")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
+    };
+
+    // In-memory search across article metadata + HTML content.
     const filtered = allLevels
-      .map((level) => ({
-        ...level,
-        articles: level.articles.filter(
-          (article) =>
-            article.documentName.toLowerCase().includes(q) ||
-            (article.description?.toLowerCase().includes(q) ?? false) ||
-            (article.author?.toLowerCase().includes(q) ?? false) ||
-            article.tags.some((tag) => tag.toLowerCase().includes(q)),
-        ),
-      }))
-      .filter((level) => level.articles.length > 0);
+      .map((level) => {
+        const matchedArticles = level.articles
+          .filter((article) => {
+            const searchable = [
+              article.documentName,
+              article.description || "",
+              article.author || "",
+              article.docNumber || "",
+              article.pageNumber !== undefined
+                ? String(article.pageNumber)
+                : "",
+              article.tags.join(" "),
+              article.searchableText || "",
+              normalizeHtmlText(article.htmlContent),
+            ]
+              .join(" ")
+              .toLowerCase();
+
+            return searchable.includes(q);
+          })
+          .map((article) => ({
+            ...article,
+            searchSnippet: getSearchSnippet(article, q),
+          }));
+
+        return {
+          ...level,
+          articles: matchedArticles,
+          // Keep tables available so global query can filter table rows via externalSearchQuery.
+          tables: level.tables || [],
+        };
+      })
+      .filter(
+        (level) =>
+          level.articles.length > 0 ||
+          (level.tables && level.tables.length > 0),
+      );
 
     setLevels(filtered);
     if (filtered.length > 0) setActiveLevel(filtered[0].id);
@@ -161,7 +229,9 @@ const KnowledgeBaseViewer: React.FC<KnowledgeBaseViewerProps> = ({
         articleId={selectedArticle}
         projectId={projectId}
         onBack={() => setSelectedArticle(null)}
+        onSelectArticle={(nextArticleId) => setSelectedArticle(nextArticleId)}
         isStudentPortal={isStudentPortal}
+        searchQuery={appliedSearchQuery}
       />
     );
   }
@@ -178,227 +248,517 @@ const KnowledgeBaseViewer: React.FC<KnowledgeBaseViewerProps> = ({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500">{t("loadingArticles")}</div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "200px",
+        }}
+      >
+        <div style={{ color: "#667085", fontSize: "14px" }}>
+          {t("loadingArticles")}
+        </div>
       </div>
     );
   }
 
   const currentLevel = levels.find((l) => l.id === activeLevel);
 
-  // Check if any table in this level uses article data source (auto-populated from KB articles)
-  // If so, we hide article cards since articles are shown in the table instead
   const hasArticleDataSourceTable = currentLevel?.tables?.some(
     (t) => t.dataSource === "articles",
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-6">
-      {/* Hero Section */}
-      <div className="mb-8 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-3xl shadow-2xl p-8 text-white">
-        <div className="flex items-center gap-3 mb-3">
-          <div className="p-3 bg-white/20 backdrop-blur-sm rounded-2xl">
-            <Sparkles size={32} className="text-white" />
+    <div
+      style={{
+        background: "#F8F9FC",
+        minHeight: "100vh",
+        padding: "20px",
+        fontFamily: '"Inter", system-ui, -apple-system, sans-serif',
+      }}
+    >
+      {/* Header Card */}
+      <div
+        style={{
+          background:
+            "linear-gradient(135deg,#7F56D9 0%,#9E77ED 60%,#6941C6 100%)",
+          padding: "28px 28px 24px",
+          borderRadius: "16px",
+          marginBottom: "20px",
+          boxShadow: "0 8px 32px rgba(127,86,217,.25)",
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: "16px",
+        }}
+      >
+        <div style={{ flex: 1 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+              marginBottom: "8px",
+            }}
+          >
+            <div
+              style={{
+                width: "44px",
+                height: "44px",
+                borderRadius: "12px",
+                background: "rgba(255,255,255,.2)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "22px",
+              }}
+            >
+              <Sparkles size={24} style={{ color: "white" }} />
+            </div>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: "26px",
+                fontWeight: 800,
+                color: "white",
+                letterSpacing: "-0.02em",
+              }}
+            >
+              {t("knowledgeBaseTitle")}
+            </h2>
           </div>
-          <h2 className="text-4xl font-extrabold">{t("knowledgeBaseTitle")}</h2>
+          <p
+            style={{
+              margin: 0,
+              fontSize: "14px",
+              color: "rgba(255,255,255,.8)",
+              fontWeight: 400,
+            }}
+          >
+            {t("discoverKnowledgeBase")}
+          </p>
         </div>
-        <p className="text-blue-100 text-lg">{t("discoverKnowledgeBase")}</p>
+        {/* View Mode Toggle — admin only */}
+        {showControls && (
+          <div
+            style={{
+              display: "inline-flex",
+              gap: "4px",
+              background: "rgba(255,255,255,.15)",
+              borderRadius: "10px",
+              padding: "4px",
+            }}
+          >
+            {(
+              [
+                ["all", "all", LayoutGrid],
+                ["articles", "articles", BookOpen],
+                ["tables", "tables", TableIcon],
+              ] as const
+            ).map(([mode, label, Icon]) => (
+              <button
+                key={mode}
+                onClick={() => setViewMode(mode as any)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "7px 14px",
+                  borderRadius: "8px",
+                  border: "none",
+                  background:
+                    viewMode === mode ? "rgba(255,255,255,.95)" : "transparent",
+                  color:
+                    viewMode === mode ? "#7F56D9" : "rgba(255,255,255,.85)",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  transition: "all .15s",
+                }}
+              >
+                <Icon size={15} />
+                {t(label)}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Search Bar */}
-      <div className="mb-8">
-        <div className="relative bg-white rounded-2xl shadow-lg border border-gray-200 hover:shadow-xl transition-all duration-300">
-          <div className="absolute left-6 top-1/2 -translate-y-1/2">
-            <Search size={24} className="text-gray-400" />
-          </div>
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              if (!e.target.value.trim()) {
-                setLevels(allLevels);
-                if (allLevels.length > 0) setActiveLevel(allLevels[0].id);
-                setAppliedSearchQuery("");
-              }
-            }}
-            onKeyPress={(e) => e.key === "Enter" && handleSearch()}
-            placeholder={t("searchForArticles")}
-            className="w-full pl-16 pr-32 py-5 text-lg rounded-2xl focus:outline-none focus:ring-4 focus:ring-blue-500/20"
-          />
-          <button
-            onClick={handleSearch}
-            className="absolute right-2 top-1/2 -translate-y-1/2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-8 py-3 rounded-xl hover:from-blue-700 hover:to-indigo-700 flex items-center gap-2 font-semibold shadow-md hover:shadow-lg transition-all duration-300"
-          >
-            <Search size={20} />
-            {t("search")}
-          </button>
+      <div
+        style={{
+          background: "white",
+          borderRadius: "12px",
+          border: "1px solid #E4E7EC",
+          boxShadow: "0 2px 12px rgba(0,0,0,.06)",
+          display: "flex",
+          alignItems: "center",
+          gap: "0",
+          marginBottom: "20px",
+          overflow: "hidden",
+        }}
+      >
+        <div style={{ padding: "0 14px", color: "#9CA3AF", flexShrink: 0 }}>
+          <Search size={20} />
         </div>
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => {
+            setSearchQuery(e.target.value);
+            if (!e.target.value.trim()) {
+              setLevels(allLevels);
+              if (allLevels.length > 0) setActiveLevel(allLevels[0].id);
+              setAppliedSearchQuery("");
+            }
+          }}
+          onKeyPress={(e) => e.key === "Enter" && handleSearch()}
+          placeholder={t("searchForArticles")}
+          style={{
+            flex: 1,
+            border: "none",
+            outline: "none",
+            padding: "14px 8px",
+            fontSize: "15px",
+            background: "transparent",
+            color: "#101828",
+          }}
+        />
+        <button
+          onClick={handleSearch}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            background: "#7F56D9",
+            color: "white",
+            border: "none",
+            padding: "14px 24px",
+            fontSize: "14px",
+            fontWeight: 600,
+            cursor: "pointer",
+            flexShrink: 0,
+          }}
+        >
+          <Search size={16} />
+          {t("search")}
+        </button>
       </div>
 
-      {/* View Mode Toggle - Only show for admins */}
-      {showControls && (
-        <div className="mb-8 bg-white rounded-2xl shadow-md p-2 inline-flex gap-2">
-          <button
-            onClick={() => setViewMode("all")}
-            className={`px-6 py-3 rounded-xl font-semibold transition-all duration-300 flex items-center gap-2 ${
-              viewMode === "all"
-                ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg scale-105"
-                : "text-gray-600 hover:bg-gray-50"
-            }`}
-          >
-            <LayoutGrid size={20} />
-            {t("all")}
-          </button>
-          <button
-            onClick={() => setViewMode("articles")}
-            className={`px-6 py-3 rounded-xl font-semibold transition-all duration-300 flex items-center gap-2 ${
-              viewMode === "articles"
-                ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg scale-105"
-                : "text-gray-600 hover:bg-gray-50"
-            }`}
-          >
-            <BookOpen size={20} />
-            {t("articles")}
-          </button>
-          <button
-            onClick={() => setViewMode("tables")}
-            className={`px-6 py-3 rounded-xl font-semibold transition-all duration-300 flex items-center gap-2 ${
-              viewMode === "tables"
-                ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg scale-105"
-                : "text-gray-600 hover:bg-gray-50"
-            }`}
-          >
-            <TableIcon size={20} />
-            {t("tables")}
-          </button>
-        </div>
-      )}
-
       {levels.length === 0 ? (
-        <div className="text-center py-12 bg-white rounded-lg shadow">
-          <FileText size={48} className="mx-auto text-gray-400 mb-4" />
-          <p className="text-gray-500">{t("noArticlesAvailable")}</p>
+        <div
+          style={{
+            background: "white",
+            borderRadius: "12px",
+            border: "1px solid #E4E7EC",
+            padding: "64px 24px",
+            textAlign: "center",
+          }}
+        >
+          <div style={{ fontSize: "40px", marginBottom: "12px" }}>📄</div>
+          <p style={{ color: "#667085", fontSize: "14px", margin: 0 }}>
+            {t("noArticlesAvailable")}
+          </p>
         </div>
       ) : (
         <>
           {/* Level Tabs */}
-          <div className="mb-8">
-            <div className="flex flex-wrap gap-3">
-              {levels.map((level) => (
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "8px",
+              marginBottom: "20px",
+            }}
+          >
+            {levels.map((level) => {
+              const isActive = activeLevel === level.id;
+              const count = level.tables?.some(
+                (t) => t.dataSource === "articles",
+              )
+                ? level.articles?.length || 0
+                : (level.articles?.length || 0) + (level.tables?.length || 0);
+              return (
                 <button
                   key={level.id}
                   onClick={() => setActiveLevel(level.id)}
-                  className={`group px-8 py-4 rounded-2xl font-bold text-sm transition-all duration-300 ${
-                    activeLevel === level.id
-                      ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-xl scale-105"
-                      : "bg-white text-gray-700 border-2 border-gray-200 hover:border-blue-400 hover:shadow-lg hover:scale-105"
-                  }`}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "10px 18px",
+                    borderRadius: "10px",
+                    border: isActive
+                      ? "2px solid #7F56D9"
+                      : "1px solid #E4E7EC",
+                    background: isActive ? "#F4F3FF" : "white",
+                    color: isActive ? "#7F56D9" : "#344054",
+                    fontSize: "14px",
+                    fontWeight: isActive ? 700 : 500,
+                    cursor: "pointer",
+                    boxShadow: isActive
+                      ? "0 0 0 3px #F4F3FF"
+                      : "0 1px 3px rgba(0,0,0,.04)",
+                    transition: "all .15s",
+                  }}
                 >
-                  <div className="flex items-center gap-3">
-                    {level.levelIcon && (
-                      <span className="text-2xl">{level.levelIcon}</span>
-                    )}
-                    <span className="text-base">{level.levelName}</span>
-                    <span
-                      className={`px-3 py-1 rounded-full text-xs font-extrabold ${
-                        activeLevel === level.id
-                          ? "bg-white/30 text-white backdrop-blur-sm"
-                          : "bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-700 group-hover:from-blue-200 group-hover:to-indigo-200"
-                      }`}
-                    >
-                      {/* If table uses article data source, show article count; otherwise show articles + manual tables */}
-                      {level.tables?.some((t) => t.dataSource === "articles")
-                        ? level.articles?.length || 0
-                        : (level.articles?.length || 0) +
-                          (level.tables?.length || 0)}
-                    </span>
-                  </div>
+                  {level.levelIcon && (
+                    <span style={{ fontSize: "18px" }}>{level.levelIcon}</span>
+                  )}
+                  <span>{level.levelName}</span>
+                  <span
+                    style={{
+                      padding: "2px 8px",
+                      borderRadius: "20px",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      background: isActive ? "#7F56D9" : "#F2F4F7",
+                      color: isActive ? "white" : "#667085",
+                    }}
+                  >
+                    {count}
+                  </span>
                 </button>
-              ))}
-            </div>
+              );
+            })}
           </div>
 
-          {/* Content - Article Cards */}
-          {/* Hide article cards if a table with dataSource='articles' exists (articles shown in table instead) */}
+          {/* Article Cards */}
           {currentLevel &&
             !hasArticleDataSourceTable &&
             (viewMode === "all" || viewMode === "articles") &&
             (currentLevel.articles.length === 0 && viewMode === "articles" ? (
-              <div className="text-center py-12 bg-white rounded-lg shadow mb-6">
-                <FileText size={48} className="mx-auto text-gray-400 mb-4" />
-                <p className="text-gray-500">
-                  No articles available in this category.
+              <div
+                style={{
+                  background: "white",
+                  borderRadius: "12px",
+                  border: "1px solid #E4E7EC",
+                  padding: "48px 24px",
+                  textAlign: "center",
+                  marginBottom: "20px",
+                }}
+              >
+                <div style={{ fontSize: "36px", marginBottom: "10px" }}>📄</div>
+                <p style={{ color: "#667085", fontSize: "14px", margin: 0 }}>
+                  No articles in this category.
                 </p>
               </div>
             ) : (
               currentLevel.articles.length > 0 && (
-                <>
-                  <h3 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                    <FileText size={24} />
+                <div style={{ marginBottom: "24px" }}>
+                  <h3
+                    style={{
+                      margin: "0 0 14px 0",
+                      fontSize: "15px",
+                      fontWeight: 700,
+                      color: "#344054",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <FileText size={16} />
                     Articles ({currentLevel.articles.length})
                   </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-                    {currentLevel.articles.map((article) => (
-                      <div
-                        key={article.id}
-                        className="bg-white rounded-lg shadow hover:shadow-lg transition-shadow p-5 cursor-pointer"
-                        onClick={() => setSelectedArticle(article.id)}
-                      >
-                        <div className="flex items-start justify-between mb-3">
-                          <h3 className="font-semibold text-lg line-clamp-2 flex-1">
-                            {article.documentName}
-                          </h3>
-                          <div className="flex items-center gap-2 ml-2">
-                            {article.showNewTag && (
-                              <span className="px-2 py-1 text-xs font-bold rounded-full bg-green-500 text-white animate-pulse">
-                                NEW
-                              </span>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "repeat(auto-fill, minmax(280px, 1fr))",
+                      gap: "14px",
+                    }}
+                  >
+                    {currentLevel.articles.map((article) => {
+                      const searchAwareArticle =
+                        article as KBArticleWithSnippet;
+                      return (
+                        <div
+                          key={article.id}
+                          onClick={() => setSelectedArticle(article.id)}
+                          style={{
+                            background: "white",
+                            borderRadius: "12px",
+                            border: "1px solid #E4E7EC",
+                            padding: "18px 20px",
+                            cursor: "pointer",
+                            boxShadow: "0 1px 3px rgba(0,0,0,.05)",
+                            transition: "all .15s",
+                            borderLeft: article.showNewTag
+                              ? "3px solid #7F56D9"
+                              : "1px solid #E4E7EC",
+                          }}
+                          onMouseEnter={(e) => {
+                            (e.currentTarget as HTMLElement).style.boxShadow =
+                              "0 4px 16px rgba(0,0,0,.10)";
+                            (e.currentTarget as HTMLElement).style.transform =
+                              "translateY(-1px)";
+                          }}
+                          onMouseLeave={(e) => {
+                            (e.currentTarget as HTMLElement).style.boxShadow =
+                              "0 1px 3px rgba(0,0,0,.05)";
+                            (e.currentTarget as HTMLElement).style.transform =
+                              "none";
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "flex-start",
+                              justifyContent: "space-between",
+                              marginBottom: "8px",
+                            }}
+                          >
+                            <h3
+                              style={{
+                                margin: 0,
+                                fontSize: "14px",
+                                fontWeight: 600,
+                                color: "#101828",
+                                flex: 1,
+                                lineHeight: "1.4",
+                                overflow: "hidden",
+                                display: "-webkit-box",
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: "vertical" as any,
+                              }}
+                            >
+                              {article.documentName}
+                            </h3>
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: "4px",
+                                marginLeft: "8px",
+                                flexShrink: 0,
+                              }}
+                            >
+                              {article.showNewTag && (
+                                <span
+                                  style={{
+                                    padding: "2px 8px",
+                                    borderRadius: "20px",
+                                    fontSize: "10px",
+                                    fontWeight: 700,
+                                    background: "#7F56D9",
+                                    color: "white",
+                                  }}
+                                >
+                                  NEW
+                                </span>
+                              )}
+                              {article.isFeatured && (
+                                <span style={{ fontSize: "16px" }}>⭐</span>
+                              )}
+                            </div>
+                          </div>
+                          {article.description && (
+                            <p
+                              style={{
+                                margin: "0 0 8px 0",
+                                fontSize: "12px",
+                                color: "#667085",
+                                overflow: "hidden",
+                                display: "-webkit-box",
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: "vertical" as any,
+                                lineHeight: "1.5",
+                              }}
+                            >
+                              {article.description}
+                            </p>
+                          )}
+                          {!!appliedSearchQuery &&
+                            !!searchAwareArticle.searchSnippet && (
+                              <p
+                                style={{
+                                  margin: "0 0 8px 0",
+                                  fontSize: "12px",
+                                  color: "#92400E",
+                                  background: "#FFFBEB",
+                                  borderRadius: "6px",
+                                  padding: "6px 10px",
+                                  border: "1px solid #FDE68A",
+                                  lineHeight: "1.5",
+                                  overflow: "hidden",
+                                  display: "-webkit-box",
+                                  WebkitLineClamp: 3,
+                                  WebkitBoxOrient: "vertical" as any,
+                                }}
+                              >
+                                {searchAwareArticle.searchSnippet}
+                              </p>
                             )}
-                            {article.isFeatured && (
-                              <span className="text-yellow-500 text-xl">
-                                ⭐
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "8px",
+                              flexWrap: "wrap",
+                              marginBottom: "10px",
+                            }}
+                          >
+                            <span
+                              style={{
+                                padding: "2px 8px",
+                                borderRadius: "20px",
+                                fontSize: "11px",
+                                fontWeight: 600,
+                                background: "#EFF8FF",
+                                color: "#175CD3",
+                              }}
+                            >
+                              {article.documentType}
+                            </span>
+                            {article.tags.slice(0, 2).map((tag) => (
+                              <span
+                                key={tag}
+                                style={{
+                                  padding: "2px 8px",
+                                  borderRadius: "20px",
+                                  fontSize: "11px",
+                                  background: "#F2F4F7",
+                                  color: "#667085",
+                                }}
+                              >
+                                {tag}
                               </span>
-                            )}
+                            ))}
+                          </div>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              fontSize: "12px",
+                              color: "#9CA3AF",
+                            }}
+                          >
+                            <span
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "4px",
+                              }}
+                            >
+                              <Eye size={12} />
+                              {article.viewsCount} views
+                            </span>
+                            <span
+                              style={{
+                                color: "#7F56D9",
+                                fontWeight: 600,
+                                fontSize: "12px",
+                              }}
+                            >
+                              Read more →
+                            </span>
                           </div>
                         </div>
-
-                        {/* Description preview */}
-                        {article.description && (
-                          <p className="text-sm text-gray-600 mb-3 line-clamp-2">
-                            {article.description}
-                          </p>
-                        )}
-
-                        <div className="flex items-center gap-2 mb-3">
-                          <span className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800">
-                            {article.documentType}
-                          </span>
-                          {article.tags.slice(0, 2).map((tag) => (
-                            <span
-                              key={tag}
-                              className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600"
-                            >
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-
-                        <div className="flex items-center justify-between text-sm text-gray-600">
-                          <span className="flex items-center gap-1">
-                            <Eye size={16} />
-                            {article.viewsCount} views
-                          </span>
-                          {article.author && <span>{article.author}</span>}
-                        </div>
-
-                        <div className="mt-4 text-blue-600 font-medium text-sm">
-                          Read more →
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
-                </>
+                </div>
               )
             ))}
 
@@ -408,16 +768,30 @@ const KnowledgeBaseViewer: React.FC<KnowledgeBaseViewerProps> = ({
             (currentLevel.tables &&
             currentLevel.tables.length === 0 &&
             viewMode === "tables" ? (
-              <div className="text-center py-12 bg-white rounded-lg shadow">
-                <TableIcon size={48} className="mx-auto text-gray-400 mb-4" />
-                <p className="text-gray-500">
-                  No tables available in this category.
+              <div
+                style={{
+                  background: "white",
+                  borderRadius: "12px",
+                  border: "1px solid #E4E7EC",
+                  padding: "48px 24px",
+                  textAlign: "center",
+                }}
+              >
+                <div style={{ fontSize: "36px", marginBottom: "10px" }}>📊</div>
+                <p style={{ color: "#667085", fontSize: "14px", margin: 0 }}>
+                  No tables in this category.
                 </p>
               </div>
             ) : (
               currentLevel.tables &&
               currentLevel.tables.length > 0 && (
-                <div className="space-y-6">
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "16px",
+                  }}
+                >
                   {currentLevel.tables.map((table) => (
                     <div key={table._id}>
                       <KBTableViewer
@@ -428,6 +802,7 @@ const KnowledgeBaseViewer: React.FC<KnowledgeBaseViewerProps> = ({
                         isStudentPortal={isStudentPortal}
                         externalSearchQuery={appliedSearchQuery}
                         projectId={projectId}
+                        useGlobalSearchOnly={true}
                       />
                     </div>
                   ))}

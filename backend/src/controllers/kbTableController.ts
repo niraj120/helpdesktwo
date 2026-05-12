@@ -8,6 +8,17 @@ import GCSService from "../services/gcsService";
 // Student role ID - used for public student portal access
 const STUDENT_ROLE_ID = "6915aeb10561bff7f36244a9";
 
+function toSearchableText(html?: string): string {
+  if (!html) return "";
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 8000);
+}
+
 /**
  * Refresh a signed GCS URL if it appears to be expired or close to expiration.
  * Supports both v2 (Expires param) and v4 (X-Goog-Date + X-Goog-Expires) signed URLs.
@@ -427,6 +438,19 @@ export const getPublicTable = async (
 
             rowData[column.columnName] = value || "N/A";
           }
+
+          // Hidden field used by frontend global search to match within article body text.
+          rowData.__searchableText = [
+            article.documentName || "",
+            article.description || "",
+            toSearchableText(article.htmlContent),
+          ]
+            .join(" ")
+            .trim();
+
+          // Hidden metadata for UI badges regardless of visible table columns.
+          rowData.__showNewTag = article.showNewTag ? "Yes" : "No";
+          rowData.__isFeatured = article.isFeatured ? "Yes" : "No";
 
           return {
             _id: article._id,

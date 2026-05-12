@@ -600,7 +600,9 @@ export const submitTicket = async (req: Request, res: Response) => {
         .lean();
 
       if (projectPriorityDefault?.code) {
-        ticketPriority = String(projectPriorityDefault.code).trim().toUpperCase();
+        ticketPriority = String(projectPriorityDefault.code)
+          .trim()
+          .toUpperCase();
         console.log(
           `✅ Using project default priority fallback: ${ticketPriority} (${projectPriorityDefault.name || projectPriorityDefault.code})`,
         );
@@ -620,65 +622,103 @@ export const submitTicket = async (req: Request, res: Response) => {
       const priorityFromLevel: number =
         (hierarchyConfig as any)?.priorityFromLevel || 0;
 
-      // Pick the category ID that should supply the priority based on priorityFromLevel
-      // 0 = manual (use L1 as before), 1 = L1, 2 = L2, 3 = L3, 4 = L4
-      let priorityCategoryId: string | null = categoryValue;
-      if (priorityFromLevel >= 2 && rawCategoryHierarchyFromBody) {
-        const levelKey = `level${priorityFromLevel}` as
-          | "level2"
-          | "level3"
-          | "level4";
-        priorityCategoryId =
-          rawCategoryHierarchyFromBody[levelKey] || categoryValue;
-      }
+      // Resolve category dynamically from selected hierarchy.
+      // Preference order:
+      // 1) configured priorityFromLevel
+      // 2) deepest selected level (L4 -> L1)
+      // 3) direct category field fallback
+      const configuredLevelKey =
+        priorityFromLevel >= 1 && priorityFromLevel <= 4
+          ? (`level${priorityFromLevel}` as
+              | "level1"
+              | "level2"
+              | "level3"
+              | "level4")
+          : null;
 
-      console.log(
-        `🔍 Priority lookup: priorityFromLevel=${priorityFromLevel}, priorityCategoryId=${priorityCategoryId}`,
-      );
+      const categoryCandidates: string[] = [];
+      const pushCandidate = (v: any) => {
+        const s = String(v || "").trim();
+        if (s && !categoryCandidates.includes(s)) categoryCandidates.push(s);
+      };
 
-      let category;
       if (
-        priorityCategoryId &&
-        mongoose.Types.ObjectId.isValid(priorityCategoryId) &&
-        priorityCategoryId.length === 24
+        configuredLevelKey &&
+        rawCategoryHierarchyFromBody?.[configuredLevelKey]
       ) {
-        category = await CategoryModel.findOne({
-          _id: priorityCategoryId,
-          isActive: true,
-        });
-        console.log(`🔍 Looking up category by ID: ${priorityCategoryId}`);
-      } else if (categoryValue) {
-        category = await CategoryModel.findOne({
-          name: categoryValue,
-          projectId: projectId,
-          isActive: true,
-        });
-        console.log(`🔍 Looking up category by name: ${categoryValue}`);
+        pushCandidate(rawCategoryHierarchyFromBody[configuredLevelKey]);
+      }
+      pushCandidate(rawCategoryHierarchyFromBody?.level4);
+      pushCandidate(rawCategoryHierarchyFromBody?.level3);
+      pushCandidate(rawCategoryHierarchyFromBody?.level2);
+      pushCandidate(rawCategoryHierarchyFromBody?.level1);
+      pushCandidate(categoryValue);
+
+      console.log("🔍 Priority lookup candidates:", {
+        priorityFromLevel,
+        configuredLevelKey,
+        categoryCandidates,
+      });
+
+      let matchedCategory: any = null;
+
+      for (const candidate of categoryCandidates) {
+        let candidateCategory: any = null;
+
+        if (
+          mongoose.Types.ObjectId.isValid(candidate) &&
+          candidate.length === 24
+        ) {
+          candidateCategory = await CategoryModel.findOne({
+            _id: candidate,
+            projectId: projectId,
+            isActive: true,
+          });
+        } else {
+          candidateCategory = await CategoryModel.findOne({
+            name: candidate,
+            projectId: projectId,
+            isActive: true,
+          });
+        }
+
+        if (!candidateCategory) continue;
+
+        if (!matchedCategory) {
+          matchedCategory = candidateCategory;
+        }
+
+        if (candidateCategory.defaultPriority) {
+          matchedCategory = candidateCategory;
+          break;
+        }
       }
 
       console.log(
-        `🔍 Category found:`,
-        category
+        `🔍 Category resolved for priority:`,
+        matchedCategory
           ? {
-              _id: category._id,
-              name: category.name,
-              defaultPriority: category.defaultPriority,
+              _id: matchedCategory._id,
+              name: matchedCategory.name,
+              defaultPriority: matchedCategory.defaultPriority,
             }
           : "NOT FOUND",
       );
 
-      if (category && category.defaultPriority) {
-        ticketPriority = String(category.defaultPriority).trim().toUpperCase();
+      if (matchedCategory?.defaultPriority) {
+        ticketPriority = String(matchedCategory.defaultPriority)
+          .trim()
+          .toUpperCase();
         console.log(
-          `✅ Using category default priority: ${ticketPriority} (from category: ${category.name}, level: ${priorityFromLevel || 1})`,
+          `✅ Using category-mapped priority: ${ticketPriority} (from category: ${matchedCategory.name})`,
         );
-      } else if (category) {
+      } else if (matchedCategory) {
         console.log(
-          `⚠️ Category found but defaultPriority is not set: ${category.name}`,
+          `⚠️ Resolved category has no defaultPriority: ${matchedCategory.name}; using project fallback ${ticketPriority}`,
         );
       } else {
         console.log(
-          `⚠️ Category not found: ${priorityCategoryId}, using fallback: ${ticketPriority}`,
+          `⚠️ No matching category resolved from selection; using project fallback: ${ticketPriority}`,
         );
       }
     } catch (error) {

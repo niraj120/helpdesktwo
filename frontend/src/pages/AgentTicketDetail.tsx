@@ -1076,7 +1076,11 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
 
         const apiPriorities = Array.isArray(ticketConfig.allowedPriorities)
           ? ticketConfig.allowedPriorities
-              .map((p: any) => String(p || "").trim().toUpperCase())
+              .map((p: any) =>
+                String(p || "")
+                  .trim()
+                  .toUpperCase(),
+              )
               .filter((p: string) => p.length > 0)
           : [];
 

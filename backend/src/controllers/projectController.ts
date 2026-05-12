@@ -1148,7 +1148,11 @@ export const getProjectTicketSettings = async (req: Request, res: Response) => {
         const priorityCodes = [
           ...new Set(
             masterPriorities
-              .map((p: any) => String(p.code || "").trim().toUpperCase())
+              .map((p: any) =>
+                String(p.code || "")
+                  .trim()
+                  .toUpperCase(),
+              )
               .filter((p: string) => p.length > 0),
           ),
         ];
