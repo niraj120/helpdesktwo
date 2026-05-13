@@ -1,35 +1,70 @@
 image: node:22
 
 pipelines:
-  custom:
-    deploy-frontend:
+  branches:
+
+    dev-deploy-frontend:
       - step:
           name: Deploy Frontend
           script:
             - echo "Frontend Deployment Started"
-            - ssh -v ubuntu@34.14.157.13 '
+            - |
+              ssh -v ubuntu@34.14.157.13 '
                 cd /home/ubuntu/helpdesk/frontend &&
                 node -v &&
                 git checkout dev &&
-                git fetch origin dev &&
-                git reset --hard origin/dev &&
+                git pull &&
                 npm ci &&
                 npm run build &&
                 pm2 restart helpdesk-frontend:3001 &&
                 echo "Frontend deployed successfully!"
               '
 
-    deploy-backend:
+    dev-deploy-backend:
       - step:
           name: Deploy Backend
           script:
             - echo "Backend Deployment Started"
-            - ssh -v ubuntu@34.14.157.13 '
+            - |
+              ssh -v ubuntu@34.14.157.13 '
                 cd /home/ubuntu/helpdesk/backend &&
                 node -v &&
                 git checkout dev &&
-                git fetch origin dev &&
-                git reset --hard origin/dev &&
+                git pull &&
+                npm ci &&
+                npm run build &&
+                pm2 restart helpdesk-backend:3003 &&
+                echo "Backend deployed successfully!"
+              '
+
+    Internal-prod-deploy-frontend:
+      - step:
+          name: Deploy Frontend
+          script:
+            - echo "Frontend Deployment Started"
+            - |
+              ssh -v ubuntu@35.200.131.128 '
+                cd /home/ubuntu/helpdesk/frontend &&
+                node -v &&
+                git checkout Internal-Prod &&
+                git pull &&
+                npm ci &&
+                npm run build &&
+                pm2 restart helpdesk-frontend:3001 &&
+                echo "Frontend deployed successfully!"
+              '
+
+    Internal-prod-deploy-backend:
+      - step:
+          name: Deploy Backend
+          script:
+            - echo "Backend Deployment Started"
+            - |
+              ssh -v ubuntu@35.200.131.128 '
+                cd /home/ubuntu/helpdesk/backend &&
+                node -v &&
+                git checkout Internal-Prod &&
+                git pull &&
                 npm ci &&
                 npm run build &&
                 pm2 restart helpdesk-backend:3003 &&
