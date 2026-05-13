@@ -110,6 +110,9 @@ import dbMonitoringRoutes from "./routes/dbMonitoringRoutes";
 import publicApiKeysRoutes from "./routes/publicApiKeys";
 import publicApiRoutes from "./routes/publicApi";
 import pushNotificationRoutes from "./routes/pushNotifications";
+import notificationRoutes from "./routes/notifications";
+import notificationSettingsRoutes from "./routes/notificationSettingsRoutes";
+import userNotificationPrefRoutes from "./routes/userNotificationPrefRoutes";
 // import integrationRoutes from './routes/integrations'; // TODO: Implement
 import { setupSocketHandlers } from "./socket/socketHandlers";
 import { setIo } from "./socket/ioInstance";
@@ -378,6 +381,11 @@ app.use("/api/cache", cacheRoutes);
 
 // Web Push Notification Routes
 app.use("/api/push", pushNotificationRoutes);
+
+// In-App Notification Routes
+app.use("/api/notifications", notificationRoutes);
+app.use("/api/admin/notification-settings", notificationSettingsRoutes);
+app.use("/api/me/notification-preferences", userNotificationPrefRoutes);
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {

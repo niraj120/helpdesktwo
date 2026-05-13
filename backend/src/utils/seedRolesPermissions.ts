@@ -811,6 +811,30 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     category: "feedback",
   },
   // =====================================================
+  // NOTIFICATIONS CATEGORY
+  // =====================================================
+  {
+    module: "Notifications",
+    name: "Manage Notification Settings",
+    code: "NOTIFICATION_MANAGE",
+    description: "Can configure notification rules for projects and roles",
+    category: "notifications",
+  },
+  {
+    module: "Notifications",
+    name: "View Notification Settings",
+    code: "NOTIFICATION_VIEW_SETTINGS",
+    description: "Can view notification settings (read-only)",
+    category: "notifications",
+  },
+  {
+    module: "Notifications",
+    name: "Manage Personal Notification Preferences",
+    code: "NOTIFICATION_PERSONAL_PREFERENCES",
+    description: "Can manage own notification delivery preferences",
+    category: "notifications",
+  },
+  // =====================================================
   // INTEGRATIONS CATEGORY
   // =====================================================
   {

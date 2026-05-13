@@ -437,6 +437,44 @@ export const permissionUIMapping: UIFeature[] = [
     status: 'missing'
   },
 
+  // ================== NOTIFICATIONS ==================
+  {
+    code: 'NOTIFICATION_MANAGE',
+    name: 'Manage Notification Settings',
+    category: 'Notifications',
+    module: 'notifications',
+    component: 'NotificationSettingsPage',
+    route: '/admin/notification-settings',
+    description: 'Create, update, and delete notification settings for projects',
+    requiresUI: true,
+    uiType: 'page',
+    status: 'implemented'
+  },
+  {
+    code: 'NOTIFICATION_VIEW_SETTINGS',
+    name: 'View Notification Settings',
+    category: 'Notifications',
+    module: 'notifications',
+    component: 'NotificationSettingsPage',
+    route: '/admin/notification-settings',
+    description: 'View notification configuration (read-only)',
+    requiresUI: true,
+    uiType: 'page',
+    status: 'implemented'
+  },
+  {
+    code: 'NOTIFICATION_PERSONAL_PREFERENCES',
+    name: 'Manage Own Notification Preferences',
+    category: 'Notifications',
+    module: 'notifications',
+    component: 'ProfileNotificationsPage',
+    route: '/profile/notifications',
+    description: 'Opt in or out of specific notification types',
+    requiresUI: true,
+    uiType: 'page',
+    status: 'implemented'
+  },
+
   // ================== OFFLINE MODULE ==================
   {
     code: 'OFFLINE_MODULE_ACCESS',

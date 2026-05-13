@@ -6,6 +6,8 @@ import GCSService from "../services/gcsService";
 import { refreshSignedUrlIfNeeded } from "../utils/gcsUrlHelper";
 import mongoose from "mongoose";
 import DOMPurify from "isomorphic-dompurify";
+import { fireNotification } from "../services/notificationEngine";
+import { TRIGGER_TYPES } from "../constants/notificationTriggers";
 
 // DOMPurify configuration to preserve CSS styles from PDF converters
 const DOMPURIFY_CONFIG = {
@@ -177,6 +179,19 @@ export const createArticle = async (
       message: "KB Article created successfully",
       data: newArticle,
     });
+
+    // Notification engine: fire kb_article_published if immediately active
+    if ((newArticle.status === "active") && newArticle.projectIds?.[0]) {
+      fireNotification({
+        triggerType: TRIGGER_TYPES.KB_ARTICLE_PUBLISHED,
+        triggeredByUserId: userId,
+        projectId: newArticle.projectIds[0].toString(),
+        entityType: "kb_article",
+        entityId: newArticle._id as mongoose.Types.ObjectId,
+        deepLinkUrl: `/kb/${newArticle._id}`,
+        templateVars: { articleTitle: newArticle.documentName || "Untitled" },
+      }).catch(console.error);
+    }
   } catch (error: any) {
     console.error("Create KB Article error:", error);
     res.status(500).json({
@@ -619,6 +634,7 @@ export const updateArticle = async (
     // Update other fields
     if (tags) article.tags = tags;
     if (author !== undefined) article.author = author;
+    const previousStatus = article.status;
     if (status) article.status = status;
     if (isFeatured !== undefined) article.isFeatured = isFeatured;
     if (showNewTag !== undefined) article.showNewTag = showNewTag;
@@ -651,6 +667,50 @@ export const updateArticle = async (
       message: "KB Article updated successfully",
       data: article,
     });
+
+    // Notification engine (non-blocking, fire after response)
+    (() => {
+      const projectId = article.projectIds?.[0]?.toString();
+      if (!projectId) return;
+      const articleTitle = article.documentName || "Untitled";
+      const articleId = article._id as mongoose.Types.ObjectId;
+      const deepLink = `/kb/${article._id}`;
+      const templateVars = { articleTitle };
+
+      if (status && status !== previousStatus) {
+        if (status === "active") {
+          fireNotification({
+            triggerType: TRIGGER_TYPES.KB_ARTICLE_PUBLISHED,
+            triggeredByUserId: userId,
+            projectId,
+            entityType: "kb_article",
+            entityId: articleId,
+            deepLinkUrl: deepLink,
+            templateVars,
+          }).catch(console.error);
+        } else if (status === "archived") {
+          fireNotification({
+            triggerType: TRIGGER_TYPES.KB_ARTICLE_ARCHIVED,
+            triggeredByUserId: userId,
+            projectId,
+            entityType: "kb_article",
+            entityId: articleId,
+            deepLinkUrl: deepLink,
+            templateVars,
+          }).catch(console.error);
+        }
+      } else {
+        fireNotification({
+          triggerType: TRIGGER_TYPES.KB_ARTICLE_UPDATED,
+          triggeredByUserId: userId,
+          projectId,
+          entityType: "kb_article",
+          entityId: articleId,
+          deepLinkUrl: deepLink,
+          templateVars,
+        }).catch(console.error);
+      }
+    })();
   } catch (error: any) {
     console.error("Update KB Article error:", error);
     res.status(500).json({

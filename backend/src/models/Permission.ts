@@ -18,6 +18,7 @@ export interface IPermission extends Document {
     | "workflow-role-mapping"
     | "sla-escalation"
     | "knowledge-base"
+    | "notifications"
     | "integrations"
     | "reports"
     | "audit-logs"
@@ -67,6 +68,7 @@ const permissionSchema = new Schema<IPermission>(
         "workflow-role-mapping",
         "sla-escalation",
         "knowledge-base",
+        "notifications",
         "feedback",
         "integrations",
         "reports",

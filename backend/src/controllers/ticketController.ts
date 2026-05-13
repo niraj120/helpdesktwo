@@ -43,6 +43,8 @@ import {
   toObjectIdArray,
   ensureObjectId,
 } from "../utils/objectIdUtils";
+import { fireNotification } from "../services/notificationEngine";
+import { TRIGGER_TYPES } from "../constants/notificationTriggers";
 
 // Helper: Convert status code to name for emails/display
 const getStatusName = (statusCode: number): string => {
@@ -909,6 +911,34 @@ export const submitTicket = async (req: Request, res: Response) => {
     console.log(
       `✅ Ticket created successfully: ${ticket._id} | Created by: ${studentUserId}${assignedAgent ? ` | Assigned to: ${assignedAgent}` : " | Unassigned"}`,
     );
+
+    // Notification engine: ticket_created (fan-out to all roles configured in settings)
+    fireNotification({
+      triggerType: TRIGGER_TYPES.TICKET_CREATED,
+      triggeredByUserId: studentUserId,
+      projectId: projectId,
+      entityType: "ticket",
+      entityId: ticket._id as mongoose.Types.ObjectId,
+      deepLinkUrl: `/projects/${projectId}/tickets/${ticket._id}`,
+      templateVars: {
+        ticketNumber: ticket.ticketNumber,
+        subject: ticket.subject,
+      },
+    }).catch(console.error);
+
+    // Notification engine: ticket_assigned_to_me (direct to assigned agent)
+    if (assignedAgent) {
+      fireNotification({
+        triggerType: TRIGGER_TYPES.TICKET_ASSIGNED_TO_ME,
+        triggeredByUserId: studentUserId,
+        projectId: projectId,
+        entityType: "ticket",
+        entityId: ticket._id as mongoose.Types.ObjectId,
+        deepLinkUrl: `/projects/${projectId}/tickets/${ticket._id}`,
+        templateVars: { ticketNumber: ticket.ticketNumber },
+        recipientOverride: [new mongoose.Types.ObjectId(assignedAgent.toString())],
+      }).catch(console.error);
+    }
 
     // Send in-app + push notification to the assigned agent (non-blocking)
     if (assignedAgent) {
@@ -3146,6 +3176,45 @@ export const replyToTicket = async (req: Request, res: Response) => {
     })();
 
     // Send in-app + push notification to the reply recipient (non-blocking)
+    // Notification engine: ticket_reply_added (direct to assignee + creator)
+    (() => {
+      const projectId =
+        (updatedTicket as any).project?.toString() ||
+        (updatedTicket as any).metadata?.projectId?.toString();
+      const lastThread = updatedTicket.threads?.[updatedTicket.threads.length - 1] as any;
+      const replyAnchor = lastThread?._id ? `#reply-${lastThread._id}` : "";
+      const deepLink = `/projects/${projectId}/tickets/${(updatedTicket._id as any).toString()}${replyAnchor}`;
+      const replierName = `${(user as any).firstName || ""} ${(user as any).lastName || ""}`.trim() || user.email;
+      const recipients: mongoose.Types.ObjectId[] = [];
+      if (isStudentReply) {
+        // Student replied → notify assigned agent
+        const agentId = ticket.assignedTo;
+        if (agentId) recipients.push(new mongoose.Types.ObjectId(agentId.toString()));
+      } else {
+        // Agent replied → notify ticket creator
+        const creatorId =
+          (ticket as any).metadata?.studentUserId ||
+          (ticket as any).submittedBy ||
+          (ticket as any).createdBy;
+        if (creatorId) recipients.push(new mongoose.Types.ObjectId(creatorId.toString()));
+      }
+      if (recipients.length > 0 && projectId) {
+        fireNotification({
+          triggerType: TRIGGER_TYPES.TICKET_REPLY_ADDED,
+          triggeredByUserId: userId,
+          projectId,
+          entityType: "ticket",
+          entityId: ticket._id as mongoose.Types.ObjectId,
+          deepLinkUrl: deepLink,
+          templateVars: {
+            agentName: replierName,
+            ticketNumber: ticket.ticketNumber,
+          },
+          recipientOverride: recipients,
+        }).catch(console.error);
+      }
+    })();
+
     (async () => {
       try {
         const {
@@ -3376,6 +3445,26 @@ export const closeTicket = async (req: Request, res: Response) => {
         );
       } catch (slaErr) {
         console.error("Failed to clear SLA tracking on student close:", slaErr);
+      }
+    })();
+
+    // Notification engine: ticket_closed (notify assignee)
+    (() => {
+      const projectId =
+        (ticket as any).metadata?.projectId?.toString() ||
+        (ticket as any).project?.toString();
+      const agentId = ticket.assignedTo;
+      if (agentId && projectId) {
+        fireNotification({
+          triggerType: TRIGGER_TYPES.TICKET_CLOSED,
+          triggeredByUserId: userId,
+          projectId,
+          entityType: "ticket",
+          entityId: ticket._id as mongoose.Types.ObjectId,
+          deepLinkUrl: `/projects/${projectId}/tickets/${(ticket._id as any).toString()}`,
+          templateVars: { ticketNumber: ticket.ticketNumber },
+          recipientOverride: [new mongoose.Types.ObjectId(agentId.toString())],
+        }).catch(console.error);
       }
     })();
 
@@ -3735,6 +3824,28 @@ export const updateTicketStatus = async (req: Request, res: Response) => {
         console.error("Failed to log activity:", logError);
       }
     }
+
+    // Notification engine: ticket_status_changed (role-based fan-out)
+    (() => {
+      const projectId =
+        (ticket as any).metadata?.projectId?.toString() ||
+        (ticket as any).project?.toString();
+      if (projectId) {
+        const statusLabel = statusDoc?.name || String(statusNum);
+        fireNotification({
+          triggerType: TRIGGER_TYPES.TICKET_STATUS_CHANGED,
+          triggeredByUserId: userId,
+          projectId,
+          entityType: "ticket",
+          entityId: ticket._id as mongoose.Types.ObjectId,
+          deepLinkUrl: `/projects/${projectId}/tickets/${(ticket._id as any).toString()}`,
+          templateVars: {
+            ticketNumber: ticket.ticketNumber,
+            newStatus: statusLabel,
+          },
+        }).catch(console.error);
+      }
+    })();
 
     // Push notification to the assigned agent about status change (non-blocking)
     // Only notify if someone other than the assigned agent made the change
@@ -4407,6 +4518,24 @@ export const escalateTicket = async (req: Request, res: Response) => {
       `✅ Ticket ${id} escalated by ${currentUser.email} to ${escalatedUser.email}`,
     );
 
+    // Notification engine: ticket_escalated (role-based fan-out)
+    (() => {
+      const projectId =
+        (ticket as any).metadata?.projectId?.toString() ||
+        (ticket as any).project?.toString();
+      if (projectId) {
+        fireNotification({
+          triggerType: TRIGGER_TYPES.TICKET_ESCALATED,
+          triggeredByUserId: userId,
+          projectId,
+          entityType: "ticket",
+          entityId: ticket._id as mongoose.Types.ObjectId,
+          deepLinkUrl: `/projects/${projectId}/tickets/${(ticket._id as any).toString()}`,
+          templateVars: { ticketNumber: ticket.ticketNumber },
+        }).catch(console.error);
+      }
+    })();
+
     return res.status(200).json({
       success: true,
       message: "Ticket escalated successfully",
@@ -4606,6 +4735,20 @@ export const assignTicket = async (req: Request, res: Response) => {
         );
       }
     })();
+
+    // Notification engine: ticket_assigned_to_me (direct to newly assigned agent)
+    if (projectId) {
+      fireNotification({
+        triggerType: TRIGGER_TYPES.TICKET_ASSIGNED_TO_ME,
+        triggeredByUserId: currentUser._id.toString(),
+        projectId,
+        entityType: "ticket",
+        entityId: ticket._id as mongoose.Types.ObjectId,
+        deepLinkUrl: `/projects/${projectId}/tickets/${(ticket._id as any).toString()}`,
+        templateVars: { ticketNumber: ticket.ticketNumber },
+        recipientOverride: [new mongoose.Types.ObjectId(agentId)],
+      }).catch(console.error);
+    }
 
     // Push notification to the assigned agent (in-app + push, non-blocking)
     if (projectId) {

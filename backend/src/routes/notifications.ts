@@ -1,26 +1,24 @@
 import { Router } from 'express';
 import { 
-  getNotifications, 
+  getNotifications,
+  getUnreadCount,
   markNotificationAsRead, 
-  markAllNotificationsAsRead 
+  markAllNotificationsAsRead,
 } from '../controllers/notificationController';
-import { authMiddleware } from '../middleware/auth';
+import { auth } from '../middleware/auth';
 
 const router = Router();
 
-// @desc    Get notifications for current user
-// @route   GET /api/notifications
-// @access  Private
-router.get('/', authMiddleware, getNotifications);
+// GET /api/notifications
+router.get('/', auth, getNotifications);
 
-// @desc    Mark notification as read
-// @route   PATCH /api/notifications/:id/read
-// @access  Private
-router.patch('/:id/read', authMiddleware, markNotificationAsRead);
+// GET /api/notifications/unread-count
+router.get('/unread-count', auth, getUnreadCount);
 
-// @desc    Mark all notifications as read
-// @route   PATCH /api/notifications/mark-all-read
-// @access  Private
-router.patch('/mark-all-read', authMiddleware, markAllNotificationsAsRead);
+// PATCH /api/notifications/:id/read
+router.patch('/:id/read', auth, markNotificationAsRead);
+
+// POST /api/notifications/read-all
+router.post('/read-all', auth, markAllNotificationsAsRead);
 
 export default router;

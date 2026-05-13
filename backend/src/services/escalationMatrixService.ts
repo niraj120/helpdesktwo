@@ -17,6 +17,8 @@ import {
   newObjectId,
 } from "../utils/objectIdUtils";
 import { sendSLAWarningEmail } from "../utils/emailService";
+import { fireNotification } from "./notificationEngine";
+import { TRIGGER_TYPES } from "../constants/notificationTriggers";
 
 /**
  * Convert slaHours value to milliseconds based on slaUnit
@@ -2007,6 +2009,32 @@ export async function processAutoEscalation(): Promise<{
 
         result.escalated++;
 
+        // Notification engine: sla_breached + ticket_escalated (non-blocking)
+        (() => {
+          const projectId =
+            (ticket as any).metadata?.projectId?.toString() ||
+            (ticket as any).project?.toString();
+          if (projectId) {
+            const ticketNum = (ticket as any).ticketNumber || ticket._id.toString();
+            fireNotification({
+              triggerType: TRIGGER_TYPES.SLA_BREACHED,
+              projectId,
+              entityType: "ticket",
+              entityId: ticket._id as mongoose.Types.ObjectId,
+              deepLinkUrl: `/projects/${projectId}/tickets/${ticket._id}`,
+              templateVars: { ticketNumber: ticketNum },
+            }).catch(console.error);
+            fireNotification({
+              triggerType: TRIGGER_TYPES.TICKET_ESCALATED,
+              projectId,
+              entityType: "ticket",
+              entityId: ticket._id as mongoose.Types.ObjectId,
+              deepLinkUrl: `/projects/${projectId}/tickets/${ticket._id}`,
+              templateVars: { ticketNumber: ticketNum },
+            }).catch(console.error);
+          }
+        })();
+
         console.log(
           `[AUTO-ESCALATION] Ticket ${ticket.ticketNumber} escalated from L${currentLevelNumber} to L${nextLevel.levelNumber}`,
         );
@@ -2233,6 +2261,29 @@ export async function processSLAWarnings(): Promise<void> {
           },
         },
       );
+
+      // Notification engine: sla_breach_warning (non-blocking)
+      if (thresholdsToFireNow.length > 0) {
+        const projectId = (ticket as any).metadata?.projectId?.toString();
+        const ticketNum = (ticket as any).ticketNumber || ticket._id.toString();
+        const remainingMs =
+          new Date((ticket.roleLevelSLA as any).dueAt).getTime() - now.getTime();
+        const remainingMins = Math.max(0, Math.round(remainingMs / 60000));
+        const timeRemaining =
+          remainingMins >= 60
+            ? `${Math.floor(remainingMins / 60)}h ${remainingMins % 60}m`
+            : `${remainingMins} min`;
+        if (projectId) {
+          fireNotification({
+            triggerType: TRIGGER_TYPES.SLA_BREACH_WARNING,
+            projectId,
+            entityType: "ticket",
+            entityId: ticket._id as mongoose.Types.ObjectId,
+            deepLinkUrl: `/projects/${projectId}/tickets/${ticket._id}`,
+            templateVars: { ticketNumber: ticketNum, timeRemaining },
+          }).catch(console.error);
+        }
+      }
     }
 
     console.log(
