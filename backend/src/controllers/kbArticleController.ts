@@ -54,6 +54,9 @@ export const createArticle = async (
       htmlContent,
       description,
       externalUrl,
+      docNumber,
+      pageNumber,
+      uploadedAt,
       publishedDate,
       levelIds: rawLevelIds,
       tags: rawTags,
@@ -64,6 +67,7 @@ export const createArticle = async (
       displayOrder,
       visibility: rawVisibility,
       visibleToRoles: rawVisibleToRoles,
+      preserveRawHtml,
     } = req.body;
     const userId = (req as any).user.userId;
     const file = req.file;
@@ -116,9 +120,14 @@ export const createArticle = async (
       pdfSize = uploadResult.size;
     }
 
-    // Sanitize HTML content while preserving styles from PDF converters
+    const shouldPreserveRawHtml =
+      preserveRawHtml === true || String(preserveRawHtml) === "true";
+
+    // Preserve raw source HTML when explicitly requested from source-mode editor.
     const sanitizedHtml = htmlContent
-      ? DOMPurify.sanitize(htmlContent, DOMPURIFY_CONFIG)
+      ? shouldPreserveRawHtml
+        ? htmlContent
+        : DOMPurify.sanitize(htmlContent, DOMPURIFY_CONFIG)
       : undefined;
 
     // Create article
@@ -130,6 +139,12 @@ export const createArticle = async (
       pdfFilename,
       pdfSize,
       htmlContent: sanitizedHtml,
+      docNumber,
+      pageNumber:
+        pageNumber !== undefined && pageNumber !== ""
+          ? Number(pageNumber)
+          : undefined,
+      uploadedAt: uploadedAt ? new Date(uploadedAt) : undefined,
       description,
       externalUrl,
       publishedDate: publishedDate ? new Date(publishedDate) : new Date(),
@@ -437,6 +452,9 @@ export const updateArticle = async (
       htmlContent,
       description,
       externalUrl,
+      docNumber,
+      pageNumber,
+      uploadedAt,
       publishedDate,
       levelIds: rawLevelIds,
       tags: rawTags,
@@ -447,6 +465,7 @@ export const updateArticle = async (
       displayOrder,
       visibility: rawVisibility,
       visibleToRoles: rawVisibleToRoles,
+      preserveRawHtml,
     } = req.body;
     const userId = (req as any).user.userId;
     const file = req.file;
@@ -467,6 +486,8 @@ export const updateArticle = async (
       typeof rawVisibleToRoles === "string"
         ? JSON.parse(rawVisibleToRoles)
         : rawVisibleToRoles;
+    const shouldPreserveRawHtml =
+      preserveRawHtml === true || String(preserveRawHtml) === "true";
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       res.status(400).json({
@@ -493,6 +514,13 @@ export const updateArticle = async (
         ? projectIds
         : [projectIds];
     if (description !== undefined) article.description = description;
+    if (docNumber !== undefined) article.docNumber = docNumber;
+    if (pageNumber !== undefined && pageNumber !== "") {
+      article.pageNumber = Number(pageNumber);
+    }
+    if (uploadedAt !== undefined) {
+      article.uploadedAt = uploadedAt ? new Date(uploadedAt) : undefined;
+    }
 
     // Determine which content type to keep based on documentType
     const targetDocType = documentType || article.documentType;
@@ -560,7 +588,9 @@ export const updateArticle = async (
       article.externalUrl = undefined;
       // Only update htmlContent if provided, otherwise keep existing
       if (htmlContent !== undefined) {
-        article.htmlContent = DOMPurify.sanitize(htmlContent, DOMPURIFY_CONFIG);
+        article.htmlContent = shouldPreserveRawHtml
+          ? htmlContent
+          : DOMPurify.sanitize(htmlContent, DOMPURIFY_CONFIG);
       }
       console.log(
         "📝 Document type: HTML - cleared PDF and externalUrl, kept htmlContent",
@@ -570,7 +600,9 @@ export const updateArticle = async (
       article.externalUrl = undefined;
       // Only update htmlContent if provided, otherwise keep existing
       if (htmlContent !== undefined) {
-        article.htmlContent = DOMPurify.sanitize(htmlContent, DOMPURIFY_CONFIG);
+        article.htmlContent = shouldPreserveRawHtml
+          ? htmlContent
+          : DOMPurify.sanitize(htmlContent, DOMPURIFY_CONFIG);
       }
       console.log(
         "📄📝 Document type: Both - cleared externalUrl, kept PDF and HTML",

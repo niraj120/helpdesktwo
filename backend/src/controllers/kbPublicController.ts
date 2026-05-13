@@ -9,6 +9,17 @@ import { refreshSignedUrlIfNeeded } from "../utils/gcsUrlHelper";
 // Student role ID - used for public student portal access
 const STUDENT_ROLE_ID = "6915aeb10561bff7f36244a9";
 
+function toSearchableText(html?: string): string {
+  if (!html) return "";
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 8000);
+}
+
 /**
  * Build visibility filter for KB articles based on user authentication and role
  * @param req - Express request object
@@ -201,7 +212,7 @@ export const getPublicArticles = async (
     // Batch fetch all articles (exclude htmlContent in list for performance)
     const allArticles = await KBArticle.find(articleFilter)
       .select(
-        "documentName documentType pdfUrl externalUrl description showNewTag isFeatured author publishedAt viewsCount tags displayOrder",
+        "documentName documentType pdfUrl externalUrl htmlContent description showNewTag isFeatured author publishedAt viewsCount tags displayOrder",
       )
       .sort({ isFeatured: -1, displayOrder: 1, publishedAt: -1 })
       .lean();
@@ -269,6 +280,7 @@ export const getPublicArticles = async (
             documentType: article.documentType,
             pdfUrl: await refreshSignedUrlIfNeeded(article.pdfUrl),
             externalUrl: article.externalUrl,
+            searchableText: toSearchableText(article.htmlContent),
             description: article.description,
             showNewTag: article.showNewTag,
             isFeatured: article.isFeatured,
@@ -329,7 +341,7 @@ export const getPublicArticles = async (
 
       const crossArticles = await KBArticle.find(crossProjectFilter)
         .select(
-          "documentName documentType pdfUrl externalUrl description showNewTag isFeatured author publishedAt viewsCount tags displayOrder",
+          "documentName documentType pdfUrl externalUrl htmlContent description showNewTag isFeatured author publishedAt viewsCount tags displayOrder",
         )
         .sort({ isFeatured: -1, displayOrder: 1, publishedAt: -1 })
         .lean();
@@ -350,6 +362,7 @@ export const getPublicArticles = async (
             documentType: art.documentType,
             pdfUrl: await refreshSignedUrlIfNeeded(art.pdfUrl),
             externalUrl: art.externalUrl,
+            searchableText: toSearchableText(art.htmlContent),
             description: art.description,
             showNewTag: art.showNewTag,
             isFeatured: art.isFeatured,
@@ -416,11 +429,30 @@ export const getPublicArticleById = async (
 
     // Build visibility filter based on user authentication and role
     const visibilityFilter = buildVisibilityFilter(req);
+    const projectIdStr = String(projectId);
+    const isAllProjects = projectIdStr === "all";
+
+    const publishTypeFilter = {
+      $or: [
+        { publishType: { $exists: false } },
+        { publishType: null },
+        { publishType: "immediate" },
+        {
+          publishType: "scheduled",
+          scheduledPublishDate: { $lte: new Date() },
+          $or: [
+            { scheduledUnpublishDate: { $gte: new Date() } },
+            { scheduledUnpublishDate: null },
+            { scheduledUnpublishDate: { $exists: false } },
+          ],
+        },
+      ],
+    };
 
     let articleQuery: any = {
       _id: id,
       status: "active",
-      projectIds: projectId,
+      projectIds: projectIdStr,
       ...visibilityFilter,
     };
 
@@ -506,11 +538,38 @@ export const getPublicArticleById = async (
       .limit(5)
       .distinct("articleId");
 
-    const relatedArticles = await KBArticle.find({
+    const detailUser = (req as any).user;
+    const detailRoleId = (() => {
+      const rv = detailUser?.roleId || detailUser?.role;
+      if (!rv) return null;
+      if (typeof rv === "object" && rv._id) return rv._id.toString();
+      if (typeof rv === "object" && rv.toString) return rv.toString();
+      return typeof rv === "string" ? rv : null;
+    })();
+
+    const relatedScopeConditions: any[] = [];
+    if (!isAllProjects) {
+      relatedScopeConditions.push({ projectIds: projectIdStr });
+    }
+    if (detailRoleId && /^[0-9a-fA-F]{24}$/.test(detailRoleId)) {
+      relatedScopeConditions.push({
+        visibility: "role_based",
+        visibleToRoles: new mongoose.Types.ObjectId(detailRoleId),
+      });
+    }
+
+    const relatedFilter: any = {
       _id: { $in: relatedArticleIds },
       status: "active",
-    })
-      .select("documentName documentType isFeatured")
+      $and: [publishTypeFilter, visibilityFilter],
+    };
+
+    if (relatedScopeConditions.length > 0) {
+      relatedFilter.$or = relatedScopeConditions;
+    }
+
+    const relatedArticles = await KBArticle.find(relatedFilter)
+      .select("documentName documentType isFeatured showNewTag")
       .limit(5)
       .lean();
 
@@ -523,6 +582,8 @@ export const getPublicArticleById = async (
           documentType: article.documentType,
           pdfUrl: freshPdfUrl,
           htmlContent: article.htmlContent,
+          showNewTag: article.showNewTag,
+          isFeatured: article.isFeatured,
           author: article.author,
           publishedAt: article.publishedAt,
           viewsCount: article.viewsCount,

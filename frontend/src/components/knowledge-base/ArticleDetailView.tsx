@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import {
   ArrowLeft,
@@ -8,7 +8,6 @@ import {
   FileText,
   Download,
 } from "lucide-react";
-import DOMPurify from "dompurify";
 import { API_CONFIG } from "../../config/constants";
 
 interface Article {
@@ -24,6 +23,7 @@ interface Article {
   viewsCount: number;
   tags: string[];
   showNewTag: boolean;
+  isFeatured: boolean;
 }
 
 interface Level {
@@ -36,25 +36,34 @@ interface RelatedArticle {
   documentName: string;
   documentType: string;
   isFeatured: boolean;
+  showNewTag?: boolean;
 }
 
 interface ArticleDetailViewProps {
   articleId: string;
   projectId: string;
   onBack: () => void;
+  onSelectArticle?: (articleId: string) => void;
   isStudentPortal?: boolean; // When true, skip token to support public access
+  searchQuery?: string;
 }
 
 const ArticleDetailView: React.FC<ArticleDetailViewProps> = ({
   articleId,
   projectId,
   onBack,
+  onSelectArticle,
   isStudentPortal = false,
+  searchQuery = "",
 }) => {
   const [article, setArticle] = useState<Article | null>(null);
   const [levels, setLevels] = useState<Level[]>([]);
   const [relatedArticles, setRelatedArticles] = useState<RelatedArticle[]>([]);
   const [loading, setLoading] = useState(true);
+  const [iframeUrl, setIframeUrl] = useState<string>("");
+  const [totalMatches, setTotalMatches] = useState(0);
+  const [currentMatch, setCurrentMatch] = useState(1);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   useEffect(() => {
     fetchArticle();
@@ -87,6 +96,118 @@ const ArticleDetailView: React.FC<ArticleDetailViewProps> = ({
     }
   };
 
+  // Prepare HTML content for iframe rendering to preserve CSS styles from PDF converters
+  const prepareHtmlForViewer = (
+    html: string,
+  ): { html: string; matchCount: number } => {
+    const escapedQuery = searchQuery.trim();
+
+    const ensureBaseTargetBlank = (content: string): string => {
+      if (
+        /target\s*=\s*["']_blank["']/i.test(content) &&
+        /<base\b/i.test(content)
+      ) {
+        return content;
+      }
+
+      if (/<head\b[^>]*>/i.test(content)) {
+        return content.replace(
+          /<head\b([^>]*)>/i,
+          '<head$1><base target="_blank">',
+        );
+      }
+
+      if (/<html\b[^>]*>/i.test(content)) {
+        return content.replace(
+          /<html\b([^>]*)>/i,
+          '<html$1><head><base target="_blank"></head>',
+        );
+      }
+
+      return content;
+    };
+
+    const wrapMinimalHtml = (content: string) =>
+      `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <base target="_blank">
+</head>
+<body>${content}</body>
+</html>`;
+
+    let normalizedHtml = html;
+
+    // Fidelity-first rendering: keep source HTML as-is whenever possible.
+    if (html.includes("<!DOCTYPE") || html.includes("<html")) {
+      normalizedHtml = ensureBaseTargetBlank(html);
+    } else {
+      normalizedHtml = wrapMinimalHtml(html);
+    }
+
+    // Do not mutate HTML DOM for highlighting; it can break formatting.
+    // Keep match controls hidden until a non-destructive highlighter is added.
+    if (!escapedQuery) return { html: normalizedHtml, matchCount: 0 };
+    return { html: normalizedHtml, matchCount: 0 };
+  };
+
+  useEffect(() => {
+    if (!article?.htmlContent) {
+      setIframeUrl("");
+      setTotalMatches(0);
+      setCurrentMatch(1);
+      return;
+    }
+
+    const prepared = prepareHtmlForViewer(article.htmlContent);
+    const blob = new Blob([prepared.html], { type: "text/html" });
+    const nextUrl = URL.createObjectURL(blob);
+
+    setIframeUrl(nextUrl);
+    setTotalMatches(prepared.matchCount);
+    setCurrentMatch(prepared.matchCount > 0 ? 1 : 0);
+
+    return () => {
+      URL.revokeObjectURL(nextUrl);
+    };
+  }, [article?.htmlContent, searchQuery]);
+
+  const focusMatch = (matchNumber: number) => {
+    const iframeDoc = iframeRef.current?.contentDocument;
+    if (!iframeDoc) return;
+
+    iframeDoc
+      .querySelectorAll("mark.kb-match-active")
+      .forEach((el) => el.classList.remove("kb-match-active"));
+
+    const target = iframeDoc.querySelector(
+      `mark[data-kb-match="${matchNumber}"]`,
+    );
+
+    if (target) {
+      target.classList.add("kb-match-active");
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  };
+
+  const goToNextMatch = () => {
+    if (!totalMatches) return;
+    setCurrentMatch((prev) => (prev >= totalMatches ? 1 : prev + 1));
+  };
+
+  const goToPreviousMatch = () => {
+    if (!totalMatches) return;
+    setCurrentMatch((prev) => (prev <= 1 ? totalMatches : prev - 1));
+  };
+
+  useEffect(() => {
+    if (currentMatch > 0) {
+      focusMatch(currentMatch);
+    }
+  }, [currentMatch, iframeUrl]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -106,47 +227,8 @@ const ArticleDetailView: React.FC<ArticleDetailViewProps> = ({
     );
   }
 
-  // Prepare HTML content for iframe rendering to preserve CSS styles from PDF converters
-  const prepareHtmlForViewer = (html: string): string => {
-    // If HTML already has DOCTYPE or html tag, return as-is
-    if (html.includes("<!DOCTYPE") || html.includes("<html")) {
-      // Inject viewport meta if not present for better rendering
-      if (!html.includes("<meta") || !html.includes("viewport")) {
-        return html.replace(
-          "<head>",
-          '<head><meta name="viewport" content="width=device-width, initial-scale=1.0">',
-        );
-      }
-      return html;
-    }
-    // Otherwise wrap in a basic HTML document with comprehensive styles
-    return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    * { box-sizing: border-box; }
-    body { font-family: Arial, sans-serif; padding: 20px; margin: 0; line-height: 1.6; color: #333; }
-    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
-    th, td { border: 1px solid #ccc; padding: 8px 12px; text-align: left; vertical-align: top; }
-    th { background-color: #f5f5f5; font-weight: 600; }
-    tr:nth-child(even) { background-color: #fafafa; }
-    img { max-width: 100%; height: auto; }
-    h1, h2, h3, h4, h5, h6 { margin-top: 1em; margin-bottom: 0.5em; color: #222; }
-    p { margin: 0.5em 0; }
-    ul, ol { padding-left: 2em; }
-    a { color: #0066cc; }
-    pre, code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: monospace; }
-    blockquote { border-left: 4px solid #ddd; margin: 1em 0; padding-left: 1em; color: #666; }
-  </style>
-</head>
-<body>${html}</body>
-</html>`;
-  };
-
   return (
-    <div className="max-w-4xl mx-auto p-6">
+    <div className="max-w-7xl mx-auto p-6">
       {/* Back Button */}
       <button
         onClick={onBack}
@@ -160,11 +242,18 @@ const ArticleDetailView: React.FC<ArticleDetailViewProps> = ({
       <div className="bg-white rounded-lg shadow-lg p-8 mb-6">
         <div className="flex items-start gap-3 mb-4">
           <h1 className="text-3xl font-bold flex-1">{article.documentName}</h1>
-          {article.showNewTag && (
-            <span className="px-3 py-1 bg-green-500 text-white text-sm font-semibold rounded-full animate-pulse">
-              NEW
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {article.showNewTag && (
+              <span className="px-3 py-1 bg-green-500 text-white text-sm font-semibold rounded-full animate-pulse">
+                NEW
+              </span>
+            )}
+            {article.isFeatured && (
+              <span className="inline-flex items-center px-3 py-1 bg-yellow-100 text-yellow-700 text-sm font-semibold rounded-full">
+                ⭐ Featured
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Description */}
@@ -284,11 +373,35 @@ const ArticleDetailView: React.FC<ArticleDetailViewProps> = ({
       {(article.documentType === "html" || article.documentType === "both") &&
         article.htmlContent && (
           <div className="bg-white rounded-lg shadow-lg p-8 mb-6">
+            {totalMatches > 0 && (
+              <div className="mb-4 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                <span className="text-sm font-medium text-amber-800">
+                  Match {currentMatch} of {totalMatches}
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={goToPreviousMatch}
+                    className="rounded border border-amber-300 bg-white px-3 py-1 text-sm text-amber-800 hover:bg-amber-100"
+                  >
+                    Prev
+                  </button>
+                  <button
+                    type="button"
+                    onClick={goToNextMatch}
+                    className="rounded border border-amber-300 bg-white px-3 py-1 text-sm text-amber-800 hover:bg-amber-100"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
             <iframe
-              srcDoc={prepareHtmlForViewer(article.htmlContent)}
+              ref={iframeRef}
+              src={iframeUrl}
               className="w-full border-0 rounded"
-              style={{ minHeight: "600px", height: "auto" }}
-              sandbox="allow-same-origin allow-scripts"
+              style={{ minHeight: "600px", height: "600px" }}
+              sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
               title="Article Content"
               onLoad={(e) => {
                 // Auto-adjust iframe height to content
@@ -298,9 +411,12 @@ const ArticleDetailView: React.FC<ArticleDetailViewProps> = ({
                     iframe.contentWindow?.document.body?.scrollHeight;
                   if (height && height > 200) {
                     iframe.style.height = `${height + 50}px`;
+                  } else {
+                    iframe.style.height = "600px";
                   }
                 } catch (err) {
                   // Cross-origin restriction - use default height
+                  iframe.style.height = "600px";
                 }
               }}
             />
@@ -316,9 +432,28 @@ const ArticleDetailView: React.FC<ArticleDetailViewProps> = ({
               <div
                 key={related._id}
                 className="border rounded p-4 hover:bg-gray-50 cursor-pointer"
-                onClick={() => window.location.reload()} // Reload to show new article
+                onClick={() => {
+                  if (onSelectArticle) {
+                    onSelectArticle(related._id);
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }
+                }}
               >
-                <h3 className="font-semibold mb-1">{related.documentName}</h3>
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <h3 className="font-semibold mb-1">{related.documentName}</h3>
+                  <div className="flex items-center gap-2">
+                    {related.showNewTag && (
+                      <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-green-500 text-white">
+                        NEW
+                      </span>
+                    )}
+                    {related.isFeatured && (
+                      <span className="text-xs px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full font-semibold">
+                        Featured
+                      </span>
+                    )}
+                  </div>
+                </div>
                 <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded">
                   {related.documentType}
                 </span>

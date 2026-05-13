@@ -22,6 +22,20 @@ interface KBArticleFormProps {
   onClose: () => void;
 }
 
+const isComplexHtmlContent = (html: string): boolean => {
+  if (!html) return false;
+  return (
+    /<style[\s>]/i.test(html) ||
+    /<!DOCTYPE/i.test(html) ||
+    /<html[\s>]/i.test(html) ||
+    /position\s*:\s*absolute/i.test(html) ||
+    /@font-face/i.test(html) ||
+    /transform\s*:/i.test(html) ||
+    /<svg[\s>]/i.test(html) ||
+    /pdf24/i.test(html)
+  );
+};
+
 const KBArticleForm: React.FC<KBArticleFormProps> = ({
   projectId,
   article,
@@ -37,6 +51,14 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
       return {
         documentName: article.documentName || "",
         documentType: article.documentType || "both",
+        docNumber: article.docNumber || "",
+        pageNumber:
+          article.pageNumber !== undefined && article.pageNumber !== null
+            ? String(article.pageNumber)
+            : "",
+        uploadedAt: article.uploadedAt
+          ? new Date(article.uploadedAt).toISOString().slice(0, 16)
+          : "",
         description: article.description || "",
         externalUrl: article.externalUrl || "",
         htmlContent: article.htmlContent || "",
@@ -59,6 +81,9 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
     return {
       documentName: "",
       documentType: "both" as "pdf" | "html" | "both" | "link",
+      docNumber: "",
+      pageNumber: "",
+      uploadedAt: "",
       description: "",
       externalUrl: "",
       htmlContent: "",
@@ -76,8 +101,36 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
   });
 
   const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [htmlFile, setHtmlFile] = useState<File | null>(null);
   const [tagInput, setTagInput] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const handleHtmlFileUpload = async (file: File) => {
+    if (!file.name.toLowerCase().endsWith(".html")) {
+      alert("Only .html files are supported.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert("File too large. Maximum size is 5 MB.");
+      return;
+    }
+
+    const htmlText = await file.text();
+    if (!htmlText.trim()) {
+      alert("HTML file is empty.");
+      return;
+    }
+
+    const inferredName = file.name.replace(/\.html$/i, "").trim();
+    setHtmlFile(file);
+    setHtmlSource(htmlText);
+    setFormData((prev) => ({
+      ...prev,
+      documentName: prev.documentName || inferredName,
+      htmlContent: htmlText,
+      uploadedAt: prev.uploadedAt || new Date().toISOString().slice(0, 16),
+    }));
+  };
 
   useEffect(() => {
     fetchLevels();
@@ -123,6 +176,15 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
       // Append all fields
       formDataToSend.append("documentName", formData.documentName);
       formDataToSend.append("documentType", formData.documentType);
+      if (formData.docNumber) {
+        formDataToSend.append("docNumber", formData.docNumber);
+      }
+      if (formData.pageNumber) {
+        formDataToSend.append("pageNumber", formData.pageNumber);
+      }
+      if (formData.uploadedAt) {
+        formDataToSend.append("uploadedAt", formData.uploadedAt);
+      }
       // Only set projectIds for NEW articles. On edit, omit it so the backend
       // preserves the existing projectIds (which may span multiple projects).
       if (!article) {
@@ -151,8 +213,19 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
         formDataToSend.append("externalUrl", formData.externalUrl);
       }
 
-      if (formData.htmlContent) {
-        formDataToSend.append("htmlContent", formData.htmlContent);
+      // If user is in HTML Source mode, always submit source content directly
+      // so complex styling is preserved without extra action.
+      const effectiveHtmlContent = showHtmlSource
+        ? htmlSource
+        : formData.htmlContent;
+
+      formDataToSend.append(
+        "preserveRawHtml",
+        showHtmlSource ? "true" : "false",
+      );
+
+      if (effectiveHtmlContent) {
+        formDataToSend.append("htmlContent", effectiveHtmlContent);
       }
 
       if (formData.tags.length > 0) {
@@ -271,6 +344,24 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
   const [showHtmlPreview, setShowHtmlPreview] = useState(false);
   const [htmlSource, setHtmlSource] = useState("");
 
+  useEffect(() => {
+    if (
+      (formData.documentType === "html" || formData.documentType === "both") &&
+      !showHtmlSource
+    ) {
+      const currentHtml = formData.htmlContent || "";
+      if (isComplexHtmlContent(currentHtml)) {
+        setHtmlSource(currentHtml);
+        setShowHtmlSource(true);
+      }
+    }
+  }, [formData.documentType, formData.htmlContent, showHtmlSource]);
+
+  const effectiveHtmlForSave = showHtmlSource
+    ? htmlSource
+    : formData.htmlContent;
+  const isComplexHtmlForSave = isComplexHtmlContent(effectiveHtmlForSave || "");
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
       <div className="bg-white rounded-lg p-6 w-full max-w-4xl my-8 max-h-[90vh] overflow-y-auto">
@@ -347,6 +438,52 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
             </select>
           </div>
 
+          {/* KB metadata */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Document Number
+              </label>
+              <input
+                type="text"
+                value={formData.docNumber}
+                onChange={(e) =>
+                  setFormData({ ...formData, docNumber: e.target.value })
+                }
+                className="w-full border rounded px-3 py-2"
+                placeholder="DOC-001"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Page Number
+              </label>
+              <input
+                type="number"
+                min={0}
+                value={formData.pageNumber}
+                onChange={(e) =>
+                  setFormData({ ...formData, pageNumber: e.target.value })
+                }
+                className="w-full border rounded px-3 py-2"
+                placeholder="1"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Uploaded At
+              </label>
+              <input
+                type="datetime-local"
+                value={formData.uploadedAt}
+                onChange={(e) =>
+                  setFormData({ ...formData, uploadedAt: e.target.value })
+                }
+                className="w-full border rounded px-3 py-2"
+              />
+            </div>
+          </div>
+
           {/* External URL - Only for link type */}
           {formData.documentType === "link" && (
             <div className="mb-4">
@@ -408,46 +545,53 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
           {(formData.documentType === "html" ||
             formData.documentType === "both") && (
             <div className="mb-4">
+              <label className="block text-sm font-medium mb-2">
+                Upload HTML File (optional)
+              </label>
+              <div className="flex items-center gap-2 mb-3">
+                <input
+                  type="file"
+                  accept=".html,text/html"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      await handleHtmlFileUpload(file);
+                    }
+                  }}
+                  className="hidden"
+                  id="html-upload"
+                />
+                <label
+                  htmlFor="html-upload"
+                  className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded cursor-pointer"
+                >
+                  <Upload size={18} />
+                  Choose HTML
+                </label>
+                {htmlFile && (
+                  <span className="text-sm text-gray-600">{htmlFile.name}</span>
+                )}
+              </div>
+              <p className="text-xs text-gray-500 mb-2">
+                Only .html files, max 5MB
+              </p>
+
               <div className="flex justify-between items-center mb-2">
                 <label className="block text-sm font-medium">
                   HTML Content {formData.documentType === "html" ? "*" : ""}
                 </label>
                 <div className="flex gap-2">
-                  {showHtmlSource && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        // Save HTML directly without switching to visual editor
-                        setFormData({ ...formData, htmlContent: htmlSource });
-                        alert(
-                          "HTML content saved! The formatting will be preserved when the article is displayed.",
-                        );
-                      }}
-                      className="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
-                      title="Save HTML content as-is (preserves complex formatting)"
-                    >
-                      ✓ Apply HTML
-                    </button>
-                  )}
                   <button
                     type="button"
                     onClick={() => {
                       if (showHtmlSource) {
-                        // Check if HTML has complex styling that will be lost
-                        const hasComplexHtml =
-                          htmlSource.includes("<style") ||
-                          htmlSource.includes("position:") ||
-                          htmlSource.includes("pdf24") ||
-                          htmlSource.includes("<!DOCTYPE");
-                        if (hasComplexHtml) {
-                          const confirm = window.confirm(
-                            "Warning: Switching to Visual Editor will remove complex formatting (CSS styles, positioning, etc.).\n\n" +
-                              "To preserve formatting, click 'Apply HTML' instead, which saves the content as-is.\n\n" +
-                              "Do you still want to switch to Visual Editor?",
+                        if (isComplexHtmlContent(htmlSource)) {
+                          alert(
+                            "Complex HTML detected. Visual Editor is disabled for this content to prevent formatting loss.\n\nKeep HTML Source mode and submit directly.",
                           );
-                          if (!confirm) return;
+                          return;
                         }
-                        // Switching from HTML to visual - apply HTML changes
+                        // Switching from HTML to visual - sync source changes into editor state
                         setFormData({ ...formData, htmlContent: htmlSource });
                       } else {
                         // Switching from visual to HTML - load current content
@@ -502,6 +646,14 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
                 </div>
               </div>
 
+              {isComplexHtmlForSave && (
+                <div className="mb-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  Raw HTML integrity: protected. Complex layout detected, so
+                  content will be saved from HTML Source mode without visual
+                  conversion.
+                </div>
+              )}
+
               {showHtmlSource ? (
                 <div>
                   <div className="flex gap-2 mb-2">
@@ -521,14 +673,12 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
                           /<body[^>]*>([\s\S]*?)<\/body>/i,
                         );
                         if (bodyMatch) {
-                          // Extract style tags and body content
-                          const styleMatch = content.match(
-                            /<style[^>]*>([\s\S]*?)<\/style>/gi,
+                          // Preserve head resources (style/link/meta) plus body content.
+                          const headMatch = content.match(
+                            /<head[^>]*>([\s\S]*?)<\/head>/i,
                           );
-                          const styles = styleMatch
-                            ? styleMatch.join("\n")
-                            : "";
-                          content = styles + bodyMatch[1];
+                          const headContent = headMatch ? headMatch[1] : "";
+                          content = `${headContent}\n${bodyMatch[1]}`;
                         }
                         setHtmlSource(content);
                       }}
@@ -893,6 +1043,21 @@ const KBArticleForm: React.FC<KBArticleFormProps> = ({
           </div>
 
           {/* Submit Buttons */}
+          {(formData.documentType === "html" ||
+            formData.documentType === "both") && (
+            <div className="mb-3 flex items-center justify-end">
+              <span
+                className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+                  isComplexHtmlForSave
+                    ? "bg-green-100 text-green-800"
+                    : "bg-gray-100 text-gray-700"
+                }`}
+              >
+                Raw HTML Integrity:{" "}
+                {isComplexHtmlForSave ? "Protected" : "Standard"}
+              </span>
+            </div>
+          )}
           <div className="flex justify-end gap-2">
             <button
               type="button"

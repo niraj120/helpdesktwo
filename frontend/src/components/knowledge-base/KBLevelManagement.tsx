@@ -1,15 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import { Plus, Edit2, Trash2, Eye, EyeOff, Move } from 'lucide-react';
-import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { API_CONFIG } from '../../config/constants';
+import React, { useState, useEffect } from "react";
+import axios from "axios";
+import { Plus, Edit2, Trash2, Eye, EyeOff, Move } from "lucide-react";
+import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
+import { API_CONFIG } from "../../config/constants";
 
 interface KBLevel {
   _id: string;
   levelName: string;
   levelOrder: number;
   levelIcon?: string;
-  status: 'active' | 'inactive';
+  status: "active" | "inactive";
   description?: string;
   articleCount?: number;
   createdBy?: { name: string };
@@ -25,10 +25,10 @@ const KBLevelManagement: React.FC<KBLevelManagementProps> = ({ projectId }) => {
   const [showModal, setShowModal] = useState(false);
   const [editingLevel, setEditingLevel] = useState<KBLevel | null>(null);
   const [formData, setFormData] = useState({
-    levelName: '',
-    levelIcon: '',
-    description: '',
-    status: 'active' as 'active' | 'inactive',
+    levelName: "",
+    levelIcon: "",
+    description: "",
+    status: "active" as "active" | "inactive",
   });
 
   useEffect(() => {
@@ -38,18 +38,15 @@ const KBLevelManagement: React.FC<KBLevelManagementProps> = ({ projectId }) => {
   const fetchLevels = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('authToken');
-      const response = await axios.get(
-        `${API_CONFIG.API_URL}/kb/levels`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-          params: { projectId },
-        }
-      );
+      const token = localStorage.getItem("authToken");
+      const response = await axios.get(`${API_CONFIG.API_URL}/kb/levels`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { projectId },
+      });
       setLevels(response.data.data || []);
     } catch (error: any) {
-      console.error('Failed to fetch KB levels:', error);
-      alert(error.response?.data?.message || 'Failed to fetch levels');
+      console.error("Failed to fetch KB levels:", error);
+      alert(error.response?.data?.message || "Failed to fetch levels");
     } finally {
       setLoading(false);
     }
@@ -57,19 +54,21 @@ const KBLevelManagement: React.FC<KBLevelManagementProps> = ({ projectId }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // Validate level name
     if (!formData.levelName.trim()) {
-      alert('Level name is required');
+      alert("Level name is required");
       return;
     }
-    
+
     try {
-      const token = localStorage.getItem('authToken');
-      
+      const token = localStorage.getItem("authToken");
+
       // Calculate levelOrder for new levels
-      let levelOrder = editingLevel ? editingLevel.levelOrder : levels.length + 1;
-      
+      let levelOrder = editingLevel
+        ? editingLevel.levelOrder
+        : levels.length + 1;
+
       const payload = {
         levelName: formData.levelName.trim(),
         levelIcon: formData.levelIcon.trim(),
@@ -79,65 +78,72 @@ const KBLevelManagement: React.FC<KBLevelManagementProps> = ({ projectId }) => {
         projectIds: [projectId],
       };
 
-      console.log('Submitting KB Level:', payload);
+      console.log("Submitting KB Level:", payload);
 
       if (editingLevel) {
         // Update existing level
         await axios.put(
           `${API_CONFIG.API_URL}/kb/levels/${editingLevel._id}`,
           payload,
-          { headers: { Authorization: `Bearer ${token}` } }
+          { headers: { Authorization: `Bearer ${token}` } },
         );
       } else {
         // Create new level
         const response = await axios.post(
           `${API_CONFIG.API_URL}/kb/levels`,
           payload,
-          { headers: { Authorization: `Bearer ${token}` } }
+          { headers: { Authorization: `Bearer ${token}` } },
         );
-        console.log('Create response:', response.data);
+        console.log("Create response:", response.data);
       }
 
       setShowModal(false);
       resetForm();
       fetchLevels();
     } catch (error: any) {
-      console.error('Failed to save level:', error);
-      console.error('Error response:', error.response?.data);
-      alert(error.response?.data?.message || error.message || 'Failed to save level');
+      console.error("Failed to save level:", error);
+      console.error("Error response:", error.response?.data);
+      alert(
+        error.response?.data?.message ||
+          error.message ||
+          "Failed to save level",
+      );
     }
   };
 
   const handleDelete = async (levelId: string) => {
-    if (!window.confirm('Are you sure you want to delete this level? This will unmap all articles.')) {
+    if (
+      !window.confirm(
+        "Are you sure you want to delete this level? This will unmap all articles.",
+      )
+    ) {
       return;
     }
 
     try {
-      const token = localStorage.getItem('authToken');
-      await axios.delete(
-        `${API_CONFIG.API_URL}/kb/levels/${levelId}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const token = localStorage.getItem("authToken");
+      await axios.delete(`${API_CONFIG.API_URL}/kb/levels/${levelId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       fetchLevels();
     } catch (error: any) {
-      console.error('Failed to delete level:', error);
-      alert(error.response?.data?.message || 'Failed to delete level');
+      console.error("Failed to delete level:", error);
+      alert(error.response?.data?.message || "Failed to delete level");
     }
   };
 
   const handleToggleStatus = async (level: KBLevel) => {
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       await axios.put(
         `${API_CONFIG.API_URL}/kb/levels/${level._id}`,
-        { status: level.status === 'active' ? 'inactive' : 'active' },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { status: level.status === "active" ? "inactive" : "active" },
+        { headers: { Authorization: `Bearer ${token}` } },
       );
       fetchLevels();
     } catch (error: any) {
-      console.error('Failed to toggle status:', error);
-      alert(error.response?.data?.message || 'Failed to update status');
+      console.error("Failed to toggle status:", error);
+      alert(error.response?.data?.message || "Failed to update status");
     }
   };
 
@@ -153,7 +159,7 @@ const KBLevelManagement: React.FC<KBLevelManagementProps> = ({ projectId }) => {
 
     // Send reorder request
     try {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       const updates = reorderedLevels.map((level, index) => ({
         levelId: level._id,
         levelOrder: index + 1,
@@ -162,11 +168,11 @@ const KBLevelManagement: React.FC<KBLevelManagementProps> = ({ projectId }) => {
       await axios.put(
         `${API_CONFIG.API_URL}/kb/levels/reorder/batch`,
         { levels: updates },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
     } catch (error: any) {
-      console.error('Failed to reorder levels:', error);
-      alert(error.response?.data?.message || 'Failed to reorder levels');
+      console.error("Failed to reorder levels:", error);
+      alert(error.response?.data?.message || "Failed to reorder levels");
       fetchLevels(); // Revert on error
     }
   };
@@ -175,8 +181,8 @@ const KBLevelManagement: React.FC<KBLevelManagementProps> = ({ projectId }) => {
     setEditingLevel(level);
     setFormData({
       levelName: level.levelName,
-      levelIcon: level.levelIcon || '',
-      description: level.description || '',
+      levelIcon: level.levelIcon || "",
+      description: level.description || "",
       status: level.status,
     });
     setShowModal(true);
@@ -185,48 +191,234 @@ const KBLevelManagement: React.FC<KBLevelManagementProps> = ({ projectId }) => {
   const resetForm = () => {
     setEditingLevel(null);
     setFormData({
-      levelName: '',
-      levelIcon: '',
-      description: '',
-      status: 'active',
+      levelName: "",
+      levelIcon: "",
+      description: "",
+      status: "active",
     });
   };
 
+  const totalLevels = levels.length;
+  const activeLevels = levels.filter((l) => l.status === "active").length;
+  const inactiveLevels = levels.filter((l) => l.status === "inactive").length;
+
   if (loading) {
-    return <div className="text-center py-8">Loading levels...</div>;
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "64px",
+        }}
+      >
+        <div style={{ color: "#667085", fontSize: "14px" }}>
+          Loading levels...
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
+    <div
+      style={{
+        background: "#F8F9FC",
+        minHeight: "100vh",
+        padding: "24px 20px 32px",
+        fontFamily: '"Inter", system-ui, -apple-system, sans-serif',
+      }}
+    >
+      {/* Page Header — matches ViewTickets style */}
+      <div
+        style={{
+          background: "#ffffff",
+          padding: "22px 24px",
+          borderRadius: "14px",
+          marginBottom: "16px",
+          border: "1px solid #e7ebf3",
+          boxShadow: "0 4px 18px rgba(15,23,42,.05)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
         <div>
-          <h2 className="text-2xl font-bold">Knowledge Base Levels</h2>
-          <p className="text-gray-600 mt-1">Manage categories for your knowledge base</p>
+          <h1
+            style={{
+              margin: "0 0 4px 0",
+              fontSize: "22px",
+              fontWeight: 700,
+              color: "#101828",
+              letterSpacing: "-0.01em",
+            }}
+          >
+            📚 Knowledge Base Levels
+          </h1>
+          <p style={{ margin: 0, fontSize: "14px", color: "#667085" }}>
+            Manage and reorder categories — drag rows to change order
+          </p>
         </div>
         <button
           onClick={() => {
             resetForm();
             setShowModal(true);
           }}
-          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            background: "#7F56D9",
+            color: "white",
+            border: "none",
+            borderRadius: "8px",
+            padding: "10px 18px",
+            fontSize: "14px",
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
         >
-          <Plus size={20} />
+          <Plus size={18} />
           Add Level
         </button>
       </div>
 
-      <div className="bg-white rounded-lg shadow">
+      {/* Stats Cards */}
+      <div
+        style={{
+          display: "flex",
+          gap: "12px",
+          marginBottom: "16px",
+          flexWrap: "wrap",
+        }}
+      >
+        {[
+          {
+            label: "Total Levels",
+            value: totalLevels,
+            color: "#7F56D9",
+            bg: "#F4F3FF",
+            icon: "📋",
+          },
+          {
+            label: "Active",
+            value: activeLevels,
+            color: "#027A48",
+            bg: "#ECFDF3",
+            icon: "✅",
+          },
+          {
+            label: "Inactive",
+            value: inactiveLevels,
+            color: "#344054",
+            bg: "#F2F4F7",
+            icon: "⏸",
+          },
+        ].map((stat) => (
+          <div
+            key={stat.label}
+            style={{
+              flex: "1 1 160px",
+              background: "white",
+              borderRadius: "10px",
+              padding: "16px 20px",
+              border: "1px solid #E4E7EC",
+              boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+              display: "flex",
+              alignItems: "center",
+              gap: "14px",
+            }}
+          >
+            <div
+              style={{
+                width: "42px",
+                height: "42px",
+                borderRadius: "50%",
+                background: stat.bg,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "18px",
+                flexShrink: 0,
+              }}
+            >
+              {stat.icon}
+            </div>
+            <div>
+              <div
+                style={{
+                  fontSize: "24px",
+                  fontWeight: 700,
+                  color: "#101828",
+                  lineHeight: 1.2,
+                }}
+              >
+                {stat.value}
+              </div>
+              <div
+                style={{ fontSize: "12px", color: "#667085", marginTop: "2px" }}
+              >
+                {stat.label}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Levels Table */}
+      <div
+        style={{
+          background: "white",
+          borderRadius: "10px",
+          border: "1px solid #E4E7EC",
+          boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+          overflow: "hidden",
+        }}
+      >
+        {/* Table Header */}
+        <div
+          style={{
+            background: "#F9FAFB",
+            borderBottom: "1px solid #E4E7EC",
+            display: "grid",
+            gridTemplateColumns: "40px 60px 1fr 180px 80px 120px",
+            padding: "12px 16px",
+            gap: "0",
+          }}
+        >
+          {["", "ICON", "LEVEL NAME", "DESCRIPTION", "ARTICLES", "ACTIONS"].map(
+            (h, i) => (
+              <div
+                key={i}
+                style={{
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  color: "#667085",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.5px",
+                  paddingRight: "8px",
+                }}
+              >
+                {h}
+              </div>
+            ),
+          )}
+        </div>
+
         <DragDropContext onDragEnd={handleDragEnd}>
           <Droppable droppableId="levels">
             {(provided: any) => (
-              <div
-                {...provided.droppableProps}
-                ref={provided.innerRef}
-                className="divide-y"
-              >
+              <div {...provided.droppableProps} ref={provided.innerRef}>
                 {levels.length === 0 ? (
-                  <div className="text-center py-12 text-gray-500">
-                    No levels found. Create your first level to get started.
+                  <div
+                    style={{
+                      textAlign: "center",
+                      padding: "48px 24px",
+                      color: "#667085",
+                      fontSize: "14px",
+                    }}
+                  >
+                    No levels found. Click <strong>Add Level</strong> to get
+                    started.
                   </div>
                 ) : (
                   levels.map((level, index) => (
@@ -239,66 +431,165 @@ const KBLevelManagement: React.FC<KBLevelManagementProps> = ({ projectId }) => {
                         <div
                           ref={provided.innerRef}
                           {...provided.draggableProps}
-                          className={`p-4 flex items-center justify-between ${
-                            snapshot.isDragging ? 'bg-blue-50' : 'hover:bg-gray-50'
-                          }`}
+                          style={{
+                            ...provided.draggableProps.style,
+                            background: snapshot.isDragging
+                              ? "#F4F3FF"
+                              : "white",
+                            borderBottom: "1px solid #F2F4F7",
+                            display: "grid",
+                            gridTemplateColumns:
+                              "40px 60px 1fr 180px 80px 120px",
+                            padding: "14px 16px",
+                            alignItems: "center",
+                            borderLeft: `3px solid ${level.status === "active" ? "#027A48" : "#E4E7EC"}`,
+                          }}
                         >
-                          <div className="flex items-center gap-4 flex-1">
-                            <div {...provided.dragHandleProps}>
-                              <Move className="text-gray-400 cursor-move" size={20} />
+                          {/* Drag Handle */}
+                          <div
+                            {...provided.dragHandleProps}
+                            style={{
+                              cursor: "grab",
+                              color: "#9CA3AF",
+                              display: "flex",
+                              alignItems: "center",
+                            }}
+                          >
+                            <Move size={16} />
+                          </div>
+                          {/* Icon */}
+                          <div style={{ fontSize: "22px" }}>
+                            {level.levelIcon || "📄"}
+                          </div>
+                          {/* Name + Status */}
+                          <div>
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "8px",
+                              }}
+                            >
+                              <span
+                                style={{
+                                  fontSize: "14px",
+                                  fontWeight: 600,
+                                  color: "#101828",
+                                }}
+                              >
+                                {level.levelName}
+                              </span>
+                              <span
+                                style={{
+                                  padding: "2px 8px",
+                                  borderRadius: "20px",
+                                  fontSize: "11px",
+                                  fontWeight: 600,
+                                  background:
+                                    level.status === "active"
+                                      ? "#ECFDF3"
+                                      : "#F2F4F7",
+                                  color:
+                                    level.status === "active"
+                                      ? "#027A48"
+                                      : "#344054",
+                                }}
+                              >
+                                {level.status}
+                              </span>
                             </div>
-                            {level.levelIcon && (
-                              <span className="text-2xl">{level.levelIcon}</span>
-                            )}
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                <h3 className="font-semibold">{level.levelName}</h3>
-                                <span
-                                  className={`px-2 py-1 text-xs rounded-full ${
-                                    level.status === 'active'
-                                      ? 'bg-green-100 text-green-800'
-                                      : 'bg-gray-100 text-gray-800'
-                                  }`}
-                                >
-                                  {level.status}
-                                </span>
-                              </div>
-                              {level.description && (
-                                <p className="text-sm text-gray-600 mt-1">
-                                  {level.description}
-                                </p>
-                              )}
-                              <p className="text-xs text-gray-500 mt-1">
-                                {level.articleCount || 0} article(s) • Order: {level.levelOrder}
-                              </p>
+                            <div
+                              style={{
+                                fontSize: "12px",
+                                color: "#667085",
+                                marginTop: "2px",
+                              }}
+                            >
+                              Order: {level.levelOrder}
                             </div>
                           </div>
-
-                          <div className="flex items-center gap-2">
+                          {/* Description */}
+                          <div
+                            style={{
+                              fontSize: "13px",
+                              color: "#667085",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {level.description || "—"}
+                          </div>
+                          {/* Article count */}
+                          <div
+                            style={{
+                              fontSize: "13px",
+                              color: "#344054",
+                              fontWeight: 500,
+                            }}
+                          >
+                            {level.articleCount || 0}
+                          </div>
+                          {/* Actions */}
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "4px",
+                            }}
+                          >
                             <button
                               onClick={() => handleToggleStatus(level)}
-                              className="p-2 hover:bg-gray-200 rounded"
-                              title={level.status === 'active' ? 'Deactivate' : 'Activate'}
+                              title={
+                                level.status === "active"
+                                  ? "Deactivate"
+                                  : "Activate"
+                              }
+                              style={{
+                                padding: "6px",
+                                borderRadius: "6px",
+                                border: "none",
+                                background: "transparent",
+                                cursor: "pointer",
+                                color:
+                                  level.status === "active"
+                                    ? "#027A48"
+                                    : "#9CA3AF",
+                              }}
                             >
-                              {level.status === 'active' ? (
-                                <Eye size={18} className="text-green-600" />
+                              {level.status === "active" ? (
+                                <Eye size={16} />
                               ) : (
-                                <EyeOff size={18} className="text-gray-400" />
+                                <EyeOff size={16} />
                               )}
                             </button>
                             <button
                               onClick={() => openEditModal(level)}
-                              className="p-2 hover:bg-gray-200 rounded"
                               title="Edit"
+                              style={{
+                                padding: "6px",
+                                borderRadius: "6px",
+                                border: "none",
+                                background: "transparent",
+                                cursor: "pointer",
+                                color: "#7F56D9",
+                              }}
                             >
-                              <Edit2 size={18} className="text-blue-600" />
+                              <Edit2 size={16} />
                             </button>
                             <button
                               onClick={() => handleDelete(level._id)}
-                              className="p-2 hover:bg-gray-200 rounded"
                               title="Delete"
+                              style={{
+                                padding: "6px",
+                                borderRadius: "6px",
+                                border: "none",
+                                background: "transparent",
+                                cursor: "pointer",
+                                color: "#DC2626",
+                              }}
                             >
-                              <Trash2 size={18} className="text-red-600" />
+                              <Trash2 size={16} />
                             </button>
                           </div>
                         </div>
@@ -311,32 +602,104 @@ const KBLevelManagement: React.FC<KBLevelManagementProps> = ({ projectId }) => {
             )}
           </Droppable>
         </DragDropContext>
+        {levels.length > 0 && (
+          <div
+            style={{
+              padding: "12px 16px",
+              background: "#F9FAFB",
+              borderTop: "1px solid #E4E7EC",
+              fontSize: "13px",
+              color: "#667085",
+            }}
+          >
+            {totalLevels} level{totalLevels !== 1 ? "s" : ""} total
+          </div>
+        )}
       </div>
 
-      {/* Modal */}
+      {/* Create / Edit Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h3 className="text-xl font-bold mb-4">
-              {editingLevel ? 'Edit Level' : 'Create New Level'}
-            </h3>
-            <form onSubmit={handleSubmit}>
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-1">Level Name *</label>
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,.5)",
+            zIndex: 1000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <div
+            style={{
+              background: "white",
+              borderRadius: "16px",
+              width: "100%",
+              maxWidth: "460px",
+              boxShadow: "0 20px 60px rgba(0,0,0,.3)",
+              overflow: "hidden",
+            }}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                background: "linear-gradient(135deg,#7F56D9 0%,#9E77ED 100%)",
+                padding: "20px 24px",
+                color: "white",
+              }}
+            >
+              <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 700 }}>
+                {editingLevel ? "✏️ Edit Level" : "➕ Create New Level"}
+              </h3>
+              <p style={{ margin: "4px 0 0", fontSize: "13px", opacity: 0.85 }}>
+                {editingLevel
+                  ? "Update the level details below"
+                  : "Add a new category to the knowledge base"}
+              </p>
+            </div>
+            {/* Modal Body */}
+            <form onSubmit={handleSubmit} style={{ padding: "24px" }}>
+              <div style={{ marginBottom: "16px" }}>
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    color: "#344054",
+                    marginBottom: "6px",
+                  }}
+                >
+                  Level Name *
+                </label>
                 <input
                   type="text"
                   value={formData.levelName}
                   onChange={(e) =>
                     setFormData({ ...formData, levelName: e.target.value })
                   }
-                  className="w-full border rounded px-3 py-2"
                   required
                   maxLength={100}
+                  style={{
+                    width: "100%",
+                    border: "1px solid #E5E7EB",
+                    borderRadius: "8px",
+                    padding: "9px 12px",
+                    fontSize: "14px",
+                    background: "#F9FAFB",
+                    boxSizing: "border-box",
+                  }}
                 />
               </div>
-
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-1">
+              <div style={{ marginBottom: "16px" }}>
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    color: "#344054",
+                    marginBottom: "6px",
+                  }}
+                >
                   Icon (Emoji)
                 </label>
                 <input
@@ -345,57 +708,123 @@ const KBLevelManagement: React.FC<KBLevelManagementProps> = ({ projectId }) => {
                   onChange={(e) =>
                     setFormData({ ...formData, levelIcon: e.target.value })
                   }
-                  className="w-full border rounded px-3 py-2"
                   placeholder="📚"
                   maxLength={10}
+                  style={{
+                    width: "100%",
+                    border: "1px solid #E5E7EB",
+                    borderRadius: "8px",
+                    padding: "9px 12px",
+                    fontSize: "14px",
+                    background: "#F9FAFB",
+                    boxSizing: "border-box",
+                  }}
                 />
               </div>
-
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-1">Description</label>
+              <div style={{ marginBottom: "16px" }}>
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    color: "#344054",
+                    marginBottom: "6px",
+                  }}
+                >
+                  Description
+                </label>
                 <textarea
                   value={formData.description}
                   onChange={(e) =>
                     setFormData({ ...formData, description: e.target.value })
                   }
-                  className="w-full border rounded px-3 py-2"
                   rows={3}
+                  style={{
+                    width: "100%",
+                    border: "1px solid #E5E7EB",
+                    borderRadius: "8px",
+                    padding: "9px 12px",
+                    fontSize: "14px",
+                    background: "#F9FAFB",
+                    boxSizing: "border-box",
+                    resize: "vertical",
+                  }}
                 />
               </div>
-
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-1">Status</label>
+              <div style={{ marginBottom: "24px" }}>
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    color: "#344054",
+                    marginBottom: "6px",
+                  }}
+                >
+                  Status
+                </label>
                 <select
                   value={formData.status}
                   onChange={(e) =>
                     setFormData({
                       ...formData,
-                      status: e.target.value as 'active' | 'inactive',
+                      status: e.target.value as "active" | "inactive",
                     })
                   }
-                  className="w-full border rounded px-3 py-2"
+                  style={{
+                    width: "100%",
+                    border: "1px solid #E5E7EB",
+                    borderRadius: "8px",
+                    padding: "9px 12px",
+                    fontSize: "14px",
+                    background: "#F9FAFB",
+                    boxSizing: "border-box",
+                  }}
                 >
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
                 </select>
               </div>
-
-              <div className="flex justify-end gap-2">
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: "10px",
+                }}
+              >
                 <button
                   type="button"
                   onClick={() => {
                     setShowModal(false);
                     resetForm();
                   }}
-                  className="px-4 py-2 border rounded hover:bg-gray-100"
+                  style={{
+                    padding: "9px 18px",
+                    borderRadius: "8px",
+                    border: "1px solid #E4E7EC",
+                    background: "white",
+                    color: "#344054",
+                    fontSize: "14px",
+                    fontWeight: 500,
+                    cursor: "pointer",
+                  }}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                  style={{
+                    padding: "9px 18px",
+                    borderRadius: "8px",
+                    border: "none",
+                    background: "#7F56D9",
+                    color: "white",
+                    fontSize: "14px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
                 >
-                  {editingLevel ? 'Update' : 'Create'}
+                  {editingLevel ? "Update Level" : "Create Level"}
                 </button>
               </div>
             </form>

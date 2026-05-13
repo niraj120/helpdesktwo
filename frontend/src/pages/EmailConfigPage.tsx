@@ -1466,11 +1466,38 @@ const EmailConfigPage: React.FC = () => {
                           <input
                             type="checkbox"
                             checked={trigger.enabled}
-                            onChange={(e) => {
+                            onChange={async (e) => {
+                              const newEnabled = e.target.checked;
+                              // Optimistically update local state
                               const updatedConfig = { ...config };
-                              updatedConfig.triggers[key].enabled =
-                                e.target.checked;
+                              updatedConfig.triggers[key].enabled = newEnabled;
                               setConfig(updatedConfig);
+                              // Persist to database immediately
+                              try {
+                                const token = localStorage.getItem("authToken");
+                                await axios.put(
+                                  `${API_BASE_URL}/email-config/${projectId}/triggers/${key}`,
+                                  { ...trigger, enabled: newEnabled },
+                                  {
+                                    headers: {
+                                      Authorization: `Bearer ${token}`,
+                                    },
+                                  },
+                                );
+                              } catch (err) {
+                                console.error(
+                                  "Failed to save trigger state:",
+                                  err,
+                                );
+                                // Revert on failure
+                                const revertedConfig = { ...config };
+                                revertedConfig.triggers[key].enabled =
+                                  !newEnabled;
+                                setConfig(revertedConfig);
+                                alert(
+                                  "Failed to save trigger state. Please try again.",
+                                );
+                              }
                             }}
                             className="sr-only peer"
                           />

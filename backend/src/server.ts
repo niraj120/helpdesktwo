@@ -37,6 +37,9 @@ import "./models/FAQ";
 import "./models/PushSubscription";
 // UserReportingHierarchy model removed - using User.reportingManager field directly
 import "./models/UserDashboardConfig";
+import "./models/Notification";
+import "./models/NotificationSetting";
+import "./models/UserNotificationPreference";
 
 import { connectDB } from "./config/database";
 import { ensureWebPushConfiguredAsync } from "./services/webPushService";
@@ -112,6 +115,7 @@ import { setupSocketHandlers } from "./socket/socketHandlers";
 import { setIo } from "./socket/ioInstance";
 import { initializeDatabase } from "./utils/dbInit";
 import { seedRolesAndPermissions } from "./utils/seedRolesPermissions";
+import { seedNotificationSettings } from "./utils/seedNotificationSettings";
 import { emailPollingService } from "./services/emailPollingService";
 import { emailProcessingWorker } from "./services/emailProcessingWorker";
 import { autoEscalationService } from "./services/autoEscalationService";
@@ -397,15 +401,26 @@ httpServer.listen(PORT, async () => {
   console.log(`📊 Environment: ${process.env.NODE_ENV}`);
   console.log(`🔗 API URL: http://localhost:${PORT}/api`);
 
-  // Initialize database with default data
+  // Step 1: Seed data and initialize database (failures here must NOT block services)
   try {
     // Seed roles and permissions FIRST (before creating admin user)
     console.log("🔐 Initializing roles and permissions...");
     await seedRolesAndPermissions();
 
+    // Seed global notification settings defaults (idempotent)
+    await seedNotificationSettings();
+
     // Then initialize database (creates admin user with role reference)
     await initializeDatabase();
+  } catch (error) {
+    console.error(
+      "⚠️  Database initialization/seeding failed, but server will continue:",
+      error,
+    );
+  }
 
+  // Step 2: Start background services independently — always run even if seeding failed
+  try {
     // Start email polling service
     console.log("📧 Starting Email Polling Service...");
     await emailPollingService.start();
@@ -428,7 +443,8 @@ httpServer.listen(PORT, async () => {
     await ensureWebPushConfiguredAsync();
   } catch (error) {
     console.error(
-      "⚠️  Database initialization failed, but server is still running",
+      "⚠️  One or more background services failed to start:",
+      error,
     );
   }
 });
