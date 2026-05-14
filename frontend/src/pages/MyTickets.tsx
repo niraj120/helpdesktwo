@@ -239,7 +239,10 @@ const computeSlaPill = (
   return { label, color: "#dc2626", bg: "#fef2f2", tooltip };
 };
 
-const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true, isStudentView = false }) => {
+const MyTickets: React.FC<MyTicketsProps> = ({
+  wrapWithLayout = true,
+  isStudentView = false,
+}) => {
   console.log(
     "🎯 MyTickets component rendering, wrapWithLayout:",
     wrapWithLayout,
@@ -2372,7 +2375,8 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true, isStudentV
                     borderRadius: "10px",
                     border: "1px solid #E4E7EC",
                     boxShadow: "0 1px 3px rgba(0,0,0,.06)",
-                    overflow: "hidden",
+                    overflowX: "auto",
+                    WebkitOverflowScrolling: "touch",
                   }}
                 >
                   <div style={{ overflowX: "auto" }}>

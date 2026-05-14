@@ -49,7 +49,9 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({
     const path = window.location.pathname;
 
     // Pre-extract IDs from deeplink formats stored by the backend
-    const ticketIdMatch = relative.match(/\/projects\/[^/]+\/tickets\/([a-f0-9]+)/i);
+    const ticketIdMatch = relative.match(
+      /\/projects\/[^/]+\/tickets\/([a-f0-9]+)/i,
+    );
     const kbIdMatch = relative.match(/^\/kb\/([a-f0-9]+)/i);
     const ticketId = ticketIdMatch?.[1];
     const kbId = kbIdMatch?.[1];

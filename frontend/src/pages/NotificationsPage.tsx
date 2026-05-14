@@ -244,7 +244,9 @@ const NotificationsPage: React.FC = () => {
         : notif.deepLinkUrl;
 
       const path = window.location.pathname;
-      const ticketIdMatch = relative.match(/\/projects\/[^/]+\/tickets\/([a-f0-9]+)/i);
+      const ticketIdMatch = relative.match(
+        /\/projects\/[^/]+\/tickets\/([a-f0-9]+)/i,
+      );
       const kbIdMatch = relative.match(/^\/kb\/([a-f0-9]+)/i);
       const ticketId = ticketIdMatch?.[1];
       const kbId = kbIdMatch?.[1];
@@ -265,7 +267,11 @@ const NotificationsPage: React.FC = () => {
         else if (ticketId) resolved = `/${p}/student/ticket/${ticketId}`;
       }
       // Legacy student context: /:customUrlPath/(kb|kb-new|submit-ticket|faq|find-center)
-      else if (path.match(/^\/([a-z0-9_-]+)\/(kb|kb-new|submit-ticket|faq|find-center)/i)) {
+      else if (
+        path.match(
+          /^\/([a-z0-9_-]+)\/(kb|kb-new|submit-ticket|faq|find-center)/i,
+        )
+      ) {
         const p = path.match(/^\/([a-z0-9_-]+)\//i)![1];
         if (kbId) resolved = `/${p}/kb-new/viewer?articleId=${kbId}`;
         else if (ticketId) resolved = `/${p}/student/ticket/${ticketId}`;

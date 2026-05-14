@@ -2150,7 +2150,8 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                 borderRadius: "10px",
                 border: "1px solid #E4E7EC",
                 boxShadow: "0 1px 3px rgba(0,0,0,.06)",
-                overflow: "hidden",
+                overflowX: "auto",
+                WebkitOverflowScrolling: "touch",
               }}
             >
               <table
