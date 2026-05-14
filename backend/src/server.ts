@@ -466,6 +466,10 @@ process.on("unhandledRejection", (reason: any, promise: Promise<any>) => {
 // Handle uncaught exceptions
 process.on("uncaughtException", (error: Error) => {
   console.error("❌ Uncaught Exception:", error);
+  if ((error as any).code === "EADDRINUSE") {
+    console.error("❌ Port already in use. Exiting so nodemon can retry.");
+    process.exit(1);
+  }
   console.error("❌ Server will continue running, but this should be fixed");
 });
 

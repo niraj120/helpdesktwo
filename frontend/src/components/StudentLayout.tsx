@@ -16,6 +16,8 @@ import { API_CONFIG } from "../config/constants";
 import { PERMISSIONS } from "../constants/permissions";
 import { usePermissions } from "../hooks/usePermissions";
 import WhatsAppFloatingIcon from "./WhatsAppFloatingIcon";
+import { NotificationBell } from "./notifications/NotificationBell";
+import { useNotifications } from "../hooks/useNotifications";
 
 interface StudentLayoutProps {
   children: ReactNode;
@@ -48,6 +50,8 @@ const StudentLayout = ({ children }: StudentLayoutProps) => {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [submissionMode, setSubmissionMode] = useState<string>("both");
   const { hasPermission, getAllPermissions } = usePermissions();
+  const notifications = useNotifications();
+  const [notifOpen, setNotifOpen] = useState(false);
 
   // Debug: Log permissions on mount
   useEffect(() => {
@@ -374,6 +378,11 @@ const StudentLayout = ({ children }: StudentLayoutProps) => {
             {branding?.headerText || "Candidate Support Portal"}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+            <NotificationBell
+              {...notifications}
+              isOpen={notifOpen}
+              setIsOpen={setNotifOpen}
+            />
             {user && (
               <div
                 style={{

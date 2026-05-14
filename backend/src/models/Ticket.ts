@@ -157,6 +157,8 @@ export interface ITicket extends Document {
    * ticket detail. Used to show the unread highlight & badge in ticket lists.
    */
   hasNewReply?: boolean;
+  /** True when an agent/admin has replied and the student has not yet viewed the ticket. */
+  hasAgentReply?: boolean;
   /** How the ticket was assigned (set by the auto-assignment engine, 'manual' when done by a human) */
   assignedVia?:
     | "manual"
@@ -454,7 +456,13 @@ const TicketSchema: Schema = new Schema(
     // Unread / new-reply tracking
     hasNewReply: {
       type: Boolean,
-      default: true, // every new ticket starts as unread
+      default: true, // every new ticket starts as unread for the agent
+      index: true,
+    },
+    // Unread tracking for the student — set true when agent replies
+    hasAgentReply: {
+      type: Boolean,
+      default: false,
       index: true,
     },
     // Assignment tracking (set by auto-assignment engine)

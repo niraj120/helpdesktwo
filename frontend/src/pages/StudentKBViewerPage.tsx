@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import KnowledgeBaseViewer from "../components/knowledge-base/KnowledgeBaseViewer";
 import { API_CONFIG } from "../config/constants";
 
@@ -18,6 +18,8 @@ interface Project {
  */
 const StudentKBViewerPage: React.FC = () => {
   const { customUrlPath } = useParams<{ customUrlPath: string }>();
+  const [searchParams] = useSearchParams();
+  const initialArticleId = searchParams.get("articleId") ?? undefined;
   const [projectId, setProjectId] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
@@ -86,8 +88,9 @@ const StudentKBViewerPage: React.FC = () => {
       {/* Student KB Viewer - No project dropdown, read-only */}
       <KnowledgeBaseViewer
         projectId={projectId}
-        showControls={false} // Students cannot edit
+        showControls={false}
         isStudentPortal={true}
+        initialArticleId={initialArticleId}
       />
     </div>
   );

@@ -92,6 +92,15 @@ const SLARulesPage = lazy(() => import("./pages/SLARulesPage"));
 // Note: EscalationMatrixConfigPage and WorkingCalendarManagement are now
 // integrated into SLARulesPage via tabs for smooth transitions
 
+// Notifications
+const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
+const NotificationSettingsPage = lazy(
+  () => import("./pages/NotificationSettingsPage"),
+);
+const ProfileNotificationsPage = lazy(
+  () => import("./pages/ProfileNotificationsPage"),
+);
+
 // Reports
 const ReportsPage = lazy(() => import("./pages/ReportsPage"));
 
@@ -257,7 +266,7 @@ function App() {
             element={
               <ProtectedRoute requireAuth={true}>
                 <StudentLayout>
-                  <MyTickets wrapWithLayout={false} />
+                  <MyTickets wrapWithLayout={false} isStudentView={true} />
                 </StudentLayout>
               </ProtectedRoute>
             }
@@ -325,7 +334,7 @@ function App() {
 
           {/* Project Portal Routes - Permission-based */}
           <Route
-            path="/:customUrlPath/portal/ticket/:ticketId"
+            path="/:customUrlPath/portal/ticket/:id"
             element={
               <ProtectedRoute
                 permission={["TICKET_VIEW_ALL", "TICKET_VIEW_OWN"]}
@@ -814,6 +823,36 @@ function App() {
                 <DashboardLayout>
                   <AttendanceConfigPage />
                 </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Notifications - requires auth */}
+          <Route
+            path="/notifications"
+            element={
+              <ProtectedRoute requireAuth={true}>
+                <NotificationsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Admin Notification Settings */}
+          <Route
+            path="/admin/notification-settings"
+            element={
+              <ProtectedRoute permission="NOTIFICATION_VIEW_SETTINGS">
+                <NotificationSettingsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* User Notification Preferences */}
+          <Route
+            path="/profile/notifications"
+            element={
+              <ProtectedRoute requireAuth={true}>
+                <ProfileNotificationsPage />
               </ProtectedRoute>
             }
           />

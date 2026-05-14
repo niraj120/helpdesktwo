@@ -60,12 +60,14 @@ interface KnowledgeBaseViewerProps {
   projectId: string;
   showControls?: boolean; // Hide toggle buttons for regular users
   isStudentPortal?: boolean; // When true, shows content visible to Student role even if not authenticated
+  initialArticleId?: string; // When set, opens this article on mount (used for notification deep links)
 }
 
 const KnowledgeBaseViewer: React.FC<KnowledgeBaseViewerProps> = ({
   projectId,
   showControls = false,
   isStudentPortal = false,
+  initialArticleId,
 }) => {
   const { t } = useTranslation();
   const [levels, setLevels] = useState<KBLevel[]>([]);
@@ -74,7 +76,9 @@ const KnowledgeBaseViewer: React.FC<KnowledgeBaseViewerProps> = ({
   const [searchQuery, setSearchQuery] = useState("");
   const [appliedSearchQuery, setAppliedSearchQuery] = useState(""); // set on Search click, passed to tables
   const [loading, setLoading] = useState(true);
-  const [selectedArticle, setSelectedArticle] = useState<string | null>(null);
+  const [selectedArticle, setSelectedArticle] = useState<string | null>(
+    initialArticleId ?? null,
+  );
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"articles" | "tables" | "all">(
     "all",

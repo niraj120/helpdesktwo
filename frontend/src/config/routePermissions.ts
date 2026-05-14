@@ -149,7 +149,7 @@ export const projectPortalRoutes: RoutePermission[] = [
     description: "Project tickets - requires any TICKET_* permission",
   },
   {
-    path: "/:customUrlPath/portal/ticket/:ticketId",
+    path: "/:customUrlPath/portal/ticket/:id",
     permission: ["TICKET_VIEW_ALL", "TICKET_VIEW_OWN"],
     description: "Ticket detail - requires TICKET_VIEW_ALL or TICKET_VIEW_OWN",
   },

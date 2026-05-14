@@ -72,6 +72,7 @@ interface Ticket {
   mergedInto?: string | { _id: string; ticketNumber: string };
   mergedTickets?: string[];
   hasNewReply?: boolean;
+  hasAgentReply?: boolean;
   roleLevelSLA?: {
     startedAt?: string;
     dueAt?: string;
@@ -89,6 +90,7 @@ interface Ticket {
 
 interface MyTicketsProps {
   wrapWithLayout?: boolean;
+  isStudentView?: boolean;
 }
 
 interface DepartmentOption {
@@ -237,7 +239,7 @@ const computeSlaPill = (
   return { label, color: "#dc2626", bg: "#fef2f2", tooltip };
 };
 
-const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
+const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true, isStudentView = false }) => {
   console.log(
     "🎯 MyTickets component rendering, wrapWithLayout:",
     wrapWithLayout,
@@ -751,7 +753,11 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
           setTickets((prev) =>
             prev.map((t) =>
               t._id === payload.ticket._id
-                ? { ...t, hasNewReply: payload.ticket.hasNewReply }
+                ? {
+                    ...t,
+                    hasNewReply: payload.ticket.hasNewReply,
+                    hasAgentReply: payload.ticket.hasAgentReply,
+                  }
                 : t,
             ),
           );
@@ -1297,9 +1303,13 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
   };
 
   const handleTicketClick = (ticketId: string) => {
-    // Clear unread highlight when agent opens the ticket
+    // Clear unread highlight when opening the ticket
     setTickets((prev) =>
-      prev.map((t) => (t._id === ticketId ? { ...t, hasNewReply: false } : t)),
+      prev.map((t) =>
+        t._id === ticketId
+          ? { ...t, hasNewReply: false, hasAgentReply: false }
+          : t,
+      ),
     );
 
     // Check if we're in a student context (URL contains /student/)
@@ -2456,8 +2466,9 @@ const MyTickets: React.FC<MyTicketsProps> = ({ wrapWithLayout = true }) => {
                       <tbody>
                         {paginatedTickets.map((ticket) => {
                           const isSelected = selectedTicketIds.has(ticket._id);
-                          const isHighlighted =
-                            !!ticket.hasNewReply && !isSelected;
+                          const isHighlighted = isStudentView
+                            ? !!ticket.hasAgentReply && !isSelected
+                            : !!ticket.hasNewReply && !isSelected;
                           const sourceBadge = getSourceBadge(
                             ticket.submissionSource,
                           );

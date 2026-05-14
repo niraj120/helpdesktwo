@@ -33,6 +33,7 @@ import {
   MdStorage,
   MdInsights,
   MdVpnKey,
+  MdNotifications,
 } from "react-icons/md";
 import { PERMISSIONS, PERMISSION_MODULES } from "../constants/permissions";
 
@@ -386,6 +387,45 @@ export const menuConfig: MenuItem[] = [
     labelHi: "रिपोर्ट",
     labelMr: "अहवाल",
     modulePrefix: PERMISSION_MODULES.REPORT,
+  },
+
+  // Notifications
+  {
+    icon: <MdNotifications />,
+    label: "Notifications",
+    labelHi: "सूचनाएं",
+    labelMr: "सूचना",
+    permission: [
+      PERMISSIONS.NOTIFICATION_VIEW_SETTINGS,
+      PERMISSIONS.NOTIFICATION_MANAGE,
+      PERMISSIONS.NOTIFICATION_PERSONAL_PREFERENCES,
+    ],
+    subItems: [
+      {
+        path: "/notifications",
+        icon: <MdNotifications />,
+        label: "My Notifications",
+        labelHi: "मेरी सूचनाएं",
+        labelMr: "माझ्या सूचना",
+        // No specific permission - all authenticated users
+      },
+      {
+        path: "/admin/notification-settings",
+        icon: <MdSettings />,
+        label: "Notification Settings",
+        labelHi: "सूचना सेटिंग",
+        labelMr: "सूचना सेटिंग",
+        permission: PERMISSIONS.NOTIFICATION_VIEW_SETTINGS,
+      },
+      {
+        path: "/profile/notifications",
+        icon: <MdPerson />,
+        label: "My Preferences",
+        labelHi: "मेरी प्राथमिकताएं",
+        labelMr: "माझ्या प्राधान्यता",
+        permission: PERMISSIONS.NOTIFICATION_PERSONAL_PREFERENCES,
+      },
+    ],
   },
 
   // Audit Logs - Super Admin and Managers with submenu

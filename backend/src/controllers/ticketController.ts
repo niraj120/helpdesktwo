@@ -936,7 +936,9 @@ export const submitTicket = async (req: Request, res: Response) => {
         entityId: ticket._id as mongoose.Types.ObjectId,
         deepLinkUrl: `/projects/${projectId}/tickets/${ticket._id}`,
         templateVars: { ticketNumber: ticket.ticketNumber },
-        recipientOverride: [new mongoose.Types.ObjectId(assignedAgent.toString())],
+        recipientOverride: [
+          new mongoose.Types.ObjectId(assignedAgent.toString()),
+        ],
       }).catch(console.error);
     }
 
@@ -2894,6 +2896,12 @@ export const getTicketById = async (req: Request, res: Response) => {
       ticketData.hasNewReply = false;
     }
 
+    // Clear the student-unread flag when the student (ticket creator) opens the ticket
+    if (isStudent && ticket.hasAgentReply) {
+      await Ticket.findByIdAndUpdate(id, { hasAgentReply: false });
+      ticketData.hasAgentReply = false;
+    }
+
     // Enrich with project-specific status metadata so detail view matches list view labels/colors.
     try {
       const rawProjectId =
@@ -3116,7 +3124,7 @@ export const replyToTicket = async (req: Request, res: Response) => {
         $push: { threads: newThread },
         $set: {
           updatedAt: new Date(),
-          ...(isStudentReply ? { hasNewReply: true } : {}),
+          ...(isStudentReply ? { hasNewReply: true } : { hasAgentReply: true }),
         },
       },
       {
@@ -3166,6 +3174,7 @@ export const replyToTicket = async (req: Request, res: Response) => {
                 _id: updatedTicket._id,
                 ticketNumber: updatedTicket.ticketNumber,
                 hasNewReply: isStudentReply,
+                hasAgentReply: !isStudentReply,
               },
             });
           }
@@ -3181,22 +3190,29 @@ export const replyToTicket = async (req: Request, res: Response) => {
       const projectId =
         (updatedTicket as any).project?.toString() ||
         (updatedTicket as any).metadata?.projectId?.toString();
-      const lastThread = updatedTicket.threads?.[updatedTicket.threads.length - 1] as any;
+      const lastThread = updatedTicket.threads?.[
+        updatedTicket.threads.length - 1
+      ] as any;
       const replyAnchor = lastThread?._id ? `#reply-${lastThread._id}` : "";
       const deepLink = `/projects/${projectId}/tickets/${(updatedTicket._id as any).toString()}${replyAnchor}`;
-      const replierName = `${(user as any).firstName || ""} ${(user as any).lastName || ""}`.trim() || user.email;
+      const replierName =
+        `${(user as any).firstName || ""} ${(user as any).lastName || ""}`.trim() ||
+        user.email;
       const recipients: mongoose.Types.ObjectId[] = [];
       if (isStudentReply) {
         // Student replied → notify assigned agent
-        const agentId = ticket.assignedTo;
-        if (agentId) recipients.push(new mongoose.Types.ObjectId(agentId.toString()));
+        const agentRaw = ticket.assignedTo as any;
+        const agentId = agentRaw?._id ?? agentRaw;
+        if (agentId)
+          recipients.push(new mongoose.Types.ObjectId(agentId.toString()));
       } else {
         // Agent replied → notify ticket creator
         const creatorId =
           (ticket as any).metadata?.studentUserId ||
           (ticket as any).submittedBy ||
           (ticket as any).createdBy;
-        if (creatorId) recipients.push(new mongoose.Types.ObjectId(creatorId.toString()));
+        if (creatorId)
+          recipients.push(new mongoose.Types.ObjectId(creatorId.toString()));
       }
       if (recipients.length > 0 && projectId) {
         fireNotification({
@@ -3232,7 +3248,8 @@ export const replyToTicket = async (req: Request, res: Response) => {
 
         if (isStudentReply) {
           // Student replied → notify assigned agent
-          const assignedAgentId = (ticket as any).assignedTo;
+          const agentRaw = (ticket as any).assignedTo;
+          const assignedAgentId = agentRaw?._id ?? agentRaw;
           if (assignedAgentId && projectId) {
             await createNotification({
               userId: new mongoose.Types.ObjectId(assignedAgentId.toString()),
@@ -3527,16 +3544,33 @@ export const reopenTicket = async (req: Request, res: Response) => {
       });
     }
 
-    // Check if ticket is actually closed (status 5 = closed)
-    if (ticket.status !== 5) {
+    // Check if ticket is actually closed — handles both hardcoded (5) and
+    // project-specific custom status codes that have isClosed = true
+    const StatusModel = require("../models/Status").Status;
+    const projectStatuses: any[] = await StatusModel.find({
+      projectId: ticket.metadata?.projectId,
+    }).select("code isClosed name");
+
+    const currentStatusDoc = projectStatuses.find(
+      (s: any) => s.code === ticket.status,
+    );
+    const isClosedStatus =
+      ticket.status === 5 || currentStatusDoc?.isClosed === true;
+
+    if (!isClosedStatus) {
       return res.status(400).json({
         success: false,
         message: "Ticket is not closed",
       });
     }
 
-    // Reopen the ticket (1 = open)
-    ticket.status = 1;
+    // Reopen to the project's first non-closed status (code 1 if no custom statuses)
+    const openStatus =
+      projectStatuses.find((s: any) => !s.isClosed && s.code !== 4) ??
+      projectStatuses.find((s: any) => !s.isClosed);
+    const reopenCode = openStatus ? openStatus.code : 1;
+    ticket.status = reopenCode;
+    ticket.closedAt = undefined; // Clear closedAt so frontend isTicketClosed check becomes false
     ticket.updatedAt = new Date();
 
     // Add system thread

@@ -14,6 +14,8 @@ import { LanguageToggle } from "./LanguageToggle";
 import { HeaderProjectSwitcher } from "./HeaderProjectSwitcher";
 import { ViewModeToggle } from "./ViewModeToggle";
 import NotificationPermissionBanner from "./NotificationPermissionBanner";
+import { NotificationBell } from "./notifications/NotificationBell";
+import { useNotifications } from "../hooks/useNotifications";
 import { designSystem } from "../styles/designSystem";
 import { useEmailActivityPolling } from "../hooks/useEmailActivityPolling";
 import { usePermissions } from "../hooks/usePermissions";
@@ -99,6 +101,8 @@ const DashboardLayout = ({
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const notifications = useNotifications();
   const [tooltipPosition, setTooltipPosition] = useState<{
     top: number;
     left: number;
@@ -1367,6 +1371,11 @@ const DashboardLayout = ({
             }}
           >
             <ViewModeToggle />
+            <NotificationBell
+              {...notifications}
+              isOpen={notifOpen}
+              setIsOpen={setNotifOpen}
+            />
             <HeaderProjectSwitcher />
           </header>
 

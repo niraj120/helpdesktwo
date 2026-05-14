@@ -114,34 +114,58 @@ export const upsertNotificationSetting = async (
 };
 
 /**
- * DELETE /api/admin/notification-settings?projectId=xxx
- * Remove project-specific overrides (reset to global defaults)
+ * DELETE /api/admin/notification-settings?roleId=xxx&projectId=xxx
+ * Delete all settings for a specific role (and optional project scope).
+ * If only projectId is supplied, resets all settings for that project.
  */
 export const deleteProjectNotificationSettings = async (
   req: AuthRequest,
   res: Response,
 ) => {
   try {
-    const { projectId } = req.query;
+    const { projectId, roleId } = req.query;
 
-    if (!projectId || !mongoose.Types.ObjectId.isValid(projectId as string)) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Valid projectId query param required" });
+    if (!roleId && !projectId) {
+      return res.status(400).json({
+        success: false,
+        message: "At least one of roleId or projectId is required",
+      });
     }
 
-    await NotificationSetting.deleteMany({
-      projectId: new mongoose.Types.ObjectId(projectId as string),
-    });
+    const filter: any = {};
 
-    return res
-      .status(200)
-      .json({ success: true, message: "Project notification settings reset to global defaults" });
+    if (roleId) {
+      if (!mongoose.Types.ObjectId.isValid(roleId as string)) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid roleId" });
+      }
+      filter.roleId = new mongoose.Types.ObjectId(roleId as string);
+    }
+
+    if (projectId) {
+      if (!mongoose.Types.ObjectId.isValid(projectId as string)) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid projectId" });
+      }
+      filter.projectId = new mongoose.Types.ObjectId(projectId as string);
+    } else if (roleId) {
+      // deleting global (non-project) settings for a role
+      filter.projectId = null;
+    }
+
+    await NotificationSetting.deleteMany(filter);
+
+    return res.status(200).json({
+      success: true,
+      message: "Notification settings deleted successfully",
+    });
   } catch (error) {
-    console.error("Delete project notification settings error:", error);
+    console.error("Delete notification settings error:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to delete project notification settings",
+      message: "Failed to delete notification settings",
       error: error instanceof Error ? error.message : "Unknown error",
     });
   }

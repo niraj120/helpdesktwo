@@ -2015,7 +2015,8 @@ export async function processAutoEscalation(): Promise<{
             (ticket as any).metadata?.projectId?.toString() ||
             (ticket as any).project?.toString();
           if (projectId) {
-            const ticketNum = (ticket as any).ticketNumber || ticket._id.toString();
+            const ticketNum =
+              (ticket as any).ticketNumber || ticket._id.toString();
             fireNotification({
               triggerType: TRIGGER_TYPES.SLA_BREACHED,
               projectId,
@@ -2267,7 +2268,8 @@ export async function processSLAWarnings(): Promise<void> {
         const projectId = (ticket as any).metadata?.projectId?.toString();
         const ticketNum = (ticket as any).ticketNumber || ticket._id.toString();
         const remainingMs =
-          new Date((ticket.roleLevelSLA as any).dueAt).getTime() - now.getTime();
+          new Date((ticket.roleLevelSLA as any).dueAt).getTime() -
+          now.getTime();
         const remainingMins = Math.max(0, Math.round(remainingMs / 60000));
         const timeRemaining =
           remainingMins >= 60

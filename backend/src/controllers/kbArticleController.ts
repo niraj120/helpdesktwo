@@ -181,7 +181,7 @@ export const createArticle = async (
     });
 
     // Notification engine: fire kb_article_published if immediately active
-    if ((newArticle.status === "active") && newArticle.projectIds?.[0]) {
+    if (newArticle.status === "active" && newArticle.projectIds?.[0]) {
       fireNotification({
         triggerType: TRIGGER_TYPES.KB_ARTICLE_PUBLISHED,
         triggeredByUserId: userId,

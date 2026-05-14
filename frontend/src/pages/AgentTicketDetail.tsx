@@ -33,6 +33,7 @@ function stripEmailBoilerplateFE(text: string): string {
     .trim();
 }
 import axios from "axios";
+import { useSocket } from "../hooks/useSocket";
 import DashboardLayout from "../components/DashboardLayout";
 import EscalationMatrixCard from "../components/EscalationMatrixCard";
 import HierarchyCategorySelector, {
@@ -755,6 +756,17 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
     fetchTicketDetails();
     fetchUserPermissions();
   }, [ticketId]);
+
+  // Realtime: join the ticket room so agent sees student replies without refreshing
+  useSocket({
+    rooms: ticketId ? [`ticket-${ticketId}`] : [],
+    events: {
+      "ticket-updated": (payload: any) => {
+        // Reload full ticket details on any update (new reply, status change, etc.)
+        fetchTicketDetails();
+      },
+    },
+  });
 
   // Auto-escalation detection: Poll ticket status to detect if it was escalated away
   useEffect(() => {

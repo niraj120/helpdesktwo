@@ -400,7 +400,12 @@ const StudentTicketDetail: React.FC = () => {
     );
   }
 
-  const isTicketClosed = Boolean(ticket.isClosedStatus || ticket.closedAt);
+  // isClosedStatus is backend-computed from current status code (reliable after reopen)
+  // Fall back to status === 5 for legacy tickets without project-specific statuses
+  // Do NOT use closedAt — it's a historical timestamp, stays set even after reopen
+  const isTicketClosed =
+    ticket.isClosedStatus === true ||
+    (ticket.isClosedStatus === undefined && ticket.status === 5);
 
   return (
     <div className="max-w-7xl mx-auto">
