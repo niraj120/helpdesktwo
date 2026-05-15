@@ -1311,24 +1311,28 @@ export const getMyTickets = async (req: Request, res: Response) => {
     // Convert userId to ObjectId for proper comparison
     const userObjectId = new mongoose.Types.ObjectId(userId);
 
-    // Get user with their role and permissions
-    const user = await User.findById(userId).populate({
-      path: "role",
-      populate: {
-        path: "permissions",
-        model: "Permission",
-      },
-    });
-
-    if (!user) {
+    // Get user with role (lean for speed), then fetch role permissions separately
+    const userDoc = await User.findById(userId).populate("role").lean();
+    if (!userDoc) {
       return res.status(404).json({
         success: false,
         message: "User not found",
       });
     }
 
+    // Fetch permissions for the role (single targeted query)
+    let roleWithPerms = userDoc.role as any;
+    if (roleWithPerms?._id) {
+      const rp = await (mongoose.model("Role") as any)
+        .findById(roleWithPerms._id)
+        .populate("permissions", "code")
+        .lean();
+      if (rp) roleWithPerms = rp;
+    }
+    const user = { ...userDoc, role: roleWithPerms };
+
     // Check if user has TICKET_VIEW_ALL permission
-    const role = user.role as any;
+    const role = roleWithPerms;
     const permissions = role?.permissions || [];
     const permissionCodes = permissions
       .map((p: any) => p.code)
@@ -1368,22 +1372,13 @@ export const getMyTickets = async (req: Request, res: Response) => {
       agentRoleCodes.includes(role?.code) ||
       hasAgentPermission;
 
-    console.log(`🔍 [MY_TICKETS] User: ${user.email}`);
-    console.log(`🔍 [MY_TICKETS] Role: ${role?.name} (${role?.code})`);
-    console.log(
-      `🔍 [MY_TICKETS] isSuperAdmin: ${isSuperAdmin}, isStudent: ${isStudent}, isAgent: ${isAgent}`,
-    );
-    console.log(`🔍 [MY_TICKETS] Permission codes:`, permissionCodes);
-    console.log(
-      `🔍 [MY_TICKETS] hasViewAll: ${hasViewAll}, hasViewOwn: ${hasViewOwn}`,
-    );
+
 
     // Build query based on permissions and role type
     let query: any = {};
 
     // Super Admin should see EMPTY list in My Tickets (no tickets assigned to them)
     if (isSuperAdmin) {
-      console.log(`🔍 [MY_TICKETS] Super Admin - returning empty list`);
       return res.status(200).json({
         success: true,
         data: [],
@@ -1393,27 +1388,11 @@ export const getMyTickets = async (req: Request, res: Response) => {
     } else if (isStudent) {
       // Students always see tickets by their email (tickets they created)
       query["metadata.studentEmail"] = user.email;
-      console.log(
-        `🔍 [QUERY] Student - filter by metadata.studentEmail: ${user.email}`,
-      );
     } else if (hasViewOwn) {
-      // Everyone else with VIEW_OWN_TICKET permission sees tickets assigned to them
       query.assignedTo = userObjectId;
-      console.log(
-        `🔍 [QUERY] TICKET_VIEW_OWN - filter by assignedTo: ${userId}`,
-      );
     } else {
-      // No specific permissions but not a student: show tickets assigned to them
       query.assignedTo = userObjectId;
-      console.log(
-        `🔍 [QUERY] Non-Student fallback - filter by assignedTo: ${userId}`,
-      );
     }
-
-    console.log(
-      `🔍 [TICKET QUERY] Final query (before project filter):`,
-      JSON.stringify(query),
-    );
 
     // Filter by project if projectId is provided in query params
     if (req.query.projectId) {
@@ -1435,21 +1414,11 @@ export const getMyTickets = async (req: Request, res: Response) => {
             },
           ],
         };
-        console.log(
-          `🏢 [PROJECT FILTER] Filtering tickets by projectId (ObjectId + string fallback):`,
-          projectIdStr,
-        );
+        // no extra log
       } catch (e) {
-        // Fallback to string comparison if not a valid ObjectId
         query["metadata.projectId"] = projectIdStr;
-        console.log(
-          `🏢 [PROJECT FILTER] Filtering tickets by projectId (string only):`,
-          projectIdStr,
-        );
       }
     } else {
-      // If no specific projectId, filter by user's assigned projects (for "All Projects" mode)
-      // Get user's assigned projects from both user.projects and role.projects
       const userProjectIds = (user.projects || []).map((p: any) =>
         typeof p === "string" ? p : p._id?.toString() || p.toString(),
       );
@@ -1461,34 +1430,18 @@ export const getMyTickets = async (req: Request, res: Response) => {
       ];
 
       if (allUserProjectIds.length > 0) {
-        // Convert string IDs to ObjectIds for proper comparison
-        // Include BOTH ObjectId and string forms to handle mixed storage (some tickets store
-        // metadata.projectId as ObjectId, others as string)
         const projectObjectIds = allUserProjectIds.map((id) => {
           try {
             return new mongoose.Types.ObjectId(id);
           } catch (e) {
-            return id; // Keep as string if not valid ObjectId
+            return id;
           }
         });
         query["metadata.projectId"] = {
           $in: [...projectObjectIds, ...allUserProjectIds],
         };
-        console.log(
-          `🏢 [PROJECT FILTER] No projectId provided - filtering by user's ${allUserProjectIds.length} assigned project(s):`,
-          allUserProjectIds,
-        );
-      } else {
-        console.warn(
-          `⚠️  [PROJECT FILTER] No projectId provided and user has no assigned projects - tickets from ALL projects will be returned!`,
-        );
       }
     }
-
-    console.log(
-      `🔍 [TICKET QUERY] Final query (with project filter):`,
-      JSON.stringify(query),
-    );
 
     // ============================================
     // CENTER FILTERING (based on project settings)
@@ -1555,20 +1508,8 @@ export const getMyTickets = async (req: Request, res: Response) => {
         } else {
           query = { $and: [existingQuery, centerFilter] };
         }
-        console.log(
-          `🏢 [CENTER FILTER] Offline mode enabled - filtering by ${userCenterIds.length} center(s): ${userCenterIds.join(", ")}`,
-        );
-      } else {
-        console.log(
-          `🏢 [CENTER FILTER] All projects are online mode - no center filtering applied`,
-        );
       }
     }
-
-    console.log(
-      `🔍 [TICKET QUERY] Final query (with center filter):`,
-      JSON.stringify(query),
-    );
 
     // ============================================
     // ADDITIONAL FILTERS (status, priority, search, dates, category)
@@ -1688,19 +1629,7 @@ export const getMyTickets = async (req: Request, res: Response) => {
       .limit(limit)
       .lean();
 
-    console.log(
-      `🔍 [TICKET QUERY] Tickets found: ${tickets.length} (Page ${page}, Total: ${totalTickets})`,
-    );
 
-    // Log sample ticket with project info for debugging
-    if (tickets.length > 0) {
-      console.log(`📋 [SAMPLE TICKET] First ticket:`, {
-        ticketNumber: tickets[0].ticketNumber,
-        subject: tickets[0].subject,
-        projectId: (tickets[0] as any).metadata?.projectId,
-        assignedTo: tickets[0].assignedTo,
-      });
-    }
 
     // OPTIMIZED: Batch fetch all projects and centers instead of N+1 queries
     const projectIds = [

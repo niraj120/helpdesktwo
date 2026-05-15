@@ -513,4 +513,10 @@ TicketSchema.index({
   description: "text",
 });
 
+// Critical indexes for my-tickets and view-tickets queries
+TicketSchema.index({ "metadata.projectId": 1, createdAt: -1 });
+TicketSchema.index({ "metadata.projectId": 1, assignedTo: 1, createdAt: -1 });
+TicketSchema.index({ "metadata.studentEmail": 1, "metadata.projectId": 1, createdAt: -1 });
+TicketSchema.index({ assignedTo: 1, "metadata.projectId": 1, createdAt: -1 });
+
 export const Ticket = mongoose.model<ITicket>("Ticket", TicketSchema);
