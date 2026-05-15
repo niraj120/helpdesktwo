@@ -102,9 +102,10 @@ export const sendSMS = async (
         params["dr"] = "false";
       }
 
-      // DLT Principal Entity ID
+      // DLT Principal Entity ID — strip any spaces/non-numeric chars before sending
       if (config.peid) {
-        params[isTataCampaignApi || isTtbsApi ? "PE_ID" : "peid"] = config.peid;
+        const cleanPeid = config.peid.replace(/\D/g, "");
+        params[isTataCampaignApi || isTtbsApi ? "PE_ID" : "peid"] = cleanPeid;
       }
 
       // Per-trigger DLT template IDs
@@ -113,7 +114,7 @@ export const sendSMS = async (
         const templateId =
           triggerOptions?.dltTemplateId || triggerOptions?.dltContentId;
         if (templateId) {
-          params["Template_ID"] = templateId;
+          params["Template_ID"] = templateId.replace(/\D/g, "");
         }
       } else {
         if (triggerOptions?.dltContentId) {
