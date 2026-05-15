@@ -1637,6 +1637,20 @@ export const getMyTickets = async (req: Request, res: Response) => {
       console.log(`🔍 [FILTER] Category: ${req.query.categoryId}`);
     }
 
+    // Custom field filters (customField_FieldName=value)
+    Object.keys(req.query).forEach((key) => {
+      if (key.startsWith("customField_")) {
+        const fieldName = key.replace(/^customField_/, "");
+        const value = req.query[key] as string;
+        if (value && value.trim()) {
+          query[`metadata.customFields.${fieldName}`] = new RegExp(
+            value.trim(),
+            "i",
+          );
+        }
+      }
+    });
+
     // ============================================
     // SORTING
     // ============================================
@@ -1764,6 +1778,9 @@ export const getMyTickets = async (req: Request, res: Response) => {
         const center = centerMap.get(ticketObj.metadata.centerId.toString());
         if (center) {
           ticketObj.metadata.centerId = center;
+        } else {
+          // Convert to string so frontend receives a string, not a raw BSON ObjectId object
+          ticketObj.metadata.centerId = ticketObj.metadata.centerId.toString();
         }
       }
       // Enrich with project-specific status name and color
@@ -2194,6 +2211,20 @@ export const getAllTickets = async (req: Request, res: Response) => {
       );
     }
 
+    // Custom field filters (customField_FieldName=value)
+    Object.keys(req.query).forEach((key) => {
+      if (key.startsWith("customField_")) {
+        const fieldName = key.replace(/^customField_/, "");
+        const value = req.query[key] as string;
+        if (value && value.trim()) {
+          query[`metadata.customFields.${fieldName}`] = new RegExp(
+            value.trim(),
+            "i",
+          );
+        }
+      }
+    });
+
     // Additional project filter from query params (for unified view multi-select)
     if (
       projectIdsFilter &&
@@ -2424,6 +2455,9 @@ export const getAllTickets = async (req: Request, res: Response) => {
         const center = centerMap.get(ticketObj.metadata.centerId.toString());
         if (center) {
           ticketObj.metadata.centerId = center;
+        } else {
+          // Convert to string so frontend receives a string, not a raw BSON ObjectId object
+          ticketObj.metadata.centerId = ticketObj.metadata.centerId.toString();
         }
       }
 

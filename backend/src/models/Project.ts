@@ -174,6 +174,7 @@ export interface IProject extends Document {
       enableOnlineForm?: boolean;
       enableOfflineCenter?: boolean;
       tableColumns?: string[]; // Configurable ticket table columns for /tickets/view
+      filterableColumns?: string[]; // Columns that appear as filters on ticket list pages
       onlineFormFields?: Array<{
         id?: string;
         fieldName: string;

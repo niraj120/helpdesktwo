@@ -2751,18 +2751,13 @@ const EmailConfigPage: React.FC = () => {
                   </p>
                 </div>
 
-                {/* DLT Template IDs (TTBS / TRAI compliance) */}
-                {(smsConfig.vendor === "ttbs" ||
-                  smsConfig.vendor === "custom") && (
+                {/* DLT Template IDs (TRAI compliance — required for all Indian SMS vendors) */}
+                {smsConfig && (
                   <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                     <h4 className="text-sm font-semibold text-yellow-900 mb-3">
                       DLT Template Details{" "}
                       <span className="text-xs font-normal text-yellow-700">
-                        (required for{" "}
-                        {smsConfig.vendor === "ttbs"
-                          ? "TTBS"
-                          : "custom vendors"}{" "}
-                        — TRAI mandate)
+                        (TRAI mandate — required for all Indian SMS vendors)
                       </span>
                     </h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

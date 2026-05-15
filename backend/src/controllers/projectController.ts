@@ -1222,6 +1222,9 @@ export const getProjectTicketSettings = async (req: Request, res: Response) => {
         numbering,
         tableColumns:
           project.configuration?.ticketSubmissionSettings?.tableColumns || [],
+        filterableColumns:
+          project.configuration?.ticketSubmissionSettings?.filterableColumns ||
+          [],
       },
     });
   } catch (error) {
@@ -1527,8 +1530,14 @@ export const updateProjectTicketSettings = async (
 ) => {
   try {
     const { projectId } = req.params;
-    const { numbering, statuses, types, onlineFormFields, tableColumns } =
-      req.body;
+    const {
+      numbering,
+      statuses,
+      types,
+      onlineFormFields,
+      tableColumns,
+      filterableColumns,
+    } = req.body;
 
     console.log(
       "💾 Saving ticket settings:",
@@ -1623,6 +1632,20 @@ export const updateProjectTicketSettings = async (
           : [];
     }
 
+    if (filterableColumns !== undefined) {
+      if (!(project as any).configuration.ticketSubmissionSettings) {
+        (project as any).configuration.ticketSubmissionSettings = {};
+      }
+      (
+        project as any
+      ).configuration.ticketSubmissionSettings.filterableColumns =
+        Array.isArray(filterableColumns)
+          ? filterableColumns
+              .map((col: any) => String(col || "").trim())
+              .filter(Boolean)
+          : [];
+    }
+
     // Update online form fields
     if (onlineFormFields !== undefined) {
       if (!(project as any).configuration.ticketSubmissionSettings) {
@@ -1666,6 +1689,8 @@ export const updateProjectTicketSettings = async (
         types: (project as any).configuration?.ticketSubmissionSettings?.types,
         tableColumns: (project as any).configuration?.ticketSubmissionSettings
           ?.tableColumns,
+        filterableColumns: (project as any).configuration
+          ?.ticketSubmissionSettings?.filterableColumns,
       },
     });
   } catch (error) {

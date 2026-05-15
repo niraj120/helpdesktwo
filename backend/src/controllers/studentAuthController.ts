@@ -124,7 +124,12 @@ export const sendOTP = async (req: Request, res: Response) => {
     if (projectId && user.phone) {
       const smsPromise = (async () => {
         try {
-          const result = await sendOTPSMS(projectId, user.phone!, otp);
+          const result = await sendOTPSMS(
+            projectId,
+            user.phone!,
+            otp,
+            user.firstName,
+          );
           if (result.success) {
             console.log(`✅ OTP SMS sent to ${user.phone}`);
             return "sms_sent";

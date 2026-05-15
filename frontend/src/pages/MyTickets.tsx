@@ -65,6 +65,7 @@ interface Ticket {
     centerName?: string;
     createdByName?: string;
     submissionType?: string;
+    customFields?: Record<string, unknown>;
   };
   createdAt: string;
   updatedAt: string;
@@ -117,7 +118,8 @@ type TicketTableColumnKey =
   | "project"
   | "category"
   | "source"
-  | "mergedCount";
+  | "mergedCount"
+  | `field_${string}`;
 
 const TICKET_TABLE_COLUMN_DEFS: Array<{
   key: TicketTableColumnKey;
@@ -154,8 +156,10 @@ const normalizeTicketColumns = (columns?: string[]): TicketTableColumnKey[] => {
     return DEFAULT_TICKET_TABLE_COLUMNS;
   }
 
-  const valid = columns.filter((key): key is TicketTableColumnKey =>
-    TICKET_TABLE_COLUMN_DEFS.some((col) => col.key === key),
+  const valid = columns.filter(
+    (key): key is TicketTableColumnKey =>
+      TICKET_TABLE_COLUMN_DEFS.some((col) => col.key === key) ||
+      key.startsWith("field_"),
   );
 
   return valid.length > 0 ? valid : DEFAULT_TICKET_TABLE_COLUMNS;
@@ -347,6 +351,22 @@ const MyTickets: React.FC<MyTicketsProps> = ({
   const [visibleColumns, setVisibleColumns] = useState<TicketTableColumnKey[]>(
     DEFAULT_TICKET_TABLE_COLUMNS,
   );
+
+  // Dynamic filterable columns from ticket settings
+  const [filterableColumnKeys, setFilterableColumnKeys] = useState<string[]>(
+    [],
+  );
+  const [customFormFieldDefs, setCustomFormFieldDefs] = useState<
+    Array<{
+      fieldName: string;
+      fieldLabel: string;
+      fieldType: string;
+      options?: string[];
+    }>
+  >([]);
+  const [customFieldFilters, setCustomFieldFilters] = useState<
+    Record<string, string>
+  >({});
   const [viewportWidth, setViewportWidth] = useState<number>(() =>
     typeof window !== "undefined" ? window.innerWidth : 1280,
   );
@@ -419,6 +439,11 @@ const MyTickets: React.FC<MyTicketsProps> = ({
 
         const columns = response.data?.ticketConfig?.tableColumns || [];
         setVisibleColumns(normalizeTicketColumns(columns));
+        const filterableCols: string[] =
+          response.data?.ticketConfig?.filterableColumns || [];
+        setFilterableColumnKeys(filterableCols);
+        const customFields = response.data?.data?.customFormFields || [];
+        setCustomFormFieldDefs(customFields);
       } catch (error) {
         console.error("[MyTickets] Failed to load ticket table columns", error);
         setVisibleColumns(DEFAULT_TICKET_TABLE_COLUMNS);
@@ -934,7 +959,17 @@ const MyTickets: React.FC<MyTicketsProps> = ({
         matchesProject &&
         matchesDateFrom &&
         matchesDateTo &&
-        matchesSearch
+        matchesSearch &&
+        // Custom field filters (client-side)
+        Object.entries(customFieldFilters).every(([colKey, filterVal]) => {
+          if (!filterVal || !filterVal.trim()) return true;
+          const fieldName = colKey.replace(/^field_/, "");
+          const fieldVal = ticket.metadata?.customFields?.[fieldName];
+          if (fieldVal === undefined || fieldVal === null) return false;
+          return String(fieldVal)
+            .toLowerCase()
+            .includes(filterVal.trim().toLowerCase());
+        })
       );
     } catch (err) {
       console.error("🎯 Error filtering ticket:", ticket, err);
@@ -1004,12 +1039,28 @@ const MyTickets: React.FC<MyTicketsProps> = ({
     };
 
     return visibleColumns
-      .map((key) => TICKET_TABLE_COLUMN_DEFS.find((def) => def.key === key))
+      .map((key) => {
+        const existing = TICKET_TABLE_COLUMN_DEFS.find(
+          (def) => def.key === key,
+        );
+        if (existing) return existing;
+        if (key.startsWith("field_")) {
+          const fieldName = key.replace(/^field_/, "");
+          const fieldDef = customFormFieldDefs.find(
+            (f) => f.fieldName === fieldName,
+          );
+          return {
+            key: key as TicketTableColumnKey,
+            label: fieldDef?.fieldLabel || fieldName,
+          };
+        }
+        return null;
+      })
       .filter(
         (def): def is { key: TicketTableColumnKey; label: string } =>
           !!def && isVisibleOnViewport(def.key),
       );
-  }, [visibleColumns, isMobile, isTablet]);
+  }, [visibleColumns, isMobile, isTablet, customFormFieldDefs]);
 
   const showSenderEmailColumn =
     showSenderEmail &&
@@ -1027,12 +1078,15 @@ const MyTickets: React.FC<MyTicketsProps> = ({
       typeof ticket.metadata?.projectId === "object"
         ? ticket.metadata.projectId.name || ticket.metadata.projectId.code
         : null;
+    const _centerId1 = ticket.metadata?.centerId as any;
     const centerName =
-      !ticket.metadata?.centerId || ticket.metadata.centerId === "online"
+      !_centerId1 || _centerId1 === "online"
         ? "Online"
-        : typeof ticket.metadata.centerId === "object"
-          ? ticket.metadata.centerId.centerName
-          : ticket.metadata?.centerName || "Online";
+        : _centerId1?.centerName
+          ? _centerId1.centerName
+          : typeof _centerId1 === "string"
+            ? _centerId1
+            : "Center";
     const requestedBy =
       ticket.metadata?.createdByName ||
       ticket.metadata?.studentName ||
@@ -1301,6 +1355,24 @@ const MyTickets: React.FC<MyTicketsProps> = ({
           </td>
         );
       default:
+        // Handle custom form field columns (key format: field_FieldName)
+        if (columnKey.startsWith("field_")) {
+          const fieldName = columnKey.replace(/^field_/, "");
+          const value = ticket.metadata?.customFields?.[fieldName];
+          return (
+            <td
+              style={{
+                padding: isMobile ? "10px 12px" : "12px 16px",
+                fontSize: 13,
+                color: "#344054",
+              }}
+            >
+              {value !== undefined && value !== null && value !== ""
+                ? String(value)
+                : "—"}
+            </td>
+          );
+        }
         return null;
     }
   };
@@ -2297,6 +2369,151 @@ const MyTickets: React.FC<MyTicketsProps> = ({
           <strong style={{ fontWeight: 600, color: "#374151" }}>Project</strong>{" "}
           → Status → Priority → Assignee → Date range
         </div>
+
+        {/* Dynamic custom field filters (from filterable columns config) */}
+        {filterableColumnKeys.filter((k) => k.startsWith("field_")).length >
+          0 && (
+          <div
+            style={{
+              marginTop: "12px",
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "10px",
+              alignItems: "center",
+            }}
+          >
+            {filterableColumnKeys
+              .filter((k) => k.startsWith("field_"))
+              .map((colKey) => {
+                const fieldName = colKey.replace(/^field_/, "");
+                const fieldDef = customFormFieldDefs.find(
+                  (f) => f.fieldName === fieldName,
+                );
+                const label = fieldDef?.fieldLabel || fieldName;
+                const currentVal = customFieldFilters[colKey] || "";
+                const hasOptions =
+                  fieldDef &&
+                  (fieldDef.fieldType === "dropdown" ||
+                    fieldDef.fieldType === "radio" ||
+                    fieldDef.fieldType === "multiselect") &&
+                  Array.isArray(fieldDef.options) &&
+                  fieldDef.options.length > 0;
+
+                return (
+                  <div key={colKey} style={{ position: "relative" }}>
+                    <span
+                      style={{
+                        position: "absolute",
+                        top: "-9px",
+                        left: "10px",
+                        fontSize: "10px",
+                        fontWeight: 700,
+                        color: "#9ca3af",
+                        background: "white",
+                        padding: "0 4px",
+                        zIndex: 1,
+                        letterSpacing: "0.04em",
+                        textTransform: "uppercase" as const,
+                      }}
+                    >
+                      {label}
+                    </span>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        height: "38px",
+                        border: currentVal
+                          ? "1px solid #84caff"
+                          : "1px solid #d7deea",
+                        borderRadius: "10px",
+                        padding: "0 10px",
+                        background: currentVal ? "#eff6ff" : "white",
+                        gap: "6px",
+                        minWidth: "150px",
+                      }}
+                    >
+                      {hasOptions ? (
+                        <select
+                          value={currentVal}
+                          onChange={(e) => {
+                            setCustomFieldFilters((p) => ({
+                              ...p,
+                              [colKey]: e.target.value,
+                            }));
+                            setCurrentPage(1);
+                          }}
+                          style={{
+                            border: "none",
+                            background: "transparent",
+                            fontSize: "13px",
+                            outline: "none",
+                            color: currentVal ? "#1d4ed8" : "#6B7280",
+                            width: "100%",
+                            cursor: "pointer",
+                            fontWeight: currentVal ? 500 : 400,
+                          }}
+                        >
+                          <option value="">All</option>
+                          {fieldDef!.options!.map((opt) => (
+                            <option key={opt} value={opt}>
+                              {opt}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          placeholder={`Filter by ${label}`}
+                          value={currentVal}
+                          onChange={(e) => {
+                            setCustomFieldFilters((p) => ({
+                              ...p,
+                              [colKey]: e.target.value,
+                            }));
+                            setCurrentPage(1);
+                          }}
+                          style={{
+                            border: "none",
+                            background: "transparent",
+                            fontSize: "13px",
+                            outline: "none",
+                            color: currentVal ? "#1d4ed8" : "#6B7280",
+                            width: "100%",
+                            fontWeight: currentVal ? 500 : 400,
+                          }}
+                        />
+                      )}
+                      {currentVal && (
+                        <button
+                          onClick={() => {
+                            setCustomFieldFilters((p) => ({
+                              ...p,
+                              [colKey]: "",
+                            }));
+                            setCurrentPage(1);
+                          }}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
+                            color: "#9CA3AF",
+                            padding: 0,
+                            display: "flex",
+                            flexShrink: 0,
+                          }}
+                        >
+                          <XMarkIcon
+                            style={{ width: "12px", height: "12px" }}
+                          />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        )}
       </div>
 
       {bulkMergeStep === "idle" && bulkError && (
@@ -2481,13 +2698,15 @@ const MyTickets: React.FC<MyTicketsProps> = ({
                               ? ticket.metadata.projectId.name ||
                                 ticket.metadata.projectId.code
                               : null;
+                          const _centerId2 = ticket.metadata?.centerId as any;
                           const centerName =
-                            !ticket.metadata?.centerId ||
-                            ticket.metadata.centerId === "online"
+                            !_centerId2 || _centerId2 === "online"
                               ? "Online"
-                              : typeof ticket.metadata.centerId === "object"
-                                ? ticket.metadata.centerId.centerName
-                                : ticket.metadata?.centerName || "Online";
+                              : _centerId2?.centerName
+                                ? _centerId2.centerName
+                                : typeof _centerId2 === "string"
+                                  ? _centerId2
+                                  : "Center";
                           const requestedBy =
                             ticket.metadata?.createdByName ||
                             ticket.metadata?.studentName ||

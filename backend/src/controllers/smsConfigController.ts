@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import SMSConfig from "../models/SMSConfig";
+import { User } from "../models/User";
 import { sendSMS, sendTriggerSMS } from "../utils/smsService";
 
 /**
@@ -147,10 +148,33 @@ export const testSMSTrigger = async (req: Request, res: Response) => {
         .json({ success: false, error: "SMS config not found" });
     }
 
+    // Try to find the real user by phone/mobile to use their actual name
+    const cleanPhone = phone.replace(/\D/g, "");
+    const last10 = cleanPhone.slice(-10);
+    const user = await User.findOne({
+      projectId,
+      $or: [
+        { phone: last10 },
+        { mobile: last10 },
+        { phone: cleanPhone },
+        { mobile: cleanPhone },
+      ],
+    })
+      .select("firstName lastName fullName")
+      .lean();
+
+    const realName = user
+      ? (
+          user.fullName ||
+          [user.firstName, user.lastName].filter(Boolean).join(" ")
+        ).trim() || "Student"
+      : "Test Student";
+
     // Mock data for testing based on trigger type
     let mockData: Record<string, string> = {
       otp: "123456",
-      studentName: "Test Student",
+      name: realName,
+      studentName: realName,
       ticketId: "#T-12345",
       status: "Resolved",
       projectName: "SAC Helpdesk",
@@ -163,8 +187,8 @@ export const testSMSTrigger = async (req: Request, res: Response) => {
       escalatedTo: "Senior Agent",
       commentText: "Test comment",
       // Numbered variables for DLT templates (e.g. TTBS)
-      "1": "MHT-CET ",
-      "2": "(PCB 1st Attempt) 2026",
+      "1": realName, // maps to {{name}} in OTP template
+      "2": "123456", // maps to {{otp}} in OTP template
       "3": "https://cetcell.",
       "4": "mahacet.org",
     };
@@ -260,7 +284,7 @@ export const testStudentOTPStaticContent = async (
     const staticMessage =
       typeof message === "string" && message.trim().length > 0
         ? message.trim()
-        : (trigger.template || defaultStaticMessage);
+        : trigger.template || defaultStaticMessage;
 
     const result = await sendSMS(phone, staticMessage, config, {
       dltContentId: (trigger as any).dltContentId,

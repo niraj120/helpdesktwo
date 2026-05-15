@@ -56,6 +56,7 @@ interface Ticket {
           state?: string;
         };
     submissionType?: string;
+    customFields?: Record<string, unknown>;
   };
   createdAt: string;
   isMerged?: boolean;
@@ -118,7 +119,8 @@ type TicketTableColumnKey =
   | "project"
   | "category"
   | "source"
-  | "mergedCount";
+  | "mergedCount"
+  | `field_${string}`;
 
 const TICKET_TABLE_COLUMN_DEFS: Array<{
   key: TicketTableColumnKey;
@@ -155,8 +157,10 @@ const normalizeTicketColumns = (columns?: string[]): TicketTableColumnKey[] => {
     return DEFAULT_TICKET_TABLE_COLUMNS;
   }
 
-  const validKeys = columns.filter((key): key is TicketTableColumnKey =>
-    TICKET_TABLE_COLUMN_DEFS.some((col) => col.key === key),
+  const validKeys = columns.filter(
+    (key): key is TicketTableColumnKey =>
+      TICKET_TABLE_COLUMN_DEFS.some((col) => col.key === key) ||
+      key.startsWith("field_"),
   );
 
   return validKeys.length > 0 ? validKeys : DEFAULT_TICKET_TABLE_COLUMNS;
@@ -331,6 +335,22 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     DEFAULT_TICKET_TABLE_COLUMNS,
   );
 
+  // Dynamic filterable columns from ticket settings
+  const [filterableColumnKeys, setFilterableColumnKeys] = useState<string[]>(
+    [],
+  );
+  const [customFormFieldDefs, setCustomFormFieldDefs] = useState<
+    Array<{
+      fieldName: string;
+      fieldLabel: string;
+      fieldType: string;
+      options?: string[];
+    }>
+  >([]);
+  const [customFieldFilters, setCustomFieldFilters] = useState<
+    Record<string, string>
+  >({});
+
   // Multi-select state
   const [selectedTicketIds, setSelectedTicketIds] = useState<Set<string>>(
     new Set(),
@@ -491,6 +511,15 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
           [];
 
         setVisibleColumns(normalizeTicketColumns(columnsFromConfig));
+
+        // Load filterable columns
+        const filterableCols: string[] =
+          response.data?.ticketConfig?.filterableColumns || [];
+        setFilterableColumnKeys(filterableCols);
+
+        // Load custom form field definitions (for rendering + labels)
+        const customFields = response.data?.data?.customFormFields || [];
+        setCustomFormFieldDefs(customFields);
       } catch (error) {
         console.error("[fetchTicketTableColumns] failed:", error);
         setVisibleColumns(DEFAULT_TICKET_TABLE_COLUMNS);
@@ -536,6 +565,7 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     deferredSearchQuery,
     filterProject,
     filterAssignedTo,
+    customFieldFilters,
   ]);
 
   const fetchStatuses = async (projectId: string | null) => {
@@ -621,6 +651,15 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
       if (filterDateTo) params.createdBefore = filterDateTo;
       if (deferredSearchQuery.trim())
         params.search = deferredSearchQuery.trim();
+
+      // Add custom field filters
+      Object.entries(customFieldFilters).forEach(([key, val]) => {
+        if (val && val.trim()) {
+          // key is like "field_ApplicationID", backend expects "customField_ApplicationID"
+          const fieldName = key.replace(/^field_/, "");
+          params[`customField_${fieldName}`] = val.trim();
+        }
+      });
 
       const response = await axios.get(`${API_CONFIG.API_URL}/tickets`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -1094,9 +1133,24 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
   const visibleColumnDefs = useMemo(
     () =>
       visibleColumns
-        .map((key) => TICKET_TABLE_COLUMN_DEFS.find((def) => def.key === key))
+        .map((key) => {
+          const existing = TICKET_TABLE_COLUMN_DEFS.find(
+            (def) => def.key === key,
+          );
+          if (existing) return existing;
+          // Handle custom field columns
+          if (key.startsWith("field_")) {
+            const fieldName = key.replace(/^field_/, "");
+            const fieldDef = customFormFieldDefs.find(
+              (f) => f.fieldName === fieldName,
+            );
+            const label = fieldDef?.fieldLabel || fieldName;
+            return { key: key as TicketTableColumnKey, label };
+          }
+          return null;
+        })
         .filter(Boolean) as Array<{ key: TicketTableColumnKey; label: string }>,
-    [visibleColumns],
+    [visibleColumns, customFormFieldDefs],
   );
   const tableColumnCount =
     visibleColumnDefs.length + 1 + (canMerge || canDelete || canAssign ? 1 : 0);
@@ -1105,12 +1159,15 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     columnKey: TicketTableColumnKey,
     ticket: Ticket,
   ) => {
+    const _centerId = ticket.metadata?.centerId as any;
     const centerName =
-      !ticket.metadata?.centerId || ticket.metadata.centerId === "online"
+      !_centerId || _centerId === "online"
         ? "Online"
-        : typeof ticket.metadata.centerId === "object"
-          ? ticket.metadata.centerId.centerName
-          : ticket.metadata?.centerId || "Online";
+        : _centerId?.centerName
+          ? _centerId.centerName
+          : typeof _centerId === "string"
+            ? _centerId
+            : "Center";
     const projectName =
       typeof ticket.metadata?.projectId === "object"
         ? ticket.metadata.projectId.name || ticket.metadata.projectId.code
@@ -1370,6 +1427,24 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
         );
 
       default:
+        // Handle custom form field columns (key format: field_FieldName)
+        if (columnKey.startsWith("field_")) {
+          const fieldName = columnKey.replace(/^field_/, "");
+          const value = ticket.metadata?.customFields?.[fieldName];
+          return (
+            <td
+              style={{
+                padding: "12px 16px",
+                fontSize: "13px",
+                color: "#344054",
+              }}
+            >
+              {value !== undefined && value !== null && value !== ""
+                ? String(value)
+                : "—"}
+            </td>
+          );
+        }
         return <td style={{ padding: "12px 16px", color: "#9CA3AF" }}>—</td>;
     }
   };
@@ -1785,7 +1860,10 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                   <div style={{ position: "relative" }}>
                     <select
                       value={filterProject}
-                      onChange={(e) => setFilterProject(e.target.value)}
+                      onChange={(e) => {
+                        setFilterProject(e.target.value);
+                        setCustomFieldFilters({});
+                      }}
                       style={{
                         width: "100%",
                         height: "42px",
@@ -2141,6 +2219,149 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                 </strong>{" "}
                 → Status → Priority → Assignee → Date range
               </div>
+
+              {/* Row 4: Dynamic custom field filters (from filterable columns config) */}
+              {filterableColumnKeys.filter((k) => k.startsWith("field_"))
+                .length > 0 && (
+                <div
+                  style={{
+                    marginTop: "12px",
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: "10px",
+                    alignItems: "center",
+                  }}
+                >
+                  {filterableColumnKeys
+                    .filter((k) => k.startsWith("field_"))
+                    .map((colKey) => {
+                      const fieldName = colKey.replace(/^field_/, "");
+                      const fieldDef = customFormFieldDefs.find(
+                        (f) => f.fieldName === fieldName,
+                      );
+                      const label = fieldDef?.fieldLabel || fieldName;
+                      const currentVal = customFieldFilters[colKey] || "";
+                      const hasOptions =
+                        fieldDef &&
+                        (fieldDef.fieldType === "dropdown" ||
+                          fieldDef.fieldType === "radio" ||
+                          fieldDef.fieldType === "multiselect") &&
+                        Array.isArray(fieldDef.options) &&
+                        fieldDef.options.length > 0;
+
+                      return (
+                        <div key={colKey} style={{ position: "relative" }}>
+                          <span
+                            style={{
+                              position: "absolute",
+                              top: "-9px",
+                              left: "10px",
+                              fontSize: "10px",
+                              fontWeight: 700,
+                              color: "#9ca3af",
+                              background: "white",
+                              padding: "0 4px",
+                              zIndex: 1,
+                              letterSpacing: "0.04em",
+                              textTransform: "uppercase" as const,
+                            }}
+                          >
+                            {label}
+                          </span>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              height: "42px",
+                              border: currentVal
+                                ? "1px solid #84caff"
+                                : "1px solid #d7deea",
+                              borderRadius: "10px",
+                              padding: "0 10px",
+                              background: currentVal ? "#eff6ff" : "white",
+                              boxShadow: "0 1px 3px rgba(0,0,0,.04)",
+                              gap: "6px",
+                              minWidth: "160px",
+                            }}
+                          >
+                            {hasOptions ? (
+                              <select
+                                value={currentVal}
+                                onChange={(e) =>
+                                  setCustomFieldFilters((prev) => ({
+                                    ...prev,
+                                    [colKey]: e.target.value,
+                                  }))
+                                }
+                                style={{
+                                  border: "none",
+                                  background: "transparent",
+                                  fontSize: "13px",
+                                  outline: "none",
+                                  color: currentVal ? "#1d4ed8" : "#6B7280",
+                                  width: "100%",
+                                  cursor: "pointer",
+                                  fontWeight: currentVal ? 500 : 400,
+                                }}
+                              >
+                                <option value="">All</option>
+                                {fieldDef!.options!.map((opt) => (
+                                  <option key={opt} value={opt}>
+                                    {opt}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                type="text"
+                                placeholder={`Filter by ${label}`}
+                                value={currentVal}
+                                onChange={(e) =>
+                                  setCustomFieldFilters((prev) => ({
+                                    ...prev,
+                                    [colKey]: e.target.value,
+                                  }))
+                                }
+                                style={{
+                                  border: "none",
+                                  background: "transparent",
+                                  fontSize: "13px",
+                                  outline: "none",
+                                  color: currentVal ? "#1d4ed8" : "#6B7280",
+                                  width: "100%",
+                                  fontWeight: currentVal ? 500 : 400,
+                                }}
+                              />
+                            )}
+                            {currentVal && (
+                              <button
+                                onClick={() =>
+                                  setCustomFieldFilters((prev) => ({
+                                    ...prev,
+                                    [colKey]: "",
+                                  }))
+                                }
+                                style={{
+                                  background: "none",
+                                  border: "none",
+                                  cursor: "pointer",
+                                  color: "#9CA3AF",
+                                  padding: 0,
+                                  display: "flex",
+                                  flexShrink: 0,
+                                }}
+                              >
+                                <XMarkIcon
+                                  style={{ width: "12px", height: "12px" }}
+                                />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
             </div>
 
             {/* Tickets Table */}

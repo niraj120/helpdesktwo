@@ -64,6 +64,11 @@ export const sendSMS = async (
     const isTataCampaignApi = apiUrl
       .toLowerCase()
       .includes("/campaignservice/campaigns/qs");
+    // TTBS transconnect API also uses PE_ID and Template_ID (uppercase), same as campaign API
+    const isTtbsApi =
+      config.vendor === "ttbs" ||
+      apiUrl.toLowerCase().includes("ttbssms.com") ||
+      apiUrl.toLowerCase().includes("tatatele");
 
     let responseData: any;
 
@@ -74,8 +79,7 @@ export const sendSMS = async (
       const usernameParam =
         config.usernameParamName || (isTataCampaignApi ? "user" : "userid");
       const passwordParam =
-        config.passwordParamName ||
-        (isTataCampaignApi ? "pswd" : "password");
+        config.passwordParamName || (isTataCampaignApi ? "pswd" : "password");
       const phoneParam =
         config.phoneParamName || (isTataCampaignApi ? "recipient" : "send_to");
       const messageParam =
@@ -100,12 +104,12 @@ export const sendSMS = async (
 
       // DLT Principal Entity ID
       if (config.peid) {
-        params[isTataCampaignApi ? "PE_ID" : "peid"] = config.peid;
+        params[isTataCampaignApi || isTtbsApi ? "PE_ID" : "peid"] = config.peid;
       }
 
       // Per-trigger DLT template IDs
-      if (isTataCampaignApi) {
-        // Tata campaign API consumes one template field: Template_ID.
+      if (isTataCampaignApi || isTtbsApi) {
+        // TTBS and Tata campaign API both use a single Template_ID field.
         const templateId =
           triggerOptions?.dltTemplateId || triggerOptions?.dltContentId;
         if (templateId) {
@@ -268,11 +272,16 @@ export const sendOTPSMS = async (
   projectId: string,
   phoneNumber: string,
   otp: string,
+  name?: string,
 ): Promise<{ success: boolean; error?: string }> => {
   // Common data for OTP
-  const data = {
+  const data: Record<string, string> = {
     otp: otp,
     projectName: "Hubble Hox", // Can be fetched from project if needed
+    name: name || "Student",
+    // Numbered aliases for DLT templates that use {{1}}, {{2}} etc.
+    "1": name || "Student",
+    "2": otp,
   };
 
   return sendTriggerSMS("studentOTP", projectId, phoneNumber, data, {

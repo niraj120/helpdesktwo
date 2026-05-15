@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   MdSave,
   MdInfo,
@@ -55,6 +55,8 @@ interface TicketTableColumnOption {
   label: string;
   description: string;
   enabled: boolean;
+  isCustomField?: boolean;
+  isFilterable?: boolean;
 }
 
 const AVAILABLE_TICKET_TABLE_COLUMNS: Array<
@@ -198,6 +200,11 @@ const TicketSettings: React.FC = () => {
   const [tableColumns, setTableColumns] = useState<TicketTableColumnOption[]>(
     () => buildTicketColumnOptions(),
   );
+
+  // Refs to hold raw saved config so both async loads can access them
+  const savedTableColumnKeysRef = useRef<string[]>([]);
+  const savedFilterableColumnKeysRef = useRef<string[]>([]);
+  const formFieldsRef = useRef<FormFieldSchema[]>([]);
 
   // Hierarchy config — drives which fixed fields appear in the form builder
   interface HierarchyLevel {
@@ -354,12 +361,33 @@ const TicketSettings: React.FC = () => {
         console.log("✅ Form Fields API Response:", data);
         if (data.success && data.data) {
           console.log("✅ Setting form fields:", data.data.length, "items");
-          setFormFields(
-            data.data.sort(
-              (a: FormFieldSchema, b: FormFieldSchema) =>
-                (a.order || 0) - (b.order || 0),
-            ),
+          const sortedFields = data.data.sort(
+            (a: FormFieldSchema, b: FormFieldSchema) =>
+              (a.order || 0) - (b.order || 0),
           );
+
+          // Update ref for cross-load access
+          formFieldsRef.current = sortedFields;
+          setFormFields(sortedFields);
+
+          // Sync custom form fields into tableColumns (uses refs set by loadProjectConfig)
+          const savedKeys = savedTableColumnKeysRef.current;
+          const filterableKeys = savedFilterableColumnKeysRef.current;
+          const customCols = sortedFields
+            .filter((f: FormFieldSchema) => !f.isFixed)
+            .map((f: FormFieldSchema) => ({
+              key: `field_${f.fieldName}`,
+              label: f.fieldLabel,
+              description: `Form field: ${f.fieldLabel}`,
+              enabled: savedKeys.includes(`field_${f.fieldName}`),
+              isFilterable: filterableKeys.includes(`field_${f.fieldName}`),
+              isCustomField: true,
+            }));
+
+          setTableColumns((prev) => {
+            const staticCols = prev.filter((c) => !c.isCustomField);
+            return [...staticCols, ...customCols];
+          });
         } else {
           console.error(
             "❌ Form Fields API returned success=false or no data:",
@@ -404,10 +432,33 @@ const TicketSettings: React.FC = () => {
         if (data.ticketConfig) {
           if (data.ticketConfig.numbering)
             setNumbering(data.ticketConfig.numbering);
-          setTableColumns(
-            buildTicketColumnOptions(data.ticketConfig.tableColumns),
-          );
-          // Categories are now loaded from Category API, not project config
+
+          // Store in refs for cross-load access
+          savedTableColumnKeysRef.current = data.ticketConfig.tableColumns || [];
+          savedFilterableColumnKeysRef.current = data.ticketConfig.filterableColumns || [];
+
+          const savedKeys = savedTableColumnKeysRef.current;
+          const filterableKeys = savedFilterableColumnKeysRef.current;
+
+          // Build static columns with filterable flags
+          const staticCols = buildTicketColumnOptions(savedKeys).map((col) => ({
+            ...col,
+            isFilterable: filterableKeys.includes(col.key),
+          }));
+
+          // If form fields already loaded, also add custom field columns
+          const customCols = formFieldsRef.current
+            .filter((f) => !f.isFixed)
+            .map((f) => ({
+              key: `field_${f.fieldName}`,
+              label: f.fieldLabel || f.fieldName,
+              description: `Form field: ${f.fieldLabel || f.fieldName}`,
+              enabled: savedKeys.includes(`field_${f.fieldName}`),
+              isFilterable: filterableKeys.includes(`field_${f.fieldName}`),
+              isCustomField: true,
+            }));
+
+          setTableColumns([...staticCols, ...customCols]);
         }
       }
     } catch (error) {
@@ -448,6 +499,9 @@ const TicketSettings: React.FC = () => {
             onlineFormFields: formFields, // Save form fields with main save
             tableColumns: tableColumns
               .filter((column) => column.enabled)
+              .map((column) => column.key),
+            filterableColumns: tableColumns
+              .filter((column) => column.isFilterable)
               .map((column) => column.key),
           }),
         },
@@ -516,6 +570,14 @@ const TicketSettings: React.FC = () => {
         return { ...col, enabled: !col.enabled };
       });
     });
+  };
+
+  const toggleFilterableColumn = (key: string) => {
+    setTableColumns((prev) =>
+      prev.map((col) =>
+        col.key === key ? { ...col, isFilterable: !col.isFilterable } : col,
+      ),
+    );
   };
 
   const generatePreview = () => {
@@ -1521,9 +1583,8 @@ const TicketSettings: React.FC = () => {
                         color: "var(--text-secondary)",
                       }}
                     >
-                      Enable/disable and reorder table columns for this project.
-                      These columns will be used on View Queries in both
-                      super-admin project view and project portal.
+                      Enable/disable and reorder columns. Check "Filter" to make
+                      a column available as a filter on View Queries pages.
                     </p>
                   </div>
 
@@ -1538,8 +1599,28 @@ const TicketSettings: React.FC = () => {
                       color: "#475467",
                     }}
                   >
-                    Keep at least one column enabled. Use arrows to shift
-                    columns left/right in the table order.
+                    Keep at least one column enabled. Use arrows to reorder.
+                    "Filter" checkbox makes the column a filter option on the
+                    tickets list page.
+                  </div>
+
+                  {/* Column header row */}
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "28px 1fr 80px auto",
+                      gap: "12px",
+                      padding: "6px 12px",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#667085",
+                      marginBottom: "4px",
+                    }}
+                  >
+                    <span>On</span>
+                    <span>Column</span>
+                    <span style={{ textAlign: "center" }}>Filter</span>
+                    <span>Order</span>
                   </div>
 
                   <div style={{ display: "grid", gap: "10px" }}>
@@ -1548,13 +1629,19 @@ const TicketSettings: React.FC = () => {
                         key={column.key}
                         style={{
                           display: "grid",
-                          gridTemplateColumns: "28px 1fr auto",
+                          gridTemplateColumns: "28px 1fr 80px auto",
                           alignItems: "center",
                           gap: "12px",
                           padding: "12px",
-                          border: "1px solid var(--border-subtle)",
+                          border: `1px solid ${column.isCustomField ? "#d1fae5" : "var(--border-subtle)"}`,
                           borderRadius: "8px",
-                          background: column.enabled ? "#ffffff" : "#f9fafb",
+                          background: column.isCustomField
+                            ? column.enabled
+                              ? "#f0fdf4"
+                              : "#f9fafb"
+                            : column.enabled
+                              ? "#ffffff"
+                              : "#f9fafb",
                           opacity: column.enabled ? 1 : 0.75,
                         }}
                       >
@@ -1570,13 +1657,47 @@ const TicketSettings: React.FC = () => {
                               fontSize: "14px",
                               fontWeight: 600,
                               color: "#111827",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "6px",
                             }}
                           >
                             {column.label}
+                            {column.isCustomField && (
+                              <span
+                                style={{
+                                  fontSize: "10px",
+                                  fontWeight: 500,
+                                  background: "#d1fae5",
+                                  color: "#065f46",
+                                  padding: "1px 6px",
+                                  borderRadius: "10px",
+                                }}
+                              >
+                                custom field
+                              </span>
+                            )}
                           </div>
                           <div style={{ fontSize: "12px", color: "#667085" }}>
                             {column.description}
                           </div>
+                        </div>
+
+                        {/* Filterable checkbox */}
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: "4px",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={!!column.isFilterable}
+                            onChange={() => toggleFilterableColumn(column.key)}
+                            title="Show as filter on View Queries pages"
+                          />
                         </div>
 
                         <div style={{ display: "flex", gap: "6px" }}>
