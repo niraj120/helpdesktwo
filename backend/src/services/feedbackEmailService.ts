@@ -4,6 +4,7 @@ import { Ticket } from "../models/Ticket";
 import { User } from "../models/User";
 import EmailConfig from "../models/EmailConfig";
 import { decrypt, isEncrypted } from "../utils/encryption";
+import config from "../config";
 
 // Helper to get transporter and sender info from database config
 const getEmailTransporter = async (projectId?: string) => {
@@ -119,7 +120,7 @@ export const sendFeedbackEmail = async (ticketId: string, formId?: string) => {
       .update(`${ticket._id}-${student._id}-${Date.now()}`)
       .digest("hex");
 
-    const baseUrl = process.env.FRONTEND_URL || "http://localhost:3001";
+    const baseUrl = config.urls.frontend;
     const projectUrlPath =
       project.branding?.customUrlPath || project.customUrlPath;
     const feedbackLink = `${baseUrl}/${projectUrlPath}/feedback/${ticket._id}?studentId=${student._id}&ticketNumber=${ticket.ticketNumber}&token=${feedbackToken}`;

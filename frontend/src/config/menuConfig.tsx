@@ -57,14 +57,71 @@ export interface MenuItem {
  * This is the single source of truth for all menu items
  */
 export const menuConfig: MenuItem[] = [
-  // Dashboard - Visible to all authenticated users
+  // Dashboard Module - all dashboard sub-pages grouped under one parent
   {
-    path: "/dashboard",
     icon: <MdDashboard />,
     label: "Dashboard",
     labelHi: "डैशबोर्ड",
     labelMr: "डॅशबोर्ड",
-    // No permission required - everyone can see dashboard
+    // No permission required - sub-items control individual visibility
+    subItems: [
+      {
+        path: "/dashboard",
+        icon: <MdDashboard />,
+        label: "Overview",
+        labelHi: "अवलोकन",
+        labelMr: "आढावा",
+        // No permission required - everyone can see dashboard
+      },
+      {
+        path: "/dashboard-engine",
+        icon: <MdInsights />,
+        label: "My Dashboards",
+        labelHi: "मेरे डैशबोर्ड",
+        labelMr: "माझे डॅशबोर्ड",
+        // No permission required - assignment controls visibility
+      },
+      {
+        path: "/my-dashboards",
+        icon: <MdInsights />,
+        label: "Personal Dashboards",
+        labelHi: "व्यक्तिगत डैशबोर्ड",
+        labelMr: "वैयक्तिक डॅशबोर्ड",
+        // No permission required - available to all users
+      },
+      {
+        path: "/admin/dashboards",
+        icon: <MdTableChart />,
+        label: "Manage Templates",
+        labelHi: "टेम्पलेट प्रबंधन",
+        labelMr: "टेम्पलेट व्यवस्थापन",
+        permission: "dashboard.manage",
+      },
+      {
+        path: "/admin/dashboard-builder",
+        icon: <MdTableChart />,
+        label: "Dashboard Builder",
+        labelHi: "डैशबोर्ड बिल्डर",
+        labelMr: "डॅशबोर्ड बिल्डर",
+        permission: "dashboard.manage",
+      },
+      {
+        path: "/admin/dashboard-usage",
+        icon: <MdTableChart />,
+        label: "Usage Analytics",
+        labelHi: "उपयोग विश्लेषण",
+        labelMr: "वापर विश्लेषण",
+        permission: "dashboard.manage",
+      },
+      {
+        path: "/admin/targets",
+        icon: <MdTableChart />,
+        label: "Target Management",
+        labelHi: "लक्ष्य प्रबंधन",
+        labelMr: "लक्ष्य व्यवस्थापन",
+        permission: "dashboard.manage",
+      },
+    ],
   },
 
   // Project Management - Super Admin only
@@ -835,18 +892,8 @@ export const hasMenuItemPermission = (
     /* ignore */
   }
 
-  // Enhanced debug logging for ALL menu items
-  console.log(`🔍 Checking permission for "${item.label}":`, {
-    itemPermission: item.permission,
-    modulePrefix: item.modulePrefix,
-    userPermissions: userPermissions,
-    hasSubItems: !!item.subItems,
-    path: item.path,
-  });
-
   // No permission requirement = visible to all
   if (!item.permission && !item.modulePrefix) {
-    console.log(`✅ "${item.label}" - No permission required, visible to all`);
     return true;
   }
 
@@ -881,14 +928,8 @@ export const getFilteredMenuItems = (
   menuItems: MenuItem[],
   userPermissions: string[],
 ): MenuItem[] => {
-  console.log(
-    "🎯 getFilteredMenuItems called with permissions:",
-    userPermissions,
-  );
-
   // Get user role code from localStorage - with robust fallback
   let userRole = localStorage.getItem("userRole") || "";
-  console.log("📌 Initial userRole from localStorage:", userRole);
 
   // If userRole doesn't look like a code (no underscore or all lowercase), try to get it from user object
   if (
@@ -902,75 +943,41 @@ export const getFilteredMenuItems = (
         const user = JSON.parse(userStr);
         const extractedRole = user.role?.code || user.roleCode;
         if (extractedRole) {
-          console.log(
-            "📌 Extracted role code from user object:",
-            extractedRole,
-          );
           userRole = extractedRole;
         }
       }
     } catch (e) {
-      console.warn("⚠️ Failed to parse user object from localStorage");
+      // ignore
     }
   }
-
-  console.log("👤 Final User Role Code:", userRole);
-  console.log("🚫 Asset Management excludes:", [
-    "STUDENT",
-    "COUNSELOR_L1",
-    "CET_STATE_CELL",
-    "AGENT",
-    "SUPPORT_ADMIN",
-    "ACCOUNT_OWNER",
-  ]);
 
   return menuItems
     .map((item) => {
       // Check if this item should be excluded for this role
       if (item.excludeForRoles && item.excludeForRoles.includes(userRole)) {
-        console.log(`❌ "${item.label}" - Excluded for role: ${userRole}`);
         return null;
       }
 
       // Check if user has permission for this item
       if (!hasMenuItemPermission(item, userPermissions)) {
-        console.log(`❌ "${item.label}" - Permission check FAILED`);
         return null;
       }
 
       // If item has subItems, filter them too
       if (item.subItems) {
-        console.log(
-          `📂 "${item.label}" has ${item.subItems.length} subItems, filtering...`,
-        );
         const filteredSubItems = item.subItems.filter((subItem) => {
           // Check role-based exclusion for subitems
           if (
             subItem.excludeForRoles &&
             subItem.excludeForRoles.includes(userRole)
           ) {
-            console.log(
-              `   ❌ SubItem: "${subItem.label}" - Excluded for role: ${userRole}`,
-            );
             return false;
           }
-
-          const hasPerm = hasMenuItemPermission(subItem, userPermissions);
-          console.log(
-            `   ${hasPerm ? "✅" : "❌"} SubItem: "${subItem.label}"`,
-          );
-          return hasPerm;
+          return hasMenuItemPermission(subItem, userPermissions);
         });
-
-        console.log(
-          `📂 "${item.label}" - Filtered subItems: ${filteredSubItems.length}/${item.subItems.length}`,
-        );
 
         // Only show parent if at least one sub-item is visible
         if (filteredSubItems.length === 0) {
-          console.log(
-            `❌ "${item.label}" - No visible subItems, hiding parent`,
-          );
           return null;
         }
 
@@ -980,7 +987,6 @@ export const getFilteredMenuItems = (
         };
       }
 
-      console.log(`✅ "${item.label}" - Visible (no subItems)`);
       return item;
     })
     .filter((item): item is MenuItem => item !== null);

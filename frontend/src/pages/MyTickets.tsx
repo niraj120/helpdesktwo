@@ -243,28 +243,31 @@ const computeSlaPill = (
   return { label, color: "#dc2626", bg: "#fef2f2", tooltip };
 };
 
+// ─── Module-level cache ───────────────────────────────────────────────────────
+// Survives unmount/remount (tab switches) so switching back to this page is instant.
+const MYTICKETS_CACHE_TTL = 2 * 60 * 1000; // 2 minutes
+interface MyTicketsCacheEntry {
+  tickets: Ticket[];
+  timestamp: number;
+}
+interface MasterDataCacheEntry {
+  statuses: Array<{ code: number; name: string }>;
+  priorities: Array<{ code: string; name: string }>;
+  timestamp: number;
+}
+const myTicketsCache = new Map<string, MyTicketsCacheEntry>();
+const myMasterDataCache = new Map<string, MasterDataCacheEntry>();
+// ──────────────────────────────────────────────────────────────────────────────
+
 const MyTickets: React.FC<MyTicketsProps> = ({
   wrapWithLayout = true,
   isStudentView = false,
 }) => {
-  console.log(
-    "🎯 MyTickets component rendering, wrapWithLayout:",
-    wrapWithLayout,
-  );
-
   const navigate = useNavigate();
   const location = useLocation();
 
   // Get viewMode and currentProjectId from context
   const { viewMode, currentProjectId, userProjects } = useProjectContext();
-
-  console.log("🎯 Hooks initialized, location:", location.pathname);
-  console.log(
-    "🎯 ProjectContext - viewMode:",
-    viewMode,
-    "currentProjectId:",
-    currentProjectId,
-  );
 
   // Helper function to check permissions from localStorage
   const checkPermission = (permission: string): boolean => {
@@ -295,8 +298,27 @@ const MyTickets: React.FC<MyTicketsProps> = ({
     }
   };
 
-  const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Resolve cache key based on project context (available at this point via closure)
+  const _initProjectId = (() => {
+    if (viewMode === "single" && currentProjectId) return currentProjectId;
+    try {
+      const pc = localStorage.getItem("projectContext");
+      if (pc) return JSON.parse(pc).projectId || "all";
+    } catch {
+      /* ignore */
+    }
+    return "all";
+  })();
+  const _initCacheKey = `mytickets:${_initProjectId}`;
+  const _initCached = myTicketsCache.get(_initCacheKey);
+  const _hasCachedTickets = !!(
+    _initCached && Date.now() - _initCached.timestamp < MYTICKETS_CACHE_TTL
+  );
+
+  const [tickets, setTickets] = useState<Ticket[]>(
+    _hasCachedTickets ? _initCached!.tickets : [],
+  );
+  const [loading, setLoading] = useState(!_hasCachedTickets); // skip spinner when cache is warm
   const [error, setError] = useState("");
   // Real-time: pending new-ticket count for page > 1
   const [pendingNewTickets, setPendingNewTickets] = useState(0);
@@ -380,20 +402,11 @@ const MyTickets: React.FC<MyTicketsProps> = ({
   const isMobile = viewportWidth <= 768;
   const isTablet = viewportWidth > 768 && viewportWidth <= 1024;
 
-  console.log("🎯 State initialized");
-
   const canExport = checkPermission("TICKET_EXPORT");
   const canMerge = checkPermission("TICKET_MERGE");
   const canAssign = checkPermission("TICKET_REASSIGN");
   const canConfigureColumns = checkPermission(
     "TICKET_CONFIG_MANAGE_TABLE_COLUMNS",
-  );
-
-  console.log(
-    "🎯 Permissions checked, canExport:",
-    canExport,
-    "canMerge:",
-    canMerge,
   );
 
   function resolveMasterDataProjectId() {
@@ -426,6 +439,21 @@ const MyTickets: React.FC<MyTicketsProps> = ({
         return;
       }
 
+      // Use a longer TTL for settings (they change rarely)
+      const settingsCacheKey = `ticketsettings:${projectId}`;
+      const settingsCached = myMasterDataCache.get(settingsCacheKey as any);
+      if (
+        settingsCached &&
+        Date.now() - (settingsCached as any).timestamp < 10 * 60 * 1000
+      ) {
+        setVisibleColumns(
+          (settingsCached as any).columns ?? DEFAULT_TICKET_TABLE_COLUMNS,
+        );
+        setFilterableColumnKeys((settingsCached as any).filterableCols ?? []);
+        setCustomFormFieldDefs((settingsCached as any).customFields ?? []);
+        return;
+      }
+
       try {
         const token = localStorage.getItem("authToken");
         const response = await axios.get(
@@ -438,14 +466,21 @@ const MyTickets: React.FC<MyTicketsProps> = ({
         );
 
         const columns = response.data?.ticketConfig?.tableColumns || [];
-        setVisibleColumns(normalizeTicketColumns(columns));
+        const normalizedCols = normalizeTicketColumns(columns);
+        setVisibleColumns(normalizedCols);
         const filterableCols: string[] =
           response.data?.ticketConfig?.filterableColumns || [];
         setFilterableColumnKeys(filterableCols);
         const customFields = response.data?.data?.customFormFields || [];
         setCustomFormFieldDefs(customFields);
-      } catch (error) {
-        console.error("[MyTickets] Failed to load ticket table columns", error);
+        // Cache settings so returning to this tab is instant
+        (myMasterDataCache as any).set(`ticketsettings:${projectId}`, {
+          columns: normalizedCols,
+          filterableCols,
+          customFields,
+          timestamp: Date.now(),
+        });
+      } catch {
         setVisibleColumns(DEFAULT_TICKET_TABLE_COLUMNS);
       }
     };
@@ -454,70 +489,67 @@ const MyTickets: React.FC<MyTicketsProps> = ({
   }, [viewMode, currentProjectId, projectFilter]);
 
   const fetchMasterData = useCallback(async () => {
+    const projectId = resolveMasterDataProjectId();
+    const mdCacheKey = `masterdata:${projectId || "all"}`;
+    const mdCached = myMasterDataCache.get(mdCacheKey);
+    if (mdCached && Date.now() - mdCached.timestamp < MYTICKETS_CACHE_TTL) {
+      // Restore from cache immediately
+      setStatuses(mdCached.statuses);
+      setPriorities(mdCached.priorities);
+      return;
+    }
+
     try {
       const token = localStorage.getItem("authToken");
       if (!token) return;
 
-      const projectId = resolveMasterDataProjectId();
+      const defaultStatuses = [
+        { code: 1, name: "Open" },
+        { code: 2, name: "In Progress" },
+        { code: 3, name: "On Hold" },
+        { code: 4, name: "Resolved" },
+        { code: 5, name: "Closed" },
+      ];
+      const defaultPriorities = [
+        { code: "Low", name: "Low" },
+        { code: "Normal", name: "Normal" },
+        { code: "Medium", name: "Medium" },
+        { code: "High", name: "High" },
+        { code: "Urgent", name: "Urgent" },
+        { code: "Critical", name: "Critical" },
+      ];
 
-      // Fetch statuses — project-specific if available, otherwise fetch all (super admin / no project context)
+      // Fetch statuses
+      let statusData: Array<{ code: number; name: string }> = [];
       try {
-        let statusData: Array<{ code: number; name: string }> = [];
-        if (projectId) {
-          const statusResponse = await axios.get(
-            `${API_BASE_URL}/statuses/project/${projectId}`,
-            { headers: { Authorization: `Bearer ${token}` } },
-          );
-          if (
-            statusResponse.data.success &&
-            Array.isArray(statusResponse.data.data)
-          ) {
-            statusData = statusResponse.data.data.map((s: any) => ({
-              code: s.code,
-              name: s.name,
-            }));
-          }
-        } else {
-          const statusResponse = await axios.get(
-            `${API_BASE_URL}/statuses/all`,
-            { headers: { Authorization: `Bearer ${token}` } },
-          );
-          if (
-            statusResponse.data.success &&
-            Array.isArray(statusResponse.data.data)
-          ) {
-            const seen = new Set<number>();
-            statusData = statusResponse.data.data
-              .filter((s: any) => {
-                if (seen.has(s.code)) return false;
-                seen.add(s.code);
-                return true;
-              })
-              .map((s: any) => ({ code: s.code, name: s.name }));
-          }
+        const endpoint = projectId
+          ? `${API_BASE_URL}/statuses/project/${projectId}`
+          : `${API_BASE_URL}/statuses/all`;
+        const statusResponse = await axios.get(endpoint, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (
+          statusResponse.data.success &&
+          Array.isArray(statusResponse.data.data)
+        ) {
+          const seen = new Set<number>();
+          statusData = statusResponse.data.data
+            .filter((s: any) => {
+              if (seen.has(s.code)) return false;
+              seen.add(s.code);
+              return true;
+            })
+            .map((s: any) => ({ code: s.code, name: s.name }));
         }
-        setStatuses(
-          statusData.length > 0
-            ? statusData
-            : [
-                { code: 1, name: "Open" },
-                { code: 2, name: "In Progress" },
-                { code: 3, name: "On Hold" },
-                { code: 4, name: "Resolved" },
-                { code: 5, name: "Closed" },
-              ],
-        );
       } catch {
-        setStatuses([
-          { code: 1, name: "Open" },
-          { code: 2, name: "In Progress" },
-          { code: 3, name: "On Hold" },
-          { code: 4, name: "Resolved" },
-          { code: 5, name: "Closed" },
-        ]);
+        /* use defaults */
       }
+      const resolvedStatuses =
+        statusData.length > 0 ? statusData : defaultStatuses;
+      setStatuses(resolvedStatuses);
 
-      // Fetch priorities from priority master data (project-scoped when projectId is present)
+      // Fetch priorities
+      let priorityList: Array<{ code: string; name: string }> = [];
       try {
         const priorityResponse = await axios.get(
           `${API_BASE_URL}/priorities/active`,
@@ -526,76 +558,39 @@ const MyTickets: React.FC<MyTicketsProps> = ({
             params: projectId ? { projectId } : {},
           },
         );
-
         if (
           priorityResponse.data.success &&
           Array.isArray(priorityResponse.data.data)
         ) {
           const seen = new Set<string>();
-          const priorityList = (priorityResponse.data.data as any[])
+          priorityList = (priorityResponse.data.data as any[])
             .map((p: any) => {
               const code = String(p.code || p.name || "").trim();
               if (!code) return null;
-              return {
-                code,
-                name: p.name
-                  ? String(p.name)
-                  : code
-                      .toLowerCase()
-                      .replace(/_/g, " ")
-                      .replace(/\b\w/g, (c: string) => c.toUpperCase()),
-              };
+              return { code, name: p.name ? String(p.name) : code };
             })
-            .filter(
-              (
-                item: { code: string; name: string } | null,
-              ): item is {
-                code: string;
-                name: string;
-              } => !!item,
-            )
+            .filter((item): item is { code: string; name: string } => !!item)
             .filter((item) => {
-              const key = item.code.toLowerCase();
-              if (seen.has(key)) return false;
-              seen.add(key);
+              const k = item.code.toLowerCase();
+              if (seen.has(k)) return false;
+              seen.add(k);
               return true;
             });
-
-          if (priorityList.length > 0) {
-            setPriorities(priorityList);
-          } else {
-            setPriorities([
-              { code: "Low", name: "Low" },
-              { code: "Normal", name: "Normal" },
-              { code: "Medium", name: "Medium" },
-              { code: "High", name: "High" },
-              { code: "Urgent", name: "Urgent" },
-              { code: "Critical", name: "Critical" },
-            ]);
-          }
-        } else {
-          setPriorities([
-            { code: "Low", name: "Low" },
-            { code: "Normal", name: "Normal" },
-            { code: "Medium", name: "Medium" },
-            { code: "High", name: "High" },
-            { code: "Urgent", name: "Urgent" },
-            { code: "Critical", name: "Critical" },
-          ]);
         }
       } catch {
-        setPriorities([
-          { code: "Low", name: "Low" },
-          { code: "Normal", name: "Normal" },
-          { code: "Medium", name: "Medium" },
-          { code: "High", name: "High" },
-          { code: "Urgent", name: "Urgent" },
-          { code: "Critical", name: "Critical" },
-        ]);
+        /* use defaults */
       }
-    } catch (err) {
-      console.error("Error fetching master data:", err);
-      // On error, set defaults so filtering still works
+      const resolvedPriorities =
+        priorityList.length > 0 ? priorityList : defaultPriorities;
+      setPriorities(resolvedPriorities);
+
+      // Cache for next tab-switch
+      myMasterDataCache.set(mdCacheKey, {
+        statuses: resolvedStatuses,
+        priorities: resolvedPriorities,
+        timestamp: Date.now(),
+      });
+    } catch {
       setStatuses([
         { code: 1, name: "Open" },
         { code: 2, name: "In Progress" },
@@ -615,74 +610,88 @@ const MyTickets: React.FC<MyTicketsProps> = ({
   }, [currentProjectId, projectFilter, viewMode]);
 
   const fetchMyTickets = useCallback(async () => {
-    console.log("🎯 fetchMyTickets called");
     try {
-      setLoading(true);
       const token = localStorage.getItem("authToken");
-
       if (!token) {
         navigate("/login");
         return;
       }
 
       // Determine projectId based on viewMode
-      // If viewMode is 'unified', don't send projectId to get ALL user's tickets
-      // If viewMode is 'single', send the currentProjectId
       let projectId = "";
-
       if (viewMode === "single" && currentProjectId) {
         projectId = currentProjectId;
       } else if (viewMode === "single") {
-        // Fallback to projectContext from localStorage
-        const projectContext = localStorage.getItem("projectContext");
-        if (projectContext) {
-          try {
-            const parsed = JSON.parse(projectContext);
-            projectId = parsed.projectId;
-          } catch (err) {
-            console.error("Error parsing projectContext:", err);
-          }
+        try {
+          const pc = localStorage.getItem("projectContext");
+          if (pc) projectId = JSON.parse(pc).projectId || "";
+        } catch {
+          /* ignore */
         }
       }
-      // If viewMode is 'unified', projectId stays empty - backend will return all user's tickets
 
-      // Build URL - only add projectId if in single project mode
+      const cacheKey = `mytickets:${projectId || "all"}`;
+      const cached = myTicketsCache.get(cacheKey);
+      const isCacheWarm = !!(
+        cached && Date.now() - cached.timestamp < MYTICKETS_CACHE_TTL
+      );
+
+      if (isCacheWarm) {
+        // Show cached data instantly — no spinner — then silently refresh
+        setTickets(cached!.tickets);
+        setLoading(false);
+        try {
+          const url = projectId
+            ? `${API_BASE_URL}/tickets/my-tickets?projectId=${projectId}`
+            : `${API_BASE_URL}/tickets/my-tickets`;
+          const bgRes = await axios.get(url, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (bgRes.data.success) {
+            const fresh = (
+              Array.isArray(bgRes.data.data) ? bgRes.data.data : []
+            ).filter((t: any) => t && t._id);
+            myTicketsCache.set(cacheKey, {
+              tickets: fresh,
+              timestamp: Date.now(),
+            });
+            setTickets(fresh);
+          }
+        } catch {
+          /* silent refresh failure — cached data remains */
+        }
+        return;
+      }
+
+      // Cache miss — normal fetch with loading spinner
+      setLoading(true);
       const url = projectId
         ? `${API_BASE_URL}/tickets/my-tickets?projectId=${projectId}`
         : `${API_BASE_URL}/tickets/my-tickets`;
 
-      console.log(
-        "🎯 Fetching my tickets - viewMode:",
-        viewMode,
-        "projectId:",
-        projectId || "ALL PROJECTS",
-      );
-
       const response = await axios.get(url, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (response.data.success) {
-        // Ensure tickets is an array and filter out any invalid entries
         const ticketsData = Array.isArray(response.data.data)
           ? response.data.data
           : [];
-        console.log("🎯 Sample ticket data:", ticketsData[0]);
-        console.log(
-          "🎢 Center data check:",
-          ticketsData[0]?.metadata?.centerId,
+        const validTickets = ticketsData.filter(
+          (ticket: any) => ticket && ticket._id,
         );
-        setTickets(ticketsData.filter((ticket: any) => ticket && ticket._id));
-      } else {
-        // Hide 404 and "Not Found" errors from UI
-        if (response.data.error && !response.data.error.includes("Not Found")) {
-          setError(response.data.error || "Failed to load tickets");
-        }
+        myTicketsCache.set(cacheKey, {
+          tickets: validTickets,
+          timestamp: Date.now(),
+        });
+        setTickets(validTickets);
+      } else if (
+        response.data.error &&
+        !response.data.error.includes("Not Found")
+      ) {
+        setError(response.data.error || "Failed to load tickets");
       }
     } catch (err: any) {
-      console.error("Error fetching my tickets:", err);
       if (err.response?.status === 401) {
         localStorage.removeItem("authToken");
         navigate("/login");
@@ -690,10 +699,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({
         setError(
           "You do not have permission to view tickets. Please contact your administrator.",
         );
-      } else if (err.response?.status === 404) {
-        // Hide 404 errors from UI, just log them
-        console.log("Tickets endpoint not found (404)");
-      } else {
+      } else if (err.response?.status !== 404) {
         setError(err.response?.data?.error || "Failed to load tickets");
       }
     } finally {
@@ -701,15 +707,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({
     }
   }, [navigate, viewMode, currentProjectId]);
 
-  console.log("🎯 useCallback defined");
-
   useEffect(() => {
-    console.log(
-      "🎯 useEffect running, viewMode:",
-      viewMode,
-      "currentProjectId:",
-      currentProjectId,
-    );
     // Fetch tickets whenever viewMode or currentProjectId changes
     fetchMasterData();
     fetchMyTickets();
@@ -812,8 +810,6 @@ const MyTickets: React.FC<MyTicketsProps> = ({
     },
   });
 
-  console.log("🎯 About to define helper functions");
-
   const getStatusName = (status: string | number, ticket?: any) => {
     // Prefer the enriched statusName from the API response (project-specific)
     if (ticket?.statusName) return ticket.statusName;
@@ -885,8 +881,6 @@ const MyTickets: React.FC<MyTicketsProps> = ({
     };
     return badges[source || "online"] || badges.online;
   };
-
-  console.log("🎯 About to filter tickets, tickets.length:", tickets.length);
 
   const filteredTickets = tickets.filter((ticket) => {
     try {
@@ -976,11 +970,6 @@ const MyTickets: React.FC<MyTicketsProps> = ({
       return false;
     }
   });
-
-  console.log(
-    "🎯 Filtered tickets, filteredTickets.length:",
-    filteredTickets.length,
-  );
 
   // Show Sender Email column only when at least one visible ticket is from email source
   const hasEmailSource = filteredTickets.some(
@@ -1422,10 +1411,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({
     return counts;
   }, [tickets]);
 
-  console.log("🎯 About to check loading state, loading:", loading);
-
   if (loading) {
-    console.log("🎯 Rendering loading state");
     const loadingContent = (
       <div style={{ padding: "24px", textAlign: "center" }}>
         <p>Loading your tickets...</p>
@@ -1437,13 +1423,6 @@ const MyTickets: React.FC<MyTicketsProps> = ({
       loadingContent
     );
   }
-
-  console.log(
-    "🎯 Not loading, rendering main content, tickets.length:",
-    tickets.length,
-  );
-
-  console.log("🎯 About to create content JSX");
 
   // Get display title based on viewMode
   const getPageTitle = () => {
@@ -3468,11 +3447,8 @@ const MyTickets: React.FC<MyTicketsProps> = ({
     </div>
   );
 
-  console.log("🎯 Content JSX created successfully");
-
   // Conditionally wrap with DashboardLayout
   try {
-    console.log("🎯 About to return, wrapWithLayout:", wrapWithLayout);
     return wrapWithLayout ? (
       <DashboardLayout>{content}</DashboardLayout>
     ) : (

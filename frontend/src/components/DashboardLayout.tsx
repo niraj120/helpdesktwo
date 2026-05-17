@@ -242,15 +242,7 @@ const DashboardLayout = ({
   // Get branding from context instead of fetching directly
   const { branding: projectBranding } = useBranding();
 
-  // Debug permissions
-  useEffect(() => {
-    console.log("🔐 DashboardLayout - User Permissions:", permissions);
-    console.log("🔐 Total permissions:", permissions?.length || 0);
-    console.log(
-      "🔐 Has TICKET_ASSIGN:",
-      permissions?.includes("TICKET_ASSIGN"),
-    );
-  }, [permissions]);
+  
 
   // Auto-expand menu that contains the active route on initial load only
   useEffect(() => {
@@ -333,6 +325,12 @@ const DashboardLayout = ({
   const currentPath = location.pathname;
   const mainSystemRoutes = [
     "/dashboard",
+    "/dashboard-engine",
+    "/admin/dashboards",
+    "/admin/dashboard-builder",
+    "/my-dashboards",
+    "/admin/dashboard-usage",
+    "/admin/targets",
     "/projects",
     "/users",
     "/rbac",
