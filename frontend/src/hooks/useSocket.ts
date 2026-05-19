@@ -23,12 +23,13 @@ export const getSocket = (): Socket => {
       // Use /api/socket.io so requests go through the existing nginx /api
       // proxy block instead of needing a separate /socket.io location.
       path: "/api/socket.io",
-      // WebSocket-only: skip long-polling entirely.
-      // Long-polling holds one of the browser's 6 HTTP/1.1 connections open
-      // for ~25s per cycle, starving API calls on HTTP/1.1 (no HTTP/2 on
-      // the server). WebSocket uses a single persistent TCP connection that
-      // does not consume the HTTP connection pool after the initial upgrade.
-      transports: ["websocket"],
+      // WebSocket-first: try WebSocket immediately (fast, no polling overhead).
+      // Polling is kept as fallback only — it activates only if WebSocket
+      // fails (e.g. nginx not yet configured for WebSocket upgrade).
+      // This is intentionally different from the original ["polling","websocket"]
+      // which always started with polling and blocked one of the browser's 6
+      // HTTP/1.1 connections for ~25s per cycle, starving API calls.
+      transports: ["websocket", "polling"],
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 2000,
