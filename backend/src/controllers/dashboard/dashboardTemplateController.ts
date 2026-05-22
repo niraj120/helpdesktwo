@@ -577,7 +577,7 @@ export async function importDashboardTemplate(
     const { WidgetDefinition } =
       await import("../../models/dashboard/WidgetDefinition");
     const widgetKeys: string[] = [
-      ...new Set(bundle.widgets.map((w: any) => w.widgetKey)),
+      ...new Set<string>(bundle.widgets.map((w: any) => w.widgetKey as string)),
     ];
     const validDefs = await WidgetDefinition.find({
       widgetKey: { $in: widgetKeys },

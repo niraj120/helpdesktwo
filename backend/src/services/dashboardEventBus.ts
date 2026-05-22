@@ -43,7 +43,7 @@ export function initDashboardEventBus(): void {
       "ticket_open_count",
       "ticket_by_status",
       "ticket_trend_over_time",
-    ]).catch(console.error);
+    ]);
   });
 
   // ── ticket.closed ───────────────────────────────────────────────────────────
@@ -57,7 +57,7 @@ export function initDashboardEventBus(): void {
       "ticket_trend_over_time",
       "ticket_sla_compliance",
       "ticket_sla_resolution_rate",
-    ]).catch(console.error);
+    ]);
   });
 
   // ── ticket.assigned ─────────────────────────────────────────────────────────
@@ -67,7 +67,7 @@ export function initDashboardEventBus(): void {
     invalidateWidgetCache(tenantId, [
       "ticket_assignee_workload",
       "my_assigned_tickets",
-    ]).catch(console.error);
+    ]);
   });
 
   // ── ticket.status_changed ───────────────────────────────────────────────────
@@ -81,7 +81,7 @@ export function initDashboardEventBus(): void {
         "ticket_closed_count",
         "ticket_by_status",
         "ticket_sla_compliance",
-      ]).catch(console.error);
+      ]);
     },
   );
 
@@ -96,7 +96,7 @@ export function initDashboardEventBus(): void {
       "centre_ideal_vs_active",
       "centre_capacity_gap",
       "centre_capacity_utilisation",
-    ]).catch(console.error);
+    ]);
   });
 
   // ── user.status_changed ─────────────────────────────────────────────────────
@@ -113,7 +113,7 @@ export function initDashboardEventBus(): void {
         "centre_ideal_vs_active",
         "centre_capacity_gap",
         "centre_capacity_utilisation",
-      ]).catch(console.error);
+      ]);
     },
   );
 
@@ -127,7 +127,7 @@ export function initDashboardEventBus(): void {
         "centre_ideal_vs_active",
         "centre_capacity_gap",
         "centre_capacity_utilisation",
-      ]).catch(console.error);
+      ]);
     },
   );
 
@@ -140,7 +140,7 @@ export function initDashboardEventBus(): void {
       invalidateWidgetCache(tenantId, [
         "user_required_vs_onboarded",
         "user_onboarding_completion_rate",
-      ]).catch(console.error);
+      ]);
     },
   );
 
@@ -153,7 +153,7 @@ export function initDashboardEventBus(): void {
       invalidateWidgetCache(tenantId, [
         "attendance_today_rate",
         "attendance_mtd_rate",
-      ]).catch(console.error);
+      ]);
     },
   );
 

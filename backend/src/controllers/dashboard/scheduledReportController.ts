@@ -280,7 +280,7 @@ export async function deleteScheduledReport(
       return;
     }
 
-    destroyTask(String(report._id));
+    destroyTask(String((report as any)._id));
 
     res.json({ success: true, message: "Scheduled report deleted" });
   } catch (err: any) {
