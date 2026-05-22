@@ -43,15 +43,15 @@ const DashboardAssignmentSchema = new Schema<IDashboardAssignment>(
     scopeType: {
       type: String,
       enum: ["global", "project", "centre", "email_domain", "multi_centre"],
-      default: null,
+      default: undefined,
     },
     scopeProjectId: {
       type: Schema.Types.ObjectId,
       ref: "Project",
-      default: null,
+      default: undefined,
     },
     scopeCentreIds: [{ type: Schema.Types.ObjectId, ref: "Center" }],
-    scopeEmailDomain: { type: String, default: null },
+    scopeEmailDomain: { type: String, default: undefined },
     assignedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
     assignedAt: { type: Date, default: Date.now },
   },
