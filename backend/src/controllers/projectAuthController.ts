@@ -11,6 +11,7 @@ import { sendOTPSMS } from "../utils/smsService";
 import otpStore from "../utils/otpStore";
 import { generateProjectJWT } from "../utils/jwtUtils";
 import { config } from "../config";
+import { cache, CACHE_TTL } from "../utils/cache";
 
 // projectOtpStore replaced by centralized otpStore (hashed + optional Redis)
 
@@ -43,29 +44,43 @@ export const getProjectBrandingByUrl = async (req: Request, res: Response) => {
   try {
     const { urlPath } = req.params;
 
-    console.log("🎨 Fetching project branding for:", urlPath);
-
-    // Try to find project by customUrlPath first, then by domain
-    let project = await Project.findOne({
-      $or: [
-        { "branding.customUrlPath": urlPath.toLowerCase() },
-        { "branding.domainUrl": { $regex: new RegExp(urlPath, "i") } },
-      ],
-      isActive: true,
-      status: "active",
-    }).select(
-      "name code branding settings configuration.customizationSettings configuration.loginSettings.ssoSettings.keycloak",
-    );
+    // Check server-side cache first (15-min TTL)
+    // Use a distinct cache key to avoid collision with projectController's full-select cache
+    const cacheKey = `project:branding:auth:${urlPath}`;
+    let project = cache.get<any>(cacheKey);
 
     if (!project) {
-      console.log("❌ Project not found for URL:", urlPath);
+      // Cache miss — query DB with $or (customUrlPath exact match or domainUrl regex)
+      project = await Project.findOne({
+        $or: [
+          { "branding.customUrlPath": urlPath.toLowerCase() },
+          { "branding.domainUrl": { $regex: new RegExp(urlPath, "i") } },
+        ],
+        isActive: true,
+        status: "active",
+      })
+        .select(
+          "name code branding settings configuration.customizationSettings configuration.loginSettings.ssoSettings.keycloak",
+        )
+        .lean();
+
+      if (project) {
+        cache.set(cacheKey, project, CACHE_TTL.LONG);
+      }
+    }
+
+    if (!project) {
       return res.status(404).json({
         success: false,
         error: "Project not found",
       });
     }
 
-    console.log("✅ Project found:", project.name);
+    // Allow browsers to cache branding for 5 minutes
+    res.setHeader(
+      "Cache-Control",
+      "public, max-age=300, stale-while-revalidate=60",
+    );
 
     // Return branding information
     return res.json({

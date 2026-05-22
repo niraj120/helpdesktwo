@@ -8,6 +8,7 @@ import mongoose from "mongoose";
 import DOMPurify from "isomorphic-dompurify";
 import { fireNotification } from "../services/notificationEngine";
 import { TRIGGER_TYPES } from "../constants/notificationTriggers";
+import { User } from "../models/User";
 
 // DOMPurify configuration to preserve CSS styles from PDF converters
 const DOMPURIFY_CONFIG = {
@@ -40,6 +41,29 @@ const DOMPURIFY_CONFIG = {
   WHOLE_DOCUMENT: true,
   FORCE_BODY: false,
 };
+
+/**
+ * Returns a list of user IDs that should receive KB article notifications.
+ * If the article has role_based visibility, only users whose role is in
+ * visibleToRoles (and are in the project) receive the notification.
+ * Otherwise returns undefined to let the engine do its normal role fan-out.
+ */
+async function buildKbRecipientOverride(
+  article: any,
+  projectId: string,
+): Promise<string[] | undefined> {
+  if (article.visibility !== "role_based" || !article.visibleToRoles?.length) {
+    return undefined;
+  }
+  const users = await User.find({
+    role: { $in: article.visibleToRoles },
+    projects: new mongoose.Types.ObjectId(projectId),
+    isActive: true,
+  })
+    .select("_id")
+    .lean();
+  return users.map((u: any) => u._id.toString());
+}
 
 /**
  * Create a new KB Article
@@ -182,15 +206,27 @@ export const createArticle = async (
 
     // Notification engine: fire kb_article_published if immediately active
     if (newArticle.status === "active" && newArticle.projectIds?.[0]) {
-      fireNotification({
-        triggerType: TRIGGER_TYPES.KB_ARTICLE_PUBLISHED,
-        triggeredByUserId: userId,
-        projectId: newArticle.projectIds[0].toString(),
-        entityType: "kb_article",
-        entityId: newArticle._id as mongoose.Types.ObjectId,
-        deepLinkUrl: `/kb/${newArticle._id}`,
-        templateVars: { articleTitle: newArticle.documentName || "Untitled" },
-      }).catch(console.error);
+      const notifProjectId = newArticle.projectIds[0].toString();
+      const recipientOverride = await buildKbRecipientOverride(
+        newArticle,
+        notifProjectId,
+      );
+      // For role_based articles with no matching recipients, skip notification
+      if (
+        newArticle.visibility !== "role_based" ||
+        (recipientOverride && recipientOverride.length > 0)
+      ) {
+        fireNotification({
+          triggerType: TRIGGER_TYPES.KB_ARTICLE_PUBLISHED,
+          triggeredByUserId: userId,
+          projectId: notifProjectId,
+          entityType: "kb_article",
+          entityId: newArticle._id as mongoose.Types.ObjectId,
+          deepLinkUrl: `/kb/${newArticle._id}`,
+          templateVars: { articleTitle: newArticle.documentName || "Untitled" },
+          ...(recipientOverride ? { recipientOverride } : {}),
+        }).catch(console.error);
+      }
     }
   } catch (error: any) {
     console.error("Create KB Article error:", error);
@@ -669,7 +705,7 @@ export const updateArticle = async (
     });
 
     // Notification engine (non-blocking, fire after response)
-    (() => {
+    (async () => {
       const projectId = article.projectIds?.[0]?.toString();
       if (!projectId) return;
       const articleTitle = article.documentName || "Untitled";
@@ -677,40 +713,47 @@ export const updateArticle = async (
       const deepLink = `/kb/${article._id}`;
       const templateVars = { articleTitle };
 
+      // Only notify users who can actually see this article.
+      // For role_based visibility, restrict recipients to matching-role users.
+      const recipientOverride = await buildKbRecipientOverride(
+        article,
+        projectId,
+      );
+      if (
+        article.visibility === "role_based" &&
+        (!recipientOverride || recipientOverride.length === 0)
+      )
+        return;
+
+      const baseEvent = {
+        triggeredByUserId: userId,
+        projectId,
+        entityType: "kb_article" as const,
+        entityId: articleId,
+        deepLinkUrl: deepLink,
+        templateVars,
+        ...(recipientOverride ? { recipientOverride } : {}),
+      };
+
       if (status && status !== previousStatus) {
         if (status === "active") {
           fireNotification({
             triggerType: TRIGGER_TYPES.KB_ARTICLE_PUBLISHED,
-            triggeredByUserId: userId,
-            projectId,
-            entityType: "kb_article",
-            entityId: articleId,
-            deepLinkUrl: deepLink,
-            templateVars,
+            ...baseEvent,
           }).catch(console.error);
         } else if (status === "archived") {
           fireNotification({
             triggerType: TRIGGER_TYPES.KB_ARTICLE_ARCHIVED,
-            triggeredByUserId: userId,
-            projectId,
-            entityType: "kb_article",
-            entityId: articleId,
-            deepLinkUrl: deepLink,
-            templateVars,
+            ...baseEvent,
           }).catch(console.error);
         }
       } else {
         fireNotification({
           triggerType: TRIGGER_TYPES.KB_ARTICLE_UPDATED,
-          triggeredByUserId: userId,
-          projectId,
-          entityType: "kb_article",
-          entityId: articleId,
-          deepLinkUrl: deepLink,
-          templateVars,
+          ...baseEvent,
         }).catch(console.error);
       }
-    })();
+    })().catch(console.error);
   } catch (error: any) {
     console.error("Update KB Article error:", error);
     res.status(500).json({

@@ -362,7 +362,7 @@ const EmailConfigPage: React.FC = () => {
       try {
         const token = localStorage.getItem("authToken");
         console.log("Fetching projects for email config...");
-        const response = await axios.get(`${API_BASE_URL}/projects`, {
+        const response = await axios.get(`${API_BASE_URL}/projects?limit=100`, {
           headers: { Authorization: `Bearer ${token}` },
         });
 

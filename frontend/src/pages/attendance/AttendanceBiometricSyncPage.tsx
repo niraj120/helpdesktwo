@@ -72,7 +72,7 @@ export default function AttendanceBiometricSyncPage() {
   // Load projects
   useEffect(() => {
     axios
-      .get(`${API_BASE_URL}/projects`, { headers })
+      .get(`${API_BASE_URL}/projects?limit=100`, { headers })
       .then((r) => {
         const d = r.data?.data;
         setProjects(Array.isArray(d) ? d : (d?.projects ?? []));

@@ -225,79 +225,44 @@ export const getMyProjects = async (req: Request, res: Response) => {
       });
     }
 
-    // Use permissions from auth middleware (already populated)
-    // authReq.user.role.permissions contains populated Permission documents
+    // Per-user cache (5 min TTL) — eliminates repeated DB queries on page navigation
+    const myProjectsCacheKey = `my-projects:${authReq.user.userId}`;
+    const cachedProjects = cache.get<any[]>(myProjectsCacheKey);
+    if (cachedProjects) {
+      return res.json({ success: true, data: { projects: cachedProjects } });
+    }
+
     const authRole = authReq.user?.role;
     let hasViewAllPermission = false;
 
-    // Check if role permissions are populated (array of Permission objects with 'code')
     if (authRole?.permissions && Array.isArray(authRole.permissions)) {
       hasViewAllPermission = authRole.permissions.some(
         (p: any) => p?.code === "PROJECT_VIEW_ALL" || p === "PROJECT_VIEW_ALL",
       );
     }
 
-    // Also check role code - Super Admin should see all projects
     if (authRole?.code === "SUPER_ADMIN") {
       hasViewAllPermission = true;
     }
 
-    console.log(
-      `🔄 getMyProjects - User: ${authReq.user.email}, Role: ${authRole?.code}, Has PROJECT_VIEW_ALL: ${hasViewAllPermission}`,
-    );
-
     let projects: any[] = [];
 
     if (hasViewAllPermission) {
-      // User can see all active projects
       projects = await Project.find({ status: "active" })
         .sort({ name: 1 })
         .select("_id projectId name code customUrlPath branding logo status")
         .lean();
-      console.log(
-        `✅ User has PROJECT_VIEW_ALL, returning all ${projects.length} active projects`,
-      );
     } else {
-      // Get user with their role and projects for non-admin users
-      const user = await User.findById(authReq.user.userId).populate({
-        path: "role",
-        populate: {
-          path: "projects",
-          model: "Project",
-        },
-      });
-
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: "User not found",
-        });
-      }
-
-      const userRole = user.role as any;
-
-      console.log(
-        `📁 User's assigned projects (user.projects):`,
-        user.projects,
+      // Use project IDs already attached by authMiddleware — no extra DB query needed
+      const userDirectIds = (authReq.user.userDirectProjects || []).map(
+        (p: any) => p?.toString(),
       );
-      console.log(
-        `📁 User's role projects (role.projects):`,
-        userRole?.projects?.map((p: any) => p._id || p),
+      const roleProjectIds = (authReq.user.projects || []).map((p: any) =>
+        typeof p === "string" ? p : p?._id?.toString() || p?.toString(),
       );
-
-      // Combine projects from both user.projects and role.projects
-      const userProjectIds = user.projects?.map((p: any) => p.toString()) || [];
-      const roleProjectIds =
-        userRole?.projects?.map((p: any) =>
-          typeof p === "string" ? p : p._id?.toString() || p.toString(),
-        ) || [];
-
-      // Merge unique project IDs
       const allProjectIds = [
-        ...new Set([...userProjectIds, ...roleProjectIds]),
-      ];
-
-      console.log(`📁 Combined project IDs:`, allProjectIds);
+        ...new Set([...userDirectIds, ...roleProjectIds]),
+      ].filter(Boolean);
 
       if (allProjectIds.length > 0) {
         projects = await Project.find({
@@ -307,29 +272,23 @@ export const getMyProjects = async (req: Request, res: Response) => {
           .sort({ name: 1 })
           .select("_id projectId name code customUrlPath branding logo status")
           .lean();
-        console.log(
-          `✅ Returning ${projects.length} assigned projects for user ${user.email}`,
-        );
-      } else {
-        console.log(`⚠️ User ${user.email} has no assigned projects`);
       }
     }
 
-    return res.json({
-      success: true,
-      data: {
-        projects: projects.map((p) => ({
-          _id: p._id,
-          projectId: p.projectId,
-          name: p.name,
-          code: p.code,
-          customUrlPath: p.branding?.customUrlPath || p.code?.toLowerCase(), // Root level for easy access
-          branding: p.branding,
-          logo: p.logo,
-          status: p.status,
-        })),
-      },
-    });
+    const result = projects.map((p) => ({
+      _id: p._id,
+      projectId: p.projectId,
+      name: p.name,
+      code: p.code,
+      customUrlPath: p.branding?.customUrlPath || p.code?.toLowerCase(),
+      branding: p.branding,
+      logo: p.logo,
+      status: p.status,
+    }));
+
+    cache.set(myProjectsCacheKey, result, CACHE_TTL.MEDIUM);
+
+    return res.json({ success: true, data: { projects: result } });
   } catch (error) {
     console.error("Get my projects error:", error);
     return res.status(500).json({
@@ -954,10 +913,11 @@ export const getProjectBranding = async (req: Request, res: Response) => {
 
     console.log(`✅ Found project branding: ${project.name}`, brandingData);
 
-    // Set cache control headers to prevent stale branding data
-    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-    res.setHeader("Pragma", "no-cache");
-    res.setHeader("Expires", "0");
+    // Allow browsers and CDNs to cache branding for 5 minutes (stale-while-revalidate adds 60s grace)
+    res.setHeader(
+      "Cache-Control",
+      "public, max-age=300, stale-while-revalidate=60",
+    );
 
     return res.json({
       success: true,

@@ -63,6 +63,13 @@ import {
 // Export controller
 import { exportTickets } from "../controllers/ticketExportController";
 
+// Draft controller (idle auto-save)
+import {
+  getDraft,
+  saveDraft,
+  deleteDraft,
+} from "../controllers/ticketDraftController";
+
 // Merge controller
 import {
   mergeTickets,
@@ -463,6 +470,14 @@ router.post(
   checkPermission(["TICKET_REPLY", "TICKET_VIEW_ALL"]),
   sendTicketReply,
 );
+
+// Draft auto-save (idle-save method)
+// @route   GET    /api/tickets/:id/draft?type=reply|email
+// @route   PUT    /api/tickets/:id/draft
+// @route   DELETE /api/tickets/:id/draft?type=reply|email
+router.get("/:id/draft", authMiddleware, getDraft);
+router.put("/:id/draft", authMiddleware, saveDraft);
+router.delete("/:id/draft", authMiddleware, deleteDraft);
 
 // @desc    Add comment to ticket
 // @route   POST /api/tickets/:id/comments

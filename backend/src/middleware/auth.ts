@@ -1,12 +1,13 @@
-import { Request, Response, NextFunction } from 'express';
-import * as jwt from 'jsonwebtoken';
-import mongoose from 'mongoose';
-import { User } from '../models/User';
-import { config } from '../config';
-import { extractPermissionCodes } from '../utils/permissionUtils';
+import { Request, Response, NextFunction } from "express";
+import * as jwt from "jsonwebtoken";
+import mongoose from "mongoose";
+import { User } from "../models/User";
+import { config } from "../config";
+import { extractPermissionCodes } from "../utils/permissionUtils";
+import { cache } from "../utils/cache";
 
 export interface ProjectContext {
-  viewMode: 'single' | 'unified';
+  viewMode: "single" | "unified";
   currentProjectId: string | null;
   accessibleProjectIds: string[]; // Empty array means all projects (admin)
   isAdmin: boolean;
@@ -20,91 +21,108 @@ export interface AuthRequest extends Request {
     firstName?: string;
     lastName?: string;
     tokenVersion?: number;
-    projects?: any[]; // User's assigned projects
+    projects?: any[]; // Projects from user's role (ObjectIds)
+    userDirectProjects?: any[]; // Projects directly assigned to user (ObjectIds)
+    projectId?: string;   // Set when logged in via project-specific portal
+    projectName?: string; // Display name of that project
   };
   projectContext?: ProjectContext; // Attached by attachProjectContext middleware
 }
 
-export const authMiddleware = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+export const authMiddleware = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
   try {
-    const token = req.headers.authorization?.split(' ')[1];
+    const token = req.headers.authorization?.split(" ")[1];
 
     if (!token) {
-      console.log('❌ [AUTH] No token provided');
-      res.status(401).json({ message: 'No token provided' });
+      res.status(401).json({ message: "No token provided" });
       return;
     }
 
-    // Use centralized config for JWT secret
-    console.log('🔐 [AUTH] Verifying token with secure secret');
-    console.log('🎫 [AUTH] Token to verify (first 20 chars):', token.substring(0, 20));
     const decoded = jwt.verify(token, config.jwt.secret) as any;
-    
-    console.log('✅ [AUTH] Token verified for user:', decoded.userId, decoded.email);
-    
-    // Check if token version matches user's current token version
-    // AND fetch the full role with permissions for permission checking
+
+    // Cache key includes tokenVersion so the cache is auto-invalidated when
+    // permissions change (tokenVersion increments on role/permission updates).
+    const authCacheKey = `auth:processed:${decoded.userId}:${decoded.tokenVersion || 0}`;
+    const cachedUser = cache.get<AuthRequest["user"]>(authCacheKey);
+
+    if (cachedUser) {
+      req.user = cachedUser;
+      return next();
+    }
+
+    // Cache miss — fetch user from DB with role + permissions populated
     const user = await User.findById(decoded.userId)
-      .select('tokenVersion projects') // Include projects array
+      .select("tokenVersion projects")
       .populate({
-        path: 'role',
+        path: "role",
         populate: {
-          path: 'permissions'
-        }
+          path: "permissions",
+        },
       })
-      .populate('projects', 'name code branding status'); // Populate project details
-      
+      .populate("projects", "_id name code branding status")
+      .lean();
+
     if (user) {
-      const currentTokenVersion = user.tokenVersion || 0;
+      const currentTokenVersion = (user as any).tokenVersion || 0;
       const tokenTokenVersion = decoded.tokenVersion || 0;
-      
+
       if (currentTokenVersion !== tokenTokenVersion) {
-        console.log(`❌ [AUTH] Token version mismatch. User: ${currentTokenVersion}, Token: ${tokenTokenVersion}`);
-        console.log('🔄 [AUTH] Permissions have been updated. Please log in again.');
-        res.status(401).json({ 
-          message: 'Your permissions have been updated. Please log in again.',
-          code: 'TOKEN_VERSION_MISMATCH'
+        res.status(401).json({
+          message: "Your permissions have been updated. Please log in again.",
+          code: "TOKEN_VERSION_MISMATCH",
         });
         return;
       }
-      
-      // Attach full role with populated permissions to req.user
-      const role = user.role as any;
-      
-      // ✅ USE CENTRALIZED UTILITY TO EXTRACT PERMISSION CODES
+
+      const role = (user as any).role as any;
+
       const permissionCodes = await extractPermissionCodes(
         role?.permissions,
-        `Auth Middleware [${decoded.email}]`
+        `Auth Middleware [${decoded.email}]`,
       );
-      
-      req.user = {
+
+      const userData: AuthRequest["user"] = {
         userId: decoded.userId,
         email: decoded.email,
         role: {
-          ...role?.toObject?.() || role || {},
-          permissions: permissionCodes // ✅ Attach permission codes from utility
+          ...(role || {}),
+          permissions: permissionCodes,
         },
         firstName: decoded.firstName,
         lastName: decoded.lastName,
         tokenVersion: decoded.tokenVersion,
-        projects: (role as any)?.projects || [] // Projects from user's role
+        projects: role?.projects || [], // role-assigned project IDs
+        userDirectProjects:
+          ((user as any).projects as any[])?.map((p: any) => p._id || p) || [], // user's own project IDs
+        projectId: decoded.projectId ? decoded.projectId.toString() : undefined,
+        projectName: decoded.projectName,
       };
+
+      // Cache for 30 seconds — eliminates DB hit for every subsequent request
+      cache.set(authCacheKey, userData, 30);
+      req.user = userData;
     } else {
-      // User not found in database
       req.user = {
         userId: decoded.userId,
         email: decoded.email,
-        role: decoded.role, // Fallback to JWT role
+        role: decoded.role,
         firstName: decoded.firstName,
         lastName: decoded.lastName,
-        tokenVersion: decoded.tokenVersion
+        tokenVersion: decoded.tokenVersion,
       };
     }
 
     next();
   } catch (error) {
-    console.error('❌ [AUTH] Token verification failed:', error instanceof Error ? error.message : error);
-    res.status(401).json({ message: 'Invalid token' });
+    console.error(
+      "❌ [AUTH] Token verification failed:",
+      error instanceof Error ? error.message : error,
+    );
+    res.status(401).json({ message: "Invalid token" });
   }
 };
 
@@ -112,15 +130,21 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
 export const auth = authMiddleware;
 
 // Public auth middleware - allows requests without authentication
-export const publicAuth = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
-  console.log('✅ [PUBLIC_AUTH] Middleware executing');
+export const publicAuth = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  console.log("✅ [PUBLIC_AUTH] Middleware executing");
   try {
-    const token = req.headers.authorization?.split(' ')[1];
-    console.log(`✅ [PUBLIC_AUTH] Token present: ${token ? 'YES' : 'NO'}`);
+    const token = req.headers.authorization?.split(" ")[1];
+    console.log(`✅ [PUBLIC_AUTH] Token present: ${token ? "YES" : "NO"}`);
 
     if (!token) {
       // No token - continue without authentication
-      console.log('✅ [PUBLIC_AUTH] No token - continuing WITHOUT auth (public access)');
+      console.log(
+        "✅ [PUBLIC_AUTH] No token - continuing WITHOUT auth (public access)",
+      );
       next();
       return;
     }
@@ -128,19 +152,19 @@ export const publicAuth = async (req: AuthRequest, res: Response, next: NextFunc
     // Use centralized config for JWT secret
     const decoded = jwt.verify(token, config.jwt.secret) as any;
     console.log(`✅ [PUBLIC_AUTH] Token verified for user: ${decoded.userId}`);
-    
+
     req.user = {
       userId: decoded.userId,
       email: decoded.email,
       role: decoded.role,
       firstName: decoded.firstName,
-      lastName: decoded.lastName
+      lastName: decoded.lastName,
     };
 
     next();
   } catch (error) {
     // Invalid/expired token - continue without authentication
-    console.log('✅ [PUBLIC_AUTH] Invalid token - continuing WITHOUT auth');
+    console.log("✅ [PUBLIC_AUTH] Invalid token - continuing WITHOUT auth");
     next();
   }
 };

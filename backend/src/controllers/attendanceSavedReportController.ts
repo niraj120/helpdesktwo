@@ -211,25 +211,55 @@ export const updateAttendanceReportAssignment = async (
         .json({ success: false, message: "Report not found" });
     }
 
-    const { assignedToUsers = [], assignedToRoles = [] } = req.body;
+    const {
+      assignedToUsers = [],
+      assignedToRoles = [],
+      alertEnabled,
+      scheduleType,
+      scheduleDay,
+      scheduleTime,
+      ccUsers,
+      ccEmails,
+    } = req.body;
 
-    const assignment = await ReportAssignment.findOneAndUpdate(
+    const updatePayload: Record<string, any> = {
+      reportId: id,
+      assignedToUsers: assignedToUsers.map(
+        (uid: string) => new mongoose.Types.ObjectId(uid),
+      ),
+      assignedToRoles: assignedToRoles.map(
+        (rid: string) => new mongoose.Types.ObjectId(rid),
+      ),
+      assignedBy: new mongoose.Types.ObjectId(userId),
+      assignedAt: new Date(),
+    };
+    if (alertEnabled  !== undefined) updatePayload.alertEnabled  = alertEnabled;
+    if (scheduleType  !== undefined) updatePayload.scheduleType  = scheduleType;
+    if (scheduleDay   !== undefined) updatePayload.scheduleDay   = scheduleDay;
+    if (scheduleTime  !== undefined) updatePayload.scheduleTime  = scheduleTime;
+    if (ccUsers       !== undefined) updatePayload.ccUsers       = ccUsers;
+    if (ccEmails      !== undefined) updatePayload.ccEmails      = ccEmails;
+
+    const doc = await ReportAssignment.findOneAndUpdate(
       { reportId: id },
-      {
-        reportId: id,
-        assignedToUsers: assignedToUsers.map(
-          (uid: string) => new mongoose.Types.ObjectId(uid),
-        ),
-        assignedToRoles: assignedToRoles.map(
-          (rid: string) => new mongoose.Types.ObjectId(rid),
-        ),
-        assignedBy: new mongoose.Types.ObjectId(userId),
-        assignedAt: new Date(),
-      },
+      updatePayload,
       { upsert: true, new: true, runValidators: true },
     );
 
-    return res.status(200).json({ success: true, data: assignment });
+    // Register or destroy cron task
+    try {
+      const { registerAttendanceAlertTask, destroyAttendanceAlertTask } =
+        await import("../services/reports/attendanceAlertScheduler");
+      if (doc?.alertEnabled) {
+        registerAttendanceAlertTask(doc);
+      } else {
+        destroyAttendanceAlertTask(id);
+      }
+    } catch (schedErr) {
+      console.error("Attendance alert scheduler hook error:", schedErr);
+    }
+
+    return res.status(200).json({ success: true, data: doc });
   } catch (err: any) {
     console.error("updateAttendanceReportAssignment error:", err);
     return res
@@ -274,5 +304,34 @@ export const getMyAttendanceReports = async (req: Request, res: Response) => {
     return res
       .status(500)
       .json({ success: false, message: "Server error", error: err.message });
+  }
+};
+
+/**
+ * POST /api/attendance/reports/saved/:id/test-alert
+ * Immediately fires the scheduled report email for testing purposes.
+ */
+export const testAttendanceReportAlert = async (
+  req: Request,
+  res: Response,
+) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: "Invalid id" });
+    }
+    const { sendAttendanceAlertNow } = await import(
+      "../services/reports/attendanceAlertScheduler"
+    );
+    await sendAttendanceAlertNow(id);
+    return res
+      .status(200)
+      .json({ success: true, message: "Test alert sent successfully" });
+  } catch (err: any) {
+    console.error("testAttendanceReportAlert error:", err);
+    return res.status(500).json({
+      success: false,
+      message: err.message ?? "Failed to send test alert",
+    });
   }
 };

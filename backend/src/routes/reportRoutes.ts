@@ -24,6 +24,7 @@ import {
   deleteReportAssignment,
   getMyReports,
   getAssignableReportUsers,
+  testReportAlert,
 } from "../controllers/reports/reportController";
 
 const router = express.Router();
@@ -156,6 +157,12 @@ router.delete(
   auth,
   checkPermission("REPORT_VIEW_TICKETS"),
   deleteReportAssignment,
+);
+router.post(
+  "/assignments/:reportId/test-alert",
+  auth,
+  checkPermission("REPORT_VIEW_TICKETS"),
+  testReportAlert,
 );
 
 // ── My assigned reports (no permission gate beyond auth) ─────────────────────

@@ -46,7 +46,7 @@ const HierarchyLevelSchema = new Schema<IHierarchyLevel>(
       type: Number,
       required: true,
       min: 1,
-      max: 4,
+      max: 5,
     },
     displayName: {
       type: String,
@@ -78,15 +78,15 @@ const VisibilitySettingsSchema = new Schema<IVisibilitySettings>(
   {
     showInOnlineForm: {
       type: [Number],
-      default: [1, 2, 3, 4],
+      default: [1, 2, 3, 4, 5],
     },
     showInOfflineForm: {
       type: [Number],
-      default: [1, 2, 3, 4],
+      default: [1, 2, 3, 4, 5],
     },
     showInTicketDisplay: {
       type: [Number],
-      default: [1, 2, 3, 4],
+      default: [1, 2, 3, 4, 5],
     },
     showInFilters: {
       type: [Number],
@@ -112,7 +112,7 @@ const HierarchyConfigSchema = new Schema<IHierarchyConfig>(
       type: Number,
       required: true,
       min: 1,
-      max: 4,
+      max: 5,
       default: 1, // Default to single-level (current system)
     },
     levels: {
@@ -120,28 +120,28 @@ const HierarchyConfigSchema = new Schema<IHierarchyConfig>(
       required: true,
       validate: {
         validator: function(levels: IHierarchyLevel[]) {
-          // Must have at least 1 level and at most 4 levels
-          if (levels.length < 1 || levels.length > 4) return false;
+          // Must have at least 1 level and at most 5 levels
+          if (levels.length < 1 || levels.length > 5) return false;
           // Level numbers must be sequential starting from 1
           return levels.every((level, index) => level.levelNumber === index + 1);
         },
-        message: 'Levels must be sequential from 1 to 4',
+        message: 'Levels must be sequential from 1 to 5',
       },
     },
     visibilitySettings: {
       type: VisibilitySettingsSchema,
       default: () => ({
-        showInOnlineForm: [1, 2, 3, 4],
-        showInOfflineForm: [1, 2, 3, 4],
-        showInTicketDisplay: [1, 2, 3, 4],
+        showInOnlineForm: [1, 2, 3, 4, 5],
+        showInOfflineForm: [1, 2, 3, 4, 5],
+        showInTicketDisplay: [1, 2, 3, 4, 5],
         showInFilters: [1, 2],
       }),
     },
     priorityFromLevel: {
       type: Number,
-      default: 0, // 0 means manual priority selection, 1-4 means use priority from that level's category
+      default: 0, // 0 means manual priority selection, 1-5 means use priority from that level's category
       min: 0,
-      max: 4,
+      max: 5,
     },
     isActive: {
       type: Boolean,

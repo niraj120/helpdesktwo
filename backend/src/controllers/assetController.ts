@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { Asset } from '../models/Asset';
 import { CenterAssetMapping } from '../models/CenterAssetMapping';
 import { Project } from '../models/Project';
+import { logActivity } from '../utils/logger';
 
 // @desc    Create new asset
 // @route   POST /api/assets
@@ -9,7 +10,10 @@ import { Project } from '../models/Project';
 export const createAsset = async (req: Request, res: Response) => {
   try {
     const { projectId, name, description, category, predefinedCount, unit } = req.body;
-    const userId = (req as any).user.userId;
+    const user = (req as any).user;
+    const userId = user.userId;
+    const userName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Unknown User';
+    const userEmail = user.email || '';
 
     if (!projectId || !name || predefinedCount === undefined) {
       return res.status(400).json({
@@ -47,6 +51,20 @@ export const createAsset = async (req: Request, res: Response) => {
       predefinedCount,
       unit: unit || 'units',
       createdBy: userId
+    });
+
+    await logActivity({
+      userId,
+      userName,
+      userEmail,
+      action: 'create',
+      entity: 'Asset',
+      entityId: asset._id.toString(),
+      entityName: name,
+      projectId: projectId,
+      projectName: project.name,
+      description: `Asset "${name}" created with predefined count ${predefinedCount}${unit ? ` ${unit}` : ''}`,
+      req,
     });
 
     return res.status(201).json({
@@ -187,6 +205,10 @@ export const updateAsset = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { name, description, category, predefinedCount, unit, isActive } = req.body;
+    const user = (req as any).user;
+    const userId = user.userId;
+    const userName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Unknown User';
+    const userEmail = user.email || '';
 
     const asset = await Asset.findById(id);
 
@@ -213,6 +235,15 @@ export const updateAsset = async (req: Request, res: Response) => {
       }
     }
 
+    // Capture old values for audit trail
+    const changes: Array<{ field: string; oldValue: any; newValue: any }> = [];
+    if (name && name !== asset.name)                     changes.push({ field: 'name', oldValue: asset.name, newValue: name });
+    if (description !== undefined && description !== asset.description) changes.push({ field: 'description', oldValue: asset.description, newValue: description });
+    if (category !== undefined && String(category) !== String(asset.category)) changes.push({ field: 'category', oldValue: asset.category, newValue: category });
+    if (predefinedCount !== undefined && predefinedCount !== asset.predefinedCount) changes.push({ field: 'predefinedCount', oldValue: asset.predefinedCount, newValue: predefinedCount });
+    if (unit && unit !== asset.unit)                     changes.push({ field: 'unit', oldValue: asset.unit, newValue: unit });
+    if (isActive !== undefined && isActive !== asset.isActive) changes.push({ field: 'isActive', oldValue: asset.isActive, newValue: isActive });
+
     // Update fields
     if (name) asset.name = name;
     if (description !== undefined) asset.description = description;
@@ -222,6 +253,22 @@ export const updateAsset = async (req: Request, res: Response) => {
     if (isActive !== undefined) asset.isActive = isActive;
 
     await asset.save();
+
+    await logActivity({
+      userId,
+      userName,
+      userEmail,
+      action: 'update',
+      entity: 'Asset',
+      entityId: asset._id.toString(),
+      entityName: asset.name,
+      projectId: asset.projectId?.toString(),
+      changes,
+      description: changes.length > 0
+        ? `Asset "${asset.name}" updated: ${changes.map(c => c.field).join(', ')}`
+        : `Asset "${asset.name}" updated (no field changes)`,
+      req,
+    });
 
     return res.status(200).json({
       success: true,
@@ -244,6 +291,10 @@ export const updateAsset = async (req: Request, res: Response) => {
 export const deleteAsset = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const user = (req as any).user;
+    const userId = user.userId;
+    const userName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Unknown User';
+    const userEmail = user.email || '';
 
     const asset = await Asset.findById(id);
 
@@ -263,6 +314,26 @@ export const deleteAsset = async (req: Request, res: Response) => {
         message: `Cannot delete asset. It is currently mapped to ${mappingCount} center(s). Please remove all mappings first.`
       });
     }
+
+    // Log before deletion so we retain asset info
+    await logActivity({
+      userId,
+      userName,
+      userEmail,
+      action: 'delete',
+      entity: 'Asset',
+      entityId: asset._id.toString(),
+      entityName: asset.name,
+      projectId: asset.projectId?.toString(),
+      description: `Asset "${asset.name}" deleted`,
+      metadata: {
+        predefinedCount: asset.predefinedCount,
+        unit: asset.unit,
+        category: asset.category,
+        isActive: asset.isActive,
+      },
+      req,
+    });
 
     await Asset.findByIdAndDelete(id);
 

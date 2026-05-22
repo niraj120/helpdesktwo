@@ -22,6 +22,9 @@ import UserManagement from "../components/UserManagement";
 import RedirectToFirstRoute from "../components/RedirectToFirstRoute";
 import EmailConfigPage from "./EmailConfigPage";
 import ProjectDashboard from "./ProjectDashboard";
+import DashboardEnginePage from "./DashboardEnginePage";
+import { fetchMyDashboards } from "../services/dashboardEngineService";
+import { useQuery } from "@tanstack/react-query";
 import MyAssets from "../components/MyAssets";
 
 import ManpowerReport from "./ManpowerReport";
@@ -1295,6 +1298,30 @@ const AgentTicketsContent = ({
   );
 };
 
+/**
+ * PortalDashboard — shows the assigned custom dashboard engine when the user
+ * has at least one DashboardAssignment for their role; falls back to the
+ * legacy ProjectDashboard (ticket stats) when none are assigned.
+ */
+const PortalDashboard = () => {
+  const { data: tabs, isLoading } = useQuery(
+    ["myDashboards"],
+    fetchMyDashboards,
+    { staleTime: 0, refetchOnMount: true, retry: 1 },
+  );
+
+  // While loading, show nothing (avoids flash of old dashboard)
+  if (isLoading) return null;
+
+  // If the user has assigned dashboards, show the engine without its own layout wrapper
+  if (tabs && tabs.length > 0) {
+    return <DashboardEnginePage wrapWithLayout={false} />;
+  }
+
+  // Fallback: old ticket-stats dashboard
+  return <ProjectDashboard wrapWithLayout={false} />;
+};
+
 const ProjectPortalDashboard = () => {
   const navigate = useNavigate();
   const { customUrlPath } = useParams();
@@ -1421,10 +1448,7 @@ const ProjectPortalDashboard = () => {
   return (
     <DashboardLayout logoutRedirectPath={`/${customUrlPath}/portal/login`}>
       <Routes>
-        <Route
-          path="/dashboard"
-          element={<ProjectDashboard wrapWithLayout={false} />}
-        />
+        <Route path="/dashboard" element={<PortalDashboard />} />
 
         {/* Submit Query - Authenticated student form */}
         <Route

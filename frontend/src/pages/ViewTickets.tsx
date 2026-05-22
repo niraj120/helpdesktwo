@@ -250,6 +250,23 @@ interface ViewTicketsProps {
   wrapWithLayout?: boolean;
 }
 
+// ─── Module-level cache ─────────────────────────────────────────────────────
+// Survives unmount/remount (tab switches) so switching back is instant.
+const VIEWTICKETS_CACHE_TTL = 2 * 60 * 1000; // 2 minutes
+interface ViewTicketsCacheEntry {
+  tickets: Ticket[];
+  total: number;
+  timestamp: number;
+}
+interface ViewMasterDataCacheEntry {
+  statuses: Array<{ code: number; name: string }>;
+  priorities: PriorityOption[];
+  timestamp: number;
+}
+const viewTicketsCache = new Map<string, ViewTicketsCacheEntry>();
+const viewMasterDataCache = new Map<string, ViewMasterDataCacheEntry>();
+// ────────────────────────────────────────────────────────────────────────────
+
 const Wrapper = ({
   children,
   wrap,
@@ -294,8 +311,18 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     }
   };
 
-  const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Init from module-level cache so returning to this tab is instant (no loading spinner)
+  const _vtInitCacheKey = `viewtickets:${initialProjectId || "all"}:p1`;
+  const _vtInitCached = viewTicketsCache.get(_vtInitCacheKey);
+  const _vtHasCache = !!(
+    _vtInitCached &&
+    Date.now() - _vtInitCached.timestamp < VIEWTICKETS_CACHE_TTL
+  );
+
+  const [tickets, setTickets] = useState<Ticket[]>(
+    _vtHasCache ? _vtInitCached!.tickets : [],
+  );
+  const [loading, setLoading] = useState(!_vtHasCache); // skip spinner when cache is warm
   // US-ESC-009: force re-render every 60s so SLA countdowns stay current
   const [, forceUpdate] = React.useReducer((n: number) => n + 1, 0);
   useEffect(() => {
@@ -573,7 +600,6 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
       const token = localStorage.getItem("authToken");
       if (!token) return;
 
-      // Resolve project ID — check argument first, then localStorage context
       let pid = projectId;
       if (!pid) {
         const ctx = localStorage.getItem("projectContext");
@@ -586,8 +612,14 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
         }
       }
 
+      const mdKey = `viewmaster:${pid || "all"}`;
+      const mdCached = viewMasterDataCache.get(mdKey);
+      if (mdCached && Date.now() - mdCached.timestamp < VIEWTICKETS_CACHE_TTL) {
+        setStatuses(mdCached.statuses);
+        return;
+      }
+
       if (pid) {
-        // Project-specific statuses
         const res = await axios.get(
           `${API_CONFIG.API_URL}/statuses/project/${pid}`,
           { headers: { Authorization: `Bearer ${token}` } },
@@ -597,12 +629,20 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
           Array.isArray(res.data.data) &&
           res.data.data.length > 0
         ) {
-          setStatuses(
-            res.data.data.map((s: any) => ({ code: s.code, name: s.name })),
-          );
+          const statusData = res.data.data.map((s: any) => ({
+            code: s.code,
+            name: s.name,
+          }));
+          setStatuses(statusData);
+          // Merge into master-data cache
+          const existing = viewMasterDataCache.get(mdKey);
+          viewMasterDataCache.set(mdKey, {
+            statuses: statusData,
+            priorities: existing?.priorities ?? [],
+            timestamp: Date.now(),
+          });
         }
       } else {
-        // No project context (super admin or global view) — fetch all statuses and deduplicate by code
         const res = await axios.get(`${API_CONFIG.API_URL}/statuses/all`, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -615,11 +655,19 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
               return true;
             })
             .map((s: any) => ({ code: s.code, name: s.name }));
-          if (unique.length > 0) setStatuses(unique);
+          if (unique.length > 0) {
+            setStatuses(unique);
+            const existing = viewMasterDataCache.get(mdKey);
+            viewMasterDataCache.set(mdKey, {
+              statuses: unique,
+              priorities: existing?.priorities ?? [],
+              timestamp: Date.now(),
+            });
+          }
         }
       }
-    } catch (err) {
-      console.error("[fetchStatuses] failed:", err);
+    } catch {
+      /* non-fatal */
     }
   };
 
@@ -628,34 +676,78 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     projectFilter: string = filterProject,
     assignedToFilter: string = filterAssignedTo,
   ) => {
+    const isDefaultFetch =
+      page === 1 &&
+      projectFilter === (initialProjectId ?? "all") &&
+      assignedToFilter === "all";
+    const cacheKey = `viewtickets:${projectFilter}:p${page}`;
+
+    // Show cached data instantly on first (default) fetch if cache is warm
+    if (isDefaultFetch) {
+      const cached = viewTicketsCache.get(cacheKey);
+      if (cached && Date.now() - cached.timestamp < VIEWTICKETS_CACHE_TTL) {
+        setTickets(cached.tickets);
+        setTotalTickets(cached.total);
+        setLoading(false);
+        // Silent background refresh
+        (async () => {
+          try {
+            const token = localStorage.getItem("authToken");
+            if (!token) return;
+            const bgRes = await axios.get(`${API_CONFIG.API_URL}/tickets`, {
+              headers: { Authorization: `Bearer ${token}` },
+              params: {
+                page,
+                limit: pageSize,
+                ...(projectFilter !== "all"
+                  ? { projectId: projectFilter }
+                  : {}),
+              },
+            });
+            if (bgRes.data.success) {
+              const fresh = bgRes.data.data.tickets || bgRes.data.data;
+              const pagination = bgRes.data.data.pagination;
+              if (Array.isArray(fresh)) {
+                viewTicketsCache.set(cacheKey, {
+                  tickets: fresh,
+                  total: pagination?.total ?? fresh.length,
+                  timestamp: Date.now(),
+                });
+                setTickets(fresh);
+                if (pagination) {
+                  setTotalPages(pagination.totalPages ?? 1);
+                  setTotalTickets(pagination.total ?? fresh.length);
+                }
+              }
+            }
+          } catch {
+            /* silent */
+          }
+        })();
+        return;
+      }
+    }
+
     try {
       setLoading(true);
       const token = localStorage.getItem("authToken");
-
       if (!token) {
         navigate("/login");
         return;
       }
 
-      const params: Record<string, string | number> = {
-        page,
-        limit: pageSize,
-      };
+      const params: Record<string, string | number> = { page, limit: pageSize };
       if (projectFilter !== "all") params.projectId = projectFilter;
       if (assignedToFilter === "unassigned") params.assignedTo = "unassigned";
       else if (assignedToFilter !== "all") params.assignedTo = assignedToFilter;
-      // Server-side filter params — read from current state via closure
       if (filterStatus !== "all") params.status = filterStatus;
       if (filterPriority !== "all") params.priority = filterPriority;
       if (filterDateFrom) params.createdAfter = filterDateFrom;
       if (filterDateTo) params.createdBefore = filterDateTo;
       if (deferredSearchQuery.trim())
         params.search = deferredSearchQuery.trim();
-
-      // Add custom field filters
       Object.entries(customFieldFilters).forEach(([key, val]) => {
         if (val && val.trim()) {
-          // key is like "field_ApplicationID", backend expects "customField_ApplicationID"
           const fieldName = key.replace(/^field_/, "");
           params[`customField_${fieldName}`] = val.trim();
         }
@@ -669,22 +761,30 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
       if (response.data.success) {
         const ticketsData = response.data.data.tickets || response.data.data;
         const pagination = response.data.data.pagination;
+        const ticketArray = Array.isArray(ticketsData) ? ticketsData : [];
 
-        setTickets(Array.isArray(ticketsData) ? ticketsData : []);
-        setSelectedTicketIds(new Set()); // clear selection on page change
+        setTickets(ticketArray);
+        setSelectedTicketIds(new Set());
 
-        // Update pagination state
         if (pagination) {
           setCurrentPage(pagination.page || page);
           setTotalPages(pagination.totalPages || 1);
-          setTotalTickets(pagination.total || ticketsData.length);
+          setTotalTickets(pagination.total || ticketArray.length);
         } else {
-          setTotalTickets(ticketsData.length);
+          setTotalTickets(ticketArray.length);
           setTotalPages(1);
+        }
+
+        // Cache page-1 default fetch for fast tab-switch restore
+        if (isDefaultFetch) {
+          viewTicketsCache.set(cacheKey, {
+            tickets: ticketArray,
+            total: pagination?.total ?? ticketArray.length,
+            timestamp: Date.now(),
+          });
         }
       }
     } catch (error: any) {
-      console.error("Error fetching tickets:", error);
       if (error.response?.status === 401) {
         localStorage.removeItem("authToken");
         navigate("/login");

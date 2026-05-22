@@ -4,7 +4,7 @@ export interface IActivityLog extends Document {
   userId: mongoose.Types.ObjectId;
   userName: string;
   userEmail: string;
-  action: 'create' | 'update' | 'delete' | 'edit';
+  action: 'create' | 'update' | 'delete' | 'edit' | 'access_denied';
   entity: string; // e.g., 'ticket', 'user', 'project', 'sla-rule', 'escalation-policy'
   entityId?: string;
   entityName?: string;
@@ -42,7 +42,7 @@ const activityLogSchema = new Schema<IActivityLog>({
   action: { 
     type: String, 
     required: true,
-    enum: ['create', 'update', 'delete', 'edit'],
+    enum: ['create', 'update', 'delete', 'edit', 'access_denied'],
     index: true 
   },
   entity: { 

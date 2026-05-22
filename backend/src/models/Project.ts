@@ -358,6 +358,12 @@ export interface IProject extends Document {
       placeholder?: string;
     }>;
   };
+  // Dashboard: project-level total user headcount target
+  userTarget?: {
+    required?: number | null;
+    requiredUpdatedBy?: mongoose.Types.ObjectId;
+    requiredUpdatedAt?: Date;
+  };
 }
 
 const projectSchema = new Schema<IProject>(
@@ -859,6 +865,12 @@ const projectSchema = new Schema<IProject>(
           placeholder: { type: String },
         },
       ],
+    },
+    // Dashboard: project-level total user headcount target
+    userTarget: {
+      required: { type: Number, default: null },
+      requiredUpdatedBy: { type: Schema.Types.ObjectId, ref: "User" },
+      requiredUpdatedAt: { type: Date },
     },
   },
   {

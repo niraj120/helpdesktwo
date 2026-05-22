@@ -43,6 +43,7 @@ import HierarchyCategorySelector, {
 } from "../components/HierarchyCategorySelector";
 import { TicketMergeModal } from "../components/tickets/TicketMergeModal";
 import { API_CONFIG } from "../config/constants";
+import { useReplyDraft } from "../hooks/useReplyDraft";
 import {
   ArrowLeftIcon,
   PaperClipIcon,
@@ -493,8 +494,15 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
     "details" | "replies" | "notes" | "history" | "emails" | "audit"
   >("replies"); // Task 6.5: Added 'emails' tab
 
-  // Reply states
-  const [replyMessage, setReplyMessage] = useState("");
+  // Reply states (useReplyDraft: idle-save auto-draft)
+  const {
+    value: replyMessage,
+    onChange: setReplyMessage,
+    saveStatus: replyDraftStatus,
+    draftRestored: replyDraftRestored,
+    dismissRestoreBanner: dismissReplyDraftBanner,
+    clearDraft: clearReplyDraft,
+  } = useReplyDraft(ticketId, "reply");
   const [replyFiles, setReplyFiles] = useState<FileList | null>(null);
   const [isSubmittingReply, setIsSubmittingReply] = useState(false);
 
@@ -622,8 +630,16 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
   const [loadingEmails, setLoadingEmails] = useState(false);
   const [expandedEmails, setExpandedEmails] = useState<Set<string>>(new Set());
 
-  // Task 7.1: Email reply state
-  const [replyContent, setReplyContent] = useState("");
+  // Task 7.1: Email reply state (useReplyDraft: idle-save auto-draft)
+  const {
+    value: replyContent,
+    onChange: onReplyContentChange,
+    setValue: setReplyContent,
+    saveStatus: emailDraftStatus,
+    draftRestored: emailDraftRestored,
+    dismissRestoreBanner: dismissEmailDraftBanner,
+    clearDraft: clearEmailDraft,
+  } = useReplyDraft(ticketId, "email");
   const [sendingReply, setSendingReply] = useState(false);
   const [replySuccess, setReplySuccess] = useState("");
   const [replyError, setReplyError] = useState("");
@@ -1294,7 +1310,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
         // Signature fetch failure is non-critical; proceed without one
       }
     }
-    setReplyContent(""); // Signature shown as separate HTML preview block below the textarea
+    // Do NOT clear replyContent here — preserve any restored draft
     setShowReplyForm(true);
   };
 
@@ -1351,7 +1367,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
 
       if (response.data.success) {
         setReplySuccess("Email reply sent successfully!");
-        setReplyContent(""); // Clear form
+        await clearEmailDraft(); // Clear draft + localStorage + backend
         setShowReplyForm(false); // Hide form
 
         // Refresh email communications to show the new reply
@@ -1670,7 +1686,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
         },
       );
 
-      setReplyMessage("");
+      await clearReplyDraft(); // Clear draft + localStorage + backend
       setReplyFiles(null);
       fetchTicketDetails();
     } catch (error) {
@@ -2393,6 +2409,17 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                             <label className="block text-sm font-medium text-gray-700 mb-2">
                               Add Reply
                             </label>
+                            {replyDraftRestored && (
+                              <div className="text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 text-sm mb-2 flex items-center justify-between">
+                                <span>📋 Draft restored — your unsent reply has been loaded</span>
+                                <button type="button" onClick={dismissReplyDraftBanner} className="ml-2 text-amber-500 hover:text-amber-700 font-bold">✕</button>
+                              </div>
+                            )}
+                            {replyDraftStatus !== "idle" && (
+                              <div style={{ fontSize: 12, marginBottom: 4, color: replyDraftStatus === "saved" ? "#16a34a" : replyDraftStatus === "saving" ? "#2563eb" : replyDraftStatus === "error" ? "#dc2626" : "#d97706" }}>
+                                {replyDraftStatus === "saving" ? "⏳ Saving draft…" : replyDraftStatus === "saved" ? "✓ Draft saved" : replyDraftStatus === "error" ? "⚠ Failed to save draft" : "● Unsaved changes"}
+                              </div>
+                            )}
                             <textarea
                               value={replyMessage}
                               onChange={(e) => setReplyMessage(e.target.value)}
@@ -3890,7 +3917,6 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                             <button
                               onClick={() => {
                                 setShowReplyForm(false);
-                                setReplyContent("");
                                 setReplyError("");
                               }}
                               className="text-gray-400 hover:text-gray-600 transition-colors"
@@ -3901,9 +3927,20 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                           </div>
 
                           {/* Reply Textarea */}
+                          {emailDraftRestored && (
+                            <div className="text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 text-sm mb-2 flex items-center justify-between">
+                              <span>📋 Draft restored — your unsent email reply has been loaded</span>
+                              <button type="button" onClick={dismissEmailDraftBanner} className="ml-2 text-amber-500 hover:text-amber-700 font-bold">✕</button>
+                            </div>
+                          )}
+                          {emailDraftStatus !== "idle" && (
+                            <div style={{ fontSize: 12, marginBottom: 4, color: emailDraftStatus === "saved" ? "#16a34a" : emailDraftStatus === "saving" ? "#2563eb" : emailDraftStatus === "error" ? "#dc2626" : "#d97706" }}>
+                              {emailDraftStatus === "saving" ? "⏳ Saving draft…" : emailDraftStatus === "saved" ? "✓ Draft saved" : emailDraftStatus === "error" ? "⚠ Failed to save draft" : "● Unsaved changes"}
+                            </div>
+                          )}
                           <textarea
                             value={replyContent}
-                            onChange={(e) => setReplyContent(e.target.value)}
+                            onChange={(e) => onReplyContentChange(e.target.value)}
                             placeholder="Type your reply here..."
                             rows={6}
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y"
@@ -3934,7 +3971,6 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                               <button
                                 onClick={() => {
                                   setShowReplyForm(false);
-                                  setReplyContent("");
                                   setReplyError("");
                                 }}
                                 className="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"

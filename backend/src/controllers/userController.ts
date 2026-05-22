@@ -8,6 +8,7 @@ import { logActivity } from "../utils/logger";
 import { validatePasswordPolicy } from "../utils/passwordPolicyUtils";
 import ExcelJS from "exceljs";
 import multer from "multer";
+import { dashboardEvents } from "../services/dashboardEventBus";
 
 // Multer config for bulk upload (memory storage, Excel files only)
 const bulkUploadStorage = multer.memoryStorage();
@@ -574,6 +575,14 @@ export const createUser = async (
       data: userResponse,
       message: "User created successfully",
     });
+
+    // Dashboard cache invalidation (fire-and-forget, after response sent)
+    const firstProjectId =
+      (user.projects?.[0] as any)?._id?.toString() ??
+      (user.projects?.[0] as any)?.toString();
+    if (firstProjectId) {
+      dashboardEvents.emit("user.created", { tenantId: firstProjectId });
+    }
   } catch (error: any) {
     console.error("Error creating user:", error);
 
@@ -983,6 +992,14 @@ export const toggleUserStatus = async (
 
     user.isActive = !user.isActive;
     await user.save();
+
+    // Dashboard cache invalidation (fire-and-forget)
+    const userProjectId =
+      (user.projects?.[0] as any)?._id?.toString() ??
+      (user.projects?.[0] as any)?.toString();
+    if (userProjectId) {
+      dashboardEvents.emit("user.status_changed", { tenantId: userProjectId });
+    }
 
     await user.populate("role", "name code");
     await user.populate("projects", "name code");

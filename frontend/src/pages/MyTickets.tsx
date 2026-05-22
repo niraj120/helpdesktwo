@@ -548,26 +548,26 @@ const MyTickets: React.FC<MyTicketsProps> = ({
         statusData.length > 0 ? statusData : defaultStatuses;
       setStatuses(resolvedStatuses);
 
-      // Fetch priorities
+      // Fetch priorities from sla-rules (source of truth for priority names per project)
       let priorityList: Array<{ code: string; name: string }> = [];
       try {
-        const priorityResponse = await axios.get(
-          `${API_BASE_URL}/priorities/active`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-            params: projectId ? { projectId } : {},
-          },
-        );
+        const slaParams: Record<string, string> = { isActive: "true" };
+        if (projectId) slaParams.projectId = projectId;
+        const slaResponse = await axios.get(`${API_BASE_URL}/sla-rules`, {
+          headers: { Authorization: `Bearer ${token}` },
+          params: slaParams,
+        });
         if (
-          priorityResponse.data.success &&
-          Array.isArray(priorityResponse.data.data)
+          slaResponse.data.success &&
+          Array.isArray(slaResponse.data.data) &&
+          slaResponse.data.data.length > 0
         ) {
           const seen = new Set<string>();
-          priorityList = (priorityResponse.data.data as any[])
+          priorityList = (slaResponse.data.data as any[])
             .map((p: any) => {
-              const code = String(p.code || p.name || "").trim();
-              if (!code) return null;
-              return { code, name: p.name ? String(p.name) : code };
+              const name = String(p.name || "").trim();
+              if (!name) return null;
+              return { code: name, name };
             })
             .filter((item): item is { code: string; name: string } => !!item)
             .filter((item) => {

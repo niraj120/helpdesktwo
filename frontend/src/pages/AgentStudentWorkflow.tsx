@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
 import axios from "axios";
 import { API_CONFIG } from "../config/constants";
+import { useBranding } from "../contexts/BrandingContext";
 import HierarchyCategorySelector, {
   CategoryHierarchyValue,
   useHierarchyConfig,
@@ -281,8 +282,10 @@ const CenterPickerScreen: React.FC<{
 const AgentStudentWorkflow: React.FC = () => {
   // Get customUrlPath from URL
   const { customUrlPath } = useParams<{ customUrlPath: string }>();
-  const [projectId, setProjectId] = useState<string>("");
-  const [projectLoading, setProjectLoading] = useState(true);
+
+  // Use branding context (already fetched by BrandingProvider at /:customUrlPath/portal/*)
+  const { branding, loading: projectLoading } = useBranding();
+  const projectId = branding?.projectId || "";
 
   // Workflow state
   const [workflowStep, setWorkflowStep] = useState<WorkflowStep>("search");
@@ -295,28 +298,6 @@ const AgentStudentWorkflow: React.FC = () => {
   const [offlineSettings, setOfflineSettings] =
     useState<OfflineSettings | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(true);
-
-  // Fetch projectId from customUrlPath
-  useEffect(() => {
-    const fetchProjectId = async () => {
-      try {
-        const response = await axios.get(
-          `${API_CONFIG.API_URL}/projects/branding/${customUrlPath}`,
-        );
-        if (response.data.success && response.data.data) {
-          setProjectId(response.data.data.projectId || response.data.data._id);
-        }
-      } catch (error) {
-        console.error("Error fetching project:", error);
-      } finally {
-        setProjectLoading(false);
-      }
-    };
-
-    if (customUrlPath) {
-      fetchProjectId();
-    }
-  }, [customUrlPath]);
 
   // Step 1: Student Search States
   const [searchQuery, setSearchQuery] = useState("");

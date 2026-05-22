@@ -5,6 +5,7 @@ import { Project } from "../models/Project";
 import mongoose from "mongoose";
 import axios from "axios";
 import { geoCache, TTL } from "../utils/geoCache";
+import { dashboardEvents } from "../services/dashboardEventBus";
 
 /** Auto-geocode an address string. Returns null if Google API unavailable or fails. */
 async function geocodeAddress(
@@ -300,12 +301,28 @@ export const updateCenter = async (req: AuthRequest, res: Response) => {
       }
     }
 
+    // Auto-stamp idealCount audit fields when idealCount changes
+    if (allowedUpdates.idealCount !== undefined) {
+      center.idealCountUpdatedBy = new mongoose.Types.ObjectId(
+        req.user!.userId,
+      );
+      center.idealCountUpdatedAt = new Date();
+    }
+
     center.updatedBy = new mongoose.Types.ObjectId(req.user!.userId);
     await center.save();
 
     // Invalidate nearest-centre cache for this project
     geoCache.deleteByPrefix(`centers:${center.projectId}`);
     geoCache.deleteByPrefix(`distances:${center.projectId}:`);
+
+    // Emit dashboard event when idealCount changes
+    if (allowedUpdates.idealCount !== undefined) {
+      dashboardEvents.emit("centre.ideal_count_changed", {
+        tenantId: center.projectId?.toString() ?? "",
+        centreId: center._id?.toString(),
+      });
+    }
 
     return res.json({
       success: true,

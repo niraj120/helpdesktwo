@@ -120,6 +120,8 @@ export interface ITicket extends Document {
   metadata?: any;
   resolvedAt?: Date; // Timestamp when status changed to Resolved (4)
   closedAt?: Date; // Timestamp when status changed to Closed (5)
+  sla_due_at?: Date; // Denormalised SLA due date for dashboard queries (Sprint 3)
+  firstRespondedAt?: Date; // Timestamp of first agent response (Sprint 3)
   // Merge tracking fields
   isMerged?: boolean; // true for secondary tickets that have been absorbed into a primary
   mergedInto?: mongoose.Types.ObjectId; // Primary ticket's _id (set on secondary)
@@ -396,6 +398,13 @@ const TicketSchema: Schema = new Schema(
       type: Date,
       index: true,
     },
+    sla_due_at: {
+      type: Date,
+      index: true,
+    },
+    firstRespondedAt: {
+      type: Date,
+    },
     // Escalation Matrix fields
     escalationMatrixId: {
       type: Schema.Types.ObjectId,
@@ -516,7 +525,19 @@ TicketSchema.index({
 // Critical indexes for my-tickets and view-tickets queries
 TicketSchema.index({ "metadata.projectId": 1, createdAt: -1 });
 TicketSchema.index({ "metadata.projectId": 1, assignedTo: 1, createdAt: -1 });
-TicketSchema.index({ "metadata.studentEmail": 1, "metadata.projectId": 1, createdAt: -1 });
+TicketSchema.index({
+  "metadata.studentEmail": 1,
+  "metadata.projectId": 1,
+  createdAt: -1,
+});
 TicketSchema.index({ assignedTo: 1, "metadata.projectId": 1, createdAt: -1 });
+
+// Dashboard compound indexes (Sprint 1 + Sprint 3)
+TicketSchema.index({ project: 1, status: 1, createdAt: -1 });
+TicketSchema.index({ project: 1, priority: 1, createdAt: -1 });
+TicketSchema.index({ project: 1, category: 1, createdAt: -1 });
+TicketSchema.index({ project: 1, assignedTo: 1, status: 1 });
+TicketSchema.index({ project: 1, closedAt: -1 });
+TicketSchema.index({ project: 1, sla_due_at: 1 });
 
 export const Ticket = mongoose.model<ITicket>("Ticket", TicketSchema);

@@ -946,7 +946,16 @@ export const updateReportAssignment = async (req: Request, res: Response) => {
   try {
     const { reportId } = req.params;
     const userId = req.user?.userId;
-    const { assignedToUsers = [], assignedToRoles = [] } = req.body;
+    const {
+      assignedToUsers = [],
+      assignedToRoles = [],
+      alertEnabled,
+      scheduleType,
+      scheduleDay,
+      scheduleTime,
+      ccUsers,
+      ccEmails,
+    } = req.body;
 
     const perms = await getEffectiveModulePerms(userId);
     if (!perms?.canAssign) {
@@ -968,17 +977,40 @@ export const updateReportAssignment = async (req: Request, res: Response) => {
         .status(404)
         .json({ success: false, message: "Report not found" });
 
+    const updatePayload: Record<string, any> = {
+      reportId,
+      assignedToUsers,
+      assignedToRoles,
+      assignedBy: userId,
+      assignedAt: new Date(),
+    };
+    if (alertEnabled !== undefined) updatePayload.alertEnabled = alertEnabled;
+    if (scheduleType !== undefined) updatePayload.scheduleType = scheduleType;
+    if (scheduleDay !== undefined) updatePayload.scheduleDay = scheduleDay;
+    if (scheduleTime !== undefined) updatePayload.scheduleTime = scheduleTime;
+    if (ccUsers !== undefined) updatePayload.ccUsers = ccUsers;
+    if (ccEmails !== undefined) updatePayload.ccEmails = ccEmails;
+
     const doc = await ReportAssignment.findOneAndUpdate(
       { reportId },
-      {
-        reportId,
-        assignedToUsers,
-        assignedToRoles,
-        assignedBy: userId,
-        assignedAt: new Date(),
-      },
+      updatePayload,
       { upsert: true, new: true, runValidators: true },
     );
+
+    // Register or destroy the alert cron task based on alertEnabled flag
+    try {
+      const { registerReportAlertTask, destroyReportAlertTask } = await import(
+        "../../services/reports/reportAlertScheduler"
+      );
+      if (doc?.alertEnabled) {
+        registerReportAlertTask(doc);
+      } else {
+        destroyReportAlertTask(reportId);
+      }
+    } catch (schedErr) {
+      console.error("Report alert scheduler hook error:", schedErr);
+      // Non-fatal — assignment saved, scheduler update failed
+    }
 
     return res.status(200).json({ success: true, data: doc });
   } catch (err: any) {
@@ -986,6 +1018,36 @@ export const updateReportAssignment = async (req: Request, res: Response) => {
     return res
       .status(500)
       .json({ success: false, message: "Server error", error: err.message });
+  }
+};
+
+/**
+ * POST /api/reports/assignments/:reportId/test-alert
+ * Immediately fires the scheduled report email for testing purposes.
+ */
+export const testReportAlert = async (req: Request, res: Response) => {
+  try {
+    const { reportId } = req.params;
+    const userId = req.user?.userId;
+
+    const perms = await getEffectiveModulePerms(userId);
+    if (!perms?.canAssign) {
+      return res.status(403).json({ success: false, message: "Permission denied" });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(reportId)) {
+      return res.status(400).json({ success: false, message: "Invalid reportId" });
+    }
+
+    const { sendAlertNow } = await import(
+      "../../services/reports/reportAlertScheduler"
+    );
+    await sendAlertNow(reportId);
+
+    return res.status(200).json({ success: true, message: "Test alert sent successfully" });
+  } catch (err: any) {
+    console.error("testReportAlert error:", err);
+    return res.status(500).json({ success: false, message: err.message ?? "Failed to send test alert" });
   }
 };
 

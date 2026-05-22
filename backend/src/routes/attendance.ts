@@ -28,6 +28,7 @@ import {
   getAttendanceReportAssignment,
   updateAttendanceReportAssignment,
   getMyAttendanceReports,
+  testAttendanceReportAlert,
 } from "../controllers/attendanceSavedReportController";
 
 const router = express.Router();
@@ -140,6 +141,11 @@ router.put(
   "/reports/saved/:id/assignment",
   requirePermission("ATTENDANCE_CONFIG"),
   updateAttendanceReportAssignment,
+);
+router.post(
+  "/reports/saved/:id/test-alert",
+  requirePermission("ATTENDANCE_CONFIG"),
+  testAttendanceReportAlert,
 );
 
 export default router;

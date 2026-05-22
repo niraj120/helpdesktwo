@@ -21,7 +21,7 @@ export const logActivity = async (params: {
   userId: string;
   userName: string;
   userEmail: string;
-  action: 'create' | 'update' | 'delete' | 'edit';
+  action: 'create' | 'update' | 'delete' | 'edit' | 'access_denied';
   entity: string;
   entityId?: string;
   entityName?: string;

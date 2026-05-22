@@ -242,8 +242,6 @@ const DashboardLayout = ({
   // Get branding from context instead of fetching directly
   const { branding: projectBranding } = useBranding();
 
-  
-
   // Auto-expand menu that contains the active route on initial load only
   useEffect(() => {
     const currentPath = location.pathname;

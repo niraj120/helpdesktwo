@@ -254,7 +254,7 @@ const HierarchyConfigManager: React.FC<HierarchyConfigManagerProps> = ({
    */
   const handleLevelCountChange = (count: number) => {
     const levels: HierarchyLevel[] = [];
-    const defaultNames = ["Category", "Subcategory", "Topic", "Subtopic"];
+    const defaultNames = ["Category", "Subcategory", "Topic", "Subtopic", "Sub-subtopic"];
 
     for (let i = 1; i <= count; i++) {
       const existingLevel = editedConfig?.levels?.find(
@@ -487,7 +487,7 @@ const HierarchyConfigManager: React.FC<HierarchyConfigManagerProps> = ({
     try {
       const token = localStorage.getItem("authToken");
       await axios.delete(
-        `${API_URL}/hierarchy-config/${projectId}/categories/${deleteConfirm.category._id}`,
+        `${API_URL}/hierarchy-config/${projectId}/categories/${deleteConfirm.category._id}?hardDelete=true`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
       setDeleteConfirm({ isOpen: false });
@@ -832,7 +832,7 @@ const HierarchyConfigManager: React.FC<HierarchyConfigManagerProps> = ({
             Number of Levels
           </label>
           <div className="flex gap-2">
-            {[1, 2, 3, 4].map((count) => (
+            {[1, 2, 3, 4, 5].map((count) => (
               <button
                 key={count}
                 onClick={() => handleLevelCountChange(count)}

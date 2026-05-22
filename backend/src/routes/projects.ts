@@ -27,6 +27,10 @@ import { listConfigsByProject } from "../controllers/ticket-module/categoryAssig
 import { listEscalationConfigsByProject } from "../controllers/ticket-module/categoryEscalationController";
 import { authMiddleware } from "../middleware/auth";
 import { checkPermission } from "../middleware/permissions";
+import {
+  getProjectUserTarget,
+  updateProjectUserTarget,
+} from "../controllers/dashboard/projectUserTargetController";
 
 const router = express.Router();
 
@@ -131,6 +135,20 @@ router.get(
   authMiddleware,
   checkPermission("MASTER_DATA_VIEW"),
   listEscalationConfigsByProject,
+);
+
+// Dashboard: Project-level user headcount target (Phase 4)
+router.get(
+  "/:id/user-target",
+  authMiddleware,
+  checkPermission("dashboard.manage"),
+  getProjectUserTarget,
+);
+router.put(
+  "/:id/user-target",
+  authMiddleware,
+  checkPermission("dashboard.manage"),
+  updateProjectUserTarget,
 );
 
 // Get single project by ID

@@ -50,6 +50,25 @@ const ProjectDashboard = lazy(() => import("./pages/ProjectDashboard"));
 const ProjectPortalDashboard = lazy(
   () => import("./pages/ProjectPortalDashboard"),
 );
+const DashboardEnginePage = lazy(() => import("./pages/DashboardEnginePage"));
+const DashboardBuilderPage = lazy(() => import("./pages/DashboardBuilderPage"));
+const AdminDashboardListPage = lazy(
+  () => import("./pages/AdminDashboardListPage"),
+);
+const PersonalDashboardCreator = lazy(
+  () => import("./pages/PersonalDashboardCreator"),
+);
+const MyPersonalDashboardsPage = lazy(
+  () => import("./pages/MyPersonalDashboardsPage"),
+);
+const DashboardUsageAnalyticsPage = lazy(
+  () => import("./pages/DashboardUsageAnalyticsPage"),
+);
+const AdminTargetsPage = lazy(() => import("./pages/AdminTargetsPage"));
+const DashboardScheduledReportsPage = lazy(
+  () => import("./pages/DashboardScheduledReportsPage"),
+);
+const DashboardAlertsPage = lazy(() => import("./pages/DashboardAlertsPage"));
 
 // Student Portal
 const StudentPortal = lazy(() => import("./pages/StudentPortal"));
@@ -360,6 +379,112 @@ function App() {
             element={
               <ProtectedRoute requireAuth={true}>
                 <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Dashboard Engine (Phase 1) — custom widget-based dashboards */}
+          <Route
+            path="/dashboard-engine"
+            element={
+              <ProtectedRoute requireAuth={true}>
+                <DashboardEnginePage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Admin Dashboard Templates List */}
+          <Route
+            path="/admin/dashboards"
+            element={
+              <ProtectedRoute permission="dashboard.manage">
+                <AdminDashboardListPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Dashboard Builder (Phase 2) — admin template builder */}
+          <Route
+            path="/admin/dashboard-builder"
+            element={
+              <ProtectedRoute permission="dashboard.manage">
+                <DashboardBuilderPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/dashboard-builder/:id"
+            element={
+              <ProtectedRoute permission="dashboard.manage">
+                <DashboardBuilderPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Personal Dashboards List (Phase 4) */}
+          <Route
+            path="/my-dashboards"
+            element={
+              <ProtectedRoute requireAuth={true}>
+                <MyPersonalDashboardsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Dashboard Usage Analytics Admin (Phase 4) */}
+          <Route
+            path="/admin/dashboard-usage"
+            element={
+              <ProtectedRoute modulePrefix="DASHBOARD_" requireAuth={true}>
+                <DashboardUsageAnalyticsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Admin Target Management (Phase 5) */}
+          <Route
+            path="/admin/targets"
+            element={
+              <ProtectedRoute modulePrefix="DASHBOARD_" requireAuth={true}>
+                <AdminTargetsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Scheduled Report Delivery (Sprint 10) */}
+          <Route
+            path="/admin/dashboard-scheduled-reports"
+            element={
+              <ProtectedRoute permission="dashboard.manage">
+                <DashboardScheduledReportsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Threshold Alerts (Sprint 11) */}
+          <Route
+            path="/admin/dashboard-alerts"
+            element={
+              <ProtectedRoute permission="dashboard.manage">
+                <DashboardAlertsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Personal Dashboard Creator (Phase 3) — any authenticated user */}
+          <Route
+            path="/my-dashboards/new"
+            element={
+              <ProtectedRoute requireAuth={true}>
+                <PersonalDashboardCreator />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/my-dashboards/:id/edit"
+            element={
+              <ProtectedRoute requireAuth={true}>
+                <PersonalDashboardCreator />
               </ProtectedRoute>
             }
           />

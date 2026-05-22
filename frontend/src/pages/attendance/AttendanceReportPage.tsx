@@ -2338,6 +2338,9 @@ function MyAttendanceReports({ token }: { token: string }) {
 // Main Component
 //
 
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTH_DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
+
 export default function AttendanceReportPage() {
   const { hasPermission } = usePermissions();
   const canConfig = hasPermission("ATTENDANCE_CONFIG");
@@ -2408,9 +2411,7 @@ export default function AttendanceReportPage() {
 
   // assign report (accordion, per-report)
   const [assignExpanded, setAssignExpanded] = useState<string | null>(null);
-  const [assignments, setAssignments] = useState<
-    Record<string, { assignedToUsers: string[]; assignedToRoles: string[] }>
-  >({});
+  const [assignments, setAssignments] = useState<Record<string, any>>({});
   const [allUsers, setAllUsers] = useState<AssignableUser[]>([]);
   const [allRoles, setAllRoles] = useState<AssignableRole[]>([]);
   const [assignSaving, setAssignSaving] = useState<string | null>(null);
@@ -2418,6 +2419,10 @@ export default function AttendanceReportPage() {
     Record<string, { type: "success" | "error"; text: string }>
   >({});
   const [assignDataLoaded, setAssignDataLoaded] = useState(false);
+  const [scheduleExpanded, setScheduleExpanded] = useState<string | null>(null);
+  const [ccEmailDraft, setCcEmailDraft] = useState<Record<string, string>>({});
+  const [testingAlert, setTestingAlert] = useState<string | null>(null);
+  const [testAlertMsg, setTestAlertMsg] = useState<Record<string, string>>({});
 
   const token = localStorage.getItem("authToken");
   const headers = { Authorization: `Bearer ${token}` };
@@ -2425,7 +2430,7 @@ export default function AttendanceReportPage() {
   // Load projects
   useEffect(() => {
     axios
-      .get(`${API_BASE_URL}/projects`, { headers })
+      .get(`${API_BASE_URL}/projects?limit=100`, { headers })
       .then((r) => {
         const d = r.data?.data;
         setProjects(Array.isArray(d) ? d : (d?.projects ?? []));
@@ -2851,10 +2856,7 @@ export default function AttendanceReportPage() {
             .catch(() => [r._id, null] as [string, null]),
         ),
       );
-      const map: Record<
-        string,
-        { assignedToUsers: string[]; assignedToRoles: string[] }
-      > = {};
+      const map: Record<string, any> = {};
       for (const [id, a] of assignEntries) {
         map[id] = {
           assignedToUsers: (a?.assignedToUsers ?? []).map(
@@ -2863,6 +2865,12 @@ export default function AttendanceReportPage() {
           assignedToRoles: (a?.assignedToRoles ?? []).map(
             (r: any) => r._id ?? r,
           ),
+          alertEnabled: a?.alertEnabled ?? false,
+          scheduleType: a?.scheduleType ?? "daily",
+          scheduleDay: a?.scheduleDay ?? 1,
+          scheduleTime: a?.scheduleTime ?? "08:00",
+          ccUsers: (a?.ccUsers ?? []).map((u: any) => u._id ?? u),
+          ccEmails: a?.ccEmails ?? [],
         };
       }
       setAssignments(map);
@@ -2879,7 +2887,7 @@ export default function AttendanceReportPage() {
         assignedToRoles: [],
       };
       const next = cur.assignedToUsers.includes(userId)
-        ? cur.assignedToUsers.filter((id) => id !== userId)
+        ? (cur.assignedToUsers as string[]).filter((id) => id !== userId)
         : [...cur.assignedToUsers, userId];
       return { ...prev, [reportId]: { ...cur, assignedToUsers: next } };
     });
@@ -2892,17 +2900,44 @@ export default function AttendanceReportPage() {
         assignedToRoles: [],
       };
       const next = cur.assignedToRoles.includes(roleId)
-        ? cur.assignedToRoles.filter((id) => id !== roleId)
+        ? (cur.assignedToRoles as string[]).filter((id) => id !== roleId)
         : [...cur.assignedToRoles, roleId];
       return { ...prev, [reportId]: { ...cur, assignedToRoles: next } };
     });
   };
 
+  const updateScheduleField = (reportId: string, field: string, value: any) => {
+    setAssignments((prev) => ({
+      ...prev,
+      [reportId]: { ...(prev[reportId] ?? {}), [field]: value },
+    }));
+  };
+
+  const handleTestAlert = async (reportId: string) => {
+    setTestingAlert(reportId);
+    setTestAlertMsg((prev) => { const n = { ...prev }; delete n[reportId]; return n; });
+    try {
+      const res = await axios.post(
+        `${API_BASE_URL}/attendance/reports/saved/${reportId}/test-alert`,
+        {},
+        { headers },
+      );
+      setTestAlertMsg((prev) => ({
+        ...prev,
+        [reportId]: res.data?.success ? "✅ Test email sent!" : `❌ ${res.data?.message}`,
+      }));
+    } catch (err: any) {
+      setTestAlertMsg((prev) => ({
+        ...prev,
+        [reportId]: `❌ ${err?.response?.data?.message ?? "Request failed"}`,
+      }));
+    } finally {
+      setTestingAlert(null);
+    }
+  };
+
   const handleSaveAssignment = async (reportId: string) => {
-    const asg = assignments[reportId] ?? {
-      assignedToUsers: [],
-      assignedToRoles: [],
-    };
+    const asg = assignments[reportId] ?? {};
     setAssignSaving(reportId);
     setAssignSaveMsg((prev) => {
       const next = { ...prev };
@@ -2913,8 +2948,14 @@ export default function AttendanceReportPage() {
       await axios.put(
         `${API_BASE_URL}/attendance/reports/saved/${reportId}/assignment`,
         {
-          assignedToUsers: asg.assignedToUsers,
-          assignedToRoles: asg.assignedToRoles,
+          assignedToUsers: asg.assignedToUsers ?? [],
+          assignedToRoles: asg.assignedToRoles ?? [],
+          alertEnabled: asg.alertEnabled ?? false,
+          scheduleType: asg.scheduleType ?? "daily",
+          scheduleDay: asg.scheduleDay ?? 1,
+          scheduleTime: asg.scheduleTime ?? "08:00",
+          ccUsers: asg.ccUsers ?? [],
+          ccEmails: asg.ccEmails ?? [],
         },
         { headers },
       );
@@ -2935,6 +2976,12 @@ export default function AttendanceReportPage() {
           assignedToRoles: (freshAsg?.assignedToRoles ?? []).map(
             (r: any) => r._id ?? r,
           ),
+          alertEnabled: freshAsg?.alertEnabled ?? false,
+          scheduleType: freshAsg?.scheduleType ?? "daily",
+          scheduleDay: freshAsg?.scheduleDay ?? 1,
+          scheduleTime: freshAsg?.scheduleTime ?? "08:00",
+          ccUsers: (freshAsg?.ccUsers ?? []).map((u: any) => u._id ?? u),
+          ccEmails: freshAsg?.ccEmails ?? [],
         },
       }));
       setAssignSaveMsg((prev) => ({
@@ -4608,9 +4655,18 @@ export default function AttendanceReportPage() {
                           assignedToRoles: [],
                         };
                         const isExpanded = assignExpanded === report._id;
+                        const scheduleOpen = scheduleExpanded === report._id;
+                        const alertEnabled: boolean = asg.alertEnabled ?? false;
+                        const scheduleType: string = asg.scheduleType ?? "daily";
+                        const scheduleDay: number = asg.scheduleDay ?? 1;
+                        const scheduleTime: string = asg.scheduleTime ?? "08:00";
+                        const ccUserIds: string[] = (asg.ccUsers ?? []).map(
+                          (u: any) => u._id ?? u,
+                        );
+                        const ccEmails: string[] = asg.ccEmails ?? [];
                         const totalAssigned =
-                          asg.assignedToUsers.length +
-                          asg.assignedToRoles.length;
+                          (asg.assignedToUsers ?? []).length +
+                          (asg.assignedToRoles ?? []).length;
                         return (
                           <div
                             key={report._id}
@@ -4650,8 +4706,8 @@ export default function AttendanceReportPage() {
                                   {report.name}
                                 </div>
                                 <div style={{ fontSize: 12, color: "#6b7280" }}>
-                                  {asg.assignedToUsers.length} users ·{" "}
-                                  {asg.assignedToRoles.length} roles assigned
+                                  {(asg.assignedToUsers ?? []).length} users ·{" "}
+                                  {(asg.assignedToRoles ?? []).length} roles assigned
                                 </div>
                               </div>
                               <div
@@ -4661,6 +4717,20 @@ export default function AttendanceReportPage() {
                                   alignItems: "center",
                                 }}
                               >
+                                {alertEnabled && (
+                                  <span
+                                    style={{
+                                      background: "#fef3c7",
+                                      color: "#d97706",
+                                      padding: "3px 10px",
+                                      borderRadius: 12,
+                                      fontSize: 11,
+                                      fontWeight: 600,
+                                    }}
+                                  >
+                                    🔔 Alert ON
+                                  </span>
+                                )}
                                 {totalAssigned > 0 && (
                                   <span
                                     style={{
@@ -4715,7 +4785,7 @@ export default function AttendanceReportPage() {
                                     >
                                       {allUsers.map((u) => {
                                         const checked =
-                                          asg.assignedToUsers.includes(u._id);
+                                          (asg.assignedToUsers ?? []).includes(u._id);
                                         return (
                                           <label
                                             key={u._id}
@@ -4781,7 +4851,7 @@ export default function AttendanceReportPage() {
                                     >
                                       {allRoles.map((role) => {
                                         const checked =
-                                          asg.assignedToRoles.includes(
+                                          (asg.assignedToRoles ?? []).includes(
                                             role._id,
                                           );
                                         return (
@@ -4828,6 +4898,282 @@ export default function AttendanceReportPage() {
                                     </div>
                                   </div>
                                 </div>
+
+                                {/* ── Schedule Alert Section ── */}
+                                <div
+                                  style={{
+                                    marginTop: 16,
+                                    border: "1px solid #e5e7eb",
+                                    borderRadius: 8,
+                                    overflow: "hidden",
+                                  }}
+                                >
+                                  <div
+                                    onClick={() =>
+                                      setScheduleExpanded(
+                                        scheduleOpen ? null : report._id,
+                                      )
+                                    }
+                                    style={{
+                                      display: "flex",
+                                      justifyContent: "space-between",
+                                      alignItems: "center",
+                                      padding: "10px 14px",
+                                      cursor: "pointer",
+                                      background: scheduleOpen ? "#fffbeb" : "#f8fafc",
+                                      borderBottom: scheduleOpen ? "1px solid #e5e7eb" : "none",
+                                    }}
+                                  >
+                                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                      <span style={{ fontSize: 14, fontWeight: 700, color: "#374151" }}>
+                                        🔔 Schedule Alert
+                                      </span>
+                                      {alertEnabled && (
+                                        <span
+                                          style={{
+                                            background: "#fef3c7",
+                                            color: "#d97706",
+                                            padding: "2px 8px",
+                                            borderRadius: 10,
+                                            fontSize: 11,
+                                            fontWeight: 600,
+                                          }}
+                                        >
+                                          {scheduleType === "daily"
+                                            ? `Daily at ${scheduleTime}`
+                                            : scheduleType === "weekly"
+                                              ? `Every ${WEEKDAYS[scheduleDay]} at ${scheduleTime}`
+                                              : `Monthly on day ${scheduleDay} at ${scheduleTime}`}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span style={{ fontSize: 14, color: "#9ca3af" }}>
+                                      {scheduleOpen ? "▲" : "▼"}
+                                    </span>
+                                  </div>
+
+                                  {scheduleOpen && (
+                                    <div style={{ padding: 14, background: "#fff" }}>
+                                      {/* Alert toggle */}
+                                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={alertEnabled}
+                                          onChange={(e) =>
+                                            updateScheduleField(report._id, "alertEnabled", e.target.checked)
+                                          }
+                                          style={{ accentColor: "#f59e0b", width: 16, height: 16 }}
+                                        />
+                                        <span style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>
+                                          Enable scheduled email alert
+                                        </span>
+                                        {alertEnabled && (
+                                          <span style={{ fontSize: 12, color: "#6b7280" }}>
+                                            — report CSV will be emailed to assigned users
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      {alertEnabled && (
+                                        <>
+                                          <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end" }}>
+                                            {/* Frequency */}
+                                            <div>
+                                              <label style={{ fontSize: 11, fontWeight: 600, color: "#374151", display: "block", marginBottom: 4 }}>
+                                                Frequency
+                                              </label>
+                                              <select
+                                                value={scheduleType}
+                                                onChange={(e) =>
+                                                  updateScheduleField(report._id, "scheduleType", e.target.value)
+                                                }
+                                                style={{ padding: "6px 10px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 13, background: "#fff" }}
+                                              >
+                                                <option value="daily">Daily</option>
+                                                <option value="weekly">Weekly</option>
+                                                <option value="monthly">Monthly</option>
+                                              </select>
+                                            </div>
+                                            {/* Day picker */}
+                                            {scheduleType !== "daily" && (
+                                              <div>
+                                                <label style={{ fontSize: 11, fontWeight: 600, color: "#374151", display: "block", marginBottom: 4 }}>
+                                                  {scheduleType === "weekly" ? "Day of week" : "Day of month"}
+                                                </label>
+                                                <select
+                                                  value={scheduleDay}
+                                                  onChange={(e) =>
+                                                    updateScheduleField(report._id, "scheduleDay", Number(e.target.value))
+                                                  }
+                                                  style={{ padding: "6px 10px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 13, background: "#fff" }}
+                                                >
+                                                  {scheduleType === "weekly"
+                                                    ? WEEKDAYS.map((d, i) => (
+                                                        <option key={d} value={i}>{d}</option>
+                                                      ))
+                                                    : MONTH_DAYS.map((d) => (
+                                                        <option key={d} value={d}>{d}</option>
+                                                      ))}
+                                                </select>
+                                              </div>
+                                            )}
+                                            {/* Time */}
+                                            <div>
+                                              <label style={{ fontSize: 11, fontWeight: 600, color: "#374151", display: "block", marginBottom: 4 }}>
+                                                Time (24h)
+                                              </label>
+                                              <input
+                                                type="time"
+                                                value={scheduleTime}
+                                                onChange={(e) =>
+                                                  updateScheduleField(report._id, "scheduleTime", e.target.value)
+                                                }
+                                                style={{ padding: "6px 10px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 13, background: "#fff" }}
+                                              />
+                                            </div>
+                                          </div>
+
+                                          {/* CC Recipients */}
+                                          <div style={{ marginTop: 16 }}>
+                                            <div style={{ fontSize: 12, fontWeight: 700, color: "#374151", marginBottom: 8 }}>
+                                              CC Recipients
+                                            </div>
+                                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                                              {/* CC System Users */}
+                                              <div>
+                                                <div style={{ fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 6 }}>
+                                                  System users
+                                                </div>
+                                                <div style={{ maxHeight: 160, overflowY: "auto", border: "1px solid #e5e7eb", borderRadius: 8 }}>
+                                                  {allUsers.map((u) => {
+                                                    const checked = ccUserIds.includes(u._id);
+                                                    return (
+                                                      <label
+                                                        key={u._id}
+                                                        style={{
+                                                          display: "flex",
+                                                          alignItems: "center",
+                                                          gap: 8,
+                                                          padding: "6px 10px",
+                                                          cursor: "pointer",
+                                                          background: checked ? "#fefce8" : "#fff",
+                                                          borderBottom: "1px solid #f3f4f6",
+                                                        }}
+                                                      >
+                                                        <input
+                                                          type="checkbox"
+                                                          checked={checked}
+                                                          onChange={() =>
+                                                            updateScheduleField(
+                                                              report._id,
+                                                              "ccUsers",
+                                                              checked
+                                                                ? ccUserIds.filter((id) => id !== u._id)
+                                                                : [...ccUserIds, u._id],
+                                                            )
+                                                          }
+                                                          style={{ accentColor: "#f59e0b" }}
+                                                        />
+                                                        <span style={{ fontSize: 12 }}>{u.firstName} {u.lastName}</span>
+                                                        <span style={{ fontSize: 10, color: "#9ca3af", marginLeft: "auto", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 120 }}>
+                                                          {u.email}
+                                                        </span>
+                                                      </label>
+                                                    );
+                                                  })}
+                                                </div>
+                                              </div>
+                                              {/* CC free-form emails */}
+                                              <div>
+                                                <div style={{ fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 6 }}>
+                                                  Additional email addresses
+                                                </div>
+                                                <div
+                                                  style={{
+                                                    display: "flex",
+                                                    flexWrap: "wrap",
+                                                    alignItems: "center",
+                                                    gap: 4,
+                                                    padding: "6px 10px",
+                                                    border: "1px solid #e5e7eb",
+                                                    borderRadius: 8,
+                                                    background: "#fff",
+                                                    minHeight: 38,
+                                                    cursor: "text",
+                                                  }}
+                                                  onClick={(e) => {
+                                                    (e.currentTarget.querySelector("input") as HTMLInputElement | null)?.focus();
+                                                  }}
+                                                >
+                                                  {ccEmails.map((em) => (
+                                                    <span
+                                                      key={em}
+                                                      style={{
+                                                        background: "#fef3c7",
+                                                        color: "#92400e",
+                                                        fontSize: 11,
+                                                        padding: "2px 4px 2px 8px",
+                                                        borderRadius: 10,
+                                                        fontWeight: 600,
+                                                        display: "flex",
+                                                        alignItems: "center",
+                                                        gap: 3,
+                                                      }}
+                                                    >
+                                                      {em}
+                                                      <span
+                                                        onClick={() =>
+                                                          updateScheduleField(
+                                                            report._id,
+                                                            "ccEmails",
+                                                            ccEmails.filter((e) => e !== em),
+                                                          )
+                                                        }
+                                                        style={{ cursor: "pointer", fontWeight: 700, opacity: 0.6 }}
+                                                      >
+                                                        ×
+                                                      </span>
+                                                    </span>
+                                                  ))}
+                                                  <input
+                                                    type="email"
+                                                    value={ccEmailDraft[report._id] ?? ""}
+                                                    onChange={(e) =>
+                                                      setCcEmailDraft((prev) => ({ ...prev, [report._id]: e.target.value }))
+                                                    }
+                                                    onKeyDown={(e) => {
+                                                      const draft = (ccEmailDraft[report._id] ?? "").trim();
+                                                      if ((e.key === "Enter" || e.key === ",") && draft) {
+                                                        e.preventDefault();
+                                                        if (
+                                                          /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft) &&
+                                                          !ccEmails.includes(draft)
+                                                        ) {
+                                                          updateScheduleField(report._id, "ccEmails", [...ccEmails, draft]);
+                                                        }
+                                                        setCcEmailDraft((prev) => ({ ...prev, [report._id]: "" }));
+                                                      } else if (e.key === "Backspace" && !draft && ccEmails.length > 0) {
+                                                        updateScheduleField(report._id, "ccEmails", ccEmails.slice(0, -1));
+                                                      }
+                                                    }}
+                                                    placeholder={ccEmails.length === 0 ? "Type email, press Enter" : "+add email"}
+                                                    style={{ border: "none", outline: "none", fontSize: 12, flex: 1, minWidth: 140, background: "transparent" }}
+                                                  />
+                                                </div>
+                                                {(ccUserIds.length > 0 || ccEmails.length > 0) && (
+                                                  <div style={{ marginTop: 6, fontSize: 11, color: "#6b7280" }}>
+                                                    {ccUserIds.length + ccEmails.length} CC address{ccUserIds.length + ccEmails.length !== 1 ? "es" : ""} added
+                                                  </div>
+                                                )}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+
                                 <div
                                   style={{
                                     marginTop: 12,
@@ -4837,6 +5183,11 @@ export default function AttendanceReportPage() {
                                     gap: 12,
                                   }}
                                 >
+                                  {testAlertMsg[report._id] && (
+                                    <span style={{ fontSize: 12, color: testAlertMsg[report._id].startsWith("✅") ? "#16a34a" : "#dc2626" }}>
+                                      {testAlertMsg[report._id]}
+                                    </span>
+                                  )}
                                   {assignSaveMsg[report._id] && (
                                     <span
                                       style={{
@@ -4851,6 +5202,25 @@ export default function AttendanceReportPage() {
                                     >
                                       {assignSaveMsg[report._id].text}
                                     </span>
+                                  )}
+                                  {alertEnabled && (
+                                    <button
+                                      onClick={() => handleTestAlert(report._id)}
+                                      disabled={testingAlert === report._id || assignSaving === report._id}
+                                      style={{
+                                        padding: "7px 14px",
+                                        background: "#f59e0b",
+                                        color: "#fff",
+                                        border: "none",
+                                        borderRadius: 8,
+                                        fontSize: 13,
+                                        fontWeight: 600,
+                                        cursor: "pointer",
+                                        opacity: testingAlert === report._id ? 0.7 : 1,
+                                      }}
+                                    >
+                                      {testingAlert === report._id ? "Sending…" : "📧 Send Test"}
+                                    </button>
                                   )}
                                   <button
                                     onClick={() =>

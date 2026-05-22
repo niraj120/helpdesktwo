@@ -51,12 +51,14 @@ export interface CategoryHierarchyValue {
   level2?: string;
   level3?: string;
   level4?: string;
+  level5?: string;
   /** Human-readable names for each level — used by conditionEngine so conditions
    * can be written as "Name change" instead of a MongoDB ObjectId. */
   level1Name?: string;
   level2Name?: string;
   level3Name?: string;
   level4Name?: string;
+  level5Name?: string;
   displayPath?: string;
   autoAssignedPriority?: string; // Priority auto-assigned from selected category
 }
@@ -108,6 +110,7 @@ const HierarchyCategorySelector: React.FC<HierarchyCategorySelectorProps> = ({
   const [level2Options, setLevel2Options] = useState<CategoryItem[]>([]);
   const [level3Options, setLevel3Options] = useState<CategoryItem[]>([]);
   const [level4Options, setLevel4Options] = useState<CategoryItem[]>([]);
+  const [level5Options, setLevel5Options] = useState<CategoryItem[]>([]);
 
   // Loading states for each level
   const [loadingLevel, setLoadingLevel] = useState<number | null>(null);
@@ -270,6 +273,66 @@ const HierarchyCategorySelector: React.FC<HierarchyCategorySelectorProps> = ({
   }, [value?.level3, config, fetchCategoriesForLevel]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
+   * Load Level 5 categories when Level 4 selection changes
+   */
+  useEffect(() => {
+    if (value?.level4 && config && config.levelCount >= 5) {
+      fetchCategoriesForLevel(5, value.level4).then((opts) => {
+        setLevel5Options(opts);
+        onLevelOptionsChange?.(5, opts.length > 0);
+      });
+    } else {
+      setLevel5Options([]);
+      onLevelOptionsChange?.(5, false);
+    }
+  }, [value?.level4, config, fetchCategoriesForLevel]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /**
+   * Auto-select levels that have exactly one option available
+   */
+  useEffect(() => {
+    if (!disabled && level1Options.length === 1 && !value?.level1) {
+      const opt = level1Options[0];
+      onChange({ ...value, level1: opt._id, level1Name: opt.name,
+        level2: undefined, level2Name: undefined, level3: undefined, level3Name: undefined,
+        level4: undefined, level4Name: undefined, level5: undefined, level5Name: undefined,
+        displayPath: opt.name });
+    }
+  }, [level1Options.length, disabled]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!disabled && level2Options.length === 1 && !value?.level2 && value?.level1) {
+      const opt = level2Options[0];
+      onChange({ ...value, level2: opt._id, level2Name: opt.name,
+        level3: undefined, level3Name: undefined, level4: undefined, level4Name: undefined,
+        level5: undefined, level5Name: undefined });
+    }
+  }, [level2Options.length, disabled]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!disabled && level3Options.length === 1 && !value?.level3 && value?.level2) {
+      const opt = level3Options[0];
+      onChange({ ...value, level3: opt._id, level3Name: opt.name,
+        level4: undefined, level4Name: undefined, level5: undefined, level5Name: undefined });
+    }
+  }, [level3Options.length, disabled]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!disabled && level4Options.length === 1 && !value?.level4 && value?.level3) {
+      const opt = level4Options[0];
+      onChange({ ...value, level4: opt._id, level4Name: opt.name,
+        level5: undefined, level5Name: undefined });
+    }
+  }, [level4Options.length, disabled]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!disabled && level5Options.length === 1 && !value?.level5 && value?.level4) {
+      const opt = level5Options[0];
+      onChange({ ...value, level5: opt._id, level5Name: opt.name });
+    }
+  }, [level5Options.length, disabled]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /**
    * Handle level selection change
    */
   const handleLevelChange = (level: number, selectedId: string) => {
@@ -289,6 +352,8 @@ const HierarchyCategorySelector: React.FC<HierarchyCategorySelectorProps> = ({
         newValue.level3Name = undefined;
         newValue.level4 = undefined;
         newValue.level4Name = undefined;
+        newValue.level5 = undefined;
+        newValue.level5Name = undefined;
         break;
       case 2:
         newValue.level2 = selectedId || undefined;
@@ -299,6 +364,8 @@ const HierarchyCategorySelector: React.FC<HierarchyCategorySelectorProps> = ({
         newValue.level3Name = undefined;
         newValue.level4 = undefined;
         newValue.level4Name = undefined;
+        newValue.level5 = undefined;
+        newValue.level5Name = undefined;
         break;
       case 3:
         newValue.level3 = selectedId || undefined;
@@ -307,11 +374,21 @@ const HierarchyCategorySelector: React.FC<HierarchyCategorySelectorProps> = ({
           : undefined;
         newValue.level4 = undefined;
         newValue.level4Name = undefined;
+        newValue.level5 = undefined;
+        newValue.level5Name = undefined;
         break;
       case 4:
         newValue.level4 = selectedId || undefined;
         newValue.level4Name = selectedId
           ? level4Options.find((c) => c._id === selectedId)?.name || undefined
+          : undefined;
+        newValue.level5 = undefined;
+        newValue.level5Name = undefined;
+        break;
+      case 5:
+        newValue.level5 = selectedId || undefined;
+        newValue.level5Name = selectedId
+          ? level5Options.find((c) => c._id === selectedId)?.name || undefined
           : undefined;
         break;
     }
@@ -348,6 +425,11 @@ const HierarchyCategorySelector: React.FC<HierarchyCategorySelectorProps> = ({
         case 4:
           selectedCategory = level4Options.find(
             (c) => c._id === newValue.level4,
+          );
+          break;
+        case 5:
+          selectedCategory = level5Options.find(
+            (c) => c._id === newValue.level5,
           );
           break;
       }
@@ -387,6 +469,10 @@ const HierarchyCategorySelector: React.FC<HierarchyCategorySelectorProps> = ({
     if (val.level4) {
       const cat4 = level4Options.find((c) => c._id === val.level4);
       if (cat4) parts.push(cat4.name);
+    }
+    if (val.level5) {
+      const cat5 = level5Options.find((c) => c._id === val.level5);
+      if (cat5) parts.push(cat5.name);
     }
 
     return parts.join(" > ");
@@ -446,8 +532,8 @@ const HierarchyCategorySelector: React.FC<HierarchyCategorySelectorProps> = ({
       case 3:
         return !!value?.level3;
       case 4:
-        return !!value?.level4;
-      default:
+        return !!value?.level4;      case 5:
+        return !value?.level4;      default:
         return true;
     }
   };
@@ -465,6 +551,8 @@ const HierarchyCategorySelector: React.FC<HierarchyCategorySelectorProps> = ({
         return level3Options;
       case 4:
         return level4Options;
+      case 5:
+        return level5Options;
       default:
         return [];
     }
@@ -483,6 +571,8 @@ const HierarchyCategorySelector: React.FC<HierarchyCategorySelectorProps> = ({
         return value?.level3 || "";
       case 4:
         return value?.level4 || "";
+      case 5:
+        return value?.level5 || "";
       default:
         return "";
     }
@@ -504,8 +594,8 @@ const HierarchyCategorySelector: React.FC<HierarchyCategorySelectorProps> = ({
       case 3:
         return !value?.level2;
       case 4:
-        return !value?.level3;
-      default:
+        return !value?.level3;      case 5:
+        return !!value?.level5;      default:
         return false;
     }
   };
@@ -619,6 +709,8 @@ const HierarchyCategorySelector: React.FC<HierarchyCategorySelectorProps> = ({
       {renderLevelDropdown(3)}
       {renderLevelDropdown(4)}
 
+          {/* Level 5 - only shown when config has levelCount >= 5 */}
+          {config && config.levelCount >= 5 && renderLevelDropdown(5)}
       {/* Display path preview */}
       {value?.displayPath && !compact && (
         <div className="mt-2 p-2 bg-gray-50 rounded border border-gray-200">

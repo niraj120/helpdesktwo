@@ -2,6 +2,7 @@ import { Response, NextFunction, RequestHandler } from 'express';
 import { AuthRequest } from './auth';
 import { Role } from '../models/Role';
 import mongoose from 'mongoose';
+import { logActivity } from '../utils/logger';
 
 /**
  * Middleware to attach project context to request
@@ -214,3 +215,98 @@ export const getUserAccessibleProjects = async (
     return [];
   }
 };
+
+/**
+ * Middleware: enforce asset module project scope for project-portal logins.
+ *
+ * When a user authenticates through a project-specific portal URL the JWT
+ * contains `projectId`.  This middleware:
+ *   1. Admin / global tokens (no projectId) → pass through unchanged.
+ *   2. Project-scoped tokens →
+ *      a. If the request carries no projectId, auto-inject the token's project
+ *         so controllers receive the correct scope without extra client logic.
+ *      b. If the request carries a *different* projectId → 403 + audit log.
+ *
+ * Apply to any asset-management route group:
+ *   router.use(authMiddleware, enforceAssetProjectScope, checkPermission(...))
+ */
+export const enforceAssetProjectScope = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  const user = req.user;
+
+  if (!user) {
+    res.status(401).json({ success: false, message: 'User not authenticated' });
+    return;
+  }
+
+  // No project scope in token → admin / multi-project user, allow through
+  const tokenProjectId = user.projectId;
+  if (!tokenProjectId) {
+    next();
+    return;
+  }
+
+  // Resolve the projectId the request is targeting
+  const requestedProjectId: string | undefined =
+    (req.params.projectId as string) ||
+    (req.query.projectId as string) ||
+    (req.body?.projectId as string);
+
+  // No projectId in request → silently inject the token's scope
+  if (!requestedProjectId) {
+    // Inject into query so downstream controllers pick it up from req.query
+    (req.query as any).projectId = tokenProjectId;
+    console.log(
+      `🔒 [ASSET_SCOPE] Injected projectId ${tokenProjectId} for ${user.email}`,
+    );
+    next();
+    return;
+  }
+
+  // ProjectId present but mismatches token scope → deny + audit
+  if (requestedProjectId !== tokenProjectId) {
+    const userName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Unknown User';
+
+    console.warn(
+      `🚫 [ASSET_SCOPE] Cross-project access blocked: user=${user.email} ` +
+      `authorized=${tokenProjectId} requested=${requestedProjectId} ` +
+      `endpoint=${req.method} ${req.path}`,
+    );
+
+    // Fire-and-forget audit log — do not block the 403 response
+    logActivity({
+      userId: user.userId,
+      userName,
+      userEmail: user.email,
+      action: 'access_denied',
+      entity: 'Asset',
+      description:
+        `Unauthorized cross-project asset access blocked — ` +
+        `authorized project: ${user.projectName || tokenProjectId}, ` +
+        `attempted project: ${requestedProjectId}`,
+      projectId: tokenProjectId,
+      projectName: user.projectName,
+      metadata: {
+        authorizedProjectId: tokenProjectId,
+        requestedProjectId,
+        method: req.method,
+        path: req.path,
+        userRole: user.role?.code,
+      },
+      req,
+    }).catch((err) => console.error('[ASSET_SCOPE] Audit log failed:', err));
+
+    res.status(403).json({
+      success: false,
+      message: 'Access denied: you can only access assets within your assigned project',
+    });
+    return;
+  }
+
+  // Match — everything is fine
+  next();
+};
+

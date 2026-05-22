@@ -64,7 +64,7 @@ const ProjectManagement = () => {
     try {
       setLoading(true);
       const token = localStorage.getItem("authToken");
-      const response = await fetch(`${API_CONFIG.API_URL}/projects`, {
+      const response = await fetch(`${API_CONFIG.API_URL}/projects?limit=100`, {
         credentials: "include",
         headers: {
           Authorization: `Bearer ${token}`,

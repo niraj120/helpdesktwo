@@ -61,7 +61,7 @@ const ApprovalWorkflows: React.FC = () => {
   const fetchProjects = async () => {
     try {
       const token = localStorage.getItem('authToken');
-      const response = await axios.get(`${API_BASE}/projects`, {
+      const response = await axios.get(`${API_BASE}/projects?limit=100`, {
         headers: { Authorization: token ? `Bearer ${token}` : undefined },
       });
       console.log('Full projects response:', response.data);

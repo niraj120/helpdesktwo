@@ -1,6 +1,14 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { API_CONFIG } from '../config/constants';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+  useMemo,
+  useCallback,
+} from "react";
+import { useNavigate } from "react-router-dom";
+import { API_CONFIG } from "../config/constants";
 
 interface Project {
   _id: string;
@@ -20,8 +28,8 @@ interface Project {
 interface ProjectContextType {
   currentProjectId: string | null;
   setCurrentProjectId: (id: string | null) => void;
-  viewMode: 'single' | 'unified';
-  setViewMode: (mode: 'single' | 'unified') => void;
+  viewMode: "single" | "unified";
+  setViewMode: (mode: "single" | "unified") => void;
   userProjects: Project[];
   setUserProjects: (projects: Project[]) => void;
   recentProjects: string[];
@@ -43,26 +51,32 @@ interface SwitchOptions {
 
 const ProjectContext = createContext<ProjectContextType | undefined>(undefined);
 
-export const ProjectContextProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [currentProjectId, setCurrentProjectId] = useState<string | null>(() => {
-    const context = localStorage.getItem('projectContext');
-    return context ? JSON.parse(context).projectId : null;
-  });
+export const ProjectContextProvider: React.FC<{ children: ReactNode }> = ({
+  children,
+}) => {
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(
+    () => {
+      const context = localStorage.getItem("projectContext");
+      return context ? JSON.parse(context).projectId : null;
+    },
+  );
 
-  const [viewMode, setViewMode] = useState<'single' | 'unified'>(() => {
-    return (localStorage.getItem('viewMode') as 'single' | 'unified') || 'single';
+  const [viewMode, setViewMode] = useState<"single" | "unified">(() => {
+    return (
+      (localStorage.getItem("viewMode") as "single" | "unified") || "single"
+    );
   });
 
   // Start with empty projects - will be fetched from API
   const [userProjects, setUserProjects] = useState<Project[]>([]);
 
   const [recentProjects, setRecentProjects] = useState<string[]>(() => {
-    const recent = localStorage.getItem('recentProjects');
+    const recent = localStorage.getItem("recentProjects");
     return recent ? JSON.parse(recent) : [];
   });
 
   const [favoriteProjects, setFavoriteProjects] = useState<string[]>(() => {
-    const favorites = localStorage.getItem('favoriteProjects');
+    const favorites = localStorage.getItem("favoriteProjects");
     return favorites ? JSON.parse(favorites) : [];
   });
 
@@ -79,74 +93,75 @@ export const ProjectContextProvider: React.FC<{ children: ReactNode }> = ({ chil
 
     const fetchUserProjects = async () => {
       try {
-        const token = localStorage.getItem('authToken');
-        console.log('🔄 ProjectContext: Checking for auth token...');
-        
+        const token = localStorage.getItem("authToken");
+
         if (!token) {
-          console.log('⚠️ ProjectContext: No auth token found, clearing projects');
           if (isMounted) {
             setUserProjects([]); // Clear projects when no token
           }
           return;
         }
 
-        console.log('🔄 ProjectContext: Fetching projects from API...');
         setIsLoading(true);
 
         // Fetch user's assigned projects from dedicated endpoint
-        const response = await fetch(`${API_CONFIG.API_URL}/projects/my-projects`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
-
-        console.log('🔄 ProjectContext: API response status:', response.status);
+        const response = await fetch(
+          `${API_CONFIG.API_URL}/projects/my-projects`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+          },
+        );
 
         if (response.ok) {
           const data = await response.json();
-          console.log('🔄 ProjectContext: API response data:', data);
-          
+
           if (data.success && data.data?.projects && isMounted) {
-            const projects = data.data.projects.filter((p: Project) => p.status === 'active');
-            
-            console.log('✅ ProjectContext: Fetched', projects.length, 'active projects');
-            
+            const projects = data.data.projects.filter(
+              (p: Project) => p.status === "active",
+            );
+
             setUserProjects(projects);
-            
+
             // Check if user is Super Admin - Super Admins should NOT have a project auto-selected
-            const userRole = localStorage.getItem('userRole');
-            const isSuperAdmin = userRole === 'SUPER_ADMIN' || userRole === 'Super Admin';
-            
+            const userRole = localStorage.getItem("userRole");
+            const isSuperAdmin =
+              userRole === "SUPER_ADMIN" || userRole === "Super Admin";
+
             // For Super Admin: use unified mode, no project auto-selection
             // For other users: auto-select first project if none selected
             if (isSuperAdmin) {
-              console.log('👑 ProjectContext: Super Admin detected - using unified mode, no project filter');
               // Don't auto-select a project for Super Admin
               // They should see all data across all projects by default
-              if (!localStorage.getItem('viewMode')) {
-                setViewMode('unified');
-                localStorage.setItem('viewMode', 'unified');
+              if (!localStorage.getItem("viewMode")) {
+                setViewMode("unified");
+                localStorage.setItem("viewMode", "unified");
               }
             } else if (projects.length > 0 && !currentProjectId) {
               const firstProject = projects[0];
               setCurrentProjectId(firstProject._id);
-              console.log('✅ ProjectContext: Auto-selected first project:', firstProject.name);
             }
           } else {
-            console.log('⚠️ ProjectContext: No projects in response or component unmounted');
             if (isMounted) {
               setUserProjects([]);
             }
           }
         } else {
-          console.error('❌ ProjectContext: API request failed with status:', response.status);
+          console.error(
+            "❌ ProjectContext: API request failed with status:",
+            response.status,
+          );
           if (isMounted) {
             setUserProjects([]);
           }
         }
       } catch (error) {
-        console.error('❌ ProjectContext: Error fetching user projects:', error);
+        console.error(
+          "❌ ProjectContext: Error fetching user projects:",
+          error,
+        );
         if (isMounted) {
           setUserProjects([]);
         }
@@ -163,12 +178,11 @@ export const ProjectContextProvider: React.FC<{ children: ReactNode }> = ({ chil
       isMounted = false;
     };
   }, []); // Run once on mount
-  
+
   // Listen for login events and refetch projects
   useEffect(() => {
     const handleAuthChange = () => {
-      console.log('🔄 ProjectContext: Auth state changed, refetching projects...');
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem("authToken");
       if (token) {
         // Token added/changed - refetch projects
         fetchProjectsAfterLogin();
@@ -181,26 +195,29 @@ export const ProjectContextProvider: React.FC<{ children: ReactNode }> = ({ chil
 
     const fetchProjectsAfterLogin = async () => {
       try {
-        const token = localStorage.getItem('authToken');
+        const token = localStorage.getItem("authToken");
         if (!token) return;
 
-        console.log('🔄 ProjectContext: Fetching projects after login...');
         setIsLoading(true);
 
-        const response = await fetch(`${API_CONFIG.API_URL}/projects/my-projects`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
+        const response = await fetch(
+          `${API_CONFIG.API_URL}/projects/my-projects`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+          },
+        );
 
         if (response.ok) {
           const data = await response.json();
           if (data.success && data.data?.projects) {
-            const projects = data.data.projects.filter((p: Project) => p.status === 'active');
-            console.log('✅ ProjectContext: Fetched', projects.length, 'active projects after login');
+            const projects = data.data.projects.filter(
+              (p: Project) => p.status === "active",
+            );
             setUserProjects(projects);
-            
+
             // Auto-select first project if none selected
             if (projects.length > 0 && !currentProjectId) {
               setCurrentProjectId(projects[0]._id);
@@ -208,61 +225,70 @@ export const ProjectContextProvider: React.FC<{ children: ReactNode }> = ({ chil
           }
         }
       } catch (error) {
-        console.error('❌ ProjectContext: Error fetching projects after login:', error);
+        console.error(
+          "❌ ProjectContext: Error fetching projects after login:",
+          error,
+        );
       } finally {
         setIsLoading(false);
       }
     };
 
     // Listen for custom login event
-    window.addEventListener('userLoggedIn', handleAuthChange);
-    
+    window.addEventListener("userLoggedIn", handleAuthChange);
+
     return () => {
-      window.removeEventListener('userLoggedIn', handleAuthChange);
+      window.removeEventListener("userLoggedIn", handleAuthChange);
     };
   }, [currentProjectId]);
 
   // Persist viewMode to localStorage
   useEffect(() => {
-    localStorage.setItem('viewMode', viewMode);
+    localStorage.setItem("viewMode", viewMode);
   }, [viewMode]);
 
   // Persist currentProjectId to localStorage
   useEffect(() => {
     if (currentProjectId) {
-      const project = userProjects.find(p => p._id === currentProjectId);
+      const project = userProjects.find((p) => p._id === currentProjectId);
       if (project) {
-        const customUrlPath = project.branding?.customUrlPath || project.code.toLowerCase();
-        localStorage.setItem('projectContext', JSON.stringify({
-          projectId: currentProjectId,
-          customUrlPath: customUrlPath
-        }));
+        const customUrlPath =
+          project.branding?.customUrlPath || project.code.toLowerCase();
+        localStorage.setItem(
+          "projectContext",
+          JSON.stringify({
+            projectId: currentProjectId,
+            customUrlPath: customUrlPath,
+          }),
+        );
       }
     }
   }, [currentProjectId, userProjects]);
 
   // Persist recent projects to localStorage
   useEffect(() => {
-    localStorage.setItem('recentProjects', JSON.stringify(recentProjects));
+    localStorage.setItem("recentProjects", JSON.stringify(recentProjects));
   }, [recentProjects]);
 
   // Persist favorite projects to localStorage
   useEffect(() => {
-    localStorage.setItem('favoriteProjects', JSON.stringify(favoriteProjects));
+    localStorage.setItem("favoriteProjects", JSON.stringify(favoriteProjects));
   }, [favoriteProjects]);
 
   const addRecentProject = useCallback((projectId: string) => {
-    setRecentProjects(prev => {
-      const newRecent = [projectId, ...prev.filter(id => id !== projectId)]
-        .slice(0, 5); // Keep last 5
+    setRecentProjects((prev) => {
+      const newRecent = [
+        projectId,
+        ...prev.filter((id) => id !== projectId),
+      ].slice(0, 5); // Keep last 5
       return newRecent;
     });
   }, []);
 
   const toggleFavorite = useCallback((projectId: string) => {
-    setFavoriteProjects(prev => {
+    setFavoriteProjects((prev) => {
       return prev.includes(projectId)
-        ? prev.filter(id => id !== projectId)
+        ? prev.filter((id) => id !== projectId)
         : [...prev, projectId];
     });
   }, []);
@@ -271,112 +297,124 @@ export const ProjectContextProvider: React.FC<{ children: ReactNode }> = ({ chil
    * Switch to a different project with smooth transitions
    * Supports multiple strategies for switching
    */
-  const switchProject = useCallback(async (
-    projectId: string, 
-    options: SwitchOptions = {}
-  ): Promise<void> => {
-    const {
-      reload = false,
-      navigate = false,
-      preserveRoute = false
-    } = options;
+  const switchProject = useCallback(
+    async (projectId: string, options: SwitchOptions = {}): Promise<void> => {
+      const {
+        reload = false,
+        navigate = false,
+        preserveRoute = false,
+      } = options;
 
-    try {
-      setIsSwitching(true);
+      try {
+        setIsSwitching(true);
 
-      // Find target project
-      const targetProject = userProjects.find(p => p._id === projectId);
-      if (!targetProject) {
-        console.error('Project not found:', projectId);
-        return;
-      }
-
-      // Update state
-      setCurrentProjectId(projectId);
-      setViewMode('single');
-      addRecentProject(projectId);
-
-      // Get custom URL path
-      const customUrlPath = targetProject.branding?.customUrlPath || targetProject.code.toLowerCase();
-
-      // Dispatch custom event for other components
-      window.dispatchEvent(new CustomEvent('projectSwitched', {
-        detail: { 
-          projectId, 
-          project: targetProject 
+        // Find target project
+        const targetProject = userProjects.find((p) => p._id === projectId);
+        if (!targetProject) {
+          console.error("Project not found:", projectId);
+          return;
         }
-      }));
 
-      // Wait a bit for state to settle
-      await new Promise(resolve => setTimeout(resolve, 100));
+        // Update state
+        setCurrentProjectId(projectId);
+        setViewMode("single");
+        addRecentProject(projectId);
 
-      // Handle navigation/reload
-      if (reload) {
-        // Full page reload to refresh all context
-        window.location.href = `/${customUrlPath}/portal/dashboard`;
-      } else if (navigate) {
-        // Use React Router navigation (smoother)
-        const currentPath = window.location.pathname;
-        const pathParts = currentPath.split('/').filter(Boolean);
-        
-        if (preserveRoute && pathParts.length > 2) {
-          // Preserve current route (e.g., /sac/portal/tickets → /nirf/portal/tickets)
-          const route = pathParts.slice(2).join('/'); // Get everything after /portal/
-          window.location.href = `/${customUrlPath}/portal/${route}`;
-        } else {
-          // Navigate to project home
+        // Get custom URL path
+        const customUrlPath =
+          targetProject.branding?.customUrlPath ||
+          targetProject.code.toLowerCase();
+
+        // Dispatch custom event for other components
+        window.dispatchEvent(
+          new CustomEvent("projectSwitched", {
+            detail: {
+              projectId,
+              project: targetProject,
+            },
+          }),
+        );
+
+        // Wait a bit for state to settle
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        // Handle navigation/reload
+        if (reload) {
+          // Full page reload to refresh all context
           window.location.href = `/${customUrlPath}/portal/dashboard`;
-        }
-      }
+        } else if (navigate) {
+          // Use React Router navigation (smoother)
+          const currentPath = window.location.pathname;
+          const pathParts = currentPath.split("/").filter(Boolean);
 
-      console.log(`✅ [PROJECT_SWITCH] Switched to project: ${targetProject.name}`);
-    } catch (error) {
-      console.error('❌ [PROJECT_SWITCH] Error switching project:', error);
-      throw error;
-    } finally {
-      setIsSwitching(false);
-    }
-  }, [userProjects, addRecentProject]);
+          if (preserveRoute && pathParts.length > 2) {
+            // Preserve current route (e.g., /sac/portal/tickets → /nirf/portal/tickets)
+            const route = pathParts.slice(2).join("/"); // Get everything after /portal/
+            window.location.href = `/${customUrlPath}/portal/${route}`;
+          } else {
+            // Navigate to project home
+            window.location.href = `/${customUrlPath}/portal/dashboard`;
+          }
+        }
+
+        console.log(
+          `✅ [PROJECT_SWITCH] Switched to project: ${targetProject.name}`,
+        );
+      } catch (error) {
+        console.error("❌ [PROJECT_SWITCH] Error switching project:", error);
+        throw error;
+      } finally {
+        setIsSwitching(false);
+      }
+    },
+    [userProjects, addRecentProject],
+  );
 
   const getCurrentProject = useCallback((): Project | null => {
-    return userProjects.find(p => p._id === currentProjectId) || null;
+    return userProjects.find((p) => p._id === currentProjectId) || null;
   }, [userProjects, currentProjectId]);
 
-  const isProjectAccessible = useCallback((projectId: string): boolean => {
-    return userProjects.some(p => p._id === projectId);
-  }, [userProjects]);
+  const isProjectAccessible = useCallback(
+    (projectId: string): boolean => {
+      return userProjects.some((p) => p._id === projectId);
+    },
+    [userProjects],
+  );
 
   // Memoize context value to prevent unnecessary re-renders of consumers
-  const contextValue = useMemo(() => ({
-    currentProjectId,
-    setCurrentProjectId,
-    viewMode,
-    setViewMode,
-    userProjects,
-    setUserProjects,
-    recentProjects,
-    addRecentProject,
-    favoriteProjects,
-    toggleFavorite,
-    switchProject,
-    getCurrentProject,
-    isProjectAccessible,
-    isLoading,
-    isSwitching
-  }), [
-    currentProjectId,
-    viewMode,
-    userProjects,
-    recentProjects,
-    favoriteProjects,
-    isLoading,
-    isSwitching,
-    addRecentProject,
-    toggleFavorite,
-    switchProject,
-    getCurrentProject,
-    isProjectAccessible
-  ]);
+  const contextValue = useMemo(
+    () => ({
+      currentProjectId,
+      setCurrentProjectId,
+      viewMode,
+      setViewMode,
+      userProjects,
+      setUserProjects,
+      recentProjects,
+      addRecentProject,
+      favoriteProjects,
+      toggleFavorite,
+      switchProject,
+      getCurrentProject,
+      isProjectAccessible,
+      isLoading,
+      isSwitching,
+    }),
+    [
+      currentProjectId,
+      viewMode,
+      userProjects,
+      recentProjects,
+      favoriteProjects,
+      isLoading,
+      isSwitching,
+      addRecentProject,
+      toggleFavorite,
+      switchProject,
+      getCurrentProject,
+      isProjectAccessible,
+    ],
+  );
 
   return (
     <ProjectContext.Provider value={contextValue}>
@@ -388,7 +426,9 @@ export const ProjectContextProvider: React.FC<{ children: ReactNode }> = ({ chil
 export const useProjectContext = () => {
   const context = useContext(ProjectContext);
   if (!context) {
-    throw new Error('useProjectContext must be used within ProjectContextProvider');
+    throw new Error(
+      "useProjectContext must be used within ProjectContextProvider",
+    );
   }
   return context;
 };

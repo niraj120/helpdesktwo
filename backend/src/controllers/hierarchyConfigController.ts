@@ -116,10 +116,10 @@ export const saveHierarchyConfig = async (req: Request, res: Response) => {
     }
 
     // Validate level count
-    if (levelCount < 1 || levelCount > 4) {
+    if (levelCount < 1 || levelCount > 5) {
       return res.status(400).json({
         success: false,
-        message: "Level count must be between 1 and 4",
+        message: "Level count must be between 1 and 5",
       });
     }
 
@@ -170,7 +170,7 @@ export const saveHierarchyConfig = async (req: Request, res: Response) => {
       if (priorityFromLevel !== undefined) {
         config.priorityFromLevel = Math.max(
           0,
-          Math.min(4, parseInt(priorityFromLevel) || 0),
+          Math.min(5, parseInt(priorityFromLevel) || 0),
         );
       }
       config.updatedBy = new mongoose.Types.ObjectId(userId);
@@ -195,7 +195,7 @@ export const saveHierarchyConfig = async (req: Request, res: Response) => {
         },
         priorityFromLevel:
           priorityFromLevel !== undefined
-            ? Math.max(0, Math.min(4, parseInt(priorityFromLevel) || 0))
+            ? Math.max(0, Math.min(5, parseInt(priorityFromLevel) || 0))
             : 0,
         isActive: true,
         createdBy: new mongoose.Types.ObjectId(userId),
@@ -362,10 +362,10 @@ export const getCategoriesByLevel = async (req: Request, res: Response) => {
     }
 
     const level = parseInt(levelNumber);
-    if (level < 1 || level > 4) {
+    if (level < 1 || level > 5) {
       return res.status(400).json({
         success: false,
-        message: "Level must be between 1 and 4",
+        message: "Level must be between 1 and 5",
       });
     }
 
@@ -454,10 +454,10 @@ export const createHierarchyCategory = async (req: Request, res: Response) => {
     const categoryLevel = level || 1;
 
     // Validate level
-    if (categoryLevel < 1 || categoryLevel > 4) {
+    if (categoryLevel < 1 || categoryLevel > 5) {
       return res.status(400).json({
         success: false,
-        message: "Level must be between 1 and 4",
+        message: "Level must be between 1 and 5",
       });
     }
 
@@ -670,7 +670,7 @@ export const updateHierarchyCategory = async (req: Request, res: Response) => {
 };
 
 /**
- * Delete a category (soft delete)
+ * Delete a category (hard delete)
  * @route DELETE /api/hierarchy-config/:projectId/categories/:categoryId
  */
 export const deleteHierarchyCategory = async (req: Request, res: Response) => {
@@ -694,15 +694,14 @@ export const deleteHierarchyCategory = async (req: Request, res: Response) => {
       });
     }
 
-    // Check if category has children
+    // Check if category has children (active or inactive)
     const childCount = await Category.countDocuments({
       parentId: categoryId,
-      isActive: true,
     });
     if (childCount > 0) {
       return res.status(400).json({
         success: false,
-        message: `Cannot delete category with ${childCount} active children. Delete children first.`,
+        message: `Cannot delete category with ${childCount} child categories. Delete children first.`,
       });
     }
 
@@ -718,22 +717,15 @@ export const deleteHierarchyCategory = async (req: Request, res: Response) => {
       ],
     });
 
-    if (ticketCount > 0 && hardDelete === "true") {
+    if (ticketCount > 0) {
       return res.status(400).json({
         success: false,
-        message: `Cannot hard delete category used in ${ticketCount} tickets. Use soft delete instead.`,
+        message: `Cannot delete category used in ${ticketCount} ticket(s). Remove those ticket references first.`,
       });
     }
 
-    if (hardDelete === "true") {
-      await Category.findByIdAndDelete(categoryId);
-      console.log("🗑️ Category hard deleted:", categoryId);
-    } else {
-      category.isActive = false;
-      category.updatedBy = new mongoose.Types.ObjectId(userId);
-      await category.save();
-      console.log("🗑️ Category soft deleted:", categoryId);
-    }
+    await Category.findByIdAndDelete(categoryId);
+    console.log("🗑️ Category hard deleted:", categoryId);
 
     // Emit WebSocket event for real-time updates
     const io = (req as any).app.get("io");
@@ -750,7 +742,7 @@ export const deleteHierarchyCategory = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       success: true,
-      message: `Category ${hardDelete === "true" ? "deleted" : "deactivated"} successfully`,
+      message: `Category deleted successfully`,
     });
   } catch (error: any) {
     console.error("Error deleting category:", error);
@@ -826,10 +818,10 @@ export const bulkUploadCategories = async (req: Request, res: Response) => {
           message: `Row ${i + 1}: Name and Level are required`,
         });
       }
-      if (row.level < 1 || row.level > 4) {
+      if (row.level < 1 || row.level > 5) {
         return res.status(400).json({
           success: false,
-          message: `Row ${i + 1}: Level must be between 1 and 4`,
+          message: `Row ${i + 1}: Level must be between 1 and 5`,
         });
       }
       if (row.level > 1 && !row.parentName) {

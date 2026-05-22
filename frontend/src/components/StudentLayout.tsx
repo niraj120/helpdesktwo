@@ -13,6 +13,7 @@ import {
 import axios from "axios";
 import API_BASE_URL from "../config/api";
 import { API_CONFIG } from "../config/constants";
+import { useBranding } from "../contexts/BrandingContext";
 import { PERMISSIONS } from "../constants/permissions";
 import { usePermissions } from "../hooks/usePermissions";
 import WhatsAppFloatingIcon from "./WhatsAppFloatingIcon";
@@ -46,9 +47,11 @@ const StudentLayout = ({ children }: StudentLayoutProps) => {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [user, setUser] = useState<User | null>(null);
-  const [branding, setBranding] = useState<ProjectBranding | null>(null);
-  const [projectId, setProjectId] = useState<string | null>(null);
-  const [submissionMode, setSubmissionMode] = useState<string>("both");
+  // Branding comes from shared BrandingContext — avoids duplicate API calls
+  const { branding: fullBranding, loading: brandingLoading } = useBranding();
+  const branding = fullBranding?.branding ?? null;
+  const projectId = fullBranding?.projectId ?? null;
+  const submissionMode = (fullBranding as any)?.ticketSubmissionMode ?? "both";
   const { hasPermission, getAllPermissions } = usePermissions();
   const notifications = useNotifications();
   const [notifOpen, setNotifOpen] = useState(false);
@@ -65,31 +68,6 @@ const StudentLayout = ({ children }: StudentLayoutProps) => {
     const pathParts = location.pathname.split("/");
     return pathParts[1]; // First segment after /
   }, [location.pathname]);
-
-  // Fetch project branding
-  useEffect(() => {
-    const fetchBranding = async () => {
-      if (customUrlPath) {
-        try {
-          const response = await axios.get(
-            `${API_BASE_URL}/projects/branding/${customUrlPath}`,
-          );
-          if (response.data.success) {
-            setBranding(response.data.data.branding);
-            if (response.data.data.projectId) {
-              setProjectId(response.data.data.projectId);
-            }
-            if (response.data.data.ticketSubmissionMode) {
-              setSubmissionMode(response.data.data.ticketSubmissionMode);
-            }
-          }
-        } catch (error) {
-          console.error("Error fetching project branding:", error);
-        }
-      }
-    };
-    fetchBranding();
-  }, [customUrlPath]);
 
   // Fetch user data
   useEffect(() => {
@@ -181,11 +159,10 @@ const StudentLayout = ({ children }: StudentLayoutProps) => {
   // Filter menu items based on permissions and project submission mode
   const visibleMenuItems = menuItems.filter((item) => {
     // Check project-mode visibility (e.g., Find Center only for offline/both)
-    if (
-      (item as any).showForModes &&
-      !(item as any).showForModes.includes(submissionMode)
-    ) {
-      return false;
+    if ((item as any).showForModes) {
+      // Hide mode-restricted items until branding is loaded to avoid flash
+      if (brandingLoading) return false;
+      if (!(item as any).showForModes.includes(submissionMode)) return false;
     }
     return !item.permission || hasPermission(item.permission);
   });

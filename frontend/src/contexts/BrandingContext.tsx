@@ -54,7 +54,9 @@ const brandingCache = new Map<
   string,
   { data: ProjectBranding; timestamp: number }
 >();
-const CACHE_DURATION = 30 * 1000; // 30 seconds — short TTL so admin changes propagate quickly
+// In-flight request deduplication — prevents N concurrent calls for the same path
+const brandingInflight = new Map<string, Promise<ProjectBranding>>();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 interface BrandingProviderProps {
   children: ReactNode;
@@ -71,25 +73,13 @@ export const BrandingProvider: React.FC<BrandingProviderProps> = ({
   // Extract customUrlPath from URL pathname
   const customUrlPath = React.useMemo(() => {
     const path = location.pathname;
-    console.log("🎨 Current pathname:", path);
-
-    // Match pattern: /customUrlPath/portal/*
-    const match = path.match(/^\/([^/]+)\/portal/);
-    if (match) {
-      console.log("🎨 Extracted customUrlPath:", match[1]);
-      return match[1];
-    }
-
-    console.log("🎨 No customUrlPath found in path");
-    return null;
+    // Match pattern: /customUrlPath/portal/* or /customUrlPath/student/*
+    const match = path.match(/^\/([^/]+)\/(portal|student)/);
+    return match ? match[1] : null;
   }, [location.pathname]);
 
-  console.log("🎨 BrandingProvider rendered, customUrlPath:", customUrlPath);
-
-  const fetchBranding = async () => {
-    console.log("🎨 fetchBranding called with customUrlPath:", customUrlPath);
+  const fetchBranding = useCallback(async () => {
     if (!customUrlPath) {
-      console.log("🎨 No customUrlPath, skipping branding fetch");
       setLoading(false);
       return;
     }
@@ -118,126 +108,125 @@ export const BrandingProvider: React.FC<BrandingProviderProps> = ({
       "forgot-password",
       "reset-password",
     ];
-
-    // Skip branding fetch for internal routes
     if (internalRoutes.includes(customUrlPath)) {
       setLoading(false);
       return;
     }
 
-    // Check cache first
+    // Check memory cache first (5-minute TTL)
     const cached = brandingCache.get(customUrlPath);
     if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-      console.log("🎨 Using cached branding for:", customUrlPath);
       setBranding(cached.data);
       setLoading(false);
       return;
     }
 
+    // In-flight deduplication: if a request is already in progress for this path,
+    // wait for it instead of firing a duplicate request.
+    let fetchPromise = brandingInflight.get(customUrlPath);
+    if (!fetchPromise) {
+      fetchPromise = axios
+        .get(`${API_CONFIG.API_URL}/projects/branding/${customUrlPath}`)
+        .then((response) => {
+          const data = response.data.success
+            ? response.data.data
+            : response.data;
+          brandingCache.set(customUrlPath, { data, timestamp: Date.now() });
+          brandingInflight.delete(customUrlPath);
+          return data as ProjectBranding;
+        })
+        .catch((err) => {
+          brandingInflight.delete(customUrlPath);
+          throw err;
+        });
+      brandingInflight.set(customUrlPath, fetchPromise);
+    }
+
     try {
-      console.log("🎨 Fetching branding for:", customUrlPath);
       setLoading(true);
       setError(null);
-
-      const response = await axios.get(
-        `${API_CONFIG.API_URL}/projects/branding/${customUrlPath}`,
-      );
-
-      const brandingData = response.data.success
-        ? response.data.data
-        : response.data;
-
-      // Cache the branding data
-      brandingCache.set(customUrlPath, {
-        data: brandingData,
-        timestamp: Date.now(),
-      });
-
+      const brandingData = await fetchPromise;
       setBranding(brandingData);
     } catch (err: any) {
-      console.error("Error fetching branding:", err);
       setError(err.message || "Failed to fetch branding");
-
-      // Try fallback to project context
+      // Fallback to projectContext in localStorage
       try {
         const projectContextStr = localStorage.getItem("projectContext");
         if (projectContextStr) {
           const projectContext = JSON.parse(projectContextStr);
-          const fallbackBranding: ProjectBranding = {
+          setBranding({
             name: projectContext.projectName || "Dashboard",
             code: projectContext.projectCode || "",
             projectId: projectContext.projectId,
-            colorTheme: {
-              primary: "#667eea",
-              secondary: "#764ba2",
-              accent: "#3b82f6",
-              background: "#ffffff",
-            },
-          };
-          setBranding(fallbackBranding);
+          });
         }
-      } catch (fallbackError) {
-        console.error("Fallback error:", fallbackError);
-      }
+      } catch {}
     } finally {
       setLoading(false);
     }
-  };
+  }, [customUrlPath]);
 
   useEffect(() => {
     fetchBranding();
-  }, [customUrlPath]);
+  }, [fetchBranding]);
 
-  // Apply color theme to CSS variables when branding changes
+  // Apply color theme, page title, and favicon when branding data changes
   useEffect(() => {
-    if (branding) {
-      console.log("🎨 Applying branding:", branding);
-      const colorTheme = branding.branding?.colorTheme || branding.colorTheme;
-      console.log("🎨 Color theme:", colorTheme);
-      if (colorTheme) {
-        const root = document.documentElement;
-        root.style.setProperty("--primary-main", colorTheme.primary);
-        root.style.setProperty("--primary-dark", colorTheme.secondary);
-        root.style.setProperty("--accent-main", colorTheme.accent);
-        console.log("🎨 Applied colors to CSS variables");
+    if (!branding) return;
 
-        // Create lighter version of primary color
-        const hexToRgb = (hex: string) => {
-          const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-          return result
-            ? {
-                r: parseInt(result[1], 16),
-                g: parseInt(result[2], 16),
-                b: parseInt(result[3], 16),
-              }
-            : null;
-        };
+    const colorTheme = branding.branding?.colorTheme || branding.colorTheme;
+    if (colorTheme) {
+      const root = document.documentElement;
+      root.style.setProperty("--primary-main", colorTheme.primary);
+      root.style.setProperty("--primary-dark", colorTheme.secondary);
+      root.style.setProperty("--accent-main", colorTheme.accent);
 
-        const rgb = hexToRgb(colorTheme.primary);
-        if (rgb) {
-          root.style.setProperty(
-            "--primary-light",
-            `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.15)`,
-          );
-        }
+      // Create a lighter version of the primary color for hover states etc.
+      const hexToRgb = (hex: string) => {
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        return result
+          ? {
+              r: parseInt(result[1], 16),
+              g: parseInt(result[2], 16),
+              b: parseInt(result[3], 16),
+            }
+          : null;
+      };
+
+      const rgb = hexToRgb(colorTheme.primary);
+      if (rgb) {
+        root.style.setProperty(
+          "--primary-light",
+          `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.15)`,
+        );
       }
+    }
 
-      // Update page title
-      const browserTitle =
-        branding.branding?.browserTitle ||
-        branding.branding?.headerText ||
-        branding.projectName ||
-        branding.name ||
-        "Helpdesk Portal";
-      document.title = browserTitle;
-      console.log("🎨 Updated page title to:", browserTitle);
-    } else {
-      console.log("🎨 No branding data available");
+    // Update page title
+    const browserTitle =
+      branding.branding?.browserTitle ||
+      branding.branding?.headerText ||
+      branding.projectName ||
+      branding.name ||
+      "Helpdesk Portal";
+    document.title = browserTitle;
+
+    // Apply favicon
+    const faviconUrl = branding.branding?.favicon || branding.favicon;
+    if (faviconUrl) {
+      let link = document.querySelector(
+        "link[rel~='icon']",
+      ) as HTMLLinkElement | null;
+      if (!link) {
+        link = document.createElement("link");
+        link.rel = "icon";
+        document.head.appendChild(link);
+      }
+      link.href = faviconUrl;
     }
   }, [branding]);
 
-  // Memoize refetch callback to maintain stable reference
-  // Always bypasses the cache so admin changes propagate immediately
+  // Memoize refetch callback — always bypasses cache so admin changes propagate immediately
   const memoizedRefetch = useCallback(async () => {
     if (customUrlPath) {
       brandingCache.delete(customUrlPath);
@@ -274,5 +263,4 @@ export const useBranding = () => {
 // Utility function to clear cache (useful for testing or manual refresh)
 export const clearBrandingCache = () => {
   brandingCache.clear();
-  console.log("🎨 Branding cache cleared");
 };

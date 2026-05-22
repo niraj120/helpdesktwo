@@ -37,6 +37,14 @@ import "./models/FAQ";
 import "./models/PushSubscription";
 // UserReportingHierarchy model removed - using User.reportingManager field directly
 import "./models/UserDashboardConfig";
+import "./models/dashboard/WidgetDefinition";
+import "./models/dashboard/DashboardTemplate";
+import "./models/dashboard/DashboardWidget";
+import "./models/dashboard/DashboardAssignment";
+import "./models/dashboard/UserDashboardPreference";
+import "./models/dashboard/UserTarget";
+import "./models/dashboard/DashScheduledReport";
+import "./models/dashboard/DashThresholdAlert";
 import "./models/Notification";
 import "./models/NotificationSetting";
 import "./models/UserNotificationPreference";
@@ -80,6 +88,15 @@ import approvalRoutes from "./routes/approvals";
 import approvalMasterRoutes from "./routes/approvalMasters";
 import offlineModuleRoutes from "./routes/offlineModule";
 import dashboardRoutes from "./routes/dashboard";
+import adminDashboardRoutes from "./routes/adminDashboardRoutes";
+import meDashboardRoutes from "./routes/meDashboardRoutes";
+import widgetDataRoutes from "./routes/widgetDataRoutes";
+import personalDashboardRoutes from "./routes/personalDashboardRoutes";
+import usageAnalyticsRoutes from "./routes/usageAnalyticsRoutes";
+import { startAggregationScheduler } from "./services/dashboardAggregationService";
+import { startReportScheduler } from "./services/dashboard/reportScheduler";
+import { startReportAlertScheduler } from "./services/reports/reportAlertScheduler";
+import { startAttendanceAlertScheduler } from "./services/reports/attendanceAlertScheduler";
 import hierarchyRoutes from "./routes/hierarchy";
 import emailConfigRoutes from "./routes/emailConfig";
 import emailLogRoutes from "./routes/emailLogs";
@@ -122,6 +139,23 @@ import { seedNotificationSettings } from "./utils/seedNotificationSettings";
 import { emailPollingService } from "./services/emailPollingService";
 import { emailProcessingWorker } from "./services/emailProcessingWorker";
 import { autoEscalationService } from "./services/autoEscalationService";
+import { registerPhase1Handlers } from "./services/widgetHandlers/phase1Handlers";
+import { registerPhase2Handlers } from "./services/widgetHandlers/phase2Handlers";
+import { registerPhase3Handlers } from "./services/widgetHandlers/phase3Handlers";
+import { registerPhase4Handlers } from "./services/widgetHandlers/phase4Handlers";
+import { registerPhase5Handlers } from "./services/widgetHandlers/phase5Handlers";
+import { registerKbHandlers } from "./services/dashboard/queryHandlers/kbHandlers";
+import { registerActivityHandlers } from "./services/dashboard/queryHandlers/activityHandlers";
+import { registerAttRawHandlers } from "./services/widgetHandlers/attRawHandlers";
+import { registerCenterOpsHandlers } from "./services/widgetHandlers/centerOpsHandlers";
+import { registerAgentPerfHandlers } from "./services/widgetHandlers/agentPerfHandlers";
+import { registerSlaEscHandlers } from "./services/widgetHandlers/slaEscHandlers";
+import { registerMiscHandlers } from "./services/widgetHandlers/miscHandlers";
+import { registerAssetMgmtHandlers } from "./services/widgetHandlers/assetMgmtHandlers";
+import "./models/dashboard/FeedbackScore";
+import { seedWidgetDefinitions } from "./utils/seedWidgetDefinitions";
+import { seedDashboardTemplates } from "./utils/seedDashboardTemplates";
+import { initDashboardEventBus } from "./services/dashboardEventBus";
 
 const app = express();
 const httpServer = createServer(app);
@@ -275,8 +309,16 @@ app.use("/api/working-calendars", workingCalendarRoutes);
 app.use("/api/activity-logs", activityLogRoutes);
 app.use("/api/access-logs", accessLogRoutes);
 
-// Dashboard Routes
+// Dashboard Routes (legacy stats)
 app.use("/api/dashboard", dashboardRoutes);
+
+// Dashboard Engine Routes (Phase 1 + 2 + 3)
+app.use("/api/v1/admin/dashboards", adminDashboardRoutes);
+app.use("/api/v1/me/dashboards", meDashboardRoutes);
+app.use("/api/v1/me/personal-dashboards", personalDashboardRoutes);
+app.use("/api/v1/widgets", widgetDataRoutes);
+app.use("/api/v1/usage", usageAnalyticsRoutes);
+app.use("/api/v1/admin/usage", usageAnalyticsRoutes);
 
 // Hierarchy Routes (User Reporting Structure for Team Dashboards)
 // Temporarily disabled - hierarchyController needs refactoring for new schema
@@ -420,6 +462,33 @@ httpServer.listen(PORT, async () => {
 
     // Then initialize database (creates admin user with role reference)
     await initializeDatabase();
+
+    // Register dashboard widget handlers (Phase 1 + 2 + 3 + 4 + 5 + KB + Activity)
+    registerPhase1Handlers();
+    registerPhase2Handlers();
+    registerPhase3Handlers();
+    registerPhase4Handlers();
+    registerPhase5Handlers();
+    registerKbHandlers();
+    registerActivityHandlers();
+    registerAttRawHandlers();
+    registerCenterOpsHandlers();
+    registerAgentPerfHandlers();
+    registerSlaEscHandlers();
+    registerMiscHandlers();
+    registerAssetMgmtHandlers();
+    console.log(
+      "📊 Dashboard Engine: Phase 1–5 + KB + Activity + att/co/ap/se/misc/am handlers registered",
+    );
+
+    // Start event-driven cache invalidation
+    initDashboardEventBus();
+
+    // Seed widget definitions (idempotent)
+    await seedWidgetDefinitions();
+
+    // Seed pre-built dashboard templates (idempotent)
+    await seedDashboardTemplates();
   } catch (error) {
     console.error(
       "⚠️  Database initialization/seeding failed, but server will continue:",
@@ -449,6 +518,22 @@ httpServer.listen(PORT, async () => {
     // Keys are persisted in SystemSettings (MongoDB) — no .env entry needed.
     console.log("🔔 Initializing Web Push (VAPID)...");
     await ensureWebPushConfiguredAsync();
+
+    // Start dashboard pre-aggregation scheduler (Phase 4)
+    console.log("📊 Starting Dashboard Aggregation Scheduler...");
+    startAggregationScheduler();
+
+    // Start scheduled report delivery scheduler (Sprint 10)
+    console.log("📧 Starting Report Delivery Scheduler...");
+    await startReportScheduler();
+
+    // Start saved-report alert scheduler
+    console.log("🔔 Starting Report Alert Scheduler...");
+    await startReportAlertScheduler();
+
+    // Start attendance report alert scheduler
+    console.log("🔔 Starting Attendance Report Alert Scheduler...");
+    await startAttendanceAlertScheduler();
   } catch (error) {
     console.error(
       "⚠️  One or more background services failed to start:",

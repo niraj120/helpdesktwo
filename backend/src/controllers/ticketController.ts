@@ -38,6 +38,7 @@ import {
   AutoAssignResult,
 } from "../utils/ticketAutoAssignment";
 import * as slaService from "../services/slaService";
+import { dashboardEvents } from "../services/dashboardEventBus";
 import {
   toObjectId,
   toObjectIdArray,
@@ -460,6 +461,7 @@ export const submitTicket = async (req: Request, res: Response) => {
     // CategoryAssignmentConfigs are matched first (resolveConfigForCategory walks
     // up to parents automatically if no config exists at the leaf).
     const deepestCategoryRaw =
+      rawCategoryHierarchyFromBody?.level5 ||
       rawCategoryHierarchyFromBody?.level4 ||
       rawCategoryHierarchyFromBody?.level3 ||
       rawCategoryHierarchyFromBody?.level2 ||
@@ -911,6 +913,9 @@ export const submitTicket = async (req: Request, res: Response) => {
     console.log(
       `✅ Ticket created successfully: ${ticket._id} | Created by: ${studentUserId}${assignedAgent ? ` | Assigned to: ${assignedAgent}` : " | Unassigned"}`,
     );
+
+    // Dashboard cache invalidation (fire-and-forget)
+    dashboardEvents.emit("ticket.created", { tenantId: projectId, projectId });
 
     // Notification engine: ticket_created (fan-out to all roles configured in settings)
     fireNotification({
@@ -1372,8 +1377,6 @@ export const getMyTickets = async (req: Request, res: Response) => {
       agentRoleCodes.includes(role?.code) ||
       hasAgentPermission;
 
-
-
     // Build query based on permissions and role type
     let query: any = {};
 
@@ -1628,8 +1631,6 @@ export const getMyTickets = async (req: Request, res: Response) => {
       .skip(skip)
       .limit(limit)
       .lean();
-
-
 
     // OPTIMIZED: Batch fetch all projects and centers instead of N+1 queries
     const projectIds = [
@@ -3450,6 +3451,11 @@ export const closeTicket = async (req: Request, res: Response) => {
 
     console.log(`✅ Ticket closed by student: ${ticket._id} by ${user.email}`);
 
+    // Dashboard cache invalidation (fire-and-forget)
+    dashboardEvents.emit("ticket.closed", {
+      tenantId: ticket.metadata?.projectId?.toString() ?? "",
+    });
+
     await emitTicketRealtimeUpdate(ticket, "status-changed");
 
     return res.status(200).json({
@@ -3884,6 +3890,16 @@ export const updateTicketStatus = async (req: Request, res: Response) => {
     })();
 
     await emitTicketRealtimeUpdate(updatedTicket, "status-changed");
+
+    // Dashboard cache invalidation (fire-and-forget)
+    const statusChangeTenantId =
+      (ticket as any).metadata?.projectId?.toString() ||
+      (ticket as any).project?.toString();
+    if (statusChangeTenantId) {
+      dashboardEvents.emit("ticket.status_changed", {
+        tenantId: statusChangeTenantId,
+      });
+    }
 
     return res.status(200).json({
       success: true,
@@ -4783,6 +4799,14 @@ export const assignTicket = async (req: Request, res: Response) => {
       .populate("metadata.projectId", "name");
 
     await emitTicketRealtimeUpdate(updatedTicket, "reassigned");
+
+    // Dashboard cache invalidation (fire-and-forget)
+    if (projectId) {
+      dashboardEvents.emit("ticket.assigned", {
+        tenantId: projectId,
+        assigneeId: agentId,
+      });
+    }
 
     return res.status(200).json({
       success: true,
