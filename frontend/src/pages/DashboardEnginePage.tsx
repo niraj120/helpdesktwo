@@ -23,7 +23,7 @@ import {
 } from "../services/dashboardEngineService";
 import WidgetFrame from "../components/dashboard/WidgetFrame";
 import { MdAdd, MdRefresh } from "react-icons/md";
-import API_CONFIG from "../config/api";
+import { API_CONFIG } from "../config/constants";
 import DashboardLayout from "../components/DashboardLayout";
 import { usePermissions } from "../hooks/usePermissions";
 import { useProjectContext } from "../contexts/ProjectContext";

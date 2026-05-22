@@ -21,7 +21,7 @@ import React, {
 } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import ReactGridLayout, { Layout } from "react-grid-layout";
+import ReactGridLayout, { Layout, LayoutItem } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import DashboardLayout from "../components/DashboardLayout";
@@ -3217,8 +3217,8 @@ export default function DashboardBuilderPage() {
             widgetKey: w.widgetKey,
             displayName: w.displayName,
             visualisationType: w.visualisationType,
-            gridX: w.gridColumn,
-            gridY: w.gridRow,
+            gridColumn: w.gridColumn,
+            gridRow: w.gridRow,
             gridWidth: w.gridWidth,
             gridHeight: w.gridHeight,
             displayOrder: i,
@@ -3388,17 +3388,12 @@ export default function DashboardBuilderPage() {
   // react-grid-layout controlled-mode feedback loop where firing onLayoutChange
   // with the pre-update internal state resets programmatic width/height changes
   // made via the input fields.
-  const onDragStop = useCallback((layout: Layout[]) => {
-    setWidgets((prev) =>
-      prev.map((w) => {
-        const l = layout.find((li) => li.i === w.layoutKey);
-        if (!l) return w;
-        return { ...w, gridColumn: l.x, gridRow: l.y };
+  const onDragStop = useCallback((layout: LayoutItem[]) => {
       }),
     );
   }, []);
 
-  const onResizeStop = useCallback((layout: Layout[]) => {
+  const onResizeStop = useCallback((layout: LayoutItem[]) => {
     setWidgets((prev) =>
       prev.map((w) => {
         const l = layout.find((li) => li.i === w.layoutKey);
@@ -3443,7 +3438,7 @@ export default function DashboardBuilderPage() {
   const selectedWidget =
     widgets.find((w) => w.layoutKey === selectedKey) ?? null;
 
-  const layout: Layout[] = widgets.map((w) => ({
+  const layout: LayoutItem[] = widgets.map((w) => ({
     i: w.layoutKey,
     x: w.gridColumn,
     y: w.gridRow,

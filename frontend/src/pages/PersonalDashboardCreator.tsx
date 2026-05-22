@@ -9,7 +9,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import ReactGridLayout, { Layout } from "react-grid-layout";
+import ReactGridLayout, { Layout, LayoutItem } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -30,6 +30,7 @@ import {
   MdAdd,
   MdDragIndicator,
 } from "react-icons/md";
+import DashboardLayout from "../components/DashboardLayout";
 
 interface CanvasWidget {
   id: string;
@@ -177,7 +178,7 @@ export default function PersonalDashboardCreator() {
     );
   }
 
-  const handleLayoutChange = useCallback((layout: Layout[]) => {
+  const handleLayoutChange = useCallback((layout: LayoutItem[]) => {
     setWidgets((prev) =>
       prev.map((w) => {
         const l = layout.find((li) => li.i === w.id);
@@ -243,7 +244,7 @@ export default function PersonalDashboardCreator() {
     }
   }
 
-  const gridLayout: Layout[] = widgets.map((w) => ({
+  const gridLayout: LayoutItem[] = widgets.map((w) => ({
     i: w.id,
     x: w.x,
     y: w.y,

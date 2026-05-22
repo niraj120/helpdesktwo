@@ -9,7 +9,7 @@
 
 import React, { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import API_CONFIG from "../config/api";
+import { API_CONFIG } from "../config/constants";
 import DashboardLayout from "../components/DashboardLayout";
 
 interface UsageSummary {

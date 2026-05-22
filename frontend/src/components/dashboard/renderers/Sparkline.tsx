@@ -117,7 +117,7 @@ export default function Sparkline({ data, onDrillThrough }: SparklineProps) {
                   padding: "4px 8px",
                 }}
                 labelStyle={{ color: "#94a3b8", fontSize: 10 }}
-                formatter={(val: number) => [val.toLocaleString(), "Value"]}
+                formatter={(val: any) => [val != null ? Number(val).toLocaleString() : "", "Value"]}
               />
               <Line
                 type="monotone"

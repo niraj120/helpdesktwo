@@ -12,7 +12,7 @@
 
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import API_CONFIG from "../config/api";
+import { API_CONFIG } from "../config/constants";
 import DashboardLayout from "../components/DashboardLayout";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -37,6 +37,8 @@ interface ScheduledReport {
   last_run_at?: string;
   last_run_status?: "success" | "failed" | "partial";
   last_error?: string;
+  subject_template?: string;
+  body_template?: string;
 }
 
 interface DashTemplate {
