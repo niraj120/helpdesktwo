@@ -3389,6 +3389,11 @@ export default function DashboardBuilderPage() {
   // with the pre-update internal state resets programmatic width/height changes
   // made via the input fields.
   const onDragStop = useCallback((layout: LayoutItem[]) => {
+    setWidgets((prev) =>
+      prev.map((w) => {
+        const l = layout.find((li) => li.i === w.layoutKey);
+        if (!l) return w;
+        return { ...w, gridColumn: l.x, gridRow: l.y };
       }),
     );
   }, []);
