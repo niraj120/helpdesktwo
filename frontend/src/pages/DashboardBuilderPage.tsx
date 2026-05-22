@@ -3388,7 +3388,7 @@ export default function DashboardBuilderPage() {
   // react-grid-layout controlled-mode feedback loop where firing onLayoutChange
   // with the pre-update internal state resets programmatic width/height changes
   // made via the input fields.
-  const onDragStop = useCallback((layout: LayoutItem[]) => {
+  const onDragStop = useCallback((layout: Layout) => {
     setWidgets((prev) =>
       prev.map((w) => {
         const l = layout.find((li) => li.i === w.layoutKey);
@@ -3398,7 +3398,7 @@ export default function DashboardBuilderPage() {
     );
   }, []);
 
-  const onResizeStop = useCallback((layout: LayoutItem[]) => {
+  const onResizeStop = useCallback((layout: Layout) => {
     setWidgets((prev) =>
       prev.map((w) => {
         const l = layout.find((li) => li.i === w.layoutKey);

@@ -178,7 +178,7 @@ export default function PersonalDashboardCreator() {
     );
   }
 
-  const handleLayoutChange = useCallback((layout: LayoutItem[]) => {
+  const handleLayoutChange = useCallback((layout: Layout) => {
     setWidgets((prev) =>
       prev.map((w) => {
         const l = layout.find((li) => li.i === w.id);
