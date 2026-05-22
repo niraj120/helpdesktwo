@@ -4276,14 +4276,11 @@ export default function DashboardBuilderPage() {
               <ReactGridLayout
                 className="layout"
                 layout={layout}
-                cols={12}
-                rowHeight={100}
+                gridConfig={{ cols: 12, rowHeight: 100 }}
                 width={canvasWidth - 32}
                 onDragStop={onDragStop}
                 onResizeStop={onResizeStop}
-                draggableHandle=".widget-drag-handle"
-                isResizable
-                isDraggable
+                dragConfig={{ handle: ".widget-drag-handle" }}
               >
                 {widgets.map((w) => {
                   const dp = w.dataPoint ?? getDataPoint(w.widgetKey);

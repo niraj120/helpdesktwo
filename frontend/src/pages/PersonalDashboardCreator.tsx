@@ -545,10 +545,9 @@ export default function PersonalDashboardCreator() {
             ) : (
               <ReactGridLayout
                 layout={gridLayout}
-                cols={12}
-                rowHeight={80}
+                gridConfig={{ cols: 12, rowHeight: 80 }}
                 width={canvasWidth}
-                draggableHandle=".widget-drag-handle"
+                dragConfig={{ handle: ".widget-drag-handle" }}
                 onLayoutChange={handleLayoutChange}
                 style={{ minHeight: 200 }}
               >
