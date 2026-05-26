@@ -735,6 +735,12 @@ const projectSchema = new Schema<IProject>(
                 "hierarchy-level-2",
                 "hierarchy-level-3",
                 "hierarchy-level-4",
+                "hierarchy-level-5",
+                "hierarchy-level-6",
+                "hierarchy-level-7",
+                "hierarchy-level-8",
+                "hierarchy-level-9",
+                "hierarchy-level-10",
               ],
             },
             required: { type: Boolean, default: false },
@@ -746,7 +752,7 @@ const projectSchema = new Schema<IProject>(
             isFixed: { type: Boolean, default: false },
             isEnabled: { type: Boolean, default: true },
             order: { type: Number },
-            hierarchyLevel: { type: Number }, // For hierarchy level fields (1-4)
+            hierarchyLevel: { type: Number }, // For hierarchy level fields (1-10)
             requireOtpVerification: { type: Boolean, default: false }, // For phone/email OTP verification
             validation: {
               minLength: { type: Number },
