@@ -154,8 +154,9 @@ export async function listDashboardTemplates(
     const { status } = req.query;
     const filter: Record<string, any> = {
       tenantId: new mongoose.Types.ObjectId(tenantId),
+      status: { $ne: "archived" }, // never show archived in default list
     };
-    if (status) filter.status = status;
+    if (status) filter.status = status; // explicit status param overrides
 
     const templates = await DashboardTemplate.find(filter)
       .sort({ updatedAt: -1 })
@@ -395,10 +396,17 @@ export async function deleteDashboardTemplate(
       return;
     }
 
-    template.status = "archived";
-    await template.save();
-
-    res.json({ success: true, message: "Template archived" });
+    // Drafts have never been published — hard delete them entirely.
+    // Published templates may have historical context — soft archive instead.
+    if (template.status === "draft") {
+      await DashboardWidget.deleteMany({ dashboardTemplateId: template._id });
+      await DashboardTemplate.deleteOne({ _id: template._id });
+      res.json({ success: true, message: "Template deleted" });
+    } else {
+      template.status = "archived";
+      await template.save();
+      res.json({ success: true, message: "Template archived" });
+    }
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
   }

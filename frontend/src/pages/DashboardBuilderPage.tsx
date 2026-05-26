@@ -2725,6 +2725,32 @@ function ConfigDrawer({
             </div>,
           )}
 
+        {/* Predefined Count — for am_total_required widget */}
+        {widget.widgetKey === "am_total_required" &&
+          section(
+            "Predefined Count Override",
+            <div>
+              <input
+                type="number"
+                min={0}
+                placeholder="e.g. 250 (leave blank to use DB value)"
+                value={cfg.targetCount ?? ""}
+                onChange={(e) =>
+                  patchConfig({
+                    targetCount: e.target.value
+                      ? Number(e.target.value)
+                      : undefined,
+                  })
+                }
+                style={inputStyle}
+              />
+              <div style={{ fontSize: 10, color: "#6b7280", marginTop: 4 }}>
+                Manually set the total required (predefined) asset count.
+                Overrides the sum calculated from asset definitions.
+              </div>
+            </div>,
+          )}
+
         {/* Excluded Roles — for all user count/breakdown widgets */}
         {isUserWidget &&
           section(
@@ -3153,6 +3179,10 @@ export default function DashboardBuilderPage() {
   useQuery(["template", id], () => fetchTemplate(id!), {
     enabled: isEdit,
     staleTime: 0, // always fetch fresh so edits immediately reflect saved widgets
+    // Prevent background refetch from overwriting unsaved user edits in the builder.
+    // Window-focus refetches would call onSuccess → setWidgets with old DB data,
+    // silently erasing any config changes the user made before clicking Save.
+    refetchOnWindowFocus: false,
     onSuccess: (t: DashboardTemplateDetail) => {
       setTemplateName(t.name);
       setDescription(t.description ?? "");

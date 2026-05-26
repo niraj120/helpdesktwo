@@ -432,11 +432,12 @@ const AgentTicketsContent = ({
     }
 
     // Filter by category
-    if (
-      filterCategory.length > 0 &&
-      !filterCategory.includes(ticket.category)
-    ) {
-      return false;
+    if (filterCategory.length > 0) {
+      const catName =
+        typeof ticket.category === "object" && ticket.category !== null
+          ? ticket.category.name
+          : ticket.category;
+      if (!filterCategory.includes(catName)) return false;
     }
 
     // Filter by ticket number
@@ -1274,7 +1275,15 @@ const AgentTicketsContent = ({
                       flexWrap: "wrap",
                     }}
                   >
-                    {ticket.category && <span>📂 {ticket.category}</span>}
+                    {ticket.category && (
+                      <span>
+                        📂{" "}
+                        {typeof ticket.category === "object" &&
+                        ticket.category !== null
+                          ? ticket.category.name
+                          : ticket.category}
+                      </span>
+                    )}
                     {ticket.createdBy && (
                       <span>
                         👤 {ticket.createdBy.firstName}{" "}

@@ -45,9 +45,25 @@ const amTotalAssetTypesHandler: QueryHandler = {
 const amTotalRequiredHandler: QueryHandler = {
   widgetKey: "am_total_required",
   cacheTtlSeconds: 600,
-  async execute(ctx): Promise<WidgetData> {
+  async execute(ctx, params, rf): Promise<WidgetData> {
+    // Manual override from widget config (super admin can set this in the builder)
+    if (params.targetCount != null && params.targetCount > 0) {
+      return { value: params.targetCount };
+    }
+    const pid = new mongoose.Types.ObjectId(ctx.tenantId);
+    const effectiveCentreId = rf.centreId ?? ctx.centreId;
+    if (effectiveCentreId) {
+      // Center view: sum totalAssigned for this center (the configured quantity IS the requirement per center)
+      const cid = new mongoose.Types.ObjectId(String(effectiveCentreId));
+      const res = await getMapping().aggregate([
+        { $match: { projectId: pid, centerId: cid } },
+        { $group: { _id: null, total: { $sum: "$totalAssigned" } } },
+      ]);
+      return { value: res[0]?.total ?? 0 };
+    }
+    // Project-wide fallback (admin view): sum predefinedCount across all active asset types
     const res = await getAsset().aggregate([
-      { $match: { projectId: new mongoose.Types.ObjectId(ctx.tenantId), isActive: true } },
+      { $match: { projectId: pid, isActive: true } },
       { $group: { _id: null, total: { $sum: "$predefinedCount" } } },
     ]);
     return { value: res[0]?.total ?? 0 };
@@ -58,9 +74,13 @@ const amTotalRequiredHandler: QueryHandler = {
 const amTotalAssignedHandler: QueryHandler = {
   widgetKey: "am_total_assigned",
   cacheTtlSeconds: 300,
-  async execute(ctx): Promise<WidgetData> {
+  async execute(ctx, _params, rf): Promise<WidgetData> {
+    const pid = new mongoose.Types.ObjectId(ctx.tenantId);
+    const match: Record<string, any> = { projectId: pid };
+    const effectiveCentreId = rf.centreId ?? ctx.centreId;
+    if (effectiveCentreId) match.centerId = new mongoose.Types.ObjectId(String(effectiveCentreId));
     const res = await getMapping().aggregate([
-      { $match: { projectId: new mongoose.Types.ObjectId(ctx.tenantId) } },
+      { $match: match },
       { $group: { _id: null, total: { $sum: "$totalAssigned" } } },
     ]);
     return { value: res[0]?.total ?? 0 };
@@ -71,20 +91,40 @@ const amTotalAssignedHandler: QueryHandler = {
 const amRequiredVsAssignedHandler: QueryHandler = {
   widgetKey: "am_required_vs_assigned",
   cacheTtlSeconds: 300,
-  async execute(ctx): Promise<WidgetData> {
+  async execute(ctx, _params, rf): Promise<WidgetData> {
     const pid = new mongoose.Types.ObjectId(ctx.tenantId);
-    const [requiredRes, assignedRes] = await Promise.all([
-      getAsset().aggregate([
-        { $match: { projectId: pid, isActive: true } },
+    let required: number;
+    let assigned: number;
+    const effectiveCentreId = rf.centreId ?? ctx.centreId;
+    if (effectiveCentreId) {
+      const cid = new mongoose.Types.ObjectId(String(effectiveCentreId));
+      const [assignedRes, mappedAssetIds] = await Promise.all([
+        getMapping().aggregate([
+          { $match: { projectId: pid, centerId: cid } },
+          { $group: { _id: null, total: { $sum: "$totalAssigned" } } },
+        ]),
+        getMapping().distinct("assetId", { projectId: pid, centerId: cid }),
+      ]);
+      assigned = assignedRes[0]?.total ?? 0;
+      const reqRes = await getAsset().aggregate([
+        { $match: { projectId: pid, isActive: true, _id: { $in: mappedAssetIds } } },
         { $group: { _id: null, total: { $sum: "$predefinedCount" } } },
-      ]),
-      getMapping().aggregate([
-        { $match: { projectId: pid } },
-        { $group: { _id: null, total: { $sum: "$totalAssigned" } } },
-      ]),
-    ]);
-    const required = requiredRes[0]?.total ?? 0;
-    const assigned = assignedRes[0]?.total ?? 0;
+      ]);
+      required = reqRes[0]?.total ?? 0;
+    } else {
+      const [requiredRes, assignedRes] = await Promise.all([
+        getAsset().aggregate([
+          { $match: { projectId: pid, isActive: true } },
+          { $group: { _id: null, total: { $sum: "$predefinedCount" } } },
+        ]),
+        getMapping().aggregate([
+          { $match: { projectId: pid } },
+          { $group: { _id: null, total: { $sum: "$totalAssigned" } } },
+        ]),
+      ]);
+      required = requiredRes[0]?.total ?? 0;
+      assigned = assignedRes[0]?.total ?? 0;
+    }
     const gap = required - assigned;
     return {
       value: gap,
@@ -106,9 +146,13 @@ const amRequiredVsAssignedHandler: QueryHandler = {
 const amWorkingAssetsHandler: QueryHandler = {
   widgetKey: "am_working_assets",
   cacheTtlSeconds: 300,
-  async execute(ctx): Promise<WidgetData> {
+  async execute(ctx, _params, rf): Promise<WidgetData> {
+    const pid = new mongoose.Types.ObjectId(ctx.tenantId);
+    const match: Record<string, any> = { projectId: pid };
+    const effectiveCentreId = rf.centreId ?? ctx.centreId;
+    if (effectiveCentreId) match.centerId = new mongoose.Types.ObjectId(String(effectiveCentreId));
     const res = await getMapping().aggregate([
-      { $match: { projectId: new mongoose.Types.ObjectId(ctx.tenantId) } },
+      { $match: match },
       { $group: { _id: null, total: { $sum: "$workingAsset" } } },
     ]);
     return { value: res[0]?.total ?? 0, trendDirection: "higher_is_better" };
@@ -119,9 +163,13 @@ const amWorkingAssetsHandler: QueryHandler = {
 const amNonWorkingAssetsHandler: QueryHandler = {
   widgetKey: "am_non_working_assets",
   cacheTtlSeconds: 300,
-  async execute(ctx): Promise<WidgetData> {
+  async execute(ctx, _params, rf): Promise<WidgetData> {
+    const pid = new mongoose.Types.ObjectId(ctx.tenantId);
+    const match: Record<string, any> = { projectId: pid };
+    const effectiveCentreId = rf.centreId ?? ctx.centreId;
+    if (effectiveCentreId) match.centerId = new mongoose.Types.ObjectId(String(effectiveCentreId));
     const res = await getMapping().aggregate([
-      { $match: { projectId: new mongoose.Types.ObjectId(ctx.tenantId) } },
+      { $match: match },
       { $group: { _id: null, total: { $sum: "$notWorkingAsset" } } },
     ]);
     return { value: res[0]?.total ?? 0, trendDirection: "lower_is_better" };
@@ -132,9 +180,13 @@ const amNonWorkingAssetsHandler: QueryHandler = {
 const amAssetHealthRateHandler: QueryHandler = {
   widgetKey: "am_asset_health_rate",
   cacheTtlSeconds: 300,
-  async execute(ctx): Promise<WidgetData> {
+  async execute(ctx, _params, rf): Promise<WidgetData> {
+    const pid = new mongoose.Types.ObjectId(ctx.tenantId);
+    const match: Record<string, any> = { projectId: pid };
+    const effectiveCentreId = rf.centreId ?? ctx.centreId;
+    if (effectiveCentreId) match.centerId = new mongoose.Types.ObjectId(String(effectiveCentreId));
     const res = await getMapping().aggregate([
-      { $match: { projectId: new mongoose.Types.ObjectId(ctx.tenantId) } },
+      { $match: match },
       {
         $group: {
           _id:        null,
@@ -161,9 +213,13 @@ const amAssetHealthRateHandler: QueryHandler = {
 const amUtilizationRateHandler: QueryHandler = {
   widgetKey: "am_utilization_rate",
   cacheTtlSeconds: 300,
-  async execute(ctx): Promise<WidgetData> {
+  async execute(ctx, _params, rf): Promise<WidgetData> {
+    const pid = new mongoose.Types.ObjectId(ctx.tenantId);
+    const match: Record<string, any> = { projectId: pid };
+    const effectiveCentreId = rf.centreId ?? ctx.centreId;
+    if (effectiveCentreId) match.centerId = new mongoose.Types.ObjectId(String(effectiveCentreId));
     const res = await getMapping().aggregate([
-      { $match: { projectId: new mongoose.Types.ObjectId(ctx.tenantId) } },
+      { $match: match },
       {
         $group: {
           _id:      null,
@@ -189,11 +245,14 @@ const amUtilizationRateHandler: QueryHandler = {
 const amAuditsSubmittedHandler: QueryHandler = {
   widgetKey: "am_audits_submitted",
   cacheTtlSeconds: 300,
-  async execute(ctx): Promise<WidgetData> {
-    const value = await getMapping().countDocuments({
+  async execute(ctx, _params, rf): Promise<WidgetData> {
+    const filter: Record<string, any> = {
       projectId: new mongoose.Types.ObjectId(ctx.tenantId),
       auditSubmitted: true,
-    });
+    };
+    const effectiveCentreId = rf.centreId ?? ctx.centreId;
+    if (effectiveCentreId) filter.centerId = new mongoose.Types.ObjectId(String(effectiveCentreId));
+    const value = await getMapping().countDocuments(filter);
     return { value, trendDirection: "higher_is_better" };
   },
 };
@@ -202,11 +261,14 @@ const amAuditsSubmittedHandler: QueryHandler = {
 const amAuditsPendingHandler: QueryHandler = {
   widgetKey: "am_audits_pending",
   cacheTtlSeconds: 300,
-  async execute(ctx): Promise<WidgetData> {
-    const value = await getMapping().countDocuments({
+  async execute(ctx, _params, rf): Promise<WidgetData> {
+    const filter: Record<string, any> = {
       projectId: new mongoose.Types.ObjectId(ctx.tenantId),
       auditSubmitted: { $ne: true },
-    });
+    };
+    const effectiveCentreId = rf.centreId ?? ctx.centreId;
+    if (effectiveCentreId) filter.centerId = new mongoose.Types.ObjectId(String(effectiveCentreId));
+    const value = await getMapping().countDocuments(filter);
     return { value, trendDirection: "lower_is_better" };
   },
 };
@@ -215,11 +277,14 @@ const amAuditsPendingHandler: QueryHandler = {
 const amAuditComplianceRateHandler: QueryHandler = {
   widgetKey: "am_audit_compliance_rate",
   cacheTtlSeconds: 300,
-  async execute(ctx): Promise<WidgetData> {
+  async execute(ctx, _params, rf): Promise<WidgetData> {
     const pid = new mongoose.Types.ObjectId(ctx.tenantId);
+    const baseFilter: Record<string, any> = { projectId: pid };
+    const effectiveCentreId = rf.centreId ?? ctx.centreId;
+    if (effectiveCentreId) baseFilter.centerId = new mongoose.Types.ObjectId(String(effectiveCentreId));
     const [submitted, total] = await Promise.all([
-      getMapping().countDocuments({ projectId: pid, auditSubmitted: true }),
-      getMapping().countDocuments({ projectId: pid }),
+      getMapping().countDocuments({ ...baseFilter, auditSubmitted: true }),
+      getMapping().countDocuments(baseFilter),
     ]);
     const value = total > 0 ? Math.round((submitted / total) * 1000) / 10 : null;
     return {
@@ -236,12 +301,15 @@ const amAuditComplianceRateHandler: QueryHandler = {
 const amAssetsOverdueAuditHandler: QueryHandler = {
   widgetKey: "am_assets_overdue_audit",
   cacheTtlSeconds: 300,
-  async execute(ctx): Promise<WidgetData> {
-    const value = await getMapping().countDocuments({
+  async execute(ctx, _params, rf): Promise<WidgetData> {
+    const filter: Record<string, any> = {
       projectId: new mongoose.Types.ObjectId(ctx.tenantId),
       nextAuditDate: { $lt: new Date() },
       auditSubmitted: { $ne: true },
-    });
+    };
+    const effectiveCentreId = rf.centreId ?? ctx.centreId;
+    if (effectiveCentreId) filter.centerId = new mongoose.Types.ObjectId(String(effectiveCentreId));
+    const value = await getMapping().countDocuments(filter);
     return { value, trendDirection: "lower_is_better" };
   },
 };
@@ -250,9 +318,13 @@ const amAssetsOverdueAuditHandler: QueryHandler = {
 const amByCategoryHandler: QueryHandler = {
   widgetKey: "am_by_category",
   cacheTtlSeconds: 600,
-  async execute(ctx): Promise<WidgetData> {
+  async execute(ctx, _params, rf): Promise<WidgetData> {
+    const pid = new mongoose.Types.ObjectId(ctx.tenantId);
+    const match: Record<string, any> = { projectId: pid };
+    const effectiveCentreId = rf.centreId ?? ctx.centreId;
+    if (effectiveCentreId) match.centerId = new mongoose.Types.ObjectId(String(effectiveCentreId));
     const rows = await getMapping().aggregate([
-      { $match: { projectId: new mongoose.Types.ObjectId(ctx.tenantId) } },
+      { $match: match },
       {
         $lookup: {
           from: "assets",
@@ -366,8 +438,9 @@ const amByCenterHandler: QueryHandler = {
 const amAuditActivityTrendHandler: QueryHandler = {
   widgetKey: "am_audit_activity_trend",
   cacheTtlSeconds: 600,
-  async execute(ctx, params): Promise<WidgetData> {
+  async execute(ctx, params, rf): Promise<WidgetData> {
     const { start, end, startStr, endStr } = buildDateRange(params.dateRangeDays);
+    const pid = new mongoose.Types.ObjectId(ctx.tenantId);
     // AssetAuditLog has no projectId — join through CenterAssetMapping
     const rows = await getAuditLog().aggregate([
       {
@@ -381,7 +454,8 @@ const amAuditActivityTrendHandler: QueryHandler = {
       { $unwind: "$mapping" },
       {
         $match: {
-          "mapping.projectId": new mongoose.Types.ObjectId(ctx.tenantId),
+          "mapping.projectId": pid,
+          ...((() => { const eCid = rf.centreId ?? ctx.centreId; return eCid ? { "mapping.centerId": new mongoose.Types.ObjectId(String(eCid)) } : {}; })()),
           changedAt: { $gte: start, $lte: end },
         },
       },

@@ -27,7 +27,7 @@ import { API_CONFIG } from "../config/constants";
 import DashboardLayout from "../components/DashboardLayout";
 import { usePermissions } from "../hooks/usePermissions";
 import { useProjectContext } from "../contexts/ProjectContext";
-import { useCenters } from "../hooks/useQueryHooks";
+import { useCenters, useCurrentUser } from "../hooks/useQueryHooks";
 
 interface DashboardEnginePageProps {
   wrapWithLayout?: boolean;
@@ -83,10 +83,27 @@ export default function DashboardEnginePage({
   const showUserFilter =
     usedCtxVars.has("@ctx.userId") && canManageDashboard;
 
-  // Fetch centre options for the current project when @ctx.centreId is in use
-  const { data: centreOptions = [] } = useCenters(
+  // Current user — needed to scope centre options to user's assigned centers
+  const { data: currentUser } = useCurrentUser();
+
+  // Fetch all centre options for the current project when @ctx.centreId is in use
+  const { data: allCentreOptions = [] } = useCenters(
     showCentreFilter ? (currentProjectId ?? undefined) : undefined,
   );
+
+  // Filter to only centres this user is mapped to (if they have any assigned);
+  // admins/managers with no center restrictions see all project centres.
+  const userCentreIds = currentUser?.centers ?? [];
+  const centreOptions =
+    userCentreIds.length > 0
+      ? allCentreOptions.filter((c) =>
+          userCentreIds.some((id) => String(id) === String(c._id)),
+        )
+      : allCentreOptions;
+
+  // Only show the dropdown when the user has access to 2+ centres.
+  // If they have exactly 1 centre the data is auto-scoped (see ctxOverrides).
+  const showCentreDropdown = showCentreFilter && centreOptions.length > 1;
 
   // Fetch project users when @ctx.userId is in use and user is an admin/manager
   const { data: projectUsers = [] } = useQuery<
@@ -111,16 +128,29 @@ export default function DashboardEnginePage({
   // Build the final overrides map passed to every WidgetFrame
   const ctxOverrides = useMemo(() => {
     const overrides: Record<string, any> = {};
-    if (selectedCentreIds.length === 1) {
-      overrides["@ctx.centreId"] = selectedCentreIds[0];
-    } else if (selectedCentreIds.length > 1) {
-      overrides["@ctx.centreId"] = { $in: selectedCentreIds };
+
+    if (showCentreFilter) {
+      if (selectedCentreIds.length === 1) {
+        // Explicit single selection from the dropdown
+        overrides["@ctx.centreId"] = selectedCentreIds[0];
+      } else if (selectedCentreIds.length > 1) {
+        // Multiple selected from the dropdown
+        overrides["@ctx.centreId"] = { $in: selectedCentreIds };
+      } else if (centreOptions.length === 1) {
+        // User has exactly one mapped centre — auto-scope without showing dropdown
+        overrides["@ctx.centreId"] = centreOptions[0]._id;
+      } else if (centreOptions.length > 1 && userCentreIds.length > 0) {
+        // User has multiple mapped centres and selected "All" — scope to all of them
+        overrides["@ctx.centreId"] = { $in: centreOptions.map((c) => c._id) };
+      }
+      // If centreOptions is empty or user has no restriction, no override (backend uses its own scoping)
     }
+
     if (selectedUserId) {
       overrides["@ctx.userId"] = selectedUserId;
     }
     return overrides;
-  }, [selectedCentreIds, selectedUserId]);
+  }, [showCentreFilter, selectedCentreIds, centreOptions, userCentreIds, selectedUserId]);
 
   // Phase 4: Track dashboard_view usage event fire-and-forget
   const trackView = useCallback(
@@ -264,8 +294,8 @@ export default function DashboardEnginePage({
             flexWrap: "wrap",
           }}
         >
-          {/* Centre multi-select — shown when any widget uses @ctx.centreId */}
-          {showCentreFilter && centreOptions.length > 0 && (
+          {/* Centre multi-select — only shown when user has 2+ mapped centres */}
+          {showCentreDropdown && (
             <CentreMultiSelect
               centres={centreOptions}
               selectedIds={selectedCentreIds}

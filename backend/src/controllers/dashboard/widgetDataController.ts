@@ -76,7 +76,7 @@ export async function getWidgetData(
       email: user.email,
       roleCode: (user.role as any)?.code ?? (user.role as any)?.roleCode,
       roleId: (user.role as any)?._id?.toString(),
-      centreId: (user as any).centreId,
+      centreId: user.centreId,
       districtId: (user as any).districtId,
       projectIds: Array.isArray(projects)
         ? projects.map((p: any) => p._id?.toString() ?? p.toString())

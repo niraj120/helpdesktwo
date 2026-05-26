@@ -51,9 +51,15 @@ async function loadProjectStatuses(
   return statuses as unknown as ProjectStatus[];
 }
 
-/** Status codes where isClosed = true  → ticket is done. */
+/** Status codes where isClosed = true  → ticket is done (resolved OR closed). */
 const closedCodes = (ss: ProjectStatus[]) =>
   ss.filter((s) => s.isClosed).map((s) => s.code);
+/** Status codes where isClosed = true AND name matches "resolved" → resolved only. */
+const resolvedOnlyCodes = (ss: ProjectStatus[]) =>
+  ss.filter((s) => s.isClosed && s.name.toLowerCase().includes("resolv")).map((s) => s.code);
+/** Status codes where isClosed = true AND name does NOT match "resolved" → truly closed only. */
+const strictClosedCodes = (ss: ProjectStatus[]) =>
+  ss.filter((s) => s.isClosed && !s.name.toLowerCase().includes("resolv")).map((s) => s.code);
 /** Status codes where isClosed = false → ticket is still active. */
 const activeCodes = (ss: ProjectStatus[]) =>
   ss.filter((s) => !s.isClosed).map((s) => s.code);
@@ -247,7 +253,7 @@ const htResolvedTicketsHandler: QueryHandler = {
       start.getTime() - params.dateRangeDays * 86400000,
     );
     const statuses = await loadProjectStatuses(ctx.tenantId);
-    const dCodes = closedCodes(statuses);
+    const dCodes = resolvedOnlyCodes(statuses);
     const extra = ticketFilterOverrides(rf, ctx);
     const [current, previous] = await Promise.all([
       Ticket.countDocuments({
@@ -279,7 +285,7 @@ const htClosedTicketsHandler: QueryHandler = {
       start.getTime() - params.dateRangeDays * 86400000,
     );
     const statuses = await loadProjectStatuses(ctx.tenantId);
-    const dCodes = closedCodes(statuses);
+    const dCodes = strictClosedCodes(statuses);
     const extra = ticketFilterOverrides(rf, ctx);
     // Tickets that were created in range AND are now in a closed status
     const [current, previous] = await Promise.all([

@@ -116,6 +116,7 @@ interface CurrentUser {
   role: Role;
   projects: string[];
   permissions: string[];
+  centers: string[]; // ObjectId strings for assigned centers
 }
 
 export const useCurrentUser = () => {

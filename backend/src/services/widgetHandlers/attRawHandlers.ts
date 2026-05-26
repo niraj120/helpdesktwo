@@ -15,8 +15,11 @@ import {
 
 const getAttendance = () => mongoose.model("AttendanceRecord");
 
-const ABSENT_STATUSES = ["A", "AB", "ABSENT", "absent", "Absent"];
-const LATE_STATUSES   = ["L", "LATE", "Late", "late", "LT"];
+// Statuses that count as Present (includes leave/holiday days that are still
+// considered "accounted-for" attendance: CL, PL, H).
+// Everything else — M/p, A, AB, ABSENT, WFH, OD, etc. — counts as Absent.
+const PRESENT_STATUSES = ["P", "CL", "PL", "H", "L", "LATE", "Late", "late", "LT"];
+const LATE_STATUSES    = ["L", "LATE", "Late", "late", "LT"];
 
 // ─── att_total_checkins ───────────────────────────────────────────────────────
 const attTotalCheckinsHandler: QueryHandler = {
@@ -41,7 +44,7 @@ const attPresentTodayHandler: QueryHandler = {
     const value = await getAttendance().countDocuments({
       projectId: new mongoose.Types.ObjectId(ctx.tenantId),
       attendanceDate: { $gte: start, $lte: end },
-      status: { $nin: ABSENT_STATUSES },
+      status: { $in: PRESENT_STATUSES },
     });
     return { value, trendDirection: "higher_is_better" };
   },
@@ -56,7 +59,7 @@ const attAbsentTodayHandler: QueryHandler = {
     const value = await getAttendance().countDocuments({
       projectId: new mongoose.Types.ObjectId(ctx.tenantId),
       attendanceDate: { $gte: start, $lte: end },
-      status: { $in: ABSENT_STATUSES },
+      status: { $nin: PRESENT_STATUSES },
     });
     return { value, trendDirection: "lower_is_better" };
   },
@@ -72,7 +75,7 @@ const attAttendanceRateHandler: QueryHandler = {
     const pid = new mongoose.Types.ObjectId(ctx.tenantId);
     const dateFilter = { $gte: start, $lte: end };
     const [present, total] = await Promise.all([
-      AR.countDocuments({ projectId: pid, attendanceDate: dateFilter, status: { $nin: ABSENT_STATUSES } }),
+      AR.countDocuments({ projectId: pid, attendanceDate: dateFilter, status: { $in: PRESENT_STATUSES } }),
       AR.countDocuments({ projectId: pid, attendanceDate: dateFilter }),
     ]);
     const value = total > 0 ? Math.round((present / total) * 1000) / 10 : null;
@@ -96,7 +99,7 @@ const attAbsenteeismRateHandler: QueryHandler = {
     const pid = new mongoose.Types.ObjectId(ctx.tenantId);
     const dateFilter = { $gte: start, $lte: end };
     const [absent, total] = await Promise.all([
-      AR.countDocuments({ projectId: pid, attendanceDate: dateFilter, status: { $in: ABSENT_STATUSES } }),
+      AR.countDocuments({ projectId: pid, attendanceDate: dateFilter, status: { $nin: PRESENT_STATUSES } }),
       AR.countDocuments({ projectId: pid, attendanceDate: dateFilter }),
     ]);
     const value = total > 0 ? Math.round((absent / total) * 1000) / 10 : null;
@@ -142,8 +145,8 @@ const attDailyTrendHandler: QueryHandler = {
         $group: {
           _id: { $dateToString: { format: "%Y-%m-%d", date: "$attendanceDate" } },
           total:   { $sum: 1 },
-          present: { $sum: { $cond: [{ $not: [{ $in: ["$status", ABSENT_STATUSES] }] }, 1, 0] } },
-          absent:  { $sum: { $cond: [{ $in: ["$status", ABSENT_STATUSES] }, 1, 0] } },
+          present: { $sum: { $cond: [{ $in: ["$status", PRESENT_STATUSES] }, 1, 0] } },
+          absent:  { $sum: { $cond: [{ $not: [{ $in: ["$status", PRESENT_STATUSES] }] }, 1, 0] } },
         },
       },
       {
@@ -183,7 +186,7 @@ const attByBatchHandler: QueryHandler = {
         $group: {
           _id:     { $ifNull: ["$center", "Unknown"] },
           total:   { $sum: 1 },
-          present: { $sum: { $cond: [{ $not: [{ $in: ["$status", ABSENT_STATUSES] }] }, 1, 0] } },
+          present: { $sum: { $cond: [{ $in: ["$status", PRESENT_STATUSES] }, 1, 0] } },
         },
       },
       {
@@ -233,7 +236,7 @@ const attByCourseHandler: QueryHandler = {
         $group: {
           _id:     { $ifNull: ["$user.department", "Unknown"] },
           total:   { $sum: 1 },
-          present: { $sum: { $cond: [{ $not: [{ $in: ["$status", ABSENT_STATUSES] }] }, 1, 0] } },
+          present: { $sum: { $cond: [{ $in: ["$status", PRESENT_STATUSES] }, 1, 0] } },
         },
       },
       {

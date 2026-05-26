@@ -753,7 +753,7 @@ export default function AdminDashboardListPage() {
                           textTransform: "capitalize",
                         }}
                       >
-                        {t.status === "published" ? "✓ Published" : "Draft"}
+                        {t.status === "published" ? "✓ Published" : t.status === "archived" ? "Archived" : "Draft"}
                       </span>
                     </td>
                     {/* Widgets */}
