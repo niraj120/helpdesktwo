@@ -19,7 +19,7 @@ interface DashboardTemplate {
   name: string;
   description?: string;
   targetScope: "tenant" | "centre" | "user";
-  status: "draft" | "published";
+  status: "draft" | "published" | "archived";
   widgets: any[];
   widgetCount?: number;
   createdAt: string;

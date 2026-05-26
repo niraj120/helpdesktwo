@@ -3117,7 +3117,7 @@ export default function DashboardBuilderPage() {
   const [targetScope, setTargetScope] = useState<"tenant" | "centre" | "user">(
     "tenant",
   );
-  const [status, setStatus] = useState<"draft" | "published">("draft");
+  const [status, setStatus] = useState<"draft" | "published" | "archived">("draft");
 
   // Project selector
   const { projects } = useAdminProjects();

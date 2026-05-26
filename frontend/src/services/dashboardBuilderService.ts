@@ -67,7 +67,7 @@ export interface DashboardTemplateDetail {
   description?: string;
   targetRoles?: string[];
   targetScope: "tenant" | "centre" | "user";
-  status: "draft" | "published";
+  status: "draft" | "published" | "archived";
   sections?: DashboardSectionSlot[];
   widgets: TemplateWidgetSlot[];
   createdAt: string;
@@ -79,7 +79,7 @@ export interface CreateTemplatePayload {
   description?: string;
   targetRoles?: string[];
   targetScope?: "tenant" | "centre" | "user";
-  status?: "draft" | "published";
+  status?: "draft" | "published" | "archived";
   widgets?: TemplateWidgetSlot[];
 }
 
