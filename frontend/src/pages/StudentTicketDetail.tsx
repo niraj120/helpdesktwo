@@ -745,13 +745,40 @@ const StudentTicketDetail: React.FC = () => {
                   <div>
                     {draftRestored && (
                       <div className="text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 text-sm mb-2 flex items-center justify-between">
-                        <span>📋 Draft restored — your unsent reply has been loaded</span>
-                        <button type="button" onClick={dismissRestoreBanner} className="ml-2 text-amber-500 hover:text-amber-700 font-bold">✕</button>
+                        <span>
+                          📋 Draft restored — your unsent reply has been loaded
+                        </span>
+                        <button
+                          type="button"
+                          onClick={dismissRestoreBanner}
+                          className="ml-2 text-amber-500 hover:text-amber-700 font-bold"
+                        >
+                          ✕
+                        </button>
                       </div>
                     )}
                     {draftStatus !== "idle" && (
-                      <div style={{ fontSize: 12, marginBottom: 4, color: draftStatus === "saved" ? "#16a34a" : draftStatus === "saving" ? "#2563eb" : draftStatus === "error" ? "#dc2626" : "#d97706" }}>
-                        {draftStatus === "saving" ? "⏳ Saving draft…" : draftStatus === "saved" ? "✓ Draft saved" : draftStatus === "error" ? "⚠ Failed to save draft" : "● Unsaved changes"}
+                      <div
+                        style={{
+                          fontSize: 12,
+                          marginBottom: 4,
+                          color:
+                            draftStatus === "saved"
+                              ? "#16a34a"
+                              : draftStatus === "saving"
+                                ? "#2563eb"
+                                : draftStatus === "error"
+                                  ? "#dc2626"
+                                  : "#d97706",
+                        }}
+                      >
+                        {draftStatus === "saving"
+                          ? "⏳ Saving draft…"
+                          : draftStatus === "saved"
+                            ? "✓ Draft saved"
+                            : draftStatus === "error"
+                              ? "⚠ Failed to save draft"
+                              : "● Unsaved changes"}
                       </div>
                     )}
                     <textarea

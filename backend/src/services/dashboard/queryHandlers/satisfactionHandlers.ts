@@ -509,14 +509,22 @@ const fbAvgRatingHandler: QueryHandler = {
           submittedAt: { $gte: start, $lte: end },
         },
       },
-      { $group: { _id: null, avg: { $avg: "$overallRating" }, total: { $sum: 1 } } },
+      {
+        $group: {
+          _id: null,
+          avg: { $avg: "$overallRating" },
+          total: { $sum: 1 },
+        },
+      },
     ]);
     const r = result[0];
     const avg = r ? Math.round(r.avg * 10) / 10 : null;
     return {
       value: avg,
       unit: "/ 5",
-      subtitle: r ? `Based on ${r.total} response${r.total !== 1 ? "s" : ""}` : "No data",
+      subtitle: r
+        ? `Based on ${r.total} response${r.total !== 1 ? "s" : ""}`
+        : "No data",
       trendDirection: "higher_is_better",
     };
   },
@@ -567,8 +575,12 @@ const fbNpsScoreHandler: QueryHandler = {
         $group: {
           _id: null,
           total: { $sum: 1 },
-          promoters: { $sum: { $cond: [{ $eq: ["$overallRating", 5] }, 1, 0] } },
-          detractors: { $sum: { $cond: [{ $lte: ["$overallRating", 2] }, 1, 0] } },
+          promoters: {
+            $sum: { $cond: [{ $eq: ["$overallRating", 5] }, 1, 0] },
+          },
+          detractors: {
+            $sum: { $cond: [{ $lte: ["$overallRating", 2] }, 1, 0] },
+          },
         },
       },
     ]);
@@ -671,7 +683,10 @@ const fbByCategoryHandler: QueryHandler = {
     ]);
     const total = rows.reduce((s: number, r: any) => s + r.count, 0);
     return {
-      segments: rows.map((r: any) => ({ ...r, percent: total > 0 ? Math.round((r.count / total) * 1000) / 10 : 0 })),
+      segments: rows.map((r: any) => ({
+        ...r,
+        percent: total > 0 ? Math.round((r.count / total) * 1000) / 10 : 0,
+      })),
       total,
     };
   },
@@ -697,7 +712,10 @@ const fbResponseRateHandler: QueryHandler = {
         submittedAt: { $gte: start, $lte: end },
       }),
     ]);
-    const rate = closedCount > 0 ? Math.round((respondedCount / closedCount) * 1000) / 10 : 0;
+    const rate =
+      closedCount > 0
+        ? Math.round((respondedCount / closedCount) * 1000) / 10
+        : 0;
     return {
       value: rate,
       unit: "%",
@@ -715,7 +733,9 @@ const fbRatingTrendHandler: QueryHandler = {
   cacheTtlSeconds: 600,
   async execute(ctx, params): Promise<WidgetData> {
     const FR = getFeedbackResponseModel();
-    const { start, end, startStr, endStr } = buildDateRange(params.dateRangeDays);
+    const { start, end, startStr, endStr } = buildDateRange(
+      params.dateRangeDays,
+    );
     const points = await FR.aggregate([
       {
         $match: {

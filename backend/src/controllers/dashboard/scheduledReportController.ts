@@ -332,12 +332,10 @@ export async function sendReportNow(
         last_error: err.message,
       }).catch(() => {});
 
-      res
-        .status(500)
-        .json({
-          success: false,
-          message: `Failed to send report: ${err.message}`,
-        });
+      res.status(500).json({
+        success: false,
+        message: `Failed to send report: ${err.message}`,
+      });
     }
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });

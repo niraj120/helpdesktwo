@@ -82,7 +82,9 @@ export async function createDashboardTemplate(
 
     if (Array.isArray(widgets) && widgets.length > 0) {
       const keysNeedingLookup = widgets
-        .filter((w: any) => !mongoose.Types.ObjectId.isValid(w.widgetDefinitionId))
+        .filter(
+          (w: any) => !mongoose.Types.ObjectId.isValid(w.widgetDefinitionId),
+        )
         .map((w: any) => w.widgetKey as string);
 
       let keyToDefId: Record<string, mongoose.Types.ObjectId> = {};

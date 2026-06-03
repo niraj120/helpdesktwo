@@ -13,14 +13,18 @@ import {
   registerWidgetHandler,
 } from "../widgetQueryEngine";
 
-const getCenter  = () => mongoose.model("Center");
-const getTicket  = () => mongoose.model("Ticket");
-const getUser    = () => mongoose.model("User");
-const getStatus  = () => mongoose.model("Status");
+const getCenter = () => mongoose.model("Center");
+const getTicket = () => mongoose.model("Ticket");
+const getUser = () => mongoose.model("User");
+const getStatus = () => mongoose.model("Status");
 
 async function loadClosedCodes(tenantId: string): Promise<number[]> {
   const docs = (await getStatus()
-    .find({ projectId: new mongoose.Types.ObjectId(tenantId), isActive: true, isClosed: true })
+    .find({
+      projectId: new mongoose.Types.ObjectId(tenantId),
+      isActive: true,
+      isClosed: true,
+    })
     .select("code")
     .lean()) as Array<{ code: number }>;
   return docs.map((d) => d.code);
@@ -57,8 +61,15 @@ const coCenterCapacityHandler: QueryHandler = {
   cacheTtlSeconds: 600,
   async execute(ctx): Promise<WidgetData> {
     const res = await getCenter().aggregate([
-      { $match: { projectId: new mongoose.Types.ObjectId(ctx.tenantId), isActive: true } },
-      { $group: { _id: null, total: { $sum: { $ifNull: ["$idealCount", 0] } } } },
+      {
+        $match: {
+          projectId: new mongoose.Types.ObjectId(ctx.tenantId),
+          isActive: true,
+        },
+      },
+      {
+        $group: { _id: null, total: { $sum: { $ifNull: ["$idealCount", 0] } } },
+      },
     ]);
     return { value: res[0]?.total ?? 0 };
   },
@@ -73,12 +84,18 @@ const coCapacityUtilizationHandler: QueryHandler = {
     const [capRes, activeUsers] = await Promise.all([
       getCenter().aggregate([
         { $match: { projectId: pid, isActive: true } },
-        { $group: { _id: null, total: { $sum: { $ifNull: ["$idealCount", 0] } } } },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: { $ifNull: ["$idealCount", 0] } },
+          },
+        },
       ]),
       getUser().countDocuments({ projects: pid, isActive: true }),
     ]);
     const capacity = capRes[0]?.total ?? 0;
-    const value = capacity > 0 ? Math.round((activeUsers / capacity) * 1000) / 10 : null;
+    const value =
+      capacity > 0 ? Math.round((activeUsers / capacity) * 1000) / 10 : null;
     return {
       value,
       unit: "%",
@@ -140,7 +157,12 @@ const coStudentsPerCenterHandler: QueryHandler = {
   cacheTtlSeconds: 600,
   async execute(ctx): Promise<WidgetData> {
     const rows = await getUser().aggregate([
-      { $match: { projects: new mongoose.Types.ObjectId(ctx.tenantId), isActive: true } },
+      {
+        $match: {
+          projects: new mongoose.Types.ObjectId(ctx.tenantId),
+          isActive: true,
+        },
+      },
       {
         $lookup: {
           from: "centers",
@@ -176,10 +198,22 @@ const coCenterPerformanceHandler: QueryHandler = {
     const usersByCenter = await getUser().aggregate([
       { $match: { projects: pid, isActive: true } },
       {
-        $lookup: { from: "centers", localField: "centreId", foreignField: "_id", as: "centre" },
+        $lookup: {
+          from: "centers",
+          localField: "centreId",
+          foreignField: "_id",
+          as: "centre",
+        },
       },
       { $unwind: { path: "$centre", preserveNullAndEmptyArrays: true } },
-      { $group: { _id: "$centre._id", centerName: { $first: "$centre.centerName" }, idealCount: { $first: "$centre.idealCount" }, users: { $sum: 1 } } },
+      {
+        $group: {
+          _id: "$centre._id",
+          centerName: { $first: "$centre.centerName" },
+          idealCount: { $first: "$centre.idealCount" },
+          users: { $sum: 1 },
+        },
+      },
     ]);
 
     // Per-center closed tickets (via agent's centreId)
@@ -192,19 +226,29 @@ const coCenterPerformanceHandler: QueryHandler = {
         },
       },
       {
-        $lookup: { from: "users", localField: "assignedTo", foreignField: "_id", as: "agent" },
+        $lookup: {
+          from: "users",
+          localField: "assignedTo",
+          foreignField: "_id",
+          as: "agent",
+        },
       },
       { $unwind: { path: "$agent", preserveNullAndEmptyArrays: true } },
       { $group: { _id: "$agent.centreId", closedTickets: { $sum: 1 } } },
     ]);
 
-    const closedMap = new Map(closedByCenter.map((r: any) => [String(r._id), r.closedTickets]));
+    const closedMap = new Map(
+      closedByCenter.map((r: any) => [String(r._id), r.closedTickets]),
+    );
 
     const segments = usersByCenter.map((c: any) => ({
-      center:       c.centerName ?? "Unassigned",
-      users:        c.users,
-      capacity:     c.idealCount ?? 0,
-      utilization:  c.idealCount > 0 ? Math.round((c.users / c.idealCount) * 1000) / 10 : null,
+      center: c.centerName ?? "Unassigned",
+      users: c.users,
+      capacity: c.idealCount ?? 0,
+      utilization:
+        c.idealCount > 0
+          ? Math.round((c.users / c.idealCount) * 1000) / 10
+          : null,
       closedTickets: closedMap.get(String(c._id)) ?? 0,
     }));
 

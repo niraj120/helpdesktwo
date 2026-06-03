@@ -18,8 +18,18 @@ const getAttendance = () => mongoose.model("AttendanceRecord");
 // Statuses that count as Present (includes leave/holiday days that are still
 // considered "accounted-for" attendance: CL, PL, H).
 // Everything else — M/p, A, AB, ABSENT, WFH, OD, etc. — counts as Absent.
-const PRESENT_STATUSES = ["P", "CL", "PL", "H", "L", "LATE", "Late", "late", "LT"];
-const LATE_STATUSES    = ["L", "LATE", "Late", "late", "LT"];
+const PRESENT_STATUSES = [
+  "P",
+  "CL",
+  "PL",
+  "H",
+  "L",
+  "LATE",
+  "Late",
+  "late",
+  "LT",
+];
+const LATE_STATUSES = ["L", "LATE", "Late", "late", "LT"];
 
 // ─── att_total_checkins ───────────────────────────────────────────────────────
 const attTotalCheckinsHandler: QueryHandler = {
@@ -75,7 +85,11 @@ const attAttendanceRateHandler: QueryHandler = {
     const pid = new mongoose.Types.ObjectId(ctx.tenantId);
     const dateFilter = { $gte: start, $lte: end };
     const [present, total] = await Promise.all([
-      AR.countDocuments({ projectId: pid, attendanceDate: dateFilter, status: { $in: PRESENT_STATUSES } }),
+      AR.countDocuments({
+        projectId: pid,
+        attendanceDate: dateFilter,
+        status: { $in: PRESENT_STATUSES },
+      }),
       AR.countDocuments({ projectId: pid, attendanceDate: dateFilter }),
     ]);
     const value = total > 0 ? Math.round((present / total) * 1000) / 10 : null;
@@ -99,7 +113,11 @@ const attAbsenteeismRateHandler: QueryHandler = {
     const pid = new mongoose.Types.ObjectId(ctx.tenantId);
     const dateFilter = { $gte: start, $lte: end };
     const [absent, total] = await Promise.all([
-      AR.countDocuments({ projectId: pid, attendanceDate: dateFilter, status: { $nin: PRESENT_STATUSES } }),
+      AR.countDocuments({
+        projectId: pid,
+        attendanceDate: dateFilter,
+        status: { $nin: PRESENT_STATUSES },
+      }),
       AR.countDocuments({ projectId: pid, attendanceDate: dateFilter }),
     ]);
     const value = total > 0 ? Math.round((absent / total) * 1000) / 10 : null;
@@ -133,7 +151,9 @@ const attDailyTrendHandler: QueryHandler = {
   widgetKey: "att_daily_trend",
   cacheTtlSeconds: 600,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end, startStr, endStr } = buildDateRange(params.dateRangeDays);
+    const { start, end, startStr, endStr } = buildDateRange(
+      params.dateRangeDays,
+    );
     const rows = await getAttendance().aggregate([
       {
         $match: {
@@ -143,23 +163,45 @@ const attDailyTrendHandler: QueryHandler = {
       },
       {
         $group: {
-          _id: { $dateToString: { format: "%Y-%m-%d", date: "$attendanceDate" } },
-          total:   { $sum: 1 },
-          present: { $sum: { $cond: [{ $in: ["$status", PRESENT_STATUSES] }, 1, 0] } },
-          absent:  { $sum: { $cond: [{ $not: [{ $in: ["$status", PRESENT_STATUSES] }] }, 1, 0] } },
+          _id: {
+            $dateToString: { format: "%Y-%m-%d", date: "$attendanceDate" },
+          },
+          total: { $sum: 1 },
+          present: {
+            $sum: { $cond: [{ $in: ["$status", PRESENT_STATUSES] }, 1, 0] },
+          },
+          absent: {
+            $sum: {
+              $cond: [{ $not: [{ $in: ["$status", PRESENT_STATUSES] }] }, 1, 0],
+            },
+          },
         },
       },
       {
         $project: {
-          _id: 0, date: "$_id", total: 1, present: 1, absent: 1,
+          _id: 0,
+          date: "$_id",
+          total: 1,
+          present: 1,
+          absent: 1,
         },
       },
       { $sort: { date: 1 } },
     ]);
     return {
       series: [
-        { key: "present", label: "Present", color: "#22c55e", data: rows.map((r: any) => ({ x: r.date, y: r.present })) },
-        { key: "absent",  label: "Absent",  color: "#ef4444", data: rows.map((r: any) => ({ x: r.date, y: r.absent })) },
+        {
+          key: "present",
+          label: "Present",
+          color: "#22c55e",
+          data: rows.map((r: any) => ({ x: r.date, y: r.present })),
+        },
+        {
+          key: "absent",
+          label: "Absent",
+          color: "#ef4444",
+          data: rows.map((r: any) => ({ x: r.date, y: r.absent })),
+        },
       ],
       xAxisLabel: "Date",
       yAxisLabel: "Count",
@@ -184,9 +226,11 @@ const attByBatchHandler: QueryHandler = {
       },
       {
         $group: {
-          _id:     { $ifNull: ["$center", "Unknown"] },
-          total:   { $sum: 1 },
-          present: { $sum: { $cond: [{ $in: ["$status", PRESENT_STATUSES] }, 1, 0] } },
+          _id: { $ifNull: ["$center", "Unknown"] },
+          total: { $sum: 1 },
+          present: {
+            $sum: { $cond: [{ $in: ["$status", PRESENT_STATUSES] }, 1, 0] },
+          },
         },
       },
       {
@@ -198,7 +242,12 @@ const attByBatchHandler: QueryHandler = {
           rate: {
             $cond: [
               { $gt: ["$total", 0] },
-              { $round: [{ $multiply: [{ $divide: ["$present", "$total"] }, 100] }, 1] },
+              {
+                $round: [
+                  { $multiply: [{ $divide: ["$present", "$total"] }, 100] },
+                  1,
+                ],
+              },
               0,
             ],
           },
@@ -234,9 +283,11 @@ const attByCourseHandler: QueryHandler = {
       { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
       {
         $group: {
-          _id:     { $ifNull: ["$user.department", "Unknown"] },
-          total:   { $sum: 1 },
-          present: { $sum: { $cond: [{ $in: ["$status", PRESENT_STATUSES] }, 1, 0] } },
+          _id: { $ifNull: ["$user.department", "Unknown"] },
+          total: { $sum: 1 },
+          present: {
+            $sum: { $cond: [{ $in: ["$status", PRESENT_STATUSES] }, 1, 0] },
+          },
         },
       },
       {
@@ -248,7 +299,12 @@ const attByCourseHandler: QueryHandler = {
           rate: {
             $cond: [
               { $gt: ["$total", 0] },
-              { $round: [{ $multiply: [{ $divide: ["$present", "$total"] }, 100] }, 1] },
+              {
+                $round: [
+                  { $multiply: [{ $divide: ["$present", "$total"] }, 100] },
+                  1,
+                ],
+              },
               0,
             ],
           },

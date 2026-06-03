@@ -19,7 +19,7 @@ export interface IReportAssignment extends Document {
   lastAlertSentAt?: Date;
   // CC recipients
   ccUsers: mongoose.Types.ObjectId[]; // existing system users to CC
-  ccEmails: string[];               // arbitrary email addresses to CC
+  ccEmails: string[]; // arbitrary email addresses to CC
   updatedAt: Date;
   createdAt: Date;
 }

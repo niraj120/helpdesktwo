@@ -1616,52 +1616,40 @@ const OfflineModuleSettings: React.FC = () => {
                                   className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed"
                                 />
                               ) : (
-                                <select
-                                  value={field.fieldName}
-                                  onChange={(e) =>
-                                    updateRegistrationField(field.id, {
-                                      fieldName: e.target.value,
-                                    })
-                                  }
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                >
-                                  <option value="">Select Field</option>
-                                  <optgroup label="Student Info">
+                                <>
+                                  <input
+                                    type="text"
+                                    list={`field-name-list-${field.id}`}
+                                    value={field.fieldName}
+                                    onChange={(e) =>
+                                      updateRegistrationField(field.id, {
+                                        fieldName: e.target.value,
+                                      })
+                                    }
+                                    placeholder="Type or select field name"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                  />
+                                  <datalist id={`field-name-list-${field.id}`}>
                                     <option value="name">
                                       Name / Full Name
                                     </option>
-                                    <option value="First Name">
-                                      First Name
-                                    </option>
-                                    <option value="Last Name">Last Name</option>
-                                    <option value="Email">Email</option>
-                                    <option value="Phone">Phone</option>
-                                    <option value="Mobile Number">
-                                      Mobile Number
-                                    </option>
-                                    <option value="Parent Mobile">
-                                      Parent Mobile
-                                    </option>
-                                    <option value="Unique ID">
-                                      Unique ID / Student ID
-                                    </option>
-                                  </optgroup>
-                                  <optgroup label="Custom Fields">
-                                    <option value="Address">Address</option>
-                                    <option value="City">City</option>
-                                    <option value="State">State</option>
-                                    <option value="Pincode">Pincode</option>
-                                    <option value="Date of Birth">
-                                      Date of Birth
-                                    </option>
-                                    <option value="Gender">Gender</option>
-                                    <option value="Course">Course</option>
-                                    <option value="Class">Class</option>
-                                    <option value="Custom Field">
-                                      Custom Field (Edit Name)
-                                    </option>
-                                  </optgroup>
-                                </select>
+                                    <option value="First Name" />
+                                    <option value="Last Name" />
+                                    <option value="Email" />
+                                    <option value="Phone" />
+                                    <option value="Mobile Number" />
+                                    <option value="Parent Mobile" />
+                                    <option value="Unique ID" />
+                                    <option value="Address" />
+                                    <option value="City" />
+                                    <option value="State" />
+                                    <option value="Pincode" />
+                                    <option value="Date of Birth" />
+                                    <option value="Gender" />
+                                    <option value="Course" />
+                                    <option value="Class" />
+                                  </datalist>
+                                </>
                               )}
                             </div>
 

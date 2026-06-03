@@ -102,7 +102,10 @@ export default function AdminDashboardListPage() {
   const [addingAssignment, setAddingAssignment] = useState(false);
 
   const menuRef = useRef<HTMLDivElement>(null);
-  const [menuAnchor, setMenuAnchor] = useState<{ top: number; right: number } | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<{
+    top: number;
+    right: number;
+  } | null>(null);
 
   // ── Load templates ──────────────────────────────────────────────────────────
 
@@ -753,7 +756,11 @@ export default function AdminDashboardListPage() {
                           textTransform: "capitalize",
                         }}
                       >
-                        {t.status === "published" ? "✓ Published" : t.status === "archived" ? "Archived" : "Draft"}
+                        {t.status === "published"
+                          ? "✓ Published"
+                          : t.status === "archived"
+                            ? "Archived"
+                            : "Draft"}
                       </span>
                     </td>
                     {/* Widgets */}
@@ -800,10 +807,19 @@ export default function AdminDashboardListPage() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                            const rect = (
+                              e.currentTarget as HTMLElement
+                            ).getBoundingClientRect();
                             setOpenMenuId((prev) => {
                               const nextId = prev === t._id ? null : t._id;
-                              setMenuAnchor(nextId ? { top: rect.bottom + 4, right: window.innerWidth - rect.right } : null);
+                              setMenuAnchor(
+                                nextId
+                                  ? {
+                                      top: rect.bottom + 4,
+                                      right: window.innerWidth - rect.right,
+                                    }
+                                  : null,
+                              );
                               return nextId;
                             });
                           }}

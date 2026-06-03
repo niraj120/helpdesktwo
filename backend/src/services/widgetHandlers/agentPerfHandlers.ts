@@ -13,14 +13,18 @@ import {
   registerWidgetHandler,
 } from "../widgetQueryEngine";
 
-const getTicket   = () => mongoose.model("Ticket");
-const getStatus   = () => mongoose.model("Status");
-const getSLA      = () => mongoose.model("SLATracking");
+const getTicket = () => mongoose.model("Ticket");
+const getStatus = () => mongoose.model("Status");
+const getSLA = () => mongoose.model("SLATracking");
 const getFeedback = () => mongoose.model("FeedbackScore");
 
 async function loadClosedCodes(tenantId: string): Promise<number[]> {
   const docs = (await getStatus()
-    .find({ projectId: new mongoose.Types.ObjectId(tenantId), isActive: true, isClosed: true })
+    .find({
+      projectId: new mongoose.Types.ObjectId(tenantId),
+      isActive: true,
+      isClosed: true,
+    })
     .select("code")
     .lean()) as Array<{ code: number }>;
   return docs.map((d) => d.code);
@@ -84,7 +88,8 @@ const apAvgHandleTimeHandler: QueryHandler = {
     ]);
 
     const avgMs = res[0]?.avgMs ?? null;
-    const value = avgMs !== null ? Math.round(avgMs / 1000 / 60 / 60 * 10) / 10 : null;
+    const value =
+      avgMs !== null ? Math.round((avgMs / 1000 / 60 / 60) * 10) / 10 : null;
     return { value, unit: "hrs", trendDirection: "lower_is_better" };
   },
 };
@@ -133,7 +138,10 @@ const apFirstContactResHandler: QueryHandler = {
         projectId: pid,
         resolutionStatus: "met",
         createdAt: { $gte: start, $lte: end },
-        $or: [{ escalationHistory: { $exists: false } }, { escalationHistory: { $size: 0 } }],
+        $or: [
+          { escalationHistory: { $exists: false } },
+          { escalationHistory: { $size: 0 } },
+        ],
       }),
       getSLA().countDocuments({
         projectId: pid,
@@ -142,7 +150,8 @@ const apFirstContactResHandler: QueryHandler = {
       }),
     ]);
 
-    const value = totalClosed > 0 ? Math.round((fcrCount / totalClosed) * 1000) / 10 : null;
+    const value =
+      totalClosed > 0 ? Math.round((fcrCount / totalClosed) * 1000) / 10 : null;
     return {
       value,
       unit: "%",
@@ -206,8 +215,16 @@ const apSlaComplianceHandler: QueryHandler = {
     const { start, end } = buildDateRange(params.dateRangeDays);
     const pid = new mongoose.Types.ObjectId(ctx.tenantId);
     const [met, total] = await Promise.all([
-      getSLA().countDocuments({ projectId: pid, resolutionStatus: "met",     createdAt: { $gte: start, $lte: end } }),
-      getSLA().countDocuments({ projectId: pid, resolutionStatus: { $in: ["met", "breached"] }, createdAt: { $gte: start, $lte: end } }),
+      getSLA().countDocuments({
+        projectId: pid,
+        resolutionStatus: "met",
+        createdAt: { $gte: start, $lte: end },
+      }),
+      getSLA().countDocuments({
+        projectId: pid,
+        resolutionStatus: { $in: ["met", "breached"] },
+        createdAt: { $gte: start, $lte: end },
+      }),
     ]);
     const value = total > 0 ? Math.round((met / total) * 1000) / 10 : null;
     return {

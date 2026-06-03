@@ -917,19 +917,13 @@ export const submitTicket = async (req: Request, res: Response) => {
     // Dashboard cache invalidation (fire-and-forget)
     dashboardEvents.emit("ticket.created", { tenantId: projectId, projectId });
 
-    // Notification engine: ticket_created (fan-out to all roles configured in settings)
-    fireNotification({
-      triggerType: TRIGGER_TYPES.TICKET_CREATED,
-      triggeredByUserId: studentUserId,
-      projectId: projectId,
-      entityType: "ticket",
-      entityId: ticket._id as mongoose.Types.ObjectId,
-      deepLinkUrl: `/projects/${projectId}/tickets/${ticket._id}`,
-      templateVars: {
-        ticketNumber: ticket.ticketNumber,
-        subject: ticket.subject,
-      },
-    }).catch(console.error);
+    // Notification engine: ticket_created — only notify the assigned agent.
+    // When a ticket is assigned, TICKET_ASSIGNED_TO_ME (below) already fires, so
+    // we do NOT fan-out TICKET_CREATED to all counselors in the centre; that was
+    // causing every counselor to see notifications for tickets not assigned to them.
+    // If the ticket is unassigned there is nobody to notify yet — they will be
+    // notified via TICKET_ASSIGNED_TO_ME once the ticket is manually assigned.
+    // (Role-based fan-out is intentionally removed here.)
 
     // Notification engine: ticket_assigned_to_me (direct to assigned agent)
     if (assignedAgent) {
@@ -1542,17 +1536,45 @@ export const getMyTickets = async (req: Request, res: Response) => {
       }
     }
 
-    // Search filter (searches ticketNumber, subject)
+    // Search filter (global — searches across all relevant ticket and student fields)
     if (req.query.search) {
       const searchTerm = String(req.query.search)
         .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
         .trim();
       if (searchTerm) {
+        const searchRegex = { $regex: searchTerm, $options: "i" };
+
+        // Find users whose name, email, or mobile matches the query
+        const matchingUsers = await User.find(
+          {
+            $or: [
+              { name: searchRegex },
+              { email: searchRegex },
+              { mobile: searchRegex },
+              { phone: searchRegex },
+            ],
+          },
+          { _id: 1 },
+        ).lean();
+        const matchingUserIds = matchingUsers.map((u: any) => u._id);
+
         query.$or = [
-          { ticketNumber: { $regex: searchTerm, $options: "i" } },
-          { subject: { $regex: searchTerm, $options: "i" } },
+          { ticketNumber: searchRegex },
+          { subject: searchRegex },
+          { description: searchRegex },
+          { mobile: searchRegex },
+          { sourceEmail: searchRegex },
+          { sourceEmailName: searchRegex },
+          { "metadata.studentName": searchRegex },
+          { "metadata.studentEmail": searchRegex },
+          { "metadata.studentPhone": searchRegex },
+          ...(matchingUserIds.length > 0
+            ? [{ createdBy: { $in: matchingUserIds } }]
+            : []),
         ];
-        console.log(`🔍 [FILTER] Search: "${searchTerm}"`);
+        console.log(
+          `🔍 [FILTER] Global search: "${searchTerm}" (matched ${matchingUserIds.length} users)`,
+        );
       }
     }
 
@@ -1671,6 +1693,31 @@ export const getMyTickets = async (req: Request, res: Response) => {
         : Promise.resolve([]),
     ]);
 
+    // Batch-fetch category names for hierarchy levels 2-4
+    const hierarchyCategoryIdsMyTickets = [
+      ...new Set(
+        tickets.flatMap((t: any) => {
+          const h = t.categoryHierarchy;
+          if (!h) return [];
+          return [h.level2, h.level3, h.level4]
+            .filter(Boolean)
+            .map((id: any) => id.toString());
+        }),
+      ),
+    ];
+    const hierarchyCategoryDocsMyTickets =
+      hierarchyCategoryIdsMyTickets.length > 0
+        ? await Category.find({ _id: { $in: hierarchyCategoryIdsMyTickets } })
+            .select("name")
+            .lean()
+        : [];
+    const hierarchyCategoryMapMyTickets = new Map(
+      hierarchyCategoryDocsMyTickets.map((c: any) => [
+        c._id.toString(),
+        c.name,
+      ]),
+    );
+
     const projectMap = new Map(
       projects.map((p: any) => [
         p._id.toString(),
@@ -1726,6 +1773,22 @@ export const getMyTickets = async (req: Request, res: Response) => {
           ticketObj.statusName = statusEntry.name;
           ticketObj.statusColor = statusEntry.color;
         }
+      }
+      // Enrich categoryHierarchyNames so hierarchy_level_N columns can render names
+      if (ticketObj.categoryHierarchy) {
+        const h = ticketObj.categoryHierarchy;
+        ticketObj.categoryHierarchyNames = {
+          level1: ticketObj.category?.name || undefined,
+          level2: h.level2
+            ? hierarchyCategoryMapMyTickets.get(h.level2.toString())
+            : undefined,
+          level3: h.level3
+            ? hierarchyCategoryMapMyTickets.get(h.level3.toString())
+            : undefined,
+          level4: h.level4
+            ? hierarchyCategoryMapMyTickets.get(h.level4.toString())
+            : undefined,
+        };
       }
       return ticketObj;
     });
@@ -2055,11 +2118,39 @@ export const getAllTickets = async (req: Request, res: Response) => {
         /[.*+?^${}()|[\]\\]/g,
         "\\$&",
       );
+      const searchRegex = { $regex: sanitizedSearch, $options: "i" };
+
+      // Find users whose name, email, or mobile matches the query
+      const matchingUsers = await User.find(
+        {
+          $or: [
+            { name: searchRegex },
+            { email: searchRegex },
+            { mobile: searchRegex },
+            { phone: searchRegex },
+          ],
+        },
+        { _id: 1 },
+      ).lean();
+      const matchingUserIds = matchingUsers.map((u: any) => u._id);
+
       query.$or = [
-        { ticketNumber: { $regex: sanitizedSearch, $options: "i" } },
-        { subject: { $regex: sanitizedSearch, $options: "i" } },
+        { ticketNumber: searchRegex },
+        { subject: searchRegex },
+        { description: searchRegex },
+        { mobile: searchRegex },
+        { sourceEmail: searchRegex },
+        { sourceEmailName: searchRegex },
+        { "metadata.studentName": searchRegex },
+        { "metadata.studentEmail": searchRegex },
+        { "metadata.studentPhone": searchRegex },
+        ...(matchingUserIds.length > 0
+          ? [{ createdBy: { $in: matchingUserIds } }]
+          : []),
       ];
-      console.log(`🔍 [VIEW_TICKETS] Searching for: ${sanitizedSearch}`);
+      console.log(
+        `🔍 [VIEW_TICKETS] Global search for: ${sanitizedSearch} (matched ${matchingUserIds.length} users)`,
+      );
     }
 
     // ============================================
@@ -2154,6 +2245,28 @@ export const getAllTickets = async (req: Request, res: Response) => {
         }
       }
     });
+
+    // Hierarchy level filters (hierarchyFilter_level2, hierarchyFilter_level3, hierarchyFilter_level4)
+    for (const levelNum of [2, 3, 4]) {
+      const paramKey = `hierarchyFilter_level${levelNum}`;
+      const filterVal = req.query[paramKey] as string | undefined;
+      if (filterVal && filterVal.trim()) {
+        const matchingCategories = await Category.find({
+          name: new RegExp(filterVal.trim(), "i"),
+          level: levelNum,
+        })
+          .select("_id")
+          .lean();
+        if (matchingCategories.length > 0) {
+          query[`categoryHierarchy.level${levelNum}`] = {
+            $in: matchingCategories.map((c: any) => c._id),
+          };
+        } else {
+          // No matching categories → force zero results for this filter
+          query[`categoryHierarchy.level${levelNum}`] = null;
+        }
+      }
+    }
 
     // Additional project filter from query params (for unified view multi-select)
     if (
@@ -2344,6 +2457,29 @@ export const getAllTickets = async (req: Request, res: Response) => {
         : Promise.resolve([]),
     ]);
 
+    // Batch-fetch category names for hierarchy levels 2-4 so they can be
+    // displayed as individual columns without N+1 queries.
+    const hierarchyCategoryIds = [
+      ...new Set(
+        tickets.flatMap((t: any) => {
+          const h = t.categoryHierarchy;
+          if (!h) return [];
+          return [h.level2, h.level3, h.level4]
+            .filter(Boolean)
+            .map((id: any) => id.toString());
+        }),
+      ),
+    ];
+    const hierarchyCategoryDocs =
+      hierarchyCategoryIds.length > 0
+        ? await Category.find({ _id: { $in: hierarchyCategoryIds } })
+            .select("name")
+            .lean()
+        : [];
+    const hierarchyCategoryMap = new Map(
+      hierarchyCategoryDocs.map((c: any) => [c._id.toString(), c.name]),
+    );
+
     const projectMap = new Map(
       projects.map((p: any) => [
         p._id.toString(),
@@ -2404,6 +2540,24 @@ export const getAllTickets = async (req: Request, res: Response) => {
           ticketObj.statusName = statusEntry.name;
           ticketObj.statusColor = statusEntry.color;
         }
+      }
+
+      // Enrich categoryHierarchyNames so hierarchy_level_N columns can render names
+      if (ticketObj.categoryHierarchy) {
+        const h = ticketObj.categoryHierarchy;
+        ticketObj.categoryHierarchyNames = {
+          // level1 is already covered by the populated `category.name` field
+          level1: ticketObj.category?.name || undefined,
+          level2: h.level2
+            ? hierarchyCategoryMap.get(h.level2.toString())
+            : undefined,
+          level3: h.level3
+            ? hierarchyCategoryMap.get(h.level3.toString())
+            : undefined,
+          level4: h.level4
+            ? hierarchyCategoryMap.get(h.level4.toString())
+            : undefined,
+        };
       }
 
       // Calculate resolution time and SLA status for resolved/closed tickets
@@ -3303,6 +3457,20 @@ export const replyToTicket = async (req: Request, res: Response) => {
       }
     })();
 
+    // Invalidate footfall cache — comment count changed
+    (() => {
+      try {
+        const tenantId =
+          (updatedTicket as any).project?.toString() ||
+          (updatedTicket as any).metadata?.projectId?.toString();
+        if (tenantId) {
+          dashboardEvents.emit("ticket.commented", { tenantId });
+        }
+      } catch (_) {
+        // non-critical
+      }
+    })();
+
     return res.status(200).json({
       success: true,
       message: "Reply added successfully",
@@ -3828,25 +3996,41 @@ export const updateTicketStatus = async (req: Request, res: Response) => {
       }
     }
 
-    // Notification engine: ticket_status_changed (role-based fan-out)
+    // Notification engine: ticket_status_changed → notify only the assignee and ticket creator
     (() => {
       const projectId =
         (ticket as any).metadata?.projectId?.toString() ||
         (ticket as any).project?.toString();
       if (projectId) {
         const statusLabel = statusDoc?.name || String(statusNum);
-        fireNotification({
-          triggerType: TRIGGER_TYPES.TICKET_STATUS_CHANGED,
-          triggeredByUserId: userId,
-          projectId,
-          entityType: "ticket",
-          entityId: ticket._id as mongoose.Types.ObjectId,
-          deepLinkUrl: `/projects/${projectId}/tickets/${(ticket._id as any).toString()}`,
-          templateVars: {
-            ticketNumber: ticket.ticketNumber,
-            newStatus: statusLabel,
-          },
-        }).catch(console.error);
+        const recipients: mongoose.Types.ObjectId[] = [];
+        // Assigned agent
+        const agentRaw = ticket.assignedTo as any;
+        const agentId = agentRaw?._id ?? agentRaw;
+        if (agentId)
+          recipients.push(new mongoose.Types.ObjectId(agentId.toString()));
+        // Ticket creator / student
+        const creatorId =
+          (ticket as any).metadata?.studentUserId ||
+          (ticket as any).submittedBy ||
+          (ticket as any).createdBy;
+        if (creatorId)
+          recipients.push(new mongoose.Types.ObjectId(creatorId.toString()));
+        if (recipients.length > 0) {
+          fireNotification({
+            triggerType: TRIGGER_TYPES.TICKET_STATUS_CHANGED,
+            triggeredByUserId: userId,
+            projectId,
+            entityType: "ticket",
+            entityId: ticket._id as mongoose.Types.ObjectId,
+            deepLinkUrl: `/projects/${projectId}/tickets/${(ticket._id as any).toString()}`,
+            templateVars: {
+              ticketNumber: ticket.ticketNumber,
+              newStatus: statusLabel,
+            },
+            recipientOverride: recipients,
+          }).catch(console.error);
+        }
       }
     })();
 
@@ -4531,12 +4715,12 @@ export const escalateTicket = async (req: Request, res: Response) => {
       `✅ Ticket ${id} escalated by ${currentUser.email} to ${escalatedUser.email}`,
     );
 
-    // Notification engine: ticket_escalated (role-based fan-out)
+    // Notification engine: ticket_escalated → notify only the escalated-to agent
     (() => {
       const projectId =
         (ticket as any).metadata?.projectId?.toString() ||
         (ticket as any).project?.toString();
-      if (projectId) {
+      if (projectId && escalatedUserId) {
         fireNotification({
           triggerType: TRIGGER_TYPES.TICKET_ESCALATED,
           triggeredByUserId: userId,
@@ -4545,6 +4729,7 @@ export const escalateTicket = async (req: Request, res: Response) => {
           entityId: ticket._id as mongoose.Types.ObjectId,
           deepLinkUrl: `/projects/${projectId}/tickets/${(ticket._id as any).toString()}`,
           templateVars: { ticketNumber: ticket.ticketNumber },
+          recipientOverride: [new mongoose.Types.ObjectId(escalatedUserId)],
         }).catch(console.error);
       }
     })();
@@ -4873,6 +5058,38 @@ export const reassignTicket = async (req: Request, res: Response) => {
       ? `${oldAssignedTo.firstName} ${oldAssignedTo.lastName}`
       : "Unassigned";
     const newAssignedName = `${newAgent.firstName} ${newAgent.lastName}`;
+
+    // ── CENTER-SCOPE GUARD ───────────────────────────────────────────────────
+    // For offline tickets that belong to a specific center, the new agent must
+    // be assigned to that same center. Super Admins bypass this check.
+    const ticketRawCenter = (ticket as any).metadata?.centerId;
+    if (ticketRawCenter && ticketRawCenter !== "online") {
+      const callerForCheck = await User.findById(callerId).populate("role");
+      const callerRoleCode = (callerForCheck?.role as any)?.code;
+      const isSuperAdminCaller = callerRoleCode === "SUPER_ADMIN";
+
+      if (!isSuperAdminCaller) {
+        const ticketCenterStr =
+          typeof ticketRawCenter === "object"
+            ? (ticketRawCenter._id?.toString() ?? String(ticketRawCenter))
+            : String(ticketRawCenter);
+
+        const agentCenterIds = ((newAgent as any).centers || []).map(
+          (c: any) =>
+            typeof c === "object"
+              ? (c._id?.toString() ?? String(c))
+              : String(c),
+        );
+
+        if (!agentCenterIds.includes(ticketCenterStr)) {
+          return res.status(400).json({
+            success: false,
+            message: `Cannot reassign: ${newAgent.firstName} ${newAgent.lastName} is not assigned to this ticket's venue/center.`,
+          });
+        }
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     // Update assignment
     ticket.assignedTo = new mongoose.Types.ObjectId(newAgentId);
@@ -5400,7 +5617,7 @@ export const getDashboardStats = async (req: Request, res: Response) => {
 
     // Optimized: Single aggregation instead of 11 sequential countDocuments calls
     // This reduces database round-trips from 12 to 2 (aggregation + recent activity)
-    const [statsResult, recentActivity] = await Promise.all([
+    const [statsResult, recentActivity, footfallData] = await Promise.all([
       Ticket.aggregate([
         { $match: query },
         {
@@ -5487,6 +5704,19 @@ export const getDashboardStats = async (req: Request, res: Response) => {
         .limit(5)
         .select("ticketNumber title status updatedAt")
         .lean(),
+
+      // Footfall aggregation: unique students + total responses + new tickets
+      Ticket.aggregate([
+        { $match: query },
+        {
+          $group: {
+            _id: null,
+            uniqueStudentEmails: { $addToSet: "$metadata.studentEmail" },
+            totalResponses: { $sum: { $size: { $ifNull: ["$comments", []] } } },
+            newTickets: { $sum: 1 },
+          },
+        },
+      ]),
     ]);
 
     // Extract stats from aggregation result
@@ -5621,6 +5851,18 @@ export const getDashboardStats = async (req: Request, res: Response) => {
     const fallbackAssignmentsThisMonth =
       await Ticket.countDocuments(fallbackQuery);
 
+    // Compute footfall count
+    // Formula: unique students (each student counted once regardless of ticket count)
+    //          + total follow-up responses/comments on existing tickets
+    // A student creating their first ticket is already counted in uniqueStudentCount,
+    // so we do NOT add newTickets separately to avoid double-counting.
+    const footfallAgg = footfallData[0];
+    const uniqueStudentCount = footfallAgg
+      ? (footfallAgg.uniqueStudentEmails as string[]).filter(Boolean).length
+      : 0;
+    const totalResponses: number = footfallAgg?.totalResponses || 0;
+    const footfallCount = uniqueStudentCount + totalResponses;
+
     return res.status(200).json({
       success: true,
       viewMode: appliedViewMode, // Return which view mode was applied
@@ -5638,6 +5880,7 @@ export const getDashboardStats = async (req: Request, res: Response) => {
       recentActivity: formattedActivity,
       teamBreakdown, // Include team breakdown if applicable
       fallbackAssignmentsThisMonth,
+      footfallCount,
     });
   } catch (error) {
     console.error("Dashboard stats error:", error);
@@ -6463,6 +6706,18 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
       });
     }
 
+    // Verify the user has STUDENT role — offline portal is for students only
+    const studentRole = await Role.findOne({ code: "STUDENT" });
+    if (studentRole && student.role) {
+      if (student.role.toString() !== studentRole._id.toString()) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "This user does not have the Student role. Only student accounts can raise tickets through the offline portal.",
+        });
+      }
+    }
+
     // Get the agent's full details including centers
     const agentDetails = await User.findById(agent.userId).select(
       "centers firstName lastName email",
@@ -7165,20 +7420,52 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
 export const getAssignableAgents = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.userId;
-    const { projectId, useHierarchy, departmentId } = req.query; // useHierarchy defaults to true
+    const { projectId, useHierarchy, departmentId, ticketId } = req.query; // useHierarchy defaults to true
+
+    // ── RESOLVE TICKET CENTER FOR SCOPE FILTERING ────────────────────────────
+    // If a ticketId is provided, derive the center that should be used to scope
+    // the assignable-agent list. Offline tickets carry metadata.centerId which
+    // restricts reassignment to agents in the same venue.
+    let ticketCenterId: string | null = null;
+    if (
+      ticketId &&
+      typeof ticketId === "string" &&
+      mongoose.Types.ObjectId.isValid(ticketId)
+    ) {
+      const rawTicket = await Ticket.findById(ticketId)
+        .select("metadata")
+        .lean();
+      const rawCenter = (rawTicket as any)?.metadata?.centerId;
+      if (rawCenter && rawCenter !== "online") {
+        ticketCenterId =
+          typeof rawCenter === "object"
+            ? (rawCenter._id?.toString() ?? String(rawCenter))
+            : String(rawCenter);
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     // ── DEPARTMENT-BASED SHORT CIRCUIT ──────────────────────────────────────
     // If departmentId is provided, return all active users in that department
     // (bypasses hierarchy / project logic — department is already project-scoped)
     if (departmentId) {
-      // Match users whose departmentRef OR any projectDepartments entry matches
-      const agents = await User.find({
+      const deptQuery: any = {
         $or: [
           { departmentRef: departmentId },
           { "projectDepartments.departmentRef": departmentId },
         ],
         isActive: true,
-      })
+      };
+
+      // Scope to the ticket's center when the ticket belongs to a specific venue
+      if (ticketCenterId) {
+        deptQuery.centers = {
+          $in: [new mongoose.Types.ObjectId(ticketCenterId)],
+        };
+      }
+
+      // Match users whose departmentRef OR any projectDepartments entry matches
+      const agents = await User.find(deptQuery)
         .populate("role", "name isAgent code")
         .select("_id firstName lastName email role")
         .sort({ firstName: 1, lastName: 1 });
@@ -7309,6 +7596,13 @@ export const getAssignableAgents = async (req: Request, res: Response) => {
           _id: { $in: assignableUserIds },
           isActive: true,
         };
+
+        // Scope to the ticket's center for offline tickets
+        if (ticketCenterId) {
+          assignableQuery.centers = {
+            $in: [new mongoose.Types.ObjectId(ticketCenterId)],
+          };
+        }
 
         // If projectId is provided, ensure users have access to that project via their role
         if (projectId) {
@@ -7457,8 +7751,18 @@ export const getAssignableAgents = async (req: Request, res: Response) => {
     // If user has centers assigned (and is NOT Super Admin), also filter agents by shared centers (for offline mode)
     // Super Admin should see all agents regardless of center assignment
     if (userCenterIds.length > 0 && !isSuperAdmin) {
-      agentQuery.centers = { $in: userCenterIds };
-      console.log("🏢 Filtering agents by shared centers:", userCenterIds);
+      // When we have a specific ticket center, prefer that over the user's full center list
+      // (ticket center is a subset — always more specific)
+      const scopeCenterIds = ticketCenterId ? [ticketCenterId] : userCenterIds;
+      agentQuery.centers = { $in: scopeCenterIds };
+      console.log("🏢 Filtering agents by center scope:", scopeCenterIds);
+    } else if (ticketCenterId && !isSuperAdmin) {
+      // User has no personal centers but ticket has a center — still scope by ticket's center
+      agentQuery.centers = { $in: [ticketCenterId] };
+      console.log(
+        "🏢 Filtering agents by ticket center (user has no center):",
+        ticketCenterId,
+      );
     } else if (isSuperAdmin) {
       console.log("👑 Super Admin - not filtering by centers");
     }

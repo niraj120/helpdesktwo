@@ -56,6 +56,10 @@ export interface IUser extends Document {
   biometricSyncedAt?: Date;
   biometricSyncError?: string;
 
+  // Payroll / Company fields
+  payrollType?: "internal" | "external";
+  company?: mongoose.Types.ObjectId | null;
+
   // Methods
   comparePassword(candidatePassword: string): Promise<boolean>;
   generateResetPasswordOTP(): string;
@@ -249,6 +253,18 @@ const userSchema = new Schema<IUser>(
     biometricDeviceId: { type: Number, default: null },
     biometricSyncedAt: { type: Date, default: null },
     biometricSyncError: { type: String, default: null },
+
+    // Payroll / Company fields
+    payrollType: {
+      type: String,
+      default: null,
+      validate: {
+        validator: (v: unknown) =>
+          v == null || v === "internal" || v === "external",
+        message: "payrollType must be internal, external, or null",
+      },
+    },
+    company: { type: Schema.Types.ObjectId, ref: "Company", default: null },
   },
   {
     timestamps: true,

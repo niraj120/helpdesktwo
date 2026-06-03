@@ -1,6 +1,6 @@
-import { ReactNode } from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
-import { usePermissions } from '../hooks/usePermissions';
+import { ReactNode } from "react";
+import { Navigate, useLocation } from "react-router-dom";
+import { usePermissions } from "../hooks/usePermissions";
 
 interface ProtectedRouteProps {
   children: ReactNode;
@@ -14,34 +14,34 @@ interface ProtectedRouteProps {
 
 /**
  * ProtectedRoute Component
- * 
+ *
  * Wraps routes to ensure users have required permissions before accessing.
  * If permission check fails, redirects to /no-access page.
- * 
+ *
  * @example
  * // Single permission required
  * <ProtectedRoute permission="USER_VIEW_ALL">
  *   <UserManagement />
  * </ProtectedRoute>
- * 
+ *
  * @example
  * // Multiple permissions (OR logic - user needs ANY one)
  * <ProtectedRoute permission={['TICKET_VIEW_ALL', 'TICKET_VIEW_OWN']}>
  *   <TicketList />
  * </ProtectedRoute>
- * 
+ *
  * @example
  * // Multiple permissions (AND logic - user needs ALL)
  * <ProtectedRoute permission={['ADMIN_ACCESS', 'SETTINGS_ADVANCED']} requireAll={true}>
  *   <AdvancedSettings />
  * </ProtectedRoute>
- * 
+ *
  * @example
  * // Module-level access (user needs ANY permission starting with prefix)
  * <ProtectedRoute modulePrefix="TICKET_">
  *   <TicketDashboard />
  * </ProtectedRoute>
- * 
+ *
  * @example
  * // Just require authentication (no specific permission)
  * <ProtectedRoute requireAuth={true}>
@@ -53,42 +53,73 @@ export const ProtectedRoute = ({
   permission,
   requireAll = false,
   modulePrefix,
-  redirectTo = '/no-access',
+  redirectTo = "/no-access",
   requireAuth = false,
   excludeForRoles = [],
 }: ProtectedRouteProps) => {
   const location = useLocation();
-  const { hasPermission, hasAnyPermission, hasAllPermissions, hasModuleAccess, getAllPermissions } = usePermissions();
+  const {
+    hasPermission,
+    hasAnyPermission,
+    hasAllPermissions,
+    hasModuleAccess,
+    getAllPermissions,
+  } = usePermissions();
 
   // Check if user is authenticated
-  const authToken = localStorage.getItem('authToken');
+  const authToken = localStorage.getItem("authToken");
   const userPermissions = getAllPermissions();
 
   // If not authenticated, redirect to login
   if (!authToken) {
+    // On portal routes, redirect to the portal's own login page
+    const portalMatch = location.pathname.match(
+      /^\/([a-z0-9_-]+)\/portal(?:\/|$)/i,
+    );
+    if (portalMatch) {
+      return (
+        <Navigate
+          to={`/${portalMatch[1]}/portal/login`}
+          state={{ from: location }}
+          replace
+        />
+      );
+    }
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   // Check role exclusion
   if (excludeForRoles.length > 0) {
-    let userRole = localStorage.getItem('userRole') || '';
-    
+    let userRole = localStorage.getItem("userRole") || "";
+
     // Try to get role code from user object if not a proper code
-    if (!userRole || !userRole.includes('_') || userRole !== userRole.toUpperCase()) {
+    if (
+      !userRole ||
+      !userRole.includes("_") ||
+      userRole !== userRole.toUpperCase()
+    ) {
       try {
-        const userStr = localStorage.getItem('user');
+        const userStr = localStorage.getItem("user");
         if (userStr) {
           const user = JSON.parse(userStr);
           userRole = user.role?.code || user.roleCode || userRole;
         }
       } catch (e) {
-        console.warn('Failed to parse user object');
+        console.warn("Failed to parse user object");
       }
     }
-    
+
     if (excludeForRoles.includes(userRole)) {
-      console.log(`🚫 Access denied - Role ${userRole} is excluded from this route`);
-      return <Navigate to={redirectTo} state={{ from: location, excludedRole: userRole }} replace />;
+      console.log(
+        `🚫 Access denied - Role ${userRole} is excluded from this route`,
+      );
+      return (
+        <Navigate
+          to={redirectTo}
+          state={{ from: location, excludedRole: userRole }}
+          replace
+        />
+      );
     }
   }
 
@@ -102,7 +133,13 @@ export const ProtectedRoute = ({
     if (hasModuleAccess(modulePrefix)) {
       return <>{children}</>;
     }
-    return <Navigate to={redirectTo} state={{ from: location, missingPermission: modulePrefix }} replace />;
+    return (
+      <Navigate
+        to={redirectTo}
+        state={{ from: location, missingPermission: modulePrefix }}
+        replace
+      />
+    );
   }
 
   // Check specific permission(s)
@@ -114,13 +151,33 @@ export const ProtectedRoute = ({
         if (hasAllPermissions(permission)) {
           return <>{children}</>;
         }
-        return <Navigate to={redirectTo} state={{ from: location, missingPermissions: permission, requireAll: true }} replace />;
+        return (
+          <Navigate
+            to={redirectTo}
+            state={{
+              from: location,
+              missingPermissions: permission,
+              requireAll: true,
+            }}
+            replace
+          />
+        );
       } else {
         // OR logic - user needs ANY one permission
         if (hasAnyPermission(permission)) {
           return <>{children}</>;
         }
-        return <Navigate to={redirectTo} state={{ from: location, missingPermissions: permission, requireAll: false }} replace />;
+        return (
+          <Navigate
+            to={redirectTo}
+            state={{
+              from: location,
+              missingPermissions: permission,
+              requireAll: false,
+            }}
+            replace
+          />
+        );
       }
     }
 
@@ -128,7 +185,13 @@ export const ProtectedRoute = ({
     if (hasPermission(permission)) {
       return <>{children}</>;
     }
-    return <Navigate to={redirectTo} state={{ from: location, missingPermission: permission }} replace />;
+    return (
+      <Navigate
+        to={redirectTo}
+        state={{ from: location, missingPermission: permission }}
+        replace
+      />
+    );
   }
 
   // No permission requirement - just show the page (authenticated users only)
@@ -137,17 +200,17 @@ export const ProtectedRoute = ({
 
 /**
  * Higher-Order Component version of ProtectedRoute
- * 
+ *
  * @example
  * const ProtectedUserManagement = withProtectedRoute(UserManagement, {
  *   permission: 'USER_VIEW_ALL'
  * });
- * 
+ *
  * <Route path="/users" element={<ProtectedUserManagement />} />
  */
 export const withProtectedRoute = (
   Component: React.ComponentType<any>,
-  options: Omit<ProtectedRouteProps, 'children'>
+  options: Omit<ProtectedRouteProps, "children">,
 ) => {
   return (props: any) => (
     <ProtectedRoute {...options}>

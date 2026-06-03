@@ -39,6 +39,7 @@ interface TicketStats {
   viewMode?: ViewMode;
   teamBreakdown?: TeamMemberStats[];
   fallbackAssignmentsThisMonth?: number;
+  footfallCount?: number;
   recentActivity: Array<{
     ticketId: string;
     title: string;
@@ -68,6 +69,7 @@ const Dashboard = () => {
     recentActivity: [],
     teamBreakdown: [],
     fallbackAssignmentsThisMonth: 0,
+    footfallCount: 0,
   });
 
   const [loading, setLoading] = useState(true);
@@ -163,6 +165,7 @@ const Dashboard = () => {
           lowPriority: data.lowPriority || 0,
           teamBreakdown: data.teamBreakdown || [],
           fallbackAssignmentsThisMonth: data.fallbackAssignmentsThisMonth ?? 0,
+          footfallCount: data.footfallCount ?? 0,
         });
       } else {
         console.error("Failed to fetch dashboard stats:", response.status);
@@ -310,6 +313,30 @@ const Dashboard = () => {
               style={{ fontSize: "32px", fontWeight: "bold", color: "#6b7280" }}
             >
               {loading ? "-" : ticketStats.closed}
+            </p>
+          </div>
+
+          <div
+            style={{
+              background: "white",
+              borderRadius: "8px",
+              padding: "20px",
+              boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+            }}
+          >
+            <p
+              style={{
+                fontSize: "14px",
+                color: "#6b7280",
+                marginBottom: "8px",
+              }}
+            >
+              Footfall Count
+            </p>
+            <p
+              style={{ fontSize: "32px", fontWeight: "bold", color: "#6366f1" }}
+            >
+              {loading ? "-" : ticketStats.footfallCount}
             </p>
           </div>
         </div>

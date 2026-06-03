@@ -21,27 +21,27 @@ const alertTasks = new Map<string, ReturnType<typeof cron.schedule>>();
 
 // Data-point key → DB field mapping
 const DP_FIELD_MAP: Record<string, string> = {
-  employee_id:          "employeeCode",
-  attendanceDate:       "attendanceDate",
-  punch_in:             "punchIn",
-  punch_out:            "punchOut",
-  total_working_hours:  "totalWorkingHours",
-  status:               "status",
-  center:               "center",
-  published:            "published",
+  employee_id: "employeeCode",
+  attendanceDate: "attendanceDate",
+  punch_in: "punchIn",
+  punch_out: "punchOut",
+  total_working_hours: "totalWorkingHours",
+  status: "status",
+  center: "center",
+  published: "published",
 };
 
 const DP_LABEL_MAP: Record<string, string> = {
-  employee_id:          "Employee ID",
-  employeeName:         "Name",
-  attendanceDate:       "Date",
-  punch_in:             "Punch In",
-  punch_out:            "Punch Out",
-  total_working_hours:  "Total Hours",
-  status:               "Status",
-  center:               "Center",
-  geo:                  "Geo Location",
-  published:            "Published",
+  employee_id: "Employee ID",
+  employeeName: "Name",
+  attendanceDate: "Date",
+  punch_in: "Punch In",
+  punch_out: "Punch Out",
+  total_working_hours: "Total Hours",
+  status: "Status",
+  center: "Center",
+  geo: "Geo Location",
+  published: "Published",
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -54,13 +54,16 @@ function buildCronExpression(
   scheduleTime: string,
 ): string {
   const [hh, mm] = scheduleTime.split(":").map(Number);
-  const hour   = isNaN(hh) ? 8 : hh;
+  const hour = isNaN(hh) ? 8 : hh;
   const minute = isNaN(mm) ? 0 : mm;
   switch (scheduleType) {
-    case "weekly":  return `${minute} ${hour} * * ${scheduleDay}`;
-    case "monthly": return `${minute} ${hour} ${scheduleDay} * *`;
+    case "weekly":
+      return `${minute} ${hour} * * ${scheduleDay}`;
+    case "monthly":
+      return `${minute} ${hour} ${scheduleDay} * *`;
     case "daily":
-    default:        return `${minute} ${hour} * * *`;
+    default:
+      return `${minute} ${hour} * * *`;
   }
 }
 
@@ -75,15 +78,18 @@ async function getTransporter(projectId?: string) {
         let smtpPassword = emailConfig.smtpPassword;
         if (isEncrypted(smtpPassword)) smtpPassword = decrypt(smtpPassword);
         const transporter = nodemailer.createTransport({
-          host:   emailConfig.smtpHost,
-          port:   emailConfig.smtpPort,
+          host: emailConfig.smtpHost,
+          port: emailConfig.smtpPort,
           secure: emailConfig.smtpSecure,
-          auth:   { user: emailConfig.smtpUser, pass: smtpPassword },
+          auth: { user: emailConfig.smtpUser, pass: smtpPassword },
         });
         return {
           transporter,
-          fromEmail: emailConfig.fromEmail ?? emailConfig.smtpUser ?? "noreply@helpdesk.com",
-          fromName:  emailConfig.fromName  ?? "SAC Helpdesk",
+          fromEmail:
+            emailConfig.fromEmail ??
+            emailConfig.smtpUser ??
+            "noreply@helpdesk.com",
+          fromName: emailConfig.fromName ?? "SAC Helpdesk",
         };
       }
     } catch {
@@ -91,8 +97,8 @@ async function getTransporter(projectId?: string) {
     }
   }
   const transporter = nodemailer.createTransport({
-    host:   process.env.SMTP_HOST || "localhost",
-    port:   parseInt(process.env.SMTP_PORT ?? "587"),
+    host: process.env.SMTP_HOST || "localhost",
+    port: parseInt(process.env.SMTP_PORT ?? "587"),
     secure: process.env.SMTP_SECURE === "true",
     auth: {
       user: process.env.SMTP_USER,
@@ -101,8 +107,9 @@ async function getTransporter(projectId?: string) {
   });
   return {
     transporter,
-    fromEmail: process.env.SMTP_FROM ?? process.env.SMTP_USER ?? "noreply@helpdesk.com",
-    fromName:  process.env.SMTP_FROM_NAME ?? "SAC Helpdesk",
+    fromEmail:
+      process.env.SMTP_FROM ?? process.env.SMTP_USER ?? "noreply@helpdesk.com",
+    fromName: process.env.SMTP_FROM_NAME ?? "SAC Helpdesk",
   };
 }
 
@@ -139,20 +146,28 @@ function buildAttendanceQuery(
         if (!query.attendanceDate) query.attendanceDate = {};
         if (f.operator === "equals") {
           const d = new Date(f.value);
-          const end = new Date(f.value); end.setHours(23, 59, 59, 999);
+          const end = new Date(f.value);
+          end.setHours(23, 59, 59, 999);
           query.attendanceDate.$gte = d;
           query.attendanceDate.$lte = end;
         } else if (f.operator === "after") {
           query.attendanceDate.$gte = new Date(f.value);
         } else if (f.operator === "before") {
-          const end = new Date(f.value); end.setHours(23, 59, 59, 999);
+          const end = new Date(f.value);
+          end.setHours(23, 59, 59, 999);
           query.attendanceDate.$lte = end;
         }
         break;
       }
-      case "status":       query.status = f.value; break;
-      case "center":       query.center = f.value; break;
-      case "employee_id":  query.employeeCode = f.value; break;
+      case "status":
+        query.status = f.value;
+        break;
+      case "center":
+        query.center = f.value;
+        break;
+      case "employee_id":
+        query.employeeCode = f.value;
+        break;
     }
   }
   return query;
@@ -230,7 +245,9 @@ async function runAttendanceAlertJob(assignmentId: string): Promise<void> {
     .lean();
 
   // Batch-fetch user names
-  const userIds = [...new Set(raw.map((r: any) => r.userId?.toString()).filter(Boolean))];
+  const userIds = [
+    ...new Set(raw.map((r: any) => r.userId?.toString()).filter(Boolean)),
+  ];
   const nameUsers = await User.find({ _id: { $in: userIds } })
     .select("_id firstName lastName")
     .lean();
@@ -252,8 +269,7 @@ async function runAttendanceAlertJob(assignmentId: string): Promise<void> {
       if (k === "employeeName") {
         out[headers[i]] = nameMap.get(r.userId?.toString() ?? "") ?? "";
       } else if (k === "geo") {
-        out[headers[i]] =
-          r.geoLat != null ? `${r.geoLat},${r.geoLong}` : "";
+        out[headers[i]] = r.geoLat != null ? `${r.geoLat},${r.geoLong}` : "";
       } else {
         const dbField = DP_FIELD_MAP[k] ?? k;
         out[headers[i]] = r[dbField] ?? "";
@@ -286,7 +302,7 @@ async function runAttendanceAlertJob(assignmentId: string): Promise<void> {
 
   await transporter.sendMail({
     from: fromName ? `"${fromName}" <${fromEmail}>` : fromEmail,
-    to:   toAddresses.join(", "),
+    to: toAddresses.join(", "),
     ...(finalCcAddresses.length > 0 ? { cc: finalCcAddresses.join(", ") } : {}),
     subject: `Scheduled Attendance Report: ${reportName} — ${dateStr}`,
     text: `Hi,\n\nPlease find attached the scheduled attendance report "${reportName}" generated on ${dateStr}.\n\nThis report contains ${raw.length} row(s).\n\nRegards,\nSAC Helpdesk`,
@@ -300,7 +316,9 @@ async function runAttendanceAlertJob(assignmentId: string): Promise<void> {
     ],
   });
 
-  await ReportAssignment.findByIdAndUpdate(assignmentId, { lastAlertSentAt: now });
+  await ReportAssignment.findByIdAndUpdate(assignmentId, {
+    lastAlertSentAt: now,
+  });
 
   console.log(
     `[AttendanceAlertScheduler] Sent alert for "${reportName}" to ${toAddresses.length} recipient(s).`,

@@ -23,9 +23,9 @@ export interface AuthRequest extends Request {
     tokenVersion?: number;
     projects?: any[]; // Projects from user's role (ObjectIds)
     userDirectProjects?: any[]; // Projects directly assigned to user (ObjectIds)
-    projectId?: string;   // Set when logged in via project-specific portal
+    projectId?: string; // Set when logged in via project-specific portal
     projectName?: string; // Display name of that project
-    centreId?: string;    // Primary centre assignment for centre-scoped queries
+    centreId?: string; // Primary centre assignment for centre-scoped queries
   };
   projectContext?: ProjectContext; // Attached by attachProjectContext middleware
 }

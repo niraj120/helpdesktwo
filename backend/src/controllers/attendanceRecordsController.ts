@@ -160,15 +160,18 @@ export const getAttendanceRecords = async (
       ...new Set(raw.map((r) => r.userId?.toString()).filter(Boolean)),
     ];
     const users = await User.find({ _id: { $in: userIds } })
-      .select("_id fullName firstName lastName")
+      .select("_id fullName firstName lastName designation")
       .lean();
     const nameMap = new Map<string, string>();
+    const designationMap = new Map<string, string>();
     for (const u of users) {
       const name =
         (u as any).fullName ||
         [(u as any).firstName, (u as any).lastName].filter(Boolean).join(" ") ||
         "";
       nameMap.set(u._id.toString(), name);
+      if ((u as any).designation)
+        designationMap.set(u._id.toString(), (u as any).designation);
     }
 
     const data = raw.map((r) => ({
@@ -178,6 +181,7 @@ export const getAttendanceRecords = async (
         fieldPermissions,
       ),
       employeeName: nameMap.get(r.userId?.toString() ?? "") || null,
+      designation: designationMap.get(r.userId?.toString() ?? "") || null,
     }));
 
     res.json({ data, meta: { total, page, limit } });
@@ -359,7 +363,7 @@ export const getAttendanceMatrix = async (
       projects: projOid,
       isActive: true,
     })
-      .select("_id employeeCode firstName lastName fullName")
+      .select("_id employeeCode firstName lastName fullName designation")
       .sort({ fullName: 1 })
       .lean();
 
@@ -455,6 +459,7 @@ export const getAttendanceMatrix = async (
         userId: uid,
         employeeCode: emp.employeeCode || "",
         name,
+        designation: (emp as any).designation || "",
         center: userCenterMap.get(uid) ?? null,
         attendance,
       };

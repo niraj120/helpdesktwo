@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import ActivityLog from "../models/ActivityLog";
+import { User } from "../models/User";
 import { AuthRequest } from "../middleware/auth";
 
 // Get all activity logs with filtering and pagination
@@ -15,6 +16,7 @@ export const getAllActivityLogs = async (
       action,
       entity,
       projectId,
+      centerId,
       startDate,
       endDate,
       search,
@@ -34,6 +36,14 @@ export const getAllActivityLogs = async (
     }
     if (projectId) {
       filter.project = projectId;
+    }
+    if (centerId) {
+      // Filter logs by users mapped to the given center
+      const usersInCenter = await User.find({ centers: centerId })
+        .select("_id")
+        .lean();
+      const userIds = usersInCenter.map((u: any) => u._id);
+      filter.userId = { $in: userIds };
     }
     if (startDate || endDate) {
       filter.timestamp = {};
@@ -218,12 +228,37 @@ export const exportActivityLogs = async (
   res: Response,
 ): Promise<void> => {
   try {
-    const { userId, action, entity, startDate, endDate } = req.query;
+    const {
+      userId,
+      action,
+      entity,
+      projectId,
+      centerId,
+      search,
+      startDate,
+      endDate,
+    } = req.query;
 
     const filter: any = {};
     if (userId) filter.userId = userId;
     if (action) filter.action = { $regex: `^${action}$`, $options: "i" };
     if (entity) filter.entity = { $regex: entity as string, $options: "i" };
+    if (projectId) filter.project = projectId;
+    if (centerId) {
+      const usersInCenter = await User.find({ centers: centerId })
+        .select("_id")
+        .lean();
+      const userIds = usersInCenter.map((u: any) => u._id);
+      filter.userId = { $in: userIds };
+    }
+    if (search) {
+      filter.$or = [
+        { userName: { $regex: search, $options: "i" } },
+        { userEmail: { $regex: search, $options: "i" } },
+        { entityName: { $regex: search, $options: "i" } },
+        { description: { $regex: search, $options: "i" } },
+      ];
+    }
     if (startDate || endDate) {
       filter.timestamp = {};
       if (startDate)

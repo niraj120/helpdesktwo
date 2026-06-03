@@ -58,6 +58,8 @@ interface User {
   centers?: Center[];
   isActive: boolean;
   createdAt: string;
+  payrollType?: "internal" | "external";
+  company?: { _id: string; name: string } | null;
 }
 
 interface HRMSEmployee {
@@ -99,6 +101,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
   const [filterStatuses, setFilterStatuses] = useState<string[]>([]);
   const [filterProjects, setFilterProjects] = useState<string[]>([]);
   const [filterCenters, setFilterCenters] = useState<string[]>([]);
+  const [filterCompany, setFilterCompany] = useState<string>("");
+  const [companies, setCompanies] = useState<{ _id: string; name: string }[]>(
+    [],
+  );
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -155,6 +161,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
     reportingManager: "",
     projects: [] as string[],
     centers: [] as string[],
+    payrollType: "" as "" | "internal" | "external",
+    company: "",
   });
 
   // Filtered data based on primary project selection - memoized to prevent recalculation
@@ -393,6 +401,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
         console.log("👤 [USER MGMT] Filtering by centers:", filterCenters);
       }
 
+      if (filterCompany) {
+        params.append("company", filterCompany);
+      }
+
       const token = localStorage.getItem("authToken");
       const url = `${API_CONFIG.API_URL}/users?${params}`;
 
@@ -628,9 +640,27 @@ const UserManagement: React.FC<UserManagementProps> = ({
     filterStatuses,
     filterProjects,
     filterCenters,
+    filterCompany,
     viewMode,
     currentProjectId,
   ]); // Added viewMode and currentProjectId
+
+  // Fetch companies for dropdown (once on mount)
+  useEffect(() => {
+    const fetchCompanies = async () => {
+      try {
+        const token = localStorage.getItem("authToken");
+        const res = await fetch(`${API_CONFIG.API_URL}/master/companies`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (data.success) setCompanies(data.data || []);
+      } catch {
+        // silent
+      }
+    };
+    fetchCompanies();
+  }, []);
 
   // Separate effect for page changes
   useEffect(() => {
@@ -836,6 +866,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
       reportingManager: "",
       projects: projectContext?.projectId ? [projectContext.projectId] : [],
       centers: [],
+      payrollType: "" as "" | "internal" | "external",
+      company: "",
     });
 
     // Fetch reporting managers for the default project (if any)
@@ -899,6 +931,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
       reportingManager: user.reportingManager?._id || "",
       projects: userProjects,
       centers: user.centers?.map((c) => c._id) || [],
+      payrollType: (user.payrollType as "" | "internal" | "external") || "",
+      company:
+        typeof user.company === "object" && user.company
+          ? user.company._id
+          : (user.company as unknown as string) || "",
     });
 
     // Fetch centers for the primary project
@@ -1020,6 +1057,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
         reportingManager: formData.reportingManager || undefined,
         projects: formData.projects,
         centers: formData.centers,
+        payrollType: formData.payrollType || undefined,
+        company: formData.company || undefined,
       };
 
       if (!editingUser && formData.password) {
@@ -1583,6 +1622,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
     setFilterStatuses([]);
     setFilterProjects([]);
     setFilterCenters([]);
+    setFilterCompany("");
     setCurrentPage(1);
   };
 
@@ -2116,6 +2156,48 @@ const UserManagement: React.FC<UserManagementProps> = ({
             {centers.map((center) => (
               <option key={center._id} value={center._id}>
                 {center.centerName} - {center.city}
+              </option>
+            ))}
+          </select>
+
+          {/* Company Filter */}
+          <select
+            value={filterCompany}
+            onChange={(e) => setFilterCompany(e.target.value)}
+            style={{
+              height: "42px",
+              padding: "8px 10px",
+              border: "1px solid #d7deea",
+              borderRadius: "10px",
+              fontSize: "14px",
+              outline: "none",
+              backgroundColor: "white",
+              fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+              cursor: "pointer",
+              transition: "all 0.2s ease",
+              boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
+            }}
+            onFocus={(e) => {
+              e.target.style.borderColor = "#84caff";
+              e.target.style.boxShadow = "0 0 0 3px rgba(132, 202, 255, 0.25)";
+            }}
+            onBlur={(e) => {
+              e.target.style.borderColor = "#d7deea";
+              e.target.style.boxShadow = "0 1px 3px rgba(0, 0, 0, 0.04)";
+            }}
+          >
+            <option value="">
+              {getText("All Companies", "सर्व कंपन्या", "सर्व कंपन्या")}
+            </option>
+            <option value="internal">
+              {getText("Internal (Own Payroll)", "अंतर्गत", "अंतर्गत")}
+            </option>
+            <option value="external">
+              {getText("External", "बाह्य", "बाह्य")}
+            </option>
+            {companies.map((c) => (
+              <option key={c._id} value={c._id}>
+                {c.name}
               </option>
             ))}
           </select>
@@ -2805,6 +2887,21 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         '"Noto Sans", system-ui, -apple-system, sans-serif',
                     }}
                   >
+                    {getText("Company", "कंपनी", "कंपनी")}
+                  </th>
+                  <th
+                    style={{
+                      padding: "12px 24px",
+                      textAlign: "left",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#6B7280",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                      fontFamily:
+                        '"Noto Sans", system-ui, -apple-system, sans-serif',
+                    }}
+                  >
                     {getText("Status", "स्थिती", "स्थिती")}
                   </th>
                   <th
@@ -3073,6 +3170,50 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             {user.centers.length}
                           </span>
                         </div>
+                      ) : (
+                        <span style={{ color: "#9ca3af", fontSize: "14px" }}>
+                          -
+                        </span>
+                      )}
+                    </td>
+                    {/* Company column */}
+                    <td style={{ padding: "16px 24px" }}>
+                      {user.payrollType === "internal" ? (
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            padding: "4px 10px",
+                            backgroundColor: "#ECFDF5",
+                            color: "#065F46",
+                            borderRadius: "6px",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            fontFamily:
+                              '"Noto Sans", system-ui, -apple-system, sans-serif',
+                          }}
+                        >
+                          {getText("Internal", "अंतर्गत", "अंतर्गत")}
+                        </span>
+                      ) : user.payrollType === "external" && user.company ? (
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            padding: "4px 10px",
+                            backgroundColor: "#FFF7ED",
+                            color: "#92400E",
+                            borderRadius: "6px",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            fontFamily:
+                              '"Noto Sans", system-ui, -apple-system, sans-serif',
+                          }}
+                        >
+                          {typeof user.company === "object"
+                            ? user.company.name
+                            : user.company}
+                        </span>
                       ) : (
                         <span style={{ color: "#9ca3af", fontSize: "14px" }}>
                           -
@@ -4064,6 +4205,124 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     }}
                   />
                 </div>
+              </div>
+
+              {/* Payroll / Company */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: isMobileViewport
+                    ? "1fr"
+                    : formData.payrollType === "external"
+                      ? "1fr 1fr"
+                      : "1fr",
+                  gap: "16px",
+                  marginTop: "16px",
+                }}
+              >
+                <div>
+                  <label
+                    style={{
+                      display: "block",
+                      fontSize: "14px",
+                      fontWeight: "500",
+                      color: "#374151",
+                      marginBottom: "6px",
+                    }}
+                  >
+                    {getText("Payroll Type", "पेरोल प्रकार", "पेरोल प्रकार")}
+                  </label>
+                  <select
+                    value={formData.payrollType}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        payrollType: e.target.value as
+                          | ""
+                          | "internal"
+                          | "external",
+                        company:
+                          e.target.value !== "external" ? "" : formData.company,
+                      })
+                    }
+                    style={{
+                      width: "100%",
+                      padding: "12px",
+                      border: "1px solid #d1d5db",
+                      borderRadius: "6px",
+                      fontSize: "14px",
+                      outline: "none",
+                      boxSizing: "border-box",
+                      backgroundColor: "white",
+                    }}
+                  >
+                    <option value="">
+                      {getText(
+                        "Select payroll type",
+                        "पेरोल प्रकार निवडा",
+                        "पेरोल प्रकार निवडा",
+                      )}
+                    </option>
+                    <option value="internal">
+                      {getText(
+                        "Internal (Own Payroll)",
+                        "अंतर्गत (स्वतःचा पेरोल)",
+                        "अंतर्गत (स्वतःचा पेरोल)",
+                      )}
+                    </option>
+                    <option value="external">
+                      {getText(
+                        "External Company",
+                        "बाह्य कंपनी",
+                        "बाह्य कंपनी",
+                      )}
+                    </option>
+                  </select>
+                </div>
+                {formData.payrollType === "external" && (
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "14px",
+                        fontWeight: "500",
+                        color: "#374151",
+                        marginBottom: "6px",
+                      }}
+                    >
+                      {getText("Company", "कंपनी", "कंपनी")}
+                    </label>
+                    <select
+                      value={formData.company}
+                      onChange={(e) =>
+                        setFormData({ ...formData, company: e.target.value })
+                      }
+                      style={{
+                        width: "100%",
+                        padding: "12px",
+                        border: "1px solid #d1d5db",
+                        borderRadius: "6px",
+                        fontSize: "14px",
+                        outline: "none",
+                        boxSizing: "border-box",
+                        backgroundColor: "white",
+                      }}
+                    >
+                      <option value="">
+                        {getText(
+                          "Select company",
+                          "कंपनी निवडा",
+                          "कंपनी निवडा",
+                        )}
+                      </option>
+                      {companies.map((c) => (
+                        <option key={c._id} value={c._id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
 
               {!editingUser && (

@@ -152,6 +152,7 @@ import { registerAgentPerfHandlers } from "./services/widgetHandlers/agentPerfHa
 import { registerSlaEscHandlers } from "./services/widgetHandlers/slaEscHandlers";
 import { registerMiscHandlers } from "./services/widgetHandlers/miscHandlers";
 import { registerAssetMgmtHandlers } from "./services/widgetHandlers/assetMgmtHandlers";
+import { registerFootfallHandlers } from "./services/widgetHandlers/footfallHandlers";
 import "./models/dashboard/FeedbackScore";
 import { seedWidgetDefinitions } from "./utils/seedWidgetDefinitions";
 import { seedDashboardTemplates } from "./utils/seedDashboardTemplates";
@@ -477,8 +478,9 @@ httpServer.listen(PORT, async () => {
     registerSlaEscHandlers();
     registerMiscHandlers();
     registerAssetMgmtHandlers();
+    registerFootfallHandlers();
     console.log(
-      "📊 Dashboard Engine: Phase 1–5 + KB + Activity + att/co/ap/se/misc/am handlers registered",
+      "📊 Dashboard Engine: Phase 1–5 + KB + Activity + att/co/ap/se/misc/am/footfall handlers registered",
     );
 
     // Start event-driven cache invalidation

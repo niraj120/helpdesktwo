@@ -1,64 +1,69 @@
-import { Response, NextFunction, RequestHandler } from 'express';
-import { AuthRequest } from './auth';
-import { Role } from '../models/Role';
-import mongoose from 'mongoose';
-import { logActivity } from '../utils/logger';
+import { Response, NextFunction, RequestHandler } from "express";
+import { AuthRequest } from "./auth";
+import { Role } from "../models/Role";
+import mongoose from "mongoose";
+import { logActivity } from "../utils/logger";
 
 /**
  * Middleware to attach project context to request
  * Extracts projectId from various sources and validates user access
  * Adds projectIds array for unified view mode
- * 
+ *
  * Usage:
  * - attachProjectContext() - automatically detects single/unified mode
  */
 export const attachProjectContext = async (
   req: AuthRequest,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const user = req.user;
     if (!user) {
       res.status(401).json({
         success: false,
-        message: 'User not authenticated'
+        message: "User not authenticated",
       });
       return;
     }
 
     // Check for viewMode in query/body
-    const viewMode = req.query.viewMode || req.body.viewMode || 'single';
-    
+    const viewMode = req.query.viewMode || req.body.viewMode || "single";
+
     // Extract projectId from request
-    const projectId = req.params.projectId || req.query.projectId || req.body.projectId;
+    const projectId =
+      req.params.projectId || req.query.projectId || req.body.projectId;
 
     // Get user's accessible projects from role only
     const fullRole = await Role.findById(user.role?._id);
     const roleProjects = fullRole?.projects || [];
-    
+
     // Use only role projects (users inherit project access from their role)
-    const uniqueProjectIds = roleProjects.map((p: any) => p._id?.toString() || p.toString());
+    const uniqueProjectIds = roleProjects.map(
+      (p: any) => p._id?.toString() || p.toString(),
+    );
 
     // Check if user is admin (has access to all)
-    const userRoleCode = user.role?.code || '';
-    const isAdmin = userRoleCode === 'SUPER_ADMIN' || userRoleCode === 'ADMIN';
+    const userRoleCode = user.role?.code || "";
+    const isAdmin = userRoleCode === "SUPER_ADMIN" || userRoleCode === "ADMIN";
 
     // Attach project context to request
     req.projectContext = {
-      viewMode: viewMode as 'single' | 'unified',
+      viewMode: viewMode as "single" | "unified",
       currentProjectId: projectId || null,
       accessibleProjectIds: isAdmin ? [] : uniqueProjectIds, // Empty array means all projects
       isAdmin,
     };
 
-    console.log(`📋 [PROJECT_CONTEXT] User: ${user.email}, Mode: ${viewMode}, Projects: ${uniqueProjectIds.length}`);
+    console.log(
+      `📋 [PROJECT_CONTEXT] User: ${user.email}, Mode: ${viewMode}, Projects: ${uniqueProjectIds.length}`,
+    );
     next();
   } catch (error) {
-    console.error('❌ [PROJECT_CONTEXT] Error:', error);
+    console.error("❌ [PROJECT_CONTEXT] Error:", error);
     res.status(500).json({
       success: false,
-      message: 'Error processing project context'
+      message: "Error processing project context",
     });
     return;
   }
@@ -69,45 +74,53 @@ export const attachProjectContext = async (
  * Checks:
  * 1. User's assigned projects array
  * 2. User's role's projects array (for roles scoped to specific projects)
- * 
+ *
  * Usage:
  * - requireProjectAccess() - checks project from req.params.projectId or req.query.projectId or req.body.projectId
  * - requireProjectAccess('customField') - checks specific field
  */
-export const requireProjectAccess = (projectIdField?: string): RequestHandler => {
+export const requireProjectAccess = (
+  projectIdField?: string,
+): RequestHandler => {
   return async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const user = req.user;
       if (!user) {
         return res.status(401).json({
           success: false,
-          message: 'User not authenticated'
+          message: "User not authenticated",
         });
       }
 
       // Extract projectId from request
       let projectId: string | undefined;
-      
+
       if (projectIdField) {
         // Custom field specified
-        projectId = req.params[projectIdField] || req.query[projectIdField] || req.body[projectIdField];
+        projectId =
+          req.params[projectIdField] ||
+          req.query[projectIdField] ||
+          req.body[projectIdField];
       } else {
         // Check common locations
-        projectId = req.params.projectId || req.query.projectId || req.body.projectId;
+        projectId =
+          req.params.projectId || req.query.projectId || req.body.projectId;
       }
 
       if (!projectId) {
-        console.log('⚠️ [PROJECT_SCOPE] No projectId found in request');
+        console.log("⚠️ [PROJECT_SCOPE] No projectId found in request");
         return res.status(400).json({
           success: false,
-          message: 'Project ID is required'
+          message: "Project ID is required",
         });
       }
 
       // Check if user is super admin (has access to all projects)
-      const userRoleCode = user.role?.code || '';
-      if (userRoleCode === 'SUPER_ADMIN' || userRoleCode === 'ADMIN') {
-        console.log(`✅ [PROJECT_SCOPE] ${user.email} is admin - full access granted`);
+      const userRoleCode = user.role?.code || "";
+      if (userRoleCode === "SUPER_ADMIN" || userRoleCode === "ADMIN") {
+        console.log(
+          `✅ [PROJECT_SCOPE] ${user.email} is admin - full access granted`,
+        );
         next();
         return;
       }
@@ -117,35 +130,41 @@ export const requireProjectAccess = (projectIdField?: string): RequestHandler =>
       if (!fullRole) {
         return res.status(403).json({
           success: false,
-          message: 'User role not found'
+          message: "User role not found",
         });
       }
 
       // Check if user's role has access to this project
       const roleProjects = fullRole.projects || [];
       const roleHasProject = roleProjects.some(
-        (p: any) => p.toString() === projectId
+        (p: any) => p.toString() === projectId,
       );
 
       if (roleHasProject) {
-        console.log(`✅ [PROJECT_SCOPE] ${user.email} has access to project ${projectId} via role ${fullRole.name}`);
+        console.log(
+          `✅ [PROJECT_SCOPE] ${user.email} has access to project ${projectId} via role ${fullRole.name}`,
+        );
         next();
         return;
       }
 
-      console.log(`❌ [PROJECT_SCOPE] ${user.email} denied access to project ${projectId}`);
+      console.log(
+        `❌ [PROJECT_SCOPE] ${user.email} denied access to project ${projectId}`,
+      );
       console.log(`   Role: ${fullRole.name}`);
-      console.log(`   Role projects: ${roleProjects.map((p: any) => p.toString()).join(', ')}`);
-      
+      console.log(
+        `   Role projects: ${roleProjects.map((p: any) => p.toString()).join(", ")}`,
+      );
+
       return res.status(403).json({
         success: false,
-        message: 'Your role does not have access to this project'
+        message: "Your role does not have access to this project",
       });
     } catch (err) {
-      console.error('Project scope check error:', err);
+      console.error("Project scope check error:", err);
       return res.status(500).json({
         success: false,
-        message: 'Internal server error'
+        message: "Internal server error",
       });
     }
   };
@@ -157,18 +176,18 @@ export const requireProjectAccess = (projectIdField?: string): RequestHandler =>
  */
 export const canAccessProject = async (
   userId: string,
-  projectId: string
+  projectId: string,
 ): Promise<boolean> => {
   try {
-    const User = mongoose.model('User');
-    const user = await User.findById(userId).populate('role');
-    
+    const User = mongoose.model("User");
+    const user = await User.findById(userId).populate("role");
+
     if (!user) return false;
 
-    const userRole: any = user.get('role');
-    
+    const userRole: any = user.get("role");
+
     // Super admin has access to all
-    if (userRole?.code === 'SUPER_ADMIN' || userRole?.code === 'ADMIN') {
+    if (userRole?.code === "SUPER_ADMIN" || userRole?.code === "ADMIN") {
       return true;
     }
 
@@ -179,7 +198,7 @@ export const canAccessProject = async (
     const roleProjects = role.projects || [];
     return roleProjects.some((p: any) => p.toString() === projectId);
   } catch (error) {
-    console.error('Error checking project access:', error);
+    console.error("Error checking project access:", error);
     return false;
   }
 };
@@ -188,18 +207,18 @@ export const canAccessProject = async (
  * Get list of all projects accessible to user
  */
 export const getUserAccessibleProjects = async (
-  userId: string
+  userId: string,
 ): Promise<string[]> => {
   try {
-    const User = mongoose.model('User');
-    const user = await User.findById(userId).populate('role');
-    
+    const User = mongoose.model("User");
+    const user = await User.findById(userId).populate("role");
+
     if (!user) return [];
 
-    const userRole: any = user.get('role');
-    
+    const userRole: any = user.get("role");
+
     // Super admin has access to all - return empty array to indicate "all"
-    if (userRole?.code === 'SUPER_ADMIN' || userRole?.code === 'ADMIN') {
+    if (userRole?.code === "SUPER_ADMIN" || userRole?.code === "ADMIN") {
       return []; // Empty array = all projects
     }
 
@@ -211,7 +230,7 @@ export const getUserAccessibleProjects = async (
 
     return role.projects.map((p: any) => p.toString());
   } catch (error) {
-    console.error('Error getting accessible projects:', error);
+    console.error("Error getting accessible projects:", error);
     return [];
   }
 };
@@ -238,7 +257,7 @@ export const enforceAssetProjectScope = async (
   const user = req.user;
 
   if (!user) {
-    res.status(401).json({ success: false, message: 'User not authenticated' });
+    res.status(401).json({ success: false, message: "User not authenticated" });
     return;
   }
 
@@ -268,12 +287,13 @@ export const enforceAssetProjectScope = async (
 
   // ProjectId present but mismatches token scope → deny + audit
   if (requestedProjectId !== tokenProjectId) {
-    const userName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Unknown User';
+    const userName =
+      `${user.firstName || ""} ${user.lastName || ""}`.trim() || "Unknown User";
 
     console.warn(
       `🚫 [ASSET_SCOPE] Cross-project access blocked: user=${user.email} ` +
-      `authorized=${tokenProjectId} requested=${requestedProjectId} ` +
-      `endpoint=${req.method} ${req.path}`,
+        `authorized=${tokenProjectId} requested=${requestedProjectId} ` +
+        `endpoint=${req.method} ${req.path}`,
     );
 
     // Fire-and-forget audit log — do not block the 403 response
@@ -281,8 +301,8 @@ export const enforceAssetProjectScope = async (
       userId: user.userId,
       userName,
       userEmail: user.email,
-      action: 'access_denied',
-      entity: 'Asset',
+      action: "access_denied",
+      entity: "Asset",
       description:
         `Unauthorized cross-project asset access blocked — ` +
         `authorized project: ${user.projectName || tokenProjectId}, ` +
@@ -297,11 +317,12 @@ export const enforceAssetProjectScope = async (
         userRole: user.role?.code,
       },
       req,
-    }).catch((err) => console.error('[ASSET_SCOPE] Audit log failed:', err));
+    }).catch((err) => console.error("[ASSET_SCOPE] Audit log failed:", err));
 
     res.status(403).json({
       success: false,
-      message: 'Access denied: you can only access assets within your assigned project',
+      message:
+        "Access denied: you can only access assets within your assigned project",
     });
     return;
   }
@@ -309,4 +330,3 @@ export const enforceAssetProjectScope = async (
   // Match — everything is fine
   next();
 };
-

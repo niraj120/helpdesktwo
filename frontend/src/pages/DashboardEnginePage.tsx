@@ -11,7 +11,13 @@
  *  - Link to personal dashboards
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import axios from "axios";
@@ -80,8 +86,7 @@ export default function DashboardEnginePage({
   }, [tabs]);
 
   const showCentreFilter = usedCtxVars.has("@ctx.centreId");
-  const showUserFilter =
-    usedCtxVars.has("@ctx.userId") && canManageDashboard;
+  const showUserFilter = usedCtxVars.has("@ctx.userId") && canManageDashboard;
 
   // Current user — needed to scope centre options to user's assigned centers
   const { data: currentUser } = useCurrentUser();
@@ -150,7 +155,13 @@ export default function DashboardEnginePage({
       overrides["@ctx.userId"] = selectedUserId;
     }
     return overrides;
-  }, [showCentreFilter, selectedCentreIds, centreOptions, userCentreIds, selectedUserId]);
+  }, [
+    showCentreFilter,
+    selectedCentreIds,
+    centreOptions,
+    userCentreIds,
+    selectedUserId,
+  ]);
 
   // Phase 4: Track dashboard_view usage event fire-and-forget
   const trackView = useCallback(
@@ -268,7 +279,9 @@ export default function DashboardEnginePage({
             {viewMode === "unified"
               ? "Dashboard - All Projects"
               : (() => {
-                  const p = userProjects.find((x) => x._id === currentProjectId);
+                  const p = userProjects.find(
+                    (x) => x._id === currentProjectId,
+                  );
                   return p ? `Dashboard - ${p.name}` : "Dashboard";
                 })()}
           </h1>
@@ -458,7 +471,12 @@ interface WidgetGridProps {
   ctxOverrides: Record<string, any>;
 }
 
-function WidgetGrid({ tab, dateRangeDays, scopeMode, ctxOverrides }: WidgetGridProps) {
+function WidgetGrid({
+  tab,
+  dateRangeDays,
+  scopeMode,
+  ctxOverrides,
+}: WidgetGridProps) {
   const { widgets, sections = [] } = tab;
 
   // Phase 5 (US-017): Local collapse state — initialised from preference data
@@ -802,7 +820,13 @@ function CentreMultiSelect({
                 />
                 {c.name}
                 {c.code && (
-                  <span style={{ fontSize: 11, color: "#6b7280", marginLeft: "auto" }}>
+                  <span
+                    style={{
+                      fontSize: 11,
+                      color: "#6b7280",
+                      marginLeft: "auto",
+                    }}
+                  >
                     {c.code}
                   </span>
                 )}

@@ -1,4 +1,4 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Document, Schema } from "mongoose";
 
 export interface ICategory extends Document {
   name: string;
@@ -38,7 +38,7 @@ const CategorySchema = new Schema<ICategory>(
     },
     projectId: {
       type: Schema.Types.ObjectId,
-      ref: 'Project',
+      ref: "Project",
       required: true,
       index: true,
     },
@@ -72,36 +72,41 @@ const CategorySchema = new Schema<ICategory>(
     },
     parentId: {
       type: Schema.Types.ObjectId,
-      ref: 'Category',
+      ref: "Category",
       default: null,
       index: true,
     },
     path: {
       type: String,
       trim: true,
-      default: '', // Will be computed on save
+      default: "", // Will be computed on save
     },
-    hierarchyPath: [{
-      type: Schema.Types.ObjectId,
-      ref: 'Category',
-    }],
+    hierarchyPath: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "Category",
+      },
+    ],
     createdBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
     },
     updatedBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
     },
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 // Compound index for unique category name per project AND level AND parent
 // This allows same name at different levels or under different parents
-CategorySchema.index({ name: 1, projectId: 1, level: 1, parentId: 1 }, { unique: true });
+CategorySchema.index(
+  { name: 1, projectId: 1, level: 1, parentId: 1 },
+  { unique: true },
+);
 
 // Compound index for unique category code per project
 CategorySchema.index({ code: 1, projectId: 1 }, { unique: true });
@@ -118,7 +123,7 @@ CategorySchema.index({ hierarchyPath: 1 });
 /**
  * Pre-save middleware to compute path and validate hierarchy
  */
-CategorySchema.pre('save', async function(next) {
+CategorySchema.pre("save", async function (next) {
   try {
     // Level 1 categories should not have a parent
     if (this.level === 1) {
@@ -127,23 +132,27 @@ CategorySchema.pre('save', async function(next) {
       this.path = this.name;
     } else if (this.parentId) {
       // Fetch parent to build hierarchy path
-      const parent = await mongoose.model<ICategory>('Category').findById(this.parentId);
+      const parent = await mongoose
+        .model<ICategory>("Category")
+        .findById(this.parentId);
       if (!parent) {
-        throw new Error('Parent category not found');
+        throw new Error("Parent category not found");
       }
-      
+
       // Validate parent level is exactly one level above
       if (parent.level !== this.level - 1) {
-        throw new Error(`Parent must be level ${this.level - 1}, but found level ${parent.level}`);
+        throw new Error(
+          `Parent must be level ${this.level - 1}, but found level ${parent.level}`,
+        );
       }
-      
+
       // Build hierarchy path (ancestors + parent)
       this.hierarchyPath = [...(parent.hierarchyPath || []), parent._id];
-      
+
       // Build display path
       this.path = parent.path ? `${parent.path} > ${this.name}` : this.name;
     }
-    
+
     next();
   } catch (error: any) {
     next(error);
@@ -153,9 +162,9 @@ CategorySchema.pre('save', async function(next) {
 /**
  * Static method to get children of a category
  */
-CategorySchema.statics.getChildren = async function(
+CategorySchema.statics.getChildren = async function (
   parentId: mongoose.Types.ObjectId | string,
-  options?: { includeInactive?: boolean }
+  options?: { includeInactive?: boolean },
 ): Promise<ICategory[]> {
   const query: any = { parentId };
   if (!options?.includeInactive) {
@@ -167,9 +176,9 @@ CategorySchema.statics.getChildren = async function(
 /**
  * Static method to get all descendants of a category
  */
-CategorySchema.statics.getDescendants = async function(
+CategorySchema.statics.getDescendants = async function (
   ancestorId: mongoose.Types.ObjectId | string,
-  options?: { includeInactive?: boolean }
+  options?: { includeInactive?: boolean },
 ): Promise<ICategory[]> {
   const query: any = { hierarchyPath: ancestorId };
   if (!options?.includeInactive) {
@@ -181,9 +190,9 @@ CategorySchema.statics.getDescendants = async function(
 /**
  * Static method to get root categories (Level 1) for a project
  */
-CategorySchema.statics.getRootCategories = async function(
+CategorySchema.statics.getRootCategories = async function (
   projectId: mongoose.Types.ObjectId | string,
-  options?: { includeInactive?: boolean }
+  options?: { includeInactive?: boolean },
 ): Promise<ICategory[]> {
   const query: any = { projectId, level: 1 };
   if (!options?.includeInactive) {
@@ -195,9 +204,9 @@ CategorySchema.statics.getRootCategories = async function(
 /**
  * Static method to get categories as tree structure
  */
-CategorySchema.statics.getTreeForProject = async function(
+CategorySchema.statics.getTreeForProject = async function (
   projectId: mongoose.Types.ObjectId | string,
-  options?: { includeInactive?: boolean; maxLevel?: number }
+  options?: { includeInactive?: boolean; maxLevel?: number },
 ): Promise<any[]> {
   const query: any = { projectId };
   if (!options?.includeInactive) {
@@ -206,23 +215,25 @@ CategorySchema.statics.getTreeForProject = async function(
   if (options?.maxLevel) {
     query.level = { $lte: options.maxLevel };
   }
-  
-  const categories = await this.find(query).sort({ level: 1, order: 1, name: 1 }).lean();
-  
+
+  const categories = await this.find(query)
+    .sort({ level: 1, order: 1, name: 1 })
+    .lean();
+
   // Build tree structure
   const buildTree = (items: any[], parentId: string | null = null): any[] => {
     return items
-      .filter(item => {
+      .filter((item) => {
         const itemParentId = item.parentId?.toString() || null;
         return itemParentId === parentId;
       })
-      .map(item => ({
+      .map((item) => ({
         ...item,
         children: buildTree(items, item._id.toString()),
       }));
   };
-  
+
   return buildTree(categories);
 };
 
-export const Category = mongoose.model<ICategory>('Category', CategorySchema);
+export const Category = mongoose.model<ICategory>("Category", CategorySchema);

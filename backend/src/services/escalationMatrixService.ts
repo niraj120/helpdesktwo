@@ -2017,6 +2017,7 @@ export async function processAutoEscalation(): Promise<{
           if (projectId) {
             const ticketNum =
               (ticket as any).ticketNumber || ticket._id.toString();
+            // SLA breach → role-based fan-out (notify the whole team)
             fireNotification({
               triggerType: TRIGGER_TYPES.SLA_BREACHED,
               projectId,
@@ -2025,6 +2026,7 @@ export async function processAutoEscalation(): Promise<{
               deepLinkUrl: `/projects/${projectId}/tickets/${ticket._id}`,
               templateVars: { ticketNumber: ticketNum },
             }).catch(console.error);
+            // Escalated → only the newly assigned agent
             fireNotification({
               triggerType: TRIGGER_TYPES.TICKET_ESCALATED,
               projectId,
@@ -2032,6 +2034,9 @@ export async function processAutoEscalation(): Promise<{
               entityId: ticket._id as mongoose.Types.ObjectId,
               deepLinkUrl: `/projects/${projectId}/tickets/${ticket._id}`,
               templateVars: { ticketNumber: ticketNum },
+              recipientOverride: [
+                new mongoose.Types.ObjectId(assignedUser._id.toString()),
+              ],
             }).catch(console.error);
           }
         })();

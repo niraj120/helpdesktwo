@@ -451,15 +451,17 @@ const CenterAssetMappingAccordion: React.FC = () => {
         ? new Date(existingSelection.auditStartDate)
         : new Date();
 
-      // DON'T pre-calculate nextAuditDate - it will be set when audit is submitted
-      // This ensures the audit is editable until submitted
+      // Calculate nextAuditDate = startDate + frequencyMonths for preview
+      const nextAudit = new Date(startDate);
+      nextAudit.setMonth(nextAudit.getMonth() + frequencyMonths);
+      const nextAuditDate = nextAudit.toISOString();
 
       console.log("🔔 Setting audit schedule:", {
         centerId,
         centerName: centers.find((c) => c._id === centerId)?.centerName,
         startDate: startDate.toISOString(),
         frequencyMonths,
-        nextAuditDate: "Will be set on audit submission",
+        nextAuditDate,
       });
 
       return {
@@ -473,7 +475,7 @@ const CenterAssetMappingAccordion: React.FC = () => {
           lastAuditDate: startDate.toISOString(),
           auditFrequencyMonths: frequencyMonths,
           auditStartDate: startDate.toISOString(),
-          // nextAuditDate intentionally NOT set - will be calculated on audit submission
+          nextAuditDate,
         },
       };
     });
@@ -489,15 +491,22 @@ const CenterAssetMappingAccordion: React.FC = () => {
 
       const start = new Date(startDate);
 
-      // DON'T calculate nextAuditDate here - it will be set when audit is submitted
-      // The selected startDate is when the FIRST audit is due
+      // Recalculate nextAuditDate if frequency is already set
+      let nextAuditDate: string | undefined;
+      if (existingSelection?.auditFrequencyMonths) {
+        const nextAudit = new Date(start);
+        nextAudit.setMonth(
+          nextAudit.getMonth() + existingSelection.auditFrequencyMonths,
+        );
+        nextAuditDate = nextAudit.toISOString();
+      }
 
-      console.log("📅 Updating audit start date (first audit date):", {
+      console.log("📅 Updating audit start date:", {
         centerId,
         centerName: centers.find((c) => c._id === centerId)?.centerName,
         startDate: start.toISOString(),
         frequencyMonths: existingSelection?.auditFrequencyMonths,
-        nextAuditDate: "Will be set after audit submission",
+        nextAuditDate,
       });
 
       return {
@@ -510,13 +519,14 @@ const CenterAssetMappingAccordion: React.FC = () => {
           assetQuantities: existingSelection?.assetQuantities || {},
           lastAuditDate: start.toISOString(),
           auditStartDate: start.toISOString(),
-          // nextAuditDate NOT set - will be calculated after first audit submission
+          ...(nextAuditDate ? { nextAuditDate } : {}),
         },
       };
     });
   };
 
   const applyToAllCenters = (
+    sourceCenterId: string,
     sourceAssets: string[],
     sourceQuantities: { [assetId: string]: number },
   ) => {
@@ -528,11 +538,8 @@ const CenterAssetMappingAccordion: React.FC = () => {
       return;
     }
 
-    // Find the source center to get audit date info
-    const sourceCenterSelection = Object.values(centerSelections).find(
-      (sel) =>
-        JSON.stringify(sel.selectedAssets) === JSON.stringify(sourceAssets),
-    );
+    // Use the source center selection directly (no fragile asset-match lookup)
+    const sourceSel = centerSelections[sourceCenterId];
 
     setCenterSelections((prev) => {
       const newSelections: { [key: string]: CenterAssetSelection } = {};
@@ -540,13 +547,15 @@ const CenterAssetMappingAccordion: React.FC = () => {
       // Apply to ALL centers (not just ones already in state)
       centers.forEach((center) => {
         newSelections[center._id] = {
+          ...prev[center._id],
           centerId: center._id,
           centerName: center.centerName,
           selectedAssets: [...sourceAssets],
           assetQuantities: { ...sourceQuantities },
-          lastAuditDate: sourceCenterSelection?.lastAuditDate,
-          auditFrequencyMonths: sourceCenterSelection?.auditFrequencyMonths,
-          nextAuditDate: sourceCenterSelection?.nextAuditDate,
+          lastAuditDate: sourceSel?.lastAuditDate,
+          auditStartDate: sourceSel?.auditStartDate,
+          auditFrequencyMonths: sourceSel?.auditFrequencyMonths,
+          nextAuditDate: sourceSel?.nextAuditDate,
         };
       });
 
@@ -696,6 +705,7 @@ const CenterAssetMappingAccordion: React.FC = () => {
                 quantities: { [centerId]: quantity }, // Map quantity to center ID
                 lastAuditDate: selection.lastAuditDate,
                 auditFrequencyMonths: selection.auditFrequencyMonths,
+                nextAuditDate: selection.nextAuditDate,
               }),
             },
           );
@@ -1658,6 +1668,7 @@ const CenterAssetMappingAccordion: React.FC = () => {
                             onClick={(e) => {
                               e.stopPropagation();
                               applyToAllCenters(
+                                center._id,
                                 selection.selectedAssets,
                                 selection.assetQuantities,
                               );

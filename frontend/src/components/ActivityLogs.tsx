@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import DashboardLayout from "./DashboardLayout";
 import { API_CONFIG } from "../config/constants";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import * as XLSX from "xlsx";
 
 interface ActivityLog {
   _id: string;
@@ -35,12 +38,23 @@ interface ActivityLog {
   metadata?: Record<string, any>;
 }
 
+interface CenterOption {
+  _id: string;
+  name: string;
+}
+
 interface ActivityLogsProps {
   wrapWithLayout?: boolean;
+  /** When provided (portal context), locks the project filter to this ID */
+  projectId?: string | null;
+  /** Centers the current user has access to; when provided shows a center dropdown */
+  centerOptions?: CenterOption[];
 }
 
 const ActivityLogs: React.FC<ActivityLogsProps> = ({
   wrapWithLayout = true,
+  projectId: lockedProjectId,
+  centerOptions,
 }) => {
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,6 +62,9 @@ const ActivityLogs: React.FC<ActivityLogsProps> = ({
   const [limit] = useState(50);
   const [total, setTotal] = useState(0);
   const [selectedLog, setSelectedLog] = useState<ActivityLog | null>(null);
+  const [exportLoading, setExportLoading] = useState<
+    "csv" | "excel" | "pdf" | null
+  >(null);
 
   // Filters
   const [filters, setFilters] = useState({
@@ -56,6 +73,7 @@ const ActivityLogs: React.FC<ActivityLogsProps> = ({
     search: "",
     startDate: "",
     endDate: "",
+    centerId: "",
   });
 
   // Separate local state for text inputs (debounced before updating filters)
@@ -93,26 +111,40 @@ const ActivityLogs: React.FC<ActivityLogsProps> = ({
     fetchActivityLogs();
   }, [page, filters]);
 
+  // Resolve the effective projectId: prop (portal context) takes priority over localStorage
+  const resolveProjectId = (): string | null => {
+    if (lockedProjectId) return lockedProjectId;
+    try {
+      const ctx = localStorage.getItem("projectContext");
+      return ctx ? JSON.parse(ctx).projectId : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const buildFilterParams = (
+    extra?: Record<string, string>,
+  ): URLSearchParams => {
+    const projectId = resolveProjectId();
+    return new URLSearchParams({
+      ...(filters.action && { action: filters.action }),
+      ...(filters.entity && { entity: filters.entity }),
+      ...(filters.search && { search: filters.search }),
+      ...(filters.startDate && { startDate: filters.startDate }),
+      ...(filters.endDate && { endDate: filters.endDate }),
+      ...(filters.centerId && { centerId: filters.centerId }),
+      ...(projectId && { projectId }),
+      ...extra,
+    });
+  };
+
   const fetchActivityLogs = async () => {
     try {
       setLoading(true);
       const token = localStorage.getItem("authToken");
-
-      // Get projectId if in project portal context
-      const projectContextStr = localStorage.getItem("projectContext");
-      const projectId = projectContextStr
-        ? JSON.parse(projectContextStr).projectId
-        : null;
-
-      const params = new URLSearchParams({
+      const params = buildFilterParams({
         page: page.toString(),
         limit: limit.toString(),
-        ...(filters.action && { action: filters.action }),
-        ...(filters.entity && { entity: filters.entity }),
-        ...(filters.search && { search: filters.search }),
-        ...(filters.startDate && { startDate: filters.startDate }),
-        ...(filters.endDate && { endDate: filters.endDate }),
-        ...(projectId && { projectId: projectId }),
       });
 
       const response = await fetch(
@@ -134,6 +166,144 @@ const ActivityLogs: React.FC<ActivityLogsProps> = ({
       console.error("Error fetching activity logs:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleExport = async (format: "csv" | "excel" | "pdf") => {
+    try {
+      setExportLoading(format);
+      const token = localStorage.getItem("authToken");
+      const params = buildFilterParams();
+
+      const response = await fetch(
+        `${API_CONFIG.API_URL}/activity-logs/export?${params}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+      if (!response.ok) throw new Error("Export failed");
+      const result = await response.json();
+      const rows: ActivityLog[] = result.data || [];
+
+      const fileName = `activity-logs-${new Date().toISOString().slice(0, 10)}`;
+
+      if (format === "csv") {
+        const header = [
+          "Timestamp",
+          "User",
+          "Email",
+          "Role",
+          "Action",
+          "Entity",
+          "Entity Name",
+          "Description",
+          "IP Address",
+          "Project",
+        ];
+        const csvRows = rows.map((r) =>
+          [
+            formatDate(r.timestamp),
+            r.userName,
+            r.userEmail,
+            r.role || "",
+            r.action,
+            r.entity,
+            r.entityName || "",
+            r.description ? r.description.replace(/"/g, '""') : "",
+            r.ipAddress || "",
+            r.projectName || "",
+          ]
+            .map((v) => `"${v}"`)
+            .join(","),
+        );
+        const csvContent = [header.join(","), ...csvRows].join("\n");
+        const blob = new Blob([csvContent], {
+          type: "text/csv;charset=utf-8;",
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${fileName}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else if (format === "excel") {
+        const wsData = [
+          [
+            "Timestamp",
+            "User",
+            "Email",
+            "Role",
+            "Action",
+            "Entity",
+            "Entity Name",
+            "Description",
+            "IP Address",
+            "Project",
+          ],
+          ...rows.map((r) => [
+            formatDate(r.timestamp),
+            r.userName,
+            r.userEmail,
+            r.role || "",
+            r.action,
+            r.entity,
+            r.entityName || "",
+            r.description || "",
+            r.ipAddress || "",
+            r.projectName || "",
+          ]),
+        ];
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Activity Logs");
+        XLSX.writeFile(wb, `${fileName}.xlsx`);
+      } else if (format === "pdf") {
+        const doc = new jsPDF({ orientation: "landscape" });
+        doc.setFontSize(14);
+        doc.text("Activity Logs", 14, 15);
+        doc.setFontSize(9);
+        doc.text(
+          `Exported: ${new Date().toLocaleString()}  |  Total records: ${rows.length}`,
+          14,
+          22,
+        );
+        autoTable(doc, {
+          startY: 28,
+          head: [
+            [
+              "Timestamp",
+              "User",
+              "Action",
+              "Entity",
+              "Entity Name",
+              "Description",
+              "IP Address",
+              "Project",
+            ],
+          ],
+          body: rows.map((r) => [
+            formatDate(r.timestamp),
+            `${r.userName}\n${r.userEmail}`,
+            r.action.toUpperCase(),
+            r.entity,
+            r.entityName || "-",
+            r.description ? r.description.substring(0, 80) : "-",
+            r.ipAddress || "-",
+            r.projectName || "-",
+          ]),
+          styles: { fontSize: 7, cellPadding: 2 },
+          headStyles: { fillColor: [124, 58, 237] },
+          columnStyles: { 1: { cellWidth: 35 }, 5: { cellWidth: 40 } },
+        });
+        doc.save(`${fileName}.pdf`);
+      }
+    } catch (error) {
+      console.error("Export error:", error);
+    } finally {
+      setExportLoading(null);
     }
   };
 
@@ -186,14 +356,129 @@ const ActivityLogs: React.FC<ActivityLogsProps> = ({
   const mainContent = (
     <div style={{ padding: "32px", maxWidth: "1400px", margin: "0 auto" }}>
       {/* Header */}
-      <div style={{ marginBottom: "24px" }}>
-        <h1 style={{ margin: "0 0 8px 0", fontSize: "24px", fontWeight: 600 }}>
-          Activity Logs
-        </h1>
-        <p style={{ margin: 0, color: "#6b7280", fontSize: "14px" }}>
-          Track all CRUD operations: create, update, edit, and delete actions
-          across the system
-        </p>
+      <div
+        style={{
+          marginBottom: "24px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          flexWrap: "wrap",
+          gap: "16px",
+        }}
+      >
+        <div>
+          <h1
+            style={{ margin: "0 0 8px 0", fontSize: "24px", fontWeight: 600 }}
+          >
+            Activity Logs
+          </h1>
+          <p style={{ margin: 0, color: "#6b7280", fontSize: "14px" }}>
+            Track all CRUD operations: create, update, edit, and delete actions
+            across the system
+          </p>
+          {/* Context badges when in portal/project context */}
+          {lockedProjectId && (
+            <div
+              style={{
+                marginTop: "8px",
+                display: "flex",
+                gap: "8px",
+                flexWrap: "wrap",
+              }}
+            >
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  padding: "3px 10px",
+                  backgroundColor: "#ede9fe",
+                  color: "#7c3aed",
+                  borderRadius: "9999px",
+                  fontSize: "12px",
+                  fontWeight: 500,
+                }}
+              >
+                🏢 Filtered by your project
+              </span>
+              {filters.centerId && centerOptions && (
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                    padding: "3px 10px",
+                    backgroundColor: "#d1fae5",
+                    color: "#065f46",
+                    borderRadius: "9999px",
+                    fontSize: "12px",
+                    fontWeight: 500,
+                  }}
+                >
+                  📍{" "}
+                  {centerOptions.find((c) => c._id === filters.centerId)
+                    ?.name || "Center filtered"}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Export buttons */}
+        <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
+          <button
+            onClick={() => handleExport("csv")}
+            disabled={exportLoading !== null}
+            style={{
+              padding: "8px 14px",
+              backgroundColor: exportLoading === "csv" ? "#d1fae5" : "#ecfdf5",
+              color: "#065f46",
+              border: "1px solid #6ee7b7",
+              borderRadius: "6px",
+              fontSize: "13px",
+              fontWeight: 500,
+              cursor: exportLoading !== null ? "not-allowed" : "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {exportLoading === "csv" ? "Exporting..." : "⬇ CSV"}
+          </button>
+          <button
+            onClick={() => handleExport("excel")}
+            disabled={exportLoading !== null}
+            style={{
+              padding: "8px 14px",
+              backgroundColor:
+                exportLoading === "excel" ? "#dbeafe" : "#eff6ff",
+              color: "#1e40af",
+              border: "1px solid #93c5fd",
+              borderRadius: "6px",
+              fontSize: "13px",
+              fontWeight: 500,
+              cursor: exportLoading !== null ? "not-allowed" : "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {exportLoading === "excel" ? "Exporting..." : "⬇ Excel"}
+          </button>
+          <button
+            onClick={() => handleExport("pdf")}
+            disabled={exportLoading !== null}
+            style={{
+              padding: "8px 14px",
+              backgroundColor: exportLoading === "pdf" ? "#fce7f3" : "#fdf2f8",
+              color: "#9d174d",
+              border: "1px solid #f9a8d4",
+              borderRadius: "6px",
+              fontSize: "13px",
+              fontWeight: 500,
+              cursor: exportLoading !== null ? "not-allowed" : "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {exportLoading === "pdf" ? "Exporting..." : "⬇ PDF"}
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -380,6 +665,40 @@ const ActivityLogs: React.FC<ActivityLogsProps> = ({
             )}
           </div>
 
+          {/* Center filter — shown only when centerOptions available (portal context) */}
+          {centerOptions && centerOptions.length > 0 && (
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: "6px",
+                  fontSize: "13px",
+                  fontWeight: 500,
+                }}
+              >
+                Center
+              </label>
+              <select
+                value={filters.centerId}
+                onChange={(e) => handleFilterChange("centerId", e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "8px 12px",
+                  border: "1px solid #d1d5db",
+                  borderRadius: "6px",
+                  fontSize: "14px",
+                }}
+              >
+                <option value="">All Centers</option>
+                {centerOptions.map((c) => (
+                  <option key={c._id} value={c._id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div style={{ display: "flex", alignItems: "flex-end" }}>
             <button
               onClick={() => {
@@ -392,6 +711,7 @@ const ActivityLogs: React.FC<ActivityLogsProps> = ({
                   search: "",
                   startDate: "",
                   endDate: "",
+                  centerId: "",
                 });
                 setPage(1);
               }}

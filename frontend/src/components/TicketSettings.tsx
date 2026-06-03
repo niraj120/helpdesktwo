@@ -56,6 +56,7 @@ interface TicketTableColumnOption {
   description: string;
   enabled: boolean;
   isCustomField?: boolean;
+  isHierarchyField?: boolean;
   isFilterable?: boolean;
 }
 
@@ -385,7 +386,9 @@ const TicketSettings: React.FC = () => {
             }));
 
           setTableColumns((prev) => {
-            const staticCols = prev.filter((c) => !c.isCustomField);
+            const staticCols = prev.filter(
+              (c) => !c.isCustomField && !c.isHierarchyField,
+            );
             return [...staticCols, ...customCols];
           });
         } else {
@@ -434,8 +437,10 @@ const TicketSettings: React.FC = () => {
             setNumbering(data.ticketConfig.numbering);
 
           // Store in refs for cross-load access
-          savedTableColumnKeysRef.current = data.ticketConfig.tableColumns || [];
-          savedFilterableColumnKeysRef.current = data.ticketConfig.filterableColumns || [];
+          savedTableColumnKeysRef.current =
+            data.ticketConfig.tableColumns || [];
+          savedFilterableColumnKeysRef.current =
+            data.ticketConfig.filterableColumns || [];
 
           const savedKeys = savedTableColumnKeysRef.current;
           const filterableKeys = savedFilterableColumnKeysRef.current;
@@ -447,18 +452,36 @@ const TicketSettings: React.FC = () => {
           }));
 
           // If form fields already loaded, also add custom field columns
-          const customCols = formFieldsRef.current
+          const customCols: TicketTableColumnOption[] = formFieldsRef.current
             .filter((f) => !f.isFixed)
             .map((f) => ({
               key: `field_${f.fieldName}`,
-              label: f.fieldLabel || f.fieldName,
-              description: `Form field: ${f.fieldLabel || f.fieldName}`,
+              label: f.fieldLabel || f.fieldName || "",
+              description: `Form field: ${f.fieldLabel || f.fieldName || ""}`,
               enabled: savedKeys.includes(`field_${f.fieldName}`),
               isFilterable: filterableKeys.includes(`field_${f.fieldName}`),
               isCustomField: true,
             }));
 
-          setTableColumns([...staticCols, ...customCols]);
+          // Add hierarchy level columns (level 1 is the existing static "category" column)
+          const hierarchyLevels: Array<{
+            levelNumber: number;
+            displayName: string;
+          }> = data.ticketConfig.hierarchyLevels || [];
+          const hierarchyCols: TicketTableColumnOption[] = hierarchyLevels
+            .filter((l) => l.levelNumber > 1)
+            .map((l) => ({
+              key: `hierarchy_level_${l.levelNumber}`,
+              label: l.displayName,
+              description: `${l.displayName} (category hierarchy level ${l.levelNumber})`,
+              enabled: savedKeys.includes(`hierarchy_level_${l.levelNumber}`),
+              isFilterable: filterableKeys.includes(
+                `hierarchy_level_${l.levelNumber}`,
+              ),
+              isHierarchyField: true,
+            }));
+
+          setTableColumns([...staticCols, ...customCols, ...hierarchyCols]);
         }
       }
     } catch (error) {
@@ -1633,15 +1656,19 @@ const TicketSettings: React.FC = () => {
                           alignItems: "center",
                           gap: "12px",
                           padding: "12px",
-                          border: `1px solid ${column.isCustomField ? "#d1fae5" : "var(--border-subtle)"}`,
+                          border: `1px solid ${column.isHierarchyField ? "#dbeafe" : column.isCustomField ? "#d1fae5" : "var(--border-subtle)"}`,
                           borderRadius: "8px",
-                          background: column.isCustomField
+                          background: column.isHierarchyField
                             ? column.enabled
-                              ? "#f0fdf4"
+                              ? "#eff6ff"
                               : "#f9fafb"
-                            : column.enabled
-                              ? "#ffffff"
-                              : "#f9fafb",
+                            : column.isCustomField
+                              ? column.enabled
+                                ? "#f0fdf4"
+                                : "#f9fafb"
+                              : column.enabled
+                                ? "#ffffff"
+                                : "#f9fafb",
                           opacity: column.enabled ? 1 : 0.75,
                         }}
                       >
@@ -1675,6 +1702,20 @@ const TicketSettings: React.FC = () => {
                                 }}
                               >
                                 custom field
+                              </span>
+                            )}
+                            {column.isHierarchyField && (
+                              <span
+                                style={{
+                                  fontSize: "10px",
+                                  fontWeight: 500,
+                                  background: "#dbeafe",
+                                  color: "#1e40af",
+                                  padding: "1px 6px",
+                                  borderRadius: "10px",
+                                }}
+                              >
+                                hierarchy
                               </span>
                             )}
                           </div>

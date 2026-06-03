@@ -13,14 +13,18 @@ import {
   registerWidgetHandler,
 } from "../widgetQueryEngine";
 
-const getSLA      = () => mongoose.model("SLATracking");
-const getSLARule  = () => mongoose.model("SLARule");
-const getTicket   = () => mongoose.model("Ticket");
-const getStatus   = () => mongoose.model("Status");
+const getSLA = () => mongoose.model("SLATracking");
+const getSLARule = () => mongoose.model("SLARule");
+const getTicket = () => mongoose.model("Ticket");
+const getStatus = () => mongoose.model("Status");
 
 async function loadClosedCodes(tenantId: string): Promise<number[]> {
   const docs = (await getStatus()
-    .find({ projectId: new mongoose.Types.ObjectId(tenantId), isActive: true, isClosed: true })
+    .find({
+      projectId: new mongoose.Types.ObjectId(tenantId),
+      isActive: true,
+      isClosed: true,
+    })
     .select("code")
     .lean()) as Array<{ code: number }>;
   return docs.map((d) => d.code);
@@ -62,8 +66,16 @@ const seSLAComplianceRateHandler: QueryHandler = {
     const { start, end } = buildDateRange(params.dateRangeDays);
     const pid = new mongoose.Types.ObjectId(ctx.tenantId);
     const [met, total] = await Promise.all([
-      getSLA().countDocuments({ projectId: pid, resolutionStatus: "met",     createdAt: { $gte: start, $lte: end } }),
-      getSLA().countDocuments({ projectId: pid, resolutionStatus: { $in: ["met", "breached"] }, createdAt: { $gte: start, $lte: end } }),
+      getSLA().countDocuments({
+        projectId: pid,
+        resolutionStatus: "met",
+        createdAt: { $gte: start, $lte: end },
+      }),
+      getSLA().countDocuments({
+        projectId: pid,
+        resolutionStatus: { $in: ["met", "breached"] },
+        createdAt: { $gte: start, $lte: end },
+      }),
     ]);
     const value = total > 0 ? Math.round((met / total) * 1000) / 10 : null;
     return {
@@ -101,11 +113,14 @@ const seEscalationsResolvedHandler: QueryHandler = {
     const closedCodes = await loadClosedCodes(ctx.tenantId);
 
     // Get escalated ticket IDs in range
-    const escalatedDocs = await getSLA().find({
-      projectId: pid,
-      createdAt: { $gte: start, $lte: end },
-      escalationHistory: { $exists: true, $not: { $size: 0 } },
-    }).select("ticketId").lean() as Array<{ ticketId: mongoose.Types.ObjectId }>;
+    const escalatedDocs = (await getSLA()
+      .find({
+        projectId: pid,
+        createdAt: { $gte: start, $lte: end },
+        escalationHistory: { $exists: true, $not: { $size: 0 } },
+      })
+      .select("ticketId")
+      .lean()) as Array<{ ticketId: mongoose.Types.ObjectId }>;
 
     const escalatedTicketIds = escalatedDocs.map((d) => d.ticketId);
     if (escalatedTicketIds.length === 0) return { value: 0 };
@@ -137,7 +152,8 @@ const seEscalationRateHandler: QueryHandler = {
         createdAt: { $gte: start, $lte: end },
       }),
     ]);
-    const value = total > 0 ? Math.round((escalated / total) * 1000) / 10 : null;
+    const value =
+      total > 0 ? Math.round((escalated / total) * 1000) / 10 : null;
     return {
       value,
       unit: "%",
@@ -164,7 +180,9 @@ const seAvgEscalationTimeHandler: QueryHandler = {
       },
       {
         $project: {
-          firstEscalatedAt: { $arrayElemAt: ["$escalationHistory.escalatedAt", 0] },
+          firstEscalatedAt: {
+            $arrayElemAt: ["$escalationHistory.escalatedAt", 0],
+          },
           createdAt: 1,
         },
       },
@@ -176,7 +194,8 @@ const seAvgEscalationTimeHandler: QueryHandler = {
       },
     ]);
     const avgMs = res[0]?.avgMs ?? null;
-    const value = avgMs !== null ? Math.round(avgMs / 1000 / 60 / 60 * 10) / 10 : null;
+    const value =
+      avgMs !== null ? Math.round((avgMs / 1000 / 60 / 60) * 10) / 10 : null;
     return { value, unit: "hrs", trendDirection: "lower_is_better" };
   },
 };
@@ -206,7 +225,7 @@ const seBreachByPriorityHandler: QueryHandler = {
       { $unwind: { path: "$ticket", preserveNullAndEmptyArrays: true } },
       {
         $group: {
-          _id:   { $ifNull: ["$ticket.priority", "Unknown"] },
+          _id: { $ifNull: ["$ticket.priority", "Unknown"] },
           count: { $sum: 1 },
         },
       },
@@ -222,7 +241,9 @@ const seBreachTrendHandler: QueryHandler = {
   widgetKey: "se_breach_trend",
   cacheTtlSeconds: 600,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end, startStr, endStr } = buildDateRange(params.dateRangeDays);
+    const { start, end, startStr, endStr } = buildDateRange(
+      params.dateRangeDays,
+    );
     const rows = await getSLA().aggregate([
       {
         $match: {
@@ -233,7 +254,7 @@ const seBreachTrendHandler: QueryHandler = {
       },
       {
         $group: {
-          _id:   { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
           count: { $sum: 1 },
         },
       },

@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from "react";
 import DashboardLayout from "./DashboardLayout";
 import { API_CONFIG } from "../config/constants";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import * as XLSX from "xlsx";
 
 interface AccessLog {
   _id: string;
@@ -48,6 +51,9 @@ const AccessLogs: React.FC<AccessLogsProps> = ({ wrapWithLayout = true }) => {
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [selectedLog, setSelectedLog] = useState<AccessLog | null>(null);
   const [dateError, setDateError] = useState("");
+  const [exportLoading, setExportLoading] = useState<
+    "csv" | "excel" | "pdf" | null
+  >(null);
 
   // Filters
   const [filters, setFilters] = useState({
@@ -153,6 +159,150 @@ const AccessLogs: React.FC<AccessLogsProps> = ({ wrapWithLayout = true }) => {
     }
   };
 
+  const handleExport = async (format: "csv" | "excel" | "pdf") => {
+    try {
+      setExportLoading(format);
+      const token = localStorage.getItem("authToken");
+      const projectContextStr = localStorage.getItem("projectContext");
+      const projectId = projectContextStr
+        ? JSON.parse(projectContextStr).projectId
+        : null;
+
+      const params = new URLSearchParams({
+        ...(filters.action && { action: filters.action }),
+        ...(filters.success && { success: filters.success }),
+        ...(filters.search && { search: filters.search }),
+        ...(filters.startDate && { startDate: filters.startDate }),
+        ...(filters.endDate && { endDate: filters.endDate }),
+        ...(projectId && { projectId }),
+      });
+
+      const response = await fetch(
+        `${API_CONFIG.API_URL}/access-logs/export?${params}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+      if (!response.ok) throw new Error("Export failed");
+      const result = await response.json();
+      const rows: AccessLog[] = result.data || [];
+
+      const fileName = `access-logs-${new Date().toISOString().slice(0, 10)}`;
+
+      if (format === "csv") {
+        const header = [
+          "Timestamp",
+          "User",
+          "Email",
+          "Role",
+          "Action",
+          "Status",
+          "Failure Reason",
+          "IP Address",
+          "Project",
+        ];
+        const csvRows = rows.map((r) =>
+          [
+            formatDate(r.timestamp),
+            r.userName || "Unknown",
+            r.userEmail,
+            r.role || "",
+            r.action,
+            r.success ? "Success" : "Failed",
+            r.failureReason ? r.failureReason.replace(/"/g, '""') : "",
+            r.ipAddress || "",
+            r.projectName || "",
+          ]
+            .map((v) => `"${v}"`)
+            .join(","),
+        );
+        const csvContent = [header.join(","), ...csvRows].join("\n");
+        const blob = new Blob([csvContent], {
+          type: "text/csv;charset=utf-8;",
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${fileName}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else if (format === "excel") {
+        const wsData = [
+          [
+            "Timestamp",
+            "User",
+            "Email",
+            "Role",
+            "Action",
+            "Status",
+            "Failure Reason",
+            "IP Address",
+            "Project",
+          ],
+          ...rows.map((r) => [
+            formatDate(r.timestamp),
+            r.userName || "Unknown",
+            r.userEmail,
+            r.role || "",
+            r.action,
+            r.success ? "Success" : "Failed",
+            r.failureReason || "",
+            r.ipAddress || "",
+            r.projectName || "",
+          ]),
+        ];
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Access Logs");
+        XLSX.writeFile(wb, `${fileName}.xlsx`);
+      } else if (format === "pdf") {
+        const doc = new jsPDF({ orientation: "landscape" });
+        doc.setFontSize(14);
+        doc.text("Access Logs", 14, 15);
+        doc.setFontSize(9);
+        doc.text(
+          `Exported: ${new Date().toLocaleString()}  |  Total records: ${rows.length}`,
+          14,
+          22,
+        );
+        autoTable(doc, {
+          startY: 28,
+          head: [
+            [
+              "Timestamp",
+              "User",
+              "Action",
+              "Status",
+              "Failure Reason",
+              "IP Address",
+              "Project",
+            ],
+          ],
+          body: rows.map((r) => [
+            formatDate(r.timestamp),
+            `${r.userName || "Unknown"}\n${r.userEmail}`,
+            r.action.replace(/_/g, " ").toUpperCase(),
+            r.success ? "Success" : "Failed",
+            r.failureReason || "-",
+            r.ipAddress || "-",
+            r.projectName || "-",
+          ]),
+          styles: { fontSize: 7, cellPadding: 2 },
+          headStyles: { fillColor: [124, 58, 237] },
+          columnStyles: { 1: { cellWidth: 40 }, 4: { cellWidth: 40 } },
+        });
+        doc.save(`${fileName}.pdf`);
+      }
+    } catch (error) {
+      console.error("Export error:", error);
+    } finally {
+      setExportLoading(null);
+    }
+  };
+
   const handleFilterChange = (key: string, value: string) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
     setPage(1); // Reset to first page when filtering
@@ -206,14 +356,71 @@ const AccessLogs: React.FC<AccessLogsProps> = ({ wrapWithLayout = true }) => {
   const mainContent = (
     <div style={{ padding: "32px", maxWidth: "1400px", margin: "0 auto" }}>
       {/* Header */}
-      <div style={{ marginBottom: "24px" }}>
-        <h1 style={{ margin: "0 0 8px 0", fontSize: "24px", fontWeight: 600 }}>
-          Access Logs
-        </h1>
-        <p style={{ margin: 0, color: "#6b7280", fontSize: "14px" }}>
-          Track all authentication events: login, logout, and forgot password
-          attempts
-        </p>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          marginBottom: "24px",
+          gap: "16px",
+          flexWrap: "wrap",
+        }}
+      >
+        <div>
+          <h1
+            style={{ margin: "0 0 8px 0", fontSize: "24px", fontWeight: 600 }}
+          >
+            Access Logs
+          </h1>
+          <p style={{ margin: 0, color: "#6b7280", fontSize: "14px" }}>
+            Track all authentication events: login, logout, and forgot password
+            attempts
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
+          {(["csv", "excel", "pdf"] as const).map((fmt) => (
+            <button
+              key={fmt}
+              onClick={() => handleExport(fmt)}
+              disabled={exportLoading !== null}
+              style={{
+                padding: "8px 14px",
+                backgroundColor:
+                  exportLoading === fmt
+                    ? "#e5e7eb"
+                    : fmt === "pdf"
+                      ? "#fef2f2"
+                      : fmt === "excel"
+                        ? "#f0fdf4"
+                        : "#eff6ff",
+                color:
+                  exportLoading === fmt
+                    ? "#9ca3af"
+                    : fmt === "pdf"
+                      ? "#dc2626"
+                      : fmt === "excel"
+                        ? "#16a34a"
+                        : "#2563eb",
+                border: `1px solid ${fmt === "pdf" ? "#fecaca" : fmt === "excel" ? "#bbf7d0" : "#bfdbfe"}`,
+                borderRadius: "6px",
+                fontSize: "13px",
+                fontWeight: 500,
+                cursor: exportLoading !== null ? "not-allowed" : "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "5px",
+              }}
+            >
+              {exportLoading === fmt
+                ? "..."
+                : fmt === "csv"
+                  ? "⬇ CSV"
+                  : fmt === "excel"
+                    ? "⬇ Excel"
+                    : "⬇ PDF"}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Filters */}

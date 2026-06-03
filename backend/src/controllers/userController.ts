@@ -170,6 +170,19 @@ export const getAllUsers = async (
       }
     }
 
+    // Company / payroll filter
+    if (req.query.company) {
+      const companyParam = String(req.query.company);
+      if (companyParam === "internal") {
+        filter.payrollType = "internal";
+      } else if (companyParam === "external") {
+        filter.payrollType = "external";
+      } else {
+        // Filter by specific company ObjectId
+        filter.company = companyParam;
+      }
+    }
+
     // ============================================
     // PROJECT SCOPING FOR NON-SUPER-ADMIN CALLERS
     // If the caller has a role scoped to specific projects (e.g. Sub Admin),
@@ -254,6 +267,7 @@ export const getAllUsers = async (
         .populate("reportingManager", "firstName lastName") // Reduced fields
         .populate("departmentRef", "name")
         .populate({ path: "projectDepartments.departmentRef", select: "name" })
+        .populate("company", "name") // Company name for user list
         .sort(sortObj)
         .skip(skip)
         .limit(effectiveLimit)
@@ -345,6 +359,8 @@ export const createUser = async (
       projects,
       centers,
       syncFromHRMS = false,
+      payrollType,
+      company,
     } = req.body;
 
     // Validate required fields
@@ -419,6 +435,8 @@ export const createUser = async (
       reportingManager,
       projects: projects || [],
       centers: centers || [],
+      payrollType: payrollType || null,
+      company: company || null,
     };
 
     // Store departmentRef if provided (ObjectId from dropdown)
@@ -637,6 +655,8 @@ export const updateUser = async (
       projects,
       centers,
       syncFromHRMS = false,
+      payrollType,
+      company,
     } = req.body;
 
     const user = await User.findById(id);
@@ -739,6 +759,9 @@ export const updateUser = async (
       user.reportingManager = reportingManager;
     if (projects !== undefined) user.projects = projects;
     if (centers !== undefined) user.centers = centers;
+    if (payrollType !== undefined)
+      (user as any).payrollType = payrollType || null;
+    if (company !== undefined) (user as any).company = company || null;
 
     // Handle hierarchy mapping when reportingManager changes
     if (reportingManager !== undefined) {
@@ -802,6 +825,7 @@ export const updateUser = async (
     await user.populate("role", "name code");
     await user.populate("projects", "name code");
     await user.populate("centers", "centerName city state projectId");
+    await user.populate("company", "name");
     await user.populate(
       "reportingManager",
       "firstName lastName email employeeCode",
@@ -1475,7 +1499,7 @@ export const registerStudent = async (
     // }
 
     // Check if user already exists with this email
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ email }).populate("role", "code");
     if (existingUser) {
       res.status(409).json({
         success: false,
@@ -1487,6 +1511,7 @@ export const registerStudent = async (
           lastName: existingUser.lastName,
           email: existingUser.email,
           phone: existingUser.phone || (existingUser as any).mobile,
+          roleCode: (existingUser.role as any)?.code || "",
         },
       });
       return;
@@ -1496,7 +1521,9 @@ export const registerStudent = async (
     if (phone) {
       const existingUserByPhone = await User.findOne({
         $or: [{ phone }, { mobile: phone }],
-      }).select("_id firstName lastName email phone mobile");
+      })
+        .select("_id firstName lastName email phone mobile role")
+        .populate("role", "code");
       if (existingUserByPhone) {
         res.status(409).json({
           success: false,
@@ -1509,6 +1536,7 @@ export const registerStudent = async (
             email: existingUserByPhone.email,
             phone:
               existingUserByPhone.phone || (existingUserByPhone as any).mobile,
+            roleCode: (existingUserByPhone.role as any)?.code || "",
           },
         });
         return;
@@ -1873,14 +1901,16 @@ export const checkDuplicate = async (
 
     if (type === "email") {
       existingUser = await User.findOne({ email: value.toLowerCase().trim() })
-        .select("_id firstName lastName email phone mobile")
+        .select("_id firstName lastName email phone mobile role")
+        .populate("role", "code name")
         .lean();
     } else if (type === "phone") {
       const normalised = value.trim();
       existingUser = await User.findOne({
         $or: [{ phone: normalised }, { mobile: normalised }],
       })
-        .select("_id firstName lastName email phone mobile")
+        .select("_id firstName lastName email phone mobile role")
+        .populate("role", "code name")
         .lean();
     } else {
       res
@@ -1898,7 +1928,8 @@ export const checkDuplicate = async (
           firstName: existingUser.firstName || "",
           lastName: existingUser.lastName || "",
           email: existingUser.email,
-          phone: existingUser.phone || existingUser.mobile || "",
+          phone: existingUser.phone || (existingUser as any).mobile || "",
+          roleCode: (existingUser as any).role?.code || "",
         },
       });
     } else {

@@ -41,6 +41,7 @@ interface AttendanceRecord {
   attendanceDate: string;
   employee_id?: string;
   employeeName?: string | null;
+  designation?: string | null;
   punch_in?: string | null;
   punch_out?: string | null;
   total_working_hours?: string | null;
@@ -75,6 +76,7 @@ interface MatrixRow {
   userId: string;
   employeeCode: string;
   name: string;
+  designation?: string;
   center?: string | null;
   attendance: Record<string, string>; // ISO date → status or "Absent"
 }
@@ -841,9 +843,44 @@ function MyAttendanceReports({ token }: { token: string }) {
   const handleViewTypeChange = (reportId: string, vt: ViewType) => {
     setViewTypes((p) => ({ ...p, [reportId]: vt }));
     if (vt !== "daily") {
+      // Derive range from existing run results if available, so the
+      // default range lands on a period that actually has data.
+      const existingRows = runResults[reportId];
+      let derivedRange: MatrixRange | null = null;
+      if (existingRows && existingRows.length > 0) {
+        const dates = existingRows
+          .map((r) => (r.attendanceDate ?? "").split("T")[0])
+          .filter(Boolean);
+        if (dates.length > 0) {
+          const maxDate = dates.reduce((a, b) => (a > b ? a : b));
+          const minDate = dates.reduce((a, b) => (a < b ? a : b));
+          const maxD = parseLocalDate(maxDate);
+          if (vt === "monthly") {
+            const first = new Date(maxD.getFullYear(), maxD.getMonth(), 1);
+            const last = new Date(maxD.getFullYear(), maxD.getMonth() + 1, 0);
+            derivedRange = {
+              dateFrom: localDateStr(first),
+              dateTo: localDateStr(last),
+            };
+          } else if (vt === "weekly") {
+            const dow = maxD.getDay();
+            const monday = new Date(maxD);
+            monday.setDate(maxD.getDate() - ((dow + 6) % 7));
+            const sunday = new Date(monday);
+            sunday.setDate(monday.getDate() + 6);
+            derivedRange = {
+              dateFrom: localDateStr(monday),
+              dateTo: localDateStr(sunday),
+            };
+          } else {
+            // custom: use the full span of the daily data
+            derivedRange = { dateFrom: minDate, dateTo: maxDate };
+          }
+        }
+      }
       setMatrixRange((p) => ({
         ...p,
-        [reportId]: getDefaultRange(vt),
+        [reportId]: derivedRange ?? getDefaultRange(vt),
       }));
     }
     setRunResults((p) => {
@@ -992,22 +1029,17 @@ function MyAttendanceReports({ token }: { token: string }) {
     if (!range.dateFrom || !range.dateTo) return;
     setMatrixRunning(report._id);
     try {
+      const params = buildParamsFromReport(report);
+      params.set("dateFrom", range.dateFrom);
+      params.set("dateTo", range.dateTo);
       const r = await axios.get(
-        `${API_BASE_URL}/attendance/matrix?projectId=${report.projectId}&dateFrom=${range.dateFrom}&dateTo=${range.dateTo}`,
+        `${API_BASE_URL}/attendance/records?${params}`,
         { headers },
       );
-      setMatrixData((p) => ({ ...p, [report._id]: r.data }));
-    } catch {
-      setMatrixData((p) => ({
-        ...p,
-        [report._id]: {
-          dates: [],
-          rows: [],
-          centers: [],
-          holidays: [],
-          nonWorkingWeekdays: [],
-        },
-      }));
+      setRunResults((p) => ({ ...p, [report._id]: r.data?.data ?? [] }));
+    } catch (err) {
+      console.error("[handleRunMatrix] API error:", err);
+      setRunResults((p) => ({ ...p, [report._id]: [] }));
     } finally {
       setMatrixRunning(null);
     }
@@ -1162,6 +1194,536 @@ function MyAttendanceReports({ token }: { token: string }) {
       });
       doc.save(`${baseName}.pdf`);
     }
+    setExportMenuOpen(null);
+  };
+
+  // ── HR Summary Format export ──────────────────────────────────────────────
+  // Produces a two-header-row file:
+  //   Row 1: "Date: <range>", "(N days a week)", "(Leave + Present)"
+  //   Row 2: column headers
+  //   Row 3+: one row per employee with target/actual/percentage summary
+  const PRESENT_STATUSES_HR = new Set([
+    "P",
+    "PL",
+    "H",
+    "CL",
+    "SL",
+    "EL",
+    "AL",
+    "ML",
+    "CO",
+    "OD",
+    "WFH",
+    "HD",
+  ]);
+
+  const handleExportHRFormat = (
+    report: SavedAttendanceReport,
+    fmt: "csv" | "excel" | "pdf" = "csv",
+  ) => {
+    const vt = viewTypes[report._id] ?? "daily";
+    const today = todayISO();
+
+    type EmpRow = {
+      employeeCode: string;
+      userName: string;
+      designation: string;
+      punchIn: string;
+      punchOut: string;
+      status: string;
+      targetAttendance: number;
+      actualAttendance: number;
+      attendancePercent: string;
+    };
+
+    let employeeRows: EmpRow[] = [];
+    let dateLabel = "";
+    let workingDaysPerWeek = 6;
+
+    if (vt !== "daily") {
+      // ── Matrix path ───────────────────────────────────────────────────────
+      const result = matrixData[report._id];
+      if (!result || !result.rows.length) {
+        alert("Please run the matrix report first before exporting.");
+        return;
+      }
+      const range = getMatrixRange(report._id);
+      const holidaySet = new Set(result.holidays ?? []);
+      const woSet = new Set(result.nonWorkingWeekdays ?? []);
+      const visibleDates = result.dates.filter((d) => d <= today);
+
+      dateLabel = `${range.dateFrom} to ${range.dateTo}`;
+      workingDaysPerWeek = 7 - (result.nonWorkingWeekdays?.length ?? 1);
+
+      const workingDays = visibleDates.filter(
+        (d) => !holidaySet.has(d) && !woSet.has(parseLocalDate(d).getDay()),
+      ).length;
+
+      for (const row of result.rows) {
+        const presentDays = visibleDates.filter((d) => {
+          const s = row.attendance[d];
+          return (
+            s &&
+            s !== "Absent" &&
+            !woSet.has(parseLocalDate(d).getDay()) &&
+            !holidaySet.has(d)
+          );
+        }).length;
+        const pct =
+          workingDays > 0
+            ? ((presentDays / workingDays) * 100).toFixed(1) + "%"
+            : "0%";
+        employeeRows.push({
+          employeeCode: row.employeeCode,
+          userName: row.name,
+          designation: row.designation ?? "",
+          punchIn: "-",
+          punchOut: "-",
+          status: "Summary",
+          targetAttendance: workingDays,
+          actualAttendance: presentDays,
+          attendancePercent: pct,
+        });
+      }
+    } else {
+      // ── Daily path ────────────────────────────────────────────────────────
+      const rows = runResults[report._id];
+      if (!rows || rows.length === 0) {
+        alert("Please run the report first before exporting.");
+        return;
+      }
+      // Group records by employee code
+      const empMap = new Map<string, AttendanceRecord[]>();
+      for (const r of rows) {
+        const code = r.employee_id ?? "_";
+        if (!empMap.has(code)) empMap.set(code, []);
+        empMap.get(code)!.push(r);
+      }
+      const allDates = [
+        ...new Set(rows.map((r) => r.attendanceDate?.split("T")[0] ?? "")),
+      ].sort();
+      dateLabel =
+        allDates.length === 1
+          ? allDates[0]
+          : `${allDates[0]} to ${allDates[allDates.length - 1]}`;
+
+      // Estimate working days/week from report filters (default 6)
+      workingDaysPerWeek = 6;
+
+      for (const [code, recs] of empMap) {
+        const first = recs[0];
+        const presentRecs = recs.filter(
+          (r) => r.status && PRESENT_STATUSES_HR.has(r.status),
+        );
+        const target = recs.length;
+        const actual = presentRecs.length;
+        const pct =
+          target > 0 ? ((actual / target) * 100).toFixed(1) + "%" : "0%";
+        employeeRows.push({
+          employeeCode: code,
+          userName: first.employeeName ?? "",
+          designation: first.designation ?? "",
+          punchIn: formatTime(first.punch_in),
+          punchOut: formatTime(first.punch_out),
+          status: first.status ?? "",
+          targetAttendance: target,
+          actualAttendance: actual,
+          attendancePercent: pct,
+        });
+      }
+    }
+
+    const metaRow = [
+      `Date: ${dateLabel}`,
+      `(${workingDaysPerWeek} days a week)`,
+      `(Leave + Present)`,
+    ];
+    const columnHeaders = [
+      "Employee code",
+      "User Name",
+      "Designation",
+      "Punch in",
+      "Punch out",
+      "Status",
+      "Target Attendance",
+      "Actual Attendance",
+      "Attendance percentage",
+    ];
+    const dataRows = employeeRows.map((r) => [
+      r.employeeCode,
+      r.userName,
+      r.designation,
+      r.punchIn,
+      r.punchOut,
+      r.status,
+      r.targetAttendance,
+      r.actualAttendance,
+      r.attendancePercent,
+    ]);
+
+    const baseName = `${report.name.replace(/[^a-z0-9]/gi, "_")}_hr_format`;
+    if (fmt === "csv") {
+      const csvContent = [
+        metaRow.map((h) => `"${String(h).replace(/"/g, '""')}"`).join(","),
+        columnHeaders.map((h) => `"${h}"`).join(","),
+        ...dataRows.map((row) =>
+          row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","),
+        ),
+      ].join("\n");
+      downloadCsv(csvContent, `${baseName}.csv`);
+    } else if (fmt === "excel") {
+      const allData = [metaRow, columnHeaders, ...dataRows];
+      const ws = XLSX.utils.aoa_to_sheet(allData);
+      // Bold column header row (row index 1)
+      const wsRange = XLSX.utils.decode_range(ws["!ref"] ?? "A1");
+      for (let c = wsRange.s.c; c <= wsRange.e.c; c++) {
+        const hCell = ws[XLSX.utils.encode_cell({ r: 1, c })];
+        if (hCell) hCell.s = { font: { bold: true } };
+      }
+      // Merge meta row cells A1:C1
+      ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 2 } }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Attendance HR");
+      XLSX.writeFile(wb, `${baseName}.xlsx`);
+    } else {
+      const doc = new jsPDF({ orientation: "landscape" });
+      doc.setFontSize(12);
+      doc.text(`${report.name} — HR Format`, 14, 14);
+      doc.setFontSize(9);
+      doc.text(`${metaRow[0]}   ${metaRow[1]}   ${metaRow[2]}`, 14, 21);
+      autoTable(doc, {
+        head: [columnHeaders],
+        body: dataRows.map((r) => r.map(String)),
+        startY: 26,
+        styles: { fontSize: 8, cellPadding: 2 },
+        headStyles: {
+          fillColor: [99, 102, 241],
+          textColor: 255,
+          fontStyle: "bold",
+        },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+      });
+      doc.save(`${baseName}.pdf`);
+    }
+    setExportMenuOpen(null);
+  };
+
+  // ── Center Wise Attendance Report ─────────────────────────────────────────
+  // Same format for all tabs (daily / weekly / monthly / custom).
+  // For the daily tab: uses already-fetched runResults.
+  // For weekly/monthly/custom tabs: fetches records filtered by the selected date range.
+  const handleExportCenterWise = async (
+    report: SavedAttendanceReport,
+    fmt: "csv" | "excel" | "pdf" = "csv",
+  ) => {
+    let rows: AttendanceRecord[] | undefined;
+    const vt = getViewType(report._id);
+
+    if (vt === "daily") {
+      rows = runResults[report._id];
+      if (!rows || rows.length === 0) {
+        alert("Please run the report first before exporting.");
+        return;
+      }
+    } else {
+      // For weekly / monthly / custom — fetch records scoped to the selected date range
+      const range = getMatrixRange(report._id);
+      if (!range.dateFrom || !range.dateTo) {
+        alert("Please select a date range first.");
+        return;
+      }
+      try {
+        const params = buildParamsFromReport(report);
+        params.set("dateFrom", range.dateFrom);
+        params.set("dateTo", range.dateTo);
+        const res = await axios.get(
+          `${API_BASE_URL}/attendance/records?${params}`,
+          { headers },
+        );
+        rows = res.data?.data ?? [];
+      } catch {
+        alert("Failed to fetch attendance data for export.");
+        return;
+      }
+      if (!rows || rows.length === 0) {
+        alert("No records found for the selected period.");
+        return;
+      }
+    }
+
+    // ── Gather unique sorted dates ───────────────────────────────────────────
+    const dateSet = new Set<string>();
+    for (const r of rows) {
+      const d = r.attendanceDate?.split("T")[0];
+      if (d) dateSet.add(d);
+    }
+    const sortedDates = [...dateSet].sort();
+
+    // ── Group records: employeeCode → date → record ──────────────────────────
+    type EmpEntry = {
+      name: string;
+      code: string;
+      designation: string;
+      byDate: Record<string, AttendanceRecord>;
+    };
+    const empMap = new Map<string, EmpEntry>();
+    for (const r of rows) {
+      const code = r.employee_id ?? "_";
+      const dateKey = r.attendanceDate?.split("T")[0] ?? "";
+      if (!empMap.has(code)) {
+        empMap.set(code, {
+          name: r.employeeName ?? "",
+          code,
+          designation: r.designation ?? "",
+          byDate: {},
+        });
+      }
+      empMap.get(code)!.byDate[dateKey] = r;
+    }
+
+    const empList = [...empMap.values()];
+    const totalDays = sortedDates.length;
+
+    // ── Date label helper: "10 Sept" ─────────────────────────────────────────
+    const shortDate = (iso: string) => {
+      const d = parseLocalDate(iso);
+      return `${d.getDate()} ${d.toLocaleString("en-IN", { month: "short" })}`;
+    };
+
+    const PRESENT_STATUSES_CW = new Set([
+      "P",
+      "PL",
+      "H",
+      "CL",
+      "SL",
+      "EL",
+      "AL",
+      "ML",
+      "CO",
+      "OD",
+      "WFH",
+      "HD",
+    ]);
+
+    const centerNames = [
+      ...new Set(rows.map((r) => r.center).filter(Boolean)),
+    ].join(", ");
+    const dateFrom = sortedDates[0] ?? "";
+    const dateTo = sortedDates[sortedDates.length - 1] ?? "";
+    const baseName = `${report.name.replace(/[^a-z0-9]/gi, "_")}_attendance`;
+
+    // ── Shared row builder ────────────────────────────────────────────────────
+    const buildRows = () =>
+      empList.map((emp, i) => {
+        let totalHrsAttended = 0;
+        let daysPresent = 0;
+        const dateCols: string[] = [];
+        for (const d of sortedDates) {
+          const rec = emp.byDate[d];
+          dateCols.push(rec?.punch_in ? formatTime(rec.punch_in) : "—");
+          dateCols.push(rec?.punch_out ? formatTime(rec.punch_out) : "—");
+          if (rec?.status && PRESENT_STATUSES_CW.has(rec.status)) {
+            daysPresent++;
+            if (rec.punch_in && rec.punch_out) {
+              const ms =
+                new Date(rec.punch_out).getTime() -
+                new Date(rec.punch_in).getTime();
+              if (ms > 0) totalHrsAttended += ms / 3_600_000;
+            }
+          }
+        }
+        const attPct =
+          totalDays > 0
+            ? ((daysPresent / totalDays) * 100).toFixed(2) + "%"
+            : "0%";
+        return [
+          i + 1,
+          emp.name,
+          emp.code,
+          ...dateCols,
+          Number(totalHrsAttended.toFixed(2)),
+          attPct,
+        ];
+      });
+
+    const fixedHeaders = ["S.No", "Name", "Employee Code"];
+    const dateHeaders: string[] = [];
+    for (const d of sortedDates) {
+      const label = shortDate(d);
+      dateHeaders.push(`${label} In`, `${label} Out`);
+    }
+    const headerRow = [
+      ...fixedHeaders,
+      ...dateHeaders,
+      "Total Hrs. Attended",
+      "Attendance %",
+    ];
+    const dataRows = buildRows();
+    const totalRow: (string | number)[] = [
+      "Total Count",
+      "",
+      "",
+      ...sortedDates.flatMap((d) => {
+        const cnt = empList.filter((e) => !!e.byDate[d]?.punch_in).length;
+        return [cnt, cnt];
+      }),
+      "",
+      "",
+    ];
+
+    if (fmt === "csv") {
+      // ── CSV version ──────────────────────────────────────────────────────────
+      const csvLines = [
+        [`Center Wise Attendance Report`],
+        [
+          `Report: ${report.name}`,
+          `Center: ${centerNames || "—"}`,
+          `Dates: ${dateFrom} to ${dateTo}`,
+        ],
+        [],
+        headerRow,
+        ...dataRows,
+        totalRow,
+      ]
+        .map((row) =>
+          row.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(","),
+        )
+        .join("\n");
+      downloadCsv(csvLines, `${baseName}.csv`);
+    } else if (fmt === "excel") {
+      // ── Excel version ────────────────────────────────────────────────────
+      const coverData: (string | number)[][] = [
+        ["Center Wise Attendance Report"],
+        [],
+        ["Report Name:", report.name, "", "Center:", centerNames || "—"],
+        ["Date From:", dateFrom, "", "Date To:", dateTo],
+        ["Total Days:", totalDays],
+        [],
+      ];
+      const coverWs = XLSX.utils.aoa_to_sheet(coverData);
+      const dataWs = XLSX.utils.aoa_to_sheet([
+        headerRow,
+        ...dataRows,
+        totalRow,
+      ]);
+      const wsRange = XLSX.utils.decode_range(dataWs["!ref"] ?? "A1");
+      for (let c = wsRange.s.c; c <= wsRange.e.c; c++) {
+        const cell = dataWs[XLSX.utils.encode_cell({ r: 0, c })];
+        if (cell) cell.s = { font: { bold: true } };
+      }
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, coverWs, "Cover");
+      XLSX.utils.book_append_sheet(wb, dataWs, "Attendance Data");
+      XLSX.writeFile(wb, `${baseName}.xlsx`);
+    } else {
+      // ── PDF version ──────────────────────────────────────────────────────
+      const doc = new jsPDF({ orientation: "landscape", format: "a3" });
+
+      // ── Page 1: Cover ───────────────────────────────────────────────────────
+      doc.setFontSize(16);
+      doc.setFont("helvetica", "bold");
+      doc.text(
+        "Center Wise Attendance Report",
+        doc.internal.pageSize.getWidth() / 2,
+        22,
+        { align: "center" },
+      );
+
+      doc.setLineWidth(0.4);
+      doc.line(14, 26, doc.internal.pageSize.getWidth() - 14, 26);
+
+      const coverItems: [string, string][] = [
+        ["Report Name:", report.name],
+        ["Center:", centerNames || "—"],
+        ["Date From:", dateFrom],
+        ["Date To:", dateTo],
+        ["Total Days:", String(totalDays)],
+      ];
+
+      doc.setFontSize(10);
+      let cy = 38;
+      const col1x = 14,
+        col2x = 80,
+        col3x = 160,
+        col4x = 230;
+      const half = Math.ceil(coverItems.length / 2);
+
+      for (let i = 0; i < half; i++) {
+        const left = coverItems[i];
+        const right = coverItems[i + half];
+        doc.setFont("helvetica", "bold");
+        doc.text(left[0], col1x, cy);
+        doc.setFont("helvetica", "normal");
+        doc.text(left[1], col2x, cy);
+        if (right) {
+          doc.setFont("helvetica", "bold");
+          doc.text(right[0], col3x, cy);
+          doc.setFont("helvetica", "normal");
+          doc.text(right[1], col4x, cy);
+        }
+        cy += 9;
+      }
+
+      // ── Page 2+: Data table ─────────────────────────────────────────────────
+      doc.addPage("a3", "landscape");
+
+      // Sub-header line
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "bold");
+      doc.text(
+        `Center: ${centerNames || "—"}  |  Dates: ${dateFrom} – ${dateTo}`,
+        14,
+        12,
+      );
+      doc.setFont("helvetica", "normal");
+
+      // Build column defs for autoTable (use shared headerRow/dataRows)
+      const tableHead: string[] = [
+        "S.No",
+        "Name",
+        "Employee Code",
+        ...sortedDates.flatMap((d) => [
+          `${shortDate(d)}\nIn`,
+          `${shortDate(d)}\nOut`,
+        ]),
+        "Total Hrs.\nAttended",
+        "Attendance\n%",
+      ];
+
+      const tableBody = [...dataRows, totalRow];
+
+      autoTable(doc, {
+        head: [tableHead],
+        body: tableBody.map((r) => r.map(String)),
+        startY: 16,
+        styles: { fontSize: 6, cellPadding: 1.2, halign: "center" },
+        headStyles: {
+          fillColor: [99, 102, 241],
+          textColor: 255,
+          fontStyle: "bold",
+          fontSize: 6,
+          halign: "center",
+          valign: "middle",
+          minCellHeight: 10,
+        },
+        columnStyles: {
+          0: { cellWidth: 8 }, // S.No
+          1: { cellWidth: 28, halign: "left" }, // Name
+          2: { cellWidth: 22 }, // Employee Code
+        },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        didParseCell: (data) => {
+          if (data.row.index === tableBody.length - 1) {
+            data.cell.styles.fontStyle = "bold";
+            data.cell.styles.fillColor = [229, 231, 235];
+          }
+        },
+        margin: { left: 5, right: 5 },
+      });
+
+      doc.save(`${baseName}.pdf`);
+    }
+
     setExportMenuOpen(null);
   };
 
@@ -1386,11 +1948,7 @@ function MyAttendanceReports({ token }: { token: string }) {
                         }}
                       >
                         <button
-                          onClick={() =>
-                            vt === "daily"
-                              ? handleExportDaily(report, "csv")
-                              : handleExportMatrix(report, "csv")
-                          }
+                          onClick={() => handleExportCenterWise(report, "csv")}
                           style={{
                             padding: "7px 12px",
                             background: "#fff",
@@ -1463,9 +2021,7 @@ function MyAttendanceReports({ token }: { token: string }) {
                             <button
                               key={fmt}
                               onClick={() =>
-                                vt === "daily"
-                                  ? handleExportDaily(report, fmt)
-                                  : handleExportMatrix(report, fmt)
+                                handleExportCenterWise(report, fmt)
                               }
                               style={{
                                 display: "block",
@@ -1800,80 +2356,298 @@ function MyAttendanceReports({ token }: { token: string }) {
                   </div>
                 )}
 
-                {/* ── Daily results table ── */}
-                {vt === "daily" && rows && rows.length > 0 && (
-                  <div style={{ borderTop: "1px solid #e5e7eb" }}>
-                    <div
-                      style={{
-                        background: "#f8fafc",
-                        padding: "8px 16px",
-                        fontSize: 12,
-                        fontWeight: 700,
-                        color: "#374151",
-                      }}
-                    >
-                      Results — {rows.length} rows
-                    </div>
-                    <div style={{ overflowX: "auto" }}>
-                      <table
-                        style={{
-                          width: "100%",
-                          borderCollapse: "collapse",
-                          fontSize: 12,
-                        }}
-                      >
-                        <thead>
-                          <tr
+                {/* ── Unified Center Wise results table (all tabs) ── */}
+                {rows &&
+                  rows.length > 0 &&
+                  (() => {
+                    // Build grouped structure: employee → date → record
+                    const cwDateSet = new Set<string>();
+                    for (const r of rows) {
+                      const d = r.attendanceDate?.split("T")[0];
+                      if (d) cwDateSet.add(d);
+                    }
+                    const cwDates = [...cwDateSet].sort();
+                    type CWEmp = {
+                      name: string;
+                      code: string;
+                      byDate: Record<string, AttendanceRecord>;
+                    };
+                    const cwMap = new Map<string, CWEmp>();
+                    for (const r of rows) {
+                      const code = r.employee_id ?? "_";
+                      const dk = r.attendanceDate?.split("T")[0] ?? "";
+                      if (!cwMap.has(code)) {
+                        cwMap.set(code, {
+                          name: r.employeeName ?? "",
+                          code,
+                          byDate: {},
+                        });
+                      }
+                      cwMap.get(code)!.byDate[dk] = r;
+                    }
+                    const cwEmps = [...cwMap.values()];
+                    const cwPresent = new Set([
+                      "P",
+                      "PL",
+                      "H",
+                      "CL",
+                      "SL",
+                      "EL",
+                      "AL",
+                      "ML",
+                      "CO",
+                      "OD",
+                      "WFH",
+                      "HD",
+                    ]);
+                    const shortD = (iso: string) => {
+                      const d = parseLocalDate(iso);
+                      return `${d.getDate()} ${d.toLocaleString("en-IN", { month: "short" })}`;
+                    };
+                    return (
+                      <div style={{ borderTop: "1px solid #e5e7eb" }}>
+                        {/* header bar */}
+                        <div
+                          style={{
+                            background: "#f8fafc",
+                            padding: "8px 16px",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: "#374151",
+                          }}
+                        >
+                          Results — {cwEmps.length} employees · {cwDates.length}{" "}
+                          day{cwDates.length !== 1 ? "s" : ""}
+                        </div>
+                        <div style={{ overflowX: "auto" }}>
+                          <table
                             style={{
-                              background: "#f8fafc",
-                              borderBottom: "1px solid #e5e7eb",
+                              borderCollapse: "collapse",
+                              fontSize: 11,
+                              minWidth: "100%",
                             }}
                           >
-                            {visibleFields.map((d) => (
-                              <th
-                                key={d.key}
+                            <thead>
+                              <tr style={{ background: "#6366f1" }}>
+                                {[
+                                  "S.No",
+                                  "Name",
+                                  "Employee Code",
+                                  ...cwDates.flatMap((d) => [
+                                    `${shortD(d)} In`,
+                                    `${shortD(d)} Out`,
+                                  ]),
+                                  "Total Hrs. Attended",
+                                  "Attendance %",
+                                ].map((h, ci) => (
+                                  <th
+                                    key={ci}
+                                    style={{
+                                      padding: "7px 8px",
+                                      textAlign: ci <= 2 ? "left" : "center",
+                                      fontWeight: 700,
+                                      color: "#fff",
+                                      fontSize: 11,
+                                      whiteSpace: "nowrap",
+                                      borderRight: "1px solid #4f46e5",
+                                    }}
+                                  >
+                                    {h}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {cwEmps.map((emp, i) => {
+                                let totalHrs = 0;
+                                let daysPresent = 0;
+                                const dateCols = cwDates.flatMap((d) => {
+                                  const rec = emp.byDate[d];
+                                  const inTime = rec?.punch_in
+                                    ? formatTime(rec.punch_in)
+                                    : "—";
+                                  const outTime = rec?.punch_out
+                                    ? formatTime(rec.punch_out)
+                                    : "—";
+                                  if (
+                                    rec?.status &&
+                                    cwPresent.has(rec.status)
+                                  ) {
+                                    daysPresent++;
+                                    if (rec.punch_in && rec.punch_out) {
+                                      const ms =
+                                        new Date(rec.punch_out).getTime() -
+                                        new Date(rec.punch_in).getTime();
+                                      if (ms > 0) totalHrs += ms / 3_600_000;
+                                    }
+                                  }
+                                  return [inTime, outTime];
+                                });
+                                const pct =
+                                  cwDates.length > 0
+                                    ? (
+                                        (daysPresent / cwDates.length) *
+                                        100
+                                      ).toFixed(1) + "%"
+                                    : "0%";
+                                const bg = i % 2 === 0 ? "#fff" : "#fafafa";
+                                return (
+                                  <tr
+                                    key={emp.code + i}
+                                    style={{
+                                      background: bg,
+                                      borderBottom: "1px solid #f3f4f6",
+                                    }}
+                                  >
+                                    <td
+                                      style={{
+                                        padding: "6px 8px",
+                                        textAlign: "center",
+                                        color: "#6b7280",
+                                        fontSize: 11,
+                                        whiteSpace: "nowrap",
+                                        borderRight: "1px solid #f3f4f6",
+                                      }}
+                                    >
+                                      {i + 1}
+                                    </td>
+                                    <td
+                                      style={{
+                                        padding: "6px 8px",
+                                        fontWeight: 600,
+                                        color: "#111827",
+                                        fontSize: 11,
+                                        whiteSpace: "nowrap",
+                                        borderRight: "1px solid #f3f4f6",
+                                        minWidth: 130,
+                                      }}
+                                    >
+                                      {emp.name || "—"}
+                                    </td>
+                                    <td
+                                      style={{
+                                        padding: "6px 8px",
+                                        color: "#374151",
+                                        fontSize: 11,
+                                        whiteSpace: "nowrap",
+                                        borderRight: "1px solid #f3f4f6",
+                                      }}
+                                    >
+                                      {emp.code !== "_" ? emp.code : "—"}
+                                    </td>
+                                    {dateCols.map((v, ci) => (
+                                      <td
+                                        key={ci}
+                                        style={{
+                                          padding: "6px 8px",
+                                          textAlign: "center",
+                                          color:
+                                            v === "—" ? "#d1d5db" : "#374151",
+                                          fontSize: 11,
+                                          whiteSpace: "nowrap",
+                                          borderRight: "1px solid #f3f4f6",
+                                        }}
+                                      >
+                                        {v}
+                                      </td>
+                                    ))}
+                                    <td
+                                      style={{
+                                        padding: "6px 8px",
+                                        textAlign: "center",
+                                        fontWeight: 600,
+                                        color: "#374151",
+                                        fontSize: 11,
+                                        whiteSpace: "nowrap",
+                                        borderRight: "1px solid #f3f4f6",
+                                      }}
+                                    >
+                                      {totalHrs.toFixed(2)}
+                                    </td>
+                                    <td
+                                      style={{
+                                        padding: "6px 8px",
+                                        textAlign: "center",
+                                        fontWeight: 700,
+                                        color:
+                                          daysPresent === 0
+                                            ? "#ef4444"
+                                            : "#065f46",
+                                        fontSize: 11,
+                                        whiteSpace: "nowrap",
+                                      }}
+                                    >
+                                      {pct}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                            {/* Total count footer */}
+                            <tfoot>
+                              <tr
                                 style={{
-                                  padding: "8px 12px",
-                                  textAlign: "left",
-                                  fontWeight: 600,
-                                  color: "#374151",
-                                  whiteSpace: "nowrap",
+                                  background: "#f3f4f6",
+                                  borderTop: "2px solid #e5e7eb",
                                 }}
                               >
-                                {d.label}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {rows.map((rec, i) => (
-                            <tr
-                              key={rec._id ?? i}
-                              style={{
-                                borderBottom: "1px solid #f3f4f6",
-                                background: i % 2 === 0 ? "#fff" : "#fafafa",
-                              }}
-                            >
-                              {visibleFields.map((d) => (
                                 <td
-                                  key={d.key}
+                                  colSpan={3}
                                   style={{
-                                    padding: "7px 12px",
+                                    padding: "6px 8px",
+                                    fontWeight: 700,
                                     color: "#374151",
-                                    whiteSpace: "nowrap",
+                                    fontSize: 11,
+                                    borderRight: "1px solid #e5e7eb",
                                   }}
                                 >
-                                  {renderCellValue(d.key, rec)}
+                                  Total Count
                                 </td>
-                              ))}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-                {vt === "daily" && rows && rows.length === 0 && (
+                                {cwDates.flatMap((d) => {
+                                  const cnt = cwEmps.filter(
+                                    (e) => !!e.byDate[d]?.punch_in,
+                                  ).length;
+                                  return [
+                                    <td
+                                      key={`${d}-in`}
+                                      style={{
+                                        padding: "6px 8px",
+                                        textAlign: "center",
+                                        fontWeight: 700,
+                                        color: "#374151",
+                                        fontSize: 11,
+                                        borderRight: "1px solid #f3f4f6",
+                                      }}
+                                    >
+                                      {cnt}
+                                    </td>,
+                                    <td
+                                      key={`${d}-out`}
+                                      style={{
+                                        padding: "6px 8px",
+                                        textAlign: "center",
+                                        fontWeight: 700,
+                                        color: "#374151",
+                                        fontSize: 11,
+                                        borderRight: "1px solid #f3f4f6",
+                                      }}
+                                    >
+                                      {cnt}
+                                    </td>,
+                                  ];
+                                })}
+                                <td
+                                  colSpan={2}
+                                  style={{ padding: "6px 8px" }}
+                                />
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                {rows && rows.length === 0 && (
                   <div
                     style={{
                       borderTop: "1px solid #e5e7eb",
@@ -1886,445 +2660,6 @@ function MyAttendanceReports({ token }: { token: string }) {
                     No records found for this report's filters.
                   </div>
                 )}
-
-                {/* ── Matrix results table (weekly / monthly / custom) ── */}
-                {vt !== "daily" && matrix && (
-                  <div style={{ borderTop: "1px solid #e5e7eb" }}>
-                    {matrix.rows.length === 0 ? (
-                      <div
-                        style={{
-                          padding: "20px",
-                          textAlign: "center",
-                          color: "#9ca3af",
-                          fontSize: 13,
-                        }}
-                      >
-                        No employees found for this project.
-                      </div>
-                    ) : filteredRows.length === 0 ? (
-                      <div
-                        style={{
-                          padding: "20px",
-                          textAlign: "center",
-                          color: "#9ca3af",
-                          fontSize: 13,
-                        }}
-                      >
-                        No employees match the selected filters.
-                      </div>
-                    ) : (
-                      <>
-                        {/* Legend */}
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: 10,
-                            flexWrap: "wrap",
-                            padding: "8px 16px",
-                            background: "#f8fafc",
-                            borderBottom: "1px solid #e5e7eb",
-                            alignItems: "center",
-                          }}
-                        >
-                          <span
-                            style={{
-                              fontSize: 11,
-                              color: "#6b7280",
-                              fontWeight: 600,
-                            }}
-                          >
-                            {filteredRows.length} employees ·{" "}
-                            {workingDaysInRange} working days /{" "}
-                            {matrix.dates.filter((d) => !isFuture(d)).length}{" "}
-                            days shown
-                          </span>
-                          {Object.entries(MATRIX_STATUS).map(([k, v]) => (
-                            <span
-                              key={k}
-                              style={{
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: 4,
-                                fontSize: 11,
-                              }}
-                            >
-                              <span
-                                style={{
-                                  background: v.bg,
-                                  color: v.fg,
-                                  borderRadius: 4,
-                                  padding: "1px 6px",
-                                  fontWeight: 700,
-                                  fontSize: 11,
-                                }}
-                              >
-                                {v.label}
-                              </span>
-                              <span style={{ color: "#6b7280" }}>
-                                {STATUS_LABELS[k] ?? k}
-                              </span>
-                            </span>
-                          ))}
-                        </div>
-
-                        {/* Matrix table */}
-                        <div style={{ overflowX: "auto" }}>
-                          <table
-                            style={{
-                              borderCollapse: "collapse",
-                              fontSize: 12,
-                              minWidth: "100%",
-                            }}
-                          >
-                            <colgroup>
-                              <col style={{ width: 200, minWidth: 160 }} />
-                              {matrix.dates.map((d) => (
-                                <col
-                                  key={d}
-                                  style={{ width: 34, minWidth: 34 }}
-                                />
-                              ))}
-                            </colgroup>
-                            <thead>
-                              <tr style={{ background: "#f8fafc" }}>
-                                <th
-                                  style={{
-                                    position: "sticky",
-                                    left: 0,
-                                    background: "#f8fafc",
-                                    zIndex: 2,
-                                    padding: "8px 12px",
-                                    textAlign: "left",
-                                    fontWeight: 700,
-                                    color: "#374151",
-                                    fontSize: 12,
-                                    borderBottom: "2px solid #e5e7eb",
-                                    borderRight: "1px solid #e5e7eb",
-                                    whiteSpace: "nowrap",
-                                    width: 200,
-                                    minWidth: 160,
-                                    maxWidth: 220,
-                                  }}
-                                >
-                                  Employee
-                                </th>
-                                {matrix.dates.map((d) => {
-                                  const dt = parseLocalDate(d);
-                                  const dayNum = dt.getDate();
-                                  const dayName = DAY_ABBR[dt.getDay()];
-                                  const future = isFuture(d);
-                                  const holiday = isHoliday(d);
-                                  const weekOff = isWeekOff(d);
-                                  const hdrBg = holiday
-                                    ? "#eff6ff"
-                                    : weekOff
-                                      ? "#f3f4f6"
-                                      : "#f8fafc";
-                                  const hdrColor = future
-                                    ? "#d1d5db"
-                                    : holiday
-                                      ? "#1d4ed8"
-                                      : weekOff
-                                        ? "#9ca3af"
-                                        : "#374151";
-                                  return (
-                                    <th
-                                      key={d}
-                                      title={`${formatDate(d)}${holiday ? " — Public Holiday" : weekOff ? " — Week Off" : ""}`}
-                                      style={{
-                                        padding: "4px 3px",
-                                        textAlign: "center",
-                                        fontWeight: 600,
-                                        color: hdrColor,
-                                        fontSize: 10,
-                                        borderBottom: "2px solid #e5e7eb",
-                                        borderRight: "1px solid #f3f4f6",
-                                        background: hdrBg,
-                                        whiteSpace: "nowrap",
-                                        minWidth: 34,
-                                        width: 34,
-                                        lineHeight: 1.3,
-                                      }}
-                                    >
-                                      <div
-                                        style={{ fontSize: 9, fontWeight: 500 }}
-                                      >
-                                        {dayName}
-                                      </div>
-                                      <div>{dayNum}</div>
-                                    </th>
-                                  );
-                                })}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {filteredRows.map((row, ri) => (
-                                <tr
-                                  key={row.userId}
-                                  style={{
-                                    background:
-                                      ri % 2 === 0 ? "#fff" : "#fafafa",
-                                  }}
-                                >
-                                  <td
-                                    style={{
-                                      position: "sticky",
-                                      left: 0,
-                                      background:
-                                        ri % 2 === 0 ? "#fff" : "#fafafa",
-                                      zIndex: 1,
-                                      padding: "6px 12px",
-                                      borderBottom: "1px solid #f3f4f6",
-                                      borderRight: "1px solid #e5e7eb",
-                                      whiteSpace: "nowrap",
-                                      fontWeight: 500,
-                                      color: "#111827",
-                                      fontSize: 12,
-                                      width: 200,
-                                      minWidth: 160,
-                                      maxWidth: 220,
-                                      overflow: "hidden",
-                                      textOverflow: "ellipsis",
-                                    }}
-                                  >
-                                    <div>{row.name || row.employeeCode}</div>
-                                    {row.employeeCode && row.name && (
-                                      <div
-                                        style={{
-                                          fontSize: 10,
-                                          color: "#9ca3af",
-                                        }}
-                                      >
-                                        {row.employeeCode}
-                                      </div>
-                                    )}
-                                  </td>
-                                  {matrix.dates.map((d) => {
-                                    const future = isFuture(d);
-                                    // Resolve effective status
-                                    let rawStatus = future
-                                      ? null
-                                      : (row.attendance[d] ?? "Absent");
-                                    // If no real record, replace Absent with calendar info
-                                    if (rawStatus === "Absent") {
-                                      if (isHoliday(d)) rawStatus = "PH";
-                                      else if (isWeekOff(d)) rawStatus = "WO";
-                                    }
-                                    const cellBg = isHoliday(d)
-                                      ? "#f0f9ff"
-                                      : isWeekOff(d)
-                                        ? "#f9fafb"
-                                        : undefined;
-                                    // Use getMatrixStyle so unknown biometric codes get a styled fallback
-                                    const style = rawStatus
-                                      ? getMatrixStyle(rawStatus)
-                                      : null;
-                                    return (
-                                      <td
-                                        key={d}
-                                        style={{
-                                          padding: "4px 3px",
-                                          textAlign: "center",
-                                          borderBottom: "1px solid #f3f4f6",
-                                          borderRight: "1px solid #f3f4f6",
-                                          background: cellBg,
-                                        }}
-                                      >
-                                        {future ? (
-                                          <span
-                                            style={{
-                                              fontSize: 10,
-                                              color: "#e5e7eb",
-                                            }}
-                                          >
-                                            —
-                                          </span>
-                                        ) : style ? (
-                                          <span
-                                            style={{
-                                              display: "inline-block",
-                                              background: style.bg,
-                                              color: style.fg,
-                                              borderRadius: 4,
-                                              padding: "1px 3px",
-                                              fontWeight: 700,
-                                              fontSize: 10,
-                                              minWidth: 26,
-                                              textAlign: "center",
-                                            }}
-                                          >
-                                            {style.label}
-                                          </span>
-                                        ) : (
-                                          <span
-                                            style={{
-                                              fontSize: 10,
-                                              color: "#9ca3af",
-                                            }}
-                                          >
-                                            —
-                                          </span>
-                                        )}
-                                      </td>
-                                    );
-                                  })}
-                                </tr>
-                              ))}
-                            </tbody>
-                            {/* ── Summary footer row ── */}
-                            <tfoot>
-                              <tr
-                                style={{
-                                  background: "#f0fdf4",
-                                  borderTop: "2px solid #d1fae5",
-                                }}
-                              >
-                                <td
-                                  style={{
-                                    position: "sticky",
-                                    left: 0,
-                                    background: "#f0fdf4",
-                                    zIndex: 1,
-                                    padding: "6px 12px",
-                                    fontWeight: 700,
-                                    fontSize: 11,
-                                    color: "#065f46",
-                                    borderRight: "1px solid #e5e7eb",
-                                    borderTop: "2px solid #d1fae5",
-                                    whiteSpace: "nowrap",
-                                    width: 200,
-                                    minWidth: 160,
-                                    maxWidth: 220,
-                                  }}
-                                >
-                                  Attendance Total
-                                  <div
-                                    style={{
-                                      fontSize: 9,
-                                      color: "#6b7280",
-                                      fontWeight: 400,
-                                    }}
-                                  >
-                                    Present / Working days ({workingDaysInRange}
-                                    )
-                                  </div>
-                                </td>
-                                {matrix.dates.map((d) => {
-                                  const future = isFuture(d);
-                                  const holiday = isHoliday(d);
-                                  const weekOff = isWeekOff(d);
-                                  const colBg = holiday
-                                    ? "#eff6ff"
-                                    : weekOff
-                                      ? "#f3f4f6"
-                                      : "#f0fdf4";
-                                  const presentCount =
-                                    future || holiday || weekOff
-                                      ? null
-                                      : filteredRows.filter((r) => {
-                                          const s = r.attendance[d];
-                                          return s === "P" || s === "PL";
-                                        }).length;
-                                  return (
-                                    <td
-                                      key={d}
-                                      style={{
-                                        padding: "4px 3px",
-                                        textAlign: "center",
-                                        background: colBg,
-                                        borderRight: "1px solid #f3f4f6",
-                                        borderTop: "2px solid #d1fae5",
-                                        fontSize: 10,
-                                        fontWeight: 600,
-                                        color: "#065f46",
-                                      }}
-                                    >
-                                      {presentCount !== null ? (
-                                        presentCount > 0 ? (
-                                          presentCount
-                                        ) : (
-                                          <span style={{ color: "#d1d5db" }}>
-                                            0
-                                          </span>
-                                        )
-                                      ) : (
-                                        <span style={{ color: "#d1d5db" }}>
-                                          —
-                                        </span>
-                                      )}
-                                    </td>
-                                  );
-                                })}
-                              </tr>
-                              {filteredRows.map((row, ri) => {
-                                const presentDays = matrix.dates.filter((d) => {
-                                  if (isFuture(d)) return false;
-                                  const s = row.attendance[d];
-                                  return s === "P" || s === "PL";
-                                }).length;
-                                const bg = ri % 2 === 0 ? "#f0fdf4" : "#ecfdf5";
-                                return (
-                                  <tr
-                                    key={`total-${row.userId}`}
-                                    style={{ background: bg }}
-                                  >
-                                    <td
-                                      style={{
-                                        position: "sticky",
-                                        left: 0,
-                                        background: bg,
-                                        zIndex: 1,
-                                        padding: "4px 12px",
-                                        fontSize: 11,
-                                        color: "#374151",
-                                        borderRight: "1px solid #e5e7eb",
-                                        whiteSpace: "nowrap",
-                                      }}
-                                    >
-                                      {row.name || row.employeeCode}
-                                      <span
-                                        style={{
-                                          marginLeft: 8,
-                                          background:
-                                            presentDays >= workingDaysInRange
-                                              ? "#d1fae5"
-                                              : "#fef3c7",
-                                          color:
-                                            presentDays >= workingDaysInRange
-                                              ? "#065f46"
-                                              : "#92400e",
-                                          borderRadius: 10,
-                                          padding: "1px 8px",
-                                          fontSize: 11,
-                                          fontWeight: 700,
-                                        }}
-                                      >
-                                        {presentDays} / {workingDaysInRange}
-                                      </span>
-                                    </td>
-                                    {matrix.dates.map((d) => (
-                                      <td
-                                        key={d}
-                                        style={{
-                                          background: isHoliday(d)
-                                            ? "#eff6ff"
-                                            : isWeekOff(d)
-                                              ? "#f3f4f6"
-                                              : bg,
-                                          borderRight: "1px solid #f3f4f6",
-                                        }}
-                                      />
-                                    ))}
-                                  </tr>
-                                );
-                              })}
-                            </tfoot>
-                          </table>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
               </div>
             );
           })}
@@ -2334,7 +2669,6 @@ function MyAttendanceReports({ token }: { token: string }) {
   );
 }
 
-//
 // Main Component
 //
 
@@ -2915,7 +3249,11 @@ export default function AttendanceReportPage() {
 
   const handleTestAlert = async (reportId: string) => {
     setTestingAlert(reportId);
-    setTestAlertMsg((prev) => { const n = { ...prev }; delete n[reportId]; return n; });
+    setTestAlertMsg((prev) => {
+      const n = { ...prev };
+      delete n[reportId];
+      return n;
+    });
     try {
       const res = await axios.post(
         `${API_BASE_URL}/attendance/reports/saved/${reportId}/test-alert`,
@@ -2924,7 +3262,9 @@ export default function AttendanceReportPage() {
       );
       setTestAlertMsg((prev) => ({
         ...prev,
-        [reportId]: res.data?.success ? "✅ Test email sent!" : `❌ ${res.data?.message}`,
+        [reportId]: res.data?.success
+          ? "✅ Test email sent!"
+          : `❌ ${res.data?.message}`,
       }));
     } catch (err: any) {
       setTestAlertMsg((prev) => ({
@@ -4657,9 +4997,11 @@ export default function AttendanceReportPage() {
                         const isExpanded = assignExpanded === report._id;
                         const scheduleOpen = scheduleExpanded === report._id;
                         const alertEnabled: boolean = asg.alertEnabled ?? false;
-                        const scheduleType: string = asg.scheduleType ?? "daily";
+                        const scheduleType: string =
+                          asg.scheduleType ?? "daily";
                         const scheduleDay: number = asg.scheduleDay ?? 1;
-                        const scheduleTime: string = asg.scheduleTime ?? "08:00";
+                        const scheduleTime: string =
+                          asg.scheduleTime ?? "08:00";
                         const ccUserIds: string[] = (asg.ccUsers ?? []).map(
                           (u: any) => u._id ?? u,
                         );
@@ -4707,7 +5049,8 @@ export default function AttendanceReportPage() {
                                 </div>
                                 <div style={{ fontSize: 12, color: "#6b7280" }}>
                                   {(asg.assignedToUsers ?? []).length} users ·{" "}
-                                  {(asg.assignedToRoles ?? []).length} roles assigned
+                                  {(asg.assignedToRoles ?? []).length} roles
+                                  assigned
                                 </div>
                               </div>
                               <div
@@ -4784,8 +5127,9 @@ export default function AttendanceReportPage() {
                                       }}
                                     >
                                       {allUsers.map((u) => {
-                                        const checked =
-                                          (asg.assignedToUsers ?? []).includes(u._id);
+                                        const checked = (
+                                          asg.assignedToUsers ?? []
+                                        ).includes(u._id);
                                         return (
                                           <label
                                             key={u._id}
@@ -4850,10 +5194,9 @@ export default function AttendanceReportPage() {
                                       }}
                                     >
                                       {allRoles.map((role) => {
-                                        const checked =
-                                          (asg.assignedToRoles ?? []).includes(
-                                            role._id,
-                                          );
+                                        const checked = (
+                                          asg.assignedToRoles ?? []
+                                        ).includes(role._id);
                                         return (
                                           <label
                                             key={role._id}
@@ -4920,12 +5263,28 @@ export default function AttendanceReportPage() {
                                       alignItems: "center",
                                       padding: "10px 14px",
                                       cursor: "pointer",
-                                      background: scheduleOpen ? "#fffbeb" : "#f8fafc",
-                                      borderBottom: scheduleOpen ? "1px solid #e5e7eb" : "none",
+                                      background: scheduleOpen
+                                        ? "#fffbeb"
+                                        : "#f8fafc",
+                                      borderBottom: scheduleOpen
+                                        ? "1px solid #e5e7eb"
+                                        : "none",
                                     }}
                                   >
-                                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                                      <span style={{ fontSize: 14, fontWeight: 700, color: "#374151" }}>
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 10,
+                                      }}
+                                    >
+                                      <span
+                                        style={{
+                                          fontSize: 14,
+                                          fontWeight: 700,
+                                          color: "#374151",
+                                        }}
+                                      >
                                         🔔 Schedule Alert
                                       </span>
                                       {alertEnabled && (
@@ -4947,106 +5306,247 @@ export default function AttendanceReportPage() {
                                         </span>
                                       )}
                                     </div>
-                                    <span style={{ fontSize: 14, color: "#9ca3af" }}>
+                                    <span
+                                      style={{ fontSize: 14, color: "#9ca3af" }}
+                                    >
                                       {scheduleOpen ? "▲" : "▼"}
                                     </span>
                                   </div>
 
                                   {scheduleOpen && (
-                                    <div style={{ padding: 14, background: "#fff" }}>
+                                    <div
+                                      style={{
+                                        padding: 14,
+                                        background: "#fff",
+                                      }}
+                                    >
                                       {/* Alert toggle */}
-                                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+                                      <div
+                                        style={{
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: 10,
+                                          marginBottom: 14,
+                                        }}
+                                      >
                                         <input
                                           type="checkbox"
                                           checked={alertEnabled}
                                           onChange={(e) =>
-                                            updateScheduleField(report._id, "alertEnabled", e.target.checked)
+                                            updateScheduleField(
+                                              report._id,
+                                              "alertEnabled",
+                                              e.target.checked,
+                                            )
                                           }
-                                          style={{ accentColor: "#f59e0b", width: 16, height: 16 }}
+                                          style={{
+                                            accentColor: "#f59e0b",
+                                            width: 16,
+                                            height: 16,
+                                          }}
                                         />
-                                        <span style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>
+                                        <span
+                                          style={{
+                                            fontSize: 13,
+                                            fontWeight: 600,
+                                            color: "#374151",
+                                          }}
+                                        >
                                           Enable scheduled email alert
                                         </span>
                                         {alertEnabled && (
-                                          <span style={{ fontSize: 12, color: "#6b7280" }}>
-                                            — report CSV will be emailed to assigned users
+                                          <span
+                                            style={{
+                                              fontSize: 12,
+                                              color: "#6b7280",
+                                            }}
+                                          >
+                                            — report CSV will be emailed to
+                                            assigned users
                                           </span>
                                         )}
                                       </div>
 
                                       {alertEnabled && (
                                         <>
-                                          <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end" }}>
+                                          <div
+                                            style={{
+                                              display: "flex",
+                                              flexWrap: "wrap",
+                                              gap: 16,
+                                              alignItems: "flex-end",
+                                            }}
+                                          >
                                             {/* Frequency */}
                                             <div>
-                                              <label style={{ fontSize: 11, fontWeight: 600, color: "#374151", display: "block", marginBottom: 4 }}>
+                                              <label
+                                                style={{
+                                                  fontSize: 11,
+                                                  fontWeight: 600,
+                                                  color: "#374151",
+                                                  display: "block",
+                                                  marginBottom: 4,
+                                                }}
+                                              >
                                                 Frequency
                                               </label>
                                               <select
                                                 value={scheduleType}
                                                 onChange={(e) =>
-                                                  updateScheduleField(report._id, "scheduleType", e.target.value)
+                                                  updateScheduleField(
+                                                    report._id,
+                                                    "scheduleType",
+                                                    e.target.value,
+                                                  )
                                                 }
-                                                style={{ padding: "6px 10px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 13, background: "#fff" }}
+                                                style={{
+                                                  padding: "6px 10px",
+                                                  border: "1px solid #d1d5db",
+                                                  borderRadius: 6,
+                                                  fontSize: 13,
+                                                  background: "#fff",
+                                                }}
                                               >
-                                                <option value="daily">Daily</option>
-                                                <option value="weekly">Weekly</option>
-                                                <option value="monthly">Monthly</option>
+                                                <option value="daily">
+                                                  Daily
+                                                </option>
+                                                <option value="weekly">
+                                                  Weekly
+                                                </option>
+                                                <option value="monthly">
+                                                  Monthly
+                                                </option>
                                               </select>
                                             </div>
                                             {/* Day picker */}
                                             {scheduleType !== "daily" && (
                                               <div>
-                                                <label style={{ fontSize: 11, fontWeight: 600, color: "#374151", display: "block", marginBottom: 4 }}>
-                                                  {scheduleType === "weekly" ? "Day of week" : "Day of month"}
+                                                <label
+                                                  style={{
+                                                    fontSize: 11,
+                                                    fontWeight: 600,
+                                                    color: "#374151",
+                                                    display: "block",
+                                                    marginBottom: 4,
+                                                  }}
+                                                >
+                                                  {scheduleType === "weekly"
+                                                    ? "Day of week"
+                                                    : "Day of month"}
                                                 </label>
                                                 <select
                                                   value={scheduleDay}
                                                   onChange={(e) =>
-                                                    updateScheduleField(report._id, "scheduleDay", Number(e.target.value))
+                                                    updateScheduleField(
+                                                      report._id,
+                                                      "scheduleDay",
+                                                      Number(e.target.value),
+                                                    )
                                                   }
-                                                  style={{ padding: "6px 10px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 13, background: "#fff" }}
+                                                  style={{
+                                                    padding: "6px 10px",
+                                                    border: "1px solid #d1d5db",
+                                                    borderRadius: 6,
+                                                    fontSize: 13,
+                                                    background: "#fff",
+                                                  }}
                                                 >
                                                   {scheduleType === "weekly"
                                                     ? WEEKDAYS.map((d, i) => (
-                                                        <option key={d} value={i}>{d}</option>
+                                                        <option
+                                                          key={d}
+                                                          value={i}
+                                                        >
+                                                          {d}
+                                                        </option>
                                                       ))
                                                     : MONTH_DAYS.map((d) => (
-                                                        <option key={d} value={d}>{d}</option>
+                                                        <option
+                                                          key={d}
+                                                          value={d}
+                                                        >
+                                                          {d}
+                                                        </option>
                                                       ))}
                                                 </select>
                                               </div>
                                             )}
                                             {/* Time */}
                                             <div>
-                                              <label style={{ fontSize: 11, fontWeight: 600, color: "#374151", display: "block", marginBottom: 4 }}>
+                                              <label
+                                                style={{
+                                                  fontSize: 11,
+                                                  fontWeight: 600,
+                                                  color: "#374151",
+                                                  display: "block",
+                                                  marginBottom: 4,
+                                                }}
+                                              >
                                                 Time (24h)
                                               </label>
                                               <input
                                                 type="time"
                                                 value={scheduleTime}
                                                 onChange={(e) =>
-                                                  updateScheduleField(report._id, "scheduleTime", e.target.value)
+                                                  updateScheduleField(
+                                                    report._id,
+                                                    "scheduleTime",
+                                                    e.target.value,
+                                                  )
                                                 }
-                                                style={{ padding: "6px 10px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 13, background: "#fff" }}
+                                                style={{
+                                                  padding: "6px 10px",
+                                                  border: "1px solid #d1d5db",
+                                                  borderRadius: 6,
+                                                  fontSize: 13,
+                                                  background: "#fff",
+                                                }}
                                               />
                                             </div>
                                           </div>
 
                                           {/* CC Recipients */}
                                           <div style={{ marginTop: 16 }}>
-                                            <div style={{ fontSize: 12, fontWeight: 700, color: "#374151", marginBottom: 8 }}>
+                                            <div
+                                              style={{
+                                                fontSize: 12,
+                                                fontWeight: 700,
+                                                color: "#374151",
+                                                marginBottom: 8,
+                                              }}
+                                            >
                                               CC Recipients
                                             </div>
-                                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                                            <div
+                                              style={{
+                                                display: "grid",
+                                                gridTemplateColumns: "1fr 1fr",
+                                                gap: 12,
+                                              }}
+                                            >
                                               {/* CC System Users */}
                                               <div>
-                                                <div style={{ fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 6 }}>
+                                                <div
+                                                  style={{
+                                                    fontSize: 11,
+                                                    fontWeight: 600,
+                                                    color: "#6b7280",
+                                                    marginBottom: 6,
+                                                  }}
+                                                >
                                                   System users
                                                 </div>
-                                                <div style={{ maxHeight: 160, overflowY: "auto", border: "1px solid #e5e7eb", borderRadius: 8 }}>
+                                                <div
+                                                  style={{
+                                                    maxHeight: 160,
+                                                    overflowY: "auto",
+                                                    border: "1px solid #e5e7eb",
+                                                    borderRadius: 8,
+                                                  }}
+                                                >
                                                   {allUsers.map((u) => {
-                                                    const checked = ccUserIds.includes(u._id);
+                                                    const checked =
+                                                      ccUserIds.includes(u._id);
                                                     return (
                                                       <label
                                                         key={u._id}
@@ -5056,8 +5556,11 @@ export default function AttendanceReportPage() {
                                                           gap: 8,
                                                           padding: "6px 10px",
                                                           cursor: "pointer",
-                                                          background: checked ? "#fefce8" : "#fff",
-                                                          borderBottom: "1px solid #f3f4f6",
+                                                          background: checked
+                                                            ? "#fefce8"
+                                                            : "#fff",
+                                                          borderBottom:
+                                                            "1px solid #f3f4f6",
                                                         }}
                                                       >
                                                         <input
@@ -5068,14 +5571,43 @@ export default function AttendanceReportPage() {
                                                               report._id,
                                                               "ccUsers",
                                                               checked
-                                                                ? ccUserIds.filter((id) => id !== u._id)
-                                                                : [...ccUserIds, u._id],
+                                                                ? ccUserIds.filter(
+                                                                    (id) =>
+                                                                      id !==
+                                                                      u._id,
+                                                                  )
+                                                                : [
+                                                                    ...ccUserIds,
+                                                                    u._id,
+                                                                  ],
                                                             )
                                                           }
-                                                          style={{ accentColor: "#f59e0b" }}
+                                                          style={{
+                                                            accentColor:
+                                                              "#f59e0b",
+                                                          }}
                                                         />
-                                                        <span style={{ fontSize: 12 }}>{u.firstName} {u.lastName}</span>
-                                                        <span style={{ fontSize: 10, color: "#9ca3af", marginLeft: "auto", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 120 }}>
+                                                        <span
+                                                          style={{
+                                                            fontSize: 12,
+                                                          }}
+                                                        >
+                                                          {u.firstName}{" "}
+                                                          {u.lastName}
+                                                        </span>
+                                                        <span
+                                                          style={{
+                                                            fontSize: 10,
+                                                            color: "#9ca3af",
+                                                            marginLeft: "auto",
+                                                            overflow: "hidden",
+                                                            textOverflow:
+                                                              "ellipsis",
+                                                            whiteSpace:
+                                                              "nowrap",
+                                                            maxWidth: 120,
+                                                          }}
+                                                        >
                                                           {u.email}
                                                         </span>
                                                       </label>
@@ -5085,7 +5617,14 @@ export default function AttendanceReportPage() {
                                               </div>
                                               {/* CC free-form emails */}
                                               <div>
-                                                <div style={{ fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 6 }}>
+                                                <div
+                                                  style={{
+                                                    fontSize: 11,
+                                                    fontWeight: 600,
+                                                    color: "#6b7280",
+                                                    marginBottom: 6,
+                                                  }}
+                                                >
                                                   Additional email addresses
                                                 </div>
                                                 <div
@@ -5102,7 +5641,11 @@ export default function AttendanceReportPage() {
                                                     cursor: "text",
                                                   }}
                                                   onClick={(e) => {
-                                                    (e.currentTarget.querySelector("input") as HTMLInputElement | null)?.focus();
+                                                    (
+                                                      e.currentTarget.querySelector(
+                                                        "input",
+                                                      ) as HTMLInputElement | null
+                                                    )?.focus();
                                                   }}
                                                 >
                                                   {ccEmails.map((em) => (
@@ -5112,7 +5655,8 @@ export default function AttendanceReportPage() {
                                                         background: "#fef3c7",
                                                         color: "#92400e",
                                                         fontSize: 11,
-                                                        padding: "2px 4px 2px 8px",
+                                                        padding:
+                                                          "2px 4px 2px 8px",
                                                         borderRadius: 10,
                                                         fontWeight: 600,
                                                         display: "flex",
@@ -5126,10 +5670,16 @@ export default function AttendanceReportPage() {
                                                           updateScheduleField(
                                                             report._id,
                                                             "ccEmails",
-                                                            ccEmails.filter((e) => e !== em),
+                                                            ccEmails.filter(
+                                                              (e) => e !== em,
+                                                            ),
                                                           )
                                                         }
-                                                        style={{ cursor: "pointer", fontWeight: 700, opacity: 0.6 }}
+                                                        style={{
+                                                          cursor: "pointer",
+                                                          fontWeight: 700,
+                                                          opacity: 0.6,
+                                                        }}
                                                       >
                                                         ×
                                                       </span>
@@ -5137,32 +5687,100 @@ export default function AttendanceReportPage() {
                                                   ))}
                                                   <input
                                                     type="email"
-                                                    value={ccEmailDraft[report._id] ?? ""}
+                                                    value={
+                                                      ccEmailDraft[
+                                                        report._id
+                                                      ] ?? ""
+                                                    }
                                                     onChange={(e) =>
-                                                      setCcEmailDraft((prev) => ({ ...prev, [report._id]: e.target.value }))
+                                                      setCcEmailDraft(
+                                                        (prev) => ({
+                                                          ...prev,
+                                                          [report._id]:
+                                                            e.target.value,
+                                                        }),
+                                                      )
                                                     }
                                                     onKeyDown={(e) => {
-                                                      const draft = (ccEmailDraft[report._id] ?? "").trim();
-                                                      if ((e.key === "Enter" || e.key === ",") && draft) {
+                                                      const draft = (
+                                                        ccEmailDraft[
+                                                          report._id
+                                                        ] ?? ""
+                                                      ).trim();
+                                                      if (
+                                                        (e.key === "Enter" ||
+                                                          e.key === ",") &&
+                                                        draft
+                                                      ) {
                                                         e.preventDefault();
                                                         if (
-                                                          /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft) &&
-                                                          !ccEmails.includes(draft)
+                                                          /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+                                                            draft,
+                                                          ) &&
+                                                          !ccEmails.includes(
+                                                            draft,
+                                                          )
                                                         ) {
-                                                          updateScheduleField(report._id, "ccEmails", [...ccEmails, draft]);
+                                                          updateScheduleField(
+                                                            report._id,
+                                                            "ccEmails",
+                                                            [
+                                                              ...ccEmails,
+                                                              draft,
+                                                            ],
+                                                          );
                                                         }
-                                                        setCcEmailDraft((prev) => ({ ...prev, [report._id]: "" }));
-                                                      } else if (e.key === "Backspace" && !draft && ccEmails.length > 0) {
-                                                        updateScheduleField(report._id, "ccEmails", ccEmails.slice(0, -1));
+                                                        setCcEmailDraft(
+                                                          (prev) => ({
+                                                            ...prev,
+                                                            [report._id]: "",
+                                                          }),
+                                                        );
+                                                      } else if (
+                                                        e.key === "Backspace" &&
+                                                        !draft &&
+                                                        ccEmails.length > 0
+                                                      ) {
+                                                        updateScheduleField(
+                                                          report._id,
+                                                          "ccEmails",
+                                                          ccEmails.slice(0, -1),
+                                                        );
                                                       }
                                                     }}
-                                                    placeholder={ccEmails.length === 0 ? "Type email, press Enter" : "+add email"}
-                                                    style={{ border: "none", outline: "none", fontSize: 12, flex: 1, minWidth: 140, background: "transparent" }}
+                                                    placeholder={
+                                                      ccEmails.length === 0
+                                                        ? "Type email, press Enter"
+                                                        : "+add email"
+                                                    }
+                                                    style={{
+                                                      border: "none",
+                                                      outline: "none",
+                                                      fontSize: 12,
+                                                      flex: 1,
+                                                      minWidth: 140,
+                                                      background: "transparent",
+                                                    }}
                                                   />
                                                 </div>
-                                                {(ccUserIds.length > 0 || ccEmails.length > 0) && (
-                                                  <div style={{ marginTop: 6, fontSize: 11, color: "#6b7280" }}>
-                                                    {ccUserIds.length + ccEmails.length} CC address{ccUserIds.length + ccEmails.length !== 1 ? "es" : ""} added
+                                                {(ccUserIds.length > 0 ||
+                                                  ccEmails.length > 0) && (
+                                                  <div
+                                                    style={{
+                                                      marginTop: 6,
+                                                      fontSize: 11,
+                                                      color: "#6b7280",
+                                                    }}
+                                                  >
+                                                    {ccUserIds.length +
+                                                      ccEmails.length}{" "}
+                                                    CC address
+                                                    {ccUserIds.length +
+                                                      ccEmails.length !==
+                                                    1
+                                                      ? "es"
+                                                      : ""}{" "}
+                                                    added
                                                   </div>
                                                 )}
                                               </div>
@@ -5184,7 +5802,16 @@ export default function AttendanceReportPage() {
                                   }}
                                 >
                                   {testAlertMsg[report._id] && (
-                                    <span style={{ fontSize: 12, color: testAlertMsg[report._id].startsWith("✅") ? "#16a34a" : "#dc2626" }}>
+                                    <span
+                                      style={{
+                                        fontSize: 12,
+                                        color: testAlertMsg[
+                                          report._id
+                                        ].startsWith("✅")
+                                          ? "#16a34a"
+                                          : "#dc2626",
+                                      }}
+                                    >
                                       {testAlertMsg[report._id]}
                                     </span>
                                   )}
@@ -5205,8 +5832,13 @@ export default function AttendanceReportPage() {
                                   )}
                                   {alertEnabled && (
                                     <button
-                                      onClick={() => handleTestAlert(report._id)}
-                                      disabled={testingAlert === report._id || assignSaving === report._id}
+                                      onClick={() =>
+                                        handleTestAlert(report._id)
+                                      }
+                                      disabled={
+                                        testingAlert === report._id ||
+                                        assignSaving === report._id
+                                      }
                                       style={{
                                         padding: "7px 14px",
                                         background: "#f59e0b",
@@ -5216,10 +5848,13 @@ export default function AttendanceReportPage() {
                                         fontSize: 13,
                                         fontWeight: 600,
                                         cursor: "pointer",
-                                        opacity: testingAlert === report._id ? 0.7 : 1,
+                                        opacity:
+                                          testingAlert === report._id ? 0.7 : 1,
                                       }}
                                     >
-                                      {testingAlert === report._id ? "Sending…" : "📧 Send Test"}
+                                      {testingAlert === report._id
+                                        ? "Sending…"
+                                        : "📧 Send Test"}
                                     </button>
                                   )}
                                   <button

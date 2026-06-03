@@ -81,6 +81,13 @@ interface Ticket {
   statusName?: string;
   /** Project-specific status color, enriched by the API */
   statusColor?: string;
+  /** Category names for hierarchy levels, enriched by the API */
+  categoryHierarchyNames?: {
+    level1?: string;
+    level2?: string;
+    level3?: string;
+    level4?: string;
+  };
 }
 
 interface Project {
@@ -120,7 +127,8 @@ type TicketTableColumnKey =
   | "category"
   | "source"
   | "mergedCount"
-  | `field_${string}`;
+  | `field_${string}`
+  | `hierarchy_level_${number}`;
 
 const TICKET_TABLE_COLUMN_DEFS: Array<{
   key: TicketTableColumnKey;
@@ -160,7 +168,8 @@ const normalizeTicketColumns = (columns?: string[]): TicketTableColumnKey[] => {
   const validKeys = columns.filter(
     (key): key is TicketTableColumnKey =>
       TICKET_TABLE_COLUMN_DEFS.some((col) => col.key === key) ||
-      key.startsWith("field_"),
+      key.startsWith("field_") ||
+      key.startsWith("hierarchy_level_"),
   );
 
   return validKeys.length > 0 ? validKeys : DEFAULT_TICKET_TABLE_COLUMNS;
@@ -323,6 +332,7 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     _vtHasCache ? _vtInitCached!.tickets : [],
   );
   const [loading, setLoading] = useState(!_vtHasCache); // skip spinner when cache is warm
+  const [isFetching, setIsFetching] = useState(false); // lightweight in-place refresh (keeps search focused)
   // US-ESC-009: force re-render every 60s so SLA countdowns stay current
   const [, forceUpdate] = React.useReducer((n: number) => n + 1, 0);
   useEffect(() => {
@@ -373,6 +383,9 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
       fieldType: string;
       options?: string[];
     }>
+  >([]);
+  const [hierarchyLevelDefs, setHierarchyLevelDefs] = useState<
+    Array<{ levelNumber: number; displayName: string }>
   >([]);
   const [customFieldFilters, setCustomFieldFilters] = useState<
     Record<string, string>
@@ -547,6 +560,13 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
         // Load custom form field definitions (for rendering + labels)
         const customFields = response.data?.data?.customFormFields || [];
         setCustomFormFieldDefs(customFields);
+
+        // Load hierarchy level definitions (for hierarchy_level_N column labels + rendering)
+        const hierarchyLevels: Array<{
+          levelNumber: number;
+          displayName: string;
+        }> = response.data?.ticketConfig?.hierarchyLevels || [];
+        setHierarchyLevelDefs(hierarchyLevels);
       } catch (error) {
         console.error("[fetchTicketTableColumns] failed:", error);
         setVisibleColumns(DEFAULT_TICKET_TABLE_COLUMNS);
@@ -679,7 +699,8 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     const isDefaultFetch =
       page === 1 &&
       projectFilter === (initialProjectId ?? "all") &&
-      assignedToFilter === "all";
+      assignedToFilter === "all" &&
+      !deferredSearchQuery.trim();
     const cacheKey = `viewtickets:${projectFilter}:p${page}`;
 
     // Show cached data instantly on first (default) fetch if cache is warm
@@ -729,10 +750,16 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     }
 
     try {
-      setLoading(true);
+      // Only show full-page spinner on the very first load (page is empty).
+      // All subsequent fetches (search, filter, pagination) use the in-place
+      // isFetching indicator so the search input never unmounts.
+      if (tickets.length === 0 && !deferredSearchQuery.trim()) {
+        setLoading(true);
+      }
+      setIsFetching(true);
       const token = localStorage.getItem("authToken");
       if (!token) {
-        navigate("/login");
+        navigate(customUrlPath ? `/${customUrlPath}/portal/login` : "/login");
         return;
       }
 
@@ -748,8 +775,13 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
         params.search = deferredSearchQuery.trim();
       Object.entries(customFieldFilters).forEach(([key, val]) => {
         if (val && val.trim()) {
-          const fieldName = key.replace(/^field_/, "");
-          params[`customField_${fieldName}`] = val.trim();
+          if (key.startsWith("hierarchy_level_")) {
+            const levelNum = key.replace("hierarchy_level_", "");
+            params[`hierarchyFilter_level${levelNum}`] = val.trim();
+          } else if (key.startsWith("field_")) {
+            const fieldName = key.replace(/^field_/, "");
+            params[`customField_${fieldName}`] = val.trim();
+          }
         }
       });
 
@@ -787,10 +819,11 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     } catch (error: any) {
       if (error.response?.status === 401) {
         localStorage.removeItem("authToken");
-        navigate("/login");
+        navigate(customUrlPath ? `/${customUrlPath}/portal/login` : "/login");
       }
     } finally {
       setLoading(false);
+      setIsFetching(false);
     }
   };
 
@@ -851,34 +884,30 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
           ? projectId
           : (initialProjectId ?? undefined);
 
-      const response = await axios.get(
-        `${API_CONFIG.API_URL}/priorities/active`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-          params: pid ? { projectId: pid } : {},
-        },
-      );
+      // Use sla-rules as the source of truth for priority names (same as MyTickets)
+      const params: Record<string, string> = { isActive: "true" };
+      if (pid) params.projectId = pid;
 
-      if (response.data.success && Array.isArray(response.data.data)) {
+      const response = await axios.get(`${API_CONFIG.API_URL}/sla-rules`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params,
+      });
+
+      if (
+        response.data.success &&
+        Array.isArray(response.data.data) &&
+        response.data.data.length > 0
+      ) {
         const seen = new Set<string>();
         const options: PriorityOption[] = [];
 
         for (const p of response.data.data as any[]) {
-          const raw = String(p.code || p.name || "").trim();
-          if (!raw) continue;
-
-          const value = raw.toUpperCase();
-          if (seen.has(value)) continue;
-          seen.add(value);
-
-          const label = p.name
-            ? String(p.name)
-            : raw
-                .toLowerCase()
-                .replace(/_/g, " ")
-                .replace(/\b\w/g, (c: string) => c.toUpperCase());
-
-          options.push({ value, label });
+          const name = String(p.name || "").trim();
+          if (!name) continue;
+          const key = name.toLowerCase();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          options.push({ value: name, label: name });
         }
 
         if (options.length > 0) {
@@ -887,22 +916,21 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
         }
       }
 
-      // API returned no priorities for this project; fallback keeps filter usable.
+      // Fallback: correct project-agnostic defaults
       setPriorityOptions([
-        { value: "LOW", label: "Low" },
-        { value: "MEDIUM", label: "Medium" },
-        { value: "NORMAL", label: "Normal" },
-        { value: "HIGH", label: "High" },
-        { value: "CRITICAL", label: "Critical" },
+        { value: "Low", label: "Low" },
+        { value: "Medium", label: "Medium" },
+        { value: "High", label: "High" },
+        { value: "Urgent", label: "Urgent" },
+        { value: "Critical", label: "Critical" },
       ]);
     } catch {
-      // non-fatal fallback
       setPriorityOptions([
-        { value: "LOW", label: "Low" },
-        { value: "MEDIUM", label: "Medium" },
-        { value: "NORMAL", label: "Normal" },
-        { value: "HIGH", label: "High" },
-        { value: "CRITICAL", label: "Critical" },
+        { value: "Low", label: "Low" },
+        { value: "Medium", label: "Medium" },
+        { value: "High", label: "High" },
+        { value: "Urgent", label: "Urgent" },
+        { value: "Critical", label: "Critical" },
       ]);
     }
   };
@@ -1238,7 +1266,7 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
             (def) => def.key === key,
           );
           if (existing) return existing;
-          // Handle custom field columns
+          // Handle custom form field columns
           if (key.startsWith("field_")) {
             const fieldName = key.replace(/^field_/, "");
             const fieldDef = customFormFieldDefs.find(
@@ -1247,10 +1275,19 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
             const label = fieldDef?.fieldLabel || fieldName;
             return { key: key as TicketTableColumnKey, label };
           }
+          // Handle hierarchy level columns
+          if (key.startsWith("hierarchy_level_")) {
+            const levelNum = parseInt(key.replace("hierarchy_level_", ""), 10);
+            const levelDef = hierarchyLevelDefs.find(
+              (l) => l.levelNumber === levelNum,
+            );
+            const label = levelDef?.displayName || `Level ${levelNum}`;
+            return { key: key as TicketTableColumnKey, label };
+          }
           return null;
         })
         .filter(Boolean) as Array<{ key: TicketTableColumnKey; label: string }>,
-    [visibleColumns, customFormFieldDefs],
+    [visibleColumns, customFormFieldDefs, hierarchyLevelDefs],
   );
   const tableColumnCount =
     visibleColumnDefs.length + 1 + (canMerge || canDelete || canAssign ? 1 : 0);
@@ -1542,6 +1579,26 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
               {value !== undefined && value !== null && value !== ""
                 ? String(value)
                 : "—"}
+            </td>
+          );
+        }
+        // Handle hierarchy level columns (key format: hierarchy_level_N)
+        if (columnKey.startsWith("hierarchy_level_")) {
+          const levelNum = parseInt(
+            columnKey.replace("hierarchy_level_", ""),
+            10,
+          );
+          const name =
+            (ticket as any).categoryHierarchyNames?.[`level${levelNum}`] || "—";
+          return (
+            <td
+              style={{
+                padding: "12px 16px",
+                fontSize: "13px",
+                color: "#344054",
+              }}
+            >
+              {name}
             </td>
           );
         }
@@ -2320,9 +2377,11 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                 → Status → Priority → Assignee → Date range
               </div>
 
-              {/* Row 4: Dynamic custom field filters (from filterable columns config) */}
-              {filterableColumnKeys.filter((k) => k.startsWith("field_"))
-                .length > 0 && (
+              {/* Row 4: Dynamic custom field + hierarchy level filters (from filterable columns config) */}
+              {filterableColumnKeys.filter(
+                (k) =>
+                  k.startsWith("field_") || k.startsWith("hierarchy_level_"),
+              ).length > 0 && (
                 <div
                   style={{
                     marginTop: "12px",
@@ -2333,21 +2392,43 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                   }}
                 >
                   {filterableColumnKeys
-                    .filter((k) => k.startsWith("field_"))
+                    .filter(
+                      (k) =>
+                        k.startsWith("field_") ||
+                        k.startsWith("hierarchy_level_"),
+                    )
                     .map((colKey) => {
-                      const fieldName = colKey.replace(/^field_/, "");
-                      const fieldDef = customFormFieldDefs.find(
-                        (f) => f.fieldName === fieldName,
-                      );
-                      const label = fieldDef?.fieldLabel || fieldName;
+                      let label: string;
+                      let hasOptions = false;
+                      let fieldDef:
+                        | (typeof customFormFieldDefs)[number]
+                        | undefined;
+
+                      if (colKey.startsWith("hierarchy_level_")) {
+                        const levelNum = parseInt(
+                          colKey.replace("hierarchy_level_", ""),
+                          10,
+                        );
+                        const levelDef = hierarchyLevelDefs.find(
+                          (l) => l.levelNumber === levelNum,
+                        );
+                        label = levelDef?.displayName || `Level ${levelNum}`;
+                      } else {
+                        const fieldName = colKey.replace(/^field_/, "");
+                        fieldDef = customFormFieldDefs.find(
+                          (f) => f.fieldName === fieldName,
+                        );
+                        label = fieldDef?.fieldLabel || fieldName;
+                        hasOptions =
+                          !!fieldDef &&
+                          (fieldDef.fieldType === "dropdown" ||
+                            fieldDef.fieldType === "radio" ||
+                            fieldDef.fieldType === "multiselect") &&
+                          Array.isArray(fieldDef.options) &&
+                          (fieldDef.options?.length ?? 0) > 0;
+                      }
+
                       const currentVal = customFieldFilters[colKey] || "";
-                      const hasOptions =
-                        fieldDef &&
-                        (fieldDef.fieldType === "dropdown" ||
-                          fieldDef.fieldType === "radio" ||
-                          fieldDef.fieldType === "multiselect") &&
-                        Array.isArray(fieldDef.options) &&
-                        fieldDef.options.length > 0;
 
                       return (
                         <div key={colKey} style={{ position: "relative" }}>
@@ -2547,7 +2628,21 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredTickets.length === 0 ? (
+                  {isFetching ? (
+                    <tr>
+                      <td
+                        colSpan={tableColumnCount}
+                        style={{
+                          padding: "32px",
+                          textAlign: "center",
+                          color: "#6B7280",
+                          fontSize: "14px",
+                        }}
+                      >
+                        <span style={{ opacity: 0.7 }}>Searching…</span>
+                      </td>
+                    </tr>
+                  ) : filteredTickets.length === 0 ? (
                     <tr>
                       <td
                         colSpan={tableColumnCount}

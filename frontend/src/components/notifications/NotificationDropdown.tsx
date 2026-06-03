@@ -318,7 +318,18 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({
         <button
           onClick={() => {
             onClose();
-            navigate("/notifications");
+            const path = window.location.pathname;
+            const portalMatch = path.match(/^\/([a-z0-9_-]+)\/portal(?:\/|$)/i);
+            const studentMatch = path.match(
+              /^\/([a-z0-9_-]+)\/student(?:\/|$)/i,
+            );
+            if (portalMatch) {
+              navigate(`/${portalMatch[1]}/portal/notifications`);
+            } else if (studentMatch) {
+              navigate(`/${studentMatch[1]}/student/notifications`);
+            } else {
+              navigate("/notifications");
+            }
           }}
           style={{
             background: "none",

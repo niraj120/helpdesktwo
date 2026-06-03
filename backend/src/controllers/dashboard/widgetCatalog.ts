@@ -278,4 +278,51 @@ export const WIDGET_CATALOG = [
     isActive: true,
     version: 1,
   },
+
+  // ─── Footfall ─────────────────────────────────────────────────────────────
+
+  {
+    widgetKey: "ticket_footfall_count",
+    module: "ticketing",
+    displayName: "Footfall Count",
+    description:
+      "Total student interactions: unique students who raised tickets + total follow-up responses.",
+    supportedVisualisations: ["kpi_tile", "sparkline"],
+    defaultVisualisation: "kpi_tile",
+    scopeLevels: ["tenant", "project", "centre"],
+    cacheTtlSeconds: 120,
+    dataQueryKey: "ticket_footfall_count",
+    defaultConfig: { dateRangeDays: 30 },
+    isActive: true,
+    version: 1,
+  },
+  {
+    widgetKey: "ticket_footfall_trend",
+    module: "ticketing",
+    displayName: "Footfall Trend",
+    description:
+      "Daily footfall count (unique students + responses) over the selected period.",
+    supportedVisualisations: ["line_chart", "bar_chart"],
+    defaultVisualisation: "line_chart",
+    scopeLevels: ["tenant", "project", "centre"],
+    cacheTtlSeconds: 300,
+    dataQueryKey: "ticket_footfall_trend",
+    defaultConfig: { dateRangeDays: 30 },
+    isActive: true,
+    version: 1,
+  },
+  {
+    widgetKey: "ticket_footfall_by_center",
+    module: "ticketing",
+    displayName: "Footfall by Centre",
+    description: "Footfall count grouped by centre.",
+    supportedVisualisations: ["bar_chart", "table"],
+    defaultVisualisation: "bar_chart",
+    scopeLevels: ["tenant", "project"],
+    cacheTtlSeconds: 300,
+    dataQueryKey: "ticket_footfall_by_center",
+    defaultConfig: { dateRangeDays: 30 },
+    isActive: true,
+    version: 1,
+  },
 ];

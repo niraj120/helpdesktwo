@@ -13,6 +13,7 @@ import {
   runReportQuery,
   applyDataPointRbac,
 } from "../../services/reportQueryService";
+import { Project } from "../../models/Project";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -202,6 +203,9 @@ export const updateModulePermission = async (req: Request, res: Response) => {
 
 /**
  * GET /api/reports/data-points
+ * Returns all active system data points.
+ * If ?projectId= is provided, also returns virtual data points derived
+ * from that project's online form fields (category: "custom_form").
  */
 export const getDataPoints = async (req: Request, res: Response) => {
   try {
@@ -217,7 +221,65 @@ export const getDataPoints = async (req: Request, res: Response) => {
     const dataPoints = await ReportDataPoint.find({ isActive: true })
       .sort({ category: 1, order: 1 })
       .lean();
-    return res.status(200).json({ success: true, data: dataPoints });
+
+    // If a projectId is supplied, append dynamic data points from the project's
+    // online form fields. These are virtual — they are NOT persisted to the DB
+    // and do not pollute the global system data points list.
+    const { projectId } = req.query as { projectId?: string };
+    let customFormDataPoints: any[] = [];
+    if (projectId && mongoose.Types.ObjectId.isValid(projectId)) {
+      const project = await Project.findById(projectId)
+        .select("configuration.ticketSubmissionSettings.onlineFormFields")
+        .lean();
+      const formFields =
+        (project as any)?.configuration?.ticketSubmissionSettings
+          ?.onlineFormFields ?? [];
+
+      // Fixed system field names that should not be double-listed as custom data points
+      const SYSTEM_FIELD_NAMES = new Set([
+        "name",
+        "email",
+        "phone",
+        "subject",
+        "description",
+        "category",
+        "priority",
+        "status",
+      ]);
+
+      let order = 200;
+      for (const field of formFields) {
+        if (
+          !field.fieldName ||
+          SYSTEM_FIELD_NAMES.has(field.fieldName.toLowerCase())
+        ) {
+          continue;
+        }
+        // Map portal fieldType → report FieldType
+        let fieldType: "string" | "number" | "date" | "boolean" = "string";
+        if (field.fieldType === "number") fieldType = "number";
+        else if (field.fieldType === "date") fieldType = "date";
+        else if (field.fieldType === "checkbox") fieldType = "boolean";
+
+        customFormDataPoints.push({
+          _id: `virtual_${field.fieldName}`,
+          key: `custom_field_${field.fieldName}`,
+          label: field.fieldLabel || field.fieldName,
+          description: `Form field: ${field.fieldLabel || field.fieldName}`,
+          category: "custom_form",
+          fieldPath: `metadata.customFields.${field.fieldName}`,
+          fieldType,
+          isActive: true,
+          isSystem: false,
+          order: order++,
+        });
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: [...dataPoints, ...customFormDataPoints],
+    });
   } catch (err: any) {
     return res
       .status(500)
@@ -999,9 +1061,8 @@ export const updateReportAssignment = async (req: Request, res: Response) => {
 
     // Register or destroy the alert cron task based on alertEnabled flag
     try {
-      const { registerReportAlertTask, destroyReportAlertTask } = await import(
-        "../../services/reports/reportAlertScheduler"
-      );
+      const { registerReportAlertTask, destroyReportAlertTask } =
+        await import("../../services/reports/reportAlertScheduler");
       if (doc?.alertEnabled) {
         registerReportAlertTask(doc);
       } else {
@@ -1032,22 +1093,32 @@ export const testReportAlert = async (req: Request, res: Response) => {
 
     const perms = await getEffectiveModulePerms(userId);
     if (!perms?.canAssign) {
-      return res.status(403).json({ success: false, message: "Permission denied" });
+      return res
+        .status(403)
+        .json({ success: false, message: "Permission denied" });
     }
 
     if (!mongoose.Types.ObjectId.isValid(reportId)) {
-      return res.status(400).json({ success: false, message: "Invalid reportId" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid reportId" });
     }
 
-    const { sendAlertNow } = await import(
-      "../../services/reports/reportAlertScheduler"
-    );
+    const { sendAlertNow } =
+      await import("../../services/reports/reportAlertScheduler");
     await sendAlertNow(reportId);
 
-    return res.status(200).json({ success: true, message: "Test alert sent successfully" });
+    return res
+      .status(200)
+      .json({ success: true, message: "Test alert sent successfully" });
   } catch (err: any) {
     console.error("testReportAlert error:", err);
-    return res.status(500).json({ success: false, message: err.message ?? "Failed to send test alert" });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: err.message ?? "Failed to send test alert",
+      });
   }
 };
 

@@ -107,7 +107,12 @@ const drillThroughMap: Record<string, (f: Record<string, any>) => string> = {
 
 function getWidgetAccent(key: string): { bg: string; color: string } {
   const k = key.toLowerCase();
-  if (k.includes("breach") || k.includes("escalat") || k.includes("overdue") || k.includes("critical"))
+  if (
+    k.includes("breach") ||
+    k.includes("escalat") ||
+    k.includes("overdue") ||
+    k.includes("critical")
+  )
     return { bg: "#FFEBE6", color: "#BF2600" };
   if (k.includes("open") || k.includes("inprogress") || k.includes("total"))
     return { bg: "#DEEBFF", color: "#0052CC" };
@@ -115,41 +120,153 @@ function getWidgetAccent(key: string): { bg: string; color: string } {
     return { bg: "#EDF2F9", color: "#4C5E7D" };
   if (k.includes("resolution") || k.includes("rate") || k.includes("bolt"))
     return { bg: "#EBECF0", color: "#172B4D" };
-  if (k.includes("avg") || k.includes("response") || k.includes("time") || k.includes("hour"))
+  if (
+    k.includes("avg") ||
+    k.includes("response") ||
+    k.includes("time") ||
+    k.includes("hour")
+  )
     return { bg: "#DEEBFF", color: "#0052CC" };
-  if (k.includes("resolved") || k.includes("closed") || k.includes("user") || k.includes("agent"))
+  if (
+    k.includes("resolved") ||
+    k.includes("closed") ||
+    k.includes("user") ||
+    k.includes("agent")
+  )
     return { bg: "#E3FCEF", color: "#006644" };
   return { bg: "#F4F5F7", color: "#44546F" };
 }
 
-function WidgetIcon({ widgetKey, color }: { widgetKey: string; color: string }) {
+function WidgetIcon({
+  widgetKey,
+  color,
+}: {
+  widgetKey: string;
+  color: string;
+}) {
   const k = widgetKey.toLowerCase();
   if (k.includes("open") || k.includes("ticket") || k.includes("total"))
     return (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      <svg
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke={color}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <rect x="2" y="3" width="20" height="14" rx="2" />
+        <line x1="8" y1="21" x2="16" y2="21" />
+        <line x1="12" y1="17" x2="12" y2="21" />
+      </svg>
     );
-  if (k.includes("sla") || k.includes("compliance") || k.includes("resolved") || k.includes("closed"))
+  if (
+    k.includes("sla") ||
+    k.includes("compliance") ||
+    k.includes("resolved") ||
+    k.includes("closed")
+  )
     return (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="9 12 11 14 15 10"/></svg>
+      <svg
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke={color}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <circle cx="12" cy="12" r="10" />
+        <polyline points="9 12 11 14 15 10" />
+      </svg>
     );
   if (k.includes("breach") || k.includes("escalat") || k.includes("overdue"))
     return (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <svg
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke={color}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+        <line x1="12" y1="9" x2="12" y2="13" />
+        <line x1="12" y1="17" x2="12.01" y2="17" />
+      </svg>
     );
-  if (k.includes("avg") || k.includes("response") || k.includes("time") || k.includes("hour"))
+  if (
+    k.includes("avg") ||
+    k.includes("response") ||
+    k.includes("time") ||
+    k.includes("hour")
+  )
     return (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      <svg
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke={color}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <circle cx="12" cy="12" r="10" />
+        <polyline points="12 6 12 12 16 14" />
+      </svg>
     );
   if (k.includes("resolution") || k.includes("rate"))
     return (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      <svg
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke={color}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+      </svg>
     );
   if (k.includes("user") || k.includes("agent"))
     return (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      <svg
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke={color}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
+        <circle cx="12" cy="7" r="4" />
+      </svg>
     );
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="12" y1="8" x2="12" y2="16"/></svg>
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <line x1="8" y1="12" x2="16" y2="12" />
+      <line x1="12" y1="8" x2="12" y2="16" />
+    </svg>
   );
 }
 
@@ -175,7 +292,11 @@ function applyCtxOverrides(
   if (!filters || Object.keys(overrides).length === 0) return filters;
   const result: Record<string, any> = {};
   for (const [k, v] of Object.entries(filters)) {
-    if (typeof v === "string" && v.startsWith("@ctx.") && overrides[v] !== undefined) {
+    if (
+      typeof v === "string" &&
+      v.startsWith("@ctx.") &&
+      overrides[v] !== undefined
+    ) {
       result[k] = overrides[v];
     } else {
       result[k] = v;
@@ -223,7 +344,13 @@ export default function WidgetFrame({
 
   const { data, isLoading, isError, error, dataUpdatedAt, refetch } =
     useQuery<WidgetDataResult>(
-      ["widget", widgetKey, dateRangeDays, JSON.stringify(config), JSON.stringify(ctxOverrides)],
+      [
+        "widget",
+        widgetKey,
+        dateRangeDays,
+        JSON.stringify(config),
+        JSON.stringify(ctxOverrides),
+      ],
       () => fetchWidgetData(widgetKey, params),
       {
         staleTime: 60_000,
@@ -258,7 +385,8 @@ export default function WidgetFrame({
   const trendBetter = kpiRawData?.trendDirection === "higher_is_better";
   const trendDir = kpiRawData?.trend?.direction as string | undefined;
   const trendDp = kpiRawData?.trend?.deltaPercent as number | undefined;
-  const trendIsGood = trendDir === "up" ? trendBetter : trendDir === "down" ? !trendBetter : null;
+  const trendIsGood =
+    trendDir === "up" ? trendBetter : trendDir === "down" ? !trendBetter : null;
 
   return (
     <div
@@ -316,7 +444,8 @@ export default function WidgetFrame({
                 letterSpacing: "0.02em",
               }}
             >
-              {trendDir === "up" ? "+" : "−"}{Math.abs(trendDp)}%
+              {trendDir === "up" ? "+" : "−"}
+              {Math.abs(trendDp)}%
             </span>
           )}
         </div>
@@ -520,13 +649,15 @@ export default function WidgetFrame({
               <span style={{ fontSize: 18 }}>
                 {data.data?.noDataReason === "no_capacity_config" ? "⚙️" : "📭"}
               </span>
-              <span style={{ fontSize: 12, color: "#9ca3af", textAlign: "center" }}>
+              <span
+                style={{ fontSize: 12, color: "#9ca3af", textAlign: "center" }}
+              >
                 {data.data?.noDataReason === "no_capacity_config"
                   ? "Centre capacity not configured. Set idealCount on centres or configure target count."
-                  : (widgetKey === "user_required_vs_onboarded" ||
-                     widgetKey === "user_onboarding_completion_rate")
-                  ? "No target set. Open widget config and enter Required User Count."
-                  : "No data for the selected period"}
+                  : widgetKey === "user_required_vs_onboarded" ||
+                      widgetKey === "user_onboarding_completion_rate"
+                    ? "No target set. Open widget config and enter Required User Count."
+                    : "No data for the selected period"}
               </span>
             </div>
           )}
@@ -603,10 +734,22 @@ function WidgetRenderer({
       );
     case "donut_chart":
       // ticket_by_status returns {segments:[]} which StatusDonut already handles
-      return <StatusDonut data={data} onDrillThrough={onDrillThrough} visualisationType="donut_chart" />;
+      return (
+        <StatusDonut
+          data={data}
+          onDrillThrough={onDrillThrough}
+          visualisationType="donut_chart"
+        />
+      );
     case "pie_chart":
       // pie_chart uses the same segment-based data as donut_chart
-      return <StatusDonut data={data} onDrillThrough={onDrillThrough} visualisationType="pie_chart" />;
+      return (
+        <StatusDonut
+          data={data}
+          onDrillThrough={onDrillThrough}
+          visualisationType="pie_chart"
+        />
+      );
     case "progress_bar":
       return <ProgressBar data={data} />;
     case "bar_chart":
@@ -615,7 +758,11 @@ function WidgetRenderer({
         return <AgentWorkloadChart data={data as any} />;
       }
       // Use GenericBarChart for items/rows shapes (ht_by_* handlers, Phase 5, KB, Activity)
-      if (data && (Array.isArray((data as any).items) || Array.isArray((data as any).rows))) {
+      if (
+        data &&
+        (Array.isArray((data as any).items) ||
+          Array.isArray((data as any).rows))
+      ) {
         return <GenericBarChart data={data} onDrillThrough={onDrillThrough} />;
       }
       // Legacy centre_ideal_vs_active shape

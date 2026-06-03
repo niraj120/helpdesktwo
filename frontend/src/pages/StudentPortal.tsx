@@ -151,6 +151,10 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
   const [submitting, setSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [validationPopup, setValidationPopup] = useState<{
+    isOpen: boolean;
+    errors: string[];
+  }>({ isOpen: false, errors: [] });
   const [createdTicketNumber, setCreatedTicketNumber] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<
@@ -758,14 +762,14 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
     if (!files || files.length === 0) return;
 
     const filesArray = Array.from(files);
-    const maxSize = (field.maxFileSizeMB || 50) * 1024 * 1024;
+    const maxSize = (field.maxFileSizeMB || 10) * 1024 * 1024;
     const allowedTypes = field.allowedFileTypes || [];
 
     // Validate file size
     const oversizedFiles = filesArray.filter((file) => file.size > maxSize);
     if (oversizedFiles.length > 0) {
       setSubmitError(
-        `Some files for "${fieldName}" exceed the maximum size of ${field.maxFileSizeMB || 50} MB`,
+        `Some files for "${fieldName}" exceed the maximum size of ${field.maxFileSizeMB || 10} MB`,
       );
       return;
     }
@@ -825,10 +829,13 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
           !formData[fieldName] && !(fieldFiles[fieldName]?.length > 0),
       );
 
+      const validationErrors: string[] = [];
+
       if (missingFields.length > 0) {
-        setSubmitError("Please fill in all required fields");
-        setSubmitting(false);
-        return;
+        missingFields.forEach((fieldName) => {
+          const f = allFields.find((fi) => fi.fieldName === fieldName);
+          validationErrors.push((f as any)?.displayLabel || fieldName);
+        });
       }
 
       // Validate field-level rules (minLength, maxLength, regex) for visible fields
@@ -842,27 +849,29 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
         if (!value) continue;
         const label = (field as any).displayLabel || field.fieldName;
         if (v.minLength != null && value.length < Number(v.minLength)) {
-          setSubmitError(`${label} must be at least ${v.minLength} characters`);
-          setSubmitting(false);
-          return;
-        }
-        if (v.maxLength != null && value.length > Number(v.maxLength)) {
-          setSubmitError(`${label} must be at most ${v.maxLength} characters`);
-          setSubmitting(false);
-          return;
-        }
-        if (v.regex) {
+          validationErrors.push(
+            `${label} must be at least ${v.minLength} characters`,
+          );
+        } else if (v.maxLength != null && value.length > Number(v.maxLength)) {
+          validationErrors.push(
+            `${label} must be at most ${v.maxLength} characters`,
+          );
+        } else if (v.regex) {
           try {
             const re = new RegExp(v.regex);
             if (!re.test(value)) {
-              setSubmitError(`${label} is not in the correct format`);
-              setSubmitting(false);
-              return;
+              validationErrors.push(`${label} is not in the correct format`);
             }
           } catch {
             // invalid regex pattern — skip silently
           }
         }
+      }
+
+      if (validationErrors.length > 0) {
+        setValidationPopup({ isOpen: true, errors: validationErrors });
+        setSubmitting(false);
+        return;
       }
 
       // Prepare form data — only include values for visible fields
@@ -950,8 +959,6 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
               handleInputChange(field.fieldName, val);
             }}
             required={field.required}
-            maxLength={(field as any).validation?.maxLength ?? undefined}
-            minLength={(field as any).validation?.minLength ?? undefined}
             className={`${commonClasses} focus:ring-2`}
             style={{
               borderColor: "#e5e7eb",
@@ -968,8 +975,6 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
             onChange={(e) => handleInputChange(field.fieldName, e.target.value)}
             required={field.required}
             rows={4}
-            maxLength={(field as any).validation?.maxLength ?? undefined}
-            minLength={(field as any).validation?.minLength ?? undefined}
             className={`${commonClasses} focus:ring-2`}
             style={{
               borderColor: "#e5e7eb",
@@ -1108,7 +1113,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
                 />
               </label>
               <p className="text-xs text-gray-500 mt-1">
-                Max size: {field.maxFileSizeMB || 50} MB
+                Max size: {field.maxFileSizeMB || 10} MB
                 {(field.allowedFileTypes || []).length > 0 &&
                   ` | Allowed: ${field.allowedFileTypes?.join(", ")}`}
               </p>
@@ -1435,6 +1440,75 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
           </div>
         )}
 
+        {/* Validation Error Popup */}
+        {validationPopup.isOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+              <div className="bg-red-500 px-6 py-6 flex flex-col items-center text-white">
+                <div className="bg-white/20 rounded-full p-3 mb-3">
+                  <svg
+                    className="h-10 w-10 text-white"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2.5}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
+                    />
+                  </svg>
+                </div>
+                <h2 className="text-xl font-bold tracking-tight">
+                  Validation Error
+                </h2>
+                <p className="text-red-100 text-sm mt-1">
+                  Please fix the following before submitting
+                </p>
+              </div>
+              <div className="px-6 py-5">
+                <ul className="space-y-2">
+                  {validationPopup.errors.map((err, idx) => (
+                    <li
+                      key={idx}
+                      className="flex items-center gap-3 text-sm text-gray-700"
+                    >
+                      <span className="flex-shrink-0 w-5 h-5 bg-red-100 rounded-full flex items-center justify-center">
+                        <svg
+                          className="w-3 h-3 text-red-600"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={3}
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M6 18L18 6M6 6l12 12"
+                          />
+                        </svg>
+                      </span>
+                      <span className="font-medium">{err}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="px-6 pb-6">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setValidationPopup({ isOpen: false, errors: [] })
+                  }
+                  className="w-full py-2.5 px-4 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors"
+                >
+                  OK, I'll Fix It
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Content Area with Modern Card Design */}
         <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-200">
           {/* Online Form View */}
@@ -1674,7 +1748,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
                             : undefined,
                       }}
                     >
-                      {t("byCity")}
+                      By District
                     </button>
                     <button
                       onClick={() => {
@@ -1706,10 +1780,10 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
                         type="text"
                         placeholder={
                           filterType === "city"
-                            ? t("searchByCity")
+                            ? "Search by district..."
                             : filterType === "pincode"
                               ? t("searchByPincode")
-                              : t("searchPlaceholder")
+                              : "Search by district, state, or pincode..."
                         }
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}

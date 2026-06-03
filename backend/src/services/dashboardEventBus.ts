@@ -43,6 +43,20 @@ export function initDashboardEventBus(): void {
       "ticket_open_count",
       "ticket_by_status",
       "ticket_trend_over_time",
+      "ticket_footfall_count",
+      "ticket_footfall_trend",
+      "ticket_footfall_by_center",
+    ]);
+  });
+
+  // ── ticket.commented ───────────────────────────────────────────────────────
+  dashboardEvents.on("ticket.commented", (payload: DashboardEventPayload) => {
+    const { tenantId } = payload;
+    if (!tenantId) return;
+    invalidateWidgetCache(tenantId, [
+      "ticket_footfall_count",
+      "ticket_footfall_trend",
+      "ticket_footfall_by_center",
     ]);
   });
 

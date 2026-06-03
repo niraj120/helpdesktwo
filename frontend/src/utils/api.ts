@@ -140,6 +140,12 @@ apiClient.interceptors.response.use(
         } else {
           loginRoute = "/login";
         }
+      } else if (currentPath.includes("/portal/")) {
+        // Project portal — redirect to project-specific login
+        const match = currentPath.match(/^\/([^/]+)\/portal/);
+        if (match && match[1]) {
+          loginRoute = `/${match[1]}/portal/login`;
+        }
       } else if (
         currentPath.includes("/submit-ticket") ||
         currentPath.includes("/student")

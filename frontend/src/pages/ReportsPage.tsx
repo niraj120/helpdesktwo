@@ -87,6 +87,22 @@ const authHeaders = () => ({
   "Content-Type": "application/json",
 });
 
+/**
+ * Returns the human-readable label for a data point key.
+ * Handles custom form field keys (custom_field_department → "Department").
+ */
+const getDataPointLabel = (
+  key: string,
+  dpMap: Record<string, string>,
+): string => {
+  if (dpMap[key]) return dpMap[key];
+  if (key.startsWith("custom_field_")) {
+    const raw = key.replace(/^custom_field_/, "");
+    return raw.charAt(0).toUpperCase() + raw.slice(1).replace(/_/g, " ");
+  }
+  return key;
+};
+
 const PERM_LABELS: {
   key: keyof Omit<ModulePerm, "roleId" | "roleCode" | "roleName">;
   label: string;
@@ -957,9 +973,12 @@ function ReportBuilderSection({
     }
   }, [editingReport]);
 
-  const loadDataPoints = () => {
+  const loadDataPoints = (projectId?: string) => {
     setDpLoading(true);
-    fetch(`${API_CONFIG.API_URL}/reports/data-points`, {
+    const url = projectId
+      ? `${API_CONFIG.API_URL}/reports/data-points?projectId=${encodeURIComponent(projectId)}`
+      : `${API_CONFIG.API_URL}/reports/data-points`;
+    fetch(url, {
       headers: authHeaders(),
     })
       .then((r) => r.json())
@@ -970,9 +989,10 @@ function ReportBuilderSection({
       .finally(() => setDpLoading(false));
   };
 
+  // Reload data points (including custom form fields) whenever project scope changes
   useEffect(() => {
-    loadDataPoints();
-  }, []);
+    loadDataPoints(selectedProjectScope || undefined);
+  }, [selectedProjectScope]);
 
   const categories = [
     "all",
@@ -1365,7 +1385,7 @@ function ReportBuilderSection({
                   No data points found in database.
                 </div>
                 <button
-                  onClick={loadDataPoints}
+                  onClick={() => loadDataPoints()}
                   style={{
                     padding: "6px 14px",
                     background: "#3b82f6",
@@ -2376,7 +2396,7 @@ function SavedReportsSection({
                             borderRadius: 4,
                           }}
                         >
-                          {dpMap[k] ?? k}
+                          {getDataPointLabel(k, dpMap)}
                         </span>
                       ))}
                       {r.dataPoints.length > 4 && (
@@ -2674,7 +2694,7 @@ function SavedReportsSection({
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {dpMap[k] ?? k}
+                      {getDataPointLabel(k, dpMap)}
                     </th>
                   ))}
                 </tr>
@@ -3007,7 +3027,7 @@ function MyReportsSection() {
       return;
     }
     const rows = getFilteredRows(reportId, result.rows, result.dataPoints);
-    const headers = result.dataPoints.map((k) => dpMap[k] ?? k);
+    const headers = result.dataPoints.map((k) => getDataPointLabel(k, dpMap));
     const csvRows = [
       headers.join(","),
       ...rows.map((row) =>
@@ -3123,7 +3143,7 @@ function MyReportsSection() {
                             fontSize: 11,
                           }}
                         >
-                          {dpMap[k] ?? k}
+                          {getDataPointLabel(k, dpMap)}
                         </span>
                       ))}
                       {report.dataPoints?.length > 6 && (
@@ -3273,7 +3293,7 @@ function MyReportsSection() {
                                         whiteSpace: "nowrap",
                                       }}
                                     >
-                                      {dpMap[k] ?? k}
+                                      {getDataPointLabel(k, dpMap)}
                                     </th>
                                   ))}
                                 </tr>
@@ -3867,11 +3887,7 @@ function AssignReportsSection() {
     });
   };
 
-  const updateScheduleField = (
-    reportId: string,
-    field: string,
-    value: any,
-  ) => {
+  const updateScheduleField = (reportId: string, field: string, value: any) => {
     setAssignments((prev) => {
       const cur = prev[reportId] ?? {};
       return { ...prev, [reportId]: { ...cur, [field]: value } };
@@ -4138,9 +4154,7 @@ function AssignReportsSection() {
                       {/* Header — click to expand/collapse */}
                       <div
                         onClick={() =>
-                          setScheduleExpanded(
-                            scheduleOpen ? null : report._id,
-                          )
+                          setScheduleExpanded(scheduleOpen ? null : report._id)
                         }
                         style={{
                           display: "flex",
@@ -4225,9 +4239,7 @@ function AssignReportsSection() {
                               Enable scheduled email alert
                             </span>
                             {alertEnabled && (
-                              <span
-                                style={{ fontSize: 12, color: "#6b7280" }}
-                              >
+                              <span style={{ fontSize: 12, color: "#6b7280" }}>
                                 — report CSV will be emailed to assigned users
                               </span>
                             )}
@@ -4235,52 +4247,15 @@ function AssignReportsSection() {
 
                           {alertEnabled && (
                             <>
-                            <div
-                              style={{
-                                display: "flex",
-                                flexWrap: "wrap",
-                                gap: 16,
-                                alignItems: "flex-end",
-                              }}
-                            >
-                              {/* Schedule type */}
-                              <div>
-                                <label
-                                  style={{
-                                    fontSize: 11,
-                                    fontWeight: 600,
-                                    color: "#374151",
-                                    display: "block",
-                                    marginBottom: 4,
-                                  }}
-                                >
-                                  Frequency
-                                </label>
-                                <select
-                                  value={scheduleType}
-                                  onChange={(e) =>
-                                    updateScheduleField(
-                                      report._id,
-                                      "scheduleType",
-                                      e.target.value,
-                                    )
-                                  }
-                                  style={{
-                                    padding: "6px 10px",
-                                    border: "1px solid #d1d5db",
-                                    borderRadius: 6,
-                                    fontSize: 13,
-                                    background: "#fff",
-                                  }}
-                                >
-                                  <option value="daily">Daily</option>
-                                  <option value="weekly">Weekly</option>
-                                  <option value="monthly">Monthly</option>
-                                </select>
-                              </div>
-
-                              {/* Day picker (weekly: Sun-Sat | monthly: 1-31) */}
-                              {scheduleType !== "daily" && (
+                              <div
+                                style={{
+                                  display: "flex",
+                                  flexWrap: "wrap",
+                                  gap: 16,
+                                  alignItems: "flex-end",
+                                }}
+                              >
+                                {/* Schedule type */}
                                 <div>
                                   <label
                                     style={{
@@ -4291,17 +4266,15 @@ function AssignReportsSection() {
                                       marginBottom: 4,
                                     }}
                                   >
-                                    {scheduleType === "weekly"
-                                      ? "Day of week"
-                                      : "Day of month"}
+                                    Frequency
                                   </label>
                                   <select
-                                    value={scheduleDay}
+                                    value={scheduleType}
                                     onChange={(e) =>
                                       updateScheduleField(
                                         report._id,
-                                        "scheduleDay",
-                                        Number(e.target.value),
+                                        "scheduleType",
+                                        e.target.value,
                                       )
                                     }
                                     style={{
@@ -4312,310 +4285,347 @@ function AssignReportsSection() {
                                       background: "#fff",
                                     }}
                                   >
-                                    {scheduleType === "weekly"
-                                      ? WEEKDAYS.map((d, i) => (
-                                          <option key={d} value={i}>
-                                            {d}
-                                          </option>
-                                        ))
-                                      : MONTH_DAYS.map((d) => (
-                                          <option key={d} value={d}>
-                                            {d}
-                                          </option>
-                                        ))}
+                                    <option value="daily">Daily</option>
+                                    <option value="weekly">Weekly</option>
+                                    <option value="monthly">Monthly</option>
                                   </select>
                                 </div>
-                              )}
 
-                              {/* Time picker */}
-                              <div>
-                                <label
-                                  style={{
-                                    fontSize: 11,
-                                    fontWeight: 600,
-                                    color: "#374151",
-                                    display: "block",
-                                    marginBottom: 4,
-                                  }}
-                                >
-                                  Time (24h)
-                                </label>
-                                <input
-                                  type="time"
-                                  value={scheduleTime}
-                                  onChange={(e) =>
-                                    updateScheduleField(
-                                      report._id,
-                                      "scheduleTime",
-                                      e.target.value,
-                                    )
-                                  }
-                                  style={{
-                                    padding: "6px 10px",
-                                    border: "1px solid #d1d5db",
-                                    borderRadius: 6,
-                                    fontSize: 13,
-                                    background: "#fff",
-                                  }}
-                                />
-                              </div>
-                            </div>
+                                {/* Day picker (weekly: Sun-Sat | monthly: 1-31) */}
+                                {scheduleType !== "daily" && (
+                                  <div>
+                                    <label
+                                      style={{
+                                        fontSize: 11,
+                                        fontWeight: 600,
+                                        color: "#374151",
+                                        display: "block",
+                                        marginBottom: 4,
+                                      }}
+                                    >
+                                      {scheduleType === "weekly"
+                                        ? "Day of week"
+                                        : "Day of month"}
+                                    </label>
+                                    <select
+                                      value={scheduleDay}
+                                      onChange={(e) =>
+                                        updateScheduleField(
+                                          report._id,
+                                          "scheduleDay",
+                                          Number(e.target.value),
+                                        )
+                                      }
+                                      style={{
+                                        padding: "6px 10px",
+                                        border: "1px solid #d1d5db",
+                                        borderRadius: 6,
+                                        fontSize: 13,
+                                        background: "#fff",
+                                      }}
+                                    >
+                                      {scheduleType === "weekly"
+                                        ? WEEKDAYS.map((d, i) => (
+                                            <option key={d} value={i}>
+                                              {d}
+                                            </option>
+                                          ))
+                                        : MONTH_DAYS.map((d) => (
+                                            <option key={d} value={d}>
+                                              {d}
+                                            </option>
+                                          ))}
+                                    </select>
+                                  </div>
+                                )}
 
-                            {/* ── CC Recipients ── */}
-                            <div style={{ marginTop: 16 }}>
-                              <div
-                                style={{
-                                  fontSize: 12,
-                                  fontWeight: 700,
-                                  color: "#374151",
-                                  marginBottom: 8,
-                                }}
-                              >
-                                CC Recipients
-                              </div>
-                              <div
-                                style={{
-                                  display: "grid",
-                                  gridTemplateColumns: "1fr 1fr",
-                                  gap: 12,
-                                }}
-                              >
-                                {/* CC Users — pick from system users */}
+                                {/* Time picker */}
                                 <div>
-                                  <div
+                                  <label
                                     style={{
                                       fontSize: 11,
                                       fontWeight: 600,
-                                      color: "#6b7280",
-                                      marginBottom: 6,
+                                      color: "#374151",
+                                      display: "block",
+                                      marginBottom: 4,
                                     }}
                                   >
-                                    System users
-                                  </div>
-                                  <div
+                                    Time (24h)
+                                  </label>
+                                  <input
+                                    type="time"
+                                    value={scheduleTime}
+                                    onChange={(e) =>
+                                      updateScheduleField(
+                                        report._id,
+                                        "scheduleTime",
+                                        e.target.value,
+                                      )
+                                    }
                                     style={{
-                                      maxHeight: 160,
-                                      overflowY: "auto",
-                                      border: "1px solid #e5e7eb",
-                                      borderRadius: 8,
+                                      padding: "6px 10px",
+                                      border: "1px solid #d1d5db",
+                                      borderRadius: 6,
+                                      fontSize: 13,
+                                      background: "#fff",
                                     }}
-                                  >
-                                    {users.map((u) => {
-                                      const uid = u._id ?? u.id;
-                                      const checked = ccUserIds.includes(uid);
-                                      return (
-                                        <label
-                                          key={uid}
+                                  />
+                                </div>
+                              </div>
+
+                              {/* ── CC Recipients ── */}
+                              <div style={{ marginTop: 16 }}>
+                                <div
+                                  style={{
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    color: "#374151",
+                                    marginBottom: 8,
+                                  }}
+                                >
+                                  CC Recipients
+                                </div>
+                                <div
+                                  style={{
+                                    display: "grid",
+                                    gridTemplateColumns: "1fr 1fr",
+                                    gap: 12,
+                                  }}
+                                >
+                                  {/* CC Users — pick from system users */}
+                                  <div>
+                                    <div
+                                      style={{
+                                        fontSize: 11,
+                                        fontWeight: 600,
+                                        color: "#6b7280",
+                                        marginBottom: 6,
+                                      }}
+                                    >
+                                      System users
+                                    </div>
+                                    <div
+                                      style={{
+                                        maxHeight: 160,
+                                        overflowY: "auto",
+                                        border: "1px solid #e5e7eb",
+                                        borderRadius: 8,
+                                      }}
+                                    >
+                                      {users.map((u) => {
+                                        const uid = u._id ?? u.id;
+                                        const checked = ccUserIds.includes(uid);
+                                        return (
+                                          <label
+                                            key={uid}
+                                            style={{
+                                              display: "flex",
+                                              alignItems: "center",
+                                              gap: 8,
+                                              padding: "6px 10px",
+                                              cursor: "pointer",
+                                              background: checked
+                                                ? "#fefce8"
+                                                : "#fff",
+                                              borderBottom: "1px solid #f3f4f6",
+                                            }}
+                                          >
+                                            <input
+                                              type="checkbox"
+                                              checked={checked}
+                                              onChange={() =>
+                                                updateScheduleField(
+                                                  report._id,
+                                                  "ccUsers",
+                                                  checked
+                                                    ? ccUserIds.filter(
+                                                        (id) => id !== uid,
+                                                      )
+                                                    : [...ccUserIds, uid],
+                                                )
+                                              }
+                                              style={{
+                                                accentColor: "#f59e0b",
+                                              }}
+                                            />
+                                            <span style={{ fontSize: 12 }}>
+                                              {u.firstName} {u.lastName}
+                                            </span>
+                                            <span
+                                              style={{
+                                                fontSize: 10,
+                                                color: "#9ca3af",
+                                                marginLeft: "auto",
+                                                overflow: "hidden",
+                                                textOverflow: "ellipsis",
+                                                whiteSpace: "nowrap",
+                                                maxWidth: 120,
+                                              }}
+                                            >
+                                              {u.email}
+                                            </span>
+                                          </label>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+
+                                  {/* CC free-form emails */}
+                                  <div>
+                                    <div
+                                      style={{
+                                        fontSize: 11,
+                                        fontWeight: 600,
+                                        color: "#6b7280",
+                                        marginBottom: 6,
+                                      }}
+                                    >
+                                      Additional email addresses
+                                    </div>
+                                    {/* Chip input */}
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        flexWrap: "wrap",
+                                        alignItems: "center",
+                                        gap: 4,
+                                        padding: "6px 10px",
+                                        border: "1px solid #e5e7eb",
+                                        borderRadius: 8,
+                                        background: "#fff",
+                                        minHeight: 38,
+                                        cursor: "text",
+                                      }}
+                                      onClick={(e) => {
+                                        const inp = (
+                                          e.currentTarget as HTMLElement
+                                        ).querySelector(
+                                          "input",
+                                        ) as HTMLInputElement | null;
+                                        inp?.focus();
+                                      }}
+                                    >
+                                      {ccEmails.map((em) => (
+                                        <span
+                                          key={em}
                                           style={{
+                                            background: "#fef3c7",
+                                            color: "#92400e",
+                                            fontSize: 11,
+                                            padding: "2px 4px 2px 8px",
+                                            borderRadius: 10,
+                                            fontWeight: 600,
                                             display: "flex",
                                             alignItems: "center",
-                                            gap: 8,
-                                            padding: "6px 10px",
-                                            cursor: "pointer",
-                                            background: checked
-                                              ? "#fefce8"
-                                              : "#fff",
-                                            borderBottom:
-                                              "1px solid #f3f4f6",
+                                            gap: 3,
                                           }}
                                         >
-                                          <input
-                                            type="checkbox"
-                                            checked={checked}
-                                            onChange={() =>
+                                          {em}
+                                          <span
+                                            onClick={() =>
                                               updateScheduleField(
                                                 report._id,
-                                                "ccUsers",
-                                                checked
-                                                  ? ccUserIds.filter(
-                                                      (id) => id !== uid,
-                                                    )
-                                                  : [...ccUserIds, uid],
+                                                "ccEmails",
+                                                ccEmails.filter(
+                                                  (e) => e !== em,
+                                                ),
                                               )
                                             }
                                             style={{
-                                              accentColor: "#f59e0b",
-                                            }}
-                                          />
-                                          <span style={{ fontSize: 12 }}>
-                                            {u.firstName} {u.lastName}
-                                          </span>
-                                          <span
-                                            style={{
-                                              fontSize: 10,
-                                              color: "#9ca3af",
-                                              marginLeft: "auto",
-                                              overflow: "hidden",
-                                              textOverflow: "ellipsis",
-                                              whiteSpace: "nowrap",
-                                              maxWidth: 120,
+                                              cursor: "pointer",
+                                              fontWeight: 700,
+                                              opacity: 0.6,
+                                              lineHeight: 1,
                                             }}
                                           >
-                                            {u.email}
+                                            ×
                                           </span>
-                                        </label>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-
-                                {/* CC free-form emails */}
-                                <div>
-                                  <div
-                                    style={{
-                                      fontSize: 11,
-                                      fontWeight: 600,
-                                      color: "#6b7280",
-                                      marginBottom: 6,
-                                    }}
-                                  >
-                                    Additional email addresses
-                                  </div>
-                                  {/* Chip input */}
-                                  <div
-                                    style={{
-                                      display: "flex",
-                                      flexWrap: "wrap",
-                                      alignItems: "center",
-                                      gap: 4,
-                                      padding: "6px 10px",
-                                      border: "1px solid #e5e7eb",
-                                      borderRadius: 8,
-                                      background: "#fff",
-                                      minHeight: 38,
-                                      cursor: "text",
-                                    }}
-                                    onClick={(e) => {
-                                      const inp = (
-                                        e.currentTarget as HTMLElement
-                                      ).querySelector(
-                                        "input",
-                                      ) as HTMLInputElement | null;
-                                      inp?.focus();
-                                    }}
-                                  >
-                                    {ccEmails.map((em) => (
-                                      <span
-                                        key={em}
-                                        style={{
-                                          background: "#fef3c7",
-                                          color: "#92400e",
-                                          fontSize: 11,
-                                          padding: "2px 4px 2px 8px",
-                                          borderRadius: 10,
-                                          fontWeight: 600,
-                                          display: "flex",
-                                          alignItems: "center",
-                                          gap: 3,
-                                        }}
-                                      >
-                                        {em}
-                                        <span
-                                          onClick={() =>
-                                            updateScheduleField(
-                                              report._id,
-                                              "ccEmails",
-                                              ccEmails.filter(
-                                                (e) => e !== em,
-                                              ),
-                                            )
-                                          }
-                                          style={{
-                                            cursor: "pointer",
-                                            fontWeight: 700,
-                                            opacity: 0.6,
-                                            lineHeight: 1,
-                                          }}
-                                        >
-                                          ×
                                         </span>
-                                      </span>
-                                    ))}
-                                    <input
-                                      type="email"
-                                      value={
-                                        ccEmailDraft[report._id] ?? ""
-                                      }
-                                      onChange={(e) =>
-                                        setCcEmailDraft((prev) => ({
-                                          ...prev,
-                                          [report._id]: e.target.value,
-                                        }))
-                                      }
-                                      onKeyDown={(e) => {
-                                        const draft = (
-                                          ccEmailDraft[report._id] ?? ""
-                                        ).trim();
-                                        if (
-                                          (e.key === "Enter" ||
-                                            e.key === ",") &&
-                                          draft
-                                        ) {
-                                          e.preventDefault();
+                                      ))}
+                                      <input
+                                        type="email"
+                                        value={ccEmailDraft[report._id] ?? ""}
+                                        onChange={(e) =>
+                                          setCcEmailDraft((prev) => ({
+                                            ...prev,
+                                            [report._id]: e.target.value,
+                                          }))
+                                        }
+                                        onKeyDown={(e) => {
+                                          const draft = (
+                                            ccEmailDraft[report._id] ?? ""
+                                          ).trim();
                                           if (
-                                            /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
-                                              draft,
-                                            ) &&
-                                            !ccEmails.includes(draft)
+                                            (e.key === "Enter" ||
+                                              e.key === ",") &&
+                                            draft
+                                          ) {
+                                            e.preventDefault();
+                                            if (
+                                              /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+                                                draft,
+                                              ) &&
+                                              !ccEmails.includes(draft)
+                                            ) {
+                                              updateScheduleField(
+                                                report._id,
+                                                "ccEmails",
+                                                [...ccEmails, draft],
+                                              );
+                                            }
+                                            setCcEmailDraft((prev) => ({
+                                              ...prev,
+                                              [report._id]: "",
+                                            }));
+                                          } else if (
+                                            e.key === "Backspace" &&
+                                            !draft &&
+                                            ccEmails.length > 0
                                           ) {
                                             updateScheduleField(
                                               report._id,
                                               "ccEmails",
-                                              [...ccEmails, draft],
+                                              ccEmails.slice(0, -1),
                                             );
                                           }
-                                          setCcEmailDraft((prev) => ({
-                                            ...prev,
-                                            [report._id]: "",
-                                          }));
-                                        } else if (
-                                          e.key === "Backspace" &&
-                                          !draft &&
-                                          ccEmails.length > 0
-                                        ) {
-                                          updateScheduleField(
-                                            report._id,
-                                            "ccEmails",
-                                            ccEmails.slice(0, -1),
-                                          );
+                                        }}
+                                        placeholder={
+                                          ccEmails.length === 0
+                                            ? "Type email, press Enter"
+                                            : "+add email"
                                         }
-                                      }}
-                                      placeholder={
-                                        ccEmails.length === 0
-                                          ? "Type email, press Enter"
-                                          : "+add email"
-                                      }
-                                      style={{
-                                        border: "none",
-                                        outline: "none",
-                                        fontSize: 12,
-                                        flex: 1,
-                                        minWidth: 140,
-                                        background: "transparent",
-                                      }}
-                                    />
-                                  </div>
-                                  {/* CC summary */}
-                                  {(ccUserIds.length > 0 ||
-                                    ccEmails.length > 0) && (
-                                    <div
-                                      style={{
-                                        marginTop: 6,
-                                        fontSize: 11,
-                                        color: "#6b7280",
-                                      }}
-                                    >
-                                      {ccUserIds.length + ccEmails.length} CC
-                                      address
-                                      {ccUserIds.length + ccEmails.length !== 1
-                                        ? "es"
-                                        : ""}{" "}
-                                      added
+                                        style={{
+                                          border: "none",
+                                          outline: "none",
+                                          fontSize: 12,
+                                          flex: 1,
+                                          minWidth: 140,
+                                          background: "transparent",
+                                        }}
+                                      />
                                     </div>
-                                  )}
+                                    {/* CC summary */}
+                                    {(ccUserIds.length > 0 ||
+                                      ccEmails.length > 0) && (
+                                      <div
+                                        style={{
+                                          marginTop: 6,
+                                          fontSize: 11,
+                                          color: "#6b7280",
+                                        }}
+                                      >
+                                        {ccUserIds.length + ccEmails.length} CC
+                                        address
+                                        {ccUserIds.length + ccEmails.length !==
+                                        1
+                                          ? "es"
+                                          : ""}{" "}
+                                        added
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
                             </>
                           )}
                         </div>
@@ -4633,15 +4643,24 @@ function AssignReportsSection() {
                     >
                       {/* Test alert feedback */}
                       {testAlertMsg[report._id] && (
-                        <span style={{ fontSize: 12, color: testAlertMsg[report._id].startsWith("✅") ? "#16a34a" : "#dc2626" }}>
+                        <span
+                          style={{
+                            fontSize: 12,
+                            color: testAlertMsg[report._id].startsWith("✅")
+                              ? "#16a34a"
+                              : "#dc2626",
+                          }}
+                        >
                           {testAlertMsg[report._id]}
                         </span>
                       )}
                       {/* Send Test button — only when alert is enabled */}
-                      {(assignments[report._id]?.alertEnabled) && (
+                      {assignments[report._id]?.alertEnabled && (
                         <button
                           onClick={() => handleTestAlert(report._id)}
-                          disabled={testingAlert === report._id || saving === report._id}
+                          disabled={
+                            testingAlert === report._id || saving === report._id
+                          }
                           style={{
                             padding: "7px 14px",
                             background: "#f59e0b",
@@ -4654,7 +4673,9 @@ function AssignReportsSection() {
                             opacity: testingAlert === report._id ? 0.7 : 1,
                           }}
                         >
-                          {testingAlert === report._id ? "Sending…" : "📧 Send Test"}
+                          {testingAlert === report._id
+                            ? "Sending…"
+                            : "📧 Send Test"}
                         </button>
                       )}
                       <button

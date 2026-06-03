@@ -17,14 +17,14 @@ import { API_CONFIG } from "../config/constants";
 export type DraftType = "reply" | "email";
 
 export type SaveStatus =
-  | "idle"        // no draft, nothing to save
-  | "unsaved"     // dirty, not yet synced to backend
-  | "saving"      // backend PUT in-flight
-  | "saved"       // last backend save succeeded
-  | "error";      // last backend save failed
+  | "idle" // no draft, nothing to save
+  | "unsaved" // dirty, not yet synced to backend
+  | "saving" // backend PUT in-flight
+  | "saved" // last backend save succeeded
+  | "error"; // last backend save failed
 
-const IDLE_DELAY_MS    = 15_000;        // 15 seconds idle before backend save
-const PERIODIC_SAVE_MS = 5 * 60_000;   // 5-minute periodic backup
+const IDLE_DELAY_MS = 15_000; // 15 seconds idle before backend save
+const PERIODIC_SAVE_MS = 5 * 60_000; // 5-minute periodic backup
 
 const lsKey = (ticketId: string, type: DraftType) =>
   `ticket_draft_${type}_${ticketId}`;
@@ -58,14 +58,14 @@ export function useReplyDraft(
   ticketId: string | undefined,
   type: DraftType = "reply",
 ): UseReplyDraftReturn {
-  const [value, setValue]               = useState<string>("");
-  const [saveStatus, setSaveStatus]     = useState<SaveStatus>("idle");
+  const [value, setValue] = useState<string>("");
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [draftRestored, setDraftRestored] = useState(false);
 
   // Refs so callbacks always have the latest values without re-creating
-  const latestValueRef  = useRef<string>("");
-  const isDirtyRef      = useRef<boolean>(false);
-  const idleTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestValueRef = useRef<string>("");
+  const isDirtyRef = useRef<boolean>(false);
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const periodicTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ── Backend save ──────────────────────────────────────────────────────────
@@ -127,13 +127,13 @@ export function useReplyDraft(
     return () => {
       cancelled = true;
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticketId, type]);
 
   // ── Cleanup timers on unmount ─────────────────────────────────────────────
   useEffect(() => {
     return () => {
-      if (idleTimerRef.current)    clearTimeout(idleTimerRef.current);
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
       if (periodicTimerRef.current) clearInterval(periodicTimerRef.current);
     };
   }, []);
@@ -195,7 +195,7 @@ export function useReplyDraft(
   // ── clearDraft: call after successful send ────────────────────────────────
   const clearDraft = useCallback(async () => {
     // Cancel any pending timers
-    if (idleTimerRef.current)    clearTimeout(idleTimerRef.current);
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
 
     setValue("");
     latestValueRef.current = "";

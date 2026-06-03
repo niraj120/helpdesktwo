@@ -54,6 +54,7 @@ export const bulkMapAssets = async (req: Request, res: Response) => {
       quantities,
       lastAuditDate,
       auditFrequencyMonths,
+      nextAuditDate,
     } = req.body;
     const userId = (req as any).user.userId;
 
@@ -168,6 +169,14 @@ export const bulkMapAssets = async (req: Request, res: Response) => {
             if (auditFrequencyMonths !== undefined) {
               existingMapping.auditFrequencyMonths = auditFrequencyMonths;
             }
+            // Save explicit nextAuditDate if provided; otherwise calculate from lastAuditDate + frequency
+            if (nextAuditDate) {
+              existingMapping.nextAuditDate = new Date(nextAuditDate);
+            } else if (lastAuditDate && auditFrequencyMonths) {
+              const calculated = new Date(lastAuditDate);
+              calculated.setMonth(calculated.getMonth() + auditFrequencyMonths);
+              existingMapping.nextAuditDate = calculated;
+            }
 
             await existingMapping.save();
             console.log("✅ Updated CENTER mapping:", {
@@ -197,6 +206,14 @@ export const bulkMapAssets = async (req: Request, res: Response) => {
             }
             if (auditFrequencyMonths !== undefined) {
               mappingData.auditFrequencyMonths = auditFrequencyMonths;
+            }
+            // Save explicit nextAuditDate if provided; otherwise calculate from lastAuditDate + frequency
+            if (nextAuditDate) {
+              mappingData.nextAuditDate = new Date(nextAuditDate);
+            } else if (lastAuditDate && auditFrequencyMonths) {
+              const calculated = new Date(lastAuditDate);
+              calculated.setMonth(calculated.getMonth() + auditFrequencyMonths);
+              mappingData.nextAuditDate = calculated;
             }
 
             const newMapping = await CenterAssetMapping.create(mappingData);

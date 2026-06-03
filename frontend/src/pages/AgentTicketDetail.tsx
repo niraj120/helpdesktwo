@@ -1224,7 +1224,8 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
         `${API_CONFIG.API_URL}/tickets/assignable-agents`,
         {
           headers: { Authorization: `Bearer ${token}` },
-          params: { departmentId },
+          // Pass ticketId so the backend can scope agents to the ticket's center/venue
+          params: { departmentId, ticketId: ticketId || ticket?._id },
         },
       );
       setReassignAgents(res.data.data || []);
@@ -2411,13 +2412,41 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                             </label>
                             {replyDraftRestored && (
                               <div className="text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 text-sm mb-2 flex items-center justify-between">
-                                <span>📋 Draft restored — your unsent reply has been loaded</span>
-                                <button type="button" onClick={dismissReplyDraftBanner} className="ml-2 text-amber-500 hover:text-amber-700 font-bold">✕</button>
+                                <span>
+                                  📋 Draft restored — your unsent reply has been
+                                  loaded
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={dismissReplyDraftBanner}
+                                  className="ml-2 text-amber-500 hover:text-amber-700 font-bold"
+                                >
+                                  ✕
+                                </button>
                               </div>
                             )}
                             {replyDraftStatus !== "idle" && (
-                              <div style={{ fontSize: 12, marginBottom: 4, color: replyDraftStatus === "saved" ? "#16a34a" : replyDraftStatus === "saving" ? "#2563eb" : replyDraftStatus === "error" ? "#dc2626" : "#d97706" }}>
-                                {replyDraftStatus === "saving" ? "⏳ Saving draft…" : replyDraftStatus === "saved" ? "✓ Draft saved" : replyDraftStatus === "error" ? "⚠ Failed to save draft" : "● Unsaved changes"}
+                              <div
+                                style={{
+                                  fontSize: 12,
+                                  marginBottom: 4,
+                                  color:
+                                    replyDraftStatus === "saved"
+                                      ? "#16a34a"
+                                      : replyDraftStatus === "saving"
+                                        ? "#2563eb"
+                                        : replyDraftStatus === "error"
+                                          ? "#dc2626"
+                                          : "#d97706",
+                                }}
+                              >
+                                {replyDraftStatus === "saving"
+                                  ? "⏳ Saving draft…"
+                                  : replyDraftStatus === "saved"
+                                    ? "✓ Draft saved"
+                                    : replyDraftStatus === "error"
+                                      ? "⚠ Failed to save draft"
+                                      : "● Unsaved changes"}
                               </div>
                             )}
                             <textarea
@@ -3929,18 +3958,48 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                           {/* Reply Textarea */}
                           {emailDraftRestored && (
                             <div className="text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 text-sm mb-2 flex items-center justify-between">
-                              <span>📋 Draft restored — your unsent email reply has been loaded</span>
-                              <button type="button" onClick={dismissEmailDraftBanner} className="ml-2 text-amber-500 hover:text-amber-700 font-bold">✕</button>
+                              <span>
+                                📋 Draft restored — your unsent email reply has
+                                been loaded
+                              </span>
+                              <button
+                                type="button"
+                                onClick={dismissEmailDraftBanner}
+                                className="ml-2 text-amber-500 hover:text-amber-700 font-bold"
+                              >
+                                ✕
+                              </button>
                             </div>
                           )}
                           {emailDraftStatus !== "idle" && (
-                            <div style={{ fontSize: 12, marginBottom: 4, color: emailDraftStatus === "saved" ? "#16a34a" : emailDraftStatus === "saving" ? "#2563eb" : emailDraftStatus === "error" ? "#dc2626" : "#d97706" }}>
-                              {emailDraftStatus === "saving" ? "⏳ Saving draft…" : emailDraftStatus === "saved" ? "✓ Draft saved" : emailDraftStatus === "error" ? "⚠ Failed to save draft" : "● Unsaved changes"}
+                            <div
+                              style={{
+                                fontSize: 12,
+                                marginBottom: 4,
+                                color:
+                                  emailDraftStatus === "saved"
+                                    ? "#16a34a"
+                                    : emailDraftStatus === "saving"
+                                      ? "#2563eb"
+                                      : emailDraftStatus === "error"
+                                        ? "#dc2626"
+                                        : "#d97706",
+                              }}
+                            >
+                              {emailDraftStatus === "saving"
+                                ? "⏳ Saving draft…"
+                                : emailDraftStatus === "saved"
+                                  ? "✓ Draft saved"
+                                  : emailDraftStatus === "error"
+                                    ? "⚠ Failed to save draft"
+                                    : "● Unsaved changes"}
                             </div>
                           )}
                           <textarea
                             value={replyContent}
-                            onChange={(e) => onReplyContentChange(e.target.value)}
+                            onChange={(e) =>
+                              onReplyContentChange(e.target.value)
+                            }
                             placeholder="Type your reply here..."
                             rows={6}
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y"
@@ -5248,8 +5307,32 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                   onChange={(e) =>
                     setRemarkModal((m) => ({ ...m, remark: e.target.value }))
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                  className={`w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none ${
+                    remarkModal.remark.length > 0 &&
+                    remarkModal.remark.trim().length < 10
+                      ? "border-red-400"
+                      : "border-gray-300"
+                  }`}
                 />
+                <div className="flex justify-between mt-1">
+                  {remarkModal.remark.length > 0 &&
+                  remarkModal.remark.trim().length < 10 ? (
+                    <span className="text-xs text-red-500">
+                      Minimum 10 characters required
+                    </span>
+                  ) : (
+                    <span />
+                  )}
+                  <span
+                    className={`text-xs ${
+                      remarkModal.remark.trim().length < 10
+                        ? "text-gray-400"
+                        : "text-green-600"
+                    }`}
+                  >
+                    {remarkModal.remark.trim().length}/10
+                  </span>
+                </div>
               </div>
 
               <div className="flex gap-3">
@@ -5261,10 +5344,14 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                 </button>
                 <button
                   disabled={
-                    !remarkModal.remark.trim() || !remarkModal.remarkDate
+                    remarkModal.remark.trim().length < 10 ||
+                    !remarkModal.remarkDate
                   }
                   onClick={() => {
-                    if (!remarkModal.remark.trim() || !remarkModal.remarkDate)
+                    if (
+                      remarkModal.remark.trim().length < 10 ||
+                      !remarkModal.remarkDate
+                    )
                       return;
                     const combinedRemark = `[${remarkModal.remarkDate}] ${remarkModal.remark.trim()}`;
                     setRemarkModal((m) => ({ ...m, open: false }));

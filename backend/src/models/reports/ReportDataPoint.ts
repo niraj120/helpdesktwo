@@ -6,7 +6,9 @@ export type DataPointCategory =
   | "customer"
   | "sla"
   | "channel"
-  | "feedback";
+  | "feedback"
+  | "footfall"
+  | "custom_form";
 export type FieldType = "string" | "number" | "date" | "boolean" | "array";
 
 /**
@@ -41,7 +43,16 @@ const ReportDataPointSchema = new Schema<IReportDataPoint>(
     description: { type: String, default: "" },
     category: {
       type: String,
-      enum: ["ticket", "agent", "customer", "sla", "channel", "feedback"],
+      enum: [
+        "ticket",
+        "agent",
+        "customer",
+        "sla",
+        "channel",
+        "feedback",
+        "footfall",
+        "custom_form",
+      ],
       required: true,
     },
     fieldPath: { type: String, required: true },
@@ -418,5 +429,29 @@ export const SYSTEM_DATA_POINTS: Omit<
     isActive: true,
     isSystem: true,
     order: 61,
+  },
+
+  // ── FOOTFALL GROUP ────────────────────────────────────────────────────────
+  {
+    key: "student_portal_email",
+    label: "Student Portal Email",
+    description: "Email used by the student when submitting via portal",
+    category: "footfall",
+    fieldPath: "studentPortalEmail",
+    fieldType: "string",
+    isActive: true,
+    isSystem: true,
+    order: 90,
+  },
+  {
+    key: "ticket_response_count",
+    label: "Response Count",
+    description: "Number of follow-up responses/comments on this ticket",
+    category: "footfall",
+    fieldPath: "responseCount",
+    fieldType: "number",
+    isActive: true,
+    isSystem: true,
+    order: 91,
   },
 ];

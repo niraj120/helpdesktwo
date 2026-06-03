@@ -87,6 +87,13 @@ interface Ticket {
     pausedAt?: string;
     pausedDuration?: number;
   };
+  /** Category names for hierarchy levels, enriched by the API */
+  categoryHierarchyNames?: {
+    level1?: string;
+    level2?: string;
+    level3?: string;
+    level4?: string;
+  };
 }
 
 interface MyTicketsProps {
@@ -119,7 +126,8 @@ type TicketTableColumnKey =
   | "category"
   | "source"
   | "mergedCount"
-  | `field_${string}`;
+  | `field_${string}`
+  | `hierarchy_level_${number}`;
 
 const TICKET_TABLE_COLUMN_DEFS: Array<{
   key: TicketTableColumnKey;
@@ -159,7 +167,8 @@ const normalizeTicketColumns = (columns?: string[]): TicketTableColumnKey[] => {
   const valid = columns.filter(
     (key): key is TicketTableColumnKey =>
       TICKET_TABLE_COLUMN_DEFS.some((col) => col.key === key) ||
-      key.startsWith("field_"),
+      key.startsWith("field_") ||
+      key.startsWith("hierarchy_level_"),
   );
 
   return valid.length > 0 ? valid : DEFAULT_TICKET_TABLE_COLUMNS;
@@ -386,6 +395,9 @@ const MyTickets: React.FC<MyTicketsProps> = ({
       options?: string[];
     }>
   >([]);
+  const [hierarchyLevelDefs, setHierarchyLevelDefs] = useState<
+    Array<{ levelNumber: number; displayName: string }>
+  >([]);
   const [customFieldFilters, setCustomFieldFilters] = useState<
     Record<string, string>
   >({});
@@ -451,6 +463,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({
         );
         setFilterableColumnKeys((settingsCached as any).filterableCols ?? []);
         setCustomFormFieldDefs((settingsCached as any).customFields ?? []);
+        setHierarchyLevelDefs((settingsCached as any).hierarchyLevels ?? []);
         return;
       }
 
@@ -473,11 +486,17 @@ const MyTickets: React.FC<MyTicketsProps> = ({
         setFilterableColumnKeys(filterableCols);
         const customFields = response.data?.data?.customFormFields || [];
         setCustomFormFieldDefs(customFields);
+        const hierarchyLevels: Array<{
+          levelNumber: number;
+          displayName: string;
+        }> = response.data?.ticketConfig?.hierarchyLevels || [];
+        setHierarchyLevelDefs(hierarchyLevels);
         // Cache settings so returning to this tab is instant
         (myMasterDataCache as any).set(`ticketsettings:${projectId}`, {
           columns: normalizedCols,
           filterableCols,
           customFields,
+          hierarchyLevels,
           timestamp: Date.now(),
         });
       } catch {
@@ -613,7 +632,9 @@ const MyTickets: React.FC<MyTicketsProps> = ({
     try {
       const token = localStorage.getItem("authToken");
       if (!token) {
-        navigate("/login");
+        const portalMatch =
+          window.location.pathname.match(/^\/([^/]+)\/portal/);
+        navigate(portalMatch ? `/${portalMatch[1]}/portal/login` : "/login");
         return;
       }
 
@@ -694,7 +715,9 @@ const MyTickets: React.FC<MyTicketsProps> = ({
     } catch (err: any) {
       if (err.response?.status === 401) {
         localStorage.removeItem("authToken");
-        navigate("/login");
+        const portalMatch =
+          window.location.pathname.match(/^\/([^/]+)\/portal/);
+        navigate(portalMatch ? `/${portalMatch[1]}/portal/login` : "/login");
       } else if (err.response?.status === 403) {
         setError(
           "You do not have permission to view tickets. Please contact your administrator.",
@@ -957,6 +980,18 @@ const MyTickets: React.FC<MyTicketsProps> = ({
         // Custom field filters (client-side)
         Object.entries(customFieldFilters).every(([colKey, filterVal]) => {
           if (!filterVal || !filterVal.trim()) return true;
+          // hierarchy_level_N — compare against enriched categoryHierarchyNames
+          if (colKey.startsWith("hierarchy_level_")) {
+            const levelNum = parseInt(
+              colKey.replace("hierarchy_level_", ""),
+              10,
+            );
+            const name =
+              (ticket as any).categoryHierarchyNames?.[`level${levelNum}`] ||
+              "";
+            return name.toLowerCase().includes(filterVal.trim().toLowerCase());
+          }
+          // field_FieldName — compare against metadata.customFields
           const fieldName = colKey.replace(/^field_/, "");
           const fieldVal = ticket.metadata?.customFields?.[fieldName];
           if (fieldVal === undefined || fieldVal === null) return false;
@@ -1043,13 +1078,29 @@ const MyTickets: React.FC<MyTicketsProps> = ({
             label: fieldDef?.fieldLabel || fieldName,
           };
         }
+        if (key.startsWith("hierarchy_level_")) {
+          const levelNum = parseInt(key.replace("hierarchy_level_", ""), 10);
+          const levelDef = hierarchyLevelDefs.find(
+            (l) => l.levelNumber === levelNum,
+          );
+          return {
+            key: key as TicketTableColumnKey,
+            label: levelDef?.displayName || `Level ${levelNum}`,
+          };
+        }
         return null;
       })
       .filter(
         (def): def is { key: TicketTableColumnKey; label: string } =>
           !!def && isVisibleOnViewport(def.key),
       );
-  }, [visibleColumns, isMobile, isTablet, customFormFieldDefs]);
+  }, [
+    visibleColumns,
+    isMobile,
+    isTablet,
+    customFormFieldDefs,
+    hierarchyLevelDefs,
+  ]);
 
   const showSenderEmailColumn =
     showSenderEmail &&
@@ -1359,6 +1410,26 @@ const MyTickets: React.FC<MyTicketsProps> = ({
               {value !== undefined && value !== null && value !== ""
                 ? String(value)
                 : "—"}
+            </td>
+          );
+        }
+        // Handle hierarchy level columns (key format: hierarchy_level_N)
+        if (columnKey.startsWith("hierarchy_level_")) {
+          const levelNum = parseInt(
+            columnKey.replace("hierarchy_level_", ""),
+            10,
+          );
+          const name =
+            (ticket as any).categoryHierarchyNames?.[`level${levelNum}`] || "—";
+          return (
+            <td
+              style={{
+                padding: isMobile ? "10px 12px" : "12px 16px",
+                fontSize: 13,
+                color: "#344054",
+              }}
+            >
+              {name}
             </td>
           );
         }
@@ -2349,9 +2420,10 @@ const MyTickets: React.FC<MyTicketsProps> = ({
           → Status → Priority → Assignee → Date range
         </div>
 
-        {/* Dynamic custom field filters (from filterable columns config) */}
-        {filterableColumnKeys.filter((k) => k.startsWith("field_")).length >
-          0 && (
+        {/* Dynamic custom field + hierarchy level filters (from filterable columns config) */}
+        {filterableColumnKeys.filter(
+          (k) => k.startsWith("field_") || k.startsWith("hierarchy_level_"),
+        ).length > 0 && (
           <div
             style={{
               marginTop: "12px",
@@ -2362,21 +2434,40 @@ const MyTickets: React.FC<MyTicketsProps> = ({
             }}
           >
             {filterableColumnKeys
-              .filter((k) => k.startsWith("field_"))
+              .filter(
+                (k) =>
+                  k.startsWith("field_") || k.startsWith("hierarchy_level_"),
+              )
               .map((colKey) => {
-                const fieldName = colKey.replace(/^field_/, "");
-                const fieldDef = customFormFieldDefs.find(
-                  (f) => f.fieldName === fieldName,
-                );
-                const label = fieldDef?.fieldLabel || fieldName;
+                let label: string;
+                let hasOptions = false;
+                let fieldDef: (typeof customFormFieldDefs)[number] | undefined;
+
+                if (colKey.startsWith("hierarchy_level_")) {
+                  const levelNum = parseInt(
+                    colKey.replace("hierarchy_level_", ""),
+                    10,
+                  );
+                  const levelDef = hierarchyLevelDefs.find(
+                    (l) => l.levelNumber === levelNum,
+                  );
+                  label = levelDef?.displayName || `Level ${levelNum}`;
+                } else {
+                  const fieldName = colKey.replace(/^field_/, "");
+                  fieldDef = customFormFieldDefs.find(
+                    (f) => f.fieldName === fieldName,
+                  );
+                  label = fieldDef?.fieldLabel || fieldName;
+                  hasOptions =
+                    !!fieldDef &&
+                    (fieldDef.fieldType === "dropdown" ||
+                      fieldDef.fieldType === "radio" ||
+                      fieldDef.fieldType === "multiselect") &&
+                    Array.isArray(fieldDef.options) &&
+                    (fieldDef.options?.length ?? 0) > 0;
+                }
+
                 const currentVal = customFieldFilters[colKey] || "";
-                const hasOptions =
-                  fieldDef &&
-                  (fieldDef.fieldType === "dropdown" ||
-                    fieldDef.fieldType === "radio" ||
-                    fieldDef.fieldType === "multiselect") &&
-                  Array.isArray(fieldDef.options) &&
-                  fieldDef.options.length > 0;
 
                 return (
                   <div key={colKey} style={{ position: "relative" }}>

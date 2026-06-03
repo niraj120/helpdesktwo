@@ -302,7 +302,7 @@ const WorkingCalendarContent: React.FC = () => {
   const handleSetDefault = async (calendarId: string) => {
     try {
       const token = localStorage.getItem("authToken");
-      await axios.patch(
+      await axios.put(
         `${API_CONFIG.API_URL}/working-calendars/${calendarId}/set-default`,
         {},
         { headers: { Authorization: `Bearer ${token}` } },

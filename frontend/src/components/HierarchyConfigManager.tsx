@@ -254,7 +254,13 @@ const HierarchyConfigManager: React.FC<HierarchyConfigManagerProps> = ({
    */
   const handleLevelCountChange = (count: number) => {
     const levels: HierarchyLevel[] = [];
-    const defaultNames = ["Category", "Subcategory", "Topic", "Subtopic", "Sub-subtopic"];
+    const defaultNames = [
+      "Category",
+      "Subcategory",
+      "Topic",
+      "Subtopic",
+      "Sub-subtopic",
+    ];
 
     for (let i = 1; i <= count; i++) {
       const existingLevel = editedConfig?.levels?.find(

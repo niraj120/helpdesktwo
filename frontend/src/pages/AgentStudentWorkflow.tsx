@@ -289,6 +289,7 @@ const AgentStudentWorkflow: React.FC = () => {
 
   // Workflow state
   const [workflowStep, setWorkflowStep] = useState<WorkflowStep>("search");
+  const [hasSavedDraft, setHasSavedDraft] = useState(false);
   const [currentStudent, setCurrentStudent] = useState<Student | null>(null);
   const [newlyRegisteredStudentId, setNewlyRegisteredStudentId] = useState<
     string | null
@@ -328,6 +329,10 @@ const AgentStudentWorkflow: React.FC = () => {
   const [loadingPriorTickets, setLoadingPriorTickets] = useState(false);
   const [creatingTicket, setCreatingTicket] = useState(false);
   const [ticketMessage, setTicketMessage] = useState("");
+  const [validationPopup, setValidationPopup] = useState<{
+    isOpen: boolean;
+    errors: string[];
+  }>({ isOpen: false, errors: [] });
   const [categoryHierarchy, setCategoryHierarchy] =
     useState<CategoryHierarchyValue>({});
 
@@ -400,6 +405,7 @@ const AgentStudentWorkflow: React.FC = () => {
       lastName: string;
       email: string;
       phone?: string;
+      roleCode?: string;
     };
   } | null>(null);
 
@@ -420,7 +426,7 @@ const AgentStudentWorkflow: React.FC = () => {
         if (form && Object.keys(form).length > 0) {
           setRegistrationForm(form);
           setVerifiedFields(verified || {});
-          setWorkflowStep("register");
+          setHasSavedDraft(true); // show resume banner, do NOT auto-redirect
         }
       }
     } catch {
@@ -481,11 +487,27 @@ const AgentStudentWorkflow: React.FC = () => {
 
         setOfflineSettings(settings);
 
-        // Initialize registration form
+        // Initialize registration form with empty defaults
         const initialRegForm: Record<string, any> = {};
         settings.registrationFields?.forEach((field: RegistrationField) => {
           initialRegForm[field.fieldName] = "";
         });
+
+        // Preserve any saved draft — draft restoration useEffect runs before
+        // this async fetch resolves, but the async API response overwrites state.
+        // Re-merge draft values so the "Resume" flow isn't wiped out.
+        try {
+          const raw = localStorage.getItem(REG_DRAFT_KEY);
+          if (raw) {
+            const { form: draft } = JSON.parse(raw);
+            if (draft && Object.keys(draft).length > 0) {
+              Object.assign(initialRegForm, draft);
+            }
+          }
+        } catch {
+          /* ignore corrupt draft */
+        }
+
         setRegistrationForm(initialRegForm);
 
         // Initialize ticket form
@@ -810,6 +832,14 @@ const AgentStudentWorkflow: React.FC = () => {
       setSearchMessage("Please enter a search query");
       return;
     }
+    if (searchType === "email" && !searchQuery.includes("@")) {
+      setSearchMessage("Please enter a valid email address containing '@'");
+      return;
+    }
+    if (searchType === "phone" && !/^[0-9]+$/.test(searchQuery.trim())) {
+      setSearchMessage("Please enter a valid phone number (digits only)");
+      return;
+    }
 
     setSearching(true);
     setSearchMessage("");
@@ -885,7 +915,16 @@ const AgentStudentWorkflow: React.FC = () => {
     lastName: string;
     email: string;
     phone?: string;
+    roleCode?: string;
   }) => {
+    // Block non-student users — offline portal is for students only
+    if (user.roleCode && user.roleCode !== "STUDENT") {
+      setRegistrationError(
+        "This user is not registered as a student and cannot be used for ticket creation in this portal.",
+      );
+      setDuplicateUserWarning(null);
+      return;
+    }
     setCurrentStudent({
       _id: user._id,
       firstName: user.firstName,
@@ -1027,9 +1066,76 @@ const AgentStudentWorkflow: React.FC = () => {
     }
 
     if (ticketForm.needsEscalation && !ticketForm.escalateTo) {
-      setTicketMessage("Please select an agent to escalate to");
+      setValidationPopup({
+        isOpen: true,
+        errors: ["Escalate To (please select an agent)"],
+      });
       return;
     }
+
+    // ── Collect ALL validation errors before proceeding ──────────────────────
+    const validationErrors: string[] = [];
+
+    // 1. Check all required non-hierarchy ticket fields
+    for (const field of offlineSettings?.ticketFields || []) {
+      if (!field.required) continue;
+      if (field.isFixed && field.isEnabled === false) continue;
+      const ft = field.fieldType?.toLowerCase() || "";
+      const isHierarchyField =
+        ft === "category" ||
+        ft === "hierarchy" ||
+        ft.startsWith("hierarchy-level-");
+      if (isHierarchyField) continue; // handled below
+      const value = ticketForm[field.fieldName];
+      const isEmpty =
+        value === undefined ||
+        value === null ||
+        value === "" ||
+        (Array.isArray(value) && value.length === 0);
+      if (isEmpty) {
+        const label =
+          field.fieldName.charAt(0).toUpperCase() +
+          field.fieldName.slice(1).replace(/([A-Z])/g, " $1");
+        validationErrors.push(label);
+      }
+    }
+
+    // 2. Check mandatory hierarchy levels (Category, Subcategory, Topic, etc.)
+    if (hierarchyConfig && hierarchyConfig.levelCount > 1) {
+      const offlineVisibleLevels = new Set(
+        hierarchyConfig.visibilitySettings?.showInOfflineForm ?? [],
+      );
+      const hierarchyFieldValue = offlineSettings?.ticketFields
+        .map((f) => ticketForm[f.fieldName])
+        .find((v) => v && typeof v === "object" && "level1" in v) as
+        | CategoryHierarchyValue
+        | undefined;
+      const mandatoryLevels = hierarchyConfig.levels.filter(
+        (l) =>
+          l.isMandatory &&
+          l.isActive &&
+          (offlineVisibleLevels.size === 0 ||
+            offlineVisibleLevels.has(l.levelNumber)),
+      );
+      if (!hierarchyFieldValue) {
+        mandatoryLevels.forEach((l) => validationErrors.push(l.displayName));
+      } else {
+        mandatoryLevels
+          .filter(
+            (l) =>
+              !hierarchyFieldValue[
+                `level${l.levelNumber}` as keyof CategoryHierarchyValue
+              ],
+          )
+          .forEach((l) => validationErrors.push(l.displayName));
+      }
+    }
+
+    if (validationErrors.length > 0) {
+      setValidationPopup({ isOpen: true, errors: validationErrors });
+      return;
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     setCreatingTicket(true);
     setTicketMessage("");
@@ -1128,9 +1234,7 @@ const AgentStudentWorkflow: React.FC = () => {
 
       // Validate required fields before submission
       if (!hasDescription || !hasCategory) {
-        setTicketMessage(
-          `Missing required fields: ${!hasDescription ? "Description " : ""}${!hasCategory ? "Category" : ""}`,
-        );
+        // Belt-and-suspenders — should not reach here since upfront validation covers this
         setCreatingTicket(false);
         return;
       }
@@ -1182,27 +1286,7 @@ const AgentStudentWorkflow: React.FC = () => {
           | CategoryHierarchyValue
           | undefined;
         if (hierarchyFieldValue) {
-          const missingLevels = hierarchyConfig.levels
-            .filter(
-              (l) =>
-                l.isMandatory &&
-                l.isActive &&
-                (offlineVisibleLevels.size === 0 ||
-                  offlineVisibleLevels.has(l.levelNumber)),
-            )
-            .filter(
-              (l) =>
-                !hierarchyFieldValue[
-                  `level${l.levelNumber}` as keyof CategoryHierarchyValue
-                ],
-            );
-          if (missingLevels.length > 0) {
-            setTicketMessage(
-              `Please select: ${missingLevels.map((l) => l.displayName).join(", ")}`,
-            );
-            setCreatingTicket(false);
-            return;
-          }
+          // Belt-and-suspenders only — upfront validation already caught missing levels
         }
       }
 
@@ -1279,7 +1363,10 @@ const AgentStudentWorkflow: React.FC = () => {
   };
 
   // Clear the persisted registration draft from localStorage
-  const clearRegDraft = () => localStorage.removeItem(REG_DRAFT_KEY);
+  const clearRegDraft = () => {
+    localStorage.removeItem(REG_DRAFT_KEY);
+    setHasSavedDraft(false);
+  };
 
   // Select a center for this session and persist to sessionStorage
   const handleCenterSelect = (center: Center) => {
@@ -1637,7 +1724,7 @@ const AgentStudentWorkflow: React.FC = () => {
             onChange={(e) => onChange(e.target.value)}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
-            <option value="">Select {field.fieldName}</option>
+            <option value="">{placeholder}</option>
             {field.options?.map((option, idx) => (
               <option key={idx} value={option}>
                 {option}
@@ -1973,7 +2060,36 @@ const AgentStudentWorkflow: React.FC = () => {
             Search for a Candidate
           </h2>
 
-          {/* Search Form */}
+          {/* Resume draft banner */}
+          {hasSavedDraft && (
+            <div className="mb-4 flex items-center justify-between bg-amber-50 border border-amber-300 rounded-lg px-4 py-3 text-sm">
+              <span className="text-amber-800 font-medium">
+                ⚠ You have an unsaved registration draft.
+              </span>
+              <div className="flex gap-2 ml-4">
+                <button
+                  onClick={() => {
+                    setHasSavedDraft(false);
+                    setWorkflowStep("register");
+                  }}
+                  className="px-3 py-1 bg-amber-500 text-white rounded hover:bg-amber-600 font-medium"
+                >
+                  Resume
+                </button>
+                <button
+                  onClick={() => {
+                    clearRegDraft();
+                    setHasSavedDraft(false);
+                    setRegistrationForm({});
+                    setVerifiedFields({});
+                  }}
+                  className="px-3 py-1 bg-white border border-amber-400 text-amber-700 rounded hover:bg-amber-100 font-medium"
+                >
+                  Discard
+                </button>
+              </div>
+            </div>
+          )}
           <div className="space-y-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1981,7 +2097,10 @@ const AgentStudentWorkflow: React.FC = () => {
               </label>
               <select
                 value={searchType}
-                onChange={(e) => setSearchType(e.target.value as any)}
+                onChange={(e) => {
+                  setSearchType(e.target.value as any);
+                  setSearchQuery("");
+                }}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="all">All (Name, Email, Phone)</option>
@@ -1997,13 +2116,21 @@ const AgentStudentWorkflow: React.FC = () => {
               </label>
               <div className="flex space-x-2">
                 <input
-                  type="text"
+                  type={
+                    searchType === "phone"
+                      ? "tel"
+                      : searchType === "email"
+                        ? "email"
+                        : "text"
+                  }
                   value={searchQuery}
                   onChange={(e) => {
-                    const val =
-                      searchType === "name"
-                        ? e.target.value.replace(/[0-9]/g, "")
-                        : e.target.value;
+                    let val = e.target.value;
+                    if (searchType === "phone") {
+                      val = val.replace(/[^0-9]/g, "");
+                    } else if (searchType === "name") {
+                      val = val.replace(/[0-9]/g, "");
+                    }
                     setSearchQuery(val);
                   }}
                   onKeyPress={(e) => e.key === "Enter" && handleSearchStudent()}
@@ -2168,7 +2295,7 @@ const AgentStudentWorkflow: React.FC = () => {
             <div className="flex justify-end space-x-4 pt-6 border-t">
               <button
                 type="button"
-                onClick={() => setWorkflowStep("search")}
+                onClick={() => resetWorkflow()}
                 className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
               >
                 Back to Search
@@ -2381,7 +2508,7 @@ const AgentStudentWorkflow: React.FC = () => {
             </div>
           )}
 
-          <form onSubmit={handleCreateTicket} className="space-y-6">
+          <form onSubmit={handleCreateTicket} noValidate className="space-y-6">
             {/* Ticket Fields */}
             <div className="space-y-6">
               {offlineSettings.ticketFields
@@ -2601,28 +2728,55 @@ const AgentStudentWorkflow: React.FC = () => {
               )}
             </div>
 
-            <p className="text-sm text-gray-600 mb-6">
-              Would you like to use this existing user and proceed to raise a
-              ticket on their behalf?
-            </p>
-
-            {/* Actions */}
-            <div className="flex gap-3">
-              <button
-                onClick={() =>
-                  useExistingUserForTicket(duplicateUserWarning.existingUser)
-                }
-                className="flex-1 py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm"
-              >
-                Use Existing User
-              </button>
-              <button
-                onClick={() => setDuplicateUserWarning(null)}
-                className="flex-1 py-2 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium text-sm"
-              >
-                Cancel
-              </button>
-            </div>
+            {/* Actions — block if existing user is not a student */}
+            {duplicateUserWarning.existingUser.roleCode &&
+            duplicateUserWarning.existingUser.roleCode !== "STUDENT" ? (
+              <>
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+                  <p className="text-sm font-semibold text-red-700 mb-1">
+                    ⛔ Access Restricted
+                  </p>
+                  <p className="text-sm text-red-600">
+                    This user is registered with a non-student role and cannot
+                    be used for ticket creation in this portal. Please use a
+                    different phone number or email address.
+                  </p>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setDuplicateUserWarning(null)}
+                    className="flex-1 py-2 px-4 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg font-medium text-sm"
+                  >
+                    Close
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-gray-600 mb-6">
+                  Would you like to use this existing user and proceed to raise
+                  a ticket on their behalf?
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() =>
+                      useExistingUserForTicket(
+                        duplicateUserWarning.existingUser,
+                      )
+                    }
+                    className="flex-1 py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm"
+                  >
+                    Use Existing User
+                  </button>
+                  <button
+                    onClick={() => setDuplicateUserWarning(null)}
+                    className="flex-1 py-2 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium text-sm"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -2759,6 +2913,81 @@ const AgentStudentWorkflow: React.FC = () => {
       )}
 
       {/* ── Ticket Created Success Modal ─────────────────────────────── */}
+      {/* ── Validation Error Popup ─────────────────────────────────────── */}
+      {validationPopup.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden animate-in fade-in zoom-in duration-300">
+            {/* Red header band */}
+            <div className="bg-red-500 px-6 py-6 flex flex-col items-center text-white">
+              <div className="bg-white/20 rounded-full p-3 mb-3">
+                <svg
+                  className="h-10 w-10 text-white"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
+                  />
+                </svg>
+              </div>
+              <h2 className="text-xl font-bold tracking-tight">
+                Required Fields Missing
+              </h2>
+              <p className="text-red-100 text-sm mt-1">
+                Please fill in the following fields before submitting
+              </p>
+            </div>
+
+            {/* Body — list of missing fields */}
+            <div className="px-6 py-5">
+              <ul className="space-y-2">
+                {validationPopup.errors.map((err, idx) => (
+                  <li
+                    key={idx}
+                    className="flex items-center gap-3 text-sm text-gray-700"
+                  >
+                    <span className="flex-shrink-0 w-5 h-5 bg-red-100 rounded-full flex items-center justify-center">
+                      <svg
+                        className="w-3 h-3 text-red-600"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={3}
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M6 18L18 6M6 6l12 12"
+                        />
+                      </svg>
+                    </span>
+                    <span className="font-medium">{err}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 pb-6">
+              <button
+                type="button"
+                onClick={() =>
+                  setValidationPopup({ isOpen: false, errors: [] })
+                }
+                className="w-full py-2.5 px-4 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors"
+              >
+                OK, I'll Fix It
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ────────────────────────────────────────────────────────────────── */}
+
       {ticketSuccessModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden animate-in fade-in zoom-in duration-300">

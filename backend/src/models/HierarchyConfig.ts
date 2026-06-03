@@ -1,4 +1,4 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Document, Schema } from "mongoose";
 
 /**
  * Interface for a single hierarchy level configuration
@@ -52,13 +52,13 @@ const HierarchyLevelSchema = new Schema<IHierarchyLevel>(
       type: String,
       required: true,
       trim: true,
-      default: function(this: IHierarchyLevel) {
+      default: function (this: IHierarchyLevel) {
         return `Level ${this.levelNumber}`;
       },
     },
     isMandatory: {
       type: Boolean,
-      default: function(this: IHierarchyLevel) {
+      default: function (this: IHierarchyLevel) {
         // Level 1 is always mandatory by default
         return this.levelNumber === 1;
       },
@@ -68,7 +68,7 @@ const HierarchyLevelSchema = new Schema<IHierarchyLevel>(
       default: true,
     },
   },
-  { _id: false }
+  { _id: false },
 );
 
 /**
@@ -93,7 +93,7 @@ const VisibilitySettingsSchema = new Schema<IVisibilitySettings>(
       default: [1, 2],
     },
   },
-  { _id: false }
+  { _id: false },
 );
 
 /**
@@ -103,7 +103,7 @@ const HierarchyConfigSchema = new Schema<IHierarchyConfig>(
   {
     projectId: {
       type: Schema.Types.ObjectId,
-      ref: 'Project',
+      ref: "Project",
       required: true,
       unique: true, // One config per project
       index: true,
@@ -119,13 +119,15 @@ const HierarchyConfigSchema = new Schema<IHierarchyConfig>(
       type: [HierarchyLevelSchema],
       required: true,
       validate: {
-        validator: function(levels: IHierarchyLevel[]) {
+        validator: function (levels: IHierarchyLevel[]) {
           // Must have at least 1 level and at most 5 levels
           if (levels.length < 1 || levels.length > 5) return false;
           // Level numbers must be sequential starting from 1
-          return levels.every((level, index) => level.levelNumber === index + 1);
+          return levels.every(
+            (level, index) => level.levelNumber === index + 1,
+          );
         },
-        message: 'Levels must be sequential from 1 to 5',
+        message: "Levels must be sequential from 1 to 5",
       },
     },
     visibilitySettings: {
@@ -149,17 +151,17 @@ const HierarchyConfigSchema = new Schema<IHierarchyConfig>(
     },
     createdBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
       required: true,
     },
     updatedBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
     },
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 // Index for efficient queries
@@ -168,9 +170,9 @@ HierarchyConfigSchema.index({ projectId: 1, isActive: 1 });
 /**
  * Static method to get or create default config for a project
  */
-HierarchyConfigSchema.statics.getOrCreateForProject = async function(
+HierarchyConfigSchema.statics.getOrCreateForProject = async function (
   projectId: mongoose.Types.ObjectId | string,
-  createdBy: mongoose.Types.ObjectId | string
+  createdBy: mongoose.Types.ObjectId | string,
 ): Promise<IHierarchyConfig> {
   const config = await this.findOne({ projectId });
   if (config) return config;
@@ -182,7 +184,7 @@ HierarchyConfigSchema.statics.getOrCreateForProject = async function(
     levels: [
       {
         levelNumber: 1,
-        displayName: 'Category',
+        displayName: "Category",
         isMandatory: true,
         isActive: true,
       },
@@ -200,25 +202,28 @@ HierarchyConfigSchema.statics.getOrCreateForProject = async function(
 /**
  * Instance method to get active levels only
  */
-HierarchyConfigSchema.methods.getActiveLevels = function(): IHierarchyLevel[] {
+HierarchyConfigSchema.methods.getActiveLevels = function (): IHierarchyLevel[] {
   return this.levels.filter((level: IHierarchyLevel) => level.isActive);
 };
 
 /**
  * Instance method to validate level count matches levels array
  */
-HierarchyConfigSchema.pre('save', function(next) {
+HierarchyConfigSchema.pre("save", function (next) {
   // Ensure levelCount matches the number of active levels
-  const activeLevels = this.levels.filter(l => l.isActive);
+  const activeLevels = this.levels.filter((l) => l.isActive);
   this.levelCount = activeLevels.length;
-  
+
   // Ensure Level 1 is always mandatory
-  const level1 = this.levels.find(l => l.levelNumber === 1);
+  const level1 = this.levels.find((l) => l.levelNumber === 1);
   if (level1) {
     level1.isMandatory = true;
   }
-  
+
   next();
 });
 
-export const HierarchyConfig = mongoose.model<IHierarchyConfig>('HierarchyConfig', HierarchyConfigSchema);
+export const HierarchyConfig = mongoose.model<IHierarchyConfig>(
+  "HierarchyConfig",
+  HierarchyConfigSchema,
+);

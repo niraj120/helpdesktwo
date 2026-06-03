@@ -18,6 +18,7 @@ import KBArticleManagementPage from "./KBArticleManagementPage";
 import KBTableManagementPage from "./KBTableManagementPage";
 import KBViewerPage from "./KBViewerPage";
 import AgentStudentWorkflow from "./AgentStudentWorkflow";
+import NotificationsPage from "./NotificationsPage";
 import UserManagement from "../components/UserManagement";
 import RedirectToFirstRoute from "../components/RedirectToFirstRoute";
 import EmailConfigPage from "./EmailConfigPage";
@@ -67,6 +68,7 @@ interface User {
     code: string;
     permissions?: string[];
   };
+  centers?: Array<{ _id: string; name: string } | string>;
 }
 
 // User Management - renders without its own DashboardLayout (already wrapped by parent)
@@ -1595,6 +1597,10 @@ const ProjectPortalDashboard = () => {
         <Route path="/offline" element={<AgentStudentWorkflow />} />
         <Route path="/student-workflow" element={<AgentStudentWorkflow />} />
         <Route
+          path="/notifications"
+          element={<NotificationsPage wrapWithLayout={false} />}
+        />
+        <Route
           path="/my-assets"
           element={
             <ProtectedRoute
@@ -1637,7 +1643,18 @@ const ProjectPortalDashboard = () => {
 
         <Route
           path="/audit/activity-logs"
-          element={<ActivityLogs wrapWithLayout={false} />}
+          element={
+            <ActivityLogs
+              wrapWithLayout={false}
+              projectId={projectBranding?.projectId}
+              centerOptions={
+                user?.centers?.filter(
+                  (c): c is { _id: string; name: string } =>
+                    typeof c === "object" && c !== null,
+                ) ?? []
+              }
+            />
+          }
         />
         <Route
           path="/audit/access-logs"

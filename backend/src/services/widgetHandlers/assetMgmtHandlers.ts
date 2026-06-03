@@ -24,8 +24,8 @@ import {
   registerWidgetHandler,
 } from "../widgetQueryEngine";
 
-const getAsset    = () => mongoose.model("Asset");
-const getMapping  = () => mongoose.model("CenterAssetMapping");
+const getAsset = () => mongoose.model("Asset");
+const getMapping = () => mongoose.model("CenterAssetMapping");
 const getAuditLog = () => mongoose.model("AssetAuditLog");
 
 // ─── am_total_asset_types ─────────────────────────────────────────────────────
@@ -78,7 +78,8 @@ const amTotalAssignedHandler: QueryHandler = {
     const pid = new mongoose.Types.ObjectId(ctx.tenantId);
     const match: Record<string, any> = { projectId: pid };
     const effectiveCentreId = rf.centreId ?? ctx.centreId;
-    if (effectiveCentreId) match.centerId = new mongoose.Types.ObjectId(String(effectiveCentreId));
+    if (effectiveCentreId)
+      match.centerId = new mongoose.Types.ObjectId(String(effectiveCentreId));
     const res = await getMapping().aggregate([
       { $match: match },
       { $group: { _id: null, total: { $sum: "$totalAssigned" } } },
@@ -107,7 +108,13 @@ const amRequiredVsAssignedHandler: QueryHandler = {
       ]);
       assigned = assignedRes[0]?.total ?? 0;
       const reqRes = await getAsset().aggregate([
-        { $match: { projectId: pid, isActive: true, _id: { $in: mappedAssetIds } } },
+        {
+          $match: {
+            projectId: pid,
+            isActive: true,
+            _id: { $in: mappedAssetIds },
+          },
+        },
         { $group: { _id: null, total: { $sum: "$predefinedCount" } } },
       ]);
       required = reqRes[0]?.total ?? 0;
@@ -129,14 +136,25 @@ const amRequiredVsAssignedHandler: QueryHandler = {
     return {
       value: gap,
       series: [
-        { key: "required", label: "Required",  color: "#6366f1", data: [{ x: "Assets", y: required }] },
-        { key: "assigned", label: "Assigned",  color: "#22c55e", data: [{ x: "Assets", y: assigned }] },
+        {
+          key: "required",
+          label: "Required",
+          color: "#6366f1",
+          data: [{ x: "Assets", y: required }],
+        },
+        {
+          key: "assigned",
+          label: "Assigned",
+          color: "#22c55e",
+          data: [{ x: "Assets", y: assigned }],
+        },
       ],
-      subtitle: gap > 0
-        ? `${gap} units under-assigned`
-        : gap < 0
-        ? `${Math.abs(gap)} units over-assigned`
-        : "Fully balanced",
+      subtitle:
+        gap > 0
+          ? `${gap} units under-assigned`
+          : gap < 0
+            ? `${Math.abs(gap)} units over-assigned`
+            : "Fully balanced",
       trendDirection: "lower_is_better",
     };
   },
@@ -150,7 +168,8 @@ const amWorkingAssetsHandler: QueryHandler = {
     const pid = new mongoose.Types.ObjectId(ctx.tenantId);
     const match: Record<string, any> = { projectId: pid };
     const effectiveCentreId = rf.centreId ?? ctx.centreId;
-    if (effectiveCentreId) match.centerId = new mongoose.Types.ObjectId(String(effectiveCentreId));
+    if (effectiveCentreId)
+      match.centerId = new mongoose.Types.ObjectId(String(effectiveCentreId));
     const res = await getMapping().aggregate([
       { $match: match },
       { $group: { _id: null, total: { $sum: "$workingAsset" } } },
@@ -167,7 +186,8 @@ const amNonWorkingAssetsHandler: QueryHandler = {
     const pid = new mongoose.Types.ObjectId(ctx.tenantId);
     const match: Record<string, any> = { projectId: pid };
     const effectiveCentreId = rf.centreId ?? ctx.centreId;
-    if (effectiveCentreId) match.centerId = new mongoose.Types.ObjectId(String(effectiveCentreId));
+    if (effectiveCentreId)
+      match.centerId = new mongoose.Types.ObjectId(String(effectiveCentreId));
     const res = await getMapping().aggregate([
       { $match: match },
       { $group: { _id: null, total: { $sum: "$notWorkingAsset" } } },
@@ -184,18 +204,19 @@ const amAssetHealthRateHandler: QueryHandler = {
     const pid = new mongoose.Types.ObjectId(ctx.tenantId);
     const match: Record<string, any> = { projectId: pid };
     const effectiveCentreId = rf.centreId ?? ctx.centreId;
-    if (effectiveCentreId) match.centerId = new mongoose.Types.ObjectId(String(effectiveCentreId));
+    if (effectiveCentreId)
+      match.centerId = new mongoose.Types.ObjectId(String(effectiveCentreId));
     const res = await getMapping().aggregate([
       { $match: match },
       {
         $group: {
-          _id:        null,
-          working:    { $sum: "$workingAsset" },
+          _id: null,
+          working: { $sum: "$workingAsset" },
           notWorking: { $sum: "$notWorkingAsset" },
         },
       },
     ]);
-    const w  = res[0]?.working    ?? 0;
+    const w = res[0]?.working ?? 0;
     const nw = res[0]?.notWorking ?? 0;
     const total = w + nw;
     const value = total > 0 ? Math.round((w / total) * 1000) / 10 : null;
@@ -217,20 +238,22 @@ const amUtilizationRateHandler: QueryHandler = {
     const pid = new mongoose.Types.ObjectId(ctx.tenantId);
     const match: Record<string, any> = { projectId: pid };
     const effectiveCentreId = rf.centreId ?? ctx.centreId;
-    if (effectiveCentreId) match.centerId = new mongoose.Types.ObjectId(String(effectiveCentreId));
+    if (effectiveCentreId)
+      match.centerId = new mongoose.Types.ObjectId(String(effectiveCentreId));
     const res = await getMapping().aggregate([
       { $match: match },
       {
         $group: {
-          _id:      null,
-          used:     { $sum: "$assetUsed" },
+          _id: null,
+          used: { $sum: "$assetUsed" },
           assigned: { $sum: "$totalAssigned" },
         },
       },
     ]);
-    const used     = res[0]?.used     ?? 0;
+    const used = res[0]?.used ?? 0;
     const assigned = res[0]?.assigned ?? 0;
-    const value = assigned > 0 ? Math.round((used / assigned) * 1000) / 10 : null;
+    const value =
+      assigned > 0 ? Math.round((used / assigned) * 1000) / 10 : null;
     return {
       value,
       unit: "%",
@@ -251,7 +274,8 @@ const amAuditsSubmittedHandler: QueryHandler = {
       auditSubmitted: true,
     };
     const effectiveCentreId = rf.centreId ?? ctx.centreId;
-    if (effectiveCentreId) filter.centerId = new mongoose.Types.ObjectId(String(effectiveCentreId));
+    if (effectiveCentreId)
+      filter.centerId = new mongoose.Types.ObjectId(String(effectiveCentreId));
     const value = await getMapping().countDocuments(filter);
     return { value, trendDirection: "higher_is_better" };
   },
@@ -267,7 +291,8 @@ const amAuditsPendingHandler: QueryHandler = {
       auditSubmitted: { $ne: true },
     };
     const effectiveCentreId = rf.centreId ?? ctx.centreId;
-    if (effectiveCentreId) filter.centerId = new mongoose.Types.ObjectId(String(effectiveCentreId));
+    if (effectiveCentreId)
+      filter.centerId = new mongoose.Types.ObjectId(String(effectiveCentreId));
     const value = await getMapping().countDocuments(filter);
     return { value, trendDirection: "lower_is_better" };
   },
@@ -281,12 +306,16 @@ const amAuditComplianceRateHandler: QueryHandler = {
     const pid = new mongoose.Types.ObjectId(ctx.tenantId);
     const baseFilter: Record<string, any> = { projectId: pid };
     const effectiveCentreId = rf.centreId ?? ctx.centreId;
-    if (effectiveCentreId) baseFilter.centerId = new mongoose.Types.ObjectId(String(effectiveCentreId));
+    if (effectiveCentreId)
+      baseFilter.centerId = new mongoose.Types.ObjectId(
+        String(effectiveCentreId),
+      );
     const [submitted, total] = await Promise.all([
       getMapping().countDocuments({ ...baseFilter, auditSubmitted: true }),
       getMapping().countDocuments(baseFilter),
     ]);
-    const value = total > 0 ? Math.round((submitted / total) * 1000) / 10 : null;
+    const value =
+      total > 0 ? Math.round((submitted / total) * 1000) / 10 : null;
     return {
       value,
       unit: "%",
@@ -308,7 +337,8 @@ const amAssetsOverdueAuditHandler: QueryHandler = {
       auditSubmitted: { $ne: true },
     };
     const effectiveCentreId = rf.centreId ?? ctx.centreId;
-    if (effectiveCentreId) filter.centerId = new mongoose.Types.ObjectId(String(effectiveCentreId));
+    if (effectiveCentreId)
+      filter.centerId = new mongoose.Types.ObjectId(String(effectiveCentreId));
     const value = await getMapping().countDocuments(filter);
     return { value, trendDirection: "lower_is_better" };
   },
@@ -322,7 +352,8 @@ const amByCategoryHandler: QueryHandler = {
     const pid = new mongoose.Types.ObjectId(ctx.tenantId);
     const match: Record<string, any> = { projectId: pid };
     const effectiveCentreId = rf.centreId ?? ctx.centreId;
-    if (effectiveCentreId) match.centerId = new mongoose.Types.ObjectId(String(effectiveCentreId));
+    if (effectiveCentreId)
+      match.centerId = new mongoose.Types.ObjectId(String(effectiveCentreId));
     const rows = await getMapping().aggregate([
       { $match: match },
       {
@@ -345,25 +376,40 @@ const amByCategoryHandler: QueryHandler = {
       { $unwind: { path: "$category", preserveNullAndEmptyArrays: true } },
       {
         $group: {
-          _id:           { $ifNull: ["$category.name", "Uncategorized"] },
+          _id: { $ifNull: ["$category.name", "Uncategorized"] },
           totalAssigned: { $sum: "$totalAssigned" },
-          working:       { $sum: "$workingAsset" },
-          notWorking:    { $sum: "$notWorkingAsset" },
-          assetUsed:     { $sum: "$assetUsed" },
+          working: { $sum: "$workingAsset" },
+          notWorking: { $sum: "$notWorkingAsset" },
+          assetUsed: { $sum: "$assetUsed" },
         },
       },
       {
         $project: {
           _id: 0,
-          category:      "$_id",
+          category: "$_id",
           totalAssigned: 1,
-          working:       1,
-          notWorking:    1,
-          assetUsed:     1,
+          working: 1,
+          notWorking: 1,
+          assetUsed: 1,
           healthRate: {
             $cond: [
               { $gt: [{ $add: ["$working", "$notWorking"] }, 0] },
-              { $round: [{ $multiply: [{ $divide: ["$working", { $add: ["$working", "$notWorking"] }] }, 100] }, 1] },
+              {
+                $round: [
+                  {
+                    $multiply: [
+                      {
+                        $divide: [
+                          "$working",
+                          { $add: ["$working", "$notWorking"] },
+                        ],
+                      },
+                      100,
+                    ],
+                  },
+                  1,
+                ],
+              },
               null,
             ],
           },
@@ -393,36 +439,61 @@ const amByCenterHandler: QueryHandler = {
       { $unwind: { path: "$center", preserveNullAndEmptyArrays: true } },
       {
         $group: {
-          _id:           { $ifNull: ["$center.centerName", "Unassigned"] },
+          _id: { $ifNull: ["$center.centerName", "Unassigned"] },
           totalAssigned: { $sum: "$totalAssigned" },
-          working:       { $sum: "$workingAsset" },
-          notWorking:    { $sum: "$notWorkingAsset" },
-          assetUsed:     { $sum: "$assetUsed" },
-          auditsDone:    { $sum: { $cond: ["$auditSubmitted", 1, 0] } },
+          working: { $sum: "$workingAsset" },
+          notWorking: { $sum: "$notWorkingAsset" },
+          assetUsed: { $sum: "$assetUsed" },
+          auditsDone: { $sum: { $cond: ["$auditSubmitted", 1, 0] } },
           totalMappings: { $sum: 1 },
         },
       },
       {
         $project: {
           _id: 0,
-          center:        "$_id",
+          center: "$_id",
           totalAssigned: 1,
-          working:       1,
-          notWorking:    1,
-          assetUsed:     1,
-          auditsDone:    1,
+          working: 1,
+          notWorking: 1,
+          assetUsed: 1,
+          auditsDone: 1,
           totalMappings: 1,
           healthRate: {
             $cond: [
               { $gt: [{ $add: ["$working", "$notWorking"] }, 0] },
-              { $round: [{ $multiply: [{ $divide: ["$working", { $add: ["$working", "$notWorking"] }] }, 100] }, 1] },
+              {
+                $round: [
+                  {
+                    $multiply: [
+                      {
+                        $divide: [
+                          "$working",
+                          { $add: ["$working", "$notWorking"] },
+                        ],
+                      },
+                      100,
+                    ],
+                  },
+                  1,
+                ],
+              },
               null,
             ],
           },
           auditRate: {
             $cond: [
               { $gt: ["$totalMappings", 0] },
-              { $round: [{ $multiply: [{ $divide: ["$auditsDone", "$totalMappings"] }, 100] }, 1] },
+              {
+                $round: [
+                  {
+                    $multiply: [
+                      { $divide: ["$auditsDone", "$totalMappings"] },
+                      100,
+                    ],
+                  },
+                  1,
+                ],
+              },
               null,
             ],
           },
@@ -439,7 +510,9 @@ const amAuditActivityTrendHandler: QueryHandler = {
   widgetKey: "am_audit_activity_trend",
   cacheTtlSeconds: 600,
   async execute(ctx, params, rf): Promise<WidgetData> {
-    const { start, end, startStr, endStr } = buildDateRange(params.dateRangeDays);
+    const { start, end, startStr, endStr } = buildDateRange(
+      params.dateRangeDays,
+    );
     const pid = new mongoose.Types.ObjectId(ctx.tenantId);
     // AssetAuditLog has no projectId — join through CenterAssetMapping
     const rows = await getAuditLog().aggregate([
@@ -455,27 +528,64 @@ const amAuditActivityTrendHandler: QueryHandler = {
       {
         $match: {
           "mapping.projectId": pid,
-          ...((() => { const eCid = rf.centreId ?? ctx.centreId; return eCid ? { "mapping.centerId": new mongoose.Types.ObjectId(String(eCid)) } : {}; })()),
+          ...(() => {
+            const eCid = rf.centreId ?? ctx.centreId;
+            return eCid
+              ? {
+                  "mapping.centerId": new mongoose.Types.ObjectId(String(eCid)),
+                }
+              : {};
+          })(),
           changedAt: { $gte: start, $lte: end },
         },
       },
       {
         $group: {
-          _id:     { $dateToString: { format: "%Y-%m-%d", date: "$changedAt" } },
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$changedAt" } },
           changes: { $sum: 1 },
-          working:    { $sum: { $cond: [{ $eq: ["$changeType", "working_asset"] }, 1, 0] } },
-          notWorking: { $sum: { $cond: [{ $eq: ["$changeType", "not_working_asset"] }, 1, 0] } },
-          both:       { $sum: { $cond: [{ $eq: ["$changeType", "both"] }, 1, 0] } },
+          working: {
+            $sum: { $cond: [{ $eq: ["$changeType", "working_asset"] }, 1, 0] },
+          },
+          notWorking: {
+            $sum: {
+              $cond: [{ $eq: ["$changeType", "not_working_asset"] }, 1, 0],
+            },
+          },
+          both: { $sum: { $cond: [{ $eq: ["$changeType", "both"] }, 1, 0] } },
         },
       },
-      { $project: { _id: 0, date: "$_id", changes: 1, working: 1, notWorking: 1, both: 1 } },
+      {
+        $project: {
+          _id: 0,
+          date: "$_id",
+          changes: 1,
+          working: 1,
+          notWorking: 1,
+          both: 1,
+        },
+      },
       { $sort: { date: 1 } },
     ]);
     return {
       series: [
-        { key: "changes",    label: "Total Changes",   color: "#6366f1", data: rows.map((r: any) => ({ x: r.date, y: r.changes })) },
-        { key: "working",    label: "Working Updated",  color: "#22c55e", data: rows.map((r: any) => ({ x: r.date, y: r.working })) },
-        { key: "notWorking", label: "Faults Reported",  color: "#ef4444", data: rows.map((r: any) => ({ x: r.date, y: r.notWorking })) },
+        {
+          key: "changes",
+          label: "Total Changes",
+          color: "#6366f1",
+          data: rows.map((r: any) => ({ x: r.date, y: r.changes })),
+        },
+        {
+          key: "working",
+          label: "Working Updated",
+          color: "#22c55e",
+          data: rows.map((r: any) => ({ x: r.date, y: r.working })),
+        },
+        {
+          key: "notWorking",
+          label: "Faults Reported",
+          color: "#ef4444",
+          data: rows.map((r: any) => ({ x: r.date, y: r.notWorking })),
+        },
       ],
       xAxisLabel: "Date",
       yAxisLabel: "Audit Events",
@@ -502,5 +612,7 @@ export function registerAssetMgmtHandlers(): void {
   registerWidgetHandler(amByCategoryHandler);
   registerWidgetHandler(amByCenterHandler);
   registerWidgetHandler(amAuditActivityTrendHandler);
-  console.log("📊 Dashboard Engine: am_* Asset Management handlers registered (15)");
+  console.log(
+    "📊 Dashboard Engine: am_* Asset Management handlers registered (15)",
+  );
 }

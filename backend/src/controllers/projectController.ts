@@ -5,6 +5,7 @@ import { Category } from "../models/Category";
 import { Status } from "../models/Status";
 import { Priority } from "../models/master-data/Priority";
 import SLARule from "../models/sla-module/SLARule";
+import { HierarchyConfig } from "../models/HierarchyConfig";
 import { AuthRequest } from "../middleware/auth";
 import { logActivity } from "../utils/logger";
 import { cache, CACHE_KEYS, CACHE_TTL, invalidateCache } from "../utils/cache";
@@ -1174,6 +1175,20 @@ export const getProjectTicketSettings = async (req: Request, res: Response) => {
       `📋 Total form fields: ${settings.onlineFormFields?.length || 0}`,
     );
 
+    // Load hierarchy config to expose level displayNames to the column builder
+    const hierarchyConfigDoc = await HierarchyConfig.findOne({
+      projectId: project._id,
+      isActive: true,
+    }).lean();
+    const hierarchyLevels = hierarchyConfigDoc
+      ? (hierarchyConfigDoc as any).levels
+          .filter((l: any) => l.isActive !== false)
+          .map((l: any) => ({
+            levelNumber: l.levelNumber,
+            displayName: l.displayName || `Level ${l.levelNumber}`,
+          }))
+      : [{ levelNumber: 1, displayName: "Category" }];
+
     return res.json({
       success: true,
       projectName: project.name,
@@ -1185,6 +1200,7 @@ export const getProjectTicketSettings = async (req: Request, res: Response) => {
         filterableColumns:
           project.configuration?.ticketSubmissionSettings?.filterableColumns ||
           [],
+        hierarchyLevels,
       },
     });
   } catch (error) {

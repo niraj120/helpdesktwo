@@ -56,10 +56,14 @@ const closedCodes = (ss: ProjectStatus[]) =>
   ss.filter((s) => s.isClosed).map((s) => s.code);
 /** Status codes where isClosed = true AND name matches "resolved" → resolved only. */
 const resolvedOnlyCodes = (ss: ProjectStatus[]) =>
-  ss.filter((s) => s.isClosed && s.name.toLowerCase().includes("resolv")).map((s) => s.code);
+  ss
+    .filter((s) => s.isClosed && s.name.toLowerCase().includes("resolv"))
+    .map((s) => s.code);
 /** Status codes where isClosed = true AND name does NOT match "resolved" → truly closed only. */
 const strictClosedCodes = (ss: ProjectStatus[]) =>
-  ss.filter((s) => s.isClosed && !s.name.toLowerCase().includes("resolv")).map((s) => s.code);
+  ss
+    .filter((s) => s.isClosed && !s.name.toLowerCase().includes("resolv"))
+    .map((s) => s.code);
 /** Status codes where isClosed = false → ticket is still active. */
 const activeCodes = (ss: ProjectStatus[]) =>
   ss.filter((s) => !s.isClosed).map((s) => s.code);
@@ -103,7 +107,10 @@ function kpiTrend(
  * Both can be combined: a counselor sees only their own tickets within a
  * specific project when both are present.
  */
-function ticketFilterOverrides(rf: Record<string, any>, ctx?: WidgetQueryContext): Record<string, any> {
+function ticketFilterOverrides(
+  rf: Record<string, any>,
+  ctx?: WidgetQueryContext,
+): Record<string, any> {
   const extra: Record<string, any> = {};
 
   // @ctx.userId → assignedTo (agent viewing their assigned tickets)
@@ -131,7 +138,11 @@ function ticketFilterOverrides(rf: Record<string, any>, ctx?: WidgetQueryContext
   } else if (Array.isArray(rf.projectIds) && rf.projectIds.length > 0) {
     // @ctx.projectIds → metadata.projectId $in (multi-project users)
     extra["metadata.projectId"] = { $in: rf.projectIds.map(String) };
-  } else if ((rf.assignedTo || rf.createdBy) && ctx?.projectIds && ctx.projectIds.length > 1) {
+  } else if (
+    (rf.assignedTo || rf.createdBy) &&
+    ctx?.projectIds &&
+    ctx.projectIds.length > 1
+  ) {
     // Auto-expand: when scoping to a specific user (assignedTo/createdBy) but no
     // explicit project filter is set, include ALL the user's projects — this
     // matches the behaviour of My Queries and prevents a 1-ticket gap when a
@@ -1092,11 +1103,32 @@ export function registerPhase3Handlers(): void {
   // ── Catalogue-key aliases ─────────────────────────────────────────────────
   // These allow dashboards to reference widgets by semantic catalogue keys
   // (e.g. "ticket_by_priority") while reusing the same proven ht_* execute logic.
-  registerWidgetHandler({ ...htTicketsByPriorityHandler,  widgetKey: "ticket_by_priority" });
-  registerWidgetHandler({ ...htTicketsByCategoryHandler,  widgetKey: "ticket_by_category" });
-  registerWidgetHandler({ ...htDailyTrendHandler,         widgetKey: "ticket_volume_trend" });
-  registerWidgetHandler({ ...htEscalatedTicketsHandler,   widgetKey: "ticket_escalation_count" });
-  registerWidgetHandler({ ...htFirstResponseTimeHandler,  widgetKey: "ticket_first_response_time" });
-  registerWidgetHandler({ ...htAvgResolutionHoursHandler, widgetKey: "ticket_avg_resolution_time" });
-  registerWidgetHandler({ ...htResolutionRateHandler,     widgetKey: "ticket_resolution_rate" });
+  registerWidgetHandler({
+    ...htTicketsByPriorityHandler,
+    widgetKey: "ticket_by_priority",
+  });
+  registerWidgetHandler({
+    ...htTicketsByCategoryHandler,
+    widgetKey: "ticket_by_category",
+  });
+  registerWidgetHandler({
+    ...htDailyTrendHandler,
+    widgetKey: "ticket_volume_trend",
+  });
+  registerWidgetHandler({
+    ...htEscalatedTicketsHandler,
+    widgetKey: "ticket_escalation_count",
+  });
+  registerWidgetHandler({
+    ...htFirstResponseTimeHandler,
+    widgetKey: "ticket_first_response_time",
+  });
+  registerWidgetHandler({
+    ...htAvgResolutionHoursHandler,
+    widgetKey: "ticket_avg_resolution_time",
+  });
+  registerWidgetHandler({
+    ...htResolutionRateHandler,
+    widgetKey: "ticket_resolution_rate",
+  });
 }

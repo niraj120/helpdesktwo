@@ -253,6 +253,33 @@ const DATA_POINTS: DataPoint[] = [
     defaultVis: "bar_chart",
   },
 
+  {
+    key: "ticket_footfall_count",
+    label: "Footfall Count",
+    desc: "Unique students who raised tickets + total follow-up responses",
+    module: "helpdesk",
+    unit: "count",
+    defaultVis: "kpi_tile",
+  },
+
+  {
+    key: "ticket_footfall_trend",
+    label: "Footfall Trend",
+    desc: "Daily footfall count over the selected period",
+    module: "helpdesk",
+    unit: "count",
+    defaultVis: "line_chart",
+  },
+
+  {
+    key: "ticket_footfall_by_center",
+    label: "Footfall by Centre",
+    desc: "Footfall count grouped by centre",
+    module: "helpdesk",
+    unit: "list",
+    defaultVis: "bar_chart",
+  },
+
   // -- Attendance --
 
   {
@@ -1641,7 +1668,11 @@ const MODULE_META: Record<
   offline_helpdesk: { label: "Offline / Field", icon: "ofd", color: "#ef4444" },
   feedback: { label: "Feedback", icon: "*", color: "#8b5cf6" },
   center_ops: { label: "Center Ops", icon: "ctr", color: "#06b6d4" },
-  agent_performance: { label: "Agent Performance", icon: "agt", color: "#ec4899" },
+  agent_performance: {
+    label: "Agent Performance",
+    icon: "agt",
+    color: "#ec4899",
+  },
   project: { label: "Projects", icon: "prj", color: "#f97316" },
   sla_escalation: { label: "SLA & Escalation", icon: "sla", color: "#dc2626" },
   tenant: { label: "Tenant", icon: "tnt", color: "#7c3aed" },
@@ -1650,7 +1681,11 @@ const MODULE_META: Record<
   knowledge_base: { label: "Knowledge Base", icon: "kb", color: "#16a34a" },
   users: { label: "Users", icon: "usr", color: "#9333ea" },
   activity: { label: "Activity", icon: "act", color: "#ca8a04" },
-  asset_management: { label: "Asset Management", icon: "ast", color: "#0d9488" },
+  asset_management: {
+    label: "Asset Management",
+    icon: "ast",
+    color: "#0d9488",
+  },
 };
 
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Context variable helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
@@ -3117,7 +3152,9 @@ export default function DashboardBuilderPage() {
   const [targetScope, setTargetScope] = useState<"tenant" | "centre" | "user">(
     "tenant",
   );
-  const [status, setStatus] = useState<"draft" | "published" | "archived">("draft");
+  const [status, setStatus] = useState<"draft" | "published" | "archived">(
+    "draft",
+  );
 
   // Project selector
   const { projects } = useAdminProjects();

@@ -34,9 +34,6 @@ const TicketDraftSchema = new Schema<ITicketDraft>(
 );
 
 // One draft per user per ticket per type
-TicketDraftSchema.index(
-  { ticketId: 1, userId: 1, type: 1 },
-  { unique: true },
-);
+TicketDraftSchema.index({ ticketId: 1, userId: 1, type: 1 }, { unique: true });
 
 export default mongoose.model<ITicketDraft>("TicketDraft", TicketDraftSchema);

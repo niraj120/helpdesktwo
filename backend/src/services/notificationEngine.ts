@@ -23,6 +23,12 @@ export interface FireNotificationEvent {
    * Used for direct assignments (ticket_assigned_to_me), mentions, etc.
    */
   recipientOverride?: Array<mongoose.Types.ObjectId | string>;
+  /**
+   * When set during role-based fan-out, only include users whose `centers`
+   * array contains this centerId. Pass "online" to skip center filtering
+   * (online tickets are visible to all agents in the project).
+   */
+  centerId?: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -63,6 +69,7 @@ export async function fireNotification(
       deepLinkUrl,
       templateVars,
       recipientOverride,
+      centerId,
     } = event;
 
     const entityObjectId = toObjectId(entityId);
@@ -116,6 +123,15 @@ export async function fireNotification(
       if (projectObjectId) {
         userQuery.projects = projectObjectId;
       }
+      // Center/venue filter: only notify agents mapped to the ticket's center.
+      // Skip filtering for online tickets (centerId === "online") or when not provided.
+      if (
+        centerId &&
+        centerId !== "online" &&
+        mongoose.Types.ObjectId.isValid(centerId)
+      ) {
+        userQuery.centers = new mongoose.Types.ObjectId(centerId);
+      }
 
       const users = await User.find(userQuery).select("_id").lean();
       recipientIds = users.map((u) => u._id as mongoose.Types.ObjectId);
@@ -142,9 +158,7 @@ export async function fireNotification(
       .lean();
 
     const optedOutIds = new Set(prefs.map((p) => p.userId.toString()));
-    recipientIds = recipientIds.filter(
-      (id) => !optedOutIds.has(id.toString()),
-    );
+    recipientIds = recipientIds.filter((id) => !optedOutIds.has(id.toString()));
 
     if (recipientIds.length === 0) return;
 

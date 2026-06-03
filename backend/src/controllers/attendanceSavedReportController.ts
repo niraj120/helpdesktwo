@@ -233,12 +233,12 @@ export const updateAttendanceReportAssignment = async (
       assignedBy: new mongoose.Types.ObjectId(userId),
       assignedAt: new Date(),
     };
-    if (alertEnabled  !== undefined) updatePayload.alertEnabled  = alertEnabled;
-    if (scheduleType  !== undefined) updatePayload.scheduleType  = scheduleType;
-    if (scheduleDay   !== undefined) updatePayload.scheduleDay   = scheduleDay;
-    if (scheduleTime  !== undefined) updatePayload.scheduleTime  = scheduleTime;
-    if (ccUsers       !== undefined) updatePayload.ccUsers       = ccUsers;
-    if (ccEmails      !== undefined) updatePayload.ccEmails      = ccEmails;
+    if (alertEnabled !== undefined) updatePayload.alertEnabled = alertEnabled;
+    if (scheduleType !== undefined) updatePayload.scheduleType = scheduleType;
+    if (scheduleDay !== undefined) updatePayload.scheduleDay = scheduleDay;
+    if (scheduleTime !== undefined) updatePayload.scheduleTime = scheduleTime;
+    if (ccUsers !== undefined) updatePayload.ccUsers = ccUsers;
+    if (ccEmails !== undefined) updatePayload.ccEmails = ccEmails;
 
     const doc = await ReportAssignment.findOneAndUpdate(
       { reportId: id },
@@ -320,9 +320,8 @@ export const testAttendanceReportAlert = async (
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ success: false, message: "Invalid id" });
     }
-    const { sendAttendanceAlertNow } = await import(
-      "../services/reports/attendanceAlertScheduler"
-    );
+    const { sendAttendanceAlertNow } =
+      await import("../services/reports/attendanceAlertScheduler");
     await sendAttendanceAlertNow(id);
     return res
       .status(200)

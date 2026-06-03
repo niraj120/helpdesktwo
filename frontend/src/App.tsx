@@ -340,6 +340,16 @@ function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/:customUrlPath/student/notifications"
+            element={
+              <ProtectedRoute requireAuth={true}>
+                <StudentLayout>
+                  <NotificationsPage wrapWithLayout={false} />
+                </StudentLayout>
+              </ProtectedRoute>
+            }
+          />
 
           {/* Project Dashboard - For project-specific users */}
           <Route

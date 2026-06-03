@@ -92,9 +92,7 @@ async function getTransporter(projectId?: string) {
   return {
     transporter,
     fromEmail:
-      process.env.SMTP_FROM ??
-      process.env.SMTP_USER ??
-      "noreply@helpdesk.com",
+      process.env.SMTP_FROM ?? process.env.SMTP_USER ?? "noreply@helpdesk.com",
     fromName: process.env.SMTP_FROM_NAME ?? "SAC Helpdesk",
   };
 }

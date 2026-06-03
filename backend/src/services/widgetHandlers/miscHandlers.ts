@@ -18,17 +18,21 @@ import {
   registerWidgetHandler,
 } from "../widgetQueryEngine";
 
-const getProject  = () => mongoose.model("Project");
-const getAlert    = () => mongoose.model("DashThresholdAlert");
-const getTicket   = () => mongoose.model("Ticket");
-const getStatus   = () => mongoose.model("Status");
-const getSLA      = () => mongoose.model("SLATracking");
+const getProject = () => mongoose.model("Project");
+const getAlert = () => mongoose.model("DashThresholdAlert");
+const getTicket = () => mongoose.model("Ticket");
+const getStatus = () => mongoose.model("Status");
+const getSLA = () => mongoose.model("SLATracking");
 const getFeedback = () => mongoose.model("FeedbackScore");
-const getUser     = () => mongoose.model("User");
+const getUser = () => mongoose.model("User");
 
 async function loadClosedCodes(tenantId: string): Promise<number[]> {
   const docs = (await getStatus()
-    .find({ projectId: new mongoose.Types.ObjectId(tenantId), isActive: true, isClosed: true })
+    .find({
+      projectId: new mongoose.Types.ObjectId(tenantId),
+      isActive: true,
+      isClosed: true,
+    })
     .select("code")
     .lean()) as Array<{ code: number }>;
   return docs.map((d) => d.code);
@@ -86,7 +90,8 @@ const prCompletionRateHandler: QueryHandler = {
       getProject().countDocuments({ status: "completed" }),
       getProject().countDocuments({}),
     ]);
-    const value = total > 0 ? Math.round((completed / total) * 1000) / 10 : null;
+    const value =
+      total > 0 ? Math.round((completed / total) * 1000) / 10 : null;
     return { value, unit: "%", trendDirection: "higher_is_better" };
   },
 };
@@ -131,10 +136,18 @@ const prProjectHealthHandler: QueryHandler = {
     const pid = new mongoose.Types.ObjectId(ctx.tenantId);
     const closedCodes = await loadClosedCodes(ctx.tenantId);
     const [closed, total] = await Promise.all([
-      getTicket().countDocuments({ "metadata.projectId": pid, status: { $in: closedCodes }, createdAt: { $gte: start, $lte: end } }),
-      getTicket().countDocuments({ "metadata.projectId": pid, createdAt: { $gte: start, $lte: end } }),
+      getTicket().countDocuments({
+        "metadata.projectId": pid,
+        status: { $in: closedCodes },
+        createdAt: { $gte: start, $lte: end },
+      }),
+      getTicket().countDocuments({
+        "metadata.projectId": pid,
+        createdAt: { $gte: start, $lte: end },
+      }),
     ]);
-    const resolutionRate = total > 0 ? Math.round((closed / total) * 1000) / 10 : null;
+    const resolutionRate =
+      total > 0 ? Math.round((closed / total) * 1000) / 10 : null;
     return {
       value: resolutionRate,
       unit: "%",
@@ -149,7 +162,11 @@ const prMilestonesMetHandler: QueryHandler = {
   widgetKey: "pr_milestones_met",
   cacheTtlSeconds: 600,
   async execute(): Promise<WidgetData> {
-    return { value: null, noData: true, message: "Milestones module not connected" };
+    return {
+      value: null,
+      noData: true,
+      message: "Milestones module not connected",
+    };
   },
 };
 
@@ -222,7 +239,11 @@ const alAvgAlertResponseHandler: QueryHandler = {
   widgetKey: "al_avg_alert_response",
   cacheTtlSeconds: 600,
   async execute(): Promise<WidgetData> {
-    return { value: null, noData: true, message: "Alert response time tracking not available" };
+    return {
+      value: null,
+      noData: true,
+      message: "Alert response time tracking not available",
+    };
   },
 };
 
@@ -232,7 +253,12 @@ const alAlertsByTypeHandler: QueryHandler = {
   async execute(ctx): Promise<WidgetData> {
     const rows = await getAlert().aggregate([
       { $match: { tenant_id: ctx.tenantId, is_active: true } },
-      { $group: { _id: { $ifNull: ["$widget_key", "Unknown"] }, count: { $sum: 1 } } },
+      {
+        $group: {
+          _id: { $ifNull: ["$widget_key", "Unknown"] },
+          count: { $sum: 1 },
+        },
+      },
       { $project: { _id: 0, widgetKey: "$_id", count: 1 } },
       { $sort: { count: -1 } },
     ]);
@@ -244,7 +270,9 @@ const alAlertTrendHandler: QueryHandler = {
   widgetKey: "al_alert_trend",
   cacheTtlSeconds: 600,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end, startStr, endStr } = buildDateRange(params.dateRangeDays);
+    const { start, end, startStr, endStr } = buildDateRange(
+      params.dateRangeDays,
+    );
     const rows = await getAlert().aggregate([
       {
         $match: {
@@ -254,7 +282,9 @@ const alAlertTrendHandler: QueryHandler = {
       },
       {
         $group: {
-          _id:   { $dateToString: { format: "%Y-%m-%d", date: "$last_triggered_at" } },
+          _id: {
+            $dateToString: { format: "%Y-%m-%d", date: "$last_triggered_at" },
+          },
           count: { $sum: 1 },
         },
       },
@@ -287,7 +317,11 @@ function wfStub(widgetKey: string): QueryHandler {
     widgetKey,
     cacheTtlSeconds: 3600,
     async execute(): Promise<WidgetData> {
-      return { value: null, noData: true, message: "Workforce management module not connected" };
+      return {
+        value: null,
+        noData: true,
+        message: "Workforce management module not connected",
+      };
     },
   };
 }
@@ -301,7 +335,11 @@ function ohStub(widgetKey: string): QueryHandler {
     widgetKey,
     cacheTtlSeconds: 3600,
     async execute(): Promise<WidgetData> {
-      return { value: null, noData: true, message: "Offline helpdesk module not connected" };
+      return {
+        value: null,
+        noData: true,
+        message: "Offline helpdesk module not connected",
+      };
     },
   };
 }
@@ -397,7 +435,13 @@ const tnCsatByTenantHandler: QueryHandler = {
     const { start, end } = buildDateRange(params.dateRangeDays);
     const rows = await getFeedback().aggregate([
       { $match: { submittedAt: { $gte: start, $lte: end } } },
-      { $group: { _id: "$projectId", avgRating: { $avg: "$overallRating" }, responses: { $sum: 1 } } },
+      {
+        $group: {
+          _id: "$projectId",
+          avgRating: { $avg: "$overallRating" },
+          responses: { $sum: 1 },
+        },
+      },
       {
         $lookup: {
           from: "projects",
@@ -437,8 +481,10 @@ const tnSLAComplianceTenantHandler: QueryHandler = {
       {
         $group: {
           _id: "$projectId",
-          met:     { $sum: { $cond: [{ $eq: ["$resolutionStatus", "met"] }, 1, 0] } },
-          total:   { $sum: 1 },
+          met: {
+            $sum: { $cond: [{ $eq: ["$resolutionStatus", "met"] }, 1, 0] },
+          },
+          total: { $sum: 1 },
         },
       },
       {
@@ -460,7 +506,12 @@ const tnSLAComplianceTenantHandler: QueryHandler = {
           rate: {
             $cond: [
               { $gt: ["$total", 0] },
-              { $round: [{ $multiply: [{ $divide: ["$met", "$total"] }, 100] }, 1] },
+              {
+                $round: [
+                  { $multiply: [{ $divide: ["$met", "$total"] }, 100] },
+                  1,
+                ],
+              },
               null,
             ],
           },
@@ -476,7 +527,11 @@ const tnTenantHealthIndexHandler: QueryHandler = {
   widgetKey: "tn_tenant_health_index",
   cacheTtlSeconds: 600,
   async execute(): Promise<WidgetData> {
-    return { value: null, noData: true, message: "Tenant health index calculation not yet configured" };
+    return {
+      value: null,
+      noData: true,
+      message: "Tenant health index calculation not yet configured",
+    };
   },
 };
 
@@ -489,7 +544,11 @@ function aiStub(widgetKey: string): QueryHandler {
     widgetKey,
     cacheTtlSeconds: 3600,
     async execute(): Promise<WidgetData> {
-      return { value: null, noData: true, message: "AI analytics module not connected" };
+      return {
+        value: null,
+        noData: true,
+        message: "AI analytics module not connected",
+      };
     },
   };
 }
@@ -519,13 +578,14 @@ const ticketClosedTodayHandler: QueryHandler = {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const closedCodes = await loadClosedCodes(ctx.tenantId);
-    const value = closedCodes.length > 0
-      ? await getTicket().countDocuments({
-          "metadata.projectId": new mongoose.Types.ObjectId(ctx.tenantId),
-          status: { $in: closedCodes },
-          updatedAt: { $gte: todayStart },
-        })
-      : 0;
+    const value =
+      closedCodes.length > 0
+        ? await getTicket().countDocuments({
+            "metadata.projectId": new mongoose.Types.ObjectId(ctx.tenantId),
+            status: { $in: closedCodes },
+            updatedAt: { $gte: todayStart },
+          })
+        : 0;
     return { value };
   },
 };
@@ -624,5 +684,7 @@ export function registerMiscHandlers(): void {
   registerWidgetHandler(ticketClosedTodayHandler);
   registerWidgetHandler(ticketAvgFirstResponseHandler);
 
-  console.log("📊 Dashboard Engine: misc handlers registered (pr×8, al×7, wf×9 stubs, oh×7 stubs, tn×7, ai×8 stubs, legacy×3 = 49)");
+  console.log(
+    "📊 Dashboard Engine: misc handlers registered (pr×8, al×7, wf×9 stubs, oh×7 stubs, tn×7, ai×8 stubs, legacy×3 = 49)",
+  );
 }

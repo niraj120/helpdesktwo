@@ -1,19 +1,19 @@
-import { Request } from 'express';
-import ActivityLog from '../models/ActivityLog';
-import AccessLog from '../models/AccessLog';
+import { Request } from "express";
+import ActivityLog from "../models/ActivityLog";
+import AccessLog from "../models/AccessLog";
 
 // Helper to extract IP address from request
 export const getClientIp = (req: Request): string => {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string') {
-    return forwarded.split(',')[0].trim();
+  const forwarded = req.headers["x-forwarded-for"];
+  if (typeof forwarded === "string") {
+    return forwarded.split(",")[0].trim();
   }
-  return req.socket.remoteAddress || 'unknown';
+  return req.socket.remoteAddress || "unknown";
 };
 
 // Helper to get user agent
 export const getUserAgent = (req: Request): string => {
-  return req.headers['user-agent'] || 'unknown';
+  return req.headers["user-agent"] || "unknown";
 };
 
 // Log activity (CRUD operations)
@@ -21,7 +21,7 @@ export const logActivity = async (params: {
   userId: string;
   userName: string;
   userEmail: string;
-  action: 'create' | 'update' | 'delete' | 'edit' | 'access_denied';
+  action: "create" | "update" | "delete" | "edit" | "access_denied";
   entity: string;
   entityId?: string;
   entityName?: string;
@@ -48,7 +48,7 @@ export const logActivity = async (params: {
       projectName: params.projectName,
       role: params.role,
       metadata: params.metadata,
-      timestamp: new Date()
+      timestamp: new Date(),
     };
 
     if (params.req) {
@@ -58,9 +58,11 @@ export const logActivity = async (params: {
 
     const log = new ActivityLog(logData);
     await log.save();
-    console.log(`✅ Activity logged: ${params.action} ${params.entity} by ${params.userEmail}`);
+    console.log(
+      `✅ Activity logged: ${params.action} ${params.entity} by ${params.userEmail}`,
+    );
   } catch (error) {
-    console.error('❌ Error logging activity:', error);
+    console.error("❌ Error logging activity:", error);
     // Don't throw error - logging failures shouldn't break the app
   }
 };
@@ -70,7 +72,13 @@ export const logAccess = async (params: {
   userId?: string;
   userName?: string;
   userEmail: string;
-  action: 'login' | 'logout' | 'login_failed' | 'password_reset' | 'forgot_password' | 'session_expired';
+  action:
+    | "login"
+    | "logout"
+    | "login_failed"
+    | "password_reset"
+    | "forgot_password"
+    | "session_expired";
   success: boolean;
   failureReason?: string;
   req?: Request;
@@ -93,7 +101,7 @@ export const logAccess = async (params: {
       role: params.role,
       sessionDuration: params.sessionDuration,
       metadata: params.metadata,
-      timestamp: new Date()
+      timestamp: new Date(),
     };
 
     if (params.req) {
@@ -103,9 +111,11 @@ export const logAccess = async (params: {
 
     const log = new AccessLog(logData);
     await log.save();
-    console.log(`✅ Access logged: ${params.action} by ${params.userEmail} (success: ${params.success})`);
+    console.log(
+      `✅ Access logged: ${params.action} by ${params.userEmail} (success: ${params.success})`,
+    );
   } catch (error) {
-    console.error('❌ Error logging access:', error);
+    console.error("❌ Error logging access:", error);
     // Don't throw error - logging failures shouldn't break the app
   }
 };
@@ -116,21 +126,21 @@ export const logLogin = async (
   userName: string,
   userEmail: string,
   req: Request,
-  status: 'success' | 'failure',
+  status: "success" | "failure",
   failureReason?: string,
   projectName?: string,
-  roleName?: string
+  roleName?: string,
 ): Promise<void> => {
   await logAccess({
-    userId: status === 'success' ? userId : undefined,
-    userName: status === 'success' ? userName : undefined,
+    userId: status === "success" ? userId : undefined,
+    userName: status === "success" ? userName : undefined,
     userEmail,
-    action: status === 'success' ? 'login' : 'login_failed',
-    success: status === 'success',
+    action: status === "success" ? "login" : "login_failed",
+    success: status === "success",
     failureReason,
     req,
     projectName,
-    role: roleName
+    role: roleName,
   });
 };
 
@@ -142,17 +152,17 @@ export const logLogout = async (
   req: Request,
   projectName?: string,
   roleName?: string,
-  sessionDuration?: number
+  sessionDuration?: number,
 ): Promise<void> => {
   await logAccess({
     userId,
     userName,
     userEmail,
-    action: 'logout',
+    action: "logout",
     success: true,
     req,
     projectName,
     role: roleName,
-    sessionDuration
+    sessionDuration,
   });
 };

@@ -44,6 +44,9 @@ export const DATA_POINT_FIELD_MAP: Record<string, string> = {
   // Feedback (joined from FeedbackResponse)
   feedback_csat_score: "csatScore",
   feedback_comment: "feedbackComment",
+  // Footfall
+  student_portal_email: "studentPortalEmail",
+  ticket_response_count: "responseCount",
 };
 
 function escapeRegex(str: string): string {
@@ -387,15 +390,34 @@ export async function runReportQuery(
           null,
         ],
       },
+      // Footfall computed fields
+      studentPortalEmail: { $ifNull: ["$metadata.studentEmail", ""] },
+      responseCount: { $size: { $ifNull: ["$comments", []] } },
     },
   };
+
+  // ── Dynamic custom form field additions ───────────────────────────────────
+  // For any dataPoint key starting with "custom_field_", we derive the value
+  // from ticket.metadata.customFields.{fieldName} and add it as a computed
+  // field so the $project and row-mapping stages can reference it.
+  const fieldMap: Record<string, string> = { ...DATA_POINT_FIELD_MAP };
+  for (const key of dataPoints) {
+    if (key.startsWith("custom_field_")) {
+      const rawName = key.replace(/^custom_field_/, "");
+      const computedName = `customField_${rawName}`;
+      fieldMap[key] = computedName;
+      (addFields.$addFields as any)[computedName] = {
+        $ifNull: [`$metadata.customFields.${rawName}`, ""],
+      };
+    }
+  }
 
   // ── 4. Post-compute $match for filters ────────────────────────────────────
   // Group by mongo field: multiple conditions on the SAME field are OR'd
   // (e.g. two project filters → any-of), different fields are AND'd.
   const fieldConditionGroups = new Map<string, any[]>();
   for (const f of filters) {
-    const fieldName = DATA_POINT_FIELD_MAP[f.field] ?? f.field;
+    const fieldName = fieldMap[f.field] ?? f.field;
     const expr = filterToMongo(fieldName, f.operator, f.value, f.value2);
     if (Object.keys(expr).length === 0) continue;
     if (!fieldConditionGroups.has(fieldName))
@@ -410,12 +432,12 @@ export async function runReportQuery(
   // ── 5. $project — only requested columns ─────────────────────────────────
   const projectStage: any = { _id: 1 };
   for (const key of dataPoints) {
-    const field = DATA_POINT_FIELD_MAP[key];
+    const field = fieldMap[key];
     if (field) projectStage[field] = 1;
   }
 
   // ── 6. Sort ───────────────────────────────────────────────────────────────
-  const sortField = (sortBy && DATA_POINT_FIELD_MAP[sortBy]) ?? "createdAt";
+  const sortField = (sortBy && fieldMap[sortBy]) ?? "createdAt";
   const sortDir = sortOrder === "asc" ? 1 : -1;
 
   // ── Assemble pipeline ─────────────────────────────────────────────────────
@@ -441,16 +463,10 @@ export async function runReportQuery(
 
   const rawRows = await Ticket.aggregate(pipeline);
 
-  // Re-key rows: { fieldPath: value } → { dataPointKey: value }
-  const fieldToKey: Record<string, string> = {};
-  for (const [k, v] of Object.entries(DATA_POINT_FIELD_MAP)) {
-    fieldToKey[v] = k; // last write wins (ok — bijective for requested set)
-  }
-
   const rows = rawRows.map((row) => {
     const out: any = { _id: row._id };
     for (const key of dataPoints) {
-      const field = DATA_POINT_FIELD_MAP[key];
+      const field = fieldMap[key];
       if (field) out[key] = row[field] ?? null;
     }
     return out;

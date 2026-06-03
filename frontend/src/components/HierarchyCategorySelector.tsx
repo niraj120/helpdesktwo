@@ -232,6 +232,7 @@ const HierarchyCategorySelector: React.FC<HierarchyCategorySelectorProps> = ({
    */
   useEffect(() => {
     if (value?.level1 && config && config.levelCount >= 2) {
+      setLevel2Options([]);
       fetchCategoriesForLevel(2, value.level1).then((opts) => {
         setLevel2Options(opts);
         onLevelOptionsChange?.(2, opts.length > 0);
@@ -247,6 +248,7 @@ const HierarchyCategorySelector: React.FC<HierarchyCategorySelectorProps> = ({
    */
   useEffect(() => {
     if (value?.level2 && config && config.levelCount >= 3) {
+      setLevel3Options([]);
       fetchCategoriesForLevel(3, value.level2).then((opts) => {
         setLevel3Options(opts);
         onLevelOptionsChange?.(3, opts.length > 0);
@@ -262,6 +264,7 @@ const HierarchyCategorySelector: React.FC<HierarchyCategorySelectorProps> = ({
    */
   useEffect(() => {
     if (value?.level3 && config && config.levelCount >= 4) {
+      setLevel4Options([]);
       fetchCategoriesForLevel(4, value.level3).then((opts) => {
         setLevel4Options(opts);
         onLevelOptionsChange?.(4, opts.length > 0);
@@ -277,6 +280,7 @@ const HierarchyCategorySelector: React.FC<HierarchyCategorySelectorProps> = ({
    */
   useEffect(() => {
     if (value?.level4 && config && config.levelCount >= 5) {
+      setLevel5Options([]);
       fetchCategoriesForLevel(5, value.level4).then((opts) => {
         setLevel5Options(opts);
         onLevelOptionsChange?.(5, opts.length > 0);
@@ -293,40 +297,90 @@ const HierarchyCategorySelector: React.FC<HierarchyCategorySelectorProps> = ({
   useEffect(() => {
     if (!disabled && level1Options.length === 1 && !value?.level1) {
       const opt = level1Options[0];
-      onChange({ ...value, level1: opt._id, level1Name: opt.name,
-        level2: undefined, level2Name: undefined, level3: undefined, level3Name: undefined,
-        level4: undefined, level4Name: undefined, level5: undefined, level5Name: undefined,
-        displayPath: opt.name });
+      onChange({
+        ...value,
+        level1: opt._id,
+        level1Name: opt.name,
+        level2: undefined,
+        level2Name: undefined,
+        level3: undefined,
+        level3Name: undefined,
+        level4: undefined,
+        level4Name: undefined,
+        level5: undefined,
+        level5Name: undefined,
+        displayPath: opt.name,
+      });
     }
   }, [level1Options.length, disabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!disabled && level2Options.length === 1 && !value?.level2 && value?.level1) {
+    if (
+      !disabled &&
+      level2Options.length === 1 &&
+      !value?.level2 &&
+      value?.level1
+    ) {
       const opt = level2Options[0];
-      onChange({ ...value, level2: opt._id, level2Name: opt.name,
-        level3: undefined, level3Name: undefined, level4: undefined, level4Name: undefined,
-        level5: undefined, level5Name: undefined });
+      onChange({
+        ...value,
+        level2: opt._id,
+        level2Name: opt.name,
+        level3: undefined,
+        level3Name: undefined,
+        level4: undefined,
+        level4Name: undefined,
+        level5: undefined,
+        level5Name: undefined,
+      });
     }
   }, [level2Options.length, disabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!disabled && level3Options.length === 1 && !value?.level3 && value?.level2) {
+    if (
+      !disabled &&
+      level3Options.length === 1 &&
+      !value?.level3 &&
+      value?.level2
+    ) {
       const opt = level3Options[0];
-      onChange({ ...value, level3: opt._id, level3Name: opt.name,
-        level4: undefined, level4Name: undefined, level5: undefined, level5Name: undefined });
+      onChange({
+        ...value,
+        level3: opt._id,
+        level3Name: opt.name,
+        level4: undefined,
+        level4Name: undefined,
+        level5: undefined,
+        level5Name: undefined,
+      });
     }
   }, [level3Options.length, disabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!disabled && level4Options.length === 1 && !value?.level4 && value?.level3) {
+    if (
+      !disabled &&
+      level4Options.length === 1 &&
+      !value?.level4 &&
+      value?.level3
+    ) {
       const opt = level4Options[0];
-      onChange({ ...value, level4: opt._id, level4Name: opt.name,
-        level5: undefined, level5Name: undefined });
+      onChange({
+        ...value,
+        level4: opt._id,
+        level4Name: opt.name,
+        level5: undefined,
+        level5Name: undefined,
+      });
     }
   }, [level4Options.length, disabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!disabled && level5Options.length === 1 && !value?.level5 && value?.level4) {
+    if (
+      !disabled &&
+      level5Options.length === 1 &&
+      !value?.level5 &&
+      value?.level4
+    ) {
       const opt = level5Options[0];
       onChange({ ...value, level5: opt._id, level5Name: opt.name });
     }
@@ -532,8 +586,10 @@ const HierarchyCategorySelector: React.FC<HierarchyCategorySelectorProps> = ({
       case 3:
         return !!value?.level3;
       case 4:
-        return !!value?.level4;      case 5:
-        return !value?.level4;      default:
+        return !!value?.level4;
+      case 5:
+        return !value?.level4;
+      default:
         return true;
     }
   };
@@ -594,8 +650,10 @@ const HierarchyCategorySelector: React.FC<HierarchyCategorySelectorProps> = ({
       case 3:
         return !value?.level2;
       case 4:
-        return !value?.level3;      case 5:
-        return !!value?.level5;      default:
+        return !value?.level3;
+      case 5:
+        return !!value?.level5;
+      default:
         return false;
     }
   };
@@ -709,8 +767,8 @@ const HierarchyCategorySelector: React.FC<HierarchyCategorySelectorProps> = ({
       {renderLevelDropdown(3)}
       {renderLevelDropdown(4)}
 
-          {/* Level 5 - only shown when config has levelCount >= 5 */}
-          {config && config.levelCount >= 5 && renderLevelDropdown(5)}
+      {/* Level 5 - only shown when config has levelCount >= 5 */}
+      {config && config.levelCount >= 5 && renderLevelDropdown(5)}
       {/* Display path preview */}
       {value?.displayPath && !compact && (
         <div className="mt-2 p-2 bg-gray-50 rounded border border-gray-200">
