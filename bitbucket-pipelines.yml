@@ -70,3 +70,39 @@ pipelines:
                 pm2 restart helpdesk-backend:3003 &&
                 echo "Backend deployed successfully!"
               '
+
+    prod-sac-deploy-frontend:
+      - step:
+          name: Deploy Frontend
+          script:
+            - echo "Frontend Deployment Started"
+            - |
+              ssh -v ubuntu@34.93.215.83 '
+                cd /home/ubuntu/helpdesk/frontend &&
+                node -v &&
+                git checkout prod-sac &&
+                git pull &&
+                npm ci &&
+                npm run build &&
+                pm2 restart helpdesk-frontend:3001 --update-env &&
+                pm2 save &&
+                echo "Frontend deployed successfully!"
+              '
+
+    prod-sac-deploy-backend:
+      - step:
+          name: Deploy Backend
+          script:
+            - echo "Backend Deployment Started"
+            - |
+              ssh -v ubuntu@34.93.215.83 '
+                cd /home/ubuntu/helpdesk/backend &&
+                node -v &&
+                git checkout prod-sac &&
+                git pull &&
+                npm ci &&
+                npm run build &&
+                ( pm2 restart helpdesk-backend:3003 --update-env || pm2 start dist/server.js --name helpdesk-backend:3003 --update-env ) &&
+                pm2 save &&
+                echo "Backend deployed successfully!"
+              '
