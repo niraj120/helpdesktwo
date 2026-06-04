@@ -79,6 +79,8 @@ export const StudentLoginModal: React.FC<StudentLoginModalProps> = ({
           localStorage.removeItem("authToken");
           localStorage.removeItem("userPermissions");
           localStorage.setItem("authToken", token);
+          // Mark this as a student session (see handleLogin for rationale).
+          localStorage.setItem("userRole", user?.role?.code || "STUDENT");
           if (user?.role?.permissions && Array.isArray(user.role.permissions)) {
             localStorage.setItem(
               "userPermissions",
@@ -322,6 +324,12 @@ export const StudentLoginModal: React.FC<StudentLoginModalProps> = ({
       // Store new token
       localStorage.setItem("authToken", token);
       console.log("💾 Token stored in localStorage");
+
+      // Persist the role code so student-only pages can distinguish a student
+      // session from a project/admin session that shares the same authToken key.
+      // Also overwrites any stale role left by a previous project-portal login
+      // in the same browser. (Backend already guarantees this is "STUDENT".)
+      localStorage.setItem("userRole", user?.role?.code || "STUDENT");
 
       // Store permissions from response if available
       if (user?.role?.permissions && Array.isArray(user.role.permissions)) {

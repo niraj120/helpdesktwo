@@ -1,7 +1,7 @@
 import mongoose, { Schema, Document } from "mongoose";
 
 export type SyncStatus = "RUNNING" | "SUCCESS" | "PARTIAL" | "FAILED";
-export type SyncTrigger = "SCHEDULE" | "MANUAL" | "API";
+export type SyncTrigger = "SCHEDULE" | "MANUAL" | "API" | "UPLOAD";
 
 export interface ISyncErrorDetail {
   employeeCode: string;
@@ -33,7 +33,7 @@ const attendanceSyncLogSchema = new Schema<IAttendanceSyncLog>(
     },
     triggeredBy: {
       type: String,
-      enum: ["SCHEDULE", "MANUAL", "API"],
+      enum: ["SCHEDULE", "MANUAL", "API", "UPLOAD"],
       required: true,
     },
     startedAt: { type: Date, required: true },

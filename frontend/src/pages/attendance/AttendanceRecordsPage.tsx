@@ -265,14 +265,14 @@ export default function AttendanceRecordsPage() {
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">
-              Center
+              Offline Center
             </label>
             <div className="relative">
               <MdSearch className="absolute left-2 top-2.5 text-gray-400" />
               <input
                 type="text"
                 className="border border-gray-300 rounded-md pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Filter by center"
+                placeholder="Filter by offline center"
                 value={filters.center}
                 onChange={(e) =>
                   setFilters((f) => ({ ...f, center: e.target.value }))
@@ -380,7 +380,7 @@ export default function AttendanceRecordsPage() {
                     Status
                   </th>
                   <th className="px-3 py-3 text-left font-medium text-gray-700">
-                    Center
+                    Offline Center
                   </th>
                 </tr>
               </thead>

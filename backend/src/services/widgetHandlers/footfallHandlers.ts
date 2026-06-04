@@ -163,8 +163,12 @@ const ticketFootfallByCenterHandler: QueryHandler = {
     scopedQuery: Record<string, any>,
   ): Promise<WidgetData> {
     const Ticket = getTicketModel();
+    const Center = mongoose.model("Center");
     const { start, end } = buildDateRange(params.dateRangeDays);
 
+    // Group by centerId (online tickets use the sentinel "online"); resolve
+    // names from the Center collection. Grouping by metadata.centerName would
+    // bucket everything as "Unassigned" because tickets only store centerId.
     const rows = await Ticket.aggregate([
       {
         $match: {
@@ -174,22 +178,41 @@ const ticketFootfallByCenterHandler: QueryHandler = {
       },
       {
         $group: {
-          _id: { $ifNull: ["$metadata.centerName", "Unassigned"] },
+          _id: { $ifNull: ["$metadata.centerId", null] },
           uniqueStudentEmails: { $addToSet: "$metadata.studentEmail" },
           totalResponses: {
             $sum: { $size: { $ifNull: ["$threads", []] } },
           },
         },
       },
-      { $sort: { _id: 1 } },
     ]);
 
-    const items = rows.map((r) => ({
-      label: r._id as string,
-      value:
-        (r.uniqueStudentEmails as string[]).filter(Boolean).length +
-        (r.totalResponses as number),
-    }));
+    const ids = rows
+      .map((r) => r._id)
+      .filter(
+        (id) =>
+          id && id !== "online" && mongoose.Types.ObjectId.isValid(String(id)),
+      )
+      .map((id) => new mongoose.Types.ObjectId(String(id)));
+    const centerDocs = await Center.find({ _id: { $in: ids } })
+      .select("centerName")
+      .lean();
+    const idToName = new Map<string, string>();
+    for (const c of centerDocs)
+      idToName.set(String(c._id), (c as any).centerName || "Unnamed center");
+
+    const items = rows
+      .map((r) => {
+        const key = r._id ? String(r._id) : null;
+        const label = key && idToName.has(key) ? idToName.get(key)! : "Unassigned";
+        return {
+          label,
+          value:
+            (r.uniqueStudentEmails as string[]).filter(Boolean).length +
+            (r.totalResponses as number),
+        };
+      })
+      .sort((a, b) => b.value - a.value);
 
     return { items };
   },

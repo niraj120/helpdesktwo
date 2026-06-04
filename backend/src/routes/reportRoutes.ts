@@ -18,6 +18,7 @@ import {
   runReport,
   previewReport,
   exportReport,
+  footfallByCenter,
   getAssignments,
   getReportAssignment,
   updateReportAssignment,
@@ -131,6 +132,14 @@ router.post(
   auth,
   checkPermission("REPORT_VIEW_TICKETS"),
   previewReport,
+);
+
+// ── Footfall by Offline Center (aggregated) ─────────────────────────────────
+router.post(
+  "/footfall-by-center",
+  auth,
+  checkPermission("REPORT_VIEW_TICKETS"),
+  footfallByCenter,
 );
 
 // ── Assignments ───────────────────────────────────────────────────────────────

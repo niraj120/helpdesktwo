@@ -151,7 +151,12 @@ const DATA_POINTS: DataPoint[] = [
     permKey: "total_working_hours",
   },
   { key: "status", label: "Status", category: "attendance", permKey: "status" },
-  { key: "center", label: "Center", category: "location", permKey: "center" },
+  {
+    key: "center",
+    label: "Offline Center",
+    category: "location",
+    permKey: "center",
+  },
   { key: "geo", label: "Geo Location", category: "location", permKey: "geo" },
   {
     key: "published",
@@ -234,7 +239,7 @@ const FILTER_FIELDS: FilterField[] = [
       .filter(([code]) => !["Absent", "WO", "PH"].includes(code))
       .map(([value, label]) => ({ value, label: `${value} — ${label}` })),
   },
-  { key: "center", label: "Center", type: "text" },
+  { key: "center", label: "Offline Center", type: "text" },
   { key: "punch_in", label: "Punch In", type: "date" },
   { key: "punch_out", label: "Punch Out", type: "date" },
   {
@@ -560,6 +565,109 @@ function downloadCsv(content: string, filename: string) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// HR Template summary
+// Builds one row per employee in the format HR expects (matches the shared
+// template): Employee code, User Name, Designation, Punch in, Punch out, Status,
+// Target Attendance, Actual Attendance, Attendance %. Works for daily and
+// range (weekly/monthly/custom) views off the same flat record list that the
+// "Run" action loads into runResults.
+//
+// Target  = number of distinct calendar dates present in the loaded data
+//           (the report's period). Actual = distinct dates where the employee
+//           had a present-or-leave status. This keeps the numbers identical to
+//           the detailed "Center Wise" table shown on the same screen.
+// ─────────────────────────────────────────────────────────────────────────────
+const HR_PRESENT_STATUSES = new Set([
+  "P",
+  "PL",
+  "H",
+  "CL",
+  "SL",
+  "EL",
+  "AL",
+  "ML",
+  "CO",
+  "OD",
+  "WFH",
+  "HD",
+]);
+
+interface HRTemplateRow {
+  employeeCode: string;
+  userName: string;
+  designation: string;
+  punchIn: string | null; // ISO timestamp of the latest record in the period
+  punchOut: string | null;
+  status: string;
+  target: number;
+  actual: number;
+  percent: string;
+}
+
+function buildHRTemplateRows(records: AttendanceRecord[]): {
+  rows: HRTemplateRow[];
+  dateLabel: string;
+  totalDays: number;
+} {
+  const dayOf = (r: AttendanceRecord) => r.attendanceDate?.split("T")[0] ?? "";
+
+  const dateSet = new Set<string>();
+  for (const r of records) {
+    const d = dayOf(r);
+    if (d) dateSet.add(d);
+  }
+  const dates = [...dateSet].sort();
+  const totalDays = dates.length;
+  const dateLabel =
+    dates.length === 0
+      ? "—"
+      : dates.length === 1
+        ? dates[0]
+        : `${dates[0]} to ${dates[dates.length - 1]}`;
+
+  const byEmp = new Map<string, AttendanceRecord[]>();
+  for (const r of records) {
+    const code = r.employee_id ?? "_";
+    if (!byEmp.has(code)) byEmp.set(code, []);
+    byEmp.get(code)!.push(r);
+  }
+
+  const rows: HRTemplateRow[] = [];
+  for (const [code, recs] of byEmp) {
+    const sorted = [...recs].sort((a, b) =>
+      (a.attendanceDate ?? "").localeCompare(b.attendanceDate ?? ""),
+    );
+    const latest = sorted[sorted.length - 1];
+
+    const presentDates = new Set<string>();
+    for (const r of recs) {
+      if (r.status && HR_PRESENT_STATUSES.has(r.status)) {
+        const d = dayOf(r);
+        if (d) presentDates.add(d);
+      }
+    }
+    const actual = presentDates.size;
+    const percent =
+      totalDays > 0 ? ((actual / totalDays) * 100).toFixed(1) + "%" : "0%";
+
+    rows.push({
+      employeeCode: code !== "_" ? code : "—",
+      userName: latest.employeeName ?? "",
+      designation: latest.designation ?? "",
+      punchIn: latest.punch_in ?? null,
+      punchOut: latest.punch_out ?? null,
+      status: latest.status ?? "",
+      target: totalDays,
+      actual,
+      percent,
+    });
+  }
+
+  rows.sort((a, b) => a.employeeCode.localeCompare(b.employeeCode));
+  return { rows, dateLabel, totalDays };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Searchable multi-select dropdown (no external dependency)
 // ─────────────────────────────────────────────────────────────────────────────
 function SearchableMultiSelect({
@@ -807,6 +915,8 @@ function MyAttendanceReports({ token }: { token: string }) {
   );
   // Per-report export format dropdown open state
   const [exportMenuOpen, setExportMenuOpen] = useState<string | null>(null);
+  // Per-report on-screen layout: false = detailed (date columns), true = HR template summary
+  const [summaryView, setSummaryView] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     setLoading(true);
@@ -1056,7 +1166,7 @@ function MyAttendanceReports({ token }: { token: string }) {
     const headers = [
       "Employee Name",
       "Employee Code",
-      "Center",
+      "Offline Center",
       ...visibleDates.map((d) => {
         const dt = parseLocalDate(d);
         const dn = DAY_ABBR[dt.getDay()];
@@ -1197,145 +1307,24 @@ function MyAttendanceReports({ token }: { token: string }) {
     setExportMenuOpen(null);
   };
 
-  // ── HR Summary Format export ──────────────────────────────────────────────
-  // Produces a two-header-row file:
-  //   Row 1: "Date: <range>", "(N days a week)", "(Leave + Present)"
-  //   Row 2: column headers
-  //   Row 3+: one row per employee with target/actual/percentage summary
-  const PRESENT_STATUSES_HR = new Set([
-    "P",
-    "PL",
-    "H",
-    "CL",
-    "SL",
-    "EL",
-    "AL",
-    "ML",
-    "CO",
-    "OD",
-    "WFH",
-    "HD",
-  ]);
-
+  // ── HR Template summary export (CSV / Excel / PDF) ─────────────────────────
+  // Two header rows + one summary row per employee, matching the on-screen
+  // template view. Computed from runResults (loaded by Run) for every view type
+  // via the shared buildHRTemplateRows helper.
   const handleExportHRFormat = (
     report: SavedAttendanceReport,
     fmt: "csv" | "excel" | "pdf" = "csv",
   ) => {
-    const vt = viewTypes[report._id] ?? "daily";
-    const today = todayISO();
-
-    type EmpRow = {
-      employeeCode: string;
-      userName: string;
-      designation: string;
-      punchIn: string;
-      punchOut: string;
-      status: string;
-      targetAttendance: number;
-      actualAttendance: number;
-      attendancePercent: string;
-    };
-
-    let employeeRows: EmpRow[] = [];
-    let dateLabel = "";
-    let workingDaysPerWeek = 6;
-
-    if (vt !== "daily") {
-      // ── Matrix path ───────────────────────────────────────────────────────
-      const result = matrixData[report._id];
-      if (!result || !result.rows.length) {
-        alert("Please run the matrix report first before exporting.");
-        return;
-      }
-      const range = getMatrixRange(report._id);
-      const holidaySet = new Set(result.holidays ?? []);
-      const woSet = new Set(result.nonWorkingWeekdays ?? []);
-      const visibleDates = result.dates.filter((d) => d <= today);
-
-      dateLabel = `${range.dateFrom} to ${range.dateTo}`;
-      workingDaysPerWeek = 7 - (result.nonWorkingWeekdays?.length ?? 1);
-
-      const workingDays = visibleDates.filter(
-        (d) => !holidaySet.has(d) && !woSet.has(parseLocalDate(d).getDay()),
-      ).length;
-
-      for (const row of result.rows) {
-        const presentDays = visibleDates.filter((d) => {
-          const s = row.attendance[d];
-          return (
-            s &&
-            s !== "Absent" &&
-            !woSet.has(parseLocalDate(d).getDay()) &&
-            !holidaySet.has(d)
-          );
-        }).length;
-        const pct =
-          workingDays > 0
-            ? ((presentDays / workingDays) * 100).toFixed(1) + "%"
-            : "0%";
-        employeeRows.push({
-          employeeCode: row.employeeCode,
-          userName: row.name,
-          designation: row.designation ?? "",
-          punchIn: "-",
-          punchOut: "-",
-          status: "Summary",
-          targetAttendance: workingDays,
-          actualAttendance: presentDays,
-          attendancePercent: pct,
-        });
-      }
-    } else {
-      // ── Daily path ────────────────────────────────────────────────────────
-      const rows = runResults[report._id];
-      if (!rows || rows.length === 0) {
-        alert("Please run the report first before exporting.");
-        return;
-      }
-      // Group records by employee code
-      const empMap = new Map<string, AttendanceRecord[]>();
-      for (const r of rows) {
-        const code = r.employee_id ?? "_";
-        if (!empMap.has(code)) empMap.set(code, []);
-        empMap.get(code)!.push(r);
-      }
-      const allDates = [
-        ...new Set(rows.map((r) => r.attendanceDate?.split("T")[0] ?? "")),
-      ].sort();
-      dateLabel =
-        allDates.length === 1
-          ? allDates[0]
-          : `${allDates[0]} to ${allDates[allDates.length - 1]}`;
-
-      // Estimate working days/week from report filters (default 6)
-      workingDaysPerWeek = 6;
-
-      for (const [code, recs] of empMap) {
-        const first = recs[0];
-        const presentRecs = recs.filter(
-          (r) => r.status && PRESENT_STATUSES_HR.has(r.status),
-        );
-        const target = recs.length;
-        const actual = presentRecs.length;
-        const pct =
-          target > 0 ? ((actual / target) * 100).toFixed(1) + "%" : "0%";
-        employeeRows.push({
-          employeeCode: code,
-          userName: first.employeeName ?? "",
-          designation: first.designation ?? "",
-          punchIn: formatTime(first.punch_in),
-          punchOut: formatTime(first.punch_out),
-          status: first.status ?? "",
-          targetAttendance: target,
-          actualAttendance: actual,
-          attendancePercent: pct,
-        });
-      }
+    const rows = runResults[report._id];
+    if (!rows || rows.length === 0) {
+      alert("Please run the report first before exporting.");
+      return;
     }
+    const { rows: employeeRows, dateLabel } = buildHRTemplateRows(rows);
 
     const metaRow = [
       `Date: ${dateLabel}`,
-      `(${workingDaysPerWeek} days a week)`,
+      `(Working days)`,
       `(Leave + Present)`,
     ];
     const columnHeaders = [
@@ -1353,12 +1342,12 @@ function MyAttendanceReports({ token }: { token: string }) {
       r.employeeCode,
       r.userName,
       r.designation,
-      r.punchIn,
-      r.punchOut,
+      formatTime(r.punchIn),
+      formatTime(r.punchOut),
       r.status,
-      r.targetAttendance,
-      r.actualAttendance,
-      r.attendancePercent,
+      r.target,
+      r.actual,
+      r.percent,
     ]);
 
     const baseName = `${report.name.replace(/[^a-z0-9]/gi, "_")}_hr_format`;
@@ -1791,6 +1780,14 @@ function MyAttendanceReports({ token }: { token: string }) {
             const rows = runResults[report._id];
             const matrix = matrixData[report._id];
             const range = getMatrixRange(report._id);
+            // On-screen layout: HR template summary vs detailed date-column table
+            const isSummary = summaryView[report._id] ?? false;
+            // Export honours the active on-screen layout
+            const doExport = (fmt: "csv" | "excel" | "pdf") =>
+              (isSummary ? handleExportHRFormat : handleExportCenterWise)(
+                report,
+                fmt,
+              );
             const visibleFields = DATA_POINTS.filter((d) =>
               report.dataPoints.includes(d.key),
             );
@@ -1948,7 +1945,7 @@ function MyAttendanceReports({ token }: { token: string }) {
                         }}
                       >
                         <button
-                          onClick={() => handleExportCenterWise(report, "csv")}
+                          onClick={() => doExport("csv")}
                           style={{
                             padding: "7px 12px",
                             background: "#fff",
@@ -1960,7 +1957,11 @@ function MyAttendanceReports({ token }: { token: string }) {
                             cursor: "pointer",
                             borderRadius: "8px 0 0 8px",
                           }}
-                          title="Export as CSV"
+                          title={
+                            isSummary
+                              ? "Export HR template as CSV"
+                              : "Export as CSV"
+                          }
                         >
                           ⬇ Export
                         </button>
@@ -2020,9 +2021,7 @@ function MyAttendanceReports({ token }: { token: string }) {
                           ).map(({ fmt, icon, label }) => (
                             <button
                               key={fmt}
-                              onClick={() =>
-                                handleExportCenterWise(report, fmt)
-                              }
+                              onClick={() => doExport(fmt)}
                               style={{
                                 display: "block",
                                 width: "100%",
@@ -2100,6 +2099,50 @@ function MyAttendanceReports({ token }: { token: string }) {
                       {opt.label}
                     </button>
                   ))}
+
+                  {/* Layout toggle: detailed date-columns vs HR template summary */}
+                  <div
+                    style={{
+                      marginLeft: "auto",
+                      display: "flex",
+                      border: "1px solid #e5e7eb",
+                      borderRadius: 6,
+                      overflow: "hidden",
+                    }}
+                  >
+                    {(
+                      [
+                        { key: false, label: "Detailed" },
+                        { key: true, label: "Summary" },
+                      ] as { key: boolean; label: string }[]
+                    ).map((opt) => (
+                      <button
+                        key={String(opt.key)}
+                        onClick={() =>
+                          setSummaryView((p) => ({
+                            ...p,
+                            [report._id]: opt.key,
+                          }))
+                        }
+                        title={
+                          opt.key
+                            ? "HR template summary (Target / Actual / %)"
+                            : "Detailed table with per-day punches"
+                        }
+                        style={{
+                          padding: "4px 12px",
+                          border: "none",
+                          background: isSummary === opt.key ? "#eef2ff" : "#fff",
+                          color: isSummary === opt.key ? "#4f46e5" : "#6b7280",
+                          fontSize: 12,
+                          fontWeight: isSummary === opt.key ? 600 : 400,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
 
                   {/* Monthly navigation */}
                   {vt === "monthly" && (
@@ -2356,9 +2399,193 @@ function MyAttendanceReports({ token }: { token: string }) {
                   </div>
                 )}
 
+                {/* ── HR template summary table (Summary layout) ── */}
+                {rows &&
+                  rows.length > 0 &&
+                  isSummary &&
+                  (() => {
+                    const { rows: hrRows, dateLabel } =
+                      buildHRTemplateRows(rows);
+                    return (
+                      <div style={{ borderTop: "1px solid #e5e7eb" }}>
+                        <div
+                          style={{
+                            background: "#f8fafc",
+                            padding: "8px 16px",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: "#374151",
+                            display: "flex",
+                            justifyContent: "space-between",
+                            flexWrap: "wrap",
+                            gap: 8,
+                          }}
+                        >
+                          <span>
+                            HR Template — {hrRows.length} employee
+                            {hrRows.length !== 1 ? "s" : ""}
+                          </span>
+                          <span style={{ fontWeight: 500, color: "#6b7280" }}>
+                            Date: {dateLabel} · Target = working days · Actual =
+                            Leave + Present
+                          </span>
+                        </div>
+                        <div style={{ overflowX: "auto" }}>
+                          <table
+                            style={{
+                              borderCollapse: "collapse",
+                              fontSize: 11,
+                              minWidth: "100%",
+                            }}
+                          >
+                            <thead>
+                              <tr style={{ background: "#6366f1" }}>
+                                {[
+                                  "Employee code",
+                                  "User Name",
+                                  "Designation",
+                                  "Punch in",
+                                  "Punch out",
+                                  "Status",
+                                  "Target Attendance",
+                                  "Actual Attendance",
+                                  "Attendance %",
+                                ].map((h, ci) => (
+                                  <th
+                                    key={ci}
+                                    style={{
+                                      padding: "7px 10px",
+                                      textAlign: ci <= 2 ? "left" : "center",
+                                      fontWeight: 700,
+                                      color: "#fff",
+                                      fontSize: 11,
+                                      whiteSpace: "nowrap",
+                                      borderRight: "1px solid #4f46e5",
+                                    }}
+                                  >
+                                    {h}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {hrRows.map((r, i) => (
+                                <tr
+                                  key={r.employeeCode + i}
+                                  style={{
+                                    background: i % 2 === 0 ? "#fff" : "#fafafa",
+                                    borderBottom: "1px solid #f3f4f6",
+                                  }}
+                                >
+                                  <td
+                                    style={{
+                                      padding: "6px 10px",
+                                      color: "#374151",
+                                      whiteSpace: "nowrap",
+                                      borderRight: "1px solid #f3f4f6",
+                                    }}
+                                  >
+                                    {r.employeeCode}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "6px 10px",
+                                      fontWeight: 600,
+                                      color: "#111827",
+                                      whiteSpace: "nowrap",
+                                      borderRight: "1px solid #f3f4f6",
+                                      minWidth: 130,
+                                    }}
+                                  >
+                                    {r.userName || "—"}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "6px 10px",
+                                      color: "#6b7280",
+                                      whiteSpace: "nowrap",
+                                      borderRight: "1px solid #f3f4f6",
+                                    }}
+                                  >
+                                    {r.designation || "—"}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "6px 10px",
+                                      textAlign: "center",
+                                      color: r.punchIn ? "#374151" : "#d1d5db",
+                                      whiteSpace: "nowrap",
+                                      borderRight: "1px solid #f3f4f6",
+                                    }}
+                                  >
+                                    {formatTime(r.punchIn)}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "6px 10px",
+                                      textAlign: "center",
+                                      color: r.punchOut ? "#374151" : "#d1d5db",
+                                      whiteSpace: "nowrap",
+                                      borderRight: "1px solid #f3f4f6",
+                                    }}
+                                  >
+                                    {formatTime(r.punchOut)}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "6px 10px",
+                                      textAlign: "center",
+                                      color: "#374151",
+                                      whiteSpace: "nowrap",
+                                      borderRight: "1px solid #f3f4f6",
+                                    }}
+                                  >
+                                    {r.status || "—"}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "6px 10px",
+                                      textAlign: "center",
+                                      color: "#374151",
+                                      borderRight: "1px solid #f3f4f6",
+                                    }}
+                                  >
+                                    {r.target}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "6px 10px",
+                                      textAlign: "center",
+                                      color: "#374151",
+                                      borderRight: "1px solid #f3f4f6",
+                                    }}
+                                  >
+                                    {r.actual}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "6px 10px",
+                                      textAlign: "center",
+                                      fontWeight: 700,
+                                      color:
+                                        r.actual === 0 ? "#ef4444" : "#065f46",
+                                    }}
+                                  >
+                                    {r.percent}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                 {/* ── Unified Center Wise results table (all tabs) ── */}
                 {rows &&
                   rows.length > 0 &&
+                  !isSummary &&
                   (() => {
                     // Build grouped structure: employee → date → record
                     const cwDateSet = new Set<string>();

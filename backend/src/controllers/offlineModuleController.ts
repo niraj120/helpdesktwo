@@ -169,9 +169,9 @@ export const createOfflineTicket = async (req: AuthRequest, res: Response): Prom
     // Verify student exists
     const student = await User.findById(ticketData.studentId);
     if (!student) {
-      res.status(404).json({ 
-        success: false, 
-        message: 'Student not found' 
+      res.status(404).json({
+        success: false,
+        message: 'Student not found'
       });
       return;
     }

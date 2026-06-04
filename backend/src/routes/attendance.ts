@@ -22,6 +22,10 @@ import {
   getAttendanceMatrix,
 } from "../controllers/attendanceRecordsController";
 import {
+  downloadBulkTemplate,
+  bulkUploadAttendance,
+} from "../controllers/attendanceBulkController";
+import {
   saveAttendanceReport,
   listAttendanceReports,
   deleteAttendanceReport,
@@ -64,6 +68,18 @@ router.get(
   "/sync/logs/:id",
   requirePermission("ATTENDANCE_CONFIG"),
   getSyncLogById,
+);
+
+// ── Bulk manual upload endpoints (Admin only) ──────────────────────────────
+router.get(
+  "/bulk/template",
+  requirePermission("ATTENDANCE_CONFIG"),
+  downloadBulkTemplate,
+);
+router.post(
+  "/bulk/upload",
+  requirePermission("ATTENDANCE_CONFIG"),
+  bulkUploadAttendance,
 );
 
 // ── Employee biometric sync endpoints (Admin, HR) ──────────────────────────

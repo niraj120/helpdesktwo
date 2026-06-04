@@ -16,6 +16,10 @@ import { SavedReport } from "../../models/reports/SavedReport";
 import { User } from "../../models/User";
 import { ReportDataPoint } from "../../models/reports/ReportDataPoint";
 import { runReportQuery } from "../reportQueryService";
+import {
+  computeFootfallByCenter,
+  FOOTFALL_COLUMNS,
+} from "../../controllers/reports/reportController";
 import EmailConfig from "../../models/EmailConfig";
 import { isEncrypted, decrypt } from "../../utils/encryption";
 
@@ -169,38 +173,67 @@ async function runAlertJob(assignmentId: string): Promise<void> {
     return;
   }
 
-  // Run the report query (all rows, no pagination limit for email)
-  const dataPoints: string[] = (report as any).dataPoints ?? [];
-  const { rows } = await runReportQuery(
-    dataPoints,
-    (report as any).filters ?? [],
-    (report as any).sortBy,
-    (report as any).sortOrder,
-    (report as any).projectId?.toString(),
-    1,
-    10000, // reasonable cap for email attachment
-  );
+  // Build the CSV — footfall reports are aggregated; everything else uses the
+  // row-per-record query engine.
+  let headers: string[];
+  let labeledRows: Record<string, any>[];
+  let rowCount: number;
 
-  // Build data-point label map for CSV headers
-  const dpDocs = await ReportDataPoint.find({
-    key: { $in: dataPoints },
-  })
-    .select("key label")
-    .lean();
-  const labelMap: Record<string, string> = {};
-  dpDocs.forEach((d: any) => {
-    labelMap[d.key] = d.label;
-  });
-  const headers = dataPoints.map((k) => labelMap[k] ?? k);
-
-  // Build rows using label-keyed headers for CSV columns
-  const labeledRows = rows.map((row: any) => {
-    const out: Record<string, any> = {};
-    dataPoints.forEach((k, i) => {
-      out[headers[i]] = row[k];
+  if ((report as any).reportType === "footfall") {
+    const result = await computeFootfallByCenter({
+      projectId: (report as any).projectId?.toString(),
+      dateRangeDays: (report as any).footfallDays ?? 30,
     });
-    return out;
-  });
+    headers = FOOTFALL_COLUMNS.map((c) => c.label);
+    labeledRows = result.data.map((r: any) => {
+      const out: Record<string, any> = {};
+      for (const c of FOOTFALL_COLUMNS) out[c.label] = r[c.key];
+      return out;
+    });
+    const t = result.totals || {};
+    labeledRows.push({
+      [FOOTFALL_COLUMNS[0].label]: "TOTAL",
+      [FOOTFALL_COLUMNS[1].label]: t.uniqueStudents ?? 0,
+      [FOOTFALL_COLUMNS[2].label]: t.responses ?? 0,
+      [FOOTFALL_COLUMNS[3].label]: t.ticketCount ?? 0,
+      [FOOTFALL_COLUMNS[4].label]: t.footfall ?? 0,
+    });
+    rowCount = result.data.length;
+  } else {
+    // Run the report query (all rows, no pagination limit for email)
+    const dataPoints: string[] = (report as any).dataPoints ?? [];
+    const { rows } = await runReportQuery(
+      dataPoints,
+      (report as any).filters ?? [],
+      (report as any).sortBy,
+      (report as any).sortOrder,
+      (report as any).projectId?.toString(),
+      1,
+      10000, // reasonable cap for email attachment
+    );
+
+    // Build data-point label map for CSV headers
+    const dpDocs = await ReportDataPoint.find({
+      key: { $in: dataPoints },
+    })
+      .select("key label")
+      .lean();
+    const labelMap: Record<string, string> = {};
+    dpDocs.forEach((d: any) => {
+      labelMap[d.key] = d.label;
+    });
+    headers = dataPoints.map((k) => labelMap[k] ?? k);
+
+    // Build rows using label-keyed headers for CSV columns
+    labeledRows = rows.map((row: any) => {
+      const out: Record<string, any> = {};
+      dataPoints.forEach((k, i) => {
+        out[headers[i]] = row[k];
+      });
+      return out;
+    });
+    rowCount = rows.length;
+  }
 
   const csvContent = rowsToCsv(headers, labeledRows);
   const csvBuffer = Buffer.from(csvContent, "utf-8");
@@ -231,8 +264,8 @@ async function runAlertJob(assignmentId: string): Promise<void> {
     to: toAddresses.join(", "),
     ...(finalCcAddresses.length > 0 ? { cc: finalCcAddresses.join(", ") } : {}),
     subject: `Scheduled Report: ${reportName} — ${dateStr}`,
-    text: `Hi,\n\nPlease find attached the scheduled report "${reportName}" generated on ${dateStr}.\n\nThis report contains ${rows.length} row(s).\n\nRegards,\nSAC Helpdesk`,
-    html: `<p>Hi,</p><p>Please find attached the scheduled report <strong>${reportName}</strong> generated on ${dateStr}.</p><p>This report contains <strong>${rows.length}</strong> row(s).</p><p>Regards,<br/>SAC Helpdesk</p>`,
+    text: `Hi,\n\nPlease find attached the scheduled report "${reportName}" generated on ${dateStr}.\n\nThis report contains ${rowCount} row(s).\n\nRegards,\nSAC Helpdesk`,
+    html: `<p>Hi,</p><p>Please find attached the scheduled report <strong>${reportName}</strong> generated on ${dateStr}.</p><p>This report contains <strong>${rowCount}</strong> row(s).</p><p>Regards,<br/>SAC Helpdesk</p>`,
     attachments: [
       {
         filename: `${reportName.replace(/[^a-z0-9]/gi, "_")}_${now.getTime()}.csv`,

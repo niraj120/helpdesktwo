@@ -27,6 +27,7 @@ const PageLoader = () => (
 import Login from "./components/Login";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { useDynamicTitle } from "./hooks/useDynamicTitle";
+import { isStudentSession } from "./utils/authToken";
 
 // ============================================================================
 // Lazy-loaded Page Components (loaded on-demand)
@@ -248,7 +249,11 @@ function App() {
             path="/:customUrlPath/submit-ticket"
             element={
               <ConditionalStudentLayout>
-                {localStorage.getItem("authToken") ? (
+                {/* Only a STUDENT session may use the authenticated submit-ticket
+                    view. A non-student token (e.g. a counselor/admin logged into
+                    the project portal in another tab, sharing the same authToken)
+                    falls through to the student login portal instead. */}
+                {isStudentSession() ? (
                   <AuthenticatedStudentSubmitTicket hideHeader={true} />
                 ) : (
                   <StudentPortal hideHeader={false} />

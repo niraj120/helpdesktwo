@@ -39,19 +39,26 @@ function scheduleProject(projectId: string, schedule: string[]): void {
       continue;
     }
 
-    const task = cron.schedule(cronExpr, async () => {
-      console.log(
-        `[AttendanceScheduler] Scheduled sync starting for project ${projectId} at ${timeSlot}`,
-      );
-      try {
-        await runAttendanceSync(projectId, "SCHEDULE");
-      } catch (err) {
-        console.error(
-          `[AttendanceScheduler] Sync error for project ${projectId}:`,
-          err,
+    const task = cron.schedule(
+      cronExpr,
+      async () => {
+        console.log(
+          `[AttendanceScheduler] Scheduled sync starting for project ${projectId} at ${timeSlot}`,
         );
-      }
-    });
+        try {
+          await runAttendanceSync(projectId, "SCHEDULE");
+        } catch (err) {
+          console.error(
+            `[AttendanceScheduler] Sync error for project ${projectId}:`,
+            err,
+          );
+        }
+      },
+      // syncSchedule times are entered in IST. Without this, node-cron uses the
+      // server's local clock (UTC in prod) and fires 5h30m off — e.g. an 09:00
+      // IST slot would run at 14:30 IST. Matches attendanceAlertScheduler.
+      { timezone: "Asia/Kolkata" },
+    );
 
     tasks.push(task);
     console.log(

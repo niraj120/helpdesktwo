@@ -24,13 +24,15 @@ export interface IReportFilter {
 export interface ISavedReport extends Document {
   name: string;
   description: string;
-  reportType: "ticket" | "attendance";
+  reportType: "ticket" | "attendance" | "footfall";
   createdBy: mongoose.Types.ObjectId;
   projectId?: mongoose.Types.ObjectId; // optional project scope
   dataPoints: string[]; // ordered array of selected data point keys
   filters: IReportFilter[];
   sortBy?: string; // data point key to sort by
   sortOrder: "asc" | "desc";
+  /** Footfall reports: rolling window size (days) used when run/emailed */
+  footfallDays?: number;
   isActive: boolean;
   /** Cached metadata from last run */
   rowCount?: number;
@@ -72,7 +74,7 @@ const SavedReportSchema = new Schema<ISavedReport>(
     description: { type: String, default: "" },
     reportType: {
       type: String,
-      enum: ["ticket", "attendance"],
+      enum: ["ticket", "attendance", "footfall"],
       default: "ticket",
     },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
@@ -81,6 +83,7 @@ const SavedReportSchema = new Schema<ISavedReport>(
     filters: { type: [FilterSchema], default: [] },
     sortBy: { type: String },
     sortOrder: { type: String, enum: ["asc", "desc"], default: "desc" },
+    footfallDays: { type: Number },
     isActive: { type: Boolean, default: true },
     rowCount: { type: Number },
     lastRunAt: { type: Date },

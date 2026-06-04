@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import DashboardLayout from "../components/DashboardLayout";
 import ModuleHeader from "../components/ModuleHeader";
 import { usePermissions } from "../hooks/usePermissions";
@@ -15,7 +17,8 @@ type Section =
   | "report-builder"
   | "assign-reports"
   | "saved-reports"
-  | "my-reports";
+  | "my-reports"
+  | "footfall";
 
 interface RoleOption {
   _id: string;
@@ -82,10 +85,32 @@ const getRoleCode = (): string => {
   }
 };
 
+// Project-scoped (project portal) logins carry a projectId in the JWT. When set,
+// reports are pinned to that project and the project picker is hidden.
+const getTokenProjectId = (): string => {
+  try {
+    const token = localStorage.getItem("authToken");
+    if (!token) return "";
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    return payload.projectId ? String(payload.projectId) : "";
+  } catch {
+    return "";
+  }
+};
+
 const authHeaders = () => ({
   Authorization: `Bearer ${localStorage.getItem("authToken") ?? ""}`,
   "Content-Type": "application/json",
 });
+
+// Column labels for footfall reports (keys returned by the footfall run/aggregation).
+const FOOTFALL_COLUMN_LABELS: Record<string, string> = {
+  center: "Offline Center",
+  uniqueStudents: "Unique Students",
+  responses: "Responses",
+  ticketCount: "Tickets",
+  footfall: "Footfall",
+};
 
 /**
  * Returns the human-readable label for a data point key.
@@ -96,6 +121,7 @@ const getDataPointLabel = (
   dpMap: Record<string, string>,
 ): string => {
   if (dpMap[key]) return dpMap[key];
+  if (FOOTFALL_COLUMN_LABELS[key]) return FOOTFALL_COLUMN_LABELS[key];
   if (key.startsWith("custom_field_")) {
     const raw = key.replace(/^custom_field_/, "");
     return raw.charAt(0).toUpperCase() + raw.slice(1).replace(/_/g, " ");
@@ -2944,10 +2970,16 @@ function MyReportsSection() {
       );
       const d = await res.json();
       if (d.success) {
+        // Footfall reports are aggregated — their columns come back in meta.columns
+        // (the saved report has no user-selected dataPoints).
+        const cols: string[] =
+          d.meta?.reportType === "footfall" && Array.isArray(d.meta?.columns)
+            ? d.meta.columns.map((c: { key: string }) => c.key)
+            : report.dataPoints;
         setRunResult({
           reportId: report._id,
           rows: d.data,
-          dataPoints: report.dataPoints,
+          dataPoints: cols,
         });
       } else setError(d.message);
     } catch {
@@ -3175,40 +3207,62 @@ function MyReportsSection() {
                         {new Date(report.lastRunAt).toLocaleDateString()}
                       </span>
                     )}
-                    <button
-                      onClick={() => handleRun(report)}
-                      disabled={isRunning}
-                      style={{
-                        padding: "7px 16px",
-                        background: "#6366f1",
-                        color: "#fff",
-                        border: "none",
-                        borderRadius: 8,
-                        fontSize: 13,
-                        fontWeight: 600,
-                        cursor: "pointer",
-                      }}
-                    >
-                      {isRunning ? "Running…" : "▶ Run Report"}
-                    </button>
-                    <button
-                      onClick={() => handleExport(report._id, report.name)}
-                      style={{
-                        padding: "7px 14px",
-                        background: "#fff",
-                        color: "#374151",
-                        border: "1px solid #d1d5db",
-                        borderRadius: 8,
-                        fontSize: 13,
-                        fontWeight: 600,
-                        cursor: "pointer",
-                      }}
-                    >
-                      ⬇ CSV
-                    </button>
+                    {/* Footfall reports render their own controls below; hide the
+                        generic Run/CSV buttons for them. */}
+                    {(report as any).reportType !== "footfall" && (
+                      <>
+                        <button
+                          onClick={() => handleRun(report)}
+                          disabled={isRunning}
+                          style={{
+                            padding: "7px 16px",
+                            background: "#6366f1",
+                            color: "#fff",
+                            border: "none",
+                            borderRadius: 8,
+                            fontSize: 13,
+                            fontWeight: 600,
+                            cursor: "pointer",
+                          }}
+                        >
+                          {isRunning ? "Running…" : "▶ Run Report"}
+                        </button>
+                        <button
+                          onClick={() => handleExport(report._id, report.name)}
+                          style={{
+                            padding: "7px 14px",
+                            background: "#fff",
+                            color: "#374151",
+                            border: "1px solid #d1d5db",
+                            borderRadius: 8,
+                            fontSize: 13,
+                            fontWeight: 600,
+                            cursor: "pointer",
+                          }}
+                        >
+                          ⬇ CSV
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
-                {result && result.rows.length > 0 && (
+                {(report as any).reportType === "footfall" && (
+                  <div
+                    style={{
+                      borderTop: "1px solid #e5e7eb",
+                      padding: "14px 18px",
+                    }}
+                  >
+                    <FootfallReportView
+                      projectId={(report as any).projectId}
+                      dateRangeDays={(report as any).footfallDays}
+                      reportName={report.name}
+                    />
+                  </div>
+                )}
+                {(report as any).reportType !== "footfall" &&
+                  result &&
+                  result.rows.length > 0 && (
                   <div style={{ borderTop: "1px solid #e5e7eb" }}>
                     {(() => {
                       const filters = columnFilters[report._id] ?? {};
@@ -4775,6 +4829,869 @@ function NavItem({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Section: Footfall by Offline Center (aggregated)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface FootfallRow {
+  center: string;
+  uniqueStudents: number;
+  responses: number;
+  ticketCount: number;
+  footfall: number;
+}
+
+// ── Shared footfall helpers (used by the builder tab AND My Reports) ──────────
+const FF_TH: React.CSSProperties = {
+  padding: "8px 12px",
+  textAlign: "left",
+  color: "#fff",
+  fontWeight: 700,
+  fontSize: 12,
+  whiteSpace: "nowrap",
+};
+const FF_TD: React.CSSProperties = {
+  padding: "8px 12px",
+  fontSize: 13,
+  borderBottom: "1px solid #f3f4f6",
+};
+
+function footfallToCsvString(
+  rows: FootfallRow[],
+  totals: FootfallRow | null,
+): string {
+  const header = [
+    "Offline Center",
+    "Unique Students",
+    "Responses",
+    "Footfall",
+    "Tickets",
+  ];
+  const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
+  const lines = [header.map(esc).join(",")];
+  for (const r of rows)
+    lines.push(
+      [r.center, r.uniqueStudents, r.responses, r.footfall, r.ticketCount]
+        .map(esc)
+        .join(","),
+    );
+  if (totals)
+    lines.push(
+      [
+        "TOTAL",
+        totals.uniqueStudents,
+        totals.responses,
+        totals.footfall,
+        totals.ticketCount,
+      ]
+        .map(esc)
+        .join(","),
+    );
+  return lines.join("\n");
+}
+
+function downloadFootfallCsv(
+  rows: FootfallRow[],
+  totals: FootfallRow | null,
+  filename = "footfall_by_offline_center.csv",
+) {
+  if (!rows.length) return;
+  const blob = new Blob([footfallToCsvString(rows, totals)], {
+    type: "text/csv;charset=utf-8;",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function downloadFootfallPdf(
+  rows: FootfallRow[],
+  totals: FootfallRow | null,
+  opts: { title?: string; subtitle?: string; filename?: string } = {},
+) {
+  if (!rows.length) return;
+  const doc = new jsPDF({ orientation: "landscape" });
+  doc.setFontSize(14);
+  doc.text(opts.title ?? "Footfall by Offline Center", 14, 16);
+  if (opts.subtitle) {
+    doc.setFontSize(9);
+    doc.text(opts.subtitle, 14, 22);
+  }
+  const body: (string | number)[][] = rows.map((r) => [
+    r.center,
+    r.uniqueStudents,
+    r.responses,
+    r.ticketCount,
+    r.footfall,
+  ]);
+  if (totals)
+    body.push([
+      "TOTAL",
+      totals.uniqueStudents,
+      totals.responses,
+      totals.ticketCount,
+      totals.footfall,
+    ]);
+  autoTable(doc, {
+    head: [
+      ["Offline Center", "Unique Students", "Responses", "Tickets", "Footfall"],
+    ],
+    body: body.map((r) => r.map(String)),
+    startY: opts.subtitle ? 27 : 22,
+    styles: { fontSize: 9, cellPadding: 3 },
+    headStyles: { fillColor: [99, 102, 241], textColor: 255, fontStyle: "bold" },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    didParseCell: (data) => {
+      if (
+        totals &&
+        data.section === "body" &&
+        data.row.index === body.length - 1
+      ) {
+        data.cell.styles.fontStyle = "bold";
+        data.cell.styles.fillColor = [243, 244, 246];
+      }
+    },
+  });
+  doc.save(opts.filename ?? "footfall_by_offline_center.pdf");
+}
+
+function FootfallResultTable({
+  rows,
+  totals,
+}: {
+  rows: FootfallRow[];
+  totals: FootfallRow | null;
+}) {
+  return (
+    <div
+      style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}
+    >
+      <div style={{ overflowX: "auto" }}>
+        <table
+          style={{ borderCollapse: "collapse", width: "100%", minWidth: 560 }}
+        >
+          <thead>
+            <tr style={{ background: "#6366f1" }}>
+              <th style={FF_TH}>Offline Center</th>
+              <th style={{ ...FF_TH, textAlign: "center" }}>Unique Students</th>
+              <th style={{ ...FF_TH, textAlign: "center" }}>Responses</th>
+              <th style={{ ...FF_TH, textAlign: "center" }}>Tickets</th>
+              <th style={{ ...FF_TH, textAlign: "center" }}>Footfall</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr
+                key={r.center + i}
+                style={{ background: i % 2 === 0 ? "#fff" : "#fafafa" }}
+              >
+                <td style={{ ...FF_TD, fontWeight: 600, color: "#111827" }}>
+                  {r.center}
+                </td>
+                <td style={{ ...FF_TD, textAlign: "center" }}>
+                  {r.uniqueStudents}
+                </td>
+                <td style={{ ...FF_TD, textAlign: "center" }}>{r.responses}</td>
+                <td style={{ ...FF_TD, textAlign: "center" }}>
+                  {r.ticketCount}
+                </td>
+                <td
+                  style={{
+                    ...FF_TD,
+                    textAlign: "center",
+                    fontWeight: 700,
+                    color: "#065f46",
+                  }}
+                >
+                  {r.footfall}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          {totals && (
+            <tfoot>
+              <tr style={{ background: "#f3f4f6" }}>
+                <td style={{ ...FF_TD, fontWeight: 700 }}>Total</td>
+                <td style={{ ...FF_TD, textAlign: "center", fontWeight: 700 }}>
+                  {totals.uniqueStudents}
+                </td>
+                <td style={{ ...FF_TD, textAlign: "center", fontWeight: 700 }}>
+                  {totals.responses}
+                </td>
+                <td style={{ ...FF_TD, textAlign: "center", fontWeight: 700 }}>
+                  {totals.ticketCount}
+                </td>
+                <td
+                  style={{
+                    ...FF_TD,
+                    textAlign: "center",
+                    fontWeight: 700,
+                    color: "#065f46",
+                  }}
+                >
+                  {totals.footfall}
+                </td>
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// Self-contained footfall view for a FIXED project (used in My Reports for an
+// assigned footfall report). Date range + Run + CSV/PDF + table with totals.
+function FootfallReportView({
+  projectId,
+  dateRangeDays,
+  reportName,
+}: {
+  projectId?: string;
+  dateRangeDays?: number;
+  reportName?: string;
+}) {
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [rows, setRows] = useState<FootfallRow[]>([]);
+  const [totals, setTotals] = useState<FootfallRow | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [ran, setRan] = useState(false);
+
+  // Prefer the saved report's project; fall back to the project pinned in a
+  // project-portal login so project users never have to pick a scope.
+  const effectiveProjectId = projectId || getTokenProjectId();
+
+  const run = async (from = dateFrom, to = dateTo) => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(
+        `${API_CONFIG.API_URL}/reports/footfall-by-center`,
+        {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({
+            projectId: effectiveProjectId || undefined,
+            dateFrom: from || undefined,
+            dateTo: to || undefined,
+            dateRangeDays,
+          }),
+        },
+      );
+      const d = await res.json();
+      if (!res.ok || !d.success) {
+        setError(d.message || "Failed to run report.");
+        setRows([]);
+        setTotals(null);
+      } else {
+        setRows(d.data || []);
+        setTotals(d.totals || null);
+      }
+      setRan(true);
+    } catch {
+      setError("Failed to run report.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Auto-run on mount so the assigned report shows data immediately.
+  useEffect(() => {
+    run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const inputStyle: React.CSSProperties = {
+    border: "1px solid #d1d5db",
+    borderRadius: 8,
+    padding: "8px 10px",
+    fontSize: 13,
+  };
+  const sub =
+    dateFrom || dateTo
+      ? `Date: ${dateFrom || "…"} to ${dateTo || "…"}`
+      : `Date: last ${dateRangeDays ?? 30} days`;
+
+  return (
+    <div>
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 12,
+          alignItems: "flex-end",
+          marginBottom: 12,
+        }}
+      >
+        <div>
+          <label
+            style={{
+              display: "block",
+              fontSize: 12,
+              color: "#374151",
+              marginBottom: 4,
+            }}
+          >
+            From
+          </label>
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            style={inputStyle}
+          />
+        </div>
+        <div>
+          <label
+            style={{
+              display: "block",
+              fontSize: 12,
+              color: "#374151",
+              marginBottom: 4,
+            }}
+          >
+            To
+          </label>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            style={inputStyle}
+          />
+        </div>
+        <button
+          onClick={() => run()}
+          disabled={loading}
+          style={{
+            padding: "8px 18px",
+            background: "#6366f1",
+            color: "#fff",
+            border: "none",
+            borderRadius: 8,
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: loading ? "not-allowed" : "pointer",
+            opacity: loading ? 0.6 : 1,
+          }}
+        >
+          {loading ? "Running…" : "▶ Run"}
+        </button>
+        <button
+          onClick={() =>
+            downloadFootfallCsv(
+              rows,
+              totals,
+              `${(reportName || "footfall").replace(/[^a-z0-9]/gi, "_")}.csv`,
+            )
+          }
+          disabled={!rows.length}
+          style={{
+            padding: "8px 14px",
+            background: "#fff",
+            color: "#374151",
+            border: "1px solid #d1d5db",
+            borderRadius: 8,
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: rows.length ? "pointer" : "not-allowed",
+            opacity: rows.length ? 1 : 0.5,
+          }}
+        >
+          ⬇ Export CSV
+        </button>
+        <button
+          onClick={() =>
+            downloadFootfallPdf(rows, totals, {
+              title: reportName || "Footfall by Offline Center",
+              subtitle: sub,
+              filename: `${(reportName || "footfall").replace(/[^a-z0-9]/gi, "_")}.pdf`,
+            })
+          }
+          disabled={!rows.length}
+          style={{
+            padding: "8px 14px",
+            background: "#fff",
+            color: "#374151",
+            border: "1px solid #d1d5db",
+            borderRadius: 8,
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: rows.length ? "pointer" : "not-allowed",
+            opacity: rows.length ? 1 : 0.5,
+          }}
+        >
+          ⬇ Export PDF
+        </button>
+      </div>
+
+      {!dateFrom && !dateTo && (
+        <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 12 }}>
+          No date range selected — defaults to the last {dateRangeDays ?? 30}{" "}
+          days.
+        </div>
+      )}
+      {error && (
+        <div
+          style={{
+            background: "#fef2f2",
+            border: "1px solid #fecaca",
+            color: "#b91c1c",
+            borderRadius: 8,
+            padding: "8px 12px",
+            fontSize: 13,
+            marginBottom: 12,
+          }}
+        >
+          {error}
+        </div>
+      )}
+      {ran && !error && rows.length === 0 && (
+        <div style={{ color: "#6b7280", fontSize: 14, padding: "20px 0" }}>
+          No footfall found for the selected date range.
+        </div>
+      )}
+      {rows.length > 0 && <FootfallResultTable rows={rows} totals={totals} />}
+    </div>
+  );
+}
+
+function FootfallReportSection({
+  isAdmin,
+  canSave,
+}: {
+  isAdmin: boolean;
+  canSave: boolean;
+}) {
+  // Project portal logins are pinned to one project (from the JWT) — the picker
+  // is hidden and the report always scopes to that project.
+  const forcedProjectId = getTokenProjectId();
+  const [projectOptions, setProjectOptions] = useState<
+    { _id: string; name: string }[]
+  >([]);
+  const [projectId, setProjectId] = useState(forcedProjectId);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [rows, setRows] = useState<FootfallRow[]>([]);
+  const [totals, setTotals] = useState<FootfallRow | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [ran, setRan] = useState(false);
+  // Save-as-schedulable-report state
+  const [saveName, setSaveName] = useState("");
+  const [saveDays, setSaveDays] = useState("30");
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState("");
+
+  const handleSaveReport = async () => {
+    if (!saveName.trim()) {
+      setSaveMsg("Enter a report name.");
+      return;
+    }
+    if (!isAdmin && !projectId) {
+      setSaveMsg("Select a project first.");
+      return;
+    }
+    setSaving(true);
+    setSaveMsg("");
+    try {
+      const res = await fetch(`${API_CONFIG.API_URL}/reports/saved`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          name: saveName.trim(),
+          reportType: "footfall",
+          projectId: projectId || undefined,
+          footfallDays: Number(saveDays) > 0 ? Number(saveDays) : 30,
+        }),
+      });
+      const d = await res.json();
+      if (res.ok && d.success) {
+        setSaveMsg(
+          "✓ Saved. Assign it to users and set a schedule from the Assign Reports tab.",
+        );
+        setSaveName("");
+      } else {
+        setSaveMsg(d.message || "Failed to save report.");
+      }
+    } catch {
+      setSaveMsg("Failed to save report.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    fetch(`${API_CONFIG.API_URL}/projects/my-projects`, {
+      headers: authHeaders(),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        const list = Array.isArray(d?.projects)
+          ? d.projects
+          : Array.isArray(d?.data)
+            ? d.data
+            : Array.isArray(d?.data?.projects)
+              ? d.data.projects
+              : [];
+        setProjectOptions(list);
+        // Pinned project (portal login) wins; otherwise auto-select a lone project.
+        if (forcedProjectId) setProjectId(forcedProjectId);
+        else if (list.length === 1) setProjectId(list[0]._id);
+      })
+      .catch(() => {});
+  }, []);
+
+  const run = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(
+        `${API_CONFIG.API_URL}/reports/footfall-by-center`,
+        {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({
+            projectId: projectId || undefined,
+            dateFrom: dateFrom || undefined,
+            dateTo: dateTo || undefined,
+          }),
+        },
+      );
+      const d = await res.json();
+      if (!res.ok || !d.success) {
+        setError(d.message || "Failed to run report.");
+        setRows([]);
+        setTotals(null);
+      } else {
+        setRows(d.data || []);
+        setTotals(d.totals || null);
+      }
+      setRan(true);
+    } catch {
+      setError("Failed to run report.");
+      setRows([]);
+      setTotals(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const exportCsv = () => downloadFootfallCsv(rows, totals);
+
+  const exportPdf = () => {
+    const rangeLabel =
+      dateFrom || dateTo
+        ? `Date: ${dateFrom || "…"} to ${dateTo || "…"}`
+        : "Date: last 30 days";
+    const projLabel = projectOptions.find((p) => p._id === projectId)?.name;
+    downloadFootfallPdf(rows, totals, {
+      subtitle: [rangeLabel, projLabel ? `Project: ${projLabel}` : ""]
+        .filter(Boolean)
+        .join("    "),
+    });
+  };
+
+  const inputStyle: React.CSSProperties = {
+    border: "1px solid #d1d5db",
+    borderRadius: 8,
+    padding: "8px 10px",
+    fontSize: 13,
+  };
+
+  return (
+    <div>
+      <div style={{ marginBottom: 4, fontSize: 18, fontWeight: 700 }}>
+        Footfall by Offline Center
+      </div>
+      <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 16 }}>
+        Footfall = unique students who raised tickets + total follow-up
+        responses, grouped by the offline center. Tickets without a center appear
+        as “Unassigned”.
+      </p>
+
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 12,
+          alignItems: "flex-end",
+          marginBottom: 16,
+        }}
+      >
+        {/* Project portal logins are pinned to one project (from the JWT) — hide
+            the project field entirely. A single-project (non-portal) user gets a
+            read-only label. Admins / multi-project users get the dropdown. */}
+        {forcedProjectId ? null : projectOptions.length === 1 ? (
+          <div>
+            <label
+              style={{
+                display: "block",
+                fontSize: 12,
+                color: "#374151",
+                marginBottom: 4,
+              }}
+            >
+              Project
+            </label>
+            <div
+              style={{
+                ...inputStyle,
+                minWidth: 220,
+                background: "#f9fafb",
+                color: "#374151",
+              }}
+            >
+              {projectOptions[0].name}
+            </div>
+          </div>
+        ) : (
+          <div>
+            <label
+              style={{
+                display: "block",
+                fontSize: 12,
+                color: "#374151",
+                marginBottom: 4,
+              }}
+            >
+              Project {!isAdmin && <span style={{ color: "#ef4444" }}>*</span>}
+            </label>
+            <select
+              value={projectId}
+              onChange={(e) => setProjectId(e.target.value)}
+              style={{ ...inputStyle, minWidth: 220 }}
+            >
+              <option value="">
+                {isAdmin ? "All projects" : "— Select project —"}
+              </option>
+              {projectOptions.map((p) => (
+                <option key={p._id} value={p._id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        <div>
+          <label
+            style={{
+              display: "block",
+              fontSize: 12,
+              color: "#374151",
+              marginBottom: 4,
+            }}
+          >
+            From
+          </label>
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            style={inputStyle}
+          />
+        </div>
+        <div>
+          <label
+            style={{
+              display: "block",
+              fontSize: 12,
+              color: "#374151",
+              marginBottom: 4,
+            }}
+          >
+            To
+          </label>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            style={inputStyle}
+          />
+        </div>
+        <button
+          onClick={run}
+          disabled={loading || (!isAdmin && !projectId)}
+          style={{
+            padding: "8px 18px",
+            background: "#6366f1",
+            color: "#fff",
+            border: "none",
+            borderRadius: 8,
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: loading ? "not-allowed" : "pointer",
+            opacity: loading || (!isAdmin && !projectId) ? 0.6 : 1,
+          }}
+        >
+          {loading ? "Running…" : "▶ Run"}
+        </button>
+        <button
+          onClick={exportCsv}
+          disabled={!rows.length}
+          style={{
+            padding: "8px 14px",
+            background: "#fff",
+            color: "#374151",
+            border: "1px solid #d1d5db",
+            borderRadius: 8,
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: rows.length ? "pointer" : "not-allowed",
+            opacity: rows.length ? 1 : 0.5,
+          }}
+        >
+          ⬇ Export CSV
+        </button>
+        <button
+          onClick={exportPdf}
+          disabled={!rows.length}
+          style={{
+            padding: "8px 14px",
+            background: "#fff",
+            color: "#374151",
+            border: "1px solid #d1d5db",
+            borderRadius: 8,
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: rows.length ? "pointer" : "not-allowed",
+            opacity: rows.length ? 1 : 0.5,
+          }}
+        >
+          ⬇ Export PDF
+        </button>
+      </div>
+
+      {!dateFrom && !dateTo && (
+        <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 12 }}>
+          No date range selected — defaults to the last 30 days.
+        </div>
+      )}
+
+      {error && (
+        <div
+          style={{
+            background: "#fef2f2",
+            border: "1px solid #fecaca",
+            color: "#b91c1c",
+            borderRadius: 8,
+            padding: "8px 12px",
+            fontSize: 13,
+            marginBottom: 12,
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      {ran && !error && rows.length === 0 && (
+        <div style={{ color: "#6b7280", fontSize: 14, padding: "20px 0" }}>
+          No footfall found for the selected project and date range.
+        </div>
+      )}
+
+      {rows.length > 0 && <FootfallResultTable rows={rows} totals={totals} />}
+
+      {/* Save as a schedulable / assignable report */}
+      {canSave && (
+        <div
+          style={{
+            marginTop: 20,
+            paddingTop: 16,
+            borderTop: "1px dashed #e5e7eb",
+          }}
+        >
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>
+            Save &amp; Schedule
+          </div>
+          <p style={{ fontSize: 12, color: "#6b7280", marginBottom: 10 }}>
+            Save this footfall report (for the selected project) so you can
+            assign it to users and email it on a schedule from the{" "}
+            <strong>Assign Reports</strong> tab. Scheduled emails use a rolling
+            window of the last N days.
+          </p>
+          <div
+            style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}
+          >
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: 12,
+                  color: "#374151",
+                  marginBottom: 4,
+                }}
+              >
+                Report name
+              </label>
+              <input
+                type="text"
+                value={saveName}
+                onChange={(e) => setSaveName(e.target.value)}
+                placeholder="e.g. Daily Footfall by Center"
+                style={{ ...inputStyle, minWidth: 260 }}
+              />
+            </div>
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: 12,
+                  color: "#374151",
+                  marginBottom: 4,
+                }}
+              >
+                Rolling window (days)
+              </label>
+              <input
+                type="number"
+                min={1}
+                value={saveDays}
+                onChange={(e) => setSaveDays(e.target.value)}
+                style={{ ...inputStyle, width: 120 }}
+              />
+            </div>
+            <button
+              onClick={handleSaveReport}
+              disabled={saving}
+              style={{
+                padding: "8px 16px",
+                background: "#10b981",
+                color: "#fff",
+                border: "none",
+                borderRadius: 8,
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: saving ? "not-allowed" : "pointer",
+                opacity: saving ? 0.6 : 1,
+              }}
+            >
+              {saving ? "Saving…" : "💾 Save Report"}
+            </button>
+          </div>
+          {saveMsg && (
+            <div
+              style={{
+                marginTop: 8,
+                fontSize: 12,
+                color: saveMsg.startsWith("✓") ? "#065f46" : "#b91c1c",
+              }}
+            >
+              {saveMsg}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main Page
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -4845,6 +5762,14 @@ const ReportsPage: React.FC<{ wrapWithLayout?: boolean }> = ({
     badge?: string;
   }[] = [
     { section: "my-reports", label: "My Reports", icon: "⭐", show: true },
+    {
+      section: "footfall",
+      label: "Footfall Report",
+      icon: "🚶",
+      // Builder tab is for report creators/admins. Other users receive assigned
+      // footfall reports (scoped, no dropdown) via My Reports + scheduled email.
+      show: canCreate,
+    },
     {
       section: "saved-reports",
       label: "Saved Reports",
@@ -4970,6 +5895,12 @@ const ReportsPage: React.FC<{ wrapWithLayout?: boolean }> = ({
             }}
           >
             {activeSection === "my-reports" && <MyReportsSection />}
+            {activeSection === "footfall" && (
+              <FootfallReportSection
+                isAdmin={isAdmin}
+                canSave={canCreate || isAdmin}
+              />
+            )}
             {activeSection === "role-permissions" && <RolePermissionsSection />}
             {activeSection === "data-points" && <DataPointsSection />}
             {activeSection === "report-builder" && (

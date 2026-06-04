@@ -8,6 +8,20 @@ import { AttendanceConfig } from "../models/attendance/AttendanceConfig";
 import { User } from "../models/User";
 import { WorkingCalendar } from "../models/WorkingCalendar";
 
+// A Super Admin bypasses every permission gate at the route level
+// (see middleware/permissions.ts `isSuperAdmin`). Their JWT does NOT necessarily
+// carry the ATTENDANCE_* codes — e.g. when the SUPER_ADMIN role predates those
+// permissions or the token was issued before a re-seed. We must mirror that
+// bypass here, otherwise permKeyFromPermissions() falls through to "employee"
+// and the records query gets scoped to the admin's own userId → no rows.
+function isSuperAdminUser(reqUser: {
+  role?: { code?: string; name?: string } | unknown;
+}): boolean {
+  const role = reqUser?.role as { code?: string; name?: string } | undefined;
+  if (!role) return false;
+  return role.code === "SUPER_ADMIN" || role.name === "Super Admin";
+}
+
 // Derive field-permission access level purely from the user's permission codes.
 // No hardcoded role codes — works for any custom role.
 function permKeyFromPermissions(
@@ -110,7 +124,9 @@ export const getAttendanceRecords = async (
           typeof p === "string" ? p : p.code || "",
         )
       : [];
-    const permKey = permKeyFromPermissions(rolePerms);
+    const permKey = isSuperAdminUser(reqUser ?? {})
+      ? "admin"
+      : permKeyFromPermissions(rolePerms);
 
     if (permKey === "employee") {
       // Force scope to current user's records
@@ -222,7 +238,9 @@ export const getAttendanceSummary = async (
           typeof p === "string" ? p : p.code || "",
         )
       : [];
-    const permKey = permKeyFromPermissions(rolePerms);
+    const permKey = isSuperAdminUser(reqUser ?? {})
+      ? "admin"
+      : permKeyFromPermissions(rolePerms);
 
     const matchStage: Record<string, unknown> = {
       projectId: new mongoose.Types.ObjectId(projectId as string),

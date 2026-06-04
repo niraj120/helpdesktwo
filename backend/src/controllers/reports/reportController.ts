@@ -555,9 +555,19 @@ export const createSavedReport = async (req: Request, res: Response) => {
       sortBy,
       sortOrder,
       projectId,
+      reportType,
+      footfallDays,
     } = req.body;
 
-    if (!name || !Array.isArray(dataPoints) || dataPoints.length === 0) {
+    const isFootfall = reportType === "footfall";
+
+    if (!name) {
+      return res
+        .status(400)
+        .json({ success: false, message: "name is required" });
+    }
+    // Footfall reports are aggregated and have no user-selected data points.
+    if (!isFootfall && (!Array.isArray(dataPoints) || dataPoints.length === 0)) {
       return res
         .status(400)
         .json({ success: false, message: "name and dataPoints are required" });
@@ -584,12 +594,16 @@ export const createSavedReport = async (req: Request, res: Response) => {
     const report = await SavedReport.create({
       name,
       description,
+      reportType: isFootfall ? "footfall" : reportType || "ticket",
       createdBy: userId,
       projectId: effectiveProjectId || undefined,
-      dataPoints,
+      dataPoints: isFootfall ? [] : dataPoints,
       filters: filters ?? [],
       sortBy,
       sortOrder,
+      ...(isFootfall
+        ? { footfallDays: Number(footfallDays) > 0 ? Number(footfallDays) : 30 }
+        : {}),
     });
 
     return res.status(201).json({ success: true, data: report });
@@ -676,6 +690,33 @@ export const runReport = async (req: Request, res: Response) => {
       return res
         .status(404)
         .json({ success: false, message: "Report not found" });
+    }
+
+    // Footfall reports are aggregated — run the dedicated computation instead of
+    // the row-per-record query engine.
+    if ((report as any).reportType === "footfall") {
+      const result = await computeFootfallByCenter({
+        projectId: (report as any).projectId?.toString(),
+        dateRangeDays: (report as any).footfallDays ?? 30,
+      });
+      SavedReport.updateOne(
+        { _id: id },
+        { lastRunAt: new Date(), rowCount: result.data.length },
+      ).exec();
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+        meta: {
+          total: result.data.length,
+          page: 1,
+          pageSize: result.data.length,
+          pages: 1,
+          reportType: "footfall",
+          columns: FOOTFALL_COLUMNS,
+          totals: result.totals,
+          dateRange: result.meta,
+        },
+      });
     }
 
     // RBAC: determine which data points the caller may see
@@ -802,6 +843,186 @@ export const previewReport = async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     console.error("previewReport error:", err);
+    return res
+      .status(500)
+      .json({ success: false, message: "Server error", error: err.message });
+  }
+};
+
+// Column definition for footfall reports — used by the run endpoint, CSV export
+// and the email scheduler so every surface shows the same columns.
+export const FOOTFALL_COLUMNS = [
+  { key: "center", label: "Offline Center" },
+  { key: "uniqueStudents", label: "Unique Students" },
+  { key: "responses", label: "Responses" },
+  { key: "ticketCount", label: "Tickets" },
+  { key: "footfall", label: "Footfall" },
+];
+
+/**
+ * Core footfall-by-center aggregation (no auth/scoping). Footfall mirrors the
+ * dashboard widget: (distinct non-empty metadata.studentEmail) + (sum of thread
+ * responses) per offline center. Tickets with no/unknown/online center fall
+ * under "Unassigned". Reused by the report endpoint, the saved-report run
+ * endpoint and the email alert scheduler.
+ */
+export async function computeFootfallByCenter(opts: {
+  projectId?: string;
+  dateFrom?: string | Date;
+  dateTo?: string | Date;
+  dateRangeDays?: number;
+}): Promise<{ data: any[]; totals: any; meta: any }> {
+  const { projectId, dateFrom, dateTo, dateRangeDays } = opts;
+
+  // Resolve the date range (explicit range wins over dateRangeDays).
+  let start: Date;
+  let end: Date;
+  if (dateFrom || dateTo) {
+    start = dateFrom ? new Date(dateFrom) : new Date("2020-01-01");
+    end = dateTo ? new Date(dateTo) : new Date();
+    end.setHours(23, 59, 59, 999);
+  } else {
+    const days = Number(dateRangeDays) > 0 ? Number(dateRangeDays) : 30;
+    end = new Date();
+    start = new Date(end.getTime() - days * 86400000);
+  }
+
+  const Ticket = mongoose.model("Ticket");
+  const Center = mongoose.model("Center");
+  const match: any = { createdAt: { $gte: start, $lte: end } };
+  if (projectId) {
+    const pid = projectId.toString();
+    const or: any[] = [{ "metadata.projectId": pid }];
+    if (mongoose.Types.ObjectId.isValid(pid))
+      or.push({ "metadata.projectId": new mongoose.Types.ObjectId(pid) });
+    match.$or = or;
+  }
+
+  // Group by centerId (offline tickets) — online tickets use "online".
+  const groups = await Ticket.aggregate([
+    { $match: match },
+    {
+      $group: {
+        _id: { $ifNull: ["$metadata.centerId", null] },
+        uniqueStudentEmails: { $addToSet: "$metadata.studentEmail" },
+        totalResponses: { $sum: { $size: { $ifNull: ["$threads", []] } } },
+        ticketCount: { $sum: 1 },
+      },
+    },
+  ]);
+
+  const groupIds = groups
+    .map((g: any) => g._id)
+    .filter(
+      (id: any) =>
+        id && id !== "online" && mongoose.Types.ObjectId.isValid(String(id)),
+    )
+    .map((id: any) => new mongoose.Types.ObjectId(String(id)));
+
+  // With a project selected, list its full offline-center set so zero-footfall
+  // centers still appear; otherwise resolve only the ids seen in the tickets.
+  const centerDocs = projectId
+    ? await Center.find({
+        projectId: new mongoose.Types.ObjectId(projectId.toString()),
+      })
+        .select("centerName isActive")
+        .sort({ centerName: 1 })
+        .lean()
+    : await Center.find({ _id: { $in: groupIds } })
+        .select("centerName")
+        .lean();
+
+  const idToName = new Map<string, string>();
+  for (const c of centerDocs)
+    idToName.set(String(c._id), (c as any).centerName || "Unnamed center");
+
+  type Row = {
+    center: string;
+    uniqueStudents: number;
+    responses: number;
+    ticketCount: number;
+    footfall: number;
+  };
+  const rowMap = new Map<string, Row>();
+  for (const c of centerDocs)
+    rowMap.set(String(c._id), {
+      center: (c as any).centerName || "Unnamed center",
+      uniqueStudents: 0,
+      responses: 0,
+      ticketCount: 0,
+      footfall: 0,
+    });
+
+  // This is a "by offline center" report — tickets with no offline center
+  // (online/portal tickets, or a center outside this project) are intentionally
+  // NOT counted. We only attribute footfall to real offline centers.
+  for (const g of groups) {
+    const key = g._id ? String(g._id) : null;
+    const target = key && idToName.has(key) ? rowMap.get(key)! : null;
+    if (!target) continue;
+    const uniqueStudents = (g.uniqueStudentEmails || []).filter(Boolean).length;
+    const responses = g.totalResponses || 0;
+    target.uniqueStudents += uniqueStudents;
+    target.responses += responses;
+    target.ticketCount += g.ticketCount || 0;
+    target.footfall += uniqueStudents + responses;
+  }
+
+  const data: Row[] = Array.from(rowMap.values()).sort(
+    (a, b) => b.footfall - a.footfall || a.center.localeCompare(b.center),
+  );
+
+  const totals = data.reduce(
+    (acc: any, r: any) => ({
+      uniqueStudents: acc.uniqueStudents + r.uniqueStudents,
+      responses: acc.responses + r.responses,
+      ticketCount: acc.ticketCount + r.ticketCount,
+      footfall: acc.footfall + r.footfall,
+    }),
+    { uniqueStudents: 0, responses: 0, ticketCount: 0, footfall: 0 },
+  );
+
+  return { data, totals, meta: { dateFrom: start, dateTo: end } };
+}
+
+/**
+ * POST /api/reports/footfall-by-center
+ * Aggregated footfall grouped by Offline Center.
+ * Body: { projectId?, dateFrom?, dateTo?, dateRangeDays? }
+ */
+export const footfallByCenter = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { projectId, dateFrom, dateTo, dateRangeDays } = req.body || {};
+
+    // Project scoping — identical rule to previewReport.
+    const allowedProjectIds = await getCallerAllowedProjectIds(userId);
+    let effectiveProjectId: string | undefined = projectId;
+    if (allowedProjectIds !== null) {
+      if (!effectiveProjectId) {
+        return res.status(400).json({
+          success: false,
+          message: "Please select a project scope for this report.",
+        });
+      }
+      if (!allowedProjectIds.includes(effectiveProjectId.toString())) {
+        return res.status(403).json({
+          success: false,
+          message: "You do not have access to the selected project.",
+        });
+      }
+    }
+
+    const result = await computeFootfallByCenter({
+      projectId: effectiveProjectId,
+      dateFrom,
+      dateTo,
+      dateRangeDays,
+    });
+
+    return res.status(200).json({ success: true, ...result });
+  } catch (err: any) {
+    console.error("footfallByCenter error:", err);
     return res
       .status(500)
       .json({ success: false, message: "Server error", error: err.message });

@@ -1,5 +1,12 @@
-import { useState, useEffect, useCallback } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  Fragment,
+  type ChangeEvent,
+} from "react";
 import axios from "axios";
+import * as XLSX from "xlsx";
 import API_BASE_URL from "../../config/api";
 import ModuleHeader from "../../components/ModuleHeader";
 import {
@@ -15,7 +22,205 @@ import {
   MdSchedule,
   MdLock,
   MdSync,
+  MdDownload,
+  MdUploadFile,
 } from "react-icons/md";
+
+const padNum = (n: number) => String(n).padStart(2, "0");
+
+// A header cell (Date object, "YYYY-MM-DD", "M/D/YYYY" or "D/M/YYYY") → YYYY-MM-DD.
+// The biometric report uses M/D/YYYY; we only treat it as D/M when first part > 12.
+function headerDateToStr(v: unknown): string {
+  if (v instanceof Date)
+    return `${v.getFullYear()}-${padNum(v.getMonth() + 1)}-${padNum(v.getDate())}`;
+  const s = String(v ?? "").trim();
+  if (!s) return "";
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) return `${m[1]}-${padNum(+m[2])}-${padNum(+m[3])}`;
+  m = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (m) {
+    let mo = +m[1];
+    let d = +m[2];
+    if (mo > 12) {
+      d = +m[1];
+      mo = +m[2];
+    }
+    return `${m[3]}-${padNum(mo)}-${padNum(d)}`;
+  }
+  return "";
+}
+
+// Spreadsheet time cell → "HH:MM:SS" (handles Date objects + Excel day fractions).
+function cellToTimeStr(v: unknown): string {
+  if (v == null || v === "" || v === "-") return "";
+  if (v instanceof Date)
+    return `${padNum(v.getHours())}:${padNum(v.getMinutes())}:${padNum(
+      v.getSeconds(),
+    )}`;
+  if (typeof v === "number") {
+    const tot = Math.round(v * 24 * 3600);
+    return `${padNum(Math.floor(tot / 3600) % 24)}:${padNum(
+      Math.floor(tot / 60) % 60,
+    )}:${padNum(tot % 60)}`;
+  }
+  const s = String(v).trim();
+  return s === "-" ? "" : s;
+}
+
+// Duration cell → "HH:MM:SS" string (may exceed 24h; kept as a display string).
+function cellToDurationStr(v: unknown): string {
+  if (v == null || v === "" || v === "-") return "";
+  if (v instanceof Date)
+    return `${padNum(v.getHours())}:${padNum(v.getMinutes())}:${padNum(
+      v.getSeconds(),
+    )}`;
+  if (typeof v === "number") {
+    const tot = Math.round(v * 24 * 3600);
+    return `${padNum(Math.floor(tot / 3600))}:${padNum(
+      Math.floor(tot / 60) % 60,
+    )}:${padNum(tot % 60)}`;
+  }
+  const s = String(v).trim();
+  return s === "-" ? "" : s;
+}
+
+interface ParsedBulkRow {
+  employeeCode: string;
+  date: string;
+  punchIn: string;
+  punchOut: string;
+  status: string;
+  totalWorkingHours: string;
+}
+
+// Parse the biometric partner's PIVOTED layout: each employee spans CheckIn /
+// Checkout / Duration / Status rows, with each date as a column. Identity columns
+// (name/center) are ignored — only the "Employee" code is read. Returns one
+// flat row per (employee, date) that actually has data.
+function parsePivotedPartnerSheet(aoa: unknown[][]): ParsedBulkRow[] | null {
+  const norm = (s: unknown) =>
+    String(s ?? "")
+      .replace(/[\s_-]/g, "")
+      .toLowerCase();
+
+  const headerIdx = aoa.findIndex((r) => r.some((c) => norm(c) === "task"));
+  if (headerIdx === -1) return null; // not the pivoted format
+
+  const header = aoa[headerIdx];
+  const taskCol = header.findIndex((c) => norm(c) === "task");
+  let empCol = header.findIndex((c) => {
+    const n = norm(c);
+    return n === "employee" || n === "employeeid" || n === "employeecode";
+  });
+  if (empCol === -1)
+    empCol = header.findIndex(
+      (c) => norm(c).includes("employee") && !norm(c).includes("name"),
+    );
+  if (empCol === -1 || taskCol === -1) return null;
+
+  const dateCols: { idx: number; date: string }[] = [];
+  for (let i = taskCol + 1; i < header.length; i++) {
+    const d = headerDateToStr(header[i]);
+    if (d) dateCols.push({ idx: i, date: d });
+  }
+  if (dateCols.length === 0) return null;
+
+  type Metrics = { in?: string; out?: string; status?: string; dur?: string };
+  const byEmp = new Map<string, Map<string, Metrics>>();
+  let current = "";
+
+  for (let r = headerIdx + 1; r < aoa.length; r++) {
+    const row = aoa[r];
+    const codeCell = String(row[empCol] ?? "").trim();
+    if (codeCell) current = codeCell;
+    if (!current) continue;
+
+    const task = norm(row[taskCol]);
+    const key: keyof Metrics | null =
+      task === "checkin"
+        ? "in"
+        : task === "checkout"
+          ? "out"
+          : task === "status"
+            ? "status"
+            : task === "duration"
+              ? "dur"
+              : null;
+    if (!key) continue;
+
+    let dates = byEmp.get(current);
+    if (!dates) {
+      dates = new Map();
+      byEmp.set(current, dates);
+    }
+    for (const { idx, date } of dateCols) {
+      const cell = row[idx];
+      const val =
+        key === "status"
+          ? String(cell ?? "").trim()
+          : key === "dur"
+            ? cellToDurationStr(cell)
+            : cellToTimeStr(cell);
+      if (!val || val === "-") continue;
+      const m = dates.get(date) ?? {};
+      m[key] = val;
+      dates.set(date, m);
+    }
+  }
+
+  const out: ParsedBulkRow[] = [];
+  for (const [code, dates] of byEmp) {
+    for (const [date, m] of dates) {
+      if (!m.in && !m.out && !m.status && !m.dur) continue;
+      out.push({
+        employeeCode: code,
+        date,
+        punchIn: m.in ?? "",
+        punchOut: m.out ?? "",
+        status: m.status ?? "",
+        totalWorkingHours: m.dur ?? "",
+      });
+    }
+  }
+  return out;
+}
+
+// Fallback: flat one-row-per-(employee,date) layout (the older template).
+function parseFlatSheet(aoa: unknown[][]): ParsedBulkRow[] | null {
+  const headerIdx = aoa.findIndex((r) =>
+    r.some((c) => String(c).trim().toLowerCase().startsWith("employee code")),
+  );
+  if (headerIdx === -1) return null;
+  const headerRow = aoa[headerIdx].map((c) => String(c).trim().toLowerCase());
+  const col = (needle: string) =>
+    headerRow.findIndex((h) => h.startsWith(needle));
+  const cEmp = col("employee code");
+  const cDate = col("date");
+  const cIn = col("punch in");
+  const cOut = col("punch out");
+  const cStatus = col("status");
+  const cDur = col("duration");
+  return aoa
+    .slice(headerIdx + 1)
+    .map((r) => ({
+      employeeCode: cEmp >= 0 ? String(r[cEmp] ?? "").trim() : "",
+      date: cDate >= 0 ? headerDateToStr(r[cDate]) || String(r[cDate] ?? "").trim() : "",
+      punchIn: cIn >= 0 ? cellToTimeStr(r[cIn]) : "",
+      punchOut: cOut >= 0 ? cellToTimeStr(r[cOut]) : "",
+      status: cStatus >= 0 ? String(r[cStatus] ?? "").trim() : "",
+      totalWorkingHours: cDur >= 0 ? cellToDurationStr(r[cDur]) : "",
+    }))
+    .filter((row) => row.employeeCode || row.date);
+}
+
+interface BulkUploadResult {
+  status: string;
+  recordsReceived: number;
+  recordsStored: number;
+  recordsSkipped: number;
+  errorCount: number;
+  errors?: { employeeCode?: string; reason?: string; error?: string }[];
+}
 
 interface Project {
   _id: string;
@@ -38,9 +243,15 @@ interface AttendanceConfig {
   >;
 }
 
+interface SyncErrorDetail {
+  employeeCode?: string;
+  reason?: string;
+  error?: string;
+}
+
 interface SyncLog {
   _id: string;
-  triggeredBy: "SCHEDULE" | "MANUAL" | "API";
+  triggeredBy: "SCHEDULE" | "MANUAL" | "API" | "UPLOAD";
   startedAt: string;
   completedAt?: string;
   recordsFetched: number;
@@ -48,6 +259,44 @@ interface SyncLog {
   recordsSkipped: number;
   errorCount: number;
   status: "SUCCESS" | "PARTIAL" | "FAILED";
+  errorDetails?: SyncErrorDetail[];
+}
+
+// Turn a sync log's raw errorDetails into a single human-readable explanation.
+// Returns null for clean SUCCESS runs.
+function describeSyncError(log: SyncLog): string | null {
+  if (log.status === "SUCCESS") return null;
+  const details = log.errorDetails ?? [];
+
+  // A fetch-level failure means we never got data from AFT at all.
+  const fetchErr = details.find((d) => d.reason === "FETCH_ERROR");
+  if (fetchErr) {
+    const msg = fetchErr.error ?? "";
+    if (/401|unauthor/i.test(msg)) {
+      return "Authentication failed (401) — the AFT API key is invalid or expired. Update it in AFT API Settings above, then run the sync again.";
+    }
+    if (/403/.test(msg)) return "AFT rejected the request (403 Forbidden).";
+    if (/timeout|ETIMEDOUT|ECONNABORTED/i.test(msg))
+      return "AFT API request timed out — the biometric server did not respond.";
+    if (/ENOTFOUND|ECONNREFUSED|Network/i.test(msg))
+      return "Could not reach the AFT API — check the base URL and network.";
+    return `Could not fetch from AFT: ${msg || "unknown error"}`;
+  }
+
+  // Per-record issues during processing.
+  const unmatched = details.filter((d) => d.reason === "UNMATCHED").length;
+  const dbErr = details.filter((d) => d.reason === "DB_ERROR").length;
+  const parts: string[] = [];
+  if (unmatched)
+    parts.push(
+      `${unmatched} record(s) skipped — no employee with a matching code in this project`,
+    );
+  if (dbErr) parts.push(`${dbErr} record(s) failed to save`);
+  if (parts.length) return parts.join("; ");
+
+  return log.status === "FAILED"
+    ? "Sync failed."
+    : "Sync completed with issues.";
 }
 
 const MASKED = "••••••";
@@ -59,7 +308,7 @@ const FIELD_LABELS: Record<string, string> = {
   punch_out: "Punch Out",
   total_working_hours: "Total Hours",
   status: "Status",
-  center: "Center",
+  center: "Offline Center",
   geo: "Geo Location",
   published: "Published",
 };
@@ -146,6 +395,89 @@ export default function AttendanceConfigPage() {
   useEffect(() => {
     loadLogs();
   }, [loadLogs]);
+
+  // ── Bulk manual upload ─────────────────────────────────────────────────────
+  const [bulkUploading, setBulkUploading] = useState(false);
+  const [bulkResult, setBulkResult] = useState<BulkUploadResult | null>(null);
+
+  const handleDownloadTemplate = () => {
+    if (!projectId) return;
+    fetch(`${API_BASE_URL}/attendance/bulk/template?projectId=${projectId}`, {
+      headers,
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("download failed");
+        return res.blob();
+      })
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `attendance_bulk_template_${projectId}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+      })
+      .catch(() =>
+        setMessage({ type: "error", text: "Failed to download template." }),
+      );
+  };
+
+  const handleBulkFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file
+    if (!file || !projectId) return;
+    setBulkUploading(true);
+    setBulkResult(null);
+    setMessage(null);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array", cellDates: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const aoa = XLSX.utils.sheet_to_json<unknown[]>(ws, {
+        header: 1,
+        blankrows: false,
+        defval: "",
+      });
+
+      // Prefer the biometric partner's pivoted layout; fall back to flat.
+      const rows = parsePivotedPartnerSheet(aoa) ?? parseFlatSheet(aoa);
+
+      if (!rows) {
+        setMessage({
+          type: "error",
+          text: "Unrecognised file. Use the biometric partner report (with a 'Task' column) or the downloaded template.",
+        });
+        return;
+      }
+      if (rows.length === 0) {
+        setMessage({ type: "error", text: "No data rows found in the file." });
+        return;
+      }
+
+      const r = await axios.post(
+        `${API_BASE_URL}/attendance/bulk/upload`,
+        { projectId, rows },
+        { headers },
+      );
+      const result: BulkUploadResult = r.data;
+      setBulkResult(result);
+      setMessage({
+        type:
+          result.errorCount > 0 || result.recordsSkipped > 0
+            ? "error"
+            : "success",
+        text: `Upload ${result.status}: ${result.recordsStored} stored, ${result.recordsSkipped} skipped, ${result.errorCount} error(s).`,
+      });
+      loadLogs();
+    } catch (err: unknown) {
+      const msg =
+        (axios.isAxiosError(err) && err.response?.data?.message) ||
+        "Bulk upload failed. Please check the file and try again.";
+      setMessage({ type: "error", text: msg });
+    } finally {
+      setBulkUploading(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!projectId) return;
@@ -574,6 +906,78 @@ export default function AttendanceConfigPage() {
             </button>
           </div>
 
+          {/* Bulk Manual Upload */}
+          <Section title="Bulk Upload Attendance">
+            <p className="text-xs text-gray-500 mb-3">
+              Upload the biometric partner's report directly (the pivoted layout
+              with CheckIn / Checkout / Duration / Status rows and a column per
+              date) — or download the template, which mirrors that layout. Only
+              the <strong>Employee</strong> code and the daily values are read;
+              <strong> Name, Designation and Center are taken from our system</strong>{" "}
+              by Employee Code (partner values are ignored). Rows are merged into
+              the same records used by View Records and the Attendance Report
+              (matched by Employee Code + Date). CSV or Excel.
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                onClick={handleDownloadTemplate}
+                disabled={!projectId}
+                className="btn btn-outline flex items-center gap-2 disabled:opacity-50"
+              >
+                <MdDownload />
+                Download Template
+              </button>
+
+              <label
+                className={`btn btn-primary flex items-center gap-2 cursor-pointer ${
+                  !projectId || bulkUploading
+                    ? "opacity-50 pointer-events-none"
+                    : ""
+                }`}
+              >
+                <MdUploadFile />
+                {bulkUploading ? "Uploading…" : "Upload Filled File"}
+                <input
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  className="hidden"
+                  disabled={!projectId || bulkUploading}
+                  onChange={handleBulkFile}
+                />
+              </label>
+
+              {!projectId && (
+                <span className="text-xs text-amber-600">
+                  Select a project first.
+                </span>
+              )}
+            </div>
+
+            {bulkResult && (
+              <div className="mt-4 rounded-md border border-gray-200 bg-gray-50 p-3 text-xs">
+                <div className="flex flex-wrap gap-4 font-medium text-gray-700">
+                  <span>Received: {bulkResult.recordsReceived}</span>
+                  <span className="text-green-700">
+                    Stored: {bulkResult.recordsStored}
+                  </span>
+                  <span className="text-amber-600">
+                    Skipped: {bulkResult.recordsSkipped}
+                  </span>
+                  <span className="text-red-600">
+                    Errors: {bulkResult.errorCount}
+                  </span>
+                </div>
+                {bulkResult.errors && bulkResult.errors.length > 0 && (
+                  <ul className="mt-2 max-h-40 overflow-y-auto list-disc pl-5 text-red-600">
+                    {bulkResult.errors.map((er, i) => (
+                      <li key={i}>{er.error || er.reason}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </Section>
+
           {/* Sync History */}
           <Section title="Recent Sync History">
             <div className="flex justify-between items-center mb-3">
@@ -587,6 +991,22 @@ export default function AttendanceConfigPage() {
                 Refresh
               </button>
             </div>
+            {/* Prominent banner when the most recent run failed */}
+            {(() => {
+              const latest = syncLogs[0];
+              if (!latest || latest.status !== "FAILED") return null;
+              const msg = describeSyncError(latest);
+              if (!msg) return null;
+              return (
+                <div className="mb-3 flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  <span className="mt-0.5">⚠</span>
+                  <span>
+                    <span className="font-semibold">Latest sync failed:</span>{" "}
+                    {msg}
+                  </span>
+                </div>
+              );
+            })()}
             {logsLoading ? (
               <p className="text-sm text-gray-500">Loading…</p>
             ) : syncLogs.length === 0 ? (
@@ -617,26 +1037,51 @@ export default function AttendanceConfigPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {syncLogs.map((log) => (
-                      <tr key={log._id} className="border-b last:border-0">
-                        <td className="py-2 pr-3 text-gray-600">
-                          {new Date(log.startedAt).toLocaleString("en-IN")}
-                        </td>
-                        <td className="py-2 pr-3">{log.triggeredBy}</td>
-                        <td className="py-2 pr-3 text-center">
-                          {log.recordsFetched}
-                        </td>
-                        <td className="py-2 pr-3 text-center">
-                          {log.recordsStored}
-                        </td>
-                        <td className="py-2 pr-3 text-center text-red-600">
-                          {log.errorCount > 0 ? log.errorCount : "—"}
-                        </td>
-                        <td className="py-2 text-center">
-                          <StatusBadge status={log.status} />
-                        </td>
-                      </tr>
-                    ))}
+                    {syncLogs.map((log) => {
+                      const errMsg = describeSyncError(log);
+                      return (
+                        <Fragment key={log._id}>
+                          <tr
+                            className={
+                              errMsg
+                                ? "border-b-0"
+                                : "border-b last:border-0"
+                            }
+                          >
+                            <td className="py-2 pr-3 text-gray-600">
+                              {new Date(log.startedAt).toLocaleString("en-IN")}
+                            </td>
+                            <td className="py-2 pr-3">{log.triggeredBy}</td>
+                            <td className="py-2 pr-3 text-center">
+                              {log.recordsFetched}
+                            </td>
+                            <td className="py-2 pr-3 text-center">
+                              {log.recordsStored}
+                            </td>
+                            <td className="py-2 pr-3 text-center text-red-600">
+                              {log.errorCount > 0 ? log.errorCount : "—"}
+                            </td>
+                            <td className="py-2 text-center">
+                              <StatusBadge status={log.status} />
+                            </td>
+                          </tr>
+                          {errMsg && (
+                            <tr className="border-b last:border-0">
+                              <td
+                                colSpan={6}
+                                className={`pb-2 pr-3 ${
+                                  log.status === "FAILED"
+                                    ? "text-red-600"
+                                    : "text-amber-600"
+                                }`}
+                              >
+                                ↳ {errMsg}
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -652,6 +1097,7 @@ const SECTION_ICONS: Record<string, React.ReactNode> = {
   "AFT API Settings": <MdSettings className="text-blue-500" />,
   "Sync Settings": <MdSchedule className="text-blue-500" />,
   "Field Visibility Permissions": <MdLock className="text-blue-500" />,
+  "Bulk Upload Attendance": <MdUploadFile className="text-blue-500" />,
   "Recent Sync History": <MdHistory className="text-blue-500" />,
 };
 
