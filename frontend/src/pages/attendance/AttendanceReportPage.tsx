@@ -1,9 +1,84 @@
 ﻿import { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import axios from "axios";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import API_BASE_URL from "../../config/api";
+
+// ── Devanagari → Latin transliteration for PDF export ───────────────────────
+// jsPDF's built-in Helvetica only supports Latin-1, so Devanagari/Marathi text
+// (e.g. "CET उपकेंद्र") would render as garbage (or, when we tried embedding a
+// Unicode font, broke the whole document). Instead we romanize any Devanagari
+// to readable Latin ("CET upakendra") — fully offline, never blank.
+const DEV_VOWELS: Record<string, string> = {
+  अ: "a", आ: "aa", इ: "i", ई: "ee", उ: "u", ऊ: "oo", ऋ: "ri",
+  ए: "e", ऐ: "ai", ओ: "o", औ: "au", ऑ: "o", ऍ: "e",
+};
+const DEV_MATRAS: Record<string, string> = {
+  "ा": "aa", "ि": "i", "ी": "ee", "ु": "u", "ू": "oo", "ृ": "ri",
+  "े": "e", "ै": "ai", "ो": "o", "ौ": "au", "ॉ": "o", "ॅ": "e",
+};
+const DEV_CONS: Record<string, string> = {
+  क: "k", ख: "kh", ग: "g", घ: "gh", ङ: "ng",
+  च: "ch", छ: "chh", ज: "j", झ: "jh", ञ: "ny",
+  ट: "t", ठ: "th", ड: "d", ढ: "dh", ण: "n",
+  त: "t", थ: "th", द: "d", ध: "dh", न: "n",
+  प: "p", फ: "ph", ब: "b", भ: "bh", म: "m",
+  य: "y", र: "r", ल: "l", व: "v",
+  श: "sh", ष: "sh", स: "s", ह: "h", ळ: "l",
+};
+const DEV_VIRAMA = "्";
+const DEV_ANUSVARA = "ं";
+const DEV_VISARGA = "ः";
+const DEV_CHANDRABINDU = "ँ";
+const DEV_NUKTA = "़";
+const DEV_DIGITS: Record<string, string> = {
+  "०": "0", "१": "1", "२": "2", "३": "3", "४": "4",
+  "५": "5", "६": "6", "७": "7", "८": "8", "९": "9",
+};
+
+function transliterateDevanagari(input: string): string {
+  const chars = Array.from(input);
+  let out = "";
+  for (let i = 0; i < chars.length; i++) {
+    const c = chars[i];
+    if (DEV_CONS[c]) {
+      out += DEV_CONS[c];
+      const next = chars[i + 1];
+      if (next === DEV_VIRAMA) {
+        i++; // halant: suppress the inherent vowel
+      } else if (next && DEV_MATRAS[next]) {
+        out += DEV_MATRAS[next];
+        i++;
+      } else {
+        out += "a"; // inherent vowel
+      }
+    } else if (DEV_VOWELS[c]) {
+      out += DEV_VOWELS[c];
+    } else if (DEV_MATRAS[c]) {
+      out += DEV_MATRAS[c]; // stray matra
+    } else if (c === DEV_ANUSVARA || c === DEV_CHANDRABINDU) {
+      out += "n";
+    } else if (c === DEV_VISARGA) {
+      out += "h";
+    } else if (c === DEV_NUKTA) {
+      // skip
+    } else if (DEV_DIGITS[c]) {
+      out += DEV_DIGITS[c];
+    } else {
+      out += c;
+    }
+  }
+  return out;
+}
+
+const DEVANAGARI_RE = /[ऀ-ॿ]/;
+// Make any string safe for jsPDF's Latin-only fonts.
+function pdfText(value: unknown): string {
+  const str = String(value ?? "");
+  return DEVANAGARI_RE.test(str) ? transliterateDevanagari(str) : str;
+}
 import ModuleHeader from "../../components/ModuleHeader";
 import { usePermissions } from "../../hooks/usePermissions";
 import {
@@ -524,6 +599,109 @@ function todayISO(): string {
   return localDateStr(new Date());
 }
 
+// ── Working-calendar helpers (target days / target hours) ────────────────────
+interface WorkCalendarLite {
+  workingHours: Array<{
+    dayOfWeek: number;
+    isWorkingDay: boolean;
+    startTime: string;
+    endTime: string;
+    breakStartTime?: string;
+    breakEndTime?: string;
+  }>;
+  holidays: Array<{ date: string; isRecurring?: boolean }>;
+}
+
+// Statuses counted as "Leave" toward Actual Attendance (in addition to
+// punch-based Present days).
+const LEAVE_STATUSES = new Set([
+  "CL",
+  "SL",
+  "EL",
+  "AL",
+  "ML",
+  "CO",
+  "OD",
+  "WFH",
+  "HD",
+]);
+
+const _toMin = (t: string): number => {
+  const [h, m] = (t || "0:0").split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+};
+
+// Target working hours for a weekday from the calendar (end − start − break).
+function dailyTargetHours(
+  cal: WorkCalendarLite | null,
+  weekday: number,
+): number {
+  const wh = cal?.workingHours?.find((w) => w.dayOfWeek === weekday);
+  if (!wh || !wh.isWorkingDay) return 0;
+  let mins = _toMin(wh.endTime) - _toMin(wh.startTime);
+  if (wh.breakStartTime && wh.breakEndTime)
+    mins -= _toMin(wh.breakEndTime) - _toMin(wh.breakStartTime);
+  return Math.max(0, mins) / 60;
+}
+
+function isHolidayDate(cal: WorkCalendarLite | null, iso: string): boolean {
+  if (!cal?.holidays?.length) return false;
+  const [y, mo, da] = iso.split("-");
+  return cal.holidays.some((h) => {
+    const hd = new Date(h.date);
+    if (isNaN(hd.getTime())) return false;
+    const hm = String(hd.getUTCMonth() + 1).padStart(2, "0");
+    const hday = String(hd.getUTCDate()).padStart(2, "0");
+    if (h.isRecurring) return hm === mo && hday === da;
+    return String(hd.getUTCFullYear()) === y && hm === mo && hday === da;
+  });
+}
+
+// A date is a working day when its weekday is a working day in the calendar and
+// it isn't a holiday. Without a calendar, default to Mon–Sat (Sunday off).
+function isWorkingDate(cal: WorkCalendarLite | null, iso: string): boolean {
+  const wd = parseLocalDate(iso).getDay();
+  if (cal) {
+    const wh = cal.workingHours?.find((w) => w.dayOfWeek === wd);
+    if (!wh || !wh.isWorkingDay) return false;
+  } else if (wd === 0) {
+    return false;
+  }
+  return !isHolidayDate(cal, iso);
+}
+
+// Inclusive list of YYYY-MM-DD strings between two dates.
+function enumerateDates(from: string, to: string): string[] {
+  if (!from || !to) return [];
+  const out: string[] = [];
+  let cur = parseLocalDate(from);
+  const end = parseLocalDate(to);
+  let guard = 0;
+  while (cur <= end && guard < 400) {
+    out.push(localDateStr(cur));
+    cur = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + 1);
+    guard++;
+  }
+  return out;
+}
+
+// Target working days + total target hours over a list of dates (past/today only).
+function computeTargets(
+  cal: WorkCalendarLite | null,
+  dates: string[],
+): { targetDays: number; targetHours: number } {
+  const today = todayISO();
+  let targetDays = 0;
+  let targetHours = 0;
+  for (const d of dates) {
+    if (d > today) continue;
+    if (!isWorkingDate(cal, d)) continue;
+    targetDays++;
+    targetHours += dailyTargetHours(cal, parseLocalDate(d).getDay());
+  }
+  return { targetDays, targetHours };
+}
+
 function getDefaultRange(vt: ViewType): MatrixRange {
   const now = new Date();
   if (vt === "monthly") {
@@ -686,11 +864,26 @@ function SearchableMultiSelect({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const wrapRef = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Panel is rendered in a portal (to escape ancestor overflow:hidden), so it
+  // needs the button's on-screen position.
+  const [pos, setPos] = useState<{ top: number; left: number; width: number }>({
+    top: 0,
+    left: 0,
+    width: 240,
+  });
 
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node))
+      const t = e.target as Node;
+      if (
+        wrapRef.current &&
+        !wrapRef.current.contains(t) &&
+        panelRef.current &&
+        !panelRef.current.contains(t)
+      )
         setOpen(false);
     };
     document.addEventListener("mousedown", handler);
@@ -718,8 +911,13 @@ function SearchableMultiSelect({
   return (
     <div ref={wrapRef} style={{ position: "relative", maxWidth }}>
       <button
+        ref={btnRef}
         onClick={() => {
           setSearch("");
+          if (!open && btnRef.current) {
+            const r = btnRef.current.getBoundingClientRect();
+            setPos({ top: r.bottom + 4, left: r.left, width: Math.max(r.width, 240) });
+          }
           setOpen((p) => !p);
         }}
         style={{
@@ -746,23 +944,25 @@ function SearchableMultiSelect({
         <span style={{ fontSize: 10, flexShrink: 0 }}>{open ? "▴" : "▾"}</span>
       </button>
 
-      {open && (
-        <div
-          style={{
-            position: "absolute",
-            top: "calc(100% + 4px)",
-            left: 0,
-            background: "#fff",
-            border: "1px solid #e5e7eb",
-            borderRadius: 8,
-            boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
-            zIndex: 100,
-            width: 240,
-            maxHeight: 320,
-            display: "flex",
-            flexDirection: "column",
-          }}
-        >
+      {open &&
+        createPortal(
+          <div
+            ref={panelRef}
+            style={{
+              position: "fixed",
+              top: pos.top,
+              left: pos.left,
+              background: "#fff",
+              border: "1px solid #e5e7eb",
+              borderRadius: 8,
+              boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+              zIndex: 9999,
+              width: pos.width,
+              maxHeight: 320,
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
           {/* Search */}
           <div style={{ padding: "8px 8px 4px" }}>
             <input
@@ -884,8 +1084,9 @@ function SearchableMultiSelect({
               })
             )}
           </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
@@ -917,6 +1118,19 @@ function MyAttendanceReports({ token }: { token: string }) {
   const [exportMenuOpen, setExportMenuOpen] = useState<string | null>(null);
   // Per-report on-screen layout: false = detailed (date columns), true = HR template summary
   const [summaryView, setSummaryView] = useState<Record<string, boolean>>({});
+  // Default working calendar per project (for Target Attendance / Target Hours)
+  const [calendarByProject, setCalendarByProject] = useState<
+    Record<string, WorkCalendarLite | null>
+  >({});
+  // Offline centers per project (name + District Nodal Officer) — drives the
+  // Center filter dropdown and the export venue header.
+  const [centersByProject, setCentersByProject] = useState<
+    Record<string, { centerName: string; dno: string }[]>
+  >({});
+  // Active employees per project — drives the Employee filter dropdown.
+  const [employeesByProject, setEmployeesByProject] = useState<
+    Record<string, { userId: string; name: string; employeeCode: string }[]>
+  >({});
 
   useEffect(() => {
     setLoading(true);
@@ -930,6 +1144,78 @@ function MyAttendanceReports({ token }: { token: string }) {
       })
       .finally(() => setLoading(false));
   }, []);
+
+  // Load each report's project default working calendar (working days + hours).
+  useEffect(() => {
+    const projectIds = [
+      ...new Set(
+        reports.map((r) => (r as any).projectId).filter(Boolean) as string[],
+      ),
+    ];
+    projectIds.forEach((pid) => {
+      setCalendarByProject((prev) => {
+        if (pid in prev) return prev; // already fetched/attempted
+        axios
+          .get(`${API_BASE_URL}/working-calendars/project/${pid}/default`, {
+            headers,
+          })
+          .then((r) => {
+            const data = r.data?.data;
+            setCalendarByProject((p) => ({
+              ...p,
+              [pid]: data
+                ? {
+                    workingHours: data.workingHours ?? [],
+                    holidays: data.holidays ?? [],
+                  }
+                : null,
+            }));
+          })
+          .catch(() =>
+            setCalendarByProject((p) => ({ ...p, [pid]: null })),
+          );
+        return { ...prev, [pid]: prev[pid] ?? null };
+      });
+
+      // Offline centers for the Center filter dropdown
+      setCentersByProject((prev) => {
+        if (pid in prev) return prev;
+        axios
+          .get(`${API_BASE_URL}/offline-module/${pid}/centers`, { headers })
+          .then((r) => {
+            const list = (r.data?.centers ?? [])
+              .filter((c: any) => c.centerName)
+              .map((c: any) => {
+                const dnoContact = (c.contacts ?? []).find((ct: any) =>
+                  /nodal|dno/i.test(ct?.role ?? ""),
+                );
+                return {
+                  centerName: c.centerName as string,
+                  dno: (dnoContact?.name as string) ?? "",
+                };
+              });
+            setCentersByProject((p) => ({ ...p, [pid]: list }));
+          })
+          .catch(() => setCentersByProject((p) => ({ ...p, [pid]: [] })));
+        return { ...prev, [pid]: prev[pid] ?? [] };
+      });
+
+      // Project employees for the Employee filter dropdown
+      setEmployeesByProject((prev) => {
+        if (pid in prev) return prev;
+        axios
+          .get(`${API_BASE_URL}/attendance/employees-list?projectId=${pid}`, {
+            headers,
+          })
+          .then((r) => {
+            setEmployeesByProject((p) => ({ ...p, [pid]: r.data?.data ?? [] }));
+          })
+          .catch(() => setEmployeesByProject((p) => ({ ...p, [pid]: [] })));
+        return { ...prev, [pid]: prev[pid] ?? [] };
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reports]);
 
   // Close export dropdown on outside click
   useEffect(() => {
@@ -1239,8 +1525,8 @@ function MyAttendanceReports({ token }: { token: string }) {
       doc.setFontSize(9);
       doc.text(`Period: ${range.dateFrom} to ${range.dateTo}`, 14, 21);
       autoTable(doc, {
-        head: [data.headers],
-        body: data.dataRows.map((r) => r.map(String)),
+        head: [data.headers.map((h) => pdfText(h))],
+        body: data.dataRows.map((r) => r.map((c) => pdfText(c))),
         startY: 26,
         styles: { fontSize: 7, cellPadding: 2 },
         headStyles: {
@@ -1291,8 +1577,8 @@ function MyAttendanceReports({ token }: { token: string }) {
       doc.setFontSize(12);
       doc.text(`${report.name} — Daily Records`, 14, 14);
       autoTable(doc, {
-        head: [headers],
-        body: dataRows.map((r) => r.map(String)),
+        head: [headers.map((h) => pdfText(h))],
+        body: dataRows.map((r) => r.map((c) => pdfText(c))),
         startY: 22,
         styles: { fontSize: 8, cellPadding: 2 },
         headStyles: {
@@ -1382,7 +1668,7 @@ function MyAttendanceReports({ token }: { token: string }) {
       doc.text(`${metaRow[0]}   ${metaRow[1]}   ${metaRow[2]}`, 14, 21);
       autoTable(doc, {
         head: [columnHeaders],
-        body: dataRows.map((r) => r.map(String)),
+        body: dataRows.map((r) => r.map((c) => pdfText(c))),
         startY: 26,
         styles: { fontSize: 8, cellPadding: 2 },
         headStyles: {
@@ -1440,6 +1726,40 @@ function MyAttendanceReports({ token }: { token: string }) {
       }
     }
 
+    // Scope the export to the selected center(s) so a per-venue download only
+    // contains that venue's rows (matches the on-screen Center filter).
+    const exportSelCenters = filterCenters[report._id] ?? [];
+    if (exportSelCenters.length > 0) {
+      rows = rows.filter((r) => exportSelCenters.includes(r.center ?? ""));
+      if (rows.length === 0) {
+        alert("No records found for the selected center(s).");
+        return;
+      }
+    }
+
+    // Venue header info. A single selected center → full venue header; otherwise
+    // fall back to the distinct centers present in the data.
+    const distinctCenters = [
+      ...new Set(rows.map((r) => r.center).filter(Boolean) as string[]),
+    ];
+    const venueName =
+      exportSelCenters.length === 1
+        ? exportSelCenters[0]
+        : distinctCenters.length === 1
+          ? distinctCenters[0]
+          : exportSelCenters.length > 1
+            ? exportSelCenters.join(", ")
+            : "All Centers";
+    // Venue code = the part of the center name before the first "-".
+    const venueCode =
+      venueName && venueName !== "All Centers" && venueName.includes("-")
+        ? venueName.split("-")[0].trim()
+        : "";
+    const projCenters =
+      centersByProject[(report as any).projectId ?? ""] ?? [];
+    const venueDno =
+      projCenters.find((c) => c.centerName === venueName)?.dno || "";
+
     // ── Gather unique sorted dates ───────────────────────────────────────────
     const dateSet = new Set<string>();
     for (const r of rows) {
@@ -1453,6 +1773,7 @@ function MyAttendanceReports({ token }: { token: string }) {
       name: string;
       code: string;
       designation: string;
+      center: string;
       byDate: Record<string, AttendanceRecord>;
     };
     const empMap = new Map<string, EmpEntry>();
@@ -1464,14 +1785,30 @@ function MyAttendanceReports({ token }: { token: string }) {
           name: r.employeeName ?? "",
           code,
           designation: r.designation ?? "",
+          center: r.center ?? "",
           byDate: {},
         });
       }
-      empMap.get(code)!.byDate[dateKey] = r;
+      const e = empMap.get(code)!;
+      if (!e.designation && r.designation) e.designation = r.designation;
+      if (!e.center && r.center) e.center = r.center;
+      e.byDate[dateKey] = r;
     }
 
     const empList = [...empMap.values()];
-    const totalDays = sortedDates.length;
+
+    // Target days/hours from the project's working calendar.
+    const cal = calendarByProject[(report as any).projectId ?? ""] ?? null;
+    const expVt = getViewType(report._id);
+    const expRange = getMatrixRange(report._id);
+    const targetDates =
+      expVt !== "daily" && expRange.dateFrom && expRange.dateTo
+        ? enumerateDates(expRange.dateFrom, expRange.dateTo)
+        : sortedDates;
+    const { targetDays, targetHours } = computeTargets(cal, targetDates);
+    const denom = targetDays > 0 ? targetDays : sortedDates.length;
+    const targetHoursStr: string | number =
+      targetHours > 0 ? Number(targetHours.toFixed(1)) : "";
 
     // ── Date label helper: "10 Sept" ─────────────────────────────────────────
     const shortDate = (iso: string) => {
@@ -1479,83 +1816,96 @@ function MyAttendanceReports({ token }: { token: string }) {
       return `${d.getDate()} ${d.toLocaleString("en-IN", { month: "short" })}`;
     };
 
-    const PRESENT_STATUSES_CW = new Set([
-      "P",
-      "PL",
-      "H",
-      "CL",
-      "SL",
-      "EL",
-      "AL",
-      "ML",
-      "CO",
-      "OD",
-      "WFH",
-      "HD",
-    ]);
-
-    const centerNames = [
-      ...new Set(rows.map((r) => r.center).filter(Boolean)),
-    ].join(", ");
     const dateFrom = sortedDates[0] ?? "";
     const dateTo = sortedDates[sortedDates.length - 1] ?? "";
+    // Attendance cycle label — "1 Jun 2026 – 4 Jun 2026" (or a single date).
+    const fmtCycle = (iso: string) => {
+      const d = parseLocalDate(iso);
+      return d.toLocaleDateString("en-IN", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+    };
+    const attendanceCycle =
+      dateFrom && dateTo
+        ? dateFrom === dateTo
+          ? fmtCycle(dateFrom)
+          : `${fmtCycle(dateFrom)} – ${fmtCycle(dateTo)}`
+        : "";
     const baseName = `${report.name.replace(/[^a-z0-9]/gi, "_")}_attendance`;
 
-    // ── Shared row builder ────────────────────────────────────────────────────
+    // ── Shared row builder (matches the on-screen detailed table) ─────────────
     const buildRows = () =>
       empList.map((emp, i) => {
-        let totalHrsAttended = 0;
-        let daysPresent = 0;
+        let presentDays = 0;
+        let leaveDays = 0;
         const dateCols: string[] = [];
         for (const d of sortedDates) {
           const rec = emp.byDate[d];
-          dateCols.push(rec?.punch_in ? formatTime(rec.punch_in) : "—");
-          dateCols.push(rec?.punch_out ? formatTime(rec.punch_out) : "—");
-          if (rec?.status && PRESENT_STATUSES_CW.has(rec.status)) {
-            daysPresent++;
-            if (rec.punch_in && rec.punch_out) {
-              const ms =
-                new Date(rec.punch_out).getTime() -
-                new Date(rec.punch_in).getTime();
-              if (ms > 0) totalHrsAttended += ms / 3_600_000;
-            }
-          }
+          const hasIn = !!rec?.punch_in;
+          const hasOut = !!rec?.punch_out;
+          const both = hasIn && hasOut;
+          dateCols.push(hasIn ? formatTime(rec!.punch_in) : "—");
+          dateCols.push(hasOut ? formatTime(rec!.punch_out) : "—");
+          dateCols.push(both ? "P" : "A");
+          if (both) presentDays++;
+          else if (rec?.status && LEAVE_STATUSES.has(rec.status)) leaveDays++;
         }
+        const actual = presentDays + leaveDays;
         const attPct =
-          totalDays > 0
-            ? ((daysPresent / totalDays) * 100).toFixed(2) + "%"
-            : "0%";
+          denom > 0 ? ((actual / denom) * 100).toFixed(2) + "%" : "0%";
         return [
           i + 1,
           emp.name,
           emp.code,
+          emp.designation || "—",
+          emp.center || "—",
           ...dateCols,
-          Number(totalHrsAttended.toFixed(2)),
+          denom,
+          actual,
           attPct,
+          targetHoursStr,
         ];
       });
 
-    const fixedHeaders = ["S.No", "Name", "Employee Code"];
+    const fixedHeaders = [
+      "S.No",
+      "Name",
+      "Employee Code",
+      "Designation",
+      "Offline Center",
+    ];
     const dateHeaders: string[] = [];
     for (const d of sortedDates) {
       const label = shortDate(d);
-      dateHeaders.push(`${label} In`, `${label} Out`);
+      dateHeaders.push(`${label} In`, `${label} Out`, `${label} Status`);
     }
     const headerRow = [
       ...fixedHeaders,
       ...dateHeaders,
-      "Total Hrs. Attended",
+      "Target Attendance",
+      "Actual Attendance",
       "Attendance %",
+      "Total Targeted Hours",
     ];
     const dataRows = buildRows();
     const totalRow: (string | number)[] = [
       "Total Count",
       "",
       "",
+      "",
+      "",
       ...sortedDates.flatMap((d) => {
-        const cnt = empList.filter((e) => !!e.byDate[d]?.punch_in).length;
-        return [cnt, cnt];
+        const inCnt = empList.filter((e) => !!e.byDate[d]?.punch_in).length;
+        const outCnt = empList.filter((e) => !!e.byDate[d]?.punch_out).length;
+        const presentCnt = empList.filter(
+          (e) => !!e.byDate[d]?.punch_in && !!e.byDate[d]?.punch_out,
+        ).length;
+        return [inCnt, outCnt, presentCnt];
       }),
+      "",
+      "",
       "",
       "",
     ];
@@ -1564,11 +1914,11 @@ function MyAttendanceReports({ token }: { token: string }) {
       // ── CSV version ──────────────────────────────────────────────────────────
       const csvLines = [
         [`Center Wise Attendance Report`],
-        [
-          `Report: ${report.name}`,
-          `Center: ${centerNames || "—"}`,
-          `Dates: ${dateFrom} to ${dateTo}`,
-        ],
+        [`Venue Name: ${venueName || "—"}`],
+        [`Venue Code: ${venueCode || "—"}`],
+        [`DNO: ${venueDno || "—"}`],
+        [`Attendance Cycle: ${attendanceCycle || "—"}`],
+        [`Report: ${report.name}`],
         [],
         headerRow,
         ...dataRows,
@@ -1584,9 +1934,15 @@ function MyAttendanceReports({ token }: { token: string }) {
       const coverData: (string | number)[][] = [
         ["Center Wise Attendance Report"],
         [],
-        ["Report Name:", report.name, "", "Center:", centerNames || "—"],
+        ["Venue Name:", venueName || "—"],
+        ["Venue Code:", venueCode || "—"],
+        ["DNO:", venueDno || "—"],
+        ["Attendance Cycle:", attendanceCycle || "—"],
+        ["Report Name:", report.name],
         ["Date From:", dateFrom, "", "Date To:", dateTo],
-        ["Total Days:", totalDays],
+        ["Total Days:", sortedDates.length],
+        ["Target Working Days:", denom],
+        ["Total Targeted Hours:", targetHoursStr || "—"],
         [],
       ];
       const coverWs = XLSX.utils.aoa_to_sheet(coverData);
@@ -1607,6 +1963,8 @@ function MyAttendanceReports({ token }: { token: string }) {
     } else {
       // ── PDF version ──────────────────────────────────────────────────────
       const doc = new jsPDF({ orientation: "landscape", format: "a3" });
+      // Helvetica is Latin-only, so romanize any Devanagari (venue/center names)
+      // via pdfText() — always renders, never blank.
 
       // ── Page 1: Cover ───────────────────────────────────────────────────────
       doc.setFontSize(16);
@@ -1622,68 +1980,44 @@ function MyAttendanceReports({ token }: { token: string }) {
       doc.line(14, 26, doc.internal.pageSize.getWidth() - 14, 26);
 
       const coverItems: [string, string][] = [
-        ["Report Name:", report.name],
-        ["Center:", centerNames || "—"],
+        ["Venue Name:", venueName || "—"],
+        ["Venue Code:", venueCode || "—"],
+        ["DNO:", venueDno || "—"],
+        ["Attendance Cycle:", attendanceCycle || "—"],
         ["Date From:", dateFrom],
         ["Date To:", dateTo],
-        ["Total Days:", String(totalDays)],
+        ["Total Days:", String(sortedDates.length)],
+        ["Target Working Days:", String(denom)],
+        ["Total Targeted Hours:", String(targetHoursStr || "—")],
       ];
 
       doc.setFontSize(10);
       let cy = 38;
-      const col1x = 14,
-        col2x = 80,
-        col3x = 160,
-        col4x = 230;
-      const half = Math.ceil(coverItems.length / 2);
-
-      for (let i = 0; i < half; i++) {
-        const left = coverItems[i];
-        const right = coverItems[i + half];
+      const labelX = 14;
+      const valueX = 70;
+      const valueMaxWidth = doc.internal.pageSize.getWidth() - valueX - 14;
+      // Single column with wrapping so long venue names don't overlap.
+      for (const [label, value] of coverItems) {
         doc.setFont("helvetica", "bold");
-        doc.text(left[0], col1x, cy);
+        doc.text(label, labelX, cy);
         doc.setFont("helvetica", "normal");
-        doc.text(left[1], col2x, cy);
-        if (right) {
-          doc.setFont("helvetica", "bold");
-          doc.text(right[0], col3x, cy);
-          doc.setFont("helvetica", "normal");
-          doc.text(right[1], col4x, cy);
-        }
-        cy += 9;
+        const lines = doc.splitTextToSize(pdfText(value), valueMaxWidth);
+        doc.text(lines, valueX, cy);
+        cy += 7 * Math.max(1, lines.length);
       }
 
       // ── Page 2+: Data table ─────────────────────────────────────────────────
       doc.addPage("a3", "landscape");
-
-      // Sub-header line
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "bold");
-      doc.text(
-        `Center: ${centerNames || "—"}  |  Dates: ${dateFrom} – ${dateTo}`,
-        14,
-        12,
-      );
       doc.setFont("helvetica", "normal");
 
-      // Build column defs for autoTable (use shared headerRow/dataRows)
-      const tableHead: string[] = [
-        "S.No",
-        "Name",
-        "Employee Code",
-        ...sortedDates.flatMap((d) => [
-          `${shortDate(d)}\nIn`,
-          `${shortDate(d)}\nOut`,
-        ]),
-        "Total Hrs.\nAttended",
-        "Attendance\n%",
-      ];
-
+      // Use the shared headerRow so the PDF columns match the data rows
+      // (Designation, Offline Center, per-date In/Out/Status, Target, Actual, %,
+      // Total Targeted Hours).
       const tableBody = [...dataRows, totalRow];
 
       autoTable(doc, {
-        head: [tableHead],
-        body: tableBody.map((r) => r.map(String)),
+        head: [headerRow.map((h) => pdfText(h))],
+        body: tableBody.map((r) => r.map((c) => pdfText(c))),
         startY: 16,
         styles: { fontSize: 6, cellPadding: 1.2, halign: "center" },
         headStyles: {
@@ -1780,6 +2114,8 @@ function MyAttendanceReports({ token }: { token: string }) {
             const rows = runResults[report._id];
             const matrix = matrixData[report._id];
             const range = getMatrixRange(report._id);
+            // Project's working calendar → Target Attendance / Target Hours
+            const cal = calendarByProject[(report as any).projectId ?? ""] ?? null;
             // On-screen layout: HR template summary vs detailed date-column table
             const isSummary = summaryView[report._id] ?? false;
             // Export honours the active on-screen layout
@@ -1801,6 +2137,78 @@ function MyAttendanceReports({ token }: { token: string }) {
             // Derived filter values for this report
             const selUsers = filterUsers[report._id] ?? [];
             const selCenters = filterCenters[report._id] ?? [];
+            // Offline centers for this report's project — drives the Center
+            // filter dropdown (falls back to centers seen in the data).
+            const offlineCenters =
+              centersByProject[(report as any).projectId ?? ""] ?? [];
+            const offlineCenterNames = offlineCenters.map((c) => c.centerName);
+            const centerOptions = (
+              offlineCenterNames.length > 0
+                ? offlineCenterNames
+                : [
+                    ...new Set(
+                      [
+                        ...(matrix?.centers ?? []),
+                        ...((runResults[report._id] ?? [])
+                          .map((r) => r.center)
+                          .filter(Boolean) as string[]),
+                      ],
+                    ),
+                  ].sort()
+            ).map((c) => ({ value: c, label: c }));
+            // Employee filter options — all active employees for the project
+            // (loaded up-front), plus any extra employees seen in the data.
+            const employeeOptions = (() => {
+              const seen = new Map<string, string>();
+              for (const e of employeesByProject[
+                (report as any).projectId ?? ""
+              ] ?? []) {
+                if (e.userId && !seen.has(e.userId))
+                  seen.set(
+                    e.userId,
+                    e.name
+                      ? `${e.name}${e.employeeCode ? ` (${e.employeeCode})` : ""}`
+                      : e.employeeCode || e.userId,
+                  );
+              }
+              for (const r of matrix?.rows ?? []) {
+                if (r.userId && !seen.has(String(r.userId)))
+                  seen.set(
+                    String(r.userId),
+                    r.name
+                      ? `${r.name}${r.employeeCode ? ` (${r.employeeCode})` : ""}`
+                      : r.employeeCode,
+                  );
+              }
+              for (const r of runResults[report._id] ?? []) {
+                const uid = (r as any).userId;
+                if (uid && !seen.has(String(uid)))
+                  seen.set(
+                    String(uid),
+                    r.employeeName
+                      ? `${r.employeeName}${r.employee_id ? ` (${r.employee_id})` : ""}`
+                      : (r.employee_id ?? String(uid)),
+                  );
+              }
+              return [...seen.entries()]
+                .map(([value, label]) => ({ value, label }))
+                .sort((a, b) => a.label.localeCompare(b.label));
+            })();
+            // Rows after applying the Center / Employee filters — used by the
+            // detailed table and the summary view.
+            const visibleRows = (rows ?? []).filter((r) => {
+              if (
+                selCenters.length > 0 &&
+                !selCenters.includes(r.center ?? "")
+              )
+                return false;
+              if (
+                selUsers.length > 0 &&
+                !selUsers.includes(String((r as any).userId ?? ""))
+              )
+                return false;
+              return true;
+            });
             // Calendar helpers for this report's matrix
             const holidaySet = new Set(matrix?.holidays ?? []);
             const woSet = new Set(matrix?.nonWorkingWeekdays ?? []);
@@ -2330,12 +2738,7 @@ function MyAttendanceReports({ token }: { token: string }) {
                     </span>
                     {/* Employee multi-select */}
                     <SearchableMultiSelect
-                      options={(matrix?.rows ?? []).map((r) => ({
-                        value: r.userId,
-                        label: r.name
-                          ? `${r.name}${r.employeeCode ? ` (${r.employeeCode})` : ""}`
-                          : r.employeeCode,
-                      }))}
+                      options={employeeOptions}
                       selected={selUsers}
                       onChange={(vals) =>
                         setFilterUsers((p) => ({ ...p, [report._id]: vals }))
@@ -2345,10 +2748,7 @@ function MyAttendanceReports({ token }: { token: string }) {
                     />
                     {/* Center multi-select */}
                     <SearchableMultiSelect
-                      options={(matrix?.centers ?? []).map((c) => ({
-                        value: c,
-                        label: c,
-                      }))}
+                      options={centerOptions}
                       selected={selCenters}
                       onChange={(vals) =>
                         setFilterCenters((p) => ({ ...p, [report._id]: vals }))
@@ -2405,7 +2805,7 @@ function MyAttendanceReports({ token }: { token: string }) {
                   isSummary &&
                   (() => {
                     const { rows: hrRows, dateLabel } =
-                      buildHRTemplateRows(rows);
+                      buildHRTemplateRows(visibleRows);
                     return (
                       <div style={{ borderTop: "1px solid #e5e7eb" }}>
                         <div
@@ -2589,7 +2989,7 @@ function MyAttendanceReports({ token }: { token: string }) {
                   (() => {
                     // Build grouped structure: employee → date → record
                     const cwDateSet = new Set<string>();
-                    for (const r of rows) {
+                    for (const r of visibleRows) {
                       const d = r.attendanceDate?.split("T")[0];
                       if (d) cwDateSet.add(d);
                     }
@@ -2597,36 +2997,42 @@ function MyAttendanceReports({ token }: { token: string }) {
                     type CWEmp = {
                       name: string;
                       code: string;
+                      designation: string;
+                      center: string;
                       byDate: Record<string, AttendanceRecord>;
                     };
                     const cwMap = new Map<string, CWEmp>();
-                    for (const r of rows) {
+                    for (const r of visibleRows) {
                       const code = r.employee_id ?? "_";
                       const dk = r.attendanceDate?.split("T")[0] ?? "";
                       if (!cwMap.has(code)) {
                         cwMap.set(code, {
                           name: r.employeeName ?? "",
                           code,
+                          designation: r.designation ?? "",
+                          center: r.center ?? "",
                           byDate: {},
                         });
                       }
-                      cwMap.get(code)!.byDate[dk] = r;
+                      const e = cwMap.get(code)!;
+                      if (!e.designation && r.designation) e.designation = r.designation;
+                      if (!e.center && r.center) e.center = r.center;
+                      e.byDate[dk] = r;
                     }
                     const cwEmps = [...cwMap.values()];
-                    const cwPresent = new Set([
-                      "P",
-                      "PL",
-                      "H",
-                      "CL",
-                      "SL",
-                      "EL",
-                      "AL",
-                      "ML",
-                      "CO",
-                      "OD",
-                      "WFH",
-                      "HD",
-                    ]);
+                    // Target days/hours come from the project's working calendar.
+                    // Use the selected range for matrix views; the day(s) with
+                    // data for the daily view.
+                    const cwVt = getViewType(report._id);
+                    const targetDates =
+                      cwVt !== "daily" && range.dateFrom && range.dateTo
+                        ? enumerateDates(range.dateFrom, range.dateTo)
+                        : cwDates;
+                    const { targetDays, targetHours } = computeTargets(
+                      cal,
+                      targetDates,
+                    );
+                    const denom = targetDays > 0 ? targetDays : cwDates.length;
                     const shortD = (iso: string) => {
                       const d = parseLocalDate(iso);
                       return `${d.getDate()} ${d.toLocaleString("en-IN", { month: "short" })}`;
@@ -2644,7 +3050,11 @@ function MyAttendanceReports({ token }: { token: string }) {
                           }}
                         >
                           Results — {cwEmps.length} employees · {cwDates.length}{" "}
-                          day{cwDates.length !== 1 ? "s" : ""}
+                          day{cwDates.length !== 1 ? "s" : ""} · Target:{" "}
+                          {denom} working day{denom !== 1 ? "s" : ""}
+                          {targetHours > 0
+                            ? ` · ${targetHours.toFixed(1)} target hrs`
+                            : ""}
                         </div>
                         <div style={{ overflowX: "auto" }}>
                           <table
@@ -2660,18 +3070,23 @@ function MyAttendanceReports({ token }: { token: string }) {
                                   "S.No",
                                   "Name",
                                   "Employee Code",
+                                  "Designation",
+                                  "Offline Center",
                                   ...cwDates.flatMap((d) => [
                                     `${shortD(d)} In`,
                                     `${shortD(d)} Out`,
+                                    `${shortD(d)} Status`,
                                   ]),
-                                  "Total Hrs. Attended",
+                                  "Target Attendance",
+                                  "Actual Attendance",
                                   "Attendance %",
+                                  "Total Targeted Hours",
                                 ].map((h, ci) => (
                                   <th
                                     key={ci}
                                     style={{
                                       padding: "7px 8px",
-                                      textAlign: ci <= 2 ? "left" : "center",
+                                      textAlign: ci <= 4 ? "left" : "center",
                                       fontWeight: 700,
                                       color: "#fff",
                                       fontSize: 11,
@@ -2686,36 +3101,68 @@ function MyAttendanceReports({ token }: { token: string }) {
                             </thead>
                             <tbody>
                               {cwEmps.map((emp, i) => {
-                                let totalHrs = 0;
-                                let daysPresent = 0;
-                                const dateCols = cwDates.flatMap((d) => {
+                                const baseTd = {
+                                  padding: "6px 8px",
+                                  textAlign: "center",
+                                  fontSize: 11,
+                                  whiteSpace: "nowrap",
+                                  borderRight: "1px solid #f3f4f6",
+                                } as const;
+                                const leftTd = {
+                                  padding: "6px 8px",
+                                  fontSize: 11,
+                                  whiteSpace: "nowrap",
+                                  borderRight: "1px solid #f3f4f6",
+                                  color: "#374151",
+                                } as const;
+                                let presentDays = 0;
+                                let leaveDays = 0;
+                                const dateCells = cwDates.flatMap((d) => {
                                   const rec = emp.byDate[d];
-                                  const inTime = rec?.punch_in
-                                    ? formatTime(rec.punch_in)
-                                    : "—";
-                                  const outTime = rec?.punch_out
-                                    ? formatTime(rec.punch_out)
-                                    : "—";
-                                  if (
+                                  const hasIn = !!rec?.punch_in;
+                                  const hasOut = !!rec?.punch_out;
+                                  const both = hasIn && hasOut;
+                                  if (both) presentDays++;
+                                  else if (
                                     rec?.status &&
-                                    cwPresent.has(rec.status)
-                                  ) {
-                                    daysPresent++;
-                                    if (rec.punch_in && rec.punch_out) {
-                                      const ms =
-                                        new Date(rec.punch_out).getTime() -
-                                        new Date(rec.punch_in).getTime();
-                                      if (ms > 0) totalHrs += ms / 3_600_000;
-                                    }
-                                  }
-                                  return [inTime, outTime];
+                                    LEAVE_STATUSES.has(rec.status)
+                                  )
+                                    leaveDays++;
+                                  return [
+                                    <td
+                                      key={d + "in"}
+                                      style={{
+                                        ...baseTd,
+                                        color: hasIn ? "#374151" : "#d1d5db",
+                                      }}
+                                    >
+                                      {hasIn ? formatTime(rec!.punch_in) : "—"}
+                                    </td>,
+                                    <td
+                                      key={d + "out"}
+                                      style={{
+                                        ...baseTd,
+                                        color: hasOut ? "#374151" : "#d1d5db",
+                                      }}
+                                    >
+                                      {hasOut ? formatTime(rec!.punch_out) : "—"}
+                                    </td>,
+                                    <td
+                                      key={d + "st"}
+                                      style={{
+                                        ...baseTd,
+                                        fontWeight: 700,
+                                        color: both ? "#065f46" : "#ef4444",
+                                      }}
+                                    >
+                                      {both ? "P" : "A"}
+                                    </td>,
+                                  ];
                                 });
+                                const actual = presentDays + leaveDays;
                                 const pct =
-                                  cwDates.length > 0
-                                    ? (
-                                        (daysPresent / cwDates.length) *
-                                        100
-                                      ).toFixed(1) + "%"
+                                  denom > 0
+                                    ? ((actual / denom) * 100).toFixed(1) + "%"
                                     : "0%";
                                 const bg = i % 2 === 0 ? "#fff" : "#fafafa";
                                 return (
@@ -2726,85 +3173,53 @@ function MyAttendanceReports({ token }: { token: string }) {
                                       borderBottom: "1px solid #f3f4f6",
                                     }}
                                   >
-                                    <td
-                                      style={{
-                                        padding: "6px 8px",
-                                        textAlign: "center",
-                                        color: "#6b7280",
-                                        fontSize: 11,
-                                        whiteSpace: "nowrap",
-                                        borderRight: "1px solid #f3f4f6",
-                                      }}
-                                    >
+                                    <td style={{ ...baseTd, color: "#6b7280" }}>
                                       {i + 1}
                                     </td>
                                     <td
                                       style={{
-                                        padding: "6px 8px",
+                                        ...leftTd,
                                         fontWeight: 600,
                                         color: "#111827",
-                                        fontSize: 11,
-                                        whiteSpace: "nowrap",
-                                        borderRight: "1px solid #f3f4f6",
                                         minWidth: 130,
                                       }}
                                     >
                                       {emp.name || "—"}
                                     </td>
-                                    <td
-                                      style={{
-                                        padding: "6px 8px",
-                                        color: "#374151",
-                                        fontSize: 11,
-                                        whiteSpace: "nowrap",
-                                        borderRight: "1px solid #f3f4f6",
-                                      }}
-                                    >
+                                    <td style={leftTd}>
                                       {emp.code !== "_" ? emp.code : "—"}
                                     </td>
-                                    {dateCols.map((v, ci) => (
-                                      <td
-                                        key={ci}
-                                        style={{
-                                          padding: "6px 8px",
-                                          textAlign: "center",
-                                          color:
-                                            v === "—" ? "#d1d5db" : "#374151",
-                                          fontSize: 11,
-                                          whiteSpace: "nowrap",
-                                          borderRight: "1px solid #f3f4f6",
-                                        }}
-                                      >
-                                        {v}
-                                      </td>
-                                    ))}
-                                    <td
-                                      style={{
-                                        padding: "6px 8px",
-                                        textAlign: "center",
-                                        fontWeight: 600,
-                                        color: "#374151",
-                                        fontSize: 11,
-                                        whiteSpace: "nowrap",
-                                        borderRight: "1px solid #f3f4f6",
-                                      }}
-                                    >
-                                      {totalHrs.toFixed(2)}
+                                    <td style={leftTd}>
+                                      {emp.designation || "—"}
+                                    </td>
+                                    <td style={leftTd}>{emp.center || "—"}</td>
+                                    {dateCells}
+                                    <td style={{ ...baseTd, fontWeight: 600 }}>
+                                      {denom}
+                                    </td>
+                                    <td style={{ ...baseTd, fontWeight: 600 }}>
+                                      {actual}
                                     </td>
                                     <td
                                       style={{
-                                        padding: "6px 8px",
-                                        textAlign: "center",
+                                        ...baseTd,
                                         fontWeight: 700,
                                         color:
-                                          daysPresent === 0
-                                            ? "#ef4444"
-                                            : "#065f46",
-                                        fontSize: 11,
-                                        whiteSpace: "nowrap",
+                                          actual === 0 ? "#ef4444" : "#065f46",
                                       }}
                                     >
                                       {pct}
+                                    </td>
+                                    <td
+                                      style={{
+                                        ...baseTd,
+                                        fontWeight: 600,
+                                        borderRight: "none",
+                                      }}
+                                    >
+                                      {targetHours > 0
+                                        ? targetHours.toFixed(1)
+                                        : "—"}
                                     </td>
                                   </tr>
                                 );
@@ -2819,7 +3234,7 @@ function MyAttendanceReports({ token }: { token: string }) {
                                 }}
                               >
                                 <td
-                                  colSpan={3}
+                                  colSpan={5}
                                   style={{
                                     padding: "6px 8px",
                                     fontWeight: 700,
@@ -2831,40 +3246,39 @@ function MyAttendanceReports({ token }: { token: string }) {
                                   Total Count
                                 </td>
                                 {cwDates.flatMap((d) => {
-                                  const cnt = cwEmps.filter(
+                                  const inCnt = cwEmps.filter(
                                     (e) => !!e.byDate[d]?.punch_in,
                                   ).length;
+                                  const outCnt = cwEmps.filter(
+                                    (e) => !!e.byDate[d]?.punch_out,
+                                  ).length;
+                                  const presentCnt = cwEmps.filter(
+                                    (e) =>
+                                      !!e.byDate[d]?.punch_in &&
+                                      !!e.byDate[d]?.punch_out,
+                                  ).length;
+                                  const ftd = {
+                                    padding: "6px 8px",
+                                    textAlign: "center",
+                                    fontWeight: 700,
+                                    color: "#374151",
+                                    fontSize: 11,
+                                    borderRight: "1px solid #f3f4f6",
+                                  } as const;
                                   return [
-                                    <td
-                                      key={`${d}-in`}
-                                      style={{
-                                        padding: "6px 8px",
-                                        textAlign: "center",
-                                        fontWeight: 700,
-                                        color: "#374151",
-                                        fontSize: 11,
-                                        borderRight: "1px solid #f3f4f6",
-                                      }}
-                                    >
-                                      {cnt}
+                                    <td key={`${d}-in`} style={ftd}>
+                                      {inCnt}
                                     </td>,
-                                    <td
-                                      key={`${d}-out`}
-                                      style={{
-                                        padding: "6px 8px",
-                                        textAlign: "center",
-                                        fontWeight: 700,
-                                        color: "#374151",
-                                        fontSize: 11,
-                                        borderRight: "1px solid #f3f4f6",
-                                      }}
-                                    >
-                                      {cnt}
+                                    <td key={`${d}-out`} style={ftd}>
+                                      {outCnt}
+                                    </td>,
+                                    <td key={`${d}-st`} style={ftd}>
+                                      {presentCnt}
                                     </td>,
                                   ];
                                 })}
                                 <td
-                                  colSpan={2}
+                                  colSpan={4}
                                   style={{ padding: "6px 8px" }}
                                 />
                               </tr>

@@ -5,6 +5,7 @@ import path from "path";
 import fs from "fs";
 import { promisify } from "util";
 import { GCSService } from "../services/gcsService";
+import { canModifyTicket } from "../utils/ticketAuth";
 
 const unlinkAsync = promisify(fs.unlink);
 
@@ -58,7 +59,8 @@ export const uploadAttachment = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const file = req.file;
-    const userId = (req as any).user?.id;
+    const reqUser = (req as any).user;
+    const userId = reqUser?.userId ?? reqUser?.id;
 
     if (!file) {
       return res.status(400).json({ message: "No file uploaded" });
@@ -67,6 +69,13 @@ export const uploadAttachment = async (req: Request, res: Response) => {
     const ticket = await Ticket.findById(id);
     if (!ticket) {
       return res.status(404).json({ message: "Ticket not found" });
+    }
+
+    // Ownership: only the assignee (or TICKET_MODIFY_ANY) may add attachments.
+    if (!canModifyTicket(String(userId), ticket, reqUser)) {
+      return res.status(403).json({
+        message: "You can only add attachments to queries assigned to you",
+      });
     }
 
     // Upload to GCS (or local fallback)
@@ -168,10 +177,19 @@ export const downloadAttachment = async (req: Request, res: Response) => {
 export const deleteAttachment = async (req: Request, res: Response) => {
   try {
     const { id, attachmentId } = req.params;
+    const reqUser = (req as any).user;
+    const userId = reqUser?.userId ?? reqUser?.id;
 
     const ticket = await Ticket.findById(id);
     if (!ticket) {
       return res.status(404).json({ message: "Ticket not found" });
+    }
+
+    // Ownership: only the assignee (or TICKET_MODIFY_ANY) may delete attachments.
+    if (!canModifyTicket(String(userId), ticket, reqUser)) {
+      return res.status(403).json({
+        message: "You can only modify attachments on queries assigned to you",
+      });
     }
 
     const attachment = ticket.attachments?.find(

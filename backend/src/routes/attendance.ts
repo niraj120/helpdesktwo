@@ -20,6 +20,7 @@ import {
   getAttendanceRecords,
   getAttendanceSummary,
   getAttendanceMatrix,
+  getProjectEmployeesList,
 } from "../controllers/attendanceRecordsController";
 import {
   downloadBulkTemplate,
@@ -125,6 +126,11 @@ router.get(
   "/matrix",
   checkPermission(["ATTENDANCE_VIEW", "ATTENDANCE_REPORT_VIEW"]),
   getAttendanceMatrix,
+);
+router.get(
+  "/employees-list",
+  checkPermission(["ATTENDANCE_VIEW", "ATTENDANCE_REPORT_VIEW"]),
+  getProjectEmployeesList,
 );
 
 // ── Saved attendance reports ────────────────────────────────────────────────

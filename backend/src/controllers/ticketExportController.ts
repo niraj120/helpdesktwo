@@ -1,185 +1,305 @@
 import { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import { Ticket } from '../models/Ticket';
+import { Project } from '../models/Project';
+import { Center } from '../models/Center';
 import ExcelJS from 'exceljs';
 
 /**
  * @route   POST /api/tickets/export
  * @desc    Export tickets to CSV or Excel
  * @access  Private (TICKET_EXPORT)
+ *
+ * The export columns mirror the configurable columns shown on the queries table.
+ * The client sends `columns: [{ key, label }]` (the project's configured table
+ * columns, including custom fields `field_*` and hierarchy levels
+ * `hierarchy_level_N`). When omitted, a sensible default set is used.
  */
+
+interface ExportColumn {
+  key: string;
+  label: string;
+}
+
+const STATUS_LABELS: Record<number, string> = {
+  1: 'Open',
+  2: 'In Progress',
+  3: 'On Hold',
+  4: 'Resolved',
+  5: 'Closed',
+};
+
+const SOURCE_LABELS: Record<string, string> = {
+  online: 'Online',
+  offline: 'Offline',
+  email: 'Email',
+  portal: 'Portal',
+  phone: 'Phone',
+  'walk-in': 'Walk-in',
+  api: 'API',
+};
+
+// Columns used when the client doesn't send a configuration (kept close to the
+// previous hardcoded export for backward compatibility).
+const DEFAULT_EXPORT_COLUMNS: ExportColumn[] = [
+  { key: 'ticketNumber', label: 'Ticket Number' },
+  { key: 'subject', label: 'Subject' },
+  { key: 'description', label: 'Description' },
+  { key: 'status', label: 'Status' },
+  { key: 'priority', label: 'Priority' },
+  { key: 'category', label: 'Category' },
+  { key: 'createdBy', label: 'Created By' },
+  { key: 'assignee', label: 'Assigned To' },
+  { key: 'project', label: 'Project' },
+  { key: 'createdAt', label: 'Created At' },
+  { key: 'updatedAt', label: 'Updated At' },
+];
+
+const fullName = (u: any): string =>
+  u ? `${u.firstName || ''} ${u.lastName || ''}`.trim() : '';
+
+const formatDate = (d?: Date | string | null): string => {
+  if (!d) return '';
+  const date = new Date(d);
+  return isNaN(date.getTime()) ? '' : date.toISOString();
+};
+
 export const exportTickets = async (req: Request, res: Response) => {
   try {
-    const { format, includeComments, includeAttachments, filters } = req.body;
+    const { format, includeComments, includeAttachments, filters, columns } =
+      req.body as {
+        format?: string;
+        includeComments?: boolean;
+        includeAttachments?: boolean;
+        filters?: any;
+        columns?: ExportColumn[];
+      };
 
     // Build query from filters
     const query: any = {};
-
     if (filters) {
-      // status is stored as a Number — skip if "all" or missing
       if (filters.status && filters.status !== 'all') {
         const statusNum = Number(filters.status);
         if (!isNaN(statusNum)) query.status = statusNum;
       }
-
-      // priority is stored as a lowercase string
       if (filters.priority && filters.priority !== 'all') {
         query.priority = filters.priority.toLowerCase();
       }
-
-      // projectId is stored under metadata.projectId
       if (filters.projectId && filters.projectId !== 'all') {
         query['metadata.projectId'] = filters.projectId;
       }
-
-      // assignedTo is an ObjectId — only add if it looks like a valid id
       if (filters.assignedTo && filters.assignedTo !== 'all') {
         query.assignedTo = filters.assignedTo;
       }
-
-      // Date range on createdAt
       if (filters.dateFrom || filters.dateTo) {
         query.createdAt = {};
         if (filters.dateFrom) query.createdAt.$gte = new Date(filters.dateFrom);
         if (filters.dateTo) {
-          // Include the whole day
           const to = new Date(filters.dateTo);
           to.setHours(23, 59, 59, 999);
           query.createdAt.$lte = to;
         }
       }
-
-      // Free-text search on subject / ticketNumber
       if (filters.search) {
-        const re = new RegExp(filters.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+        const re = new RegExp(
+          filters.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+          'i',
+        );
         query.$or = [{ subject: re }, { ticketNumber: re }];
       }
     }
 
-    // Fetch tickets
     const tickets = await Ticket.find(query)
       .populate('createdBy', 'firstName lastName email')
       .populate('assignedTo', 'firstName lastName email')
       .populate('category', 'name')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
-    if (format === 'csv') {
-      // Generate CSV
-      const csvRows: string[] = [];
-      
-      // Header row
-      const headers = [
-        'Ticket Number',
-        'Subject',
-        'Description',
-        'Status',
-        'Priority',
-        'Category',
-        'Created By',
-        'Assigned To',
-        'Project',
-        'Created At',
-        'Updated At'
-      ];
-      
-      if (includeComments) headers.push('Comments Count');
-      if (includeAttachments) headers.push('Attachments Count');
-      
-      csvRows.push(headers.join(','));
-
-      // Data rows
-      const statusLabel: Record<number, string> = { 1: 'Open', 2: 'In Progress', 3: 'On Hold', 4: 'Resolved', 5: 'Closed' };
-      tickets.forEach(ticket => {
-        const row = [
-          ticket.ticketNumber || '',
-          `"${(ticket.subject || '').replace(/"/g, '""')}"`,
-          `"${(ticket.description || '').replace(/"/g, '""')}"`,
-          statusLabel[ticket.status as number] || String(ticket.status || ''),
-          ticket.priority || '',
-          (ticket.category as any)?.name || '',
-          `"${(ticket.createdBy as any)?.firstName || ''} ${(ticket.createdBy as any)?.lastName || ''}"`,
-          ticket.assignedTo ? `"${(ticket.assignedTo as any)?.firstName || ''} ${(ticket.assignedTo as any)?.lastName || ''}"` : 'Unassigned',
-          (ticket.metadata as any)?.projectId || '',
-          ticket.createdAt.toISOString(),
-          ticket.updatedAt.toISOString()
-        ];
-        
-        if (includeComments) row.push(ticket.comments?.length.toString() || '0');
-        if (includeAttachments) row.push(ticket.attachments?.length.toString() || '0');
-        
-        csvRows.push(row.join(','));
+    // ── Resolve the column set ────────────────────────────────────────────────
+    let exportColumns: ExportColumn[] =
+      Array.isArray(columns) && columns.length > 0
+        ? columns.filter((c) => c && c.key)
+        : [...DEFAULT_EXPORT_COLUMNS];
+    if (includeComments)
+      exportColumns.push({ key: '__commentsCount', label: 'Comments Count' });
+    if (includeAttachments)
+      exportColumns.push({
+        key: '__attachmentsCount',
+        label: 'Attachments Count',
       });
 
-      const csv = csvRows.join('\n');
-      const filename = `tickets_export_${new Date().toISOString().split('T')[0]}.csv`;
+    // ── Batch-resolve project & center names referenced by the tickets ────────
+    const oid = (v: any) =>
+      typeof v === 'string' && mongoose.Types.ObjectId.isValid(v)
+        ? new mongoose.Types.ObjectId(v)
+        : null;
 
+    const needsProject = exportColumns.some((c) => c.key === 'project');
+    const needsCenter = exportColumns.some((c) => c.key === 'center');
+
+    const projectNameById = new Map<string, string>();
+    const centerNameById = new Map<string, string>();
+
+    if (needsProject) {
+      const ids = [
+        ...new Set(
+          tickets
+            .map((t: any) => t.metadata?.projectId)
+            .filter((v: any) => typeof v === 'string'),
+        ),
+      ];
+      const objIds = ids.map(oid).filter(Boolean) as mongoose.Types.ObjectId[];
+      if (objIds.length) {
+        const docs = await Project.find({ _id: { $in: objIds } })
+          .select('name code')
+          .lean();
+        docs.forEach((p: any) =>
+          projectNameById.set(String(p._id), p.name || p.code || ''),
+        );
+      }
+    }
+
+    if (needsCenter) {
+      const ids = [
+        ...new Set(
+          tickets
+            .map((t: any) => t.metadata?.centerId)
+            .filter((v: any) => typeof v === 'string' && v !== 'online'),
+        ),
+      ];
+      const objIds = ids.map(oid).filter(Boolean) as mongoose.Types.ObjectId[];
+      if (objIds.length) {
+        const docs = await Center.find({ _id: { $in: objIds } })
+          .select('centerName')
+          .lean();
+        docs.forEach((c: any) =>
+          centerNameById.set(String(c._id), c.centerName || ''),
+        );
+      }
+    }
+
+    // ── Per-column value resolver (mirrors the queries table cell logic) ──────
+    const resolveValue = (ticket: any, key: string): string => {
+      const meta = ticket.metadata || {};
+
+      if (key.startsWith('field_')) {
+        const fieldName = key.replace(/^field_/, '');
+        const v = meta.customFields?.[fieldName];
+        return v === undefined || v === null ? '' : String(v);
+      }
+      if (key.startsWith('hierarchy_level_')) {
+        const levelNum = key.replace('hierarchy_level_', '');
+        return String(meta.categoryHierarchy?.[`level${levelNum}Name`] ?? '');
+      }
+
+      switch (key) {
+        case 'ticketNumber':
+          return ticket.ticketNumber || '';
+        case 'subject':
+          return ticket.subject || '';
+        case 'description':
+          return ticket.description || '';
+        case 'status':
+          return STATUS_LABELS[ticket.status as number] || String(ticket.status ?? '');
+        case 'priority':
+          return ticket.priority || '';
+        case 'category':
+          return (ticket.category as any)?.name || '';
+        case 'createdBy':
+          return (
+            meta.createdByName ||
+            meta.studentName ||
+            fullName(ticket.createdBy) ||
+            ''
+          );
+        case 'requestedBy':
+          return (
+            meta.createdByName ||
+            meta.studentName ||
+            fullName(ticket.createdBy) ||
+            (ticket.submissionSource === 'email' ? ticket.sourceEmail : '') ||
+            ''
+          );
+        case 'assignee':
+          return ticket.assignedTo ? fullName(ticket.assignedTo) : 'Unassigned';
+        case 'project':
+          return (
+            projectNameById.get(String(meta.projectId)) ||
+            (typeof meta.projectId === 'string' ? meta.projectId : '')
+          );
+        case 'center': {
+          const cid = meta.centerId;
+          if (!cid || cid === 'online') return 'Online';
+          return centerNameById.get(String(cid)) || String(cid);
+        }
+        case 'source':
+          return (
+            SOURCE_LABELS[ticket.submissionSource] ||
+            ticket.submissionSource ||
+            ''
+          );
+        case 'sla': {
+          const due =
+            ticket.roleLevelSLA?.dueAt || ticket.ticketLevelSLA?.dueAt || null;
+          return formatDate(due);
+        }
+        case 'createdAt':
+          return formatDate(ticket.createdAt);
+        case 'updatedAt':
+          return formatDate(ticket.updatedAt);
+        case 'mergedCount':
+          return String(ticket.mergedTickets?.length || 0);
+        case '__commentsCount':
+          return String(ticket.comments?.length || 0);
+        case '__attachmentsCount':
+          return String(ticket.attachments?.length || 0);
+        default:
+          return '';
+      }
+    };
+
+    const headers = exportColumns.map((c) => c.label);
+    const dataRows = tickets.map((t: any) =>
+      exportColumns.map((c) => resolveValue(t, c.key)),
+    );
+
+    if (format === 'csv') {
+      const csvEscape = (v: string) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+      const lines = [headers.map(csvEscape).join(',')];
+      for (const row of dataRows) lines.push(row.map(csvEscape).join(','));
+      const csv = lines.join('\n');
+      const filename = `tickets_export_${new Date().toISOString().split('T')[0]}.csv`;
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       res.send(csv);
-      
     } else if (format === 'excel') {
-      // Generate Excel
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('Tickets');
-
-      // Define columns
-      const columns: any[] = [
-        { header: 'Ticket Number', key: 'ticketNumber', width: 15 },
-        { header: 'Subject', key: 'subject', width: 30 },
-        { header: 'Description', key: 'description', width: 40 },
-        { header: 'Status', key: 'status', width: 15 },
-        { header: 'Priority', key: 'priority', width: 15 },
-        { header: 'Category', key: 'category', width: 20 },
-        { header: 'Created By', key: 'createdBy', width: 20 },
-        { header: 'Assigned To', key: 'assignedTo', width: 20 },
-        { header: 'Project', key: 'project', width: 20 },
-        { header: 'Created At', key: 'createdAt', width: 20 },
-        { header: 'Updated At', key: 'updatedAt', width: 20 }
-      ];
-
-      if (includeComments) columns.push({ header: 'Comments Count', key: 'commentsCount', width: 15 });
-      if (includeAttachments) columns.push({ header: 'Attachments Count', key: 'attachmentsCount', width: 15 });
-
-      worksheet.columns = columns;
-
-      // Style header row
+      worksheet.columns = exportColumns.map((c) => ({
+        header: c.label,
+        key: c.key,
+        width: Math.min(40, Math.max(15, c.label.length + 6)),
+      }));
       worksheet.getRow(1).font = { bold: true };
       worksheet.getRow(1).fill = {
         type: 'pattern',
         pattern: 'solid',
-        fgColor: { argb: 'FFE0E0E0' }
+        fgColor: { argb: 'FFE0E0E0' },
       };
-
-      // Add data rows
-      const statusLabelXl: Record<number, string> = { 1: 'Open', 2: 'In Progress', 3: 'On Hold', 4: 'Resolved', 5: 'Closed' };
-      tickets.forEach(ticket => {
-        const row: any = {
-          ticketNumber: ticket.ticketNumber || '',
-          subject: ticket.subject || '',
-          description: ticket.description || '',
-          status: statusLabelXl[ticket.status as number] || String(ticket.status || ''),
-          priority: ticket.priority || '',
-          category: (ticket.category as any)?.name || '',
-          createdBy: `${(ticket.createdBy as any)?.firstName || ''} ${(ticket.createdBy as any)?.lastName || ''}`.trim(),
-          assignedTo: ticket.assignedTo ? `${(ticket.assignedTo as any)?.firstName || ''} ${(ticket.assignedTo as any)?.lastName || ''}`.trim() : 'Unassigned',
-          project: (ticket.metadata as any)?.projectId || '',
-          createdAt: ticket.createdAt,
-          updatedAt: ticket.updatedAt
-        };
-
-        if (includeComments) row.commentsCount = ticket.comments?.length || 0;
-        if (includeAttachments) row.attachmentsCount = ticket.attachments?.length || 0;
-
-        worksheet.addRow(row);
-      });
-
+      for (const t of tickets) {
+        const rowObj: Record<string, string> = {};
+        for (const c of exportColumns) rowObj[c.key] = resolveValue(t, c.key);
+        worksheet.addRow(rowObj);
+      }
       const filename = `tickets_export_${new Date().toISOString().split('T')[0]}.xlsx`;
-
-      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-
       await workbook.xlsx.write(res);
       res.end();
-      
     } else {
       res.status(400).json({ message: 'Invalid format. Use "csv" or "excel"' });
     }

@@ -29,6 +29,8 @@ interface TicketExportModalProps {
   };
   /** Total tickets matching the current page filters — shown as "X tickets will be exported" */
   ticketCount?: number;
+  /** Configured table columns (key + label) so the export matches the on-screen table */
+  columns?: { key: string; label: string }[];
 }
 
 export const TicketExportModal: React.FC<TicketExportModalProps> = ({
@@ -37,6 +39,7 @@ export const TicketExportModal: React.FC<TicketExportModalProps> = ({
   filters = {},
   filterLabels = {},
   ticketCount,
+  columns,
 }) => {
   const [exportFormat, setExportFormat] = useState<'csv' | 'excel'>('csv');
   const [exporting, setExporting] = useState(false);
@@ -49,7 +52,7 @@ export const TicketExportModal: React.FC<TicketExportModalProps> = ({
       const token = localStorage.getItem('authToken');
       const response = await axios.post(
         `${API_BASE_URL}/tickets/export`,
-        { format: exportFormat, filters },
+        { format: exportFormat, filters, columns },
         {
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
           responseType: 'blob',

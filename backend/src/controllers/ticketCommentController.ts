@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { Ticket } from '../models/Ticket';
+import { canModifyTicket } from '../utils/ticketAuth';
 
 /**
  * @route   GET /api/tickets/:id/comments
@@ -35,7 +36,8 @@ export const createComment = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { text } = req.body;
-    const userId = (req as any).user?.id;
+    const reqUser = (req as any).user;
+    const userId = reqUser?.userId ?? reqUser?.id;
 
     if (!text || text.trim() === '') {
       return res.status(400).json({ message: 'Comment text is required' });
@@ -44,6 +46,13 @@ export const createComment = async (req: Request, res: Response) => {
     const ticket = await Ticket.findById(id);
     if (!ticket) {
       return res.status(404).json({ message: 'Ticket not found' });
+    }
+
+    // Ownership: only the assignee (or TICKET_MODIFY_ANY) may comment.
+    if (!canModifyTicket(String(userId), ticket, reqUser)) {
+      return res.status(403).json({
+        message: 'You can only comment on queries assigned to you',
+      });
     }
 
     const comment = {
@@ -81,7 +90,8 @@ export const updateComment = async (req: Request, res: Response) => {
   try {
     const { id, commentId } = req.params;
     const { text } = req.body;
-    const userId = (req as any).user?.id;
+    const reqUser = (req as any).user;
+    const userId = reqUser?.userId ?? reqUser?.id;
 
     if (!text || text.trim() === '') {
       return res.status(400).json({ message: 'Comment text is required' });
@@ -92,13 +102,20 @@ export const updateComment = async (req: Request, res: Response) => {
       return res.status(404).json({ message: 'Ticket not found' });
     }
 
+    // Ownership: read-only on queries not assigned to you (unless TICKET_MODIFY_ANY)
+    if (!canModifyTicket(String(userId), ticket, reqUser)) {
+      return res.status(403).json({
+        message: 'You can only modify comments on queries assigned to you',
+      });
+    }
+
     const comment = ticket.comments?.find((c: any) => c._id.toString() === commentId);
     if (!comment) {
       return res.status(404).json({ message: 'Comment not found' });
     }
 
     // Check if user is the comment creator
-    if ((comment as any).createdBy.toString() !== userId) {
+    if ((comment as any).createdBy.toString() !== String(userId)) {
       return res.status(403).json({ message: 'You can only edit your own comments' });
     }
 
@@ -130,11 +147,19 @@ export const updateComment = async (req: Request, res: Response) => {
 export const deleteComment = async (req: Request, res: Response) => {
   try {
     const { id, commentId } = req.params;
-    const userId = (req as any).user?.id;
+    const reqUser = (req as any).user;
+    const userId = reqUser?.userId ?? reqUser?.id;
 
     const ticket = await Ticket.findById(id);
     if (!ticket) {
       return res.status(404).json({ message: 'Ticket not found' });
+    }
+
+    // Ownership: read-only on queries not assigned to you (unless TICKET_MODIFY_ANY)
+    if (!canModifyTicket(String(userId), ticket, reqUser)) {
+      return res.status(403).json({
+        message: 'You can only modify comments on queries assigned to you',
+      });
     }
 
     const comment = ticket.comments?.find((c: any) => c._id.toString() === commentId);
@@ -143,7 +168,7 @@ export const deleteComment = async (req: Request, res: Response) => {
     }
 
     // Check if user is the comment creator
-    if ((comment as any).createdBy.toString() !== userId) {
+    if ((comment as any).createdBy.toString() !== String(userId)) {
       return res.status(403).json({ message: 'You can only delete your own comments' });
     }
 

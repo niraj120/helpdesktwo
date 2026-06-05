@@ -1102,6 +1102,33 @@ const MyTickets: React.FC<MyTicketsProps> = ({
     hierarchyLevelDefs,
   ]);
 
+  // Full configured column set (key + label) WITHOUT the viewport filter — used
+  // for export so the file always includes every configured column (incl. custom
+  // fields and hierarchy levels), regardless of screen size.
+  const exportColumnDefs = useMemo(() => {
+    return visibleColumns
+      .map((key) => {
+        const existing = TICKET_TABLE_COLUMN_DEFS.find((def) => def.key === key);
+        if (existing) return { key: existing.key as string, label: existing.label };
+        if (key.startsWith("field_")) {
+          const fieldName = key.replace(/^field_/, "");
+          const fieldDef = customFormFieldDefs.find(
+            (f) => f.fieldName === fieldName,
+          );
+          return { key, label: fieldDef?.fieldLabel || fieldName };
+        }
+        if (key.startsWith("hierarchy_level_")) {
+          const levelNum = parseInt(key.replace("hierarchy_level_", ""), 10);
+          const levelDef = hierarchyLevelDefs.find(
+            (l) => l.levelNumber === levelNum,
+          );
+          return { key, label: levelDef?.displayName || `Level ${levelNum}` };
+        }
+        return null;
+      })
+      .filter((def): def is { key: string; label: string } => !!def);
+  }, [visibleColumns, customFormFieldDefs, hierarchyLevelDefs]);
+
   const showSenderEmailColumn =
     showSenderEmail &&
     visibleColumnDefs.some((col) => col.key === "requestedBy");
@@ -3313,6 +3340,15 @@ const MyTickets: React.FC<MyTicketsProps> = ({
           filters={{
             status: statusFilter !== "all" ? statusFilter : undefined,
             priority: priorityFilter !== "all" ? priorityFilter : undefined,
+            // Scope export to the same project the table is showing:
+            // single mode → current project; unified mode → selected project
+            // (or all projects when no project filter is set).
+            projectId:
+              viewMode === "unified"
+                ? projectFilter !== "all"
+                  ? projectFilter
+                  : undefined
+                : currentProjectId || resolveMasterDataProjectId() || undefined,
             dateFrom: dateFromFilter || undefined,
             dateTo: dateToFilter || undefined,
             search: searchTerm || undefined,
@@ -3335,11 +3371,22 @@ const MyTickets: React.FC<MyTicketsProps> = ({
                 ? priorityFilter.charAt(0).toUpperCase() +
                   priorityFilter.slice(1)
                 : undefined,
+            project: (() => {
+              const pid =
+                viewMode === "unified"
+                  ? projectFilter !== "all"
+                    ? projectFilter
+                    : ""
+                  : currentProjectId || resolveMasterDataProjectId();
+              if (!pid) return undefined;
+              return userProjects.find((p) => p._id === pid)?.name || undefined;
+            })(),
             dateFrom: dateFromFilter || undefined,
             dateTo: dateToFilter || undefined,
             search: searchTerm || undefined,
           }}
           ticketCount={filteredTickets.length}
+          columns={exportColumnDefs}
         />
       )}
 

@@ -240,14 +240,36 @@ export async function runReportQuery(
         pipeline: [{ $project: { responseTime: 1, resolutionTime: 1 } }],
       },
     },
-    // Center lookup for offline tickets
+    // Center lookup for offline tickets.
+    // metadata.centerId is stored as a STRING but centers._id is an ObjectId,
+    // so a plain localField/foreignField join never matches. Convert the string
+    // to an ObjectId inside the pipeline ($convert with onError/onNull => null
+    // safely handles online tickets that have no/invalid centerId).
     {
       $lookup: {
         from: "centers",
-        localField: "metadata.centerId",
-        foreignField: "_id",
+        let: { cid: "$metadata.centerId" },
         as: "_centerData",
-        pipeline: [{ $project: { centerName: 1 } }],
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $eq: [
+                  "$_id",
+                  {
+                    $convert: {
+                      input: "$$cid",
+                      to: "objectId",
+                      onError: null,
+                      onNull: null,
+                    },
+                  },
+                ],
+              },
+            },
+          },
+          { $project: { centerName: 1 } },
+        ],
       },
     },
   ];

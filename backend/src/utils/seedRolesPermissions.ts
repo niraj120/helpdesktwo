@@ -1113,6 +1113,14 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
   },
   {
     module: "Tickets",
+    name: "Modify Any Ticket",
+    code: "TICKET_MODIFY_ANY",
+    description:
+      "Can act on (comment, reply, change status/priority/category, escalate, add/remove attachments, edit) ANY ticket regardless of assignee. Without it, agents can only modify tickets assigned to them.",
+    category: "tickets",
+  },
+  {
+    module: "Tickets",
     name: "Create Ticket",
     code: "TICKET_CREATE",
     description: "Can create new tickets",
@@ -1417,6 +1425,7 @@ const defaultRoles = [
     type: "custom",
     permissions: [
       "TICKET_VIEW_ALL",
+      "TICKET_MODIFY_ANY",
       "TICKET_CREATE",
       "TICKET_EDIT",
       "TICKET_DELETE",
@@ -1476,6 +1485,7 @@ const defaultRoles = [
     type: "custom",
     permissions: [
       "TICKET_VIEW_ALL",
+      "TICKET_MODIFY_ANY",
       "TICKET_CREATE",
       "TICKET_EDIT",
       "TICKET_ASSIGN",
@@ -1529,6 +1539,7 @@ const defaultRoles = [
     type: "custom",
     permissions: [
       "TICKET_VIEW_ALL",
+      "TICKET_MODIFY_ANY",
       "TICKET_CREATE",
       "TICKET_EDIT",
       "TICKET_ASSIGN",

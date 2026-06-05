@@ -1345,6 +1345,7 @@ const AgentStudentWorkflow: React.FC = () => {
           setRegistrationForm({});
           setVerifiedFields({});
           setFieldErrors({});
+          setCategoryHierarchy({});
           setTicketForm({
             markAsResolved: false,
             needsEscalation: false,
@@ -1392,6 +1393,7 @@ const AgentStudentWorkflow: React.FC = () => {
     setTicketMessage("");
     setVerifiedFields({});
     setFieldErrors({});
+    setCategoryHierarchy({});
   };
 
   // OTP Functions
@@ -3054,6 +3056,7 @@ const AgentStudentWorkflow: React.FC = () => {
                   setRegistrationForm({});
                   setVerifiedFields({});
                   setFieldErrors({});
+                  setCategoryHierarchy({});
                   setTicketForm({
                     markAsResolved: false,
                     needsEscalation: false,

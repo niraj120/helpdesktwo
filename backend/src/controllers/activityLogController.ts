@@ -75,7 +75,11 @@ export const getAllActivityLogs = async (
 
     const [logs, total] = await Promise.all([
       ActivityLog.find(filter)
-        .populate("userId", "firstName lastName email")
+        .populate({
+          path: "userId",
+          select: "firstName lastName email role",
+          populate: { path: "role", select: "name" },
+        })
         .populate("project", "name code")
         .sort({ timestamp: -1 })
         .skip(skip)
@@ -84,9 +88,15 @@ export const getAllActivityLogs = async (
       ActivityLog.countDocuments(filter),
     ]);
 
+    // Backfill missing role from the user's current role for display.
+    const data = (logs as any[]).map((log) => ({
+      ...log,
+      role: log.role || log.userId?.role?.name || "",
+    }));
+
     res.status(200).json({
       success: true,
-      data: logs,
+      data,
       pagination: {
         total,
         page: pageNum,
@@ -272,16 +282,27 @@ export const exportActivityLogs = async (
     }
 
     const logs = await ActivityLog.find(filter)
-      .populate("userId", "firstName lastName email")
+      .populate({
+        path: "userId",
+        select: "firstName lastName email role",
+        populate: { path: "role", select: "name" },
+      })
       .populate("project", "name code")
       .sort({ timestamp: -1 })
       .limit(10000) // Limit export to 10k records
       .lean();
 
+    // Backfill the role column: many older logs were stored without a `role`,
+    // so fall back to the user's current role name when it's missing.
+    const data = logs.map((log: any) => ({
+      ...log,
+      role: log.role || log.userId?.role?.name || "",
+    }));
+
     res.status(200).json({
       success: true,
-      data: logs,
-      count: logs.length,
+      data,
+      count: data.length,
     });
   } catch (error: any) {
     console.error("Error exporting activity logs:", error);

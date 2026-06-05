@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import DOMPurify from "dompurify";
 import { useParams, useNavigate } from "react-router-dom";
 
@@ -488,6 +488,16 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [loading, setLoading] = useState(true);
   const [permissions, setPermissions] = useState<string[]>([]);
+  // Current user id (for ownership: can only act on tickets assigned to me)
+  const currentUserId = useMemo<string | null>(() => {
+    try {
+      const userStr = localStorage.getItem("user");
+      const u = userStr ? JSON.parse(userStr) : null;
+      return u?._id ?? u?.id ?? null;
+    } catch {
+      return null;
+    }
+  }, []);
   // US-ESC-009: ticker to keep SLA countdown pill current (updates every 60s)
   const [, setTickNow] = useState(Date.now());
   const [activeTab, setActiveTab] = useState<
@@ -1791,9 +1801,35 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
     );
   }
 
+  // Ownership: an agent may act on a query only when it's assigned to them, or
+  // when they hold TICKET_MODIFY_ANY (supervisor capability). Otherwise the
+  // query is read-only. (The backend enforces the same rule.)
+  const ticketAssigneeId =
+    typeof ticket.assignedTo === "object"
+      ? (ticket.assignedTo as any)?._id
+      : (ticket.assignedTo as any);
+  const canModify =
+    permissions.includes("TICKET_MODIFY_ANY") ||
+    (!!currentUserId && !!ticketAssigneeId && ticketAssigneeId === currentUserId);
+  const assigneeName =
+    typeof ticket.assignedTo === "object" && ticket.assignedTo
+      ? `${(ticket.assignedTo as any).firstName ?? ""} ${(ticket.assignedTo as any).lastName ?? ""}`.trim()
+      : "";
+
   const content = (
     <>
       <div className="min-h-screen bg-gray-50">
+        {/* Read-only banner when the query isn't assigned to the current agent */}
+        {!canModify && (
+          <div className="bg-amber-50 border-b border-amber-200 px-6 py-2.5 text-sm text-amber-800 flex items-center gap-2">
+            <span aria-hidden>🔒</span>
+            <span>
+              View only — this query is
+              {assigneeName ? ` assigned to ${assigneeName}` : " not assigned to you"}
+              . You can read it but can't comment, reply, or make changes.
+            </span>
+          </div>
+        )}
         {/* Header — stacks directly below the 64px DashboardLayout top bar */}
         <div className="bg-white border-b border-gray-200 sticky top-16 z-40">
           <div className="px-6">
@@ -2397,11 +2433,12 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                         </div>
                       )}
 
-                      {/* Reply Form (only if ticket is not closed) */}
-                      {!(
-                        String(ticket.status) === "5" ||
-                        String(ticket.status).toLowerCase() === "closed"
-                      ) && (
+                      {/* Reply Form (only if assigned to me / modify-any, and not closed) */}
+                      {canModify &&
+                        !(
+                          String(ticket.status) === "5" ||
+                          String(ticket.status).toLowerCase() === "closed"
+                        ) && (
                         <form
                           onSubmit={handleSubmitReply}
                           className="space-y-4"
@@ -3928,8 +3965,8 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                         </div>
                       )}
 
-                      {/* Reply Button or Form */}
-                      {!showReplyForm ? (
+                      {/* Reply Button or Form (only when assigned to me / modify-any) */}
+                      {!canModify ? null : !showReplyForm ? (
                         <button
                           onClick={handleOpenReplyForm}
                           className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center justify-center gap-2 transition-colors"
@@ -4080,6 +4117,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                     </label>
                     <select
                       value={ticket.status || ""}
+                      disabled={!canModify}
                       onChange={(e) => {
                         const value = e.target.value;
                         if (!value) return; // Don't update if no value selected
@@ -4130,6 +4168,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                     </label>
                     <select
                       value={ticket.priority.toUpperCase()}
+                      disabled={!canModify}
                       onChange={(e) => {
                         const newPriorityValue = e.target.value;
                         setNewPriority(newPriorityValue);
@@ -4622,7 +4661,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                     hierarchyConfig.levelCount > 1 &&
                     ticketProjectId ? (
                       <div>
-                        {!permissions.includes("TICKET_CHANGE_CATEGORY") ? (
+                        {!(permissions.includes("TICKET_CHANGE_CATEGORY") && canModify) ? (
                           <div className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed">
                             {ticket.categoryHierarchy?.displayPath ||
                               "No category selected"}
@@ -4667,7 +4706,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                     ) : (
                       <select
                         disabled={
-                          !permissions.includes("TICKET_CHANGE_CATEGORY")
+                          !(permissions.includes("TICKET_CHANGE_CATEGORY") && canModify)
                         }
                         value={
                           typeof ticket.category === "object" &&
@@ -4704,7 +4743,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                           });
                         }}
                         className={`w-full px-3 py-2 border rounded-lg ${
-                          permissions.includes("TICKET_CHANGE_CATEGORY")
+                          (permissions.includes("TICKET_CHANGE_CATEGORY") && canModify)
                             ? "border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                             : "border-gray-200 bg-gray-50 text-gray-500 cursor-not-allowed"
                         }`}

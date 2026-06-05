@@ -20,6 +20,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { GCSService } from "../services/gcsService";
+import { canModifyTicket } from "../utils/ticketAuth";
 import {
   sendTicketCreatedEmail,
   sendStudentWelcomeEmail,
@@ -134,52 +135,9 @@ const emitTicketRealtimeUpdate = async (
   }
 };
 
-/**
- * Check if user has authorization to modify a ticket
- * Authorized users:
- * - Ticket creator (student who submitted)
- * - Assigned agent
- * - Project admins/managers
- * - Super admins
- */
-const canModifyTicket = async (
-  userId: string,
-  ticket: any,
-  user: any,
-): Promise<boolean> => {
-  // Super admins can modify any ticket
-  if (user?.role?.code === "SUPER_ADMIN") {
-    return true;
-  }
-
-  // Center managers can modify tickets in their projects
-  if (user?.role?.code === "CENTER_MANAGER") {
-    return true;
-  }
-
-  // Ticket creator can modify their own ticket
-  if (ticket.submittedBy?.toString() === userId) {
-    return true;
-  }
-
-  // Assigned agent can modify the ticket
-  if (ticket.assignedTo?.toString() === userId) {
-    return true;
-  }
-
-  // Check if user is an agent on this project
-  const projectId = ticket.metadata?.projectId;
-  if (projectId) {
-    const userDoc = await User.findById(userId);
-    if (
-      userDoc?.projects?.some((p: any) => p.toString() === projectId.toString())
-    ) {
-      return true;
-    }
-  }
-
-  return false;
-};
+// Ownership-scoped ticket authorization (canModifyTicket / hasModifyAnyTicket)
+// lives in ../utils/ticketAuth and is imported at the top of this file so the
+// same rule is reused by the comment & attachment controllers.
 
 /**
  * Helper function to track changes in ticket history
@@ -3151,47 +3109,24 @@ export const replyToTicket = async (req: Request, res: Response) => {
       });
     }
 
-    // Check if user has permission to reply:
-    // 1. Student who created the ticket
-    // 2. Assigned agent
-    // 3. User with TICKET_VIEW_ALL + (TICKET_ADD_COMMENT or TICKET_ADD_ATTACHMENT or TICKET_REPLY)
-    // 4. Backward-compat role-code fallback for legacy setups
+    // Authorization to reply:
+    //  - The student who owns the query may always reply to their own ticket.
+    //  - An agent may reply only when the ticket is ASSIGNED TO THEM, or when
+    //    they hold TICKET_MODIFY_ANY (supervisor capability). Merely having
+    //    "View Queries" (TICKET_VIEW_ALL) does NOT allow replying to others'
+    //    tickets — those are read-only.
     const isTicketCreator = ticket.metadata?.studentEmail === user.email;
-    const isAssignedAgent =
-      ticket.assignedTo && ticket.assignedTo._id.toString() === userId;
 
-    // Get user's role with permissions to enforce RBAC-based reply checks
+    // Role + permissions for the ownership check
     const populatedUser = await User.findById(userId).populate({
       path: "role",
       select: "code permissions",
       populate: { path: "permissions", select: "code name" },
     });
-    const roleCode = (populatedUser?.role as any)?.code;
-    const rolePermissions = (
-      (populatedUser?.role as any)?.permissions ?? []
-    ).map((p: any) => (typeof p === "string" ? p : p?.code || p?.name));
 
-    const hasViewAllPermission = rolePermissions.includes("TICKET_VIEW_ALL");
-    const hasReplyCapabilityPermission =
-      rolePermissions.includes("TICKET_ADD_COMMENT") ||
-      rolePermissions.includes("TICKET_ADD_ATTACHMENT") ||
-      rolePermissions.includes("TICKET_REPLY");
-    const hasRbacReplyAccess =
-      hasViewAllPermission && hasReplyCapabilityPermission;
+    const canModify = await canModifyTicket(userId, ticket, populatedUser);
 
-    const hasLegacyRoleReplyAccess = [
-      "SUPER_ADMIN",
-      "SUPPORT_MANAGER",
-      "AGENT",
-      "SUPPORT_AGENT",
-    ].includes(roleCode || "");
-
-    if (
-      !isTicketCreator &&
-      !isAssignedAgent &&
-      !hasRbacReplyAccess &&
-      !hasLegacyRoleReplyAccess
-    ) {
+    if (!isTicketCreator && !canModify) {
       return res.status(403).json({
         success: false,
         message: "You do not have permission to reply to this ticket",
@@ -4578,6 +4513,15 @@ export const escalateTicket = async (req: Request, res: Response) => {
       return res.status(403).json({
         success: false,
         message: "Only agents can escalate tickets",
+      });
+    }
+
+    // Ownership: only the current assignee (or a user with TICKET_MODIFY_ANY)
+    // may escalate. Agents cannot escalate queries that aren't theirs.
+    if (!(await canModifyTicket(userId, ticket, user))) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only escalate queries assigned to you",
       });
     }
 

@@ -406,13 +406,13 @@ export const getCenters = async (req: AuthRequest, res: Response): Promise<void>
       projectId: new mongoose.Types.ObjectId(projectId),
       isActive: true 
     })
-    .select('projectId centerName city state address pincode phone email workingHours')
+    .select('projectId centerName city state address pincode phone email workingHours contacts')
     .sort({ centerName: 1 });
 
     console.log(`[getCenters] Found ${centers.length} centers for projectId: ${projectId}`);
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       centers: centers.map(center => ({
         _id: center._id,
         projectId: center.projectId,
@@ -423,7 +423,8 @@ export const getCenters = async (req: AuthRequest, res: Response): Promise<void>
         pincode: center.pincode,
         phone: center.phone,
         email: center.email,
-        workingHours: center.workingHours
+        workingHours: center.workingHours,
+        contacts: center.contacts || []
       }))
     });
   } catch (error) {

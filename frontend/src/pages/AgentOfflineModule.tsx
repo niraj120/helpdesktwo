@@ -839,6 +839,7 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
             resetForm[field.fieldName] = field.fieldType === "file" ? [] : "";
           });
           setTicketForm(resetForm);
+          setCategoryHierarchy({});
           setSelectedUser(null);
           setTicketUserSearched(false);
           setCreatedTicketNumber("");
@@ -1145,7 +1146,12 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
       {/* Tab Navigation */}
       <div className="flex space-x-4 border-b border-gray-200 mb-8">
         <button
-          onClick={() => setActiveTab("register")}
+          onClick={() => {
+            // Starting a new flow — clear any in-progress category selection
+            // so returning to the query form starts fresh.
+            setCategoryHierarchy({});
+            setActiveTab("register");
+          }}
           className={`px-6 py-3 font-medium transition-colors border-b-2 ${
             activeTab === "register"
               ? "border-blue-600 text-blue-600"
@@ -1790,6 +1796,7 @@ const AgentOfflineModule: React.FC<Props> = ({ projectId }) => {
                       field.fieldType === "file" ? [] : "";
                   });
                   setTicketForm(resetForm);
+                  setCategoryHierarchy({});
                   setSelectedUser(null);
                   setTicketUserSearched(false);
                 }}

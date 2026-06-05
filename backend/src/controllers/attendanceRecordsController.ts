@@ -176,7 +176,8 @@ export const getAttendanceRecords = async (
       ...new Set(raw.map((r) => r.userId?.toString()).filter(Boolean)),
     ];
     const users = await User.find({ _id: { $in: userIds } })
-      .select("_id fullName firstName lastName designation")
+      .select("_id fullName firstName lastName designation role")
+      .populate({ path: "role", select: "name" })
       .lean();
     const nameMap = new Map<string, string>();
     const designationMap = new Map<string, string>();
@@ -186,8 +187,11 @@ export const getAttendanceRecords = async (
         [(u as any).firstName, (u as any).lastName].filter(Boolean).join(" ") ||
         "";
       nameMap.set(u._id.toString(), name);
-      if ((u as any).designation)
-        designationMap.set(u._id.toString(), (u as any).designation);
+      // "Designation" in the attendance report = the user's role name
+      // (fall back to the User.designation field if no role).
+      const designation =
+        (u as any).role?.name || (u as any).designation || "";
+      if (designation) designationMap.set(u._id.toString(), designation);
     }
 
     const data = raw.map((r) => ({
@@ -381,7 +385,8 @@ export const getAttendanceMatrix = async (
       projects: projOid,
       isActive: true,
     })
-      .select("_id employeeCode firstName lastName fullName designation")
+      .select("_id employeeCode firstName lastName fullName designation role")
+      .populate({ path: "role", select: "name" })
       .sort({ fullName: 1 })
       .lean();
 
@@ -477,7 +482,7 @@ export const getAttendanceMatrix = async (
         userId: uid,
         employeeCode: emp.employeeCode || "",
         name,
-        designation: (emp as any).designation || "",
+        designation: (emp as any).role?.name || (emp as any).designation || "",
         center: userCenterMap.get(uid) ?? null,
         attendance,
       };
@@ -486,6 +491,50 @@ export const getAttendanceMatrix = async (
     res.json({ dates, rows, centers, holidays, nonWorkingWeekdays });
   } catch (err) {
     console.error("[AttendanceMatrix] getAttendanceMatrix error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/attendance/employees-list?projectId=
+// Active employees mapped to a project — used to populate the attendance report
+// "Employee" filter (so it lists the project's employees even before running).
+// ─────────────────────────────────────────────────────────────────────────────
+export const getProjectEmployeesList = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { projectId } = req.query;
+    if (!projectId) {
+      res.status(400).json({ message: "projectId is required" });
+      return;
+    }
+
+    const users = await User.find({
+      projects: new mongoose.Types.ObjectId(projectId as string),
+      isActive: true,
+    })
+      .select("_id employeeCode fullName firstName lastName")
+      .sort({ fullName: 1 })
+      .lean();
+
+    const data = users.map((u) => {
+      const name =
+        (u as any).fullName ||
+        [(u as any).firstName, (u as any).lastName].filter(Boolean).join(" ") ||
+        u.employeeCode ||
+        "";
+      return {
+        userId: String(u._id),
+        employeeCode: u.employeeCode || "",
+        name,
+      };
+    });
+
+    res.json({ data });
+  } catch (err) {
+    console.error("[Attendance] getProjectEmployeesList error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 };
