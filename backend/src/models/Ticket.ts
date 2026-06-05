@@ -80,6 +80,7 @@ export interface ICategoryHierarchy {
   level2?: mongoose.Types.ObjectId; // Optional (Level 2 category)
   level3?: mongoose.Types.ObjectId; // Optional (Level 3 category)
   level4?: mongoose.Types.ObjectId; // Optional (Level 4 category)
+  level5?: mongoose.Types.ObjectId; // Optional (Level 5 category)
   displayPath?: string; // Cached display path for quick rendering
 }
 
@@ -313,6 +314,11 @@ const TicketSchema: Schema = new Schema(
         index: true,
       },
       level4: {
+        type: Schema.Types.ObjectId,
+        ref: "Category",
+        index: true,
+      },
+      level5: {
         type: Schema.Types.ObjectId,
         ref: "Category",
         index: true,

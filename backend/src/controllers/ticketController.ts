@@ -783,6 +783,11 @@ export const submitTicket = async (req: Request, res: Response) => {
             mongoose.Types.ObjectId.isValid(rawCategoryHierarchyFromBody.level4)
               ? new mongoose.Types.ObjectId(rawCategoryHierarchyFromBody.level4)
               : undefined,
+          level5:
+            rawCategoryHierarchyFromBody.level5 &&
+            mongoose.Types.ObjectId.isValid(rawCategoryHierarchyFromBody.level5)
+              ? new mongoose.Types.ObjectId(rawCategoryHierarchyFromBody.level5)
+              : undefined,
           displayPath: rawCategoryHierarchyFromBody.displayPath,
         }
       : categoryObjectId
@@ -1657,7 +1662,7 @@ export const getMyTickets = async (req: Request, res: Response) => {
         tickets.flatMap((t: any) => {
           const h = t.categoryHierarchy;
           if (!h) return [];
-          return [h.level2, h.level3, h.level4]
+          return [h.level2, h.level3, h.level4, h.level5]
             .filter(Boolean)
             .map((id: any) => id.toString());
         }),
@@ -1745,6 +1750,9 @@ export const getMyTickets = async (req: Request, res: Response) => {
             : undefined,
           level4: h.level4
             ? hierarchyCategoryMapMyTickets.get(h.level4.toString())
+            : undefined,
+          level5: h.level5
+            ? hierarchyCategoryMapMyTickets.get(h.level5.toString())
             : undefined,
         };
       }
@@ -2422,7 +2430,7 @@ export const getAllTickets = async (req: Request, res: Response) => {
         tickets.flatMap((t: any) => {
           const h = t.categoryHierarchy;
           if (!h) return [];
-          return [h.level2, h.level3, h.level4]
+          return [h.level2, h.level3, h.level4, h.level5]
             .filter(Boolean)
             .map((id: any) => id.toString());
         }),
@@ -2514,6 +2522,9 @@ export const getAllTickets = async (req: Request, res: Response) => {
             : undefined,
           level4: h.level4
             ? hierarchyCategoryMap.get(h.level4.toString())
+            : undefined,
+          level5: h.level5
+            ? hierarchyCategoryMap.get(h.level5.toString())
             : undefined,
         };
       }
@@ -4160,6 +4171,7 @@ export const updateTicketCategoryHierarchy = async (
       level2: categoryHierarchy.level2,
       level3: categoryHierarchy.level3,
       level4: categoryHierarchy.level4,
+      level5: categoryHierarchy.level5,
       displayPath: categoryHierarchy.displayPath,
     };
 
@@ -6865,6 +6877,7 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
       level2?: string;
       level3?: string;
       level4?: string;
+      level5?: string;
       displayPath?: string;
     } = {};
 
@@ -6887,6 +6900,7 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
 
       // Determine final category ID: use deepest level from hierarchy OR fallback to category field
       finalCategoryId =
+        parsedHierarchy.level5 ||
         parsedHierarchy.level4 ||
         parsedHierarchy.level3 ||
         parsedHierarchy.level2 ||
@@ -6904,6 +6918,7 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
       // Also collect category names to build displayPath
       // Check levels in order: level1 -> level2 -> level3 -> level4 for names, but deepest priority wins
       const hierarchyLevelsForPriority = [
+        parsedHierarchy.level5,
         parsedHierarchy.level4,
         parsedHierarchy.level3,
         parsedHierarchy.level2,
@@ -6915,6 +6930,7 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
         parsedHierarchy.level2,
         parsedHierarchy.level3,
         parsedHierarchy.level4,
+        parsedHierarchy.level5,
       ].filter(Boolean);
 
       console.log(

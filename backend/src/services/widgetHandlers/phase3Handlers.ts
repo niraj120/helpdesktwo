@@ -1076,6 +1076,298 @@ const htTicketsByProjectHandler: QueryHandler = {
   },
 };
 
+// ─── Category-hierarchy breakdowns (levels 1–5) ──────────────────────────────
+// The project's category hierarchy can have up to 5 levels (e.g. Category →
+// Subcategory → Topic → Course → Department). Level 1 is stored on `category`;
+// levels 2–5 on `categoryHierarchy.levelN`. These factories build "tickets
+// count" and "resolution efficiency" breakdowns grouped by a given level.
+
+/** Count of tickets per value at a hierarchy level (breakdown). */
+function makeCountByHierarchyLevel(
+  widgetKey: string,
+  levelField: string,
+): QueryHandler {
+  return {
+    widgetKey,
+    cacheTtlSeconds: 300,
+    async execute(ctx, params, rf, scopedQuery): Promise<WidgetData> {
+      const Ticket = getTicketModel();
+      const { start, end } = buildDateRange(params.dateRangeDays);
+      const extra = ticketFilterOverrides(rf, ctx);
+      const agg = await Ticket.aggregate([
+        {
+          $match: {
+            ...scopedQuery,
+            ...extra,
+            createdAt: { $gte: start, $lte: end },
+            [levelField]: { $nin: [null, ""] },
+          },
+        },
+        { $group: { _id: `$${levelField}`, count: { $sum: 1 } } },
+        {
+          $lookup: {
+            from: "categories",
+            localField: "_id",
+            foreignField: "_id",
+            as: "cat",
+          },
+        },
+        { $unwind: { path: "$cat", preserveNullAndEmptyArrays: true } },
+        { $sort: { count: -1 } },
+        { $limit: 30 },
+      ]);
+      const total = agg.reduce((s: number, r: any) => s + r.count, 0);
+      return {
+        items: agg.map((r: any) => ({
+          label: r.cat?.name ?? "Uncategorized",
+          value: r.count,
+          percent: total > 0 ? Math.round((r.count / total) * 1000) / 10 : 0,
+        })),
+      };
+    },
+  };
+}
+
+/** Resolution efficiency (resolved ÷ total %) per value at a hierarchy level. */
+function makeEfficiencyByHierarchyLevel(
+  widgetKey: string,
+  levelField: string,
+): QueryHandler {
+  return {
+    widgetKey,
+    cacheTtlSeconds: 300,
+    async execute(ctx, params, rf, scopedQuery): Promise<WidgetData> {
+      const Ticket = getTicketModel();
+      const { start, end } = buildDateRange(params.dateRangeDays);
+      const statuses = await loadProjectStatuses(ctx.tenantId);
+      const done = closedCodes(statuses);
+      const extra = ticketFilterOverrides(rf, ctx);
+      const agg = await Ticket.aggregate([
+        {
+          $match: {
+            ...scopedQuery,
+            ...extra,
+            createdAt: { $gte: start, $lte: end },
+            [levelField]: { $nin: [null, ""] },
+          },
+        },
+        {
+          $group: {
+            _id: `$${levelField}`,
+            total: { $sum: 1 },
+            resolved: {
+              $sum: { $cond: [{ $in: ["$status", done] }, 1, 0] },
+            },
+          },
+        },
+        {
+          $lookup: {
+            from: "categories",
+            localField: "_id",
+            foreignField: "_id",
+            as: "cat",
+          },
+        },
+        { $unwind: { path: "$cat", preserveNullAndEmptyArrays: true } },
+        { $sort: { total: -1 } },
+        { $limit: 30 },
+      ]);
+      return {
+        items: agg.map((r: any) => {
+          const rate =
+            r.total > 0 ? Math.round((r.resolved / r.total) * 1000) / 10 : 0;
+          return {
+            label: r.cat?.name ?? "Uncategorized",
+            value: rate,
+            percent: rate,
+            unit: "%",
+            resolved: r.resolved,
+            total: r.total,
+            subtitle: `${r.resolved}/${r.total} resolved`,
+          };
+        }),
+      };
+    },
+  };
+}
+
+// Count breakdowns — level 1 is the existing ht_tickets_by_category.
+const htTicketsBySubcategoryHandler = makeCountByHierarchyLevel(
+  "ht_tickets_by_subcategory",
+  "categoryHierarchy.level2",
+);
+const htTicketsByTopicHandler = makeCountByHierarchyLevel(
+  "ht_tickets_by_topic",
+  "categoryHierarchy.level3",
+);
+const htTicketsByCourseHandler = makeCountByHierarchyLevel(
+  "ht_tickets_by_course",
+  "categoryHierarchy.level4",
+);
+const htTicketsByDepartmentHandler = makeCountByHierarchyLevel(
+  "ht_tickets_by_department",
+  "categoryHierarchy.level5",
+);
+
+// Efficiency breakdowns by hierarchy level (level 1 groups by legacy `category`).
+const htEfficiencyByCategoryHandler = makeEfficiencyByHierarchyLevel(
+  "ht_efficiency_by_category",
+  "category",
+);
+const htEfficiencyBySubcategoryHandler = makeEfficiencyByHierarchyLevel(
+  "ht_efficiency_by_subcategory",
+  "categoryHierarchy.level2",
+);
+const htEfficiencyByTopicHandler = makeEfficiencyByHierarchyLevel(
+  "ht_efficiency_by_topic",
+  "categoryHierarchy.level3",
+);
+const htEfficiencyByCourseHandler = makeEfficiencyByHierarchyLevel(
+  "ht_efficiency_by_course",
+  "categoryHierarchy.level4",
+);
+const htEfficiencyByDepartmentHandler = makeEfficiencyByHierarchyLevel(
+  "ht_efficiency_by_department",
+  "categoryHierarchy.level5",
+);
+
+// ─── Efficiency by Offline Center ────────────────────────────────────────────
+// metadata.centerId is stored as a STRING; convert to ObjectId in the lookup.
+const htEfficiencyByCenterHandler: QueryHandler = {
+  widgetKey: "ht_efficiency_by_center",
+  cacheTtlSeconds: 300,
+  async execute(ctx, params, rf, scopedQuery): Promise<WidgetData> {
+    const Ticket = getTicketModel();
+    const { start, end } = buildDateRange(params.dateRangeDays);
+    const statuses = await loadProjectStatuses(ctx.tenantId);
+    const done = closedCodes(statuses);
+    const extra = ticketFilterOverrides(rf, ctx);
+    const agg = await Ticket.aggregate([
+      {
+        $match: {
+          ...scopedQuery,
+          ...extra,
+          createdAt: { $gte: start, $lte: end },
+          "metadata.centerId": { $nin: [null, "", "online"] },
+        },
+      },
+      {
+        $group: {
+          _id: "$metadata.centerId",
+          total: { $sum: 1 },
+          resolved: { $sum: { $cond: [{ $in: ["$status", done] }, 1, 0] } },
+        },
+      },
+      {
+        $lookup: {
+          from: "centers",
+          let: { cid: "$_id" },
+          as: "center",
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $eq: [
+                    "$_id",
+                    {
+                      $convert: {
+                        input: "$$cid",
+                        to: "objectId",
+                        onError: null,
+                        onNull: null,
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+            { $project: { centerName: 1 } },
+          ],
+        },
+      },
+      { $unwind: { path: "$center", preserveNullAndEmptyArrays: true } },
+      { $sort: { total: -1 } },
+      { $limit: 50 },
+    ]);
+    return {
+      items: agg.map((r: any) => {
+        const rate =
+          r.total > 0 ? Math.round((r.resolved / r.total) * 1000) / 10 : 0;
+        return {
+          label: r.center?.centerName ?? "Unknown center",
+          value: rate,
+          percent: rate,
+          unit: "%",
+          resolved: r.resolved,
+          total: r.total,
+          subtitle: `${r.resolved}/${r.total} resolved`,
+        };
+      }),
+    };
+  },
+};
+
+// ─── Efficiency by User (assignee) ───────────────────────────────────────────
+const htEfficiencyByUserHandler: QueryHandler = {
+  widgetKey: "ht_efficiency_by_user",
+  cacheTtlSeconds: 300,
+  async execute(ctx, params, rf, scopedQuery): Promise<WidgetData> {
+    const Ticket = getTicketModel();
+    const { start, end } = buildDateRange(params.dateRangeDays);
+    const statuses = await loadProjectStatuses(ctx.tenantId);
+    const done = closedCodes(statuses);
+    const extra = ticketFilterOverrides(rf, ctx);
+    const agg = await Ticket.aggregate([
+      {
+        $match: {
+          ...scopedQuery,
+          ...extra,
+          createdAt: { $gte: start, $lte: end },
+          assignedTo: { $ne: null },
+        },
+      },
+      {
+        $group: {
+          _id: "$assignedTo",
+          total: { $sum: 1 },
+          resolved: { $sum: { $cond: [{ $in: ["$status", done] }, 1, 0] } },
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          localField: "_id",
+          foreignField: "_id",
+          as: "user",
+          pipeline: [{ $project: { firstName: 1, lastName: 1, fullName: 1 } }],
+        },
+      },
+      { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
+      { $sort: { total: -1 } },
+      { $limit: 50 },
+    ]);
+    return {
+      items: agg.map((r: any) => {
+        const rate =
+          r.total > 0 ? Math.round((r.resolved / r.total) * 1000) / 10 : 0;
+        const name =
+          r.user?.fullName ||
+          [r.user?.firstName, r.user?.lastName].filter(Boolean).join(" ") ||
+          "Unassigned";
+        return {
+          label: name,
+          value: rate,
+          percent: rate,
+          unit: "%",
+          resolved: r.resolved,
+          total: r.total,
+          subtitle: `${r.resolved}/${r.total} resolved`,
+        };
+      }),
+    };
+  },
+};
+
 // ─── Register all Phase 3 handlers ───────────────────────────────────────────
 
 export function registerPhase3Handlers(): void {
@@ -1099,6 +1391,19 @@ export function registerPhase3Handlers(): void {
   registerWidgetHandler(htFirstResponseTimeHandler);
   registerWidgetHandler(htReopenRateHandler);
   registerWidgetHandler(htTicketsByProjectHandler);
+
+  // ── Category-hierarchy breakdowns (levels 1–5) ────────────────────────────
+  registerWidgetHandler(htTicketsBySubcategoryHandler);
+  registerWidgetHandler(htTicketsByTopicHandler);
+  registerWidgetHandler(htTicketsByCourseHandler);
+  registerWidgetHandler(htTicketsByDepartmentHandler);
+  registerWidgetHandler(htEfficiencyByCategoryHandler);
+  registerWidgetHandler(htEfficiencyBySubcategoryHandler);
+  registerWidgetHandler(htEfficiencyByTopicHandler);
+  registerWidgetHandler(htEfficiencyByCourseHandler);
+  registerWidgetHandler(htEfficiencyByDepartmentHandler);
+  registerWidgetHandler(htEfficiencyByCenterHandler);
+  registerWidgetHandler(htEfficiencyByUserHandler);
 
   // ── Catalogue-key aliases ─────────────────────────────────────────────────
   // These allow dashboards to reference widgets by semantic catalogue keys
