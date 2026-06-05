@@ -452,19 +452,12 @@ httpServer.listen(PORT, async () => {
   console.log(`📊 Environment: ${process.env.NODE_ENV}`);
   console.log(`🔗 API URL: http://localhost:${PORT}/api`);
 
-  // Step 1: Seed data and initialize database (failures here must NOT block services)
+  // Step 0: Register dashboard widget handlers FIRST.
+  // This is a pure in-memory operation that does NOT depend on the database, so
+  // it MUST run independently of seeding. Previously it lived inside the seeding
+  // try/catch below — any seeding failure would skip registration entirely and
+  // leave every dashboard widget reporting "No query handler registered".
   try {
-    // Seed roles and permissions FIRST (before creating admin user)
-    console.log("🔐 Initializing roles and permissions...");
-    await seedRolesAndPermissions();
-
-    // Seed global notification settings defaults (idempotent)
-    await seedNotificationSettings();
-
-    // Then initialize database (creates admin user with role reference)
-    await initializeDatabase();
-
-    // Register dashboard widget handlers (Phase 1 + 2 + 3 + 4 + 5 + KB + Activity)
     registerPhase1Handlers();
     registerPhase2Handlers();
     registerPhase3Handlers();
@@ -483,8 +476,23 @@ httpServer.listen(PORT, async () => {
       "📊 Dashboard Engine: Phase 1–5 + KB + Activity + att/co/ap/se/misc/am/footfall handlers registered",
     );
 
-    // Start event-driven cache invalidation
+    // Start event-driven cache invalidation (in-memory event bus)
     initDashboardEventBus();
+  } catch (error) {
+    console.error("⚠️  Widget handler registration failed:", error);
+  }
+
+  // Step 1: Seed data and initialize database (failures here must NOT block services)
+  try {
+    // Seed roles and permissions FIRST (before creating admin user)
+    console.log("🔐 Initializing roles and permissions...");
+    await seedRolesAndPermissions();
+
+    // Seed global notification settings defaults (idempotent)
+    await seedNotificationSettings();
+
+    // Then initialize database (creates admin user with role reference)
+    await initializeDatabase();
 
     // Seed widget definitions (idempotent)
     await seedWidgetDefinitions();
