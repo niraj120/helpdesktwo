@@ -187,15 +187,22 @@ export function buildDateRange(dateRangeDays: number): {
   endStr: string;
 } {
   const end = new Date();
-  // 0 means "All time" — use project launch floor (Jan 1 2020)
+  // 0 means "All time" — use project launch floor (Jan 1 2020).
+  // -1 means "Today" — from local midnight up to now.
   const start =
     dateRangeDays === 0
       ? new Date("2020-01-01T00:00:00.000Z")
-      : (() => {
-          const d = new Date();
-          d.setDate(d.getDate() - dateRangeDays);
-          return d;
-        })();
+      : dateRangeDays < 0
+        ? (() => {
+            const d = new Date();
+            d.setHours(0, 0, 0, 0);
+            return d;
+          })()
+        : (() => {
+            const d = new Date();
+            d.setDate(d.getDate() - dateRangeDays);
+            return d;
+          })();
   return {
     start,
     end,

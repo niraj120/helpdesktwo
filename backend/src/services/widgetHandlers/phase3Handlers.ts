@@ -1113,17 +1113,25 @@ function makeCountByHierarchyLevel(
           },
         },
         { $unwind: { path: "$cat", preserveNullAndEmptyArrays: true } },
-        { $sort: { count: -1 } },
-        { $limit: 30 },
       ]);
-      const total = agg.reduce((s: number, r: any) => s + r.count, 0);
-      return {
-        items: agg.map((r: any) => ({
-          label: r.cat?.name ?? "Uncategorized",
-          value: r.count,
-          percent: total > 0 ? Math.round((r.count / total) * 1000) / 10 : 0,
-        })),
-      };
+      // A hierarchy can have several distinct nodes that share the SAME name
+      // (e.g. a "Higher" department under different courses). Merge by name so
+      // the breakdown shows unique labels with summed counts.
+      const byName = new Map<string, number>();
+      for (const r of agg as any[]) {
+        const label = r.cat?.name ?? "Uncategorized";
+        byName.set(label, (byName.get(label) ?? 0) + r.count);
+      }
+      const total = [...byName.values()].reduce((s, v) => s + v, 0);
+      const items = [...byName.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 30)
+        .map(([label, count]) => ({
+          label,
+          value: count,
+          percent: total > 0 ? Math.round((count / total) * 1000) / 10 : 0,
+        }));
+      return { items };
     },
   };
 }
@@ -1169,24 +1177,33 @@ function makeEfficiencyByHierarchyLevel(
           },
         },
         { $unwind: { path: "$cat", preserveNullAndEmptyArrays: true } },
-        { $sort: { total: -1 } },
-        { $limit: 30 },
       ]);
-      return {
-        items: agg.map((r: any) => {
+      // Merge distinct nodes that share the same name (see count factory above).
+      const byName = new Map<string, { resolved: number; total: number }>();
+      for (const r of agg as any[]) {
+        const label = r.cat?.name ?? "Uncategorized";
+        const cur = byName.get(label) ?? { resolved: 0, total: 0 };
+        cur.resolved += r.resolved;
+        cur.total += r.total;
+        byName.set(label, cur);
+      }
+      const items = [...byName.entries()]
+        .sort((a, b) => b[1].total - a[1].total)
+        .slice(0, 30)
+        .map(([label, { resolved, total }]) => {
           const rate =
-            r.total > 0 ? Math.round((r.resolved / r.total) * 1000) / 10 : 0;
+            total > 0 ? Math.round((resolved / total) * 1000) / 10 : 0;
           return {
-            label: r.cat?.name ?? "Uncategorized",
+            label,
             value: rate,
             percent: rate,
             unit: "%",
-            resolved: r.resolved,
-            total: r.total,
-            subtitle: `${r.resolved}/${r.total} resolved`,
+            resolved,
+            total,
+            subtitle: `${resolved}/${total} resolved`,
           };
-        }),
-      };
+        });
+      return { items };
     },
   };
 }

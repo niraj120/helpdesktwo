@@ -1961,63 +1961,66 @@ const AgentStudentWorkflow: React.FC = () => {
         </div>
       )}
 
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">
-          Candidate Management Workflow
-        </h1>
-        <p className="text-gray-600 mt-2">
-          Search, register, and create queries for walk-in candidates
-        </p>
-        {selectedCenter && (
-          <div className="mt-3 flex items-center gap-3 flex-wrap">
-            <div className="inline-flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-full px-4 py-1.5">
-              <svg
-                className="h-4 w-4 text-blue-600 flex-shrink-0"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-                />
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-                />
-              </svg>
-              <span className="text-sm font-medium text-blue-800">
-                {selectedCenter.centerName}
-              </span>
-              {selectedCenter.city && (
-                <span className="text-xs text-blue-600">
-                  · {selectedCenter.city}
+      {/* Header card (matches the My Queries page UI/UX) */}
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-5 mb-4">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Offline Support</h1>
+            <p className="text-gray-500 text-sm mt-1">
+              Search, register, and create queries for walk-in candidates
+            </p>
+          </div>
+          {selectedCenter && (
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="inline-flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-full px-4 py-1.5">
+                <svg
+                  className="h-4 w-4 text-blue-600 flex-shrink-0"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+                  />
+                </svg>
+                <span className="text-sm font-medium text-blue-800">
+                  {selectedCenter.centerName}
                 </span>
+                {selectedCenter.city && (
+                  <span className="text-xs text-blue-600">
+                    · {selectedCenter.city}
+                  </span>
+                )}
+              </div>
+              {mappedCenters.length > 1 && (
+                <button
+                  onClick={() => {
+                    setSelectedCenter(null);
+                    try {
+                      sessionStorage.removeItem(CENTER_SESSION_KEY);
+                    } catch {
+                      /* ignore */
+                    }
+                  }}
+                  className="text-sm text-gray-500 hover:text-gray-700 underline"
+                >
+                  Change Center
+                </button>
               )}
             </div>
-            {mappedCenters.length > 1 && (
-              <button
-                onClick={() => {
-                  setSelectedCenter(null);
-                  try {
-                    sessionStorage.removeItem(CENTER_SESSION_KEY);
-                  } catch {
-                    /* ignore */
-                  }
-                }}
-                className="text-sm text-gray-500 hover:text-gray-700 underline"
-              >
-                Change Center
-              </button>
-            )}
-          </div>
-        )}
+          )}
+        </div>
       </div>
+
 
       {/* Workflow Progress */}
       <div className="mb-8 flex items-center space-x-4">

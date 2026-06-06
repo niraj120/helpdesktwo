@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { Ticket } from '../models/Ticket';
 import { Project } from '../models/Project';
 import { Center } from '../models/Center';
+import { Category } from '../models/Category';
 import ExcelJS from 'exceljs';
 
 /**
@@ -137,9 +138,13 @@ export const exportTickets = async (req: Request, res: Response) => {
 
     const needsProject = exportColumns.some((c) => c.key === 'project');
     const needsCenter = exportColumns.some((c) => c.key === 'center');
+    const needsHierarchy = exportColumns.some((c) =>
+      c.key.startsWith('hierarchy_level_'),
+    );
 
     const projectNameById = new Map<string, string>();
     const centerNameById = new Map<string, string>();
+    const categoryNameById = new Map<string, string>();
 
     if (needsProject) {
       const ids = [
@@ -179,6 +184,31 @@ export const exportTickets = async (req: Request, res: Response) => {
       }
     }
 
+    // Resolve category names for hierarchy level columns (level1..level5). The
+    // on-screen table shows the category NAMES; tickets store ObjectIds on
+    // categoryHierarchy.levelN, so batch-resolve them to names here.
+    if (needsHierarchy) {
+      const ids = new Set<string>();
+      for (const t of tickets as any[]) {
+        const h = t.categoryHierarchy || {};
+        for (const lvl of ['level1', 'level2', 'level3', 'level4', 'level5']) {
+          const v = h[lvl];
+          if (v) ids.add(String(v));
+        }
+      }
+      const objIds = [...ids]
+        .map(oid)
+        .filter(Boolean) as mongoose.Types.ObjectId[];
+      if (objIds.length) {
+        const docs = await Category.find({ _id: { $in: objIds } })
+          .select('name')
+          .lean();
+        docs.forEach((c: any) =>
+          categoryNameById.set(String(c._id), c.name || ''),
+        );
+      }
+    }
+
     // ── Per-column value resolver (mirrors the queries table cell logic) ──────
     const resolveValue = (ticket: any, key: string): string => {
       const meta = ticket.metadata || {};
@@ -190,7 +220,18 @@ export const exportTickets = async (req: Request, res: Response) => {
       }
       if (key.startsWith('hierarchy_level_')) {
         const levelNum = key.replace('hierarchy_level_', '');
-        return String(meta.categoryHierarchy?.[`level${levelNum}Name`] ?? '');
+        // Level 1 == the legacy populated category; deeper levels resolve from
+        // the batched category-name map keyed by categoryHierarchy.levelN id.
+        if (levelNum === '1') {
+          const lvl1 = ticket.categoryHierarchy?.level1;
+          return (
+            (ticket.category as any)?.name ||
+            (lvl1 ? categoryNameById.get(String(lvl1)) : '') ||
+            ''
+          );
+        }
+        const levelId = ticket.categoryHierarchy?.[`level${levelNum}`];
+        return levelId ? categoryNameById.get(String(levelId)) ?? '' : '';
       }
 
       switch (key) {
@@ -214,9 +255,11 @@ export const exportTickets = async (req: Request, res: Response) => {
             ''
           );
         case 'requestedBy':
+          // Mirror the table: student name → student email → creator name.
           return (
-            meta.createdByName ||
             meta.studentName ||
+            meta.studentEmail ||
+            meta.createdByName ||
             fullName(ticket.createdBy) ||
             (ticket.submissionSource === 'email' ? ticket.sourceEmail : '') ||
             ''
@@ -233,12 +276,12 @@ export const exportTickets = async (req: Request, res: Response) => {
           if (!cid || cid === 'online') return 'Online';
           return centerNameById.get(String(cid)) || String(cid);
         }
-        case 'source':
-          return (
-            SOURCE_LABELS[ticket.submissionSource] ||
-            ticket.submissionSource ||
-            ''
-          );
+        case 'source': {
+          // The table reads metadata.submissionType; fall back to the
+          // ticket-level submissionSource for older records.
+          const src = meta.submissionType || ticket.submissionSource || '';
+          return SOURCE_LABELS[src] || (src ? String(src) : '');
+        }
         case 'sla': {
           const due =
             ticket.roleLevelSLA?.dueAt || ticket.ticketLevelSLA?.dueAt || null;

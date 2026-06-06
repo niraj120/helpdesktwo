@@ -383,6 +383,7 @@ export default function DashboardEnginePage({
             }}
           >
             <option value={0}>All time</option>
+            <option value={-1}>Today</option>
             <option value={7}>Last 7 days</option>
             <option value={14}>Last 14 days</option>
             <option value={30}>Last 30 days</option>

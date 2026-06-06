@@ -3666,6 +3666,7 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
           search: searchQuery || undefined,
         }}
         ticketCount={ticketStats.total}
+        columns={visibleColumnDefs}
       />
     </Wrapper>
   );
