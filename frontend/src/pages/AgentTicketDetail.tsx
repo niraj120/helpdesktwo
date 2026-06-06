@@ -488,9 +488,14 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [loading, setLoading] = useState(true);
   const [permissions, setPermissions] = useState<string[]>([]);
-  // Current user id (for ownership: can only act on tickets assigned to me)
+  // Current user id (for ownership: can only act on tickets assigned to me).
+  // Prefer the plain "userId" key — it's set by EVERY login path (including the
+  // project portal, which does NOT store a "user" object). Fall back to the
+  // "user" object for older sessions.
   const currentUserId = useMemo<string | null>(() => {
     try {
+      const plain = localStorage.getItem("userId");
+      if (plain) return plain;
       const userStr = localStorage.getItem("user");
       const u = userStr ? JSON.parse(userStr) : null;
       return u?._id ?? u?.id ?? null;
