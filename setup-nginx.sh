@@ -20,8 +20,17 @@ server {
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers on;
 
-    root /var/www/helpdesk/frontend;
+    # Serve ONLY the compiled Vite build — never the project source directory,
+    # or raw /src/*.tsx, .env, vite.config.ts, package.json, node_modules and
+    # .git become publicly downloadable (CWE-540 / CWE-200).
+    root /var/www/helpdesk/frontend/dist;
     index index.html;
+
+    # Defense-in-depth: block source & dev artifacts even if root is wrong.
+    location ~ /\.(?!well-known) { deny all; return 404; }
+    location ~* \.(ts|tsx|map)$ { return 404; }
+    location ~* ^/(src|node_modules)/ { return 404; }
+    location ~* ^/(vite\.config|tsconfig|package|package-lock|postcss\.config|tailwind\.config)\.(ts|js|cjs|mjs|json)$ { return 404; }
 
     gzip on;
     gzip_vary on;
