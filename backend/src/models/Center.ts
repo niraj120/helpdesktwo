@@ -4,6 +4,7 @@ export interface ICenter extends Document {
   projectId: mongoose.Types.ObjectId;
   centerName: string;
   address: string;
+  country?: string;
   city: string;
   state: string;
   pincode?: string;
@@ -48,6 +49,10 @@ const CenterSchema = new Schema<ICenter>(
     address: {
       type: String,
       required: true,
+    },
+    country: {
+      type: String,
+      trim: true,
     },
     city: {
       type: String,

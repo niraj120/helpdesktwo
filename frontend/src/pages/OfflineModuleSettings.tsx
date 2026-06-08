@@ -2535,7 +2535,10 @@ const CenterForm: React.FC<CenterFormProps> = ({
     mobile: "",
     email: "",
   });
-  const [isInitialized, setIsInitialized] = useState(false);
+  // Guards so the edit-init cascade auto-loads states/cities for the saved
+  // country/state exactly once (per center), independent of render timing.
+  const didLoadStatesRef = useRef(false);
+  const didLoadCitiesRef = useRef(false);
 
   // Update form data when center prop changes
   useEffect(() => {
@@ -2558,30 +2561,38 @@ const CenterForm: React.FC<CenterFormProps> = ({
         googleMapLink: center.googleMapLink || "",
         contacts: center.contacts || [],
       });
-      setIsInitialized(false);
+      // New center being edited — allow the cascade to auto-load again.
+      didLoadStatesRef.current = false;
+      didLoadCitiesRef.current = false;
     }
   }, [center?._id]);
 
-  // Load states when editing a center and countries are available
+  // Edit-init: load STATES for the saved country as soon as the country list is
+  // available. Ref-guarded so it runs once per center (no loops, no timing race).
   useEffect(() => {
-    if (center && center.country && countries.length > 0 && !isInitialized) {
+    if (didLoadStatesRef.current) return;
+    if (center?.country && countries.length > 0) {
       const countryObj = countries.find((c) => c.name === center.country);
       if (countryObj?._id) {
+        didLoadStatesRef.current = true;
         onCountryChange(countryObj._id);
-        setIsInitialized(true);
       }
     }
-  }, [center?.country, countries.length, isInitialized]);
+  }, [center?._id, center?.country, countries.length]);
 
-  // Load cities when editing a center and states are available
+  // Edit-init: load CITIES for the saved state as soon as the state list is
+  // available (i.e. right after the states above resolve). This is what was
+  // previously missed, leaving the City dropdown empty on edit.
   useEffect(() => {
-    if (center && center.state && states.length > 0 && isInitialized) {
+    if (didLoadCitiesRef.current) return;
+    if (center?.state && states.length > 0) {
       const stateObj = states.find((s) => s.name === center.state);
       if (stateObj?._id) {
+        didLoadCitiesRef.current = true;
         onStateChange(stateObj._id);
       }
     }
-  }, [center?.state, states.length, isInitialized]);
+  }, [center?._id, center?.state, states.length]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -2785,7 +2796,7 @@ const CenterForm: React.FC<CenterFormProps> = ({
         {/* Phone */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Phone <span className="text-red-500">*</span>
+            Phone
           </label>
           <input
             type="tel"
@@ -2795,14 +2806,13 @@ const CenterForm: React.FC<CenterFormProps> = ({
             }
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="+91 98765 43210"
-            required
           />
         </div>
 
         {/* Email */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Email <span className="text-red-500">*</span>
+            Email
           </label>
           <input
             type="email"
@@ -2812,14 +2822,13 @@ const CenterForm: React.FC<CenterFormProps> = ({
             }
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="center@example.com"
-            required
           />
         </div>
 
         {/* Working Hours */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Working Hours <span className="text-red-500">*</span>
+            Working Hours
           </label>
           <input
             type="text"
@@ -2829,7 +2838,6 @@ const CenterForm: React.FC<CenterFormProps> = ({
             }
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="e.g., Mon-Fri: 9AM-6PM"
-            required
           />
         </div>
 

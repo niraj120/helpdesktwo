@@ -114,6 +114,24 @@ interface OfflineCenter {
   }>;
 }
 
+// Treat empty strings and common placeholder values ("NA", "N/A", the dummy
+// "NA@NA.com" email, etc.) as "not provided" so unfilled centre details are
+// hidden from the public centre cards instead of showing junk.
+const CENTER_PLACEHOLDERS = new Set([
+  "",
+  "na",
+  "n/a",
+  "none",
+  "nil",
+  "null",
+  "-",
+  "na@na.com",
+]);
+const isBlankValue = (v?: string | number | null): boolean =>
+  v === undefined ||
+  v === null ||
+  CENTER_PLACEHOLDERS.has(String(v).trim().toLowerCase());
+
 interface TicketSubmissionSettings {
   mode: "online" | "offline" | "both";
   enableOnlineForm: boolean;
@@ -2419,61 +2437,94 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
                             </div>
                           </div>
 
-                          {/* Contact Info Grid - Fixed Height */}
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                            <div className="flex items-start space-x-3 h-[90px]">
-                              <MapPinIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
-                              <div className="overflow-hidden">
-                                <p className="text-sm font-medium text-gray-700">
-                                  {t("address")}
-                                </p>
-                                <p className="text-sm text-gray-600 line-clamp-3">
-                                  {center.address}, {center.city},{" "}
-                                  {center.state} - {center.pincode}
-                                </p>
+                          {/* Contact Info Grid — only render details that are
+                              actually provided (hide NA / empty placeholders) */}
+                          {(() => {
+                            const addressStr = [
+                              center.address,
+                              center.city,
+                              center.state,
+                            ]
+                              .filter((p) => !isBlankValue(p))
+                              .join(", ");
+                            const fullAddress = !isBlankValue(center.pincode)
+                              ? `${addressStr}${addressStr ? " - " : ""}${center.pincode}`
+                              : addressStr;
+                            const hasAddress = !!fullAddress;
+                            const hasPhone = !isBlankValue(center.phone);
+                            const hasEmail = !isBlankValue(center.email);
+                            const hasHours = !isBlankValue(center.workingHours);
+                            if (
+                              !hasAddress &&
+                              !hasPhone &&
+                              !hasEmail &&
+                              !hasHours
+                            )
+                              return null;
+                            return (
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                {hasAddress && (
+                                  <div className="flex items-start space-x-3">
+                                    <MapPinIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
+                                    <div className="overflow-hidden">
+                                      <p className="text-sm font-medium text-gray-700">
+                                        {t("address")}
+                                      </p>
+                                      <p className="text-sm text-gray-600 line-clamp-3">
+                                        {fullAddress}
+                                      </p>
+                                    </div>
+                                  </div>
+                                )}
+                                {hasPhone && (
+                                  <div className="flex items-start space-x-3">
+                                    <PhoneIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
+                                    <div>
+                                      <p className="text-sm font-medium text-gray-700">
+                                        {t("phone")}
+                                      </p>
+                                      <p className="text-sm text-gray-600">
+                                        {center.phone}
+                                      </p>
+                                    </div>
+                                  </div>
+                                )}
+                                {hasEmail && (
+                                  <div className="flex items-start space-x-3">
+                                    <EnvelopeIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
+                                    <div>
+                                      <p className="text-sm font-medium text-gray-700">
+                                        {t("email")}
+                                      </p>
+                                      <p className="text-sm text-gray-600 truncate">
+                                        {center.email}
+                                      </p>
+                                    </div>
+                                  </div>
+                                )}
+                                {hasHours && (
+                                  <div className="flex items-start space-x-3">
+                                    <ClockIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
+                                    <div>
+                                      <p className="text-sm font-medium text-gray-700">
+                                        {t("workingHours")}
+                                      </p>
+                                      <p className="text-sm text-gray-600">
+                                        {center.workingHours}
+                                      </p>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
-                            </div>
-                            <div className="flex items-start space-x-3 h-[90px]">
-                              <PhoneIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
-                              <div>
-                                <p className="text-sm font-medium text-gray-700">
-                                  {t("phone")}
-                                </p>
-                                <p className="text-sm text-gray-600">
-                                  {center.phone}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="flex items-start space-x-3 h-[50px]">
-                              <EnvelopeIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
-                              <div>
-                                <p className="text-sm font-medium text-gray-700">
-                                  {t("email")}
-                                </p>
-                                <p className="text-sm text-gray-600 truncate">
-                                  {center.email}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="flex items-start space-x-3 h-[50px]">
-                              <ClockIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
-                              <div>
-                                <p className="text-sm font-medium text-gray-700">
-                                  {t("workingHours")}
-                                </p>
-                                <p className="text-sm text-gray-600">
-                                  {center.workingHours}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
+                            );
+                          })()}
 
-                          {/* Features Section - Fixed Min Height */}
-                          <div className="mt-4 pt-4 border-t border-gray-200 min-h-[100px]">
-                            <p className="text-sm font-medium text-gray-700 mb-2">
-                              {t("availableFeatures")}
-                            </p>
-                            {center.features && center.features.length > 0 ? (
+                          {/* Features Section — hidden when none are listed */}
+                          {center.features && center.features.length > 0 && (
+                            <div className="mt-4 pt-4 border-t border-gray-200">
+                              <p className="text-sm font-medium text-gray-700 mb-2">
+                                {t("availableFeatures")}
+                              </p>
                               <div className="flex flex-wrap gap-2">
                                 {center.features.map((feature, featureIdx) => (
                                   <span
@@ -2484,61 +2535,65 @@ const StudentPortal: React.FC<StudentPortalProps> = ({
                                   </span>
                                 ))}
                               </div>
-                            ) : (
-                              <p className="text-sm text-gray-400 italic">
-                                {t("noFeaturesListed")}
-                              </p>
-                            )}
-                          </div>
+                            </div>
+                          )}
 
-                          {/* Contact Details Section - Fixed Min Height */}
-                          <div className="mt-4 pt-4 border-t border-gray-200 min-h-[120px]">
-                            <p className="text-sm font-medium text-gray-700 mb-3">
-                              {t("contactDetails")}
-                            </p>
-                            {center.contacts && center.contacts.length > 0 ? (
-                              <div className="space-y-3">
-                                {center.contacts.map((contact, contactIdx) => (
-                                  <div key={contactIdx}>
-                                    <p className="text-sm font-semibold text-gray-900">
-                                      {contact.name}
-                                    </p>
-                                    {contact.role && (
-                                      <p className="text-xs text-gray-500 mb-2">
-                                        {contact.role}
-                                      </p>
-                                    )}
-                                    {contact.mobile && (
-                                      <div className="flex items-center space-x-2 mb-1">
-                                        <PhoneIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                                        <a
-                                          href={`tel:${contact.mobile}`}
-                                          className="text-sm text-gray-600 hover:text-gray-900"
-                                        >
-                                          {contact.mobile}
-                                        </a>
-                                      </div>
-                                    )}
-                                    {contact.email && (
-                                      <div className="flex items-center space-x-2">
-                                        <EnvelopeIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                                        <a
-                                          href={`mailto:${contact.email}`}
-                                          className="text-sm text-gray-600 hover:text-gray-900 truncate"
-                                        >
-                                          {contact.email}
-                                        </a>
-                                      </div>
-                                    )}
-                                  </div>
-                                ))}
+                          {/* Contact Details Section — hidden when no real
+                              contacts are provided */}
+                          {(() => {
+                            const validContacts = (center.contacts || []).filter(
+                              (c) =>
+                                !isBlankValue(c?.name) ||
+                                !isBlankValue(c?.mobile) ||
+                                !isBlankValue(c?.email),
+                            );
+                            if (validContacts.length === 0) return null;
+                            return (
+                              <div className="mt-4 pt-4 border-t border-gray-200">
+                                <p className="text-sm font-medium text-gray-700 mb-3">
+                                  {t("contactDetails")}
+                                </p>
+                                <div className="space-y-3">
+                                  {validContacts.map((contact, contactIdx) => (
+                                    <div key={contactIdx}>
+                                      {!isBlankValue(contact.name) && (
+                                        <p className="text-sm font-semibold text-gray-900">
+                                          {contact.name}
+                                        </p>
+                                      )}
+                                      {!isBlankValue(contact.role) && (
+                                        <p className="text-xs text-gray-500 mb-2">
+                                          {contact.role}
+                                        </p>
+                                      )}
+                                      {!isBlankValue(contact.mobile) && (
+                                        <div className="flex items-center space-x-2 mb-1">
+                                          <PhoneIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                                          <a
+                                            href={`tel:${contact.mobile}`}
+                                            className="text-sm text-gray-600 hover:text-gray-900"
+                                          >
+                                            {contact.mobile}
+                                          </a>
+                                        </div>
+                                      )}
+                                      {!isBlankValue(contact.email) && (
+                                        <div className="flex items-center space-x-2">
+                                          <EnvelopeIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                                          <a
+                                            href={`mailto:${contact.email}`}
+                                            className="text-sm text-gray-600 hover:text-gray-900 truncate"
+                                          >
+                                            {contact.email}
+                                          </a>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
-                            ) : (
-                              <p className="text-sm text-gray-400 italic">
-                                {t("noContactDetailsAvailable")}
-                              </p>
-                            )}
-                          </div>
+                            );
+                          })()}
 
                           {/* Get Directions Button - Always at bottom */}
                           <div className="mt-auto pt-4 border-t border-gray-200">
