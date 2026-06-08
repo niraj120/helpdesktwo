@@ -645,6 +645,10 @@ const htTicketsByCategoryHandler: QueryHandler = {
     const Ticket = getTicketModel();
     const { start, end } = buildDateRange(params.dateRangeDays);
     const extra = ticketFilterOverrides(rf, ctx);
+    // Group by the TRUE level-1 category. The legacy `category` field stores the
+    // DEEPEST selected level (offline tickets set it to level 2–5), so grouping
+    // by it mixes hierarchy levels. Prefer categoryHierarchy.level1, falling back
+    // to the legacy `category` only for old tickets with no hierarchy stored.
     const agg = await Ticket.aggregate([
       {
         $match: {
@@ -653,7 +657,12 @@ const htTicketsByCategoryHandler: QueryHandler = {
           createdAt: { $gte: start, $lte: end },
         },
       },
-      { $group: { _id: "$category", count: { $sum: 1 } } },
+      {
+        $group: {
+          _id: { $ifNull: ["$categoryHierarchy.level1", "$category"] },
+          count: { $sum: 1 },
+        },
+      },
       {
         $lookup: {
           from: "categories",
@@ -663,17 +672,23 @@ const htTicketsByCategoryHandler: QueryHandler = {
         },
       },
       { $unwind: { path: "$cat", preserveNullAndEmptyArrays: true } },
-      { $sort: { count: -1 } },
-      { $limit: 20 },
     ]);
-    const total = agg.reduce((s: number, r: any) => s + r.count, 0);
-    return {
-      items: agg.map((r: any) => ({
-        label: r.cat?.name ?? "Uncategorized",
-        value: r.count,
-        percent: total > 0 ? Math.round((r.count / total) * 1000) / 10 : 0,
-      })),
-    };
+    // Merge by name — distinct level-1 nodes can share a name; show unique labels.
+    const byName = new Map<string, number>();
+    for (const r of agg as any[]) {
+      const label = r.cat?.name ?? "Uncategorized";
+      byName.set(label, (byName.get(label) ?? 0) + r.count);
+    }
+    const total = [...byName.values()].reduce((s, v) => s + v, 0);
+    const items = [...byName.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 30)
+      .map(([label, count]) => ({
+        label,
+        value: count,
+        percent: total > 0 ? Math.round((count / total) * 1000) / 10 : 0,
+      }));
+    return { items };
   },
 };
 
@@ -1227,9 +1242,11 @@ const htTicketsByDepartmentHandler = makeCountByHierarchyLevel(
 );
 
 // Efficiency breakdowns by hierarchy level (level 1 groups by legacy `category`).
+// Group by the true level-1 category (categoryHierarchy.level1), not the legacy
+// `category` field which holds the deepest selected level for offline tickets.
 const htEfficiencyByCategoryHandler = makeEfficiencyByHierarchyLevel(
   "ht_efficiency_by_category",
-  "category",
+  "categoryHierarchy.level1",
 );
 const htEfficiencyBySubcategoryHandler = makeEfficiencyByHierarchyLevel(
   "ht_efficiency_by_subcategory",

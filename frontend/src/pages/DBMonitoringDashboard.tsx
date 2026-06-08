@@ -111,7 +111,8 @@ const DBMonitoringDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [refreshInterval, setRefreshInterval] = useState(5000);
+  // Default 30s (was 5s) — a 5s poll generated continuous auth/scope queries.
+  const [refreshInterval, setRefreshInterval] = useState(30000);
   const [alertFilter, setAlertFilter] = useState<string>("all");
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [config, setConfig] = useState({

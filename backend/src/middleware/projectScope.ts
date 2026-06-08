@@ -34,9 +34,18 @@ export const attachProjectContext = async (
     const projectId =
       req.params.projectId || req.query.projectId || req.body.projectId;
 
-    // Get user's accessible projects from role only
-    const fullRole = await Role.findById(user.role?._id);
-    const roleProjects = fullRole?.projects || [];
+    // Get user's accessible projects from role.
+    // authMiddleware already loads the role's projects into req.user.projects and
+    // caches it (30s), so prefer that to avoid a per-request roles.findOne on
+    // this hot middleware. Fall back to a DB lookup only on the rare path where
+    // auth didn't populate them (e.g. token-only fallback).
+    let roleProjects: any[];
+    if (Array.isArray(user.projects)) {
+      roleProjects = user.projects;
+    } else {
+      const fullRole = await Role.findById(user.role?._id);
+      roleProjects = fullRole?.projects || [];
+    }
 
     // Use only role projects (users inherit project access from their role)
     const uniqueProjectIds = roleProjects.map(
@@ -125,24 +134,34 @@ export const requireProjectAccess = (
         return;
       }
 
-      // Fetch full role details with projects
-      const fullRole = await Role.findById(user.role?._id);
-      if (!fullRole) {
-        return res.status(403).json({
-          success: false,
-          message: "User role not found",
-        });
+      // Resolve the role's project scope. Prefer the role projects already
+      // loaded & cached by authMiddleware (req.user.projects) to avoid a
+      // per-request roles.findOne; fall back to a DB lookup only when they're
+      // not present on req.user (rare token-only auth fallback).
+      let roleProjects: any[];
+      let roleName = user.role?.name || "";
+      if (Array.isArray(user.projects)) {
+        roleProjects = user.projects;
+      } else {
+        const fullRole = await Role.findById(user.role?._id);
+        if (!fullRole) {
+          return res.status(403).json({
+            success: false,
+            message: "User role not found",
+          });
+        }
+        roleProjects = fullRole.projects || [];
+        roleName = fullRole.name;
       }
 
       // Check if user's role has access to this project
-      const roleProjects = fullRole.projects || [];
       const roleHasProject = roleProjects.some(
         (p: any) => p.toString() === projectId,
       );
 
       if (roleHasProject) {
         console.log(
-          `✅ [PROJECT_SCOPE] ${user.email} has access to project ${projectId} via role ${fullRole.name}`,
+          `✅ [PROJECT_SCOPE] ${user.email} has access to project ${projectId} via role ${roleName}`,
         );
         next();
         return;
@@ -151,7 +170,7 @@ export const requireProjectAccess = (
       console.log(
         `❌ [PROJECT_SCOPE] ${user.email} denied access to project ${projectId}`,
       );
-      console.log(`   Role: ${fullRole.name}`);
+      console.log(`   Role: ${roleName}`);
       console.log(
         `   Role projects: ${roleProjects.map((p: any) => p.toString()).join(", ")}`,
       );
