@@ -1613,6 +1613,31 @@ export async function assignMatrixToTicket(
 }
 
 /**
+ * Round-robin pick from a user pool: choose the user immediately AFTER the
+ * most-recently-assigned one (by last assigned ticket in the project) so
+ * assignments rotate evenly. Falls back to the first user.
+ */
+async function pickRoundRobinUser(
+  users: any[],
+  projectId: any,
+): Promise<any> {
+  if (users.length <= 1) return users[0];
+  const ids = users.map((u) => u._id);
+  const lastTicket = await Ticket.findOne({
+    project: projectId,
+    assignedTo: { $in: ids },
+  })
+    .sort({ updatedAt: -1 })
+    .select("assignedTo")
+    .lean();
+  if (!lastTicket?.assignedTo) return users[0];
+  const lastIdx = users.findIndex(
+    (u) => u._id.toString() === (lastTicket as any).assignedTo.toString(),
+  );
+  return users[(lastIdx + 1) % users.length];
+}
+
+/**
  * Check and process auto-escalation for SLA breached tickets
  * This function should be called by a scheduled job (e.g., every 5 minutes)
  *
@@ -1879,8 +1904,8 @@ export async function processAutoEscalation(): Promise<{
               { projects: { $size: 0 } },
             ];
           }
-          const usersInRole = await User.find(userQuery).select(
-            "_id firstName lastName",
+          let usersInRole = await User.find(userQuery).select(
+            "_id firstName lastName centers centreId",
           );
 
           if (usersInRole.length === 0) {
@@ -1890,9 +1915,38 @@ export async function processAutoEscalation(): Promise<{
             continue;
           }
 
-          // Select a random user from the role
-          assignedUser =
-            usersInRole[Math.floor(Math.random() * usersInRole.length)];
+          // OFFLINE tickets only: escalate within the ticket's OWN centre — e.g.
+          // to the DNO of the counselor's centre, not a DNO of another centre.
+          // Only applies when the ticket carries a real centre (offline-mode
+          // projects); online tickets keep the existing project-wide behaviour.
+          const ticketCenterId = (ticket as any).metadata?.centerId;
+          const hasCentre =
+            ticketCenterId &&
+            mongoose.Types.ObjectId.isValid(String(ticketCenterId));
+
+          if (hasCentre) {
+            const cid = String(ticketCenterId);
+            const sameCentre = usersInRole.filter(
+              (u: any) =>
+                (u.centers || []).some((c: any) => c?.toString() === cid) ||
+                u.centreId?.toString() === cid,
+            );
+            if (sameCentre.length === 0) {
+              // Do NOT cross-assign to another centre's DNO. Skip; the next cron
+              // cycle retries. (Matches manual escalation, which also refuses
+              // cross-centre assignment.)
+              const errMsg = `Ticket ${ticket.ticketNumber}: no "${nextLevel.levelName}" (L${nextLevel.levelNumber}) member in centre ${cid} — skipping to avoid cross-centre assignment`;
+              console.log(`⚠️  [AUTO-ESC] ${errMsg}`);
+              result.errors.push(errMsg);
+              continue;
+            }
+            // Round-robin across the centre-scoped pool (e.g. multiple DNOs).
+            assignedUser = await pickRoundRobinUser(sameCentre, ticket.project);
+          } else {
+            // Online tickets: existing behaviour — random pick from the pool.
+            assignedUser =
+              usersInRole[Math.floor(Math.random() * usersInRole.length)];
+          }
         }
 
         const previousAssignee = ticket.assignedTo;

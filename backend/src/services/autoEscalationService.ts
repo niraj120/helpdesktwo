@@ -224,10 +224,11 @@ class AutoEscalationService {
       `🔼 Auto-escalating ticket ${ticket.ticketNumber} to level ${nextLevel}`,
     );
 
-    // Find target user(s) for escalation
+    // Find target user(s) for escalation — centre-scoped for offline tickets.
     const targetUsers = await this.findEscalationTargets(
       levelConfig.escalateTo,
       ticket.project,
+      (ticket as any).metadata?.centerId,
     );
 
     if (targetUsers.length === 0) {
@@ -236,8 +237,11 @@ class AutoEscalationService {
       );
     }
 
-    // Pick the first available user (you can implement load balancing here)
-    const escalatedToUser = targetUsers[0];
+    // Round-robin across the candidate pool (e.g. multiple DNOs of the centre).
+    const escalatedToUser = await this.pickRoundRobin(
+      targetUsers,
+      ticket.project,
+    );
 
     // Capture the previous assignee (handler at current level) BEFORE changing
     const previousAssigneeId = ticket.assignedTo;
@@ -383,23 +387,46 @@ class AutoEscalationService {
   }
 
   /**
-   * Find users based on escalation target
+   * Find users based on escalation target.
+   *
+   * For role-type targets on OFFLINE tickets (those tied to a specific centre),
+   * we prefer users mapped to the SAME centre as the ticket — e.g. escalate to
+   * the DNO of the counselor's own centre, not a DNO of another centre. This
+   * only applies when the ticket carries a real centre (offline-mode projects);
+   * online tickets have no centre and fall back to the project-wide pool.
    */
   private async findEscalationTargets(
     escalateTo: any,
     projectId: mongoose.Types.ObjectId,
+    centerId?: unknown,
   ): Promise<any[]> {
     switch (escalateTo.type) {
       case "user":
         const user = await User.findById(escalateTo.targetId);
         return user ? [user] : [];
 
-      case "role":
-        return await User.find({
+      case "role": {
+        const baseQuery: Record<string, any> = {
           role: escalateTo.targetId,
           isActive: true,
           projects: { $in: [projectId] },
-        }).limit(10);
+        };
+
+        // Offline tickets only (real centre): restrict to the ticket's centre —
+        // e.g. the DNO of the counselor's centre. We do NOT fall back to other
+        // centres; if none are mapped, return [] so the caller skips rather than
+        // cross-assigning. Online tickets (no centre) use the project-wide pool.
+        const cidStr = centerId ? String(centerId) : "";
+        if (cidStr && mongoose.Types.ObjectId.isValid(cidStr)) {
+          const cid = new mongoose.Types.ObjectId(cidStr);
+          return await User.find({
+            ...baseQuery,
+            $or: [{ centers: cid }, { centreId: cid }],
+          }).limit(20);
+        }
+
+        return await User.find(baseQuery).limit(10);
+      }
 
       case "group":
         // Implement group logic if you have groups
@@ -408,6 +435,31 @@ class AutoEscalationService {
       default:
         return [];
     }
+  }
+
+  /**
+   * Round-robin pick from a candidate pool (e.g. multiple DNOs of one centre):
+   * choose the user immediately AFTER the most-recently-assigned candidate so
+   * assignments rotate evenly. Falls back to the first candidate.
+   */
+  private async pickRoundRobin(
+    candidates: any[],
+    projectId: mongoose.Types.ObjectId,
+  ): Promise<any> {
+    if (candidates.length <= 1) return candidates[0];
+    const ids = candidates.map((c) => c._id);
+    const lastTicket = await Ticket.findOne({
+      project: projectId,
+      assignedTo: { $in: ids },
+    })
+      .sort({ updatedAt: -1 })
+      .select("assignedTo")
+      .lean();
+    if (!lastTicket?.assignedTo) return candidates[0];
+    const lastIdx = candidates.findIndex(
+      (c) => c._id.toString() === lastTicket.assignedTo!.toString(),
+    );
+    return candidates[(lastIdx + 1) % candidates.length];
   }
 
   /**
