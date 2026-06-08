@@ -321,6 +321,11 @@ export default function WidgetFrame({
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const [hovered, setHovered] = useState(false);
 
+  // Temporarily hidden: View-detail (drill-through), Export/Download and
+  // Collapse actions — these don't yet return correct data. Flip back to true
+  // to re-enable. (Refresh is kept.)
+  const SHOW_WIDGET_TOOLBAR_ACTIONS = false;
+
   const handleCollapse = () => {
     const next = !collapsed;
     setCollapsed(next);
@@ -488,7 +493,11 @@ export default function WidgetFrame({
             flexShrink: 0,
           }}
         >
-          {hasDrillThrough && data && !isLoading && !collapsed && (
+          {SHOW_WIDGET_TOOLBAR_ACTIONS &&
+            hasDrillThrough &&
+            data &&
+            !isLoading &&
+            !collapsed && (
             <button
               title="View detail"
               onClick={() => handleDrillThrough()}
@@ -506,7 +515,11 @@ export default function WidgetFrame({
               ↗
             </button>
           )}
-          {allowExport && data && !isLoading && !collapsed && (
+          {SHOW_WIDGET_TOOLBAR_ACTIONS &&
+            allowExport &&
+            data &&
+            !isLoading &&
+            !collapsed && (
             <button
               title="Export as CSV"
               onClick={() => exportWidgetCsv(widgetKey, title, data.data)}
@@ -542,24 +555,26 @@ export default function WidgetFrame({
               ↻
             </button>
           )}
-          <button
-            title={collapsed ? "Expand widget" : "Collapse widget"}
-            onClick={handleCollapse}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              padding: "2px 5px",
-              fontSize: 13,
-              color: "#9ca3af",
-              lineHeight: 1,
-              transform: collapsed ? "rotate(180deg)" : "rotate(0deg)",
-              transition: "transform 0.2s",
-            }}
-            aria-label={collapsed ? "Expand widget" : "Collapse widget"}
-          >
-            ⌄
-          </button>
+          {SHOW_WIDGET_TOOLBAR_ACTIONS && (
+            <button
+              title={collapsed ? "Expand widget" : "Collapse widget"}
+              onClick={handleCollapse}
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: "2px 5px",
+                fontSize: 13,
+                color: "#9ca3af",
+                lineHeight: 1,
+                transform: collapsed ? "rotate(180deg)" : "rotate(0deg)",
+                transition: "transform 0.2s",
+              }}
+              aria-label={collapsed ? "Expand widget" : "Collapse widget"}
+            >
+              ⌄
+            </button>
+          )}
         </div>
       </div>
 
@@ -569,6 +584,10 @@ export default function WidgetFrame({
           style={{
             padding: isKpi ? "4px 16px 18px" : "12px 16px 14px",
             flex: 1,
+            // minHeight:0 lets inner scroll areas (bar lists, donut legend) size
+            // to the card and scroll within it instead of overflowing/being
+            // chopped by the card's overflow:hidden.
+            minHeight: 0,
             display: "flex",
             flexDirection: "column",
             gap: 8,

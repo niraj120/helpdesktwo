@@ -47,7 +47,8 @@ export default function DashboardEnginePage({
   const canManageDashboard = hasPermission("dashboard.manage");
   const { viewMode, currentProjectId, userProjects } = useProjectContext();
   const [activeTabIndex, setActiveTabIndex] = useState(0);
-  const [dateRangeDays, setDateRangeDays] = useState(30);
+  // Default to "All time" (0) on load instead of Last 30 days.
+  const [dateRangeDays, setDateRangeDays] = useState(0);
   // Phase 4: global scope filter
   const [scopeMode, setScopeMode] = useState<
     "all" | "project" | "centre" | "user"
@@ -239,7 +240,7 @@ export default function DashboardEnginePage({
 
   const effectiveDateRange = activeTab?.allowUserDateOverride
     ? dateRangeDays
-    : (activeTab?.globalDateRangeDays ?? 30);
+    : (activeTab?.globalDateRangeDays ?? 0);
 
   return wrap(
     <div

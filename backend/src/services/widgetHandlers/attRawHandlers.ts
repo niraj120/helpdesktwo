@@ -31,6 +31,16 @@ const PRESENT_STATUSES = [
 ];
 const LATE_STATUSES = ["L", "LATE", "Late", "late", "LT"];
 
+// "Today" widgets must ALWAYS reflect today only — never the dashboard's global
+// date-range dropdown — so the figure stays correct whatever range is selected.
+function todayRange(): { start: Date; end: Date } {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const end = new Date();
+  end.setHours(23, 59, 59, 999);
+  return { start, end };
+}
+
 // ─── att_total_checkins ───────────────────────────────────────────────────────
 const attTotalCheckinsHandler: QueryHandler = {
   widgetKey: "att_total_checkins",
@@ -49,8 +59,9 @@ const attTotalCheckinsHandler: QueryHandler = {
 const attPresentTodayHandler: QueryHandler = {
   widgetKey: "att_present_today",
   cacheTtlSeconds: 300,
-  async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+  async execute(ctx): Promise<WidgetData> {
+    // Always today — ignores the dashboard date-range dropdown.
+    const { start, end } = todayRange();
     const value = await getAttendance().countDocuments({
       projectId: new mongoose.Types.ObjectId(ctx.tenantId),
       attendanceDate: { $gte: start, $lte: end },
@@ -64,8 +75,9 @@ const attPresentTodayHandler: QueryHandler = {
 const attAbsentTodayHandler: QueryHandler = {
   widgetKey: "att_absent_today",
   cacheTtlSeconds: 300,
-  async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+  async execute(ctx): Promise<WidgetData> {
+    // Always today — ignores the dashboard date-range dropdown.
+    const { start, end } = todayRange();
     const value = await getAttendance().countDocuments({
       projectId: new mongoose.Types.ObjectId(ctx.tenantId),
       attendanceDate: { $gte: start, $lte: end },

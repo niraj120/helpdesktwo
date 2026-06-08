@@ -77,11 +77,15 @@ export default function GenericBarChart({ data, onDrillThrough }: GenericBarChar
     <div
       style={{
         flex: 1,
+        // Fill the card's available height and scroll within it (no hardcoded
+        // maxHeight, which previously chopped rows when the card was shorter).
+        minHeight: 0,
         display: "flex",
         flexDirection: "column",
         gap: 10,
         overflowY: "auto",
-        maxHeight: 300,
+        paddingRight: 6,
+        paddingBottom: 2,
       }}
     >
       {rows.map((row, i) => {

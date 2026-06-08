@@ -181,19 +181,36 @@ function PieChart({
       style={{
         display: "flex",
         alignItems: "center",
+        justifyContent: "center",
         gap: 16,
         flex: 1,
         minWidth: 0,
+        minHeight: 0,
         height: "100%",
       }}
     >
       {/* ── SVG chart ── */}
-      <div style={{ flexShrink: 0, position: "relative" }}>
+      <div
+        style={{
+          flexShrink: 0,
+          position: "relative",
+          maxHeight: "100%",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
         <svg
           width={SIZE}
           height={SIZE}
           viewBox={`0 0 ${SIZE} ${SIZE}`}
-          style={{ display: "block", overflow: "visible" }}
+          style={{
+            display: "block",
+            overflow: "visible",
+            maxHeight: "100%",
+            maxWidth: "100%",
+          }}
         >
           {arcs.map(({ seg, start, end }) => (
             <path
@@ -259,16 +276,18 @@ function PieChart({
         )}
       </div>
 
-      {/* ── Legend ── */}
+      {/* ── Legend ── (scrolls within the card height) */}
       <div
         style={{
           flex: 1,
           minWidth: 0,
+          minHeight: 0,
+          maxHeight: "100%",
           display: "flex",
           flexDirection: "column",
           gap: 6,
           overflowY: "auto",
-          maxHeight: SIZE + 20,
+          paddingRight: 4,
         }}
       >
         {segments.map((s) => (

@@ -266,18 +266,21 @@ const htResolvedTicketsHandler: QueryHandler = {
     const statuses = await loadProjectStatuses(ctx.tenantId);
     const dCodes = resolvedOnlyCodes(statuses);
     const extra = ticketFilterOverrides(rf, ctx);
+    // Count by STATUS over createdAt (consistent with Total/Open/Closed widgets
+    // and the View Queries per-status cards). Filtering by closedAt undercounted
+    // resolved tickets that have no closedAt timestamp set.
     const [current, previous] = await Promise.all([
       Ticket.countDocuments({
         ...scopedQuery,
         ...extra,
         status: { $in: dCodes },
-        closedAt: { $gte: start, $lte: end },
+        createdAt: { $gte: start, $lte: end },
       }),
       Ticket.countDocuments({
         ...scopedQuery,
         ...extra,
         status: { $in: dCodes },
-        closedAt: { $gte: prevStart, $lt: start },
+        createdAt: { $gte: prevStart, $lt: start },
       }),
     ]);
     return kpiTrend(current, previous, true);
