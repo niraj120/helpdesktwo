@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'react-hot-toast'
 import { BrandingProvider } from './contexts/BrandingContext'
 import { ProjectContextProvider } from './contexts/ProjectContext'
+import NetworkStatusNotifier from './components/NetworkStatusNotifier'
 
 import './i18n/index' // Initialize i18n
 import App from './App.tsx'
@@ -31,7 +32,8 @@ const AppWrapper = () => (
       <BrandingProvider>
         <ProjectContextProvider>
           <App />
-          <Toaster 
+          <NetworkStatusNotifier />
+          <Toaster
             position="top-right"
             toastOptions={{
               duration: 4000,

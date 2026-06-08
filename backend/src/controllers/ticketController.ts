@@ -1596,9 +1596,13 @@ export const getMyTickets = async (req: Request, res: Response) => {
     const sortOrder = req.query.sortOrder === "asc" ? 1 : -1;
     const sortObj: Record<string, 1 | -1> = { [sortBy]: sortOrder as 1 | -1 };
 
-    // Get pagination parameters with max limit enforcement
+    // Get pagination parameters with max limit enforcement.
+    // The My Tickets page loads the user's full (scoped) ticket set and does its
+    // own client-side status/priority filtering + pagination, so it must be able
+    // to request all of them — not just the first 50. Allow a large explicit
+    // limit (default stays 50 for any caller that doesn't ask for more).
     const page = parseInt(req.query.page as string) || 1;
-    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100); // Max 100
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100000);
     const skip = (page - 1) * limit;
 
     // Get total count for pagination
@@ -1662,7 +1666,7 @@ export const getMyTickets = async (req: Request, res: Response) => {
         tickets.flatMap((t: any) => {
           const h = t.categoryHierarchy;
           if (!h) return [];
-          return [h.level2, h.level3, h.level4, h.level5]
+          return [h.level1, h.level2, h.level3, h.level4, h.level5]
             .filter(Boolean)
             .map((id: any) => id.toString());
         }),
@@ -1741,7 +1745,11 @@ export const getMyTickets = async (req: Request, res: Response) => {
       if (ticketObj.categoryHierarchy) {
         const h = ticketObj.categoryHierarchy;
         ticketObj.categoryHierarchyNames = {
-          level1: ticketObj.category?.name || undefined,
+          // level1 = the TRUE level-1 category (categoryHierarchy.level1); the
+          // populated `category` field is the DEEPEST level for offline tickets.
+          level1: h.level1
+            ? hierarchyCategoryMapMyTickets.get(h.level1.toString())
+            : ticketObj.category?.name || undefined,
           level2: h.level2
             ? hierarchyCategoryMapMyTickets.get(h.level2.toString())
             : undefined,
@@ -1963,10 +1971,23 @@ export const getAllTickets = async (req: Request, res: Response) => {
     let projectFilterApplied = false;
 
     if (isSuperAdmin) {
-      // Super Admin: No filters - show ALL tickets
-      console.log(
-        `✅ [ASSIGN QUERIES] Super Admin - showing ALL tickets (no filters)`,
-      );
+      // Super Admin: ALL projects by default, but honor an explicit Project
+      // filter when one is selected (the Project dropdown sends projectId →
+      // projectContext.currentProjectId). Without this the Project filter was
+      // silently ignored for super admins.
+      const saProjectId = projectContext?.currentProjectId;
+      if (saProjectId && mongoose.Types.ObjectId.isValid(String(saProjectId))) {
+        const pidStr = String(saProjectId);
+        query["metadata.projectId"] = {
+          $in: [pidStr, new mongoose.Types.ObjectId(pidStr)],
+        };
+        projectFilterApplied = true;
+        console.log(
+          `✅ [VIEW_TICKETS] Super Admin - filtered to project ${pidStr}`,
+        );
+      } else {
+        console.log(`✅ [VIEW_TICKETS] Super Admin - showing ALL tickets`);
+      }
     } else if (
       projectContext?.viewMode === "single" &&
       projectContext.currentProjectId
@@ -2430,7 +2451,7 @@ export const getAllTickets = async (req: Request, res: Response) => {
         tickets.flatMap((t: any) => {
           const h = t.categoryHierarchy;
           if (!h) return [];
-          return [h.level2, h.level3, h.level4, h.level5]
+          return [h.level1, h.level2, h.level3, h.level4, h.level5]
             .filter(Boolean)
             .map((id: any) => id.toString());
         }),
@@ -2512,8 +2533,11 @@ export const getAllTickets = async (req: Request, res: Response) => {
       if (ticketObj.categoryHierarchy) {
         const h = ticketObj.categoryHierarchy;
         ticketObj.categoryHierarchyNames = {
-          // level1 is already covered by the populated `category.name` field
-          level1: ticketObj.category?.name || undefined,
+          // level1 = the TRUE level-1 category (categoryHierarchy.level1); the
+          // populated `category` field holds the DEEPEST level for offline tickets.
+          level1: h.level1
+            ? hierarchyCategoryMap.get(h.level1.toString())
+            : ticketObj.category?.name || undefined,
           level2: h.level2
             ? hierarchyCategoryMap.get(h.level2.toString())
             : undefined,

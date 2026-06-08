@@ -662,9 +662,11 @@ const MyTickets: React.FC<MyTicketsProps> = ({
         setTickets(cached!.tickets);
         setLoading(false);
         try {
+          // Load the full set so client-side status/priority filtering + paging
+          // is correct even with lots of tickets (was capped at 50 by default).
           const url = projectId
-            ? `${API_BASE_URL}/tickets/my-tickets?projectId=${projectId}`
-            : `${API_BASE_URL}/tickets/my-tickets`;
+            ? `${API_BASE_URL}/tickets/my-tickets?projectId=${projectId}&limit=100000`
+            : `${API_BASE_URL}/tickets/my-tickets?limit=100000`;
           const bgRes = await axios.get(url, {
             headers: { Authorization: `Bearer ${token}` },
           });
@@ -686,9 +688,10 @@ const MyTickets: React.FC<MyTicketsProps> = ({
 
       // Cache miss — normal fetch with loading spinner
       setLoading(true);
+      // Load the full set (see note above) so client-side filtering is correct.
       const url = projectId
-        ? `${API_BASE_URL}/tickets/my-tickets?projectId=${projectId}`
-        : `${API_BASE_URL}/tickets/my-tickets`;
+        ? `${API_BASE_URL}/tickets/my-tickets?projectId=${projectId}&limit=100000`
+        : `${API_BASE_URL}/tickets/my-tickets?limit=100000`;
 
       const response = await axios.get(url, {
         headers: { Authorization: `Bearer ${token}` },
@@ -1406,7 +1409,11 @@ const MyTickets: React.FC<MyTicketsProps> = ({
               color: "#344054",
             }}
           >
-            {ticket.category?.name || "-"}
+            {/* Show the true Level-1 category, not the deepest hierarchy level
+                that the legacy `category` field holds for offline tickets. */}
+            {(ticket as any).categoryHierarchyNames?.level1 ||
+              ticket.category?.name ||
+              "-"}
           </td>
         );
       case "mergedCount":

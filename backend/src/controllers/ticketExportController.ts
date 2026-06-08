@@ -138,8 +138,10 @@ export const exportTickets = async (req: Request, res: Response) => {
 
     const needsProject = exportColumns.some((c) => c.key === 'project');
     const needsCenter = exportColumns.some((c) => c.key === 'center');
-    const needsHierarchy = exportColumns.some((c) =>
-      c.key.startsWith('hierarchy_level_'),
+    // "category" also needs the hierarchy lookup so it can show the TRUE level-1
+    // name (the legacy `category` field holds the deepest level offline).
+    const needsHierarchy = exportColumns.some(
+      (c) => c.key.startsWith('hierarchy_level_') || c.key === 'category',
     );
 
     const projectNameById = new Map<string, string>();
@@ -245,8 +247,15 @@ export const exportTickets = async (req: Request, res: Response) => {
           return STATUS_LABELS[ticket.status as number] || String(ticket.status ?? '');
         case 'priority':
           return ticket.priority || '';
-        case 'category':
-          return (ticket.category as any)?.name || '';
+        case 'category': {
+          // True Level-1 category; fall back to the populated category name.
+          const lvl1 = ticket.categoryHierarchy?.level1;
+          return (
+            (lvl1 ? categoryNameById.get(String(lvl1)) : '') ||
+            (ticket.category as any)?.name ||
+            ''
+          );
+        }
         case 'createdBy':
           return (
             meta.createdByName ||

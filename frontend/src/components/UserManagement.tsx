@@ -110,6 +110,12 @@ const UserManagement: React.FC<UserManagementProps> = ({
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalUsers, setTotalUsers] = useState(0);
+  // Full-dataset stats from the API (not just the current page) for the cards.
+  const [serverStats, setServerStats] = useState<{
+    total: number;
+    active: number;
+    inactive: number;
+  } | null>(null);
   const [usersPerPage] = useState(50); // Show 50 users per page
 
   // Modal states
@@ -428,6 +434,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
           setTotalPages(data.pagination.pages);
           setTotalUsers(data.pagination.total);
         }
+        // Full-dataset stats for the cards (independent of the 50-per-page view)
+        if (data.stats) setServerStats(data.stats);
       } else {
         throw new Error(data.error || "Failed to fetch users");
       }
@@ -1575,19 +1583,24 @@ const UserManagement: React.FC<UserManagementProps> = ({
   });
 
   const userStats = useMemo(() => {
-    const activeCount = users.filter((u) => u.isActive).length;
-    const inactiveCount = users.length - activeCount;
-    const uniqueProjects = new Set(
-      users.flatMap((u) => (u.projects || []).map((p) => p._id)),
-    ).size;
+    // Prefer full-dataset counts from the API; fall back to the current page.
+    const total = serverStats?.total ?? totalUsers ?? users.length;
+    const active =
+      serverStats?.active ?? users.filter((u) => u.isActive).length;
+    const inactive = serverStats?.inactive ?? Math.max(0, total - active);
+    // Number of projects in the system (the loaded projects list), not just the
+    // projects represented on the current page.
+    const projectCount =
+      projects.length ||
+      new Set(users.flatMap((u) => (u.projects || []).map((p) => p._id))).size;
 
     return {
-      total: users.length,
-      active: activeCount,
-      inactive: inactiveCount,
-      projects: uniqueProjects,
+      total,
+      active,
+      inactive,
+      projects: projectCount,
     };
-  }, [users]);
+  }, [serverStats, totalUsers, users, projects.length]);
 
   const SELECT_ALL_VALUE = "__select_all__";
   const allProjectIds = useMemo(() => projects.map((p) => p._id), [projects]);

@@ -696,11 +696,23 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     projectFilter: string = filterProject,
     assignedToFilter: string = filterAssignedTo,
   ) => {
+    // The page-1 cache only holds the UNFILTERED default view. If any filter is
+    // active (status / priority / date range / custom fields), we must NOT take
+    // the cache fast-path — otherwise it serves cached unfiltered tickets and a
+    // background refresh that omits those filters, so the filter appears to do
+    // nothing. (Project, assignee and search are already accounted for.)
+    const noOtherFiltersActive =
+      filterStatus === "all" &&
+      filterPriority === "all" &&
+      !filterDateFrom &&
+      !filterDateTo &&
+      !Object.values(customFieldFilters).some((v) => v && v.trim());
     const isDefaultFetch =
       page === 1 &&
       projectFilter === (initialProjectId ?? "all") &&
       assignedToFilter === "all" &&
-      !deferredSearchQuery.trim();
+      !deferredSearchQuery.trim() &&
+      noOtherFiltersActive;
     const cacheKey = `viewtickets:${projectFilter}:p${page}`;
 
     // Show cached data instantly on first (default) fetch if cache is warm
@@ -1541,7 +1553,11 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
           <td
             style={{ padding: "12px 16px", fontSize: "13px", color: "#344054" }}
           >
-            {ticket.category?.name || "—"}
+            {/* True Level-1 category, not the deepest hierarchy level held by
+                the legacy `category` field on offline tickets. */}
+            {(ticket as any).categoryHierarchyNames?.level1 ||
+              ticket.category?.name ||
+              "—"}
           </td>
         );
 

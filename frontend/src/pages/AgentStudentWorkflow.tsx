@@ -1322,6 +1322,8 @@ const AgentStudentWorkflow: React.FC = () => {
             Authorization: `Bearer ${token}`,
             "Content-Type": "multipart/form-data",
           },
+          // Fail fast with a clear message instead of hanging on a bad network.
+          timeout: 60000,
         },
       );
 
@@ -1355,9 +1357,26 @@ const AgentStudentWorkflow: React.FC = () => {
         }, 6000);
       }
     } catch (error: any) {
-      setTicketMessage(
-        error.response?.data?.message || "Failed to create query",
-      );
+      // Surface the real cause so connectivity issues (which look identical to a
+      // server failure with a generic message) can be told apart and diagnosed.
+      let msg: string;
+      if (error?.response) {
+        // Server responded with an error status
+        msg =
+          error.response.data?.message ||
+          `Server error (${error.response.status}). Please try again.`;
+      } else if (error?.code === "ECONNABORTED") {
+        msg =
+          "Request timed out — the server took too long to respond. Check your internet connection and try again.";
+      } else if (error?.code === "ERR_NETWORK" || error?.request) {
+        // Request was sent but no response arrived (network/firewall/proxy/offline)
+        msg =
+          "Network error — couldn't reach the server. Check your internet connection (or VPN/firewall) and try again.";
+      } else {
+        msg = error?.message || "Failed to create query";
+      }
+      console.error("[Create Query] failed:", error);
+      setTicketMessage(msg);
     } finally {
       setCreatingTicket(false);
     }

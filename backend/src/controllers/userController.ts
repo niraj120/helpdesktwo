@@ -255,7 +255,10 @@ export const getAllUsers = async (
       });
     }
 
-    const [users, total] = await Promise.all([
+    // Active count over the FULL filtered set (not just the current page) so the
+    // stat cards reflect all matching users, not the 50 on screen.
+    const activeFilter = { ...filter, isActive: true };
+    const [users, total, activeTotal] = await Promise.all([
       User.find(filter)
         // OPTIMIZED: Exclude password and heavy fields, reduce populate data for list view
         .select(
@@ -273,6 +276,7 @@ export const getAllUsers = async (
         .limit(effectiveLimit)
         .lean(),
       User.countDocuments(filter),
+      User.countDocuments(activeFilter),
     ]);
 
     res.json({
@@ -283,6 +287,12 @@ export const getAllUsers = async (
         limit: limitNum,
         total,
         pages: Math.ceil(total / limitNum),
+      },
+      // Full-dataset stats for the cards (independent of pagination).
+      stats: {
+        total,
+        active: activeTotal,
+        inactive: Math.max(0, total - activeTotal),
       },
     });
   } catch (error: any) {
