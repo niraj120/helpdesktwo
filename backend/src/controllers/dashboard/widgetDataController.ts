@@ -77,6 +77,14 @@ export async function getWidgetData(
       roleCode: (user.role as any)?.code ?? (user.role as any)?.roleCode,
       roleId: (user.role as any)?._id?.toString(),
       centreId: user.centreId,
+      // All centres assigned to the user, so "My Centre" filters match every
+      // centre of a multi-centre role (e.g. a commissioner mapped to many).
+      centreIds:
+        (user as any).centreIds && (user as any).centreIds.length > 0
+          ? (user as any).centreIds
+          : user.centreId
+            ? [user.centreId]
+            : [],
       districtId: (user as any).districtId,
       projectIds: Array.isArray(projects)
         ? projects.map((p: any) => p._id?.toString() ?? p.toString())

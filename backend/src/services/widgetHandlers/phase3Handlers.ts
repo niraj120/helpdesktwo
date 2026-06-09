@@ -150,9 +150,26 @@ function ticketFilterOverrides(
     extra["metadata.projectId"] = { $in: ctx.projectIds.map(String) };
   }
 
-  // @ctx.centreId → metadata.centreId (centre-scoped counsellor view)
-  if (rf.centreId) {
-    extra["metadata.centreId"] = String(rf.centreId);
+  // Centre filter ("My Centre"). Tickets store metadata.centerId (American
+  // spelling) as a string — the previous "metadata.centreId" matched nothing.
+  // Expand to the user's FULL centre set so multi-centre roles (e.g. a
+  // commissioner mapped to many centres) match all of them, not just the primary
+  // centre; match both string and ObjectId forms.
+  if (rf.centreId !== undefined && rf.centreId !== null) {
+    const ctxCentres =
+      ctx?.centreIds && ctx.centreIds.length > 0 ? ctx.centreIds : null;
+    const provided = Array.isArray(rf.centreId) ? rf.centreId : [rf.centreId];
+    const list = (ctxCentres ?? provided)
+      .filter(Boolean)
+      .map((x: any) => String(x));
+    const both: any[] = [];
+    for (const v of list) {
+      both.push(v);
+      if (mongoose.Types.ObjectId.isValid(v)) {
+        both.push(new mongoose.Types.ObjectId(v));
+      }
+    }
+    extra["metadata.centerId"] = { $in: both };
   }
 
   // @ctx.districtId → metadata.districtId (district manager view)

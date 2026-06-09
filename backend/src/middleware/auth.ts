@@ -26,6 +26,7 @@ export interface AuthRequest extends Request {
     projectId?: string; // Set when logged in via project-specific portal
     projectName?: string; // Display name of that project
     centreId?: string; // Primary centre assignment for centre-scoped queries
+    centreIds?: string[]; // ALL centres assigned to the user (multi-centre roles)
   };
   projectContext?: ProjectContext; // Attached by attachProjectContext middleware
 }
@@ -57,7 +58,7 @@ export const authMiddleware = async (
 
     // Cache miss — fetch user from DB with role + permissions populated
     const user = await User.findById(decoded.userId)
-      .select("tokenVersion projects centreId")
+      .select("tokenVersion projects centreId centers")
       .populate({
         path: "role",
         populate: {
@@ -102,6 +103,9 @@ export const authMiddleware = async (
         projectId: decoded.projectId ? decoded.projectId.toString() : undefined,
         projectName: decoded.projectName,
         centreId: (user as any).centreId?.toString(),
+        centreIds: Array.isArray((user as any).centers)
+          ? (user as any).centers.map((c: any) => c?.toString()).filter(Boolean)
+          : [],
       };
 
       // Cache for 30 seconds — eliminates DB hit for every subsequent request

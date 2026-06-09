@@ -6,6 +6,7 @@
  */
 
 import crypto from "crypto";
+import mongoose from "mongoose";
 import { cache } from "../utils/cache";
 
 // ─── Context Variable Types ──────────────────────────────────────────────────
@@ -16,7 +17,8 @@ export interface WidgetQueryContext {
   email: string;
   roleCode?: string;
   roleId?: string;
-  centreId?: string;
+  centreId?: string; // primary centre
+  centreIds?: string[]; // ALL centres assigned to the user (multi-centre roles)
   districtId?: string;
   projectIds?: string[];
   primaryProjectId?: string;
@@ -106,6 +108,14 @@ export function resolveContextVars(
     if (typeof value === "string" && value.startsWith("@ctx.")) {
       if (value === "@ctx.projectIds") {
         resolved[key] = ctx.projectIds ?? [];
+      } else if (value === "@ctx.centreIds") {
+        // Explicit full-centre-set variable (all centres of a multi-centre role).
+        resolved[key] =
+          ctx.centreIds && ctx.centreIds.length > 0
+            ? ctx.centreIds
+            : ctx.centreId
+              ? [ctx.centreId]
+              : [];
       } else {
         const ctxField = CTX_VARIABLE_MAP[value];
         resolved[key] = ctxField ? ctx[ctxField] : undefined;
@@ -140,7 +150,12 @@ export function buildScopedQuery(
   if (scopeOverride.mode === "project" && scopeOverride.projectId) {
     query["metadata.projectId"] = scopeOverride.projectId;
   } else if (scopeOverride.mode === "centre" && scopeOverride.centreId) {
-    query["metadata.centreId"] = scopeOverride.centreId;
+    // Tickets store metadata.centerId (American spelling) as a string; match
+    // both string and ObjectId forms.
+    const cid = String(scopeOverride.centreId);
+    query["metadata.centerId"] = mongoose.Types.ObjectId.isValid(cid)
+      ? { $in: [cid, new mongoose.Types.ObjectId(cid)] }
+      : cid;
     query["metadata.projectId"] = ctx.tenantId; // belt-and-braces
   } else if (scopeOverride.mode === "user" && scopeOverride.userId) {
     // user scope is handler-specific; pass tenantId guard only
