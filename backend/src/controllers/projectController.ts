@@ -455,6 +455,35 @@ export const createProject = async (req: Request, res: Response) => {
 /**
  * Update project
  */
+// Recursively merge `source` into `target`: nested objects are merged so a
+// partial update only changes the keys it sends; arrays & primitives are
+// replaced when present in `source`. Used so updating a project from the Project
+// Management module never wipes config it didn't touch (e.g. the Query
+// Configuration's ticketSubmissionSettings.tableColumns).
+function deepMergeConfig(target: any, source: any): any {
+  if (source === null || typeof source !== "object" || Array.isArray(source)) {
+    return source;
+  }
+  const out: any = { ...(target && typeof target === "object" ? target : {}) };
+  for (const key of Object.keys(source)) {
+    const sv = source[key];
+    const tv = out[key];
+    if (
+      sv &&
+      typeof sv === "object" &&
+      !Array.isArray(sv) &&
+      tv &&
+      typeof tv === "object" &&
+      !Array.isArray(tv)
+    ) {
+      out[key] = deepMergeConfig(tv, sv);
+    } else {
+      out[key] = sv; // arrays & primitives: incoming value wins
+    }
+  }
+  return out;
+}
+
 export const updateProject = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -484,13 +513,17 @@ export const updateProject = async (req: Request, res: Response) => {
       });
     }
 
-    // Preserve existing offlineModuleSettings if it exists
-    if (
-      updateData.configuration &&
-      existingProject.configuration?.offlineModuleSettings
-    ) {
-      updateData.configuration.offlineModuleSettings =
-        existingProject.configuration.offlineModuleSettings;
+    // Deep-merge the incoming configuration into the existing one so a partial
+    // update (e.g. from the Project Management form) never resets config it
+    // didn't send — Query Configuration (ticketSubmissionSettings.tableColumns),
+    // offlineModuleSettings, loginSettings, SLA settings, etc. all survive.
+    if (updateData.configuration) {
+      const existingConfig =
+        (existingProject.toObject() as any).configuration || {};
+      updateData.configuration = deepMergeConfig(
+        existingConfig,
+        updateData.configuration,
+      );
     }
 
     // Debug: Log loginSettings being saved
