@@ -7,6 +7,10 @@ import {
 import { AttendanceConfig } from "../models/attendance/AttendanceConfig";
 import { User } from "../models/User";
 import { WorkingCalendar } from "../models/WorkingCalendar";
+import {
+  getLastSyncMinutes,
+  isAttendancePresent,
+} from "../utils/attendancePresence";
 
 // A Super Admin bypasses every permission gate at the route level
 // (see middleware/permissions.ts `isSuperAdmin`). Their JWT does NOT necessarily
@@ -194,6 +198,12 @@ export const getAttendanceRecords = async (
       if (designation) designationMap.set(u._id.toString(), designation);
     }
 
+    // Effective Present/Absent per the last-sync rule: incomplete records
+    // (miss-punch / single-punch) are Present until the day's last configured
+    // sync time, Absent after (past days = already past the boundary = Absent).
+    const lastSyncMinutes = await getLastSyncMinutes(String(projectId));
+    const nowMs = Date.now();
+
     const data = raw.map((r) => ({
       ...serializeRecord(
         r as IAttendanceRecord & Record<string, unknown>,
@@ -202,6 +212,7 @@ export const getAttendanceRecords = async (
       ),
       employeeName: nameMap.get(r.userId?.toString() ?? "") || null,
       designation: designationMap.get(r.userId?.toString() ?? "") || null,
+      effectivePresent: isAttendancePresent(r as any, lastSyncMinutes, nowMs),
     }));
 
     res.json({ data, meta: { total, page, limit } });

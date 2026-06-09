@@ -819,7 +819,14 @@ function buildHRTemplateRows(records: AttendanceRecord[]): {
 
     const presentDates = new Set<string>();
     for (const r of recs) {
-      if (r.status && HR_PRESENT_STATUSES.has(r.status)) {
+      // Prefer the backend's effective Present/Absent (applies the last-sync
+      // rule: miss-punch / single-punch is Present until the day's last sync
+      // time, Absent after). Fall back to status for older payloads.
+      const present =
+        (r as any).effectivePresent !== undefined
+          ? (r as any).effectivePresent
+          : !!(r.status && HR_PRESENT_STATUSES.has(r.status));
+      if (present) {
         const d = dayOf(r);
         if (d) presentDates.add(d);
       }
@@ -1846,11 +1853,18 @@ function MyAttendanceReports({ token }: { token: string }) {
           const hasIn = !!rec?.punch_in;
           const hasOut = !!rec?.punch_out;
           const both = hasIn && hasOut;
+          const isLeave = !!(rec?.status && LEAVE_STATUSES.has(rec.status));
+          // Present = both punches OR an incomplete record still within the
+          // last-sync window (backend effectivePresent), excluding leave so
+          // Actual = Present + Leave stays correct. Falls back to "both" for
+          // older payloads without effectivePresent.
+          const eff = (rec as any)?.effectivePresent;
+          const present = (eff !== undefined ? eff === true : both) && !isLeave;
           dateCols.push(hasIn ? formatTime(rec!.punch_in) : "—");
           dateCols.push(hasOut ? formatTime(rec!.punch_out) : "—");
-          dateCols.push(both ? "P" : "A");
-          if (both) presentDays++;
-          else if (rec?.status && LEAVE_STATUSES.has(rec.status)) leaveDays++;
+          dateCols.push(present ? "P" : "A");
+          if (present) presentDays++;
+          else if (isLeave) leaveDays++;
         }
         const actual = presentDays + leaveDays;
         const attPct =
@@ -3122,12 +3136,19 @@ function MyAttendanceReports({ token }: { token: string }) {
                                   const hasIn = !!rec?.punch_in;
                                   const hasOut = !!rec?.punch_out;
                                   const both = hasIn && hasOut;
-                                  if (both) presentDays++;
-                                  else if (
+                                  const isLeave = !!(
                                     rec?.status &&
                                     LEAVE_STATUSES.has(rec.status)
-                                  )
-                                    leaveDays++;
+                                  );
+                                  // Present = both punches OR incomplete-but-
+                                  // within-last-sync (effectivePresent), minus
+                                  // leave so Actual = Present + Leave.
+                                  const eff = (rec as any)?.effectivePresent;
+                                  const present =
+                                    (eff !== undefined ? eff === true : both) &&
+                                    !isLeave;
+                                  if (present) presentDays++;
+                                  else if (isLeave) leaveDays++;
                                   return [
                                     <td
                                       key={d + "in"}
@@ -3152,10 +3173,10 @@ function MyAttendanceReports({ token }: { token: string }) {
                                       style={{
                                         ...baseTd,
                                         fontWeight: 700,
-                                        color: both ? "#065f46" : "#ef4444",
+                                        color: present ? "#065f46" : "#ef4444",
                                       }}
                                     >
-                                      {both ? "P" : "A"}
+                                      {present ? "P" : "A"}
                                     </td>,
                                   ];
                                 });

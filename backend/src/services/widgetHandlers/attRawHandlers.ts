@@ -12,6 +12,10 @@ import {
   buildDateRange,
   registerWidgetHandler,
 } from "../widgetQueryEngine";
+import {
+  getLastSyncMinutes,
+  isAttendancePresent,
+} from "../../utils/attendancePresence";
 
 const getAttendance = () => mongoose.model("AttendanceRecord");
 
@@ -55,6 +59,30 @@ const attTotalCheckinsHandler: QueryHandler = {
   },
 };
 
+// Fetch attendance records (minimal fields) and count Present via the shared
+// rule: incomplete (miss-punch / single-punch) records are Present until the
+// day's last configured sync time, Absent after.
+async function presentAndTotal(
+  projectId: string,
+  start: Date,
+  end: Date,
+): Promise<{ present: number; total: number }> {
+  const recs = await getAttendance()
+    .find({
+      projectId: new mongoose.Types.ObjectId(projectId),
+      attendanceDate: { $gte: start, $lte: end },
+    })
+    .select("status punchIn punchOut attendanceDate")
+    .lean();
+  const lastSync = await getLastSyncMinutes(projectId);
+  const now = Date.now();
+  let present = 0;
+  for (const r of recs as any[]) {
+    if (isAttendancePresent(r, lastSync, now)) present++;
+  }
+  return { present, total: recs.length };
+}
+
 // ─── att_present_today ────────────────────────────────────────────────────────
 const attPresentTodayHandler: QueryHandler = {
   widgetKey: "att_present_today",
@@ -62,12 +90,8 @@ const attPresentTodayHandler: QueryHandler = {
   async execute(ctx): Promise<WidgetData> {
     // Always today — ignores the dashboard date-range dropdown.
     const { start, end } = todayRange();
-    const value = await getAttendance().countDocuments({
-      projectId: new mongoose.Types.ObjectId(ctx.tenantId),
-      attendanceDate: { $gte: start, $lte: end },
-      status: { $in: PRESENT_STATUSES },
-    });
-    return { value, trendDirection: "higher_is_better" };
+    const { present } = await presentAndTotal(ctx.tenantId, start, end);
+    return { value: present, trendDirection: "higher_is_better" };
   },
 };
 
@@ -78,12 +102,8 @@ const attAbsentTodayHandler: QueryHandler = {
   async execute(ctx): Promise<WidgetData> {
     // Always today — ignores the dashboard date-range dropdown.
     const { start, end } = todayRange();
-    const value = await getAttendance().countDocuments({
-      projectId: new mongoose.Types.ObjectId(ctx.tenantId),
-      attendanceDate: { $gte: start, $lte: end },
-      status: { $nin: PRESENT_STATUSES },
-    });
-    return { value, trendDirection: "lower_is_better" };
+    const { present, total } = await presentAndTotal(ctx.tenantId, start, end);
+    return { value: total - present, trendDirection: "lower_is_better" };
   },
 };
 
@@ -92,18 +112,8 @@ const attAttendanceRateHandler: QueryHandler = {
   widgetKey: "att_attendance_rate",
   cacheTtlSeconds: 300,
   async execute(ctx, params): Promise<WidgetData> {
-    const AR = getAttendance();
     const { start, end } = buildDateRange(params.dateRangeDays);
-    const pid = new mongoose.Types.ObjectId(ctx.tenantId);
-    const dateFilter = { $gte: start, $lte: end };
-    const [present, total] = await Promise.all([
-      AR.countDocuments({
-        projectId: pid,
-        attendanceDate: dateFilter,
-        status: { $in: PRESENT_STATUSES },
-      }),
-      AR.countDocuments({ projectId: pid, attendanceDate: dateFilter }),
-    ]);
+    const { present, total } = await presentAndTotal(ctx.tenantId, start, end);
     const value = total > 0 ? Math.round((present / total) * 1000) / 10 : null;
     return {
       value,
@@ -120,18 +130,9 @@ const attAbsenteeismRateHandler: QueryHandler = {
   widgetKey: "att_absenteeism_rate",
   cacheTtlSeconds: 300,
   async execute(ctx, params): Promise<WidgetData> {
-    const AR = getAttendance();
     const { start, end } = buildDateRange(params.dateRangeDays);
-    const pid = new mongoose.Types.ObjectId(ctx.tenantId);
-    const dateFilter = { $gte: start, $lte: end };
-    const [absent, total] = await Promise.all([
-      AR.countDocuments({
-        projectId: pid,
-        attendanceDate: dateFilter,
-        status: { $nin: PRESENT_STATUSES },
-      }),
-      AR.countDocuments({ projectId: pid, attendanceDate: dateFilter }),
-    ]);
+    const { present, total } = await presentAndTotal(ctx.tenantId, start, end);
+    const absent = total - present;
     const value = total > 0 ? Math.round((absent / total) * 1000) / 10 : null;
     return {
       value,
