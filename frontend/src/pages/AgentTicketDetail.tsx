@@ -2231,9 +2231,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                           </div>
                           <div className="bg-blue-50 rounded-lg p-3">
                             <p className="text-xs font-medium text-gray-700 mb-1">
-                              {latestReply.createdBy.firstName}{" "}
-                              {latestReply.createdBy.lastName}
-                              {latestReply.createdBy.role && (
+                              {`${latestReply.createdBy?.firstName ?? ""} ${
+                                latestReply.createdBy?.lastName ?? ""
+                              }`.trim() || "User"}
+                              {latestReply.createdBy?.role && (
                                 <span className="text-gray-500">
                                   {" "}
                                   •{" "}
@@ -2305,8 +2306,9 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                           </div>
                           <div className="bg-yellow-50 rounded-lg p-3">
                             <p className="text-xs font-medium text-gray-700 mb-1">
-                              {latestNote.createdBy.firstName}{" "}
-                              {latestNote.createdBy.lastName}
+                              {`${latestNote.createdBy?.firstName ?? ""} ${
+                                latestNote.createdBy?.lastName ?? ""
+                              }`.trim() || "User"}
                             </p>
                             <p className="text-sm text-gray-800 whitespace-pre-wrap line-clamp-3">
                               {latestNote.note}

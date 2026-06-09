@@ -2049,7 +2049,12 @@ export const getAllTickets = async (req: Request, res: Response) => {
       return centerId;
     });
 
-    if (userCenterIds.length > 0) {
+    // Centre scoping applies ONLY to centre-restricted users. Super admins and
+    // anyone with TICKET_VIEW_ALL must see every ticket regardless of which
+    // centres happen to be assigned to their own account — otherwise two
+    // super-admin accounts show different totals (and differ from the export,
+    // which isn't centre-scoped).
+    if (!isSuperAdmin && !hasViewAll && userCenterIds.length > 0) {
       // Filter by centers: show tickets from assigned centers OR online tickets
       const centerObjectIds = userCenterIds.map(
         (id) => new mongoose.Types.ObjectId(id),

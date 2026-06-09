@@ -59,10 +59,21 @@ const DEFAULT_EXPORT_COLUMNS: ExportColumn[] = [
 const fullName = (u: any): string =>
   u ? `${u.firstName || ''} ${u.lastName || ''}`.trim() : '';
 
+// Format dates in IST (Asia/Kolkata) for exports — e.g. "08/06/2026, 05:32 PM"
+// instead of a raw UTC ISO string.
 const formatDate = (d?: Date | string | null): string => {
   if (!d) return '';
   const date = new Date(d);
-  return isNaN(date.getTime()) ? '' : date.toISOString();
+  if (isNaN(date.getTime())) return '';
+  return date.toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
 };
 
 export const exportTickets = async (req: Request, res: Response) => {
