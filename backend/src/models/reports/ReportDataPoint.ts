@@ -8,8 +8,27 @@ export type DataPointCategory =
   | "channel"
   | "feedback"
   | "footfall"
-  | "custom_form";
+  | "custom_form"
+  | "user"
+  | "asset"
+  | "asset_audit"
+  | "asset_inventory"
+  | "service_request"
+  | "call"
+  | "inquiry";
 export type FieldType = "string" | "number" | "date" | "boolean" | "array";
+
+/** Base collection a data point is queried from. Existing points default to ticket. */
+export type DataPointSource =
+  | "ticket"
+  | "user"
+  | "asset"
+  | "asset_audit"
+  | "asset_inventory"
+  | "feedback"
+  | "service_request"
+  | "call"
+  | "inquiry";
 
 /**
  * Registry of all available data points in the Report module.
@@ -21,6 +40,8 @@ export interface IReportDataPoint extends Document {
   label: string; // UI label, e.g. 'Ticket #'
   description: string;
   category: DataPointCategory;
+  /** Base collection this data point reports from (default 'ticket'). */
+  source?: DataPointSource;
   fieldPath: string; // computed field name after aggregation (not raw MongoDB path)
   fieldType: FieldType;
   isActive: boolean;
@@ -52,8 +73,30 @@ const ReportDataPointSchema = new Schema<IReportDataPoint>(
         "feedback",
         "footfall",
         "custom_form",
+        "user",
+        "asset",
+        "asset_audit",
+        "asset_inventory",
+        "service_request",
+        "call",
+        "inquiry",
       ],
       required: true,
+    },
+    source: {
+      type: String,
+      enum: [
+        "ticket",
+        "user",
+        "asset",
+        "asset_audit",
+        "asset_inventory",
+        "feedback",
+        "service_request",
+        "call",
+        "inquiry",
+      ],
+      default: "ticket",
     },
     fieldPath: { type: String, required: true },
     fieldType: {
@@ -454,4 +497,68 @@ export const SYSTEM_DATA_POINTS: Omit<
     isSystem: true,
     order: 91,
   },
+
+  // ── USER GROUP (source: user) ──────────────────────────────────────────────
+  { key: "user_name", label: "Name", description: "User full name", category: "user", source: "user", fieldPath: "userName", fieldType: "string", isActive: true, isSystem: true, order: 200 },
+  { key: "user_email", label: "Email", description: "User email address", category: "user", source: "user", fieldPath: "email", fieldType: "string", isActive: true, isSystem: true, order: 201 },
+  { key: "user_mobile", label: "Mobile", description: "User mobile number", category: "user", source: "user", fieldPath: "mobile", fieldType: "string", isActive: true, isSystem: true, order: 202 },
+  { key: "user_employee_code", label: "Employee Code", description: "Employee / staff code", category: "user", source: "user", fieldPath: "employeeCode", fieldType: "string", isActive: true, isSystem: true, order: 203 },
+  { key: "user_role", label: "Role", description: "Assigned role name", category: "user", source: "user", fieldPath: "roleName", fieldType: "string", isActive: true, isSystem: true, order: 204 },
+  { key: "user_department", label: "Department", description: "User department", category: "user", source: "user", fieldPath: "department", fieldType: "string", isActive: true, isSystem: true, order: 205 },
+  { key: "user_payroll_type", label: "Payroll Type", description: "Internal / external payroll", category: "user", source: "user", fieldPath: "payrollType", fieldType: "string", isActive: true, isSystem: true, order: 206 },
+  { key: "user_projects", label: "Projects", description: "Projects the user belongs to", category: "user", source: "user", fieldPath: "projectNames", fieldType: "string", isActive: true, isSystem: true, order: 207 },
+  { key: "user_centers", label: "Centers", description: "Centers assigned to the user", category: "user", source: "user", fieldPath: "centerNames", fieldType: "string", isActive: true, isSystem: true, order: 208 },
+  { key: "user_status", label: "Status", description: "Active / Inactive", category: "user", source: "user", fieldPath: "statusLabel", fieldType: "string", isActive: true, isSystem: true, order: 209 },
+  { key: "user_last_login", label: "Last Login", description: "Last login date/time", category: "user", source: "user", fieldPath: "lastLogin", fieldType: "date", isActive: true, isSystem: true, order: 210 },
+  { key: "user_created_at", label: "Created Date", description: "Account creation date", category: "user", source: "user", fieldPath: "createdAt", fieldType: "date", isActive: true, isSystem: true, order: 211 },
+
+  // ── ASSET GROUP (source: asset) ────────────────────────────────────────────
+  { key: "asset_name", label: "Asset Name", description: "Name of the asset", category: "asset", source: "asset", fieldPath: "name", fieldType: "string", isActive: true, isSystem: true, order: 300 },
+  { key: "asset_category", label: "Asset Category", description: "Asset category", category: "asset", source: "asset", fieldPath: "categoryName", fieldType: "string", isActive: true, isSystem: true, order: 301 },
+  { key: "asset_count", label: "Predefined Count", description: "Configured asset quantity", category: "asset", source: "asset", fieldPath: "predefinedCount", fieldType: "number", isActive: true, isSystem: true, order: 302 },
+  { key: "asset_unit", label: "Unit", description: "Unit of measure", category: "asset", source: "asset", fieldPath: "unit", fieldType: "string", isActive: true, isSystem: true, order: 303 },
+  { key: "asset_project", label: "Project", description: "Project the asset belongs to", category: "asset", source: "asset", fieldPath: "projectName", fieldType: "string", isActive: true, isSystem: true, order: 304 },
+  { key: "asset_status", label: "Status", description: "Active / Inactive", category: "asset", source: "asset", fieldPath: "statusLabel", fieldType: "string", isActive: true, isSystem: true, order: 305 },
+  { key: "asset_created_at", label: "Created Date", description: "When the asset was created", category: "asset", source: "asset", fieldPath: "createdAt", fieldType: "date", isActive: true, isSystem: true, order: 306 },
+
+  // ── ASSET AUDIT GROUP (source: asset_audit) ────────────────────────────────
+  { key: "audit_asset_name", label: "Asset", description: "Audited asset name", category: "asset_audit", source: "asset_audit", fieldPath: "assetName", fieldType: "string", isActive: true, isSystem: true, order: 400 },
+  { key: "audit_center", label: "Center", description: "Center where the audit happened", category: "asset_audit", source: "asset_audit", fieldPath: "centerName", fieldType: "string", isActive: true, isSystem: true, order: 401 },
+  { key: "audit_change_type", label: "Change Type", description: "working / not-working / both", category: "asset_audit", source: "asset_audit", fieldPath: "changeType", fieldType: "string", isActive: true, isSystem: true, order: 402 },
+  { key: "audit_prev_working", label: "Prev Working", description: "Working count before change", category: "asset_audit", source: "asset_audit", fieldPath: "prevWorking", fieldType: "number", isActive: true, isSystem: true, order: 403 },
+  { key: "audit_prev_notworking", label: "Prev Not-Working", description: "Not-working count before change", category: "asset_audit", source: "asset_audit", fieldPath: "prevNotWorking", fieldType: "number", isActive: true, isSystem: true, order: 404 },
+  { key: "audit_curr_working", label: "New Working", description: "Working count after change", category: "asset_audit", source: "asset_audit", fieldPath: "currWorking", fieldType: "number", isActive: true, isSystem: true, order: 405 },
+  { key: "audit_curr_notworking", label: "New Not-Working", description: "Not-working count after change", category: "asset_audit", source: "asset_audit", fieldPath: "currNotWorking", fieldType: "number", isActive: true, isSystem: true, order: 406 },
+  { key: "audit_changed_by", label: "Changed By", description: "User who made the change", category: "asset_audit", source: "asset_audit", fieldPath: "changedByName", fieldType: "string", isActive: true, isSystem: true, order: 407 },
+  { key: "audit_changed_at", label: "Changed At", description: "When the audit change was made", category: "asset_audit", source: "asset_audit", fieldPath: "changedAt", fieldType: "date", isActive: true, isSystem: true, order: 408 },
+  { key: "audit_remarks", label: "Remarks", description: "Audit remarks/notes", category: "asset_audit", source: "asset_audit", fieldPath: "remarks", fieldType: "string", isActive: true, isSystem: true, order: 409 },
+
+  // ── ASSET INVENTORY GROUP (source: asset_inventory — CenterAssetMapping) ────
+  { key: "inv_asset_name", label: "Asset", description: "Asset name", category: "asset_inventory", source: "asset_inventory", fieldPath: "assetName", fieldType: "string", isActive: true, isSystem: true, order: 450 },
+  { key: "inv_center", label: "Center", description: "Center the asset is mapped to", category: "asset_inventory", source: "asset_inventory", fieldPath: "centerName", fieldType: "string", isActive: true, isSystem: true, order: 451 },
+  { key: "inv_project", label: "Project", description: "Project", category: "asset_inventory", source: "asset_inventory", fieldPath: "projectName", fieldType: "string", isActive: true, isSystem: true, order: 452 },
+  { key: "inv_total_assigned", label: "Total Assigned", description: "Total assets assigned", category: "asset_inventory", source: "asset_inventory", fieldPath: "totalAssigned", fieldType: "number", isActive: true, isSystem: true, order: 453 },
+  { key: "inv_used", label: "Used", description: "Assets in use", category: "asset_inventory", source: "asset_inventory", fieldPath: "assetUsed", fieldType: "number", isActive: true, isSystem: true, order: 454 },
+  { key: "inv_not_used", label: "Not Used", description: "Assets not in use", category: "asset_inventory", source: "asset_inventory", fieldPath: "assetNotUsed", fieldType: "number", isActive: true, isSystem: true, order: 455 },
+  { key: "inv_working", label: "Working", description: "Working asset count", category: "asset_inventory", source: "asset_inventory", fieldPath: "workingAsset", fieldType: "number", isActive: true, isSystem: true, order: 456 },
+  { key: "inv_not_working", label: "Not Working", description: "Not-working asset count", category: "asset_inventory", source: "asset_inventory", fieldPath: "notWorkingAsset", fieldType: "number", isActive: true, isSystem: true, order: 457 },
+  { key: "inv_remark", label: "Remark", description: "Inventory remark/notes", category: "asset_inventory", source: "asset_inventory", fieldPath: "remark", fieldType: "string", isActive: true, isSystem: true, order: 458 },
+  { key: "inv_audit_submitted", label: "Audit Submitted", description: "Whether the current audit cycle is submitted", category: "asset_inventory", source: "asset_inventory", fieldPath: "auditSubmittedLabel", fieldType: "string", isActive: true, isSystem: true, order: 459 },
+  { key: "inv_last_audit_submitted_by", label: "Audit Submitted By", description: "Who submitted the last audit", category: "asset_inventory", source: "asset_inventory", fieldPath: "auditSubmittedByName", fieldType: "string", isActive: true, isSystem: true, order: 460 },
+  { key: "inv_last_audit_submitted_at", label: "Audit Submitted At", description: "When the last audit was submitted", category: "asset_inventory", source: "asset_inventory", fieldPath: "lastAuditSubmittedAt", fieldType: "date", isActive: true, isSystem: true, order: 461 },
+  { key: "inv_last_audit_date", label: "Last Audit Date", description: "Configured last audit date", category: "asset_inventory", source: "asset_inventory", fieldPath: "lastAuditDate", fieldType: "date", isActive: true, isSystem: true, order: 462 },
+  { key: "inv_next_audit_date", label: "Next Audit Date", description: "When the next audit is due", category: "asset_inventory", source: "asset_inventory", fieldPath: "nextAuditDate", fieldType: "date", isActive: true, isSystem: true, order: 463 },
+  { key: "inv_audit_frequency", label: "Audit Frequency (months)", description: "Audit frequency in months", category: "asset_inventory", source: "asset_inventory", fieldPath: "auditFrequencyMonths", fieldType: "number", isActive: true, isSystem: true, order: 464 },
+  { key: "inv_updated_by", label: "Last Updated By", description: "Who last updated this inventory record", category: "asset_inventory", source: "asset_inventory", fieldPath: "updatedByName", fieldType: "string", isActive: true, isSystem: true, order: 465 },
+  { key: "inv_updated_at", label: "Last Updated At", description: "When the inventory record was last updated", category: "asset_inventory", source: "asset_inventory", fieldPath: "updatedAt", fieldType: "date", isActive: true, isSystem: true, order: 466 },
+
+  // ── FEEDBACK GROUP (source: feedback — direct from FeedbackResponse) ────────
+  { key: "fbr_rating", label: "Overall Rating", description: "Overall feedback rating", category: "feedback", source: "feedback", fieldPath: "rating", fieldType: "number", isActive: true, isSystem: true, order: 500 },
+  { key: "fbr_submitted_at", label: "Submitted Date", description: "When the feedback was submitted", category: "feedback", source: "feedback", fieldPath: "submittedAt", fieldType: "date", isActive: true, isSystem: true, order: 501 },
+  { key: "fbr_ticket_number", label: "Ticket #", description: "Ticket the feedback is for", category: "feedback", source: "feedback", fieldPath: "ticketNumber", fieldType: "string", isActive: true, isSystem: true, order: 502 },
+  { key: "fbr_submitter", label: "Submitted By", description: "Student / submitter name", category: "feedback", source: "feedback", fieldPath: "submitterName", fieldType: "string", isActive: true, isSystem: true, order: 503 },
+  { key: "fbr_project", label: "Project", description: "Project the feedback belongs to", category: "feedback", source: "feedback", fieldPath: "projectName", fieldType: "string", isActive: true, isSystem: true, order: 504 },
+  { key: "fbr_form", label: "Feedback Form", description: "Name of the feedback form", category: "feedback", source: "feedback", fieldPath: "formName", fieldType: "string", isActive: true, isSystem: true, order: 505 },
+  { key: "fbr_answers_count", label: "# Answers", description: "Number of answered questions", category: "feedback", source: "feedback", fieldPath: "answersCount", fieldType: "number", isActive: true, isSystem: true, order: 506 },
+  { key: "fbr_answers", label: "Answers", description: "All question/answer pairs", category: "feedback", source: "feedback", fieldPath: "answersText", fieldType: "string", isActive: true, isSystem: true, order: 507 },
 ];
