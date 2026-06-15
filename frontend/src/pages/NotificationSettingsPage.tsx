@@ -12,7 +12,11 @@ interface TriggerDef {
   key: string;
   label: string;
   description: string;
-  section: "Ticket Events" | "KB Events" | "System Events";
+  section:
+    | "Ticket Events"
+    | "KB Events"
+    | "System Events"
+    | "Service Request Events";
 }
 
 const TRIGGERS: TriggerDef[] = [
@@ -88,9 +92,58 @@ const TRIGGERS: TriggerDef[] = [
     description: "When a ticket has exceeded its SLA deadline",
     section: "System Events",
   },
+  // Service Request (PSR/ISR) lifecycle — N1–N15
+  {
+    key: "sr_created",
+    label: "Service Request Created",
+    description: "When a PSR/ISR is raised (parent acknowledgement)",
+    section: "Service Request Events",
+  },
+  {
+    key: "sr_task_assigned",
+    label: "SR Task Assigned",
+    description: "When a research/resolution task is assigned to a department",
+    section: "Service Request Events",
+  },
+  {
+    key: "sr_resolved",
+    label: "Service Request Resolved",
+    description: "When a service request is resolved (parent notified)",
+    section: "Service Request Events",
+  },
+  {
+    key: "sr_reassigned",
+    label: "Service Request Re-assigned",
+    description: "When a resolution is re-assigned to another department",
+    section: "Service Request Events",
+  },
+  {
+    key: "sr_child_case",
+    label: "Child Case Created",
+    description:
+      "When an SR is cancelled and a child case is created (e.g. RE Cell)",
+    section: "Service Request Events",
+  },
+  {
+    key: "sr_reopened",
+    label: "Service Request Re-opened",
+    description: "When a parent re-opens an SR and closure is needed",
+    section: "Service Request Events",
+  },
+  {
+    key: "sr_closed",
+    label: "Service Request Closed",
+    description: "When a service request is finally closed",
+    section: "Service Request Events",
+  },
 ];
 
-const SECTIONS = ["Ticket Events", "KB Events", "System Events"] as const;
+const SECTIONS = [
+  "Ticket Events",
+  "KB Events",
+  "System Events",
+  "Service Request Events",
+] as const;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

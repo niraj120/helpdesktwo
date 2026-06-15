@@ -31,6 +31,7 @@ interface DataPoint {
   description: string;
   category: string;
   fieldType: string;
+  source?: string; // ticket | user | asset | asset_audit (undefined = ticket)
 }
 interface ModulePerm {
   roleId: string;
@@ -937,6 +938,8 @@ function ReportBuilderSection({
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [catFilter, setCatFilter] = useState("all");
+  // Data source: which base collection the report runs against.
+  const [sourceFilter, setSourceFilter] = useState("ticket");
   const [projectOptions, setProjectOptions] = useState<
     { _id: string; name: string }[]
   >([]);
@@ -978,6 +981,21 @@ function ReportBuilderSection({
       setReportName(editingReport.name);
       setReportDesc(editingReport.description ?? "");
       setSelectedKeys([...editingReport.dataPoints]);
+      // Infer the data source from the report's data-point keys.
+      const fk = editingReport.dataPoints[0] || "";
+      setSourceFilter(
+        fk.startsWith("user_")
+          ? "user"
+          : fk.startsWith("inv_")
+            ? "asset_inventory"
+            : fk.startsWith("asset_")
+              ? "asset"
+              : fk.startsWith("audit_")
+                ? "asset_audit"
+                : fk.startsWith("fbr_")
+                  ? "feedback"
+                  : "ticket",
+      );
       setFilters(editingReport.filters ? [...editingReport.filters] : []);
       setSortBy(editingReport.sortBy ?? "ticket_created_at");
       setSortOrder((editingReport.sortOrder as "asc" | "desc") ?? "desc");
@@ -993,6 +1011,7 @@ function ReportBuilderSection({
       setFilters([]);
       setSortBy("ticket_created_at");
       setSortOrder("desc");
+      setSourceFilter("ticket");
       setPreviewRows([]);
       setError("");
       setSuccess("");
@@ -1020,14 +1039,26 @@ function ReportBuilderSection({
     loadDataPoints(selectedProjectScope || undefined);
   }, [selectedProjectScope]);
 
+  // Scope to the selected data source first (undefined source = ticket).
+  const sourceScopedDps = dataPoints.filter(
+    (d) => (d.source || "ticket") === sourceFilter,
+  );
   const categories = [
     "all",
-    ...Array.from(new Set(dataPoints.map((d: DataPoint) => d.category))),
+    ...Array.from(new Set(sourceScopedDps.map((d: DataPoint) => d.category))),
   ];
   const filteredDps =
     catFilter === "all"
-      ? dataPoints
-      : dataPoints.filter((d) => d.category === catFilter);
+      ? sourceScopedDps
+      : sourceScopedDps.filter((d) => d.category === catFilter);
+
+  // Switching data source clears the (now-incompatible) selection + filters.
+  const changeSource = (s: string) => {
+    setSourceFilter(s);
+    setCatFilter("all");
+    setSelectedKeys([]);
+    setFilters([]);
+  };
 
   const toggleKey = (key: string) => {
     setSelectedKeys((prev) =>
@@ -1351,6 +1382,96 @@ function ReportBuilderSection({
               {selectedKeys.length} selected
             </div>
           </div>
+          {/* Data source selector */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 8,
+              padding: "10px 12px",
+              borderBottom: "1px solid #f3f4f6",
+            }}
+          >
+            <span style={{ fontSize: 12, fontWeight: 600, color: "#6b7280" }}>
+              Data Source:
+            </span>
+            {[
+              { key: "ticket", label: "Tickets" },
+              { key: "user", label: "Users" },
+              // Assets is a single tab grouping 3 collections (sub-switch below).
+              { key: "asset", label: "Assets", group: ["asset", "asset_inventory", "asset_audit"] },
+              { key: "feedback", label: "Feedback" },
+              { key: "service_request", label: "Service Requests" },
+              { key: "call", label: "Calls" },
+              { key: "inquiry", label: "Inquiries" },
+            ].map((s: any) => {
+              const active = s.group
+                ? s.group.includes(sourceFilter)
+                : sourceFilter === s.key;
+              return (
+                <button
+                  key={s.key}
+                  onClick={() => changeSource(s.key)}
+                  style={{
+                    padding: "5px 14px",
+                    borderRadius: 8,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    border: active ? "1px solid #2563eb" : "1px solid #e5e7eb",
+                    cursor: "pointer",
+                    background: active ? "#2563eb" : "#fff",
+                    color: active ? "#fff" : "#374151",
+                  }}
+                >
+                  {s.label}
+                </button>
+              );
+            })}
+          </div>
+          {/* Asset sub-switch (only for the Assets group) */}
+          {["asset", "asset_inventory", "asset_audit"].includes(sourceFilter) && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 6,
+                padding: "8px 12px",
+                background: "#f9fafb",
+                borderBottom: "1px solid #f3f4f6",
+              }}
+            >
+              <span style={{ fontSize: 11, fontWeight: 600, color: "#6b7280" }}>
+                Asset View:
+              </span>
+              {[
+                { key: "asset", label: "Asset Details" },
+                { key: "asset_inventory", label: "Inventory (center · counts · audit status)" },
+                { key: "asset_audit", label: "Audit History" },
+              ].map((s) => (
+                <button
+                  key={s.key}
+                  onClick={() => changeSource(s.key)}
+                  style={{
+                    padding: "3px 10px",
+                    borderRadius: 8,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    border:
+                      sourceFilter === s.key
+                        ? "1px solid #2563eb"
+                        : "1px solid #e5e7eb",
+                    cursor: "pointer",
+                    background: sourceFilter === s.key ? "#dbeafe" : "#fff",
+                    color: sourceFilter === s.key ? "#1d4ed8" : "#6b7280",
+                  }}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          )}
           {/* Category tabs */}
           <div
             style={{
