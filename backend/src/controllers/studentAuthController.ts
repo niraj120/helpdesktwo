@@ -18,147 +18,108 @@ const getJwtSecret = () => config.jwt.secret;
 const JWT_EXPIRY = "7d";
 
 /**
+ * Pre-computed bcrypt hash used to perform a "wasted" password comparison when
+ * an account does not exist (or has no password yet). This keeps login response
+ * timing constant regardless of whether the account exists, preventing timing
+ * based user enumeration (VAPT CODE-1 / CWE-204).
+ */
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync(
+  "account-enumeration-timing-guard",
+  10,
+);
+
+/**
  * Send OTP to student email for first-time login
  */
 export const sendOTP = async (req: Request, res: Response) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({
+      success: false,
+      message: "Email is required",
+    });
+  }
+
+  // SECURITY (VAPT CODE-1 / CWE-204): every outcome returns this identical
+  // generic response so an attacker cannot infer whether an account exists, is
+  // a student, or is locked. An OTP is only actually dispatched for eligible
+  // accounts.
+  const generic = () =>
+    res.status(200).json({
+      success: true,
+      message: "If an account exists for this email, an OTP has been sent.",
+    });
+
   try {
-    const { email } = req.body;
-
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        message: "Email is required",
-      });
-    }
-
-    // Find student user
     const user = await User.findOne({ email: email.toLowerCase() }).populate(
       "role",
     );
 
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message:
-          "No account found with this email. Please submit a ticket first to create an account.",
+    const role = user ? (user.role as any) : null;
+    const isStudent = !!role && role.code === "STUDENT";
+
+    // Only dispatch an OTP for an existing, student, non-locked account.
+    if (user && isStudent && !user.isResetPasswordLocked()) {
+      // Generate OTP locally (do not persist plaintext OTP to DB)
+      const otp = crypto.randomInt(100000, 999999).toString();
+
+      const projectId =
+        user.projects && user.projects.length > 0
+          ? user.projects[0].toString()
+          : undefined;
+      await otpStore.createOtp(email.toLowerCase(), otp, 10 * 60, {
+        projectId,
+        purpose: "student_password_setup",
       });
-    }
 
-    // Check if user is a student
-    const role = user.role as any;
-    if (role.code !== "STUDENT") {
-      return res.status(403).json({
-        success: false,
-        message: "This login is for students only. Please use the admin login.",
-      });
-    }
+      // Do not log OTP plaintext in production; indicate generation only
+      console.log(`📧 OTP generated for ${email} (dispatched)`);
 
-    // Check if account is locked
-    if (user.isResetPasswordLocked()) {
-      return res.status(429).json({
-        success: false,
-        message: "Too many OTP attempts. Please try again later.",
-      });
-    }
+      const promises: Promise<unknown>[] = [];
 
-    // Generate OTP locally (do not persist plaintext OTP to DB)
-    const otp = crypto.randomInt(100000, 999999).toString();
+      // 1. Email
+      promises.push(
+        (async () => {
+          try {
+            await sendOTPEmail(email, otp, projectId);
+          } catch (emailError) {
+            console.error("Failed to send OTP email:", emailError);
+          }
+        })(),
+      );
 
-    // Store OTP using centralized otpStore (hashed, optional Redis)
-    const projectId =
-      user.projects && user.projects.length > 0
-        ? user.projects[0].toString()
-        : undefined;
-    await otpStore.createOtp(email.toLowerCase(), otp, 10 * 60, {
-      projectId,
-      purpose: "student_password_setup",
-    });
-
-    // Do not log OTP plaintext in production; indicate generation only
-    console.log(`📧 OTP generated for ${email} (dispatched)`);
-
-    // Send OTP via Email and WhatsApp concurrently
-    const promises = [];
-
-    // 1. Email Promise
-    const emailPromise = (async () => {
-      try {
-        const emailSent = await sendOTPEmail(email, otp, projectId);
-        if (emailSent) {
-          console.log(`✅ OTP email sent to ${email}`);
-          return "email_sent";
-        } else {
-          console.log(
-            `⚠️  OTP email not sent (email config might be disabled)`,
-          );
-          return "email_disabled";
-        }
-      } catch (emailError) {
-        console.error("Failed to send OTP email:", emailError);
-        throw emailError;
+      // 2. WhatsApp + 3. SMS (if phone and project available)
+      if (projectId && user.phone) {
+        promises.push(
+          (async () => {
+            try {
+              await sendOTPWhatsApp(projectId, user.phone!, otp);
+            } catch (waError) {
+              console.error("Failed to send OTP WhatsApp:", waError);
+            }
+          })(),
+        );
+        promises.push(
+          (async () => {
+            try {
+              await sendOTPSMS(projectId, user.phone!, otp, user.firstName);
+            } catch (smsError) {
+              console.error("Failed to send OTP SMS:", smsError);
+            }
+          })(),
+        );
       }
-    })();
-    promises.push(emailPromise);
 
-    // 2. WhatsApp Promise (if phone and project available)
-    if (projectId && user.phone) {
-      const whatsappPromise = (async () => {
-        try {
-          const result = await sendOTPWhatsApp(projectId, user.phone!, otp);
-          if (result.success) {
-            console.log(`✅ OTP WhatsApp sent to ${user.phone}`);
-            return "whatsapp_sent";
-          } else {
-            console.log(`⚠️  OTP WhatsApp failed: ${result.error}`);
-            return "whatsapp_failed";
-          }
-        } catch (waError) {
-          console.error("Failed to send OTP WhatsApp:", waError);
-          return "whatsapp_failed";
-        }
-      })();
-      promises.push(whatsappPromise);
+      // Wait for all to settle (don't fail if one fails)
+      await Promise.allSettled(promises);
     }
 
-    // 3. SMS Promise (same conditions)
-    if (projectId && user.phone) {
-      const smsPromise = (async () => {
-        try {
-          const result = await sendOTPSMS(
-            projectId,
-            user.phone!,
-            otp,
-            user.firstName,
-          );
-          if (result.success) {
-            console.log(`✅ OTP SMS sent to ${user.phone}`);
-            return "sms_sent";
-          } else {
-            console.log(`⚠️  OTP SMS failed: ${result.error}`);
-            return "sms_failed";
-          }
-        } catch (smsError) {
-          console.error("Failed to send OTP SMS:", smsError);
-          return "sms_failed";
-        }
-      })();
-      promises.push(smsPromise);
-    }
-
-    // Wait for all to settle (don't fail if one fails)
-    await Promise.allSettled(promises);
-
-    return res.status(200).json({
-      success: true,
-      message: "OTP sent to your email. Please check your inbox.",
-    });
+    return generic();
   } catch (error) {
+    // Stay generic even on internal error so failures can't leak existence.
     console.error("Send OTP error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to send OTP",
-      error: error instanceof Error ? error.message : "Unknown error",
-    });
+    return generic();
   }
 };
 
@@ -391,35 +352,20 @@ export const login = async (req: Request, res: Response) => {
       },
     });
 
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid email or password",
-      });
-    }
+    const role = user ? (user.role as any) : null;
+    const isStudent = !!role && role.code === "STUDENT";
 
-    // Check if user is a student
-    const role = user.role as any;
-    if (role.code !== "STUDENT") {
-      return res.status(403).json({
-        success: false,
-        message: "This login is for students only. Please use the admin login.",
-      });
-    }
+    // SECURITY (VAPT CODE-1 / CWE-204): always run a bcrypt comparison — against
+    // the real hash when possible, otherwise a dummy hash — so response timing
+    // is constant whether or not the account exists / has a password set.
+    const canCheckPassword = !!user && !user.requirePasswordSetup;
+    const passwordMatches = canCheckPassword
+      ? await user!.comparePassword(password)
+      : await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
 
-    // Check if password setup is required
-    if (user.requirePasswordSetup) {
-      return res.status(403).json({
-        success: false,
-        message: "Please set up your password first using OTP verification",
-        requirePasswordSetup: true,
-      });
-    }
-
-    // Verify password
-    const isMatch = await user.comparePassword(password);
-
-    if (!isMatch) {
+    // Every failure mode — unknown account, non-student, pending password setup,
+    // or wrong password — returns the SAME generic 401 with identical body.
+    if (!user || !isStudent || user.requirePasswordSetup || !passwordMatches) {
       return res.status(401).json({
         success: false,
         message: "Invalid email or password",
@@ -475,50 +421,22 @@ export const login = async (req: Request, res: Response) => {
  * Check if user exists and requires password setup
  */
 export const checkUser = async (req: Request, res: Response) => {
-  try {
-    const { email } = req.body;
+  // SECURITY (VAPT CODE-1 / CWE-204): this endpoint must NOT reveal whether an
+  // account exists, its role, or its password-setup state. It returns an
+  // identical, generic response for every input. The login UI no longer branches
+  // on it; it is retained only for backward compatibility with older clients.
+  const { email } = req.body;
 
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        message: "Email is required",
-      });
-    }
-
-    const user = await User.findOne({ email: email.toLowerCase() }).populate(
-      "role",
-    );
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "No account found. Please submit a ticket first.",
-        userExists: false,
-      });
-    }
-
-    const role = user.role as any;
-    if (!role || role.code !== "STUDENT") {
-      return res.status(403).json({
-        success: false,
-        message: "This is not a student account.",
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      data: {
-        userExists: true,
-        requirePasswordSetup: user.requirePasswordSetup,
-        firstName: user.firstName,
-      },
-    });
-  } catch (error) {
-    console.error("Check user error:", error);
-    return res.status(500).json({
+  if (!email) {
+    return res.status(400).json({
       success: false,
-      message: "Failed to check user",
-      error: error instanceof Error ? error.message : "Unknown error",
+      message: "Email is required",
     });
   }
+
+  return res.status(200).json({
+    success: true,
+    message:
+      "If an account exists for this email, you can continue to log in or set up a password.",
+  });
 };

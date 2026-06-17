@@ -1,12 +1,16 @@
 import express from 'express';
 import { sendOTP, verifyOTP, setPassword, login, checkUser } from '../controllers/studentAuthController';
+import { authRateLimiter } from '../middleware/authRateLimiter';
 
 const router = express.Router();
 
 /**
  * Student Authentication Routes
- * All routes are public (no auth middleware required)
+ * All routes are public (no auth middleware required).
+ * Rate-limited per client IP to deter brute force / account enumeration
+ * (VAPT CODE-1).
  */
+router.use(authRateLimiter);
 
 // Check if user exists and their setup status
 router.post('/check-user', checkUser);

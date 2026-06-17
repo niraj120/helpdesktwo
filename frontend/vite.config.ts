@@ -46,7 +46,7 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       outDir: 'dist',
-      sourcemap: isProduction ? false : true, // Disable sourcemaps in production
+      sourcemap: false, // Never emit source maps in production builds (VAPT CODE-2 / CWE-209)
       minify: 'esbuild',
       // CSS code splitting - separate CSS files for better caching
       cssCodeSplit: true,

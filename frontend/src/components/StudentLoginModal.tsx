@@ -49,9 +49,7 @@ export const StudentLoginModal: React.FC<StudentLoginModalProps> = ({
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [requirePasswordSetup, setRequirePasswordSetup] = useState(false);
   const [tempToken, setTempToken] = useState("");
-  const [firstName, setFirstName] = useState("");
   const [passwordPolicy, setPasswordPolicy] = useState<any>(null);
   const hasAutoLoginAttempted = useRef(false);
 
@@ -136,9 +134,7 @@ export const StudentLoginModal: React.FC<StudentLoginModalProps> = ({
     setPassword("");
     setConfirmPassword("");
     setError(null);
-    setRequirePasswordSetup(false);
     setTempToken("");
-    setFirstName("");
     setPasswordPolicy(null);
   };
 
@@ -149,52 +145,27 @@ export const StudentLoginModal: React.FC<StudentLoginModalProps> = ({
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
+    // SECURITY (VAPT CODE-1): do NOT pre-check whether the account exists — that
+    // would enumerate users. Go straight to the password step. First-time users
+    // and forgotten passwords use the "Set / reset password" link there, which
+    // triggers an OTP whose response never reveals whether the account exists.
+    setStep("password");
+  };
+
+  // Start OTP-based password setup / reset. The backend returns an identical
+  // response regardless of whether the account exists, so this is safe.
+  const handleStartPasswordSetup = async () => {
     setLoading(true);
     setError(null);
-
     try {
-      // Check if user exists
-      const response = await axios.post(
-        `${API_CONFIG.API_URL}/student-auth/check-user`,
-        {
-          email,
-        },
-      );
-
-      const {
-        userExists,
-        requirePasswordSetup: needsSetup,
-        firstName: name,
-      } = response.data.data;
-
-      if (!userExists) {
-        setError(
-          "No account found. Please submit a ticket first to create an account.",
-        );
-        setLoading(false);
-        return;
-      }
-
-      setFirstName(name);
-      setRequirePasswordSetup(needsSetup);
-
-      if (needsSetup) {
-        // First time user - send OTP
-        await axios.post(`${API_CONFIG.API_URL}/student-auth/send-otp`, {
-          email,
-        });
-        setStep("otp");
-      } else {
-        // Returning user - show password input
-        setStep("password");
-      }
+      await axios.post(`${API_CONFIG.API_URL}/student-auth/send-otp`, { email });
+      setStep("otp");
     } catch (err: any) {
       setError(
-        err.response?.data?.message ||
-          "Failed to check user. Please try again.",
+        err.response?.data?.message || "Something went wrong. Please try again.",
       );
     }
-
     setLoading(false);
   };
 
@@ -493,9 +464,9 @@ export const StudentLoginModal: React.FC<StudentLoginModalProps> = ({
             <form onSubmit={handleOTPSubmit}>
               <div className="mb-2">
                 <p className="text-sm text-gray-600 mb-4">
-                  Hi <span className="font-semibold">{firstName}</span>! We've
-                  sent a 6-digit OTP to{" "}
-                  <span className="font-semibold">{email}</span>
+                  If an account exists for{" "}
+                  <span className="font-semibold">{email}</span>, a 6-digit OTP
+                  has been sent to it.
                 </p>
               </div>
 
@@ -537,13 +508,13 @@ export const StudentLoginModal: React.FC<StudentLoginModalProps> = ({
             </form>
           )}
 
-          {/* Step 3a: Password Login (Returning Users) */}
+          {/* Step 3a: Password Login */}
           {step === "password" && (
             <form onSubmit={handlePasswordLogin}>
               <div className="mb-2">
                 <p className="text-sm text-gray-600 mb-4">
-                  Welcome back,{" "}
-                  <span className="font-semibold">{firstName}</span>!
+                  Enter your password to continue as{" "}
+                  <span className="font-semibold">{email}</span>.
                 </p>
               </div>
 
@@ -570,6 +541,16 @@ export const StudentLoginModal: React.FC<StudentLoginModalProps> = ({
               >
                 {loading ? "Logging in..." : "Login"}
               </button>
+
+              {/* First-time setup / forgot password — OTP based, enumeration-safe */}
+              <button
+                type="button"
+                onClick={handleStartPasswordSetup}
+                disabled={loading}
+                className="w-full mt-3 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50"
+              >
+                First time here or forgot your password? Set / reset it via OTP
+              </button>
             </form>
           )}
 
@@ -578,8 +559,7 @@ export const StudentLoginModal: React.FC<StudentLoginModalProps> = ({
             <form onSubmit={handleSetPasswordSubmit}>
               <div className="mb-4">
                 <p className="text-sm text-gray-600 mb-4">
-                  Hi <span className="font-semibold">{firstName}</span>! Please
-                  set a password for your account.
+                  Please set a password for your account.
                 </p>
               </div>
 
