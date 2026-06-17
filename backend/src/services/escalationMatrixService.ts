@@ -2217,9 +2217,12 @@ export async function processSLAWarnings(): Promise<void> {
   try {
     const now = new Date();
 
-    // Find open tickets that have an escalation matrix assigned and a started roleLevelSLA
+    // Find open tickets that have an escalation matrix assigned and a started roleLevelSLA.
+    // status is numeric (1=open, 2=in-progress, 3=on-hold, 4=resolved, 5=closed) —
+    // exclude resolved(4)/closed(5). Using the string values "resolved"/"closed" here
+    // threw a CastError every cycle, so no SLA warnings were ever processed.
     const tickets = await Ticket.find({
-      status: { $nin: ["resolved", "closed"] },
+      status: { $nin: [4, 5] },
       escalationMatrixId: { $exists: true, $ne: null },
       "roleLevelSLA.startedAt": { $exists: true },
       "roleLevelSLA.dueAt": { $exists: true },
