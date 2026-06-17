@@ -70,72 +70,44 @@ export default defineConfig(({ mode }) => {
           //
           // NOTE: xlsx is NOT included here - it uses dynamic import for on-demand loading
           // ============================================================================
+          // Only isolate HEAVY, LEAF libraries (each depends one-way on the
+          // shared `vendor` chunk and nothing imports it back, so it cannot form
+          // a cross-chunk cycle). Everything else — React core, router, forms
+          // (react-hook-form / yup / @hookform/resolvers), query, UI, icons,
+          // i18n, date utils — MUST stay together in a single `vendor` chunk.
+          //
+          // The previous strategy split these interdependent packages across
+          // separate chunks (e.g. react-hook-form/yup in vendor-forms but
+          // @hookform/resolvers in vendor-common), creating a circular import
+          // whose minified output crashed at module init with
+          // "Cannot access 'X' before initialization" (temporal dead zone),
+          // white-screening the production app.
           manualChunks: (id) => {
-            // Node modules chunking strategy
-            if (id.includes('node_modules')) {
-              // Core React - always needed, load first
-              if (id.includes('react-dom') || id.includes('/react/') || id.includes('react-router')) {
-                return 'vendor-react';
-              }
-              
-              // UI component libraries
-              if (id.includes('@headlessui') || id.includes('@heroicons')) {
-                return 'vendor-ui';
-              }
-              
-              // Form handling
-              if (id.includes('react-hook-form') || id.includes('yup') || id.includes('zod')) {
-                return 'vendor-forms';
-              }
-              
-              // Data fetching & state
-              if (id.includes('@tanstack/react-query') || id.includes('axios')) {
-                return 'vendor-query';
-              }
-              
-              // Rich text editor (heavy - ~200KB) - only loads with KB pages
-              if (id.includes('react-quill') || id.includes('quill')) {
-                return 'vendor-editor';
-              }
-              
-              // PDF export (heavy - ~300KB) - uses dynamic import
-              if (id.includes('jspdf')) {
-                return 'vendor-pdf';
-              }
-              
-              // Excel export (heavy - ~500KB) - uses dynamic import, separate chunk
-              if (id.includes('xlsx')) {
-                return 'vendor-xlsx';
-              }
-              
-              // HTML to canvas (for screenshots/exports)
-              if (id.includes('html2canvas')) {
-                return 'vendor-canvas';
-              }
-              
-              // Drag & drop - only loads with KB level management
-              if (id.includes('react-beautiful-dnd') || id.includes('beautiful-dnd')) {
-                return 'vendor-dnd';
-              }
-              
-              // Internationalization
-              if (id.includes('i18next')) {
-                return 'vendor-i18n';
-              }
-              
-              // Date utilities
-              if (id.includes('date-fns')) {
-                return 'vendor-date';
-              }
-              
-              // Icons - consolidate all icon libraries
-              if (id.includes('lucide-react') || id.includes('react-icons') || id.includes('@heroicons')) {
-                return 'vendor-icons';
-              }
-              
-              // Other smaller vendor libraries
-              return 'vendor-common';
+            if (!id.includes('node_modules')) return;
+
+            // Excel export (~500KB) — code-split via dynamic import in app code
+            if (id.includes('xlsx')) return 'vendor-xlsx';
+            // PDF export (~300KB) — dynamic import
+            if (id.includes('jspdf')) return 'vendor-pdf';
+            // Rich text editor (~200KB)
+            if (id.includes('react-quill') || id.includes('quill'))
+              return 'vendor-editor';
+            // HTML to canvas (screenshots / exports)
+            if (id.includes('html2canvas')) return 'vendor-canvas';
+            // Charts (recharts only — its d3 deps stay in `vendor` to avoid a cycle)
+            if (id.includes('recharts')) return 'vendor-charts';
+            // Drag & drop
+            if (
+              id.includes('@dnd-kit') ||
+              id.includes('@hello-pangea/dnd') ||
+              id.includes('react-beautiful-dnd') ||
+              id.includes('beautiful-dnd')
+            ) {
+              return 'vendor-dnd';
             }
+
+            // All remaining (interdependent) node_modules share one chunk.
+            return 'vendor';
           },
         },
       },
