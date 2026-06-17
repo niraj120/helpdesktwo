@@ -22,6 +22,16 @@ import { config } from "../config";
 import otpStore from "../utils/otpStore";
 import { extractPermissionCodes } from "../utils/permissionUtils";
 
+/**
+ * Pre-computed bcrypt hash used for a constant-time comparison when no account
+ * is found, so login response timing cannot reveal whether an account exists
+ * (VAPT CODE-1 / CWE-204).
+ */
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync(
+  "account-enumeration-timing-guard",
+  10,
+);
+
 interface LoginRequest {
   email: string;
   password: string;
@@ -76,6 +86,9 @@ export const login = async (
 
     if (!user) {
       console.log("❌ User not found:", email);
+      // Constant-time: perform a throwaway comparison so a missing account is
+      // indistinguishable from a wrong password by response timing.
+      await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
       return res.status(401).json({
         success: false,
         error: "Invalid credentials",

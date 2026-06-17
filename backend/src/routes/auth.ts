@@ -12,13 +12,14 @@ import {
 } from '../controllers/authController';
 import { refreshPermissions } from '../controllers/permissionController';
 import { auth, authMiddleware } from '../middleware/auth';
+import { authRateLimiter } from '../middleware/authRateLimiter';
 
 const router = Router();
 
 // @desc    Login user
 // @route   POST /api/auth/login
 // @access  Public
-router.post('/login', [
+router.post('/login', authRateLimiter, [
   body('email').isEmail().normalizeEmail().withMessage('Please provide a valid email'),
   body('password').notEmpty().withMessage('Password is required'),
   validateRequest,
@@ -42,7 +43,7 @@ router.post('/logout', auth, logout);
 // @desc    Forgot password - Send OTP
 // @route   POST /api/auth/forgot-password
 // @access  Public
-router.post('/forgot-password', [
+router.post('/forgot-password', authRateLimiter, [
   body('email').isEmail().normalizeEmail().withMessage('Please provide a valid email'),
   validateRequest,
 ], forgotPassword);
@@ -50,7 +51,7 @@ router.post('/forgot-password', [
 // @desc    Verify OTP
 // @route   POST /api/auth/verify-otp
 // @access  Public
-router.post('/verify-otp', [
+router.post('/verify-otp', authRateLimiter, [
   body('email').isEmail().normalizeEmail().withMessage('Please provide a valid email'),
   body('otp').notEmpty().withMessage('OTP is required'),
   validateRequest,
@@ -59,7 +60,7 @@ router.post('/verify-otp', [
 // @desc    Verify 2FA OTP
 // @route   POST /api/auth/verify-2fa
 // @access  Public
-router.post('/verify-2fa', [
+router.post('/verify-2fa', authRateLimiter, [
   body('email').isEmail().normalizeEmail().withMessage('Please provide a valid email'),
   body('tempToken').notEmpty().withMessage('Temporary token is required'),
   body('otp').notEmpty().withMessage('OTP is required'),
@@ -69,7 +70,7 @@ router.post('/verify-2fa', [
 // @desc    Reset password
 // @route   POST /api/auth/reset-password
 // @access  Public
-router.post('/reset-password', [
+router.post('/reset-password', authRateLimiter, [
   body('email').isEmail().normalizeEmail().withMessage('Please provide a valid email'),
   body('newPassword')
     .isLength({ min: 6 })
