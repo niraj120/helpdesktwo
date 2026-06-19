@@ -1785,9 +1785,13 @@ export async function processAutoEscalation(): Promise<{
             slaBreach = now > new Date(ticket.roleLevelSLA.dueAt);
             slaSource = `roleLevelSLA.dueAt=${ticket.roleLevelSLA.dueAt}`;
             if (slaBreach) {
-              console.log(
-                `⏰ [AUTO-ESC] Ticket ${ticket.ticketNumber}: Role-level SLA breached (dueAt: ${ticket.roleLevelSLA.dueAt})`,
-              );
+              // Log the breach only the first time (before it's recorded), so a
+              // ticket stuck at the top level isn't re-logged every cron run.
+              if (!ticket.roleLevelSLA.breachedAt) {
+                console.log(
+                  `⏰ [AUTO-ESC] Ticket ${ticket.ticketNumber}: Role-level SLA breached (dueAt: ${ticket.roleLevelSLA.dueAt})`,
+                );
+              }
             } else {
               const minsLeft = Math.round(
                 (new Date(ticket.roleLevelSLA.dueAt).getTime() -
@@ -1843,10 +1847,20 @@ export async function processAutoEscalation(): Promise<{
         );
 
         if (!nextLevel) {
-          // Already at highest level, can't escalate further
-          console.log(
-            `ℹ️  [AUTO-ESC] Ticket ${ticket.ticketNumber}: Already at highest level (L${currentLevelNumber}), cannot auto-escalate further`,
-          );
+          // Already at the highest level — can't escalate further. Record the
+          // breach once (drives SLA reporting) and log only the first time so
+          // this permanently-stuck ticket isn't re-logged every cron run.
+          if (!ticket.roleLevelSLA?.breachedAt) {
+            if (ticket.roleLevelSLA) {
+              await Ticket.updateOne(
+                { _id: ticket._id },
+                { $set: { "roleLevelSLA.breachedAt": now } },
+              );
+            }
+            console.log(
+              `ℹ️  [AUTO-ESC] Ticket ${ticket.ticketNumber}: Already at highest level (L${currentLevelNumber}), cannot auto-escalate further (breach recorded)`,
+            );
+          }
           continue;
         }
 

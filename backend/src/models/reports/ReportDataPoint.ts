@@ -169,7 +169,7 @@ export const SYSTEM_DATA_POINTS: Omit<
   {
     key: "ticket_category",
     label: "Category",
-    description: "Category / sub-category hierarchy",
+    description: "Category / sub-category hierarchy (full path)",
     category: "ticket",
     fieldPath: "categoryDisplay",
     fieldType: "string",

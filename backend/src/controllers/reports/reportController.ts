@@ -277,17 +277,26 @@ export const getDataPoints = async (req: Request, res: Response) => {
     }
 
     // Per-project category hierarchy levels → one data point per configured
-    // level, labelled with the project's level name (e.g. "Course", "Topic").
-    // Virtual (not persisted). The single "Category" point shows the full path;
-    // these expose each level as its own column.
+    // level, labelled with the project's level name (e.g. "Sub Category",
+    // "Topic", "Department"). Virtual (not persisted). Only added when a project
+    // is selected — the super-admin also has the Project Scope selector. The
+    // single "Category" point shows the full path; these expose each level.
     const categoryLevelDataPoints: any[] = [];
     if (projectId && mongoose.Types.ObjectId.isValid(projectId)) {
       try {
         const HierarchyConfig = mongoose.model("HierarchyConfig");
-        const hc = await HierarchyConfig.findOne({
-          projectId: new mongoose.Types.ObjectId(projectId),
-        }).lean();
+        const pOid = new mongoose.Types.ObjectId(projectId);
+        // Prefer the active config; fall back to any config for the project.
+        const hc =
+          (await HierarchyConfig.findOne({
+            projectId: pOid,
+            isActive: true,
+          }).lean()) ||
+          (await HierarchyConfig.findOne({ projectId: pOid }).lean());
         const levels = (hc as any)?.levels ?? [];
+        console.log(
+          `📊 [getDataPoints] project ${projectId}: hierarchy config ${hc ? "found" : "NOT found"}, ${levels.length} level(s)`,
+        );
         for (const lvl of levels) {
           const n = lvl?.levelNumber;
           if (!n || n < 1 || n > 5 || lvl?.isActive === false) continue;

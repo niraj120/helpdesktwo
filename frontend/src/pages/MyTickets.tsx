@@ -23,6 +23,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { useProjectContext } from "../contexts/ProjectContext";
 import { useSocket } from "../hooks/useSocket";
+import { useCenters } from "../hooks/useQueryHooks";
 import toast from "react-hot-toast";
 
 interface Ticket {
@@ -122,6 +123,7 @@ type TicketTableColumnKey =
   | "sla"
   | "createdAt"
   | "center"
+  | "district"
   | "project"
   | "category"
   | "source"
@@ -141,7 +143,8 @@ const TICKET_TABLE_COLUMN_DEFS: Array<{
   { key: "status", label: "Status" },
   { key: "sla", label: "SLA" },
   { key: "createdAt", label: "Created" },
-  { key: "center", label: "Center" },
+  { key: "center", label: "Offline Center" },
+  { key: "district", label: "District" },
   { key: "project", label: "Project" },
   { key: "category", label: "Category" },
   { key: "source", label: "Source" },
@@ -442,6 +445,23 @@ const MyTickets: React.FC<MyTicketsProps> = ({
   }
 
   const configProjectId = resolveMasterDataProjectId();
+
+  // District filter options — district is the centre's `city`, derived from the
+  // active project's centres (distinct, sorted).
+  const { data: districtCenters = [] } = useCenters(
+    configProjectId || undefined,
+  );
+  const districtOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          (districtCenters as Array<{ city?: string }>)
+            .map((c) => (c.city || "").trim())
+            .filter(Boolean),
+        ),
+      ).sort((a, b) => a.localeCompare(b)),
+    [districtCenters],
+  );
 
   useEffect(() => {
     const fetchTicketTableColumns = async () => {
@@ -983,6 +1003,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({
         // Custom field filters (client-side)
         Object.entries(customFieldFilters).every(([colKey, filterVal]) => {
           if (!filterVal || !filterVal.trim()) return true;
+          const v = filterVal.trim();
           // hierarchy_level_N — compare against enriched categoryHierarchyNames
           if (colKey.startsWith("hierarchy_level_")) {
             const levelNum = parseInt(
@@ -992,7 +1013,24 @@ const MyTickets: React.FC<MyTicketsProps> = ({
             const name =
               (ticket as any).categoryHierarchyNames?.[`level${levelNum}`] ||
               "";
-            return name.toLowerCase().includes(filterVal.trim().toLowerCase());
+            return name.toLowerCase().includes(v.toLowerCase());
+          }
+          // Built-in config-driven filters (District / Offline Centre / Source)
+          const centerObj =
+            typeof ticket.metadata?.centerId === "object"
+              ? (ticket.metadata.centerId as any)
+              : null;
+          if (colKey === "district") {
+            return (centerObj?.city || "") === v;
+          }
+          if (colKey === "center") {
+            const cid = centerObj
+              ? String(centerObj._id)
+              : String(ticket.metadata?.centerId || "");
+            return cid === v;
+          }
+          if (colKey === "source") {
+            return (ticket.submissionSource || "") === v;
           }
           // field_FieldName — compare against metadata.customFields
           const fieldName = colKey.replace(/^field_/, "");
@@ -1157,6 +1195,11 @@ const MyTickets: React.FC<MyTicketsProps> = ({
           : typeof _centerId1 === "string"
             ? _centerId1
             : "Center";
+    // District is the offline centre's `city` field.
+    const centerDistrict =
+      _centerId1 && typeof _centerId1 === "object" && _centerId1.city
+        ? _centerId1.city
+        : "";
     const requestedBy =
       ticket.metadata?.createdByName ||
       ticket.metadata?.studentName ||
@@ -1368,6 +1411,18 @@ const MyTickets: React.FC<MyTicketsProps> = ({
             >
               {centerName}
             </span>
+          </td>
+        );
+      case "district":
+        return (
+          <td
+            style={{
+              padding: isMobile ? "10px 12px" : "12px 16px",
+              fontSize: 13,
+              color: "#374151",
+            }}
+          >
+            {centerDistrict || <span style={{ color: "#9ca3af" }}>—</span>}
           </td>
         );
       case "project":
@@ -2049,6 +2104,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({
             priorityFilter !== "all" ||
             assignedToFilter !== "all" ||
             projectFilter !== "all" ||
+            Object.values(customFieldFilters).some((v) => v && v.trim()) ||
             dateFromFilter ||
             dateToFilter) && (
             <button
@@ -2058,6 +2114,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({
                 setPriorityFilter("all");
                 setAssignedToFilter("all");
                 setProjectFilter("all");
+                setCustomFieldFilters({});
                 setDateFromFilter("");
                 setDateToFilter("");
                 setCurrentPage(1);
@@ -2242,6 +2299,107 @@ const MyTickets: React.FC<MyTicketsProps> = ({
               }}
             />
           </div>
+
+          {/* Config-driven built-in filters (District / Offline Centre /
+              Source) — rendered ONLY for columns enabled as a filter in Query
+              Configuration. No hardcoding: filtered by filterableColumnKeys. */}
+          {(
+            [
+              {
+                key: "district",
+                label: "District",
+                options: districtOptions.map((d) => ({ value: d, label: d })),
+              },
+              {
+                key: "center",
+                label: "Offline Center",
+                options: (
+                  districtCenters as Array<{
+                    _id: string;
+                    centerName?: string;
+                  }>
+                )
+                  .map((c) => ({
+                    value: String(c._id),
+                    label: c.centerName || "—",
+                  }))
+                  .sort((a, b) => a.label.localeCompare(b.label)),
+              },
+              {
+                key: "source",
+                label: "Source",
+                options: [
+                  "online",
+                  "offline",
+                  "email",
+                  "whatsapp",
+                  "sms",
+                  "api",
+                ].map((s) => ({
+                  value: s,
+                  label: s.charAt(0).toUpperCase() + s.slice(1),
+                })),
+              },
+            ] as const
+          )
+            .filter(
+              (f) =>
+                filterableColumnKeys.includes(f.key) && f.options.length > 0,
+            )
+            .map((f) => {
+              const currentVal = customFieldFilters[f.key] || "";
+              return (
+                <div key={f.key} style={{ position: "relative" }}>
+                  <select
+                    value={currentVal}
+                    onChange={(e) => {
+                      setCustomFieldFilters((prev) => ({
+                        ...prev,
+                        [f.key]: e.target.value,
+                      }));
+                      setCurrentPage(1);
+                    }}
+                    style={{
+                      width: "100%",
+                      height: "42px",
+                      padding: "8px 36px 8px 10px",
+                      border: currentVal
+                        ? "1px solid #84caff"
+                        : "1px solid #d7deea",
+                      borderRadius: "10px",
+                      fontSize: "14px",
+                      background: currentVal ? "#eff6ff" : "white",
+                      color: currentVal ? "#1d4ed8" : "#374151",
+                      cursor: "pointer",
+                      appearance: "none" as const,
+                      WebkitAppearance: "none" as const,
+                      fontWeight: currentVal ? 500 : 400,
+                      outline: "none",
+                      boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
+                    }}
+                  >
+                    <option value="">All {f.label}</option>
+                    {f.options.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDownIcon
+                    style={{
+                      position: "absolute",
+                      right: "12px",
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      width: "13px",
+                      height: "13px",
+                      pointerEvents: "none",
+                      color: currentVal ? "#1d4ed8" : "#6B7280",
+                    }}
+                  />
+                </div>
+              );
+            })}
 
           <div style={{ position: "relative" }}>
             <select

@@ -25,6 +25,7 @@ import {
   sendStudentWelcomeEmail,
 } from "../utils/emailService";
 import { logActivity } from "../utils/logger";
+import { buildProjectLoginUrl } from "../utils/projectUrl";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal helpers
@@ -775,18 +776,14 @@ export const createPublicTicket = async (
       (async () => {
         try {
           if (isNewStudent) {
-            const customUrlPath =
-              (project as any)?.branding?.customUrlPath || "portal";
-            const frontendUrl =
-              process.env.NODE_ENV === "production"
-                ? process.env.PRODUCTION_FRONTEND_URL ||
-                  "https://helpdesk.hubblehox.ai"
-                : process.env.FRONTEND_URL || "http://localhost:3001";
+            // Build login URL from the project's actual domain (or request
+            // origin) — never a hardcoded localhost.
+            const loginUrl = buildProjectLoginUrl(project as any, req);
             await sendStudentWelcomeEmail(
               studentEmail,
               studentName ?? "Student",
               (project as any)?.name || "",
-              `${frontendUrl}/${customUrlPath}/student/login`,
+              loginUrl,
               project_id,
             );
           }

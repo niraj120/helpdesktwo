@@ -356,7 +356,6 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     return () => clearInterval(id);
   }, []);
   const [filterStatus, setFilterStatus] = useState("all");
-  const [filterDistrict, setFilterDistrict] = useState("all");
   const [filterPriority, setFilterPriority] = useState("all");
   const [filterServiceType, setFilterServiceType] = useState<
     "normal" | "PSR" | "ISR" | "all"
@@ -562,7 +561,6 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     setFilterStatus("all");
     setFilterPriority("all");
     setFilterAssignedTo("all");
-    setFilterDistrict("all");
   }, [filterProject]);
 
   useEffect(() => {
@@ -644,7 +642,6 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     });
   }, [
     filterStatus,
-    filterDistrict,
     filterPriority,
     filterServiceType,
     filterDateFrom,
@@ -821,7 +818,6 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
       if (assignedToFilter === "unassigned") params.assignedTo = "unassigned";
       else if (assignedToFilter !== "all") params.assignedTo = assignedToFilter;
       if (filterStatus !== "all") params.status = filterStatus;
-      if (filterDistrict !== "all") params.district = filterDistrict;
       if (filterPriority !== "all") params.priority = filterPriority;
       // Service Request typing: "normal" excludes PSR/ISR, "PSR"/"ISR" scope to
       // that type, "all" includes everything.
@@ -838,6 +834,12 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
           } else if (key.startsWith("field_")) {
             const fieldName = key.replace(/^field_/, "");
             params[`customField_${fieldName}`] = val.trim();
+          } else if (key === "district") {
+            params.district = val.trim();
+          } else if (key === "center") {
+            params.centerId = val.trim();
+          } else if (key === "source") {
+            params.source = val.trim();
           }
         }
       });
@@ -2090,7 +2092,7 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                 {((initialProjectId ? false : filterProject !== "all") ||
                   filterAssignedTo !== "all" ||
                   filterStatus !== "all" ||
-                  filterDistrict !== "all" ||
+                  Object.values(customFieldFilters).some((v) => v && v.trim()) ||
                   filterPriority !== "all" ||
                   filterDateFrom ||
                   filterDateTo ||
@@ -2100,7 +2102,7 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                       if (!initialProjectId) setFilterProject("all");
                       setFilterAssignedTo("all");
                       setFilterStatus("all");
-                      setFilterDistrict("all");
+                      setCustomFieldFilters({});
                       setFilterPriority("all");
                       setFilterDateFrom("");
                       setFilterDateTo("");
@@ -2246,56 +2248,110 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                   />
                 </div>
 
-                {/* District (centre's city) — shown only when enabled as a
-                    filter in Query Configuration. */}
-                {filterableColumnKeys.includes("district") &&
-                  districtOptions.length > 0 && (
-                  <div style={{ position: "relative" }}>
-                    <select
-                      value={filterDistrict}
-                      onChange={(e) => setFilterDistrict(e.target.value)}
-                      style={{
-                        width: "100%",
-                        height: "42px",
-                        padding: "8px 36px 8px 10px",
-                        border:
-                          filterDistrict !== "all"
-                            ? "1px solid #84caff"
-                            : "1px solid #d7deea",
-                        borderRadius: "10px",
-                        fontSize: "14px",
-                        background:
-                          filterDistrict !== "all" ? "#eff6ff" : "white",
-                        color: filterDistrict !== "all" ? "#1d4ed8" : "#374151",
-                        cursor: "pointer",
-                        appearance: "none" as const,
-                        WebkitAppearance: "none" as const,
-                        fontWeight: filterDistrict !== "all" ? 500 : 400,
-                        outline: "none",
-                        boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
-                      }}
-                    >
-                      <option value="all">All Districts</option>
-                      {districtOptions.map((d) => (
-                        <option key={d} value={d}>
-                          {d}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDownIcon
-                      style={{
-                        position: "absolute",
-                        right: "12px",
-                        top: "50%",
-                        transform: "translateY(-50%)",
-                        width: "13px",
-                        height: "13px",
-                        pointerEvents: "none",
-                        color: filterDistrict !== "all" ? "#1d4ed8" : "#6B7280",
-                      }}
-                    />
-                  </div>
-                )}
+                {/* Config-driven built-in filters (District / Offline Centre /
+                    Source) — rendered ONLY for columns enabled as a filter in
+                    Query Configuration. No hardcoding: the set below is filtered
+                    by filterableColumnKeys. */}
+                {(
+                  [
+                    {
+                      key: "district",
+                      label: "District",
+                      options: districtOptions.map((d) => ({
+                        value: d,
+                        label: d,
+                      })),
+                    },
+                    {
+                      key: "center",
+                      label: "Offline Center",
+                      options: (
+                        districtCenters as Array<{
+                          _id: string;
+                          centerName?: string;
+                        }>
+                      )
+                        .map((c) => ({
+                          value: String(c._id),
+                          label: c.centerName || "—",
+                        }))
+                        .sort((a, b) => a.label.localeCompare(b.label)),
+                    },
+                    {
+                      key: "source",
+                      label: "Source",
+                      options: [
+                        "online",
+                        "offline",
+                        "email",
+                        "whatsapp",
+                        "sms",
+                        "api",
+                      ].map((s) => ({
+                        value: s,
+                        label: s.charAt(0).toUpperCase() + s.slice(1),
+                      })),
+                    },
+                  ] as const
+                )
+                  .filter(
+                    (f) =>
+                      filterableColumnKeys.includes(f.key) &&
+                      f.options.length > 0,
+                  )
+                  .map((f) => {
+                    const currentVal = customFieldFilters[f.key] || "";
+                    return (
+                      <div key={f.key} style={{ position: "relative" }}>
+                        <select
+                          value={currentVal}
+                          onChange={(e) =>
+                            setCustomFieldFilters((prev) => ({
+                              ...prev,
+                              [f.key]: e.target.value,
+                            }))
+                          }
+                          style={{
+                            width: "100%",
+                            height: "42px",
+                            padding: "8px 36px 8px 10px",
+                            border: currentVal
+                              ? "1px solid #84caff"
+                              : "1px solid #d7deea",
+                            borderRadius: "10px",
+                            fontSize: "14px",
+                            background: currentVal ? "#eff6ff" : "white",
+                            color: currentVal ? "#1d4ed8" : "#374151",
+                            cursor: "pointer",
+                            appearance: "none" as const,
+                            WebkitAppearance: "none" as const,
+                            fontWeight: currentVal ? 500 : 400,
+                            outline: "none",
+                            boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
+                          }}
+                        >
+                          <option value="">All {f.label}</option>
+                          {f.options.map((o) => (
+                            <option key={o.value} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDownIcon
+                          style={{
+                            position: "absolute",
+                            right: "12px",
+                            top: "50%",
+                            transform: "translateY(-50%)",
+                            width: "13px",
+                            height: "13px",
+                            pointerEvents: "none",
+                            color: currentVal ? "#1d4ed8" : "#6B7280",
+                          }}
+                        />
+                      </div>
+                    );
+                  })}
 
                 {/* 3. Priority */}
                 <div style={{ position: "relative" }}>

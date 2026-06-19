@@ -28,6 +28,7 @@ import {
   sendTicketCommentAddedEmail,
 } from "../utils/emailService";
 import { logActivity } from "../utils/logger";
+import { buildProjectLoginUrl } from "../utils/projectUrl";
 import { config } from "../config";
 import { initializeSLATracking } from "../services/slaHelperService";
 import {
@@ -1113,13 +1114,9 @@ export const submitTicket = async (req: Request, res: Response) => {
         try {
           // Send welcome email if this is a new student
           if (isNewStudent) {
-            const customUrlPath = project.branding?.customUrlPath || "portal";
-            const isProduction = process.env.NODE_ENV === "production";
-            const frontendUrl = isProduction
-              ? process.env.PRODUCTION_FRONTEND_URL ||
-                "https://helpdesk.hubblehox.ai"
-              : process.env.FRONTEND_URL || "http://localhost:3001";
-            const loginUrl = `${frontendUrl}/${customUrlPath}/student/login`;
+            // Build the login URL from the project's actual domain (or the
+            // origin the request came from) — never a hardcoded localhost.
+            const loginUrl = buildProjectLoginUrl(project as any, req);
 
             await sendStudentWelcomeEmail(
               studentEmail,
@@ -2238,6 +2235,27 @@ export const getAllTickets = async (req: Request, res: Response) => {
       console.log(
         `🔍 [VIEW_TICKETS] Filtering by center: ${req.query.centerId}`,
       );
+    }
+
+    // District filter — district is the centre's `city`; resolve to centre IDs.
+    if (req.query.district) {
+      const districtStr = String(req.query.district).trim();
+      if (districtStr) {
+        const districtCenters = await Center.find(
+          { city: districtStr },
+          "_id",
+        ).lean();
+        query["metadata.centerId"] = {
+          $in: districtCenters.map((c: any) => c._id.toString()),
+        };
+        console.log(`🔍 [VIEW_TICKETS] Filtering by district: ${districtStr}`);
+      }
+    }
+
+    // Source filter (submission source: online / offline / email / …)
+    if (req.query.source) {
+      const src = String(req.query.source).trim();
+      if (src) query.submissionSource = src;
     }
 
     // Custom field filters (customField_FieldName=value)
@@ -7420,10 +7438,9 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
             })) === 1;
 
           if (isFirstTicket) {
-            // Generate login URL for project portal
-            const loginUrl = (project as any).customUrlPath
-              ? `${process.env.FRONTEND_URL || "http://localhost:3001"}/${(project as any).customUrlPath}/portal/login`
-              : `${process.env.FRONTEND_URL || "http://localhost:3001"}/login`;
+            // Generate login URL from the project's actual domain (or request
+            // origin) — never a hardcoded localhost.
+            const loginUrl = buildProjectLoginUrl(project as any, req);
 
             console.log(
               "📧 Sending welcome email to new student:",

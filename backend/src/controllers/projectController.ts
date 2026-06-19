@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import mongoose from "mongoose";
 import { Project } from "../models/Project";
 import { User } from "../models/User";
 import { Category } from "../models/Category";
@@ -1674,6 +1675,26 @@ export const updateProjectTicketSettings = async (
     project.markModified("configuration.ticketSubmissionSettings");
 
     await project.save();
+
+    // Bulletproof persistence for filterableColumns: write it directly via the
+    // raw driver too, bypassing any Mongoose strict-mode / nested-path quirk
+    // that can silently drop a newly-added nested array on save().
+    if (filterableColumns !== undefined) {
+      const cleanFilterable = Array.isArray(filterableColumns)
+        ? filterableColumns
+            .map((col: any) => String(col || "").trim())
+            .filter(Boolean)
+        : [];
+      await Project.collection.updateOne(
+        { _id: new mongoose.Types.ObjectId(projectId) },
+        {
+          $set: {
+            "configuration.ticketSubmissionSettings.filterableColumns":
+              cleanFilterable,
+          },
+        },
+      );
+    }
 
     console.log("✅ Ticket settings saved successfully");
     console.log(

@@ -608,6 +608,10 @@ const projectSchema = new Schema<IProject>(
         enableOnlineForm: { type: Boolean, default: true },
         enableOfflineCenter: { type: Boolean, default: true },
         tableColumns: [{ type: String }],
+        // Columns the admin marked "Show as filter" on View/My Queries. Must be
+        // declared here or strict mode silently strips it on save (which is why
+        // enabling a filter never took effect).
+        filterableColumns: [{ type: String }],
         onlineFormFields: [
           {
             id: { type: String },
