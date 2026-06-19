@@ -2246,8 +2246,10 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                   />
                 </div>
 
-                {/* District (centre's city) */}
-                {districtOptions.length > 0 && (
+                {/* District (centre's city) — shown only when enabled as a
+                    filter in Query Configuration. */}
+                {filterableColumnKeys.includes("district") &&
+                  districtOptions.length > 0 && (
                   <div style={{ position: "relative" }}>
                     <select
                       value={filterDistrict}

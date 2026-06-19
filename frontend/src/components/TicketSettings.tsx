@@ -89,8 +89,13 @@ const AVAILABLE_TICKET_TABLE_COLUMNS: Array<
   { key: "createdAt", label: "Created", description: "Created date" },
   {
     key: "center",
-    label: "Center",
-    description: "Student center/online source",
+    label: "Offline Center",
+    description: "Offline center / online source",
+  },
+  {
+    key: "district",
+    label: "District",
+    description: "District of the offline center (centre's city)",
   },
   {
     key: "project",

@@ -276,9 +276,46 @@ export const getDataPoints = async (req: Request, res: Response) => {
       }
     }
 
+    // Per-project category hierarchy levels → one data point per configured
+    // level, labelled with the project's level name (e.g. "Course", "Topic").
+    // Virtual (not persisted). The single "Category" point shows the full path;
+    // these expose each level as its own column.
+    const categoryLevelDataPoints: any[] = [];
+    if (projectId && mongoose.Types.ObjectId.isValid(projectId)) {
+      try {
+        const HierarchyConfig = mongoose.model("HierarchyConfig");
+        const hc = await HierarchyConfig.findOne({
+          projectId: new mongoose.Types.ObjectId(projectId),
+        }).lean();
+        const levels = (hc as any)?.levels ?? [];
+        for (const lvl of levels) {
+          const n = lvl?.levelNumber;
+          if (!n || n < 1 || n > 5 || lvl?.isActive === false) continue;
+          categoryLevelDataPoints.push({
+            _id: `virtual_cat_level_${n}`,
+            key: `ticket_category_level_${n}`,
+            label: lvl.displayName || `Category Level ${n}`,
+            description: `Category hierarchy — ${lvl.displayName || `Level ${n}`}`,
+            category: "ticket",
+            fieldPath: `categoryLevel${n}Name`,
+            fieldType: "string",
+            isActive: true,
+            isSystem: false,
+            order: 5 + n / 10,
+          });
+        }
+      } catch (e) {
+        // HierarchyConfig not registered / not found — skip silently.
+      }
+    }
+
     return res.status(200).json({
       success: true,
-      data: [...dataPoints, ...customFormDataPoints],
+      data: [
+        ...dataPoints,
+        ...categoryLevelDataPoints,
+        ...customFormDataPoints,
+      ],
     });
   } catch (err: any) {
     return res

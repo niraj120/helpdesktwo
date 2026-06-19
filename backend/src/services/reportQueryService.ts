@@ -28,6 +28,11 @@ export const DATA_POINT_FIELD_MAP: Record<string, string> = {
   ticket_status: "statusLabel",
   ticket_priority: "priority",
   ticket_category: "categoryDisplay",
+  ticket_category_level_1: "categoryLevel1Name",
+  ticket_category_level_2: "categoryLevel2Name",
+  ticket_category_level_3: "categoryLevel3Name",
+  ticket_category_level_4: "categoryLevel4Name",
+  ticket_category_level_5: "categoryLevel5Name",
   ticket_assigned_to: "assignedToName",
   ticket_created_by: "createdByName",
   ticket_created_at: "createdAt",
@@ -365,6 +370,12 @@ export async function runReportQuery(
         ],
       },
     },
+    // Category hierarchy levels → category names (for per-level report columns).
+    { $lookup: { from: "categories", localField: "categoryHierarchy.level1", foreignField: "_id", as: "_catL1", pipeline: [{ $project: { name: 1 } }] } },
+    { $lookup: { from: "categories", localField: "categoryHierarchy.level2", foreignField: "_id", as: "_catL2", pipeline: [{ $project: { name: 1 } }] } },
+    { $lookup: { from: "categories", localField: "categoryHierarchy.level3", foreignField: "_id", as: "_catL3", pipeline: [{ $project: { name: 1 } }] } },
+    { $lookup: { from: "categories", localField: "categoryHierarchy.level4", foreignField: "_id", as: "_catL4", pipeline: [{ $project: { name: 1 } }] } },
+    { $lookup: { from: "categories", localField: "categoryHierarchy.level5", foreignField: "_id", as: "_catL5", pipeline: [{ $project: { name: 1 } }] } },
   ];
 
   // ── 3. $addFields — compute derived columns ───────────────────────────────
@@ -445,6 +456,12 @@ export async function runReportQuery(
       categoryDisplay: {
         $ifNull: ["$categoryHierarchy.displayPath", "$category"],
       },
+      // Per-level category names (blank when that level isn't set).
+      categoryLevel1Name: { $ifNull: [{ $arrayElemAt: ["$_catL1.name", 0] }, ""] },
+      categoryLevel2Name: { $ifNull: [{ $arrayElemAt: ["$_catL2.name", 0] }, ""] },
+      categoryLevel3Name: { $ifNull: [{ $arrayElemAt: ["$_catL3.name", 0] }, ""] },
+      categoryLevel4Name: { $ifNull: [{ $arrayElemAt: ["$_catL4.name", 0] }, ""] },
+      categoryLevel5Name: { $ifNull: [{ $arrayElemAt: ["$_catL5.name", 0] }, ""] },
       slaDueAt: { $ifNull: ["$roleLevelSLA.dueAt", "$ticketLevelSLA.dueAt"] },
       slaBreachedAt: {
         $ifNull: ["$roleLevelSLA.breachedAt", "$ticketLevelSLA.breachedAt"],
