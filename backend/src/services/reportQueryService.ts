@@ -123,6 +123,7 @@ export const DATA_POINT_FIELD_MAP: Record<string, string> = {
   fbr_answers_count: "answersCount",
   fbr_answers: "answersText",
   fbr_center: "centerName",
+  fbr_district: "centerDistrict",
 };
 
 function escapeRegex(str: string): string {
@@ -731,8 +732,9 @@ async function runNonTicketQuery(
     lookups = [
       // Feedback → ticket. Also pull the ticket's center so feedback can be reported center-wise.
       { $lookup: { from: "tickets", localField: "ticketId", foreignField: "_id", as: "_ticket", pipeline: [{ $project: { ticketNumber: 1, centerId: "$metadata.centerId" } }] } },
-      // ticket.metadata.centerId → centers.centerName (no match for online/portal tickets → blank).
-      { $lookup: { from: "centers", let: { cid: { $arrayElemAt: ["$_ticket.centerId", 0] } }, pipeline: [{ $match: { $expr: { $eq: ["$_id", "$$cid"] } } }, { $project: { centerName: 1 } }], as: "_center" } },
+      // ticket.metadata.centerId (stored as a STRING) → centers (_id is ObjectId),
+      // so convert before matching; online/portal tickets have no centre → blank.
+      { $lookup: { from: "centers", let: { cid: { $arrayElemAt: ["$_ticket.centerId", 0] } }, pipeline: [{ $match: { $expr: { $eq: ["$_id", { $convert: { input: "$$cid", to: "objectId", onError: null, onNull: null } }] } } }, { $project: { centerName: 1, city: 1 } }], as: "_center" } },
       { $lookup: { from: "users", localField: "studentId", foreignField: "_id", as: "_submitter", pipeline: [{ $project: { firstName: 1, lastName: 1 } }] } },
       { $lookup: { from: "projects", localField: "projectId", foreignField: "_id", as: "_proj", pipeline: [{ $project: { name: 1 } }] } },
       { $lookup: { from: "feedbackforms", localField: "formId", foreignField: "_id", as: "_form", pipeline: [{ $project: { name: 1, title: 1 } }] } },
@@ -740,6 +742,8 @@ async function runNonTicketQuery(
     computed.rating = { $ifNull: ["$overallRating", null] };
     computed.ticketNumber = { $ifNull: [{ $arrayElemAt: ["$_ticket.ticketNumber", 0] }, ""] };
     computed.centerName = { $ifNull: [{ $arrayElemAt: ["$_center.centerName", 0] }, ""] };
+    // District is stored on the centre's `city` field (see Center model usage).
+    computed.centerDistrict = { $ifNull: [{ $arrayElemAt: ["$_center.city", 0] }, ""] };
     computed.submitterName = {
       $trim: {
         input: {

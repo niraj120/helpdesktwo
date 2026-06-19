@@ -534,7 +534,7 @@ export const SYSTEM_DATA_POINTS: Omit<
 
   // ── ASSET AUDIT GROUP (source: asset_audit) ────────────────────────────────
   { key: "audit_asset_name", label: "Asset", description: "Audited asset name", category: "asset_audit", source: "asset_audit", fieldPath: "assetName", fieldType: "string", isActive: true, isSystem: true, order: 400 },
-  { key: "audit_center", label: "Center", description: "Center where the audit happened", category: "asset_audit", source: "asset_audit", fieldPath: "centerName", fieldType: "string", isActive: true, isSystem: true, order: 401 },
+  { key: "audit_center", label: "Offline Center", description: "Offline center where the audit happened", category: "asset_audit", source: "asset_audit", fieldPath: "centerName", fieldType: "string", isActive: true, isSystem: true, order: 401 },
   { key: "audit_change_type", label: "Change Type", description: "working / not-working / both", category: "asset_audit", source: "asset_audit", fieldPath: "changeType", fieldType: "string", isActive: true, isSystem: true, order: 402 },
   { key: "audit_prev_working", label: "Prev Working", description: "Working count before change", category: "asset_audit", source: "asset_audit", fieldPath: "prevWorking", fieldType: "number", isActive: true, isSystem: true, order: 403 },
   { key: "audit_prev_notworking", label: "Prev Not-Working", description: "Not-working count before change", category: "asset_audit", source: "asset_audit", fieldPath: "prevNotWorking", fieldType: "number", isActive: true, isSystem: true, order: 404 },
@@ -546,7 +546,7 @@ export const SYSTEM_DATA_POINTS: Omit<
 
   // ── ASSET INVENTORY GROUP (source: asset_inventory — CenterAssetMapping) ────
   { key: "inv_asset_name", label: "Asset", description: "Asset name", category: "asset_inventory", source: "asset_inventory", fieldPath: "assetName", fieldType: "string", isActive: true, isSystem: true, order: 450 },
-  { key: "inv_center", label: "Center", description: "Center the asset is mapped to", category: "asset_inventory", source: "asset_inventory", fieldPath: "centerName", fieldType: "string", isActive: true, isSystem: true, order: 451 },
+  { key: "inv_center", label: "Offline Center", description: "Offline center the asset is mapped to", category: "asset_inventory", source: "asset_inventory", fieldPath: "centerName", fieldType: "string", isActive: true, isSystem: true, order: 451 },
   { key: "inv_project", label: "Project", description: "Project", category: "asset_inventory", source: "asset_inventory", fieldPath: "projectName", fieldType: "string", isActive: true, isSystem: true, order: 452 },
   { key: "inv_total_assigned", label: "Total Assigned", description: "Total assets assigned", category: "asset_inventory", source: "asset_inventory", fieldPath: "totalAssigned", fieldType: "number", isActive: true, isSystem: true, order: 453 },
   { key: "inv_used", label: "Used", description: "Assets in use", category: "asset_inventory", source: "asset_inventory", fieldPath: "assetUsed", fieldType: "number", isActive: true, isSystem: true, order: 454 },
@@ -572,5 +572,6 @@ export const SYSTEM_DATA_POINTS: Omit<
   { key: "fbr_form", label: "Feedback Form", description: "Name of the feedback form", category: "feedback", source: "feedback", fieldPath: "formName", fieldType: "string", isActive: true, isSystem: true, order: 505 },
   { key: "fbr_answers_count", label: "# Answers", description: "Number of answered questions", category: "feedback", source: "feedback", fieldPath: "answersCount", fieldType: "number", isActive: true, isSystem: true, order: 506 },
   { key: "fbr_answers", label: "Answers", description: "All question/answer pairs", category: "feedback", source: "feedback", fieldPath: "answersText", fieldType: "string", isActive: true, isSystem: true, order: 507 },
-  { key: "fbr_center", label: "Center", description: "Center of the ticket this feedback is for", category: "feedback", source: "feedback", fieldPath: "centerName", fieldType: "string", isActive: true, isSystem: true, order: 508 },
+  { key: "fbr_center", label: "Offline Center", description: "Offline center of the ticket this feedback is for", category: "feedback", source: "feedback", fieldPath: "centerName", fieldType: "string", isActive: true, isSystem: true, order: 508 },
+  { key: "fbr_district", label: "District", description: "District of the ticket's offline center", category: "feedback", source: "feedback", fieldPath: "centerDistrict", fieldType: "string", isActive: true, isSystem: true, order: 509 },
 ];
