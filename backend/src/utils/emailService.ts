@@ -1039,63 +1039,32 @@ export const sendStudentWelcomeEmail = async (
     );
     const transporter = await getEmailTransporter(projectId);
 
-    // Default templates with placeholders
-    const defaultSubject = `Welcome to {{projectName}} - Account Created`;
-    const defaultBody = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2>Welcome to {{projectName}}!</h2>
-        <p>Dear {{studentName}},</p>
-        <p>Your account has been created successfully. You can now track and manage your support tickets online.</p>
-        
-        <div style="background-color: #f4f4f4; padding: 20px; margin: 20px 0; border-left: 4px solid #4CAF50;">
-          <h3 style="margin-top: 0;">Your Login Details</h3>
-          <p><strong>Email:</strong> {{email}}</p>
-          <p><strong>Login URL:</strong> <a href="{{loginUrl}}" style="color: #4CAF50;">{{loginUrl}}</a></p>
-        </div>
-        
-        <div style="background-color: #fff3cd; padding: 15px; margin: 20px 0; border-left: 4px solid #ffc107;">
-          <h4 style="margin-top: 0; color: #856404;">📌 Set Your Password</h4>
-          <p style="color: #856404; margin-bottom: 0;">To set up your password and access your account:</p>
-          <ol style="color: #856404;">
-            <li>Click on the login link above</li>
-            <li>Click on "Forgot Password"</li>
-            <li>Enter your email address ({{email}})</li>
-            <li>You will receive an OTP to create your password</li>
-          </ol>
-        </div>
-        
-        <p>Once you log in, you will be able to:</p>
-        <ul>
-          <li>View and track all your support tickets</li>
-          <li>Create new support requests</li>
-          <li>Communicate with support staff</li>
-          <li>Upload documents and attachments</li>
-        </ul>
-        
-        <p>If you have any questions, please don't hesitate to contact our support team.</p>
-        
-        <p>Best regards,<br>{{projectName}} Support Team</p>
-        
-        <hr style="margin: 30px 0;">
-        <p style="color: #666; font-size: 12px;">This is an automated message, please do not reply.</p>
-      </div>
-    `;
+    // The frontend exposes the welcome template as "Student Welcome Email"
+    // (triggers.studentWelcome). Read THAT trigger so admin edits actually
+    // take effect; fall back to the legacy accountCreated trigger only if
+    // studentWelcome is unavailable.
+    const trigger =
+      emailConfig?.triggers?.studentWelcome ||
+      emailConfig?.triggers?.accountCreated;
 
-    // Get the account created trigger settings
-    const trigger = emailConfig?.triggers?.accountCreated;
+    // Default template (used only when no custom template is configured)
+    const defaultSubject = `Welcome to {{projectName}}`;
+    const defaultBody = `Hello {{studentName}},\n\nWelcome to {{projectName}}!\n\nYour account has been created. You can now submit and track your support tickets.\n\nPortal URL: {{portalUrl}}\nEmail: {{studentEmail}}\n\nThank you!\n\n{{projectName}} Support Team`;
 
-    // Use template from config or default, then replace ALL variables
-    let subject = (trigger?.subject || defaultSubject)
-      .replace(/\{\{projectName\}\}/g, projectName)
-      .replace(/\{\{studentName\}\}/g, studentName)
-      .replace(/\{\{email\}\}/g, email)
-      .replace(/\{\{loginUrl\}\}/g, loginUrl);
+    // Replace every supported placeholder (and its aliases) so a template
+    // authored from the frontend works regardless of which variable names the
+    // admin used. {{portalUrl}}/{{loginUrl}} both resolve to the student URL.
+    const fillTemplate = (tpl: string): string =>
+      tpl
+        .replace(/\{\{studentName\}\}/g, studentName)
+        .replace(/\{\{studentEmail\}\}/g, email)
+        .replace(/\{\{email\}\}/g, email)
+        .replace(/\{\{portalUrl\}\}/g, loginUrl)
+        .replace(/\{\{loginUrl\}\}/g, loginUrl)
+        .replace(/\{\{projectName\}\}/g, projectName);
 
-    let body = (trigger?.body || defaultBody)
-      .replace(/\{\{studentName\}\}/g, studentName)
-      .replace(/\{\{email\}\}/g, email)
-      .replace(/\{\{loginUrl\}\}/g, loginUrl)
-      .replace(/\{\{projectName\}\}/g, projectName);
+    let subject = fillTemplate(trigger?.subject || defaultSubject);
+    let body = fillTemplate(trigger?.body || defaultBody);
 
     // Convert plain text newlines to HTML if body doesn't contain HTML tags
     if (!body.includes("<") && !body.includes(">")) {

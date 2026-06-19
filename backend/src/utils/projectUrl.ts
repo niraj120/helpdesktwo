@@ -60,11 +60,12 @@ export const resolveProjectBaseUrl = (
 };
 
 /**
- * Build the project portal login URL used in welcome emails.
- * Produces `<base>/<customUrlPath>/portal/login`, or `<base>/login` when the
- * project has no custom URL path.
+ * Build the student-facing portal URL used in welcome emails.
+ * Students land on the project's submit-ticket page (NOT the staff/agent
+ * portal login). Produces `<base>/<customUrlPath>/submit-ticket`, or
+ * `<base>/login` when the project has no custom URL path.
  */
-export const buildProjectLoginUrl = (
+export const buildStudentPortalUrl = (
   project?:
     | { branding?: { domainUrl?: string; customUrlPath?: string } }
     | null,
@@ -73,6 +74,6 @@ export const buildProjectLoginUrl = (
   const base = resolveProjectBaseUrl(project, req);
   const customUrlPath = project?.branding?.customUrlPath?.trim();
   return customUrlPath
-    ? `${base}/${customUrlPath}/portal/login`
+    ? `${base}/${customUrlPath}/submit-ticket`
     : `${base}/login`;
 };

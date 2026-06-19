@@ -28,7 +28,7 @@ import {
   sendTicketCommentAddedEmail,
 } from "../utils/emailService";
 import { logActivity } from "../utils/logger";
-import { buildProjectLoginUrl } from "../utils/projectUrl";
+import { buildStudentPortalUrl } from "../utils/projectUrl";
 import { config } from "../config";
 import { initializeSLATracking } from "../services/slaHelperService";
 import {
@@ -1116,7 +1116,7 @@ export const submitTicket = async (req: Request, res: Response) => {
           if (isNewStudent) {
             // Build the login URL from the project's actual domain (or the
             // origin the request came from) — never a hardcoded localhost.
-            const loginUrl = buildProjectLoginUrl(project as any, req);
+            const loginUrl = buildStudentPortalUrl(project as any, req);
 
             await sendStudentWelcomeEmail(
               studentEmail,
@@ -7440,7 +7440,7 @@ export const createOfflineTicket = async (req: Request, res: Response) => {
           if (isFirstTicket) {
             // Generate login URL from the project's actual domain (or request
             // origin) — never a hardcoded localhost.
-            const loginUrl = buildProjectLoginUrl(project as any, req);
+            const loginUrl = buildStudentPortalUrl(project as any, req);
 
             console.log(
               "📧 Sending welcome email to new student:",

@@ -25,6 +25,15 @@ const TRIGGER_VARIABLES: {
     { variable: "{{loginUrl}}", description: "Link to student login page" },
     { variable: "{{projectName}}", description: "Project/portal name" },
   ],
+  studentWelcome: [
+    { variable: "{{studentName}}", description: "Student's full name" },
+    { variable: "{{studentEmail}}", description: "Student's email address" },
+    {
+      variable: "{{portalUrl}}",
+      description: "Link to the student submit-ticket portal",
+    },
+    { variable: "{{projectName}}", description: "Project/portal name" },
+  ],
   passwordReset: [
     { variable: "{{studentName}}", description: "Student's full name" },
     { variable: "{{email}}", description: "Student's email address" },

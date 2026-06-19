@@ -25,7 +25,7 @@ import {
   sendStudentWelcomeEmail,
 } from "../utils/emailService";
 import { logActivity } from "../utils/logger";
-import { buildProjectLoginUrl } from "../utils/projectUrl";
+import { buildStudentPortalUrl } from "../utils/projectUrl";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal helpers
@@ -778,7 +778,7 @@ export const createPublicTicket = async (
           if (isNewStudent) {
             // Build login URL from the project's actual domain (or request
             // origin) — never a hardcoded localhost.
-            const loginUrl = buildProjectLoginUrl(project as any, req);
+            const loginUrl = buildStudentPortalUrl(project as any, req);
             await sendStudentWelcomeEmail(
               studentEmail,
               studentName ?? "Student",
