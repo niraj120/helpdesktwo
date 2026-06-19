@@ -46,7 +46,7 @@ const activityFeedHandler: QueryHandler = {
     _scopedQuery: Record<string, any>,
   ): Promise<WidgetData> {
     const ActivityLog = getActivityLogModel();
-    const { start } = buildDateRange(params.dateRangeDays);
+    const { start } = buildDateRange(params);
     const topN = (params.filters as any)?.top_n ?? 20;
 
     const events = await ActivityLog.find({
@@ -75,7 +75,7 @@ const loginFailureCountHandler: QueryHandler = {
     _scopedQuery: Record<string, any>,
   ): Promise<WidgetData> {
     const AccessLog = getAccessLogModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const prevStart = new Date(start.getTime() - params.dateRangeDays * 86400000);
     const projectOId = new mongoose.Types.ObjectId(ctx.tenantId);
 
@@ -150,7 +150,7 @@ const emailSentCountHandler: QueryHandler = {
     _scopedQuery: Record<string, any>,
   ): Promise<WidgetData> {
     const EmailLog = getEmailLogModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const prevStart = new Date(start.getTime() - params.dateRangeDays * 86400000);
     const projectOId = new mongoose.Types.ObjectId(ctx.tenantId);
 
@@ -197,7 +197,7 @@ const emailFailureRateHandler: QueryHandler = {
     _scopedQuery: Record<string, any>,
   ): Promise<WidgetData> {
     const EmailLog = getEmailLogModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const projectOId = new mongoose.Types.ObjectId(ctx.tenantId);
 
     const [sent, failed] = await Promise.all([
@@ -234,7 +234,7 @@ const emailByTypeHandler: QueryHandler = {
     _scopedQuery: Record<string, any>,
   ): Promise<WidgetData> {
     const EmailLog = getEmailLogModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
 
     const agg = await EmailLog.aggregate([
       {

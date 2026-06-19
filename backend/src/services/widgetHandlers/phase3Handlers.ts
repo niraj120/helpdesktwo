@@ -194,7 +194,7 @@ const htTotalTicketsHandler: QueryHandler = {
   cacheTtlSeconds: 120,
   async execute(ctx, params, rf, scopedQuery): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const prevStart = new Date(
       start.getTime() - params.dateRangeDays * 86400000,
     );
@@ -233,7 +233,7 @@ const htOpenTicketsHandler: QueryHandler = {
   cacheTtlSeconds: 60,
   async execute(ctx, params, rf, scopedQuery): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const prevStart = new Date(
       start.getTime() - params.dateRangeDays * 86400000,
     );
@@ -276,7 +276,7 @@ const htResolvedTicketsHandler: QueryHandler = {
   cacheTtlSeconds: 120,
   async execute(ctx, params, rf, scopedQuery): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const prevStart = new Date(
       start.getTime() - params.dateRangeDays * 86400000,
     );
@@ -311,7 +311,7 @@ const htClosedTicketsHandler: QueryHandler = {
   cacheTtlSeconds: 120,
   async execute(ctx, params, rf, scopedQuery): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const prevStart = new Date(
       start.getTime() - params.dateRangeDays * 86400000,
     );
@@ -346,7 +346,7 @@ const htPendingTicketsHandler: QueryHandler = {
   cacheTtlSeconds: 60,
   async execute(ctx, params, rf, scopedQuery): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const prevStart = new Date(
       start.getTime() - params.dateRangeDays * 86400000,
     );
@@ -381,7 +381,7 @@ const htEscalatedTicketsHandler: QueryHandler = {
   cacheTtlSeconds: 120,
   async execute(ctx, params, rf, scopedQuery): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const prevStart = new Date(
       start.getTime() - params.dateRangeDays * 86400000,
     );
@@ -418,7 +418,7 @@ const htSlaBreachedHandler: QueryHandler = {
   cacheTtlSeconds: 120,
   async execute(ctx, params, rf, scopedQuery): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const prevStart = new Date(
       start.getTime() - params.dateRangeDays * 86400000,
     );
@@ -481,7 +481,7 @@ const htResolvedWithinSlaHandler: QueryHandler = {
   cacheTtlSeconds: 120,
   async execute(ctx, params, rf, scopedQuery): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const prevStart = new Date(
       start.getTime() - params.dateRangeDays * 86400000,
     );
@@ -531,7 +531,7 @@ const htResolutionRateHandler: QueryHandler = {
   cacheTtlSeconds: 180,
   async execute(ctx, params, rf, scopedQuery): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const dateFilter = { createdAt: { $gte: start, $lte: end } };
     const statuses = await loadProjectStatuses(ctx.tenantId);
     const dCodes = closedCodes(statuses);
@@ -559,7 +559,7 @@ const htSlaComplianceRateHandler: QueryHandler = {
   cacheTtlSeconds: 300,
   async execute(ctx, params, rf, scopedQuery): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const statuses = await loadProjectStatuses(ctx.tenantId);
     const dCodes = closedCodes(statuses);
     const extra = ticketFilterOverrides(rf, ctx);
@@ -626,7 +626,7 @@ const htAvgResolutionHoursHandler: QueryHandler = {
   cacheTtlSeconds: 300,
   async execute(ctx, params, rf, scopedQuery): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const statuses = await loadProjectStatuses(ctx.tenantId);
     const dCodes = closedCodes(statuses);
     const extra = ticketFilterOverrides(rf, ctx);
@@ -663,7 +663,7 @@ const htTicketsByCategoryHandler: QueryHandler = {
   cacheTtlSeconds: 300,
   async execute(ctx, params, rf, scopedQuery): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const extra = ticketFilterOverrides(rf, ctx);
     // Group by the TRUE level-1 category. The legacy `category` field stores the
     // DEEPEST selected level (offline tickets set it to level 2–5), so grouping
@@ -720,7 +720,7 @@ const htTicketsByStatusHandler: QueryHandler = {
   cacheTtlSeconds: 120,
   async execute(ctx, params, rf, scopedQuery): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const statuses = await loadProjectStatuses(ctx.tenantId);
     const nameMap = codeToName(statuses);
     const colorMap = new Map(
@@ -759,7 +759,7 @@ const htTicketsByPriorityHandler: QueryHandler = {
   cacheTtlSeconds: 120,
   async execute(ctx, params, rf, scopedQuery): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     // Load project priorities for display names (code is uppercase string e.g. LOW, MEDIUM)
     const priorities = (await getPriorityModel()
       .find({
@@ -809,7 +809,7 @@ const htDailyTrendHandler: QueryHandler = {
   cacheTtlSeconds: 300,
   async execute(ctx, params, rf, scopedQuery): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const statuses = await loadProjectStatuses(ctx.tenantId);
     const dCodes = closedCodes(statuses);
     const extra = ticketFilterOverrides(rf, ctx);
@@ -874,7 +874,7 @@ const htAgentWorkloadHandler: QueryHandler = {
   cacheTtlSeconds: 180,
   async execute(ctx, params, rf, scopedQuery): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const statuses = await loadProjectStatuses(ctx.tenantId);
     const aCodes = activeCodes(statuses);
     const dCodes = closedCodes(statuses);
@@ -935,7 +935,7 @@ const htTicketsHeatmapHandler: QueryHandler = {
   cacheTtlSeconds: 600,
   async execute(ctx, params, rf, scopedQuery): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const extra = ticketFilterOverrides(rf, ctx);
     const agg = await Ticket.aggregate([
       {
@@ -974,7 +974,7 @@ const htFirstResponseTimeHandler: QueryHandler = {
   cacheTtlSeconds: 300,
   async execute(ctx, params, rf, scopedQuery): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const extra = ticketFilterOverrides(rf, ctx);
     const agg = await Ticket.aggregate([
       {
@@ -1027,7 +1027,7 @@ const htReopenRateHandler: QueryHandler = {
   cacheTtlSeconds: 300,
   async execute(ctx, params, rf, scopedQuery): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const statuses = await loadProjectStatuses(ctx.tenantId);
     const dCodes = closedCodes(statuses).map(String);
     const aCodes = activeCodes(statuses).map(String);
@@ -1067,7 +1067,7 @@ const htTicketsByProjectHandler: QueryHandler = {
   cacheTtlSeconds: 300,
   async execute(ctx, params, rf, scopedQuery): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     // Note: project override from resolvedFilters is intentionally NOT applied
     // here — this widget is meant to show a cross-project breakdown.
     // Only assignedTo filter is applied.
@@ -1127,7 +1127,7 @@ function makeCountByHierarchyLevel(
     cacheTtlSeconds: 300,
     async execute(ctx, params, rf, scopedQuery): Promise<WidgetData> {
       const Ticket = getTicketModel();
-      const { start, end } = buildDateRange(params.dateRangeDays);
+      const { start, end } = buildDateRange(params);
       const extra = ticketFilterOverrides(rf, ctx);
       const agg = await Ticket.aggregate([
         {
@@ -1181,7 +1181,7 @@ function makeEfficiencyByHierarchyLevel(
     cacheTtlSeconds: 300,
     async execute(ctx, params, rf, scopedQuery): Promise<WidgetData> {
       const Ticket = getTicketModel();
-      const { start, end } = buildDateRange(params.dateRangeDays);
+      const { start, end } = buildDateRange(params);
       const statuses = await loadProjectStatuses(ctx.tenantId);
       const done = closedCodes(statuses);
       const extra = ticketFilterOverrides(rf, ctx);
@@ -1292,7 +1292,7 @@ const htEfficiencyByCenterHandler: QueryHandler = {
   cacheTtlSeconds: 300,
   async execute(ctx, params, rf, scopedQuery): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const statuses = await loadProjectStatuses(ctx.tenantId);
     const done = closedCodes(statuses);
     const extra = ticketFilterOverrides(rf, ctx);
@@ -1367,7 +1367,7 @@ const htEfficiencyByUserHandler: QueryHandler = {
   cacheTtlSeconds: 300,
   async execute(ctx, params, rf, scopedQuery): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const statuses = await loadProjectStatuses(ctx.tenantId);
     const done = closedCodes(statuses);
     const extra = ticketFilterOverrides(rf, ctx);

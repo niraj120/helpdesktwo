@@ -41,6 +41,7 @@ export async function createDashboardTemplate(
       name,
       globalDateRangeDays,
       allowUserDateOverride,
+      allTimeStartDate,
       isSystemTemplate,
     } = req.body;
 
@@ -55,6 +56,7 @@ export async function createDashboardTemplate(
       status: "draft",
       globalDateRangeDays: globalDateRangeDays ?? 30,
       allowUserDateOverride: allowUserDateOverride ?? true,
+      allTimeStartDate: allTimeStartDate ?? null,
       isSystemTemplate: isSystemTemplate ?? false,
       createdBy: new mongoose.Types.ObjectId(req.user!.userId),
     });
@@ -243,6 +245,7 @@ export async function updateDashboardTemplate(
       name,
       globalDateRangeDays,
       allowUserDateOverride,
+      allTimeStartDate,
       widgets,
       sections,
     } = req.body;
@@ -252,6 +255,8 @@ export async function updateDashboardTemplate(
       template.globalDateRangeDays = globalDateRangeDays;
     if (allowUserDateOverride !== undefined)
       template.allowUserDateOverride = allowUserDateOverride;
+    if (allTimeStartDate !== undefined)
+      (template as any).allTimeStartDate = allTimeStartDate || null;
     if (Array.isArray(sections)) {
       (template as any).sections = sections.map((s: any, i: number) => ({
         // Preserve existing MongoDB _id so widget sectionId references remain stable

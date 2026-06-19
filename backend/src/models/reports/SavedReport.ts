@@ -33,6 +33,12 @@ export interface ISavedReport extends Document {
   sortOrder: "asc" | "desc";
   /** Footfall reports: rolling window size (days) used when run/emailed */
   footfallDays?: number;
+  /** "detail" = one row per record (default); "summary" = pivot table of counts. */
+  reportMode?: "detail" | "summary";
+  /** Summary pivot: data point key used for the row dimension. */
+  pivotRow?: string;
+  /** Summary pivot: data point key whose distinct values become the columns. */
+  pivotCol?: string;
   isActive: boolean;
   /** Cached metadata from last run */
   rowCount?: number;
@@ -84,6 +90,13 @@ const SavedReportSchema = new Schema<ISavedReport>(
     sortBy: { type: String },
     sortOrder: { type: String, enum: ["asc", "desc"], default: "desc" },
     footfallDays: { type: Number },
+    reportMode: {
+      type: String,
+      enum: ["detail", "summary"],
+      default: "detail",
+    },
+    pivotRow: { type: String },
+    pivotCol: { type: String },
     isActive: { type: Boolean, default: true },
     rowCount: { type: Number },
     lastRunAt: { type: Date },

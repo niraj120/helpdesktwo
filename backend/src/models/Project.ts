@@ -75,6 +75,7 @@ export interface IProject extends Document {
     maxUsers?: number;
     maxStorage?: number; // in GB
     allowedDomains?: string[]; // Email domains allowed
+    assetLinkButtons?: Array<{ label: string; url: string }>;
     customFields?: Array<{
       name: string;
       type: string;
@@ -572,6 +573,13 @@ const projectSchema = new Schema<IProject>(
         satisfactionFeedback: Schema.Types.Mixed,
         seoSettings: Schema.Types.Mixed,
       },
+      // Custom link buttons shown on this project's "My Assets" page.
+      assetLinkButtons: [
+        {
+          label: { type: String },
+          url: { type: String },
+        },
+      ],
       customizationSettings: {
         loginPageBackgroundImage: { type: String },
         themeMode: { type: String, enum: ["light", "dark"], default: "light" },

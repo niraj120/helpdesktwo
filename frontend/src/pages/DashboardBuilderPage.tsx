@@ -256,7 +256,7 @@ const DATA_POINTS: DataPoint[] = [
   {
     key: "ticket_footfall_count",
     label: "Footfall Count",
-    desc: "Unique students who raised tickets + total follow-up responses",
+    desc: "New queries created + existing queries that got a reply/comment",
     module: "helpdesk",
     unit: "count",
     defaultVis: "kpi_tile",
@@ -1127,6 +1127,38 @@ const DATA_POINTS: DataPoint[] = [
     module: "helpdesk",
     unit: "percent",
     defaultVis: "gauge",
+  },
+  {
+    key: "ticket_sla_closed_within",
+    label: "Closed/Resolved Within SLA",
+    desc: "Closed/resolved tickets that met SLA",
+    module: "helpdesk",
+    unit: "count",
+    defaultVis: "kpi_tile",
+  },
+  {
+    key: "ticket_sla_closed_breached",
+    label: "Closed/Resolved SLA Breached",
+    desc: "Closed/resolved tickets that missed SLA",
+    module: "helpdesk",
+    unit: "count",
+    defaultVis: "kpi_tile",
+  },
+  {
+    key: "ticket_sla_open_within",
+    label: "Open Within SLA",
+    desc: "Currently-open tickets still within SLA",
+    module: "helpdesk",
+    unit: "count",
+    defaultVis: "kpi_tile",
+  },
+  {
+    key: "ticket_sla_open_breached",
+    label: "Open SLA Breached",
+    desc: "Currently-open tickets already overdue",
+    module: "helpdesk",
+    unit: "count",
+    defaultVis: "kpi_tile",
   },
   {
     key: "ticket_avg_first_response",
@@ -3149,6 +3181,8 @@ export default function DashboardBuilderPage() {
   // Template metadata
   const [templateName, setTemplateName] = useState("New Dashboard");
   const [description, setDescription] = useState("");
+  // "All time" floor date (YYYY-MM-DD); when set, the "All time" range counts from here.
+  const [allTimeStartDate, setAllTimeStartDate] = useState<string>("");
   const [targetScope, setTargetScope] = useState<"tenant" | "centre" | "user">(
     "tenant",
   );
@@ -3223,6 +3257,7 @@ export default function DashboardBuilderPage() {
     onSuccess: (t: DashboardTemplateDetail) => {
       setTemplateName(t.name);
       setDescription(t.description ?? "");
+      setAllTimeStartDate(((t as any).allTimeStartDate ?? "") || "");
       setTargetScope(t.targetScope);
       setStatus(t.status);
       setSections(
@@ -3270,6 +3305,7 @@ export default function DashboardBuilderPage() {
         name: templateName,
         description,
         targetScope,
+        allTimeStartDate: allTimeStartDate || null,
         status: publish ? ("published" as const) : ("draft" as const),
         sections: sections.map((s, i) => ({
           _id: s._id,
@@ -3632,6 +3668,57 @@ export default function DashboardBuilderPage() {
                 </option>
               ))}
             </select>
+          </div>
+
+          {/* All-time start date — when set, "All time" counts from this date */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              border: "1px solid #CAC4D0",
+              borderRadius: 10,
+              padding: "5px 12px",
+            }}
+          >
+            <span
+              style={{ fontSize: 12, color: "#49454F", whiteSpace: "nowrap" }}
+              title="When set, this dashboard's 'All time' range counts from this date instead of the default."
+            >
+              All-time from:
+            </span>
+            <input
+              type="date"
+              value={allTimeStartDate}
+              onChange={(e) => setAllTimeStartDate(e.target.value)}
+              style={{
+                border: "none",
+                background: "transparent",
+                fontSize: 13,
+                color: "#6750A4",
+                fontWeight: 600,
+                outline: "none",
+                cursor: "pointer",
+              }}
+            />
+            {allTimeStartDate && (
+              <button
+                type="button"
+                onClick={() => setAllTimeStartDate("")}
+                title="Clear (use default)"
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  color: "#6B778C",
+                  cursor: "pointer",
+                  fontSize: 16,
+                  lineHeight: 1,
+                  padding: 0,
+                }}
+              >
+                ×
+              </button>
+            )}
           </div>
 
           {/* Scope */}

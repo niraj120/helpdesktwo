@@ -486,7 +486,7 @@ const fbTotalResponsesHandler: QueryHandler = {
   cacheTtlSeconds: 300,
   async execute(ctx, params): Promise<WidgetData> {
     const FR = getFeedbackResponseModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const value = await FR.countDocuments({
       projectId: new mongoose.Types.ObjectId(ctx.tenantId),
       submittedAt: { $gte: start, $lte: end },
@@ -500,7 +500,7 @@ const fbAvgRatingHandler: QueryHandler = {
   cacheTtlSeconds: 300,
   async execute(ctx, params): Promise<WidgetData> {
     const FR = getFeedbackResponseModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const result = await FR.aggregate([
       {
         $match: {
@@ -535,7 +535,7 @@ const fbCsatScoreHandler: QueryHandler = {
   cacheTtlSeconds: 300,
   async execute(ctx, params): Promise<WidgetData> {
     const FR = getFeedbackResponseModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const baseMatch = {
       projectId: new mongoose.Types.ObjectId(ctx.tenantId),
       overallRating: { $exists: true, $ne: null },
@@ -561,7 +561,7 @@ const fbNpsScoreHandler: QueryHandler = {
   cacheTtlSeconds: 300,
   async execute(ctx, params): Promise<WidgetData> {
     const FR = getFeedbackResponseModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     // Map 1-5 scale: 5=promoter, 3-4=passive, 1-2=detractor
     const result = await FR.aggregate([
       {
@@ -608,7 +608,7 @@ const fbPromotersHandler: QueryHandler = {
   cacheTtlSeconds: 300,
   async execute(ctx, params): Promise<WidgetData> {
     const FR = getFeedbackResponseModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const value = await FR.countDocuments({
       projectId: new mongoose.Types.ObjectId(ctx.tenantId),
       overallRating: 5,
@@ -623,7 +623,7 @@ const fbDetractorsHandler: QueryHandler = {
   cacheTtlSeconds: 300,
   async execute(ctx, params): Promise<WidgetData> {
     const FR = getFeedbackResponseModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const value = await FR.countDocuments({
       projectId: new mongoose.Types.ObjectId(ctx.tenantId),
       overallRating: { $lte: 2 },
@@ -638,7 +638,7 @@ const fbByCategoryHandler: QueryHandler = {
   cacheTtlSeconds: 600,
   async execute(ctx, params): Promise<WidgetData> {
     const FR = getFeedbackResponseModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const rows = await FR.aggregate([
       {
         $match: {
@@ -698,7 +698,7 @@ const fbResponseRateHandler: QueryHandler = {
   async execute(ctx, params): Promise<WidgetData> {
     const FR = getFeedbackResponseModel();
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const closedCodes = await loadClosedCodes(ctx.tenantId);
     const projectOid = new mongoose.Types.ObjectId(ctx.tenantId);
     const [closedCount, respondedCount] = await Promise.all([

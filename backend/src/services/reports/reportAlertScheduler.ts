@@ -191,13 +191,12 @@ async function runAlertJob(assignmentId: string): Promise<void> {
       return out;
     });
     const t = result.totals || {};
-    labeledRows.push({
+    const totalRow: Record<string, any> = {
       [FOOTFALL_COLUMNS[0].label]: "TOTAL",
-      [FOOTFALL_COLUMNS[1].label]: t.uniqueStudents ?? 0,
-      [FOOTFALL_COLUMNS[2].label]: t.responses ?? 0,
-      [FOOTFALL_COLUMNS[3].label]: t.ticketCount ?? 0,
-      [FOOTFALL_COLUMNS[4].label]: t.footfall ?? 0,
-    });
+    };
+    for (const c of FOOTFALL_COLUMNS.slice(1))
+      totalRow[c.label] = (t as Record<string, any>)[c.key] ?? 0;
+    labeledRows.push(totalRow);
     rowCount = result.data.length;
   } else {
     // Run the report query (all rows, no pagination limit for email)

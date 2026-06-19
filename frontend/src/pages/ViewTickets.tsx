@@ -22,6 +22,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { API_CONFIG } from "../config/constants";
 import { useSocket } from "../hooks/useSocket";
+import { useCenters } from "../hooks/useQueryHooks";
 import toast from "react-hot-toast";
 
 interface Ticket {
@@ -125,6 +126,7 @@ type TicketTableColumnKey =
   | "sla"
   | "createdAt"
   | "center"
+  | "district"
   | "project"
   | "category"
   | "source"
@@ -145,6 +147,7 @@ const TICKET_TABLE_COLUMN_DEFS: Array<{
   { key: "sla", label: "SLA" },
   { key: "createdAt", label: "Created" },
   { key: "center", label: "Center" },
+  { key: "district", label: "District" },
   { key: "project", label: "Project" },
   { key: "category", label: "Category" },
   { key: "source", label: "Source" },
@@ -353,6 +356,7 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     return () => clearInterval(id);
   }, []);
   const [filterStatus, setFilterStatus] = useState("all");
+  const [filterDistrict, setFilterDistrict] = useState("all");
   const [filterPriority, setFilterPriority] = useState("all");
   const [filterServiceType, setFilterServiceType] = useState<
     "normal" | "PSR" | "ISR" | "all"
@@ -449,6 +453,23 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
   const activeProjectForColumns =
     initialProjectId ?? (filterProject !== "all" ? filterProject : null);
 
+  // District filter options — district is the centre's `city`. Derived from the
+  // active project's centres (distinct, sorted).
+  const { data: districtCenters = [] } = useCenters(
+    activeProjectForColumns ?? undefined,
+  );
+  const districtOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          (districtCenters as Array<{ city?: string }>)
+            .map((c) => (c.city || "").trim())
+            .filter(Boolean),
+        ),
+      ).sort((a, b) => a.localeCompare(b)),
+    [districtCenters],
+  );
+
   // Stats cards — keyed by "total" and each status code (as string)
   const [ticketStats, setTicketStats] = useState<Record<string, number>>({
     total: 0,
@@ -541,6 +562,7 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     setFilterStatus("all");
     setFilterPriority("all");
     setFilterAssignedTo("all");
+    setFilterDistrict("all");
   }, [filterProject]);
 
   useEffect(() => {
@@ -622,6 +644,7 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
     });
   }, [
     filterStatus,
+    filterDistrict,
     filterPriority,
     filterServiceType,
     filterDateFrom,
@@ -798,6 +821,7 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
       if (assignedToFilter === "unassigned") params.assignedTo = "unassigned";
       else if (assignedToFilter !== "all") params.assignedTo = assignedToFilter;
       if (filterStatus !== "all") params.status = filterStatus;
+      if (filterDistrict !== "all") params.district = filterDistrict;
       if (filterPriority !== "all") params.priority = filterPriority;
       // Service Request typing: "normal" excludes PSR/ISR, "PSR"/"ISR" scope to
       // that type, "all" includes everything.
@@ -1027,6 +1051,19 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
 
   // All filtering is done server-side; filteredTickets is the current page returned by the API.
   const filteredTickets = useMemo(() => tickets, [tickets]);
+
+  // Expose the current ticket order so the detail view can offer Prev/Next
+  // navigation without returning to the list.
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        "ticketNavList",
+        JSON.stringify(filteredTickets.map((t) => t._id)),
+      );
+    } catch {
+      /* ignore storage errors */
+    }
+  }, [filteredTickets]);
 
   // Convert numeric status code to label string
   const getStatusLabel = useCallback((status: string | number): string => {
@@ -1340,6 +1377,11 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
           : typeof _centerId === "string"
             ? _centerId
             : "Center";
+    // District is stored on the centre's `city` field.
+    const centerDistrict =
+      _centerId && typeof _centerId === "object" && _centerId.city
+        ? _centerId.city
+        : "";
     const projectName =
       typeof ticket.metadata?.projectId === "object"
         ? ticket.metadata.projectId.name || ticket.metadata.projectId.code
@@ -1590,6 +1632,17 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
               }}
             >
               {centerName}
+            </span>
+          </td>
+        );
+
+      case "district":
+        return (
+          <td style={{ padding: "12px 16px" }}>
+            <span style={{ fontSize: "13px", color: "#374151" }}>
+              {centerDistrict || (
+                <span style={{ color: "#9CA3AF" }}>—</span>
+              )}
             </span>
           </td>
         );
@@ -2037,6 +2090,7 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                 {((initialProjectId ? false : filterProject !== "all") ||
                   filterAssignedTo !== "all" ||
                   filterStatus !== "all" ||
+                  filterDistrict !== "all" ||
                   filterPriority !== "all" ||
                   filterDateFrom ||
                   filterDateTo ||
@@ -2046,6 +2100,7 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                       if (!initialProjectId) setFilterProject("all");
                       setFilterAssignedTo("all");
                       setFilterStatus("all");
+                      setFilterDistrict("all");
                       setFilterPriority("all");
                       setFilterDateFrom("");
                       setFilterDateTo("");
@@ -2190,6 +2245,55 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                     }}
                   />
                 </div>
+
+                {/* District (centre's city) */}
+                {districtOptions.length > 0 && (
+                  <div style={{ position: "relative" }}>
+                    <select
+                      value={filterDistrict}
+                      onChange={(e) => setFilterDistrict(e.target.value)}
+                      style={{
+                        width: "100%",
+                        height: "42px",
+                        padding: "8px 36px 8px 10px",
+                        border:
+                          filterDistrict !== "all"
+                            ? "1px solid #84caff"
+                            : "1px solid #d7deea",
+                        borderRadius: "10px",
+                        fontSize: "14px",
+                        background:
+                          filterDistrict !== "all" ? "#eff6ff" : "white",
+                        color: filterDistrict !== "all" ? "#1d4ed8" : "#374151",
+                        cursor: "pointer",
+                        appearance: "none" as const,
+                        WebkitAppearance: "none" as const,
+                        fontWeight: filterDistrict !== "all" ? 500 : 400,
+                        outline: "none",
+                        boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
+                      }}
+                    >
+                      <option value="all">All Districts</option>
+                      {districtOptions.map((d) => (
+                        <option key={d} value={d}>
+                          {d}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDownIcon
+                      style={{
+                        position: "absolute",
+                        right: "12px",
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        width: "13px",
+                        height: "13px",
+                        pointerEvents: "none",
+                        color: filterDistrict !== "all" ? "#1d4ed8" : "#6B7280",
+                      }}
+                    />
+                  </div>
+                )}
 
                 {/* 3. Priority */}
                 <div style={{ position: "relative" }}>

@@ -11,6 +11,7 @@ import { getText } from "../utils/language";
 import { usePermissions } from "../hooks/usePermissions";
 import { useProjectContext } from "../contexts/ProjectContext";
 import { API_CONFIG } from "../config/constants";
+import { startImpersonation } from "../utils/impersonation";
 
 interface Role {
   _id: string;
@@ -122,6 +123,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
   const [showUserModal, setShowUserModal] = useState(false);
   const [showHRMSModal, setShowHRMSModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  // Impersonation ("Login as user") — reason is required (DPDP).
+  const [impersonateTarget, setImpersonateTarget] = useState<User | null>(null);
+  const [impersonateReason, setImpersonateReason] = useState("");
+  const [impersonating, setImpersonating] = useState(false);
+  const [impersonateError, setImpersonateError] = useState("");
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
   const [selectedUserForCredentials, setSelectedUserForCredentials] =
     useState<User | null>(null);
@@ -257,6 +263,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
 
   const [saving, setSaving] = useState(false);
 
+  // Export state
+  const [exporting, setExporting] = useState(false);
   // Bulk upload modal state
   const [showBulkUploadModal, setShowBulkUploadModal] = useState(false);
   const [bulkUploadFile, setBulkUploadFile] = useState<File | null>(null);
@@ -887,6 +895,33 @@ const UserManagement: React.FC<UserManagementProps> = ({
     setShowUserModal(true);
   };
 
+  // Open the "Login as" confirmation modal for a user.
+  const handleImpersonate = (user: User) => {
+    setImpersonateTarget(user);
+    setImpersonateReason("");
+    setImpersonateError("");
+  };
+
+  // Confirm + start impersonation (reason required). On success the page
+  // redirects into the impersonated user's session.
+  const confirmImpersonate = async () => {
+    if (!impersonateTarget) return;
+    const reason = impersonateReason.trim();
+    if (reason.length < 3) {
+      setImpersonateError("Please enter a reason (at least 3 characters).");
+      return;
+    }
+    setImpersonating(true);
+    setImpersonateError("");
+    try {
+      await startImpersonation(impersonateTarget._id, reason);
+      // startImpersonation redirects on success; nothing else to do here.
+    } catch (err: any) {
+      setImpersonateError(err?.message || "Failed to start impersonation.");
+      setImpersonating(false);
+    }
+  };
+
   // Handle edit user
   const handleEditUser = async (user: User) => {
     setEditingUser(user);
@@ -1346,6 +1381,48 @@ const UserManagement: React.FC<UserManagementProps> = ({
       alert("Failed to delete some users. Please try again.");
     } finally {
       setBulkDeleting(false);
+    }
+  };
+
+  // Export the CURRENTLY-FILTERED users (CSV or Excel). Mirrors the list filters.
+  const handleExportUsers = async (format: "excel" | "csv" = "excel") => {
+    try {
+      setExporting(true);
+      const params = new URLSearchParams();
+      if (searchQuery) params.append("search", searchQuery);
+      if (filterRoles.length > 0) params.append("role", filterRoles.join(","));
+      if (filterStatuses.length > 0)
+        params.append("isActive", filterStatuses.join(","));
+      if (filterProjects.length > 0)
+        params.append("project", filterProjects.join(","));
+      else if (viewMode === "single" && currentProjectId)
+        params.append("project", currentProjectId);
+      if (filterCenters.length > 0)
+        params.append("centers", filterCenters.join(","));
+      if (filterCompany) params.append("company", filterCompany);
+      params.append("format", format);
+
+      const token = localStorage.getItem("authToken");
+      const res = await fetch(`${API_CONFIG.API_URL}/users/export?${params}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `users_export_${new Date().toISOString().split("T")[0]}.${
+        format === "csv" ? "csv" : "xlsx"
+      }`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Export users failed:", err);
+      alert("Export failed. Please try again.");
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -2372,6 +2449,62 @@ const UserManagement: React.FC<UserManagementProps> = ({
               {getText("Bulk Upload", "बल्क अपलोड", "बल्क अपलोड")}
             </button>
           )}
+          {hasPermission("USER_VIEW_ALL") && (
+            <button
+              onClick={() => handleExportUsers("excel")}
+              disabled={exporting}
+              title={getText(
+                "Export the currently filtered users to Excel",
+                "फ़िल्टर किए गए उपयोगकर्ताओं को एक्सेल में निर्यात करें",
+                "फिल्टर केलेले वापरकर्ते एक्सेलमध्ये निर्यात करा",
+              )}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "10px 16px",
+                background: exporting ? "#86efac" : "#16a34a",
+                color: "white",
+                border: "none",
+                borderRadius: "8px",
+                fontSize: "14px",
+                fontWeight: 600,
+                cursor: exporting ? "not-allowed" : "pointer",
+                boxShadow: "0 2px 6px rgba(22, 163, 74, 0.24)",
+                transition: "all 0.2s ease",
+                fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+                outline: "none",
+              }}
+              onMouseEnter={(e) => {
+                if (exporting) return;
+                e.currentTarget.style.background = "#15803d";
+                e.currentTarget.style.transform = "translateY(-1px)";
+              }}
+              onMouseLeave={(e) => {
+                if (exporting) return;
+                e.currentTarget.style.background = "#16a34a";
+                e.currentTarget.style.transform = "translateY(0)";
+              }}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              {exporting
+                ? getText("Exporting…", "निर्यात हो रहा है…", "निर्यात होत आहे…")
+                : getText("Export", "निर्यात", "निर्यात")}
+            </button>
+          )}
           {hasPermission("USER_CREATE") && (
             <button
               onClick={handleOpenCreateModal}
@@ -2735,6 +2868,23 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         {getText("Edit", "संपादित", "संपादित")}
                       </button>
                     )}
+                    {hasPermission("IMPERSONATE_USER") &&
+                      user._id !== localStorage.getItem("userId") && (
+                        <button
+                          onClick={() => handleImpersonate(user)}
+                          style={{
+                            padding: "6px 8px",
+                            border: "1px solid #fde68a",
+                            borderRadius: "8px",
+                            background: "#fffbeb",
+                            cursor: "pointer",
+                            fontSize: "12px",
+                            color: "#b45309",
+                          }}
+                        >
+                          {getText("Login as", "म्हणून लॉगिन", "म्हणून लॉगिन")}
+                        </button>
+                      )}
                     {hasPermission("USER_DELETE") && (
                       <button
                         onClick={() => handleDeleteUser(user._id)}
@@ -3364,6 +3514,54 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             </svg>
                           </button>
                         )}
+                        {hasPermission("IMPERSONATE_USER") &&
+                          user._id !== localStorage.getItem("userId") && (
+                            <button
+                              onClick={() => handleImpersonate(user)}
+                              style={{
+                                padding: "8px",
+                                width: "36px",
+                                height: "36px",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                background: "white",
+                                border: "1.5px solid #E5E7EB",
+                                borderRadius: "8px",
+                                cursor: "pointer",
+                                transition: "all 0.15s ease",
+                                outline: "none",
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = "#FEF3C7";
+                                e.currentTarget.style.borderColor = "#D97706";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = "white";
+                                e.currentTarget.style.borderColor = "#E5E7EB";
+                              }}
+                              title={getText(
+                                "Login as this user",
+                                "या वापरकर्त्याप्रमाणे लॉगिन करा",
+                                "या वापरकर्त्याप्रमाणे लॉगिन करा",
+                              )}
+                            >
+                              <svg
+                                width="16"
+                                height="16"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="#B45309"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                                <circle cx="9" cy="7" r="4" />
+                                <polyline points="16 11 18 13 22 9" />
+                              </svg>
+                            </button>
+                          )}
                         {hasPermission("USER_VIEW_ALL") && (
                           <button
                             onClick={() => handleViewCredentials(user)}
@@ -3682,6 +3880,146 @@ const UserManagement: React.FC<UserManagementProps> = ({
             >
               Last
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Impersonation ("Login as") confirmation — reason is required (DPDP) */}
+      {impersonateTarget && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 100001,
+            padding: "16px",
+          }}
+          onClick={() => !impersonating && setImpersonateTarget(null)}
+        >
+          <div
+            style={{
+              background: "white",
+              borderRadius: "14px",
+              padding: "24px",
+              width: "100%",
+              maxWidth: "460px",
+              fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2
+              style={{
+                fontSize: "18px",
+                fontWeight: 700,
+                color: "#111827",
+                margin: "0 0 6px 0",
+              }}
+            >
+              Login as user
+            </h2>
+            <p
+              style={{
+                fontSize: "13px",
+                color: "#6b7280",
+                margin: "0 0 16px 0",
+              }}
+            >
+              You are about to start a session as{" "}
+              <strong>
+                {impersonateTarget.firstName} {impersonateTarget.lastName}
+              </strong>{" "}
+              ({impersonateTarget.email}). This action is logged for audit. A
+              reason is required.
+            </p>
+
+            <label
+              style={{
+                display: "block",
+                fontSize: "12px",
+                fontWeight: 600,
+                color: "#374151",
+                marginBottom: "6px",
+              }}
+            >
+              Reason <span style={{ color: "#dc2626" }}>*</span>
+            </label>
+            <textarea
+              value={impersonateReason}
+              onChange={(e) => setImpersonateReason(e.target.value)}
+              rows={3}
+              autoFocus
+              placeholder="e.g. Reproducing a ticket-submission issue reported by this user"
+              style={{
+                width: "100%",
+                border: "1px solid #D1D5DB",
+                borderRadius: "8px",
+                padding: "8px 10px",
+                fontSize: "13px",
+                resize: "vertical",
+                outline: "none",
+                boxSizing: "border-box",
+              }}
+            />
+
+            {impersonateError && (
+              <div
+                style={{
+                  marginTop: "10px",
+                  background: "#FEF2F2",
+                  border: "1px solid #FECACA",
+                  color: "#B91C1C",
+                  borderRadius: "8px",
+                  padding: "8px 10px",
+                  fontSize: "12px",
+                }}
+              >
+                {impersonateError}
+              </div>
+            )}
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "10px",
+                marginTop: "20px",
+              }}
+            >
+              <button
+                onClick={() => setImpersonateTarget(null)}
+                disabled={impersonating}
+                style={{
+                  padding: "9px 18px",
+                  background: "white",
+                  border: "1px solid #D1D5DB",
+                  borderRadius: "8px",
+                  cursor: impersonating ? "not-allowed" : "pointer",
+                  fontSize: "14px",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmImpersonate}
+                disabled={impersonating}
+                style={{
+                  padding: "9px 18px",
+                  background: "#B45309",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "8px",
+                  cursor: impersonating ? "not-allowed" : "pointer",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  opacity: impersonating ? 0.7 : 1,
+                }}
+              >
+                {impersonating ? "Starting…" : "Login as user"}
+              </button>
+            </div>
           </div>
         </div>
       )}

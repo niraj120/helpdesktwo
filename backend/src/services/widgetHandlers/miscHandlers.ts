@@ -100,7 +100,7 @@ const prTicketsPerProjectHandler: QueryHandler = {
   widgetKey: "pr_tickets_per_project",
   cacheTtlSeconds: 600,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const rows = await getTicket().aggregate([
       { $match: { createdAt: { $gte: start, $lte: end } } },
       { $group: { _id: "$metadata.projectId", count: { $sum: 1 } } },
@@ -132,7 +132,7 @@ const prProjectHealthHandler: QueryHandler = {
   cacheTtlSeconds: 600,
   async execute(ctx, params): Promise<WidgetData> {
     // Composite: active / total as a simple health proxy
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const pid = new mongoose.Types.ObjectId(ctx.tenantId);
     const closedCodes = await loadClosedCodes(ctx.tenantId);
     const [closed, total] = await Promise.all([
@@ -190,7 +190,7 @@ const alResolvedAlertsHandler: QueryHandler = {
   widgetKey: "al_resolved_alerts",
   cacheTtlSeconds: 300,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     // Alerts that fired (last_triggered_at) but are no longer active
     const value = await getAlert().countDocuments({
       tenant_id: ctx.tenantId,
@@ -218,7 +218,7 @@ const alAlertResolutionRateHandler: QueryHandler = {
   widgetKey: "al_alert_resolution_rate",
   cacheTtlSeconds: 300,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const [resolved, total] = await Promise.all([
       getAlert().countDocuments({
         tenant_id: ctx.tenantId,
@@ -370,7 +370,7 @@ const tnTicketsPerTenantHandler: QueryHandler = {
   widgetKey: "tn_tickets_per_tenant",
   cacheTtlSeconds: 600,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const rows = await getTicket().aggregate([
       { $match: { createdAt: { $gte: start, $lte: end } } },
       { $group: { _id: "$metadata.projectId", count: { $sum: 1 } } },
@@ -432,7 +432,7 @@ const tnCsatByTenantHandler: QueryHandler = {
   widgetKey: "tn_csat_by_tenant",
   cacheTtlSeconds: 600,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const rows = await getFeedback().aggregate([
       { $match: { submittedAt: { $gte: start, $lte: end } } },
       {
@@ -470,7 +470,7 @@ const tnSLAComplianceTenantHandler: QueryHandler = {
   widgetKey: "tn_sla_compliance_tenant",
   cacheTtlSeconds: 600,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const rows = await getSLA().aggregate([
       {
         $match: {
@@ -594,7 +594,7 @@ const ticketAvgFirstResponseHandler: QueryHandler = {
   widgetKey: "ticket_avg_first_response",
   cacheTtlSeconds: 600,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const res = await getSLA().aggregate([
       {
         $match: {

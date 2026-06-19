@@ -48,7 +48,7 @@ const seSLABreachedCountHandler: QueryHandler = {
   widgetKey: "se_sla_breached_count",
   cacheTtlSeconds: 300,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const value = await getSLA().countDocuments({
       projectId: new mongoose.Types.ObjectId(ctx.tenantId),
       resolutionStatus: "breached",
@@ -63,7 +63,7 @@ const seSLAComplianceRateHandler: QueryHandler = {
   widgetKey: "se_sla_compliance_rate",
   cacheTtlSeconds: 300,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const pid = new mongoose.Types.ObjectId(ctx.tenantId);
     const [met, total] = await Promise.all([
       getSLA().countDocuments({
@@ -93,7 +93,7 @@ const seEscalationsRaisedHandler: QueryHandler = {
   widgetKey: "se_escalations_raised",
   cacheTtlSeconds: 300,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const value = await getSLA().countDocuments({
       projectId: new mongoose.Types.ObjectId(ctx.tenantId),
       createdAt: { $gte: start, $lte: end },
@@ -108,7 +108,7 @@ const seEscalationsResolvedHandler: QueryHandler = {
   widgetKey: "se_escalations_resolved",
   cacheTtlSeconds: 300,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const pid = new mongoose.Types.ObjectId(ctx.tenantId);
     const closedCodes = await loadClosedCodes(ctx.tenantId);
 
@@ -139,7 +139,7 @@ const seEscalationRateHandler: QueryHandler = {
   widgetKey: "se_escalation_rate",
   cacheTtlSeconds: 300,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const pid = new mongoose.Types.ObjectId(ctx.tenantId);
     const [escalated, total] = await Promise.all([
       getSLA().countDocuments({
@@ -169,7 +169,7 @@ const seAvgEscalationTimeHandler: QueryHandler = {
   widgetKey: "se_avg_escalation_time",
   cacheTtlSeconds: 600,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const res = await getSLA().aggregate([
       {
         $match: {
@@ -205,7 +205,7 @@ const seBreachByPriorityHandler: QueryHandler = {
   widgetKey: "se_breach_by_priority",
   cacheTtlSeconds: 600,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const rows = await getSLA().aggregate([
       {
         $match: {

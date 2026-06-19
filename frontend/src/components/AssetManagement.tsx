@@ -77,6 +77,13 @@ const AssetManagement: React.FC = () => {
     text: string;
   } | null>(null);
 
+  // Per-project custom link buttons (shown on the project My Assets page).
+  const [linkButtons, setLinkButtons] = useState<
+    Array<{ label: string; url: string }>
+  >([]);
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [savingLinks, setSavingLinks] = useState(false);
+
   const canCreate = hasPermission(PERMISSIONS.ASSET_CREATE);
   const canEdit = hasPermission(PERMISSIONS.ASSET_EDIT);
   const canDelete = hasPermission(PERMISSIONS.ASSET_DELETE);
@@ -89,8 +96,70 @@ const AssetManagement: React.FC = () => {
     if (selectedProject) {
       fetchAssets();
       fetchCategories();
+      loadLinkButtons();
     }
   }, [selectedProject]);
+
+  // Load the selected project's configured asset link buttons.
+  const loadLinkButtons = async () => {
+    if (!selectedProject) return;
+    try {
+      const token = localStorage.getItem("authToken");
+      const res = await fetch(
+        `${API_CONFIG.API_URL}/projects/${selectedProject}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      const d = await res.json();
+      const proj = d?.data ?? d?.project ?? d;
+      const btns = proj?.configuration?.assetLinkButtons;
+      setLinkButtons(Array.isArray(btns) ? btns : []);
+    } catch {
+      setLinkButtons([]);
+    }
+  };
+
+  // Save the link buttons into the project's configuration (deep-merged server-side).
+  const saveLinkButtons = async () => {
+    if (!selectedProject) return;
+    setSavingLinks(true);
+    try {
+      const token = localStorage.getItem("authToken");
+      const clean = linkButtons
+        .map((b) => ({
+          label: (b.label || "").trim(),
+          url: (b.url || "").trim(),
+        }))
+        .filter((b) => b.label && b.url);
+      const res = await fetch(
+        `${API_CONFIG.API_URL}/projects/${selectedProject}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            configuration: { assetLinkButtons: clean },
+          }),
+        },
+      );
+      const d = await res.json();
+      if (d.success !== false) {
+        setLinkButtons(clean);
+        setShowLinkModal(false);
+        setMessage({ type: "success", text: "Link buttons saved." });
+      } else {
+        setMessage({
+          type: "error",
+          text: d.message || "Failed to save link buttons.",
+        });
+      }
+    } catch {
+      setMessage({ type: "error", text: "Failed to save link buttons." });
+    } finally {
+      setSavingLinks(false);
+    }
+  };
 
   const fetchProjects = async () => {
     try {
@@ -385,6 +454,28 @@ const AssetManagement: React.FC = () => {
             <MdRefresh className="h-5 w-5" />
             Refresh
           </button>
+          {canEdit && (
+            <button
+              onClick={() => setShowLinkModal(true)}
+              disabled={!selectedProject}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "10px 20px",
+                background: "white",
+                border: "2px solid #E5E7EB",
+                borderRadius: "12px",
+                fontSize: "14px",
+                fontWeight: "600",
+                cursor: !selectedProject ? "not-allowed" : "pointer",
+                opacity: !selectedProject ? 0.5 : 1,
+              }}
+              title="Add custom link buttons shown on this project's My Assets page"
+            >
+              🔗 Link Buttons
+            </button>
+          )}
           {canCreate && (
             <button
               onClick={() => handleOpenModal()}
@@ -757,6 +848,191 @@ const AssetManagement: React.FC = () => {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* Manage per-project asset link buttons */}
+        {showLinkModal && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,0.5)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 1000,
+              padding: "16px",
+            }}
+            onClick={() => setShowLinkModal(false)}
+          >
+            <div
+              style={{
+                background: "white",
+                borderRadius: "12px",
+                padding: "24px",
+                width: "100%",
+                maxWidth: "560px",
+                maxHeight: "85vh",
+                overflowY: "auto",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2
+                style={{ fontSize: "18px", fontWeight: 700, marginBottom: "4px" }}
+              >
+                Asset Link Buttons
+              </h2>
+              <p
+                style={{
+                  fontSize: "13px",
+                  color: "#6B7280",
+                  marginBottom: "16px",
+                }}
+              >
+                These buttons appear on this project's “My Assets” page and open
+                their link in a new tab. If none are added, nothing is shown.
+              </p>
+
+              {linkButtons.length === 0 && (
+                <p
+                  style={{
+                    fontSize: "13px",
+                    color: "#9CA3AF",
+                    marginBottom: "12px",
+                  }}
+                >
+                  No buttons yet — add one below.
+                </p>
+              )}
+
+              {linkButtons.map((b, i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: "flex",
+                    gap: "8px",
+                    marginBottom: "8px",
+                    alignItems: "center",
+                  }}
+                >
+                  <input
+                    type="text"
+                    placeholder="Button name"
+                    value={b.label}
+                    onChange={(e) =>
+                      setLinkButtons((prev) =>
+                        prev.map((x, idx) =>
+                          idx === i ? { ...x, label: e.target.value } : x,
+                        ),
+                      )
+                    }
+                    style={{
+                      flex: "0 0 35%",
+                      padding: "8px 10px",
+                      border: "1px solid #D1D5DB",
+                      borderRadius: "8px",
+                      fontSize: "13px",
+                    }}
+                  />
+                  <input
+                    type="url"
+                    placeholder="https://example.com"
+                    value={b.url}
+                    onChange={(e) =>
+                      setLinkButtons((prev) =>
+                        prev.map((x, idx) =>
+                          idx === i ? { ...x, url: e.target.value } : x,
+                        ),
+                      )
+                    }
+                    style={{
+                      flex: 1,
+                      padding: "8px 10px",
+                      border: "1px solid #D1D5DB",
+                      borderRadius: "8px",
+                      fontSize: "13px",
+                    }}
+                  />
+                  <button
+                    onClick={() =>
+                      setLinkButtons((prev) => prev.filter((_, idx) => idx !== i))
+                    }
+                    style={{
+                      padding: "6px 10px",
+                      background: "#FEE2E2",
+                      color: "#DC2626",
+                      border: "none",
+                      borderRadius: "8px",
+                      cursor: "pointer",
+                      fontSize: "14px",
+                    }}
+                    title="Remove"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+
+              <button
+                onClick={() =>
+                  setLinkButtons((prev) => [...prev, { label: "", url: "" }])
+                }
+                style={{
+                  marginTop: "8px",
+                  padding: "8px 14px",
+                  background: "#EEF2FF",
+                  color: "#4338CA",
+                  border: "none",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                }}
+              >
+                + Add button
+              </button>
+
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: "10px",
+                  marginTop: "20px",
+                }}
+              >
+                <button
+                  onClick={() => setShowLinkModal(false)}
+                  style={{
+                    padding: "9px 18px",
+                    background: "white",
+                    border: "1px solid #D1D5DB",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveLinkButtons}
+                  disabled={savingLinks}
+                  style={{
+                    padding: "9px 18px",
+                    background: "#4F46E5",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "8px",
+                    cursor: savingLinks ? "not-allowed" : "pointer",
+                    fontSize: "14px",
+                    fontWeight: 600,
+                    opacity: savingLinks ? 0.6 : 1,
+                  }}
+                >
+                  {savingLinks ? "Saving…" : "Save"}
+                </button>
+              </div>
             </div>
           </div>
         )}

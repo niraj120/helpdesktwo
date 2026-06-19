@@ -139,6 +139,14 @@ interface Ticket {
     studentEmail?: string;
     studentPhone?: string;
     projectId?: string;
+    centerId?:
+      | string
+      | {
+          _id?: string;
+          centerName?: string;
+          city?: string;
+          state?: string;
+        };
     customFields?: Record<string, any>;
   };
   formSchemaSnapshot?: Array<{
@@ -485,6 +493,24 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
 }) => {
   const { id: ticketId, customUrlPath } = useParams();
   const navigate = useNavigate();
+
+  // Prev/Next navigation within the list the user came from. ViewTickets stores
+  // the current ordered ticket IDs in sessionStorage; we use them to jump
+  // between tickets without returning to the list.
+  let prevTicketId: string | null = null;
+  let nextTicketId: string | null = null;
+  try {
+    const navList: string[] = JSON.parse(
+      sessionStorage.getItem("ticketNavList") || "[]",
+    );
+    const idx = navList.indexOf(ticketId || "");
+    if (idx !== -1) {
+      prevTicketId = idx > 0 ? navList[idx - 1] : null;
+      nextTicketId = idx < navList.length - 1 ? navList[idx + 1] : null;
+    }
+  } catch {
+    /* no nav context — Prev/Next simply won't render */
+  }
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [loading, setLoading] = useState(true);
   const [permissions, setPermissions] = useState<string[]>([]);
@@ -1850,6 +1876,34 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                   <ArrowLeftIcon className="h-5 w-5 text-gray-500" />
                 </button>
 
+                {/* Prev / Next — navigate within the list the user came from */}
+                {(prevTicketId || nextTicketId) && (
+                  <div className="flex items-center gap-1 flex-shrink-0 mt-0.5">
+                    <button
+                      onClick={() =>
+                        prevTicketId &&
+                        navigate(`/tickets/${prevTicketId}`, { replace: true })
+                      }
+                      disabled={!prevTicketId}
+                      className="px-2 py-1 text-xs font-medium rounded-md border border-gray-200 text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      title="Previous ticket"
+                    >
+                      ‹ Prev
+                    </button>
+                    <button
+                      onClick={() =>
+                        nextTicketId &&
+                        navigate(`/tickets/${nextTicketId}`, { replace: true })
+                      }
+                      disabled={!nextTicketId}
+                      className="px-2 py-1 text-xs font-medium rounded-md border border-gray-200 text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      title="Next ticket"
+                    >
+                      Next ›
+                    </button>
+                  </div>
+                )}
+
                 {/* Divider */}
                 <div className="hidden sm:block mt-0.5 h-8 w-px bg-gray-200 flex-shrink-0" />
 
@@ -1888,6 +1942,30 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                         >
                           <span>{sourceBadge.icon}</span>
                           <span>{sourceBadge.label}</span>
+                        </span>
+                      );
+                    })()}
+                    {/* Centre badge — shown for tickets raised at an offline centre */}
+                    {(() => {
+                      const c: any = ticket.metadata?.centerId;
+                      const centerName =
+                        c && typeof c === "object" ? c.centerName : undefined;
+                      if (!centerName) return null;
+                      return (
+                        <span
+                          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold"
+                          style={{
+                            color: "#92400E",
+                            backgroundColor: "#FEF3C7",
+                            border: "1px solid #FCD34D80",
+                          }}
+                          title="Centre where this ticket was created"
+                        >
+                          <span>📍</span>
+                          <span>
+                            {centerName}
+                            {c.city ? ` · ${c.city}` : ""}
+                          </span>
                         </span>
                       );
                     })()}

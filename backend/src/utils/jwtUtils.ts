@@ -25,6 +25,13 @@ export interface JWTPayload {
   // Optional project-specific fields
   projectId?: string | mongoose.Types.ObjectId;
   projectName?: string;
+  // Impersonation: present only when an admin is "logged in as" this user.
+  // Identifies the real admin behind the session for audit + the exit banner.
+  impersonatedBy?: {
+    userId: string;
+    email: string;
+    name?: string;
+  };
   // Token metadata
   iat?: number;
   exp?: number;
@@ -143,6 +150,24 @@ export async function generateProjectJWT(
     projectId: project._id,
     projectName: project.name
   }, options);
+}
+
+/**
+ * Generate a short-lived impersonation JWT for "login as user".
+ * Carries the target user's identity + permissions PLUS an `impersonatedBy`
+ * claim identifying the real admin. Short expiry limits the exposure window.
+ * @param targetUser - The user being impersonated (will be populated if needed)
+ * @param impersonatedBy - The real admin performing the impersonation
+ * @param extra - Optional extra payload (e.g. projectId/projectName for portal users)
+ * @param options - JWT sign options (default: 30 minutes)
+ */
+export async function generateImpersonationJWT(
+  targetUser: IUser | any,
+  impersonatedBy: { userId: string; email: string; name?: string },
+  extra: Partial<JWTPayload> = {},
+  options: SignOptions = { expiresIn: '30m' }
+): Promise<string> {
+  return generateUserJWT(targetUser, { ...extra, impersonatedBy }, options);
 }
 
 /**

@@ -50,7 +50,7 @@ const attTotalCheckinsHandler: QueryHandler = {
   widgetKey: "att_total_checkins",
   cacheTtlSeconds: 300,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const value = await getAttendance().countDocuments({
       projectId: new mongoose.Types.ObjectId(ctx.tenantId),
       attendanceDate: { $gte: start, $lte: end },
@@ -112,7 +112,7 @@ const attAttendanceRateHandler: QueryHandler = {
   widgetKey: "att_attendance_rate",
   cacheTtlSeconds: 300,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const { present, total } = await presentAndTotal(ctx.tenantId, start, end);
     const value = total > 0 ? Math.round((present / total) * 1000) / 10 : null;
     return {
@@ -130,7 +130,7 @@ const attAbsenteeismRateHandler: QueryHandler = {
   widgetKey: "att_absenteeism_rate",
   cacheTtlSeconds: 300,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const { present, total } = await presentAndTotal(ctx.tenantId, start, end);
     const absent = total - present;
     const value = total > 0 ? Math.round((absent / total) * 1000) / 10 : null;
@@ -149,7 +149,7 @@ const attLateArrivalsHandler: QueryHandler = {
   widgetKey: "att_late_arrivals",
   cacheTtlSeconds: 300,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const value = await getAttendance().countDocuments({
       projectId: new mongoose.Types.ObjectId(ctx.tenantId),
       attendanceDate: { $gte: start, $lte: end },
@@ -229,7 +229,7 @@ const attByBatchHandler: QueryHandler = {
   widgetKey: "att_by_batch",
   cacheTtlSeconds: 600,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const rows = await getAttendance().aggregate([
       {
         $match: {
@@ -277,7 +277,7 @@ const attByCourseHandler: QueryHandler = {
   widgetKey: "att_by_course",
   cacheTtlSeconds: 600,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const rows = await getAttendance().aggregate([
       {
         $match: {

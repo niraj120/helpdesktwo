@@ -44,6 +44,28 @@ async function loadClosedCodes(tenantId: string): Promise<number[]> {
   }
 }
 
+/**
+ * Numeric status codes treated as "completed" for SLA reporting: any closing
+ * status (isClosed) PLUS Resolved (code 4). Used so the closed-vs-open SLA
+ * widgets count both resolved and closed tickets as "closed/resolved".
+ */
+async function loadCompletedCodes(tenantId: string): Promise<number[]> {
+  try {
+    const docs = (await getStatusModel()
+      .find({
+        projectId: new mongoose.Types.ObjectId(tenantId),
+        isActive: true,
+        $or: [{ isClosed: true }, { code: 4 }], // closing statuses + Resolved
+      })
+      .select("code")
+      .lean()) as Array<{ code: number }>;
+    const codes = docs.map((d) => d.code);
+    return codes.length ? codes : [4, 5];
+  } catch {
+    return [4, 5]; // fallback: resolved=4, closed=5
+  }
+}
+
 interface ProjectStatusInfo {
   code: number;
   name: string;
@@ -85,7 +107,7 @@ const ticketOpenCountHandler: QueryHandler = {
     scopedQuery: Record<string, any>,
   ): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start } = buildDateRange(params.dateRangeDays);
+    const { start } = buildDateRange(params);
     const closedCodes = await loadClosedCodes(ctx.tenantId);
 
     const baseQuery: Record<string, any> = {
@@ -140,7 +162,7 @@ const ticketByStatusHandler: QueryHandler = {
     scopedQuery: Record<string, any>,
   ): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const statuses = await loadProjectStatuses(ctx.tenantId);
     const nameMap = new Map(statuses.map((s) => [s.code, s.name]));
     const colorMap = new Map(statuses.map((s) => [s.code, s.color ?? "#888"]));
@@ -187,7 +209,7 @@ const ticketSlaResolutionRateHandler: QueryHandler = {
     scopedQuery: Record<string, any>,
   ): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const prevStart = new Date(start);
     prevStart.setDate(prevStart.getDate() - params.dateRangeDays);
     const closedCodes = await loadClosedCodes(ctx.tenantId);
@@ -371,6 +393,179 @@ const centreIdealVsActiveHandler: QueryHandler = {
   },
 };
 
+// ─── SLA status split: closed/resolved vs open × within vs breached ──────────
+//
+// Four separate KPI count widgets so each can be placed on its own:
+//   • ticket_sla_closed_within   — closed/resolved tickets met SLA
+//   • ticket_sla_closed_breached — closed/resolved tickets missed SLA
+//   • ticket_sla_open_within     — currently-open tickets still within SLA
+//   • ticket_sla_open_breached   — currently-open tickets already overdue
+//
+// Closed widgets count tickets COMPLETED within the selected date range
+// (completion = closedAt, falling back to resolvedAt). A ticket is "within" when
+// it completed on/before sla_due_at, "breached" when it completed after.
+// Open widgets are a live snapshot of all currently-open tickets in scope (like
+// the Open Tickets count): "within" = due in the future, "breached" = past due.
+
+// Authoritative SLA expressions — MUST match the SLA Status report
+// (reportQueryService.ts). The denormalised `sla_due_at` field is unreliable
+// (often unset); the real deadline is roleLevelSLA.dueAt → ticketLevelSLA.dueAt,
+// and breach also honours the breachedAt flags.
+const SLA_DUE = { $ifNull: ["$roleLevelSLA.dueAt", "$ticketLevelSLA.dueAt"] };
+// completion timestamp: prefer resolvedAt, fall back to closedAt (report parity)
+const SLA_DONE = { $ifNull: ["$resolvedAt", "$closedAt"] };
+const SLA_BREACHED_FLAG = {
+  $or: [
+    { $ifNull: ["$roleLevelSLA.breachedAt", false] },
+    { $ifNull: ["$ticketLevelSLA.breachedAt", false] },
+  ],
+};
+
+const ticketSlaClosedWithinHandler: QueryHandler = {
+  widgetKey: "ticket_sla_closed_within",
+  cacheTtlSeconds: 300,
+  async execute(
+    ctx: WidgetQueryContext,
+    params: WidgetQueryParams,
+    _resolvedFilters: Record<string, any>,
+    scopedQuery: Record<string, any>,
+  ): Promise<WidgetData> {
+    const Ticket = getTicketModel();
+    const { start, end } = buildDateRange(params);
+    const completed = await loadCompletedCodes(ctx.tenantId);
+    const value = await Ticket.countDocuments({
+      ...scopedQuery,
+      status: { $in: completed },
+      $expr: {
+        $let: {
+          vars: { due: SLA_DUE, done: SLA_DONE, flag: SLA_BREACHED_FLAG },
+          in: {
+            $and: [
+              { $ne: ["$$done", null] },
+              { $gte: ["$$done", start] },
+              { $lte: ["$$done", end] },
+              { $ne: ["$$due", null] },
+              { $not: ["$$flag"] },
+              { $lte: ["$$done", "$$due"] },
+            ],
+          },
+        },
+      },
+    });
+    return { value, trendDirection: "higher_is_better" };
+  },
+};
+
+const ticketSlaClosedBreachedHandler: QueryHandler = {
+  widgetKey: "ticket_sla_closed_breached",
+  cacheTtlSeconds: 300,
+  async execute(
+    ctx: WidgetQueryContext,
+    params: WidgetQueryParams,
+    _resolvedFilters: Record<string, any>,
+    scopedQuery: Record<string, any>,
+  ): Promise<WidgetData> {
+    const Ticket = getTicketModel();
+    const { start, end } = buildDateRange(params);
+    const completed = await loadCompletedCodes(ctx.tenantId);
+    const value = await Ticket.countDocuments({
+      ...scopedQuery,
+      status: { $in: completed },
+      $expr: {
+        $let: {
+          vars: { due: SLA_DUE, done: SLA_DONE, flag: SLA_BREACHED_FLAG },
+          in: {
+            $and: [
+              { $ne: ["$$done", null] },
+              { $gte: ["$$done", start] },
+              { $lte: ["$$done", end] },
+              // Breached = explicit flag OR completed after the due date.
+              {
+                $or: [
+                  "$$flag",
+                  {
+                    $and: [
+                      { $ne: ["$$due", null] },
+                      { $gt: ["$$done", "$$due"] },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    });
+    return { value, trendDirection: "lower_is_better" };
+  },
+};
+
+const ticketSlaOpenWithinHandler: QueryHandler = {
+  widgetKey: "ticket_sla_open_within",
+  cacheTtlSeconds: 120,
+  async execute(
+    ctx: WidgetQueryContext,
+    _params: WidgetQueryParams,
+    _resolvedFilters: Record<string, any>,
+    scopedQuery: Record<string, any>,
+  ): Promise<WidgetData> {
+    const Ticket = getTicketModel();
+    const completed = await loadCompletedCodes(ctx.tenantId);
+    const now = new Date();
+    const value = await Ticket.countDocuments({
+      ...scopedQuery,
+      status: { $nin: completed },
+      $expr: {
+        $let: {
+          vars: { due: SLA_DUE, flag: SLA_BREACHED_FLAG },
+          in: {
+            $and: [
+              { $not: ["$$flag"] },
+              { $ne: ["$$due", null] },
+              { $gte: ["$$due", now] },
+            ],
+          },
+        },
+      },
+    });
+    return { value, trendDirection: "higher_is_better" };
+  },
+};
+
+const ticketSlaOpenBreachedHandler: QueryHandler = {
+  widgetKey: "ticket_sla_open_breached",
+  cacheTtlSeconds: 120,
+  async execute(
+    ctx: WidgetQueryContext,
+    _params: WidgetQueryParams,
+    _resolvedFilters: Record<string, any>,
+    scopedQuery: Record<string, any>,
+  ): Promise<WidgetData> {
+    const Ticket = getTicketModel();
+    const completed = await loadCompletedCodes(ctx.tenantId);
+    const now = new Date();
+    const value = await Ticket.countDocuments({
+      ...scopedQuery,
+      status: { $nin: completed },
+      $expr: {
+        $let: {
+          vars: { due: SLA_DUE, flag: SLA_BREACHED_FLAG },
+          in: {
+            // Breached = explicit flag OR past the due date while still open.
+            $or: [
+              "$$flag",
+              {
+                $and: [{ $ne: ["$$due", null] }, { $lt: ["$$due", now] }],
+              },
+            ],
+          },
+        },
+      },
+    });
+    return { value, trendDirection: "lower_is_better" };
+  },
+};
+
 // ─── Register all Phase 1 handlers ──────────────────────────────────────────
 
 export function registerPhase1Handlers(): void {
@@ -379,4 +574,8 @@ export function registerPhase1Handlers(): void {
   registerWidgetHandler(ticketSlaResolutionRateHandler);
   registerWidgetHandler(userRequiredVsOnboardedHandler);
   registerWidgetHandler(centreIdealVsActiveHandler);
+  registerWidgetHandler(ticketSlaClosedWithinHandler);
+  registerWidgetHandler(ticketSlaClosedBreachedHandler);
+  registerWidgetHandler(ticketSlaOpenWithinHandler);
+  registerWidgetHandler(ticketSlaOpenBreachedHandler);
 }

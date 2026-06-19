@@ -34,6 +34,11 @@ export interface ScopeOverride {
 
 export interface WidgetQueryParams {
   dateRangeDays: number;
+  /** Custom range bounds (used when dateRangeDays === -3). ISO date strings. */
+  customStart?: string | null;
+  customEnd?: string | null;
+  /** Dashboard-level "All time" floor (used when dateRangeDays === 0). ISO date string. */
+  allTimeStart?: string | null;
   filters: Record<string, any>;
   visualisationType: string;
   scopeOverride?: ScopeOverride;
@@ -177,6 +182,9 @@ function buildCacheKey(
     .update(
       JSON.stringify({
         dateRangeDays: params.dateRangeDays,
+        customStart: params.customStart ?? null,
+        customEnd: params.customEnd ?? null,
+        allTimeStart: params.allTimeStart ?? null,
         filters: params.filters,
         visualisationType: params.visualisationType,
         scopeOverride: params.scopeOverride,
@@ -195,29 +203,67 @@ function buildCacheKey(
 
 // ─── Date Range Helper ────────────────────────────────────────────────────────
 
-export function buildDateRange(dateRangeDays: number): {
+/**
+ * Resolve a widget's date window.
+ *
+ * Accepts either the legacy `dateRangeDays` number or the full query params
+ * (so custom ranges and a configurable all-time floor can flow through):
+ *   0   → All time   (floor = params.allTimeStart, else 2020-01-01)
+ *   -1  → Today      (local midnight → now)
+ *   -2  → Yesterday  (yesterday 00:00 → yesterday 23:59:59)
+ *   -3  → Custom     (params.customStart → params.customEnd, inclusive)
+ *   N>0 → Last N days
+ */
+export function buildDateRange(
+  input:
+    | number
+    | {
+        dateRangeDays: number;
+        customStart?: string | Date | null;
+        customEnd?: string | Date | null;
+        allTimeStart?: string | Date | null;
+      },
+): {
   start: Date;
   end: Date;
   startStr: string;
   endStr: string;
 } {
-  const end = new Date();
-  // 0 means "All time" — use project launch floor (Jan 1 2020).
-  // -1 means "Today" — from local midnight up to now.
-  const start =
-    dateRangeDays === 0
-      ? new Date("2020-01-01T00:00:00.000Z")
-      : dateRangeDays < 0
-        ? (() => {
-            const d = new Date();
-            d.setHours(0, 0, 0, 0);
-            return d;
-          })()
-        : (() => {
-            const d = new Date();
-            d.setDate(d.getDate() - dateRangeDays);
-            return d;
-          })();
+  const p = typeof input === "number" ? { dateRangeDays: input } : input;
+  const dateRangeDays = p.dateRangeDays;
+
+  let start: Date;
+  let end = new Date();
+
+  if (dateRangeDays === -3 && (p as any).customStart) {
+    // Custom range — inclusive of the whole end day.
+    start = new Date((p as any).customStart);
+    start.setHours(0, 0, 0, 0);
+    end = (p as any).customEnd ? new Date((p as any).customEnd) : new Date();
+    end.setHours(23, 59, 59, 999);
+  } else if (dateRangeDays === -2) {
+    // Yesterday
+    start = new Date();
+    start.setDate(start.getDate() - 1);
+    start.setHours(0, 0, 0, 0);
+    end = new Date();
+    end.setDate(end.getDate() - 1);
+    end.setHours(23, 59, 59, 999);
+  } else if (dateRangeDays === -1) {
+    // Today
+    start = new Date();
+    start.setHours(0, 0, 0, 0);
+  } else if (dateRangeDays === 0) {
+    // All time — use the dashboard's configured floor when provided.
+    start = (p as any).allTimeStart
+      ? new Date((p as any).allTimeStart)
+      : new Date("2020-01-01T00:00:00.000Z");
+  } else {
+    // Last N days
+    start = new Date();
+    start.setDate(start.getDate() - dateRangeDays);
+  }
+
   return {
     start,
     end,
@@ -241,7 +287,7 @@ export async function executeWidgetQuery(
   const cacheKey = buildCacheKey(widgetKey, ctx, params);
   const cached = cache.get<WidgetData>(cacheKey);
 
-  const dateRange = buildDateRange(params.dateRangeDays);
+  const dateRange = buildDateRange(params);
   const resolvedFilters = resolveContextVars(params.filters ?? {}, ctx);
   const scopedQuery = buildScopedQuery(ctx, params.scopeOverride);
 

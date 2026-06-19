@@ -14,6 +14,89 @@ interface AuthRequest extends Request {
 }
 
 /**
+ * Evaluate the audit window for a mapping and return whether it is currently
+ * editable/submittable. Side effects (persisted on the mapping):
+ *  - If the deadline (auditEndDate) has passed without submission, the last
+ *    recorded data is frozen into audit history once and the window closes.
+ *  - When the next cycle's start date arrives, a submitted audit is reopened and
+ *    the start/deadline/next dates roll forward by the frequency.
+ *
+ * Window rule: editable from the scheduled START date, through the LAST
+ * submission date (deadline), until submitted.
+ */
+async function evaluateAuditWindow(
+  mapping: any,
+  today: Date,
+): Promise<boolean> {
+  if (!mapping.lastAuditDate || !mapping.auditFrequencyMonths) return false;
+
+  const auditEnd = mapping.auditEndDate ? new Date(mapping.auditEndDate) : null;
+  if (auditEnd) auditEnd.setHours(0, 0, 0, 0);
+  const nextAudit = mapping.nextAuditDate
+    ? new Date(mapping.nextAuditDate)
+    : null;
+  if (nextAudit) nextAudit.setHours(0, 0, 0, 0);
+
+  // Deadline passed without submission → freeze the last recorded data into
+  // audit history (once) so it is preserved "as is".
+  if (
+    auditEnd &&
+    today > auditEnd &&
+    !mapping.auditSubmitted &&
+    !mapping.auditAutoArchivedAt
+  ) {
+    try {
+      await AssetAuditLog.create({
+        centerAssetMappingId: mapping._id,
+        userId: mapping.lastUpdatedBy,
+        centerId: mapping.centerId,
+        assetId: mapping.assetId,
+        changeType: "both",
+        previousValues: {
+          workingAsset: mapping.workingAsset,
+          notWorkingAsset: mapping.notWorkingAsset,
+        },
+        newValues: {
+          workingAsset: mapping.workingAsset,
+          notWorkingAsset: mapping.notWorkingAsset,
+        },
+        changedAt: new Date(),
+        remarks:
+          "Audit deadline reached without submission — last recorded data archived.",
+      });
+    } catch (e) {
+      console.error("Failed to auto-archive audit at deadline:", e);
+    }
+    mapping.auditAutoArchivedAt = new Date();
+    await mapping.save();
+  }
+
+  // Next cycle reached → reopen and roll the window forward by the frequency.
+  if (nextAudit && today >= nextAudit && mapping.auditSubmitted) {
+    mapping.auditSubmitted = false;
+    mapping.auditAutoArchivedAt = undefined;
+    mapping.lastAuditDate = nextAudit;
+    const rolledNext = new Date(nextAudit);
+    rolledNext.setMonth(rolledNext.getMonth() + mapping.auditFrequencyMonths);
+    mapping.nextAuditDate = rolledNext;
+    if (mapping.auditEndDate) {
+      const rolledEnd = new Date(mapping.auditEndDate);
+      rolledEnd.setMonth(rolledEnd.getMonth() + mapping.auditFrequencyMonths);
+      mapping.auditEndDate = rolledEnd;
+    }
+    await mapping.save();
+  }
+
+  // Compute from the mapping's current (possibly rolled) values.
+  const start = new Date(mapping.lastAuditDate);
+  start.setHours(0, 0, 0, 0);
+  const end = mapping.auditEndDate ? new Date(mapping.auditEndDate) : null;
+  if (end) end.setHours(0, 0, 0, 0);
+  const withinWindow = today >= start && (!end || today <= end);
+  return withinWindow && !mapping.auditSubmitted;
+}
+
+/**
  * @desc    Get assets for user's center(s)
  * @route   GET /api/my-assets
  * @access  Private (requires MY_ASSETS_VIEW permission)
@@ -195,30 +278,8 @@ export const getMyAssets = async (req: AuthRequest, res: Response) => {
         today.setHours(0, 0, 0, 0);
 
         let canEdit = false;
-
         if (mapping.lastAuditDate && mapping.auditFrequencyMonths) {
-          const lastAudit = new Date(mapping.lastAuditDate);
-          lastAudit.setHours(0, 0, 0, 0);
-
-          const nextAudit = mapping.nextAuditDate
-            ? new Date(mapping.nextAuditDate)
-            : null;
-          if (nextAudit) {
-            nextAudit.setHours(0, 0, 0, 0);
-          }
-
-          const isAuditDue = nextAudit && today >= nextAudit;
-          const isInitialAudit = !nextAudit && today >= lastAudit;
-
-          if ((isAuditDue || isInitialAudit) && mapping.auditSubmitted) {
-            mapping.auditSubmitted = false;
-            await mapping.save();
-            console.log(
-              `✅ Reset auditSubmitted for mapping ${mapping._id} (new audit cycle started)`,
-            );
-          }
-
-          canEdit = (isAuditDue || isInitialAudit) && !mapping.auditSubmitted;
+          canEdit = await evaluateAuditWindow(mapping, today);
         }
 
         formattedMappings.push({
@@ -242,30 +303,8 @@ export const getMyAssets = async (req: AuthRequest, res: Response) => {
           today.setHours(0, 0, 0, 0);
 
           let canEdit = false;
-
           if (mapping.lastAuditDate && mapping.auditFrequencyMonths) {
-            const lastAudit = new Date(mapping.lastAuditDate);
-            lastAudit.setHours(0, 0, 0, 0);
-
-            const nextAudit = mapping.nextAuditDate
-              ? new Date(mapping.nextAuditDate)
-              : null;
-            if (nextAudit) {
-              nextAudit.setHours(0, 0, 0, 0);
-            }
-
-            const isAuditDue = nextAudit && today >= nextAudit;
-            const isInitialAudit = !nextAudit && today >= lastAudit;
-
-            if ((isAuditDue || isInitialAudit) && mapping.auditSubmitted) {
-              mapping.auditSubmitted = false;
-              await mapping.save();
-              console.log(
-                `✅ Reset auditSubmitted for mapping ${mapping._id} (new audit cycle started)`,
-              );
-            }
-
-            canEdit = (isAuditDue || isInitialAudit) && !mapping.auditSubmitted;
+            canEdit = await evaluateAuditWindow(mapping, today);
           }
 
           formattedMappings.push({
@@ -327,9 +366,27 @@ export const getMyAssets = async (req: AuthRequest, res: Response) => {
     });
     console.log("📊 Total mappings after dedup:", dedupedMappings.length);
 
+    // Per-project custom link buttons (configured on the Asset Management page).
+    // Returned so the project-side My Assets view can render them; empty if none.
+    let assetLinkButtons: Array<{ label: string; url: string }> = [];
+    try {
+      const ProjectModel = mongoose.model("Project");
+      const projs = await ProjectModel.find(
+        { _id: { $in: projectIds } },
+        "configuration.assetLinkButtons",
+      ).lean();
+      assetLinkButtons = projs
+        .flatMap((p: any) => p?.configuration?.assetLinkButtons || [])
+        .filter((b: any) => b && b.label && b.url)
+        .map((b: any) => ({ label: String(b.label), url: String(b.url) }));
+    } catch (e) {
+      console.error("Failed to load asset link buttons:", e);
+    }
+
     return res.status(200).json({
       success: true,
       data: dedupedMappings,
+      assetLinkButtons,
     });
   } catch (error: any) {
     console.error("Error fetching my assets:", error);
@@ -752,32 +809,33 @@ export const submitAudit = async (req: AuthRequest, res: Response) => {
       }
     }
 
-    // Mark audit as submitted
-    mapping.auditSubmitted = true;
+    // Capture the cycle's scheduled START before overwriting lastAuditDate, so the
+    // next cycle is anchored to the date the admin set — not the submission date.
+    const cycleStart = mapping.lastAuditDate
+      ? new Date(mapping.lastAuditDate)
+      : null;
 
-    // Update lastAuditDate to today (when audit was submitted)
+    // Mark audit as submitted (and clear any deadline auto-archive marker)
+    mapping.auditSubmitted = true;
+    (mapping as any).auditAutoArchivedAt = undefined;
+
+    // Record submission date/time
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     mapping.lastAuditDate = today;
-
-    // Set lastAuditSubmittedAt and lastAuditSubmittedBy (for "Last Updated" column)
     (mapping as any).lastAuditSubmittedAt = new Date(); // Full timestamp with time
     (mapping as any).lastAuditSubmittedBy = userId;
 
-    // Calculate next audit date based on frequency from TODAY
+    // Next cycle starts a frequency-interval after the SCHEDULED START date.
     if (mapping.auditFrequencyMonths && mapping.auditFrequencyMonths > 0) {
-      const nextDate = new Date(today);
+      const base = cycleStart ?? today;
+      const nextDate = new Date(base);
       nextDate.setMonth(nextDate.getMonth() + mapping.auditFrequencyMonths);
-
-      // Set the next audit date at start of day for consistency
       nextDate.setHours(0, 0, 0, 0);
-
       mapping.nextAuditDate = nextDate;
 
       console.log(
-        "✅ Audit submitted. lastAuditDate:",
-        today,
-        "Next audit date:",
+        "✅ Audit submitted. Next audit date (from scheduled start):",
         nextDate,
       );
     }

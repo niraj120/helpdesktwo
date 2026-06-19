@@ -75,6 +75,7 @@ const permissionSchema = new Schema<IPermission>(
         "audit-logs",
         "tickets",
         "offline-module",
+        "service-request",
         "attendance",
       ],
       required: true,

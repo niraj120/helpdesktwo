@@ -1343,6 +1343,10 @@ const DashboardLayout = ({
           style={{
             marginLeft: sidebarWidth,
             flex: 1,
+            // Allow this flex item to shrink to the available width instead of
+            // growing to fit a wide child (e.g. a many-column attendance table).
+            // Without min-width:0 a wide table pushes the whole page sideways.
+            minWidth: 0,
             backgroundColor: "var(--background-secondary)",
             transition: "margin-left 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)",
             minHeight: "100vh",
@@ -1377,7 +1381,7 @@ const DashboardLayout = ({
 
           {/* Main Content */}
           <NotificationPermissionBanner />
-          <div style={{ flex: 1 }}>{children}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
 
           {/* Footer with Role Document */}
           {roleDocument && (

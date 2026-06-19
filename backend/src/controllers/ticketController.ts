@@ -1566,6 +1566,22 @@ export const getMyTickets = async (req: Request, res: Response) => {
       console.log(`🔍 [FILTER] Category: ${req.query.categoryId}`);
     }
 
+    // District filter — district is stored on the centre's `city` field, so
+    // resolve the district to its centre IDs and match tickets by centre.
+    if (req.query.district) {
+      const districtStr = String(req.query.district).trim();
+      if (districtStr) {
+        const districtCenters = await Center.find(
+          { city: districtStr },
+          "_id",
+        ).lean();
+        query["metadata.centerId"] = {
+          $in: districtCenters.map((c: any) => c._id.toString()),
+        };
+        console.log(`🔍 [FILTER] District: ${districtStr}`);
+      }
+    }
+
     // Custom field filters (customField_FieldName=value)
     Object.keys(req.query).forEach((key) => {
       if (key.startsWith("customField_")) {
@@ -3046,6 +3062,30 @@ export const getTicketById = async (req: Request, res: Response) => {
       }
     } catch (statusErr) {
       console.error("Failed to enrich ticket status metadata:", statusErr);
+    }
+
+    // Enrich centre so the detail view can show the centre name for offline tickets.
+    try {
+      const rawCenterId = (ticketData as any).metadata?.centerId;
+      if (
+        rawCenterId &&
+        rawCenterId !== "online" &&
+        mongoose.Types.ObjectId.isValid(String(rawCenterId))
+      ) {
+        const centerDoc = await Center.findById(rawCenterId)
+          .select("centerName city state")
+          .lean();
+        if (centerDoc) {
+          (ticketData as any).metadata.centerId = {
+            _id: (centerDoc as any)._id,
+            centerName: (centerDoc as any).centerName,
+            city: (centerDoc as any).city,
+            state: (centerDoc as any).state,
+          };
+        }
+      }
+    } catch (centerErr) {
+      console.error("Failed to enrich ticket centre:", centerErr);
     }
 
     // Add escalation matrix name if available
@@ -5600,6 +5640,23 @@ export const getDashboardStats = async (req: Request, res: Response) => {
     );
     // ===== END SLA FIELD SELECTION =====
 
+    // Footfall is a per-day metric, so the dashboard KPI reports TODAY's footfall
+    // (IST day). Compute the UTC instant of IST midnight today.
+    const _now = new Date();
+    const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+    const _istNow = new Date(_now.getTime() + IST_OFFSET_MS);
+    const footfallDayStart = new Date(
+      Date.UTC(
+        _istNow.getUTCFullYear(),
+        _istNow.getUTCMonth(),
+        _istNow.getUTCDate(),
+        0,
+        0,
+        0,
+        0,
+      ).valueOf() - IST_OFFSET_MS,
+    );
+
     // Optimized: Single aggregation instead of 11 sequential countDocuments calls
     // This reduces database round-trips from 12 to 2 (aggregation + recent activity)
     const [statsResult, recentActivity, footfallData] = await Promise.all([
@@ -5690,15 +5747,42 @@ export const getDashboardStats = async (req: Request, res: Response) => {
         .select("ticketNumber title status updatedAt")
         .lean(),
 
-      // Footfall aggregation: unique students + total responses + new tickets
+      // Footfall (today) = new queries created today
+      //                  + distinct EXISTING queries (created earlier) that got
+      //                    a reply (thread) or comment today. Each existing
+      //                    ticket counts once regardless of how many replies.
       Ticket.aggregate([
         { $match: query },
         {
-          $group: {
-            _id: null,
-            uniqueStudentEmails: { $addToSet: "$metadata.studentEmail" },
-            totalResponses: { $sum: { $size: { $ifNull: ["$comments", []] } } },
-            newTickets: { $sum: 1 },
+          $facet: {
+            newToday: [
+              { $match: { createdAt: { $gte: footfallDayStart, $lte: _now } } },
+              { $count: "n" },
+            ],
+            existingActiveToday: [
+              {
+                $match: {
+                  createdAt: { $lt: footfallDayStart },
+                  $or: [
+                    {
+                      threads: {
+                        $elemMatch: {
+                          createdAt: { $gte: footfallDayStart, $lte: _now },
+                        },
+                      },
+                    },
+                    {
+                      comments: {
+                        $elemMatch: {
+                          createdAt: { $gte: footfallDayStart, $lte: _now },
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+              { $count: "n" },
+            ],
           },
         },
       ]),
@@ -5836,17 +5920,17 @@ export const getDashboardStats = async (req: Request, res: Response) => {
     const fallbackAssignmentsThisMonth =
       await Ticket.countDocuments(fallbackQuery);
 
-    // Compute footfall count
-    // Formula: unique students (each student counted once regardless of ticket count)
-    //          + total follow-up responses/comments on existing tickets
-    // A student creating their first ticket is already counted in uniqueStudentCount,
-    // so we do NOT add newTickets separately to avoid double-counting.
-    const footfallAgg = footfallData[0];
-    const uniqueStudentCount = footfallAgg
-      ? (footfallAgg.uniqueStudentEmails as string[]).filter(Boolean).length
-      : 0;
-    const totalResponses: number = footfallAgg?.totalResponses || 0;
-    const footfallCount = uniqueStudentCount + totalResponses;
+    // Compute footfall count (today)
+    // Formula: new queries created today
+    //          + distinct existing queries that received a reply/comment today.
+    // A query created today is counted as "new"; replies on it today do not
+    // double-count it (existing only matches createdAt < today).
+    const footfallAgg = footfallData[0] as
+      | { newToday?: { n: number }[]; existingActiveToday?: { n: number }[] }
+      | undefined;
+    const newToday = footfallAgg?.newToday?.[0]?.n ?? 0;
+    const existingActiveToday = footfallAgg?.existingActiveToday?.[0]?.n ?? 0;
+    const footfallCount = newToday + existingActiveToday;
 
     return res.status(200).json({
       success: true,

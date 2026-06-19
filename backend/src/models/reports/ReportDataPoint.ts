@@ -436,6 +436,17 @@ export const SYSTEM_DATA_POINTS: Omit<
     isSystem: true,
     order: 51,
   },
+  {
+    key: "channel_district",
+    label: "District",
+    description: "District of the ticket's centre (from the centre address)",
+    category: "channel",
+    fieldPath: "centerDistrict",
+    fieldType: "string",
+    isActive: true,
+    isSystem: true,
+    order: 52,
+  },
 
   // ── AGENT GROUP ───────────────────────────────────────────────────────────
   {
@@ -561,4 +572,5 @@ export const SYSTEM_DATA_POINTS: Omit<
   { key: "fbr_form", label: "Feedback Form", description: "Name of the feedback form", category: "feedback", source: "feedback", fieldPath: "formName", fieldType: "string", isActive: true, isSystem: true, order: 505 },
   { key: "fbr_answers_count", label: "# Answers", description: "Number of answered questions", category: "feedback", source: "feedback", fieldPath: "answersCount", fieldType: "number", isActive: true, isSystem: true, order: 506 },
   { key: "fbr_answers", label: "Answers", description: "All question/answer pairs", category: "feedback", source: "feedback", fieldPath: "answersText", fieldType: "string", isActive: true, isSystem: true, order: 507 },
+  { key: "fbr_center", label: "Center", description: "Center of the ticket this feedback is for", category: "feedback", source: "feedback", fieldPath: "centerName", fieldType: "string", isActive: true, isSystem: true, order: 508 },
 ];

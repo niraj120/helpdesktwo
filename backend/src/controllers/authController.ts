@@ -9,6 +9,8 @@ import { sendOTPSMS } from "../utils/smsService";
 import { User } from "../models/User";
 import { Role } from "../models/Role";
 import { Project } from "../models/Project";
+import { Center } from "../models/Center";
+import ActivityLog from "../models/ActivityLog";
 import { validatePasswordPolicy } from "../utils/passwordPolicyUtils";
 import EulaAcceptance from "../models/EulaAcceptance";
 import { logLogin, logLogout } from "../utils/logger";
@@ -16,6 +18,7 @@ import { AuthRequest } from "../middleware/auth";
 import {
   generateUserJWT,
   generateProjectJWT,
+  generateImpersonationJWT,
   refreshUserPermissions,
 } from "../utils/jwtUtils";
 import { config } from "../config";
@@ -918,5 +921,263 @@ export const logout = async (req: AuthRequest, res: Response) => {
       success: false,
       error: "Internal server error",
     });
+  }
+};
+
+/**
+ * Start an impersonation ("login as user") session.
+ *
+ * DPDP-compliant by design:
+ *  - Passwords are NEVER read, decrypted or exposed — a fresh short-lived
+ *    (30-minute) JWT is minted for the target user with an `impersonatedBy`
+ *    claim identifying the real admin.
+ *  - Gated by the configurable IMPERSONATE_USER permission (route middleware).
+ *  - Protected accounts (roles holding IMPERSONATION_EXEMPT, or anyone who can
+ *    themselves impersonate) can never be targeted — no hardcoded role names.
+ *  - A mandatory reason is captured and every start is written to ActivityLog
+ *    (accountability + purpose limitation).
+ *
+ * @route POST /api/auth/impersonate/:userId
+ * @access IMPERSONATE_USER
+ */
+export const impersonateUser = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user?.userId;
+    const targetUserId = req.params.userId;
+    const reason = (req.body?.reason || "").toString().trim();
+
+    if (!adminId) {
+      return res
+        .status(401)
+        .json({ success: false, message: "Not authenticated" });
+    }
+
+    // DPDP purpose limitation: a justification is required and recorded.
+    if (reason.length < 3) {
+      return res.status(400).json({
+        success: false,
+        message: "A reason is required to log in as another user.",
+      });
+    }
+
+    // No nested impersonation — an impersonation session can't start another.
+    if (req.user?.impersonatedBy) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "You are already impersonating a user. Exit that session first.",
+      });
+    }
+
+    if (targetUserId === adminId.toString()) {
+      return res
+        .status(400)
+        .json({ success: false, message: "You cannot impersonate yourself." });
+    }
+
+    const target = await User.findById(targetUserId).populate({
+      path: "role",
+      populate: { path: "permissions" },
+    });
+
+    if (!target) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Target user not found." });
+    }
+    if (!target.isActive) {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot impersonate an inactive account.",
+      });
+    }
+
+    const targetRole = target.role as any;
+    const targetPerms = await extractPermissionCodes(
+      targetRole?.permissions,
+      `Impersonate target [${target.email}]`,
+    );
+
+    // Protection (configurable, never hardcoded by role name):
+    //  - IMPERSONATION_EXEMPT → explicitly shielded (Super Admin / Sub Admin)
+    //  - IMPERSONATE_USER     → can't impersonate a fellow impersonator
+    if (
+      targetPerms.includes("IMPERSONATION_EXEMPT") ||
+      targetPerms.includes("IMPERSONATE_USER")
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "This account is protected and cannot be impersonated.",
+      });
+    }
+
+    // Best-effort resolve the target's project for portal/student landing.
+    let project: any = null;
+    const projIds: any[] = [
+      ...(((target as any).projects as any[]) || []),
+      ...((targetRole?.projects as any[]) || []),
+      ...(targetRole?.projectId ? [targetRole.projectId] : []),
+    ];
+    if (projIds.length) {
+      project = await Project.findById(projIds[0]).select(
+        "_id name code branding",
+      );
+    }
+    if (
+      !project &&
+      Array.isArray((target as any).centers) &&
+      (target as any).centers.length
+    ) {
+      const center = await Center.findById(
+        (target as any).centers[0],
+      ).select("projectId");
+      if (center?.projectId) {
+        project = await Project.findById(center.projectId).select(
+          "_id name code branding",
+        );
+      }
+    }
+
+    const extra: Record<string, any> = {};
+    if (project) {
+      extra.projectId = project._id;
+      extra.projectName = project.name;
+    }
+
+    const adminName =
+      `${req.user?.firstName || ""} ${req.user?.lastName || ""}`.trim() ||
+      req.user?.email ||
+      "Admin";
+
+    const token = await generateImpersonationJWT(
+      target,
+      { userId: adminId.toString(), email: req.user!.email, name: adminName },
+      extra,
+    );
+
+    // Audit (DPDP accountability) — failure to log must not block, but is noisy.
+    try {
+      await ActivityLog.create({
+        userId: adminId,
+        userName: adminName,
+        userEmail: req.user!.email,
+        action: "impersonate",
+        entity: "impersonation",
+        entityId: target._id.toString(),
+        entityName:
+          `${target.firstName || ""} ${target.lastName || ""}`.trim() ||
+          target.email,
+        description: `Started impersonating ${target.email}`,
+        ipAddress:
+          (req.headers["x-forwarded-for"] as string) || req.ip || undefined,
+        userAgent: req.get("user-agent"),
+        project: project?._id,
+        projectName: project?.name,
+        role: targetRole?.name,
+        metadata: {
+          reason,
+          targetEmail: target.email,
+          targetRole: targetRole?.code,
+        },
+      });
+    } catch (logErr) {
+      console.error("⚠️ Failed to write impersonation audit log:", logErr);
+    }
+
+    const customUrlPath = project
+      ? project.branding?.customUrlPath || project.code?.toLowerCase()
+      : null;
+    let redirectPath: string | null = null;
+    if (targetRole?.code === "STUDENT") {
+      redirectPath = customUrlPath
+        ? `/${customUrlPath}/student/dashboard`
+        : "/";
+    }
+
+    console.log(
+      `🕵️ ${req.user!.email} started impersonating ${target.email} (reason: ${reason})`,
+    );
+
+    return res.json({
+      success: true,
+      message: "Impersonation session started",
+      data: {
+        token,
+        permissions: targetPerms,
+        redirectPath, // null → frontend resolves via getDefaultRoute()
+        project: project
+          ? {
+              id: project._id,
+              name: project.name,
+              code: project.code,
+              customUrlPath,
+            }
+          : null,
+        user: {
+          id: target._id,
+          email: target.email,
+          firstName: target.firstName,
+          lastName: target.lastName,
+          role: targetRole?.code || null,
+          roleName: targetRole?.name || null,
+        },
+        impersonatedBy: {
+          userId: adminId.toString(),
+          email: req.user!.email,
+          name: adminName,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("❌ Impersonation error:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to start impersonation." });
+  }
+};
+
+/**
+ * End an impersonation session (writes the audit "end" event).
+ * The frontend restores the admin's own token after calling this.
+ * Authorized by the `impersonatedBy` claim on the current token — the
+ * impersonated user's own permissions are irrelevant here.
+ *
+ * @route POST /api/auth/stop-impersonation
+ * @access Authenticated impersonation session
+ */
+export const stopImpersonation = async (req: AuthRequest, res: Response) => {
+  try {
+    const imp = req.user?.impersonatedBy;
+    if (!imp) {
+      return res.status(400).json({
+        success: false,
+        message: "This is not an impersonation session.",
+      });
+    }
+
+    try {
+      await ActivityLog.create({
+        userId: imp.userId,
+        userName: imp.name || imp.email,
+        userEmail: imp.email,
+        action: "impersonate_end",
+        entity: "impersonation",
+        entityId: req.user!.userId,
+        entityName: req.user!.email,
+        description: `Stopped impersonating ${req.user!.email}`,
+        ipAddress:
+          (req.headers["x-forwarded-for"] as string) || req.ip || undefined,
+        userAgent: req.get("user-agent"),
+      });
+    } catch (logErr) {
+      console.error("⚠️ Failed to write impersonation-end audit log:", logErr);
+    }
+
+    return res.json({ success: true, message: "Impersonation ended." });
+  } catch (error) {
+    console.error("❌ Stop impersonation error:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to end impersonation." });
   }
 };

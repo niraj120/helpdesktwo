@@ -119,6 +119,13 @@ export async function getWidgetData(
 
     const params: WidgetQueryParams = {
       dateRangeDays: isNaN(dateRangeDays) ? 30 : dateRangeDays,
+      // Custom range bounds (dateRangeDays === -3) and the dashboard-level
+      // "All time" floor (dateRangeDays === 0) — passed by the frontend.
+      customStart: req.query.customStart ? String(req.query.customStart) : null,
+      customEnd: req.query.customEnd ? String(req.query.customEnd) : null,
+      allTimeStart: req.query.allTimeStart
+        ? String(req.query.allTimeStart)
+        : null,
       filters,
       visualisationType,
       scopeOverride,

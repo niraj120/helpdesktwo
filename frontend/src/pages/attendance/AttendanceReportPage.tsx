@@ -79,7 +79,6 @@ function pdfText(value: unknown): string {
   const str = String(value ?? "");
   return DEVANAGARI_RE.test(str) ? transliterateDevanagari(str) : str;
 }
-import ModuleHeader from "../../components/ModuleHeader";
 import { usePermissions } from "../../hooks/usePermissions";
 import {
   MdAdd,
@@ -713,14 +712,12 @@ function getDefaultRange(vt: ViewType): MatrixRange {
     };
   }
   if (vt === "weekly") {
-    const day = now.getDay();
-    const monday = new Date(now);
-    monday.setDate(now.getDate() - ((day + 6) % 7));
-    const sunday = new Date(monday);
-    sunday.setDate(monday.getDate() + 6);
+    // Weekly report = the last 7 days (today and the 6 days before it).
+    const from = new Date(now);
+    from.setDate(now.getDate() - 6);
     return {
-      dateFrom: localDateStr(monday),
-      dateTo: localDateStr(sunday),
+      dateFrom: localDateStr(from),
+      dateTo: localDateStr(now),
     };
   }
   // custom: default to last 7 days
@@ -1266,14 +1263,12 @@ function MyAttendanceReports({ token }: { token: string }) {
               dateTo: localDateStr(last),
             };
           } else if (vt === "weekly") {
-            const dow = maxD.getDay();
-            const monday = new Date(maxD);
-            monday.setDate(maxD.getDate() - ((dow + 6) % 7));
-            const sunday = new Date(monday);
-            sunday.setDate(monday.getDate() + 6);
+            // Last 7 days ending at the most-recent day that has data.
+            const start = new Date(maxD);
+            start.setDate(maxD.getDate() - 6);
             derivedRange = {
-              dateFrom: localDateStr(monday),
-              dateTo: localDateStr(sunday),
+              dateFrom: localDateStr(start),
+              dateTo: localDateStr(maxD),
             };
           } else {
             // custom: use the full span of the daily data
@@ -2090,19 +2085,16 @@ function MyAttendanceReports({ token }: { token: string }) {
     );
 
   return (
-    <div>
-      <div style={{ marginBottom: 20 }}>
-        <h2
-          style={{ fontSize: 18, fontWeight: 700, color: "#111827", margin: 0 }}
-        >
-          My Attendance Reports
-        </h2>
-        <p style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
-          Attendance reports that have been shared with you by your
-          administrator.
-        </p>
-      </div>
-
+    <div
+      style={{
+        maxWidth: "100%",
+        // Keep horizontal scrolling INSIDE the result tables (each has its own
+        // overflow-x). The page itself never scrolls sideways, so a wide
+        // monthly matrix can't drag the whole screen.
+        overflowX: "hidden",
+        fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+      }}
+    >
       {reports.length === 0 ? (
         <div
           style={{
@@ -3007,7 +2999,18 @@ function MyAttendanceReports({ token }: { token: string }) {
                       const d = r.attendanceDate?.split("T")[0];
                       if (d) cwDateSet.add(d);
                     }
-                    const cwDates = [...cwDateSet].sort();
+                    // For weekly/monthly show EVERY day of the selected range (up
+                    // to today) as a column — not just days that happen to have a
+                    // record — so a monthly report always spans the full month
+                    // with Absent fillers. Daily view uses the dates in the data.
+                    const cwViewType = getViewType(report._id);
+                    const cwToday = todayISO();
+                    const cwDates =
+                      cwViewType !== "daily" && range.dateFrom && range.dateTo
+                        ? enumerateDates(range.dateFrom, range.dateTo).filter(
+                            (d) => d <= cwToday,
+                          )
+                        : [...cwDateSet].sort();
                     type CWEmp = {
                       name: string;
                       code: string;
@@ -3070,7 +3073,16 @@ function MyAttendanceReports({ token }: { token: string }) {
                             ? ` · ${targetHours.toFixed(1)} target hrs`
                             : ""}
                         </div>
-                        <div style={{ overflowX: "auto" }}>
+                        {/* The results grid scrolls horizontally inside this box
+                            (width-bounded) so wide monthly reports never drag the
+                            whole page. */}
+                        <div
+                          style={{
+                            overflowX: "auto",
+                            maxWidth: "100%",
+                            width: "100%",
+                          }}
+                        >
                           <table
                             style={{
                               borderCollapse: "collapse",
@@ -4057,11 +4069,41 @@ export default function AttendanceReportPage() {
 
   //
   return (
-    <div style={{ padding: 24 }}>
-      <ModuleHeader
-        title="Attendance Report"
-        subtitle="Build customisable attendance reports with data-point selection, filters and export"
-      />
+    <div
+      style={{
+        padding: 24,
+        maxWidth: "100%",
+        overflowX: "hidden",
+        fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+      }}
+    >
+      {/* Header card — matches the View Queries page styling (no purple banner) */}
+      <div
+        style={{
+          background: "#ffffff",
+          padding: "22px 24px",
+          borderRadius: "14px",
+          marginBottom: "4px",
+          border: "1px solid #e7ebf3",
+          boxShadow: "0 4px 18px rgba(15, 23, 42, 0.05)",
+        }}
+      >
+        <h1
+          style={{
+            margin: "0 0 6px 0",
+            fontSize: "24px",
+            fontWeight: 700,
+            color: "#111827",
+            letterSpacing: "-0.01em",
+          }}
+        >
+          Attendance Report
+        </h1>
+        <p style={{ margin: 0, fontSize: "14px", color: "#6b7280" }}>
+          Build customisable attendance reports with data-point selection,
+          filters and export.
+        </p>
+      </div>
 
       <div
         style={{

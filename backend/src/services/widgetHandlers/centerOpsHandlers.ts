@@ -112,7 +112,7 @@ const coTicketsPerCenterHandler: QueryHandler = {
   widgetKey: "co_tickets_per_center",
   cacheTtlSeconds: 300,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const rows = await getTicket().aggregate([
       {
         $match: {
@@ -190,7 +190,7 @@ const coCenterPerformanceHandler: QueryHandler = {
   widgetKey: "co_center_performance",
   cacheTtlSeconds: 600,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const pid = new mongoose.Types.ObjectId(ctx.tenantId);
     const closedCodes = await loadClosedCodes(ctx.tenantId);
 

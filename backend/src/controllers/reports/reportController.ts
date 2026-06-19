@@ -557,6 +557,9 @@ export const createSavedReport = async (req: Request, res: Response) => {
       projectId,
       reportType,
       footfallDays,
+      reportMode,
+      pivotRow,
+      pivotCol,
     } = req.body;
 
     const isFootfall = reportType === "footfall";
@@ -601,6 +604,9 @@ export const createSavedReport = async (req: Request, res: Response) => {
       filters: filters ?? [],
       sortBy,
       sortOrder,
+      reportMode: reportMode === "summary" ? "summary" : "detail",
+      pivotRow: reportMode === "summary" ? pivotRow : undefined,
+      pivotCol: reportMode === "summary" ? pivotCol : undefined,
       ...(isFootfall
         ? { footfallDays: Number(footfallDays) > 0 ? Number(footfallDays) : 30 }
         : {}),
@@ -737,6 +743,48 @@ export const runReport = async (req: Request, res: Response) => {
             roleInfo?.isSuperAdmin ?? false,
           );
 
+    // Summary (pivot) saved report → return the full pivot table.
+    if ((report as any).reportMode === "summary") {
+      const pRow = (report as any).pivotRow;
+      const pCol = (report as any).pivotCol;
+      if (!pRow || !pCol) {
+        return res.status(400).json({
+          success: false,
+          message: "This summary report is missing its pivot row/column fields.",
+        });
+      }
+      const summaryKeys = Array.from(new Set([pRow, pCol, ...dataPoints]));
+      const { rows: detailRows } = await runReportQuery(
+        summaryKeys,
+        (report as any).filters ?? [],
+        (report as any).sortBy,
+        (report as any).sortOrder,
+        (report as any).projectId?.toString(),
+        1,
+        10000,
+      );
+      const pivot = buildPivotTable(detailRows, pRow, pCol);
+      SavedReport.updateOne(
+        { _id: id },
+        { lastRunAt: new Date(), rowCount: pivot.rows.length },
+      ).exec();
+      return res.status(200).json({
+        success: true,
+        data: pivot.rows,
+        meta: {
+          isPivot: true,
+          columns: pivot.columns,
+          total: pivot.rows.length,
+          page: 1,
+          pageSize: pivot.rows.length,
+          pages: 1,
+          pivotRow: pRow,
+          pivotCol: pCol,
+          dataPoints: summaryKeys,
+        },
+      });
+    }
+
     const { rows, total } = await runReportQuery(
       dataPoints,
       (report as any).filters ?? [],
@@ -776,18 +824,72 @@ export const runReport = async (req: Request, res: Response) => {
 };
 
 /**
+ * Build a pivot table (row dimension × column dimension; cell = count) from
+ * detail rows (each keyed by data-point key). Returns dynamic columns
+ * [rowKey, ...distinct column values, "Total"] and one output row per
+ * row-dimension value. Used by Summary reports.
+ */
+export function buildPivotTable(
+  rows: any[],
+  pivotRow: string,
+  pivotCol: string,
+): { rows: any[]; columns: string[] } {
+  const BLANK = "(blank)";
+  const colValues = new Set<string>();
+  const rowMap = new Map<string, any>();
+  for (const r of rows) {
+    const rv = r[pivotRow];
+    const cv = r[pivotCol];
+    const rowVal = rv === undefined || rv === null || rv === "" ? BLANK : String(rv);
+    const colVal = cv === undefined || cv === null || cv === "" ? BLANK : String(cv);
+    colValues.add(colVal);
+    if (!rowMap.has(rowVal)) rowMap.set(rowVal, { [pivotRow]: rowVal, __total: 0 });
+    const agg = rowMap.get(rowVal);
+    agg[colVal] = (agg[colVal] ?? 0) + 1;
+    agg.__total += 1;
+  }
+  const sortedCols = Array.from(colValues).sort();
+  const outRows = Array.from(rowMap.values())
+    .map((agg) => {
+      const row: any = { [pivotRow]: agg[pivotRow] };
+      for (const c of sortedCols) row[c] = agg[c] ?? 0;
+      row.Total = agg.__total;
+      return row;
+    })
+    .sort((a, b) => b.Total - a.Total);
+  return { rows: outRows, columns: [pivotRow, ...sortedCols, "Total"] };
+}
+
+/**
  * POST /api/reports/preview
- * Used by the Report Builder to preview the first 10 rows without saving.
+ * Used by the Report Builder to preview results without saving.
+ * Detail mode → first 10 rows. Summary mode → full pivot table (counts).
  */
 export const previewReport = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { dataPoints, filters = [], sortBy, sortOrder, projectId } = req.body;
+    const {
+      dataPoints,
+      filters = [],
+      sortBy,
+      sortOrder,
+      projectId,
+      reportMode,
+      pivotRow,
+      pivotCol,
+    } = req.body;
 
     if (!Array.isArray(dataPoints) || dataPoints.length === 0) {
       return res
         .status(400)
         .json({ success: false, message: "dataPoints are required" });
+    }
+
+    if (reportMode === "summary" && (!pivotRow || !pivotCol)) {
+      return res.status(400).json({
+        success: false,
+        message: "Summary reports require pivotRow and pivotCol.",
+      });
     }
 
     // Enforce project scoping for non-admin callers
@@ -826,6 +928,35 @@ export const previewReport = async (req: Request, res: Response) => {
             roleInfo?.isSuperAdmin ?? false,
           );
 
+    // Summary (pivot) mode: fetch all matching rows, then pivot by count.
+    if (reportMode === "summary") {
+      const summaryKeys = Array.from(
+        new Set([pivotRow, pivotCol, ...filteredKeys]),
+      );
+      const { rows: detailRows } = await runReportQuery(
+        summaryKeys,
+        filters,
+        sortBy,
+        sortOrder,
+        effectiveProjectId,
+        1,
+        10000, // pull all matching rows (capped) so counts are accurate
+      );
+      const pivot = buildPivotTable(detailRows, pivotRow, pivotCol);
+      return res.status(200).json({
+        success: true,
+        data: pivot.rows,
+        meta: {
+          isPivot: true,
+          columns: pivot.columns,
+          total: pivot.rows.length,
+          pivotRow,
+          pivotCol,
+          dataPoints: summaryKeys,
+        },
+      });
+    }
+
     const { rows, total } = await runReportQuery(
       filteredKeys,
       filters,
@@ -853,18 +984,22 @@ export const previewReport = async (req: Request, res: Response) => {
 // and the email scheduler so every surface shows the same columns.
 export const FOOTFALL_COLUMNS = [
   { key: "center", label: "Offline Center" },
-  { key: "uniqueStudents", label: "Unique Students" },
-  { key: "responses", label: "Responses" },
-  { key: "ticketCount", label: "Tickets" },
+  { key: "newQueries", label: "New Queries" },
+  { key: "existingActive", label: "Existing Queries (Activity)" },
   { key: "footfall", label: "Footfall" },
 ];
 
 /**
- * Core footfall-by-center aggregation (no auth/scoping). Footfall mirrors the
- * dashboard widget: (distinct non-empty metadata.studentEmail) + (sum of thread
- * responses) per offline center. Tickets with no/unknown/online center fall
- * under "Unassigned". Reused by the report endpoint, the saved-report run
- * endpoint and the email alert scheduler.
+ * Core footfall-by-center aggregation (no auth/scoping).
+ *
+ * Footfall per centre = new queries created in the range
+ *                     + distinct EXISTING queries (created before the range)
+ *                       that received a reply (thread) or comment in the range.
+ * Each existing ticket counts once regardless of how many replies it got, and a
+ * query created in the range is counted only as "new" (never double-counted).
+ * Tickets with no/unknown/online center are intentionally excluded.
+ * Reused by the report endpoint, the saved-report run endpoint and the email
+ * alert scheduler.
  */
 export async function computeFootfallByCenter(opts: {
   projectId?: string;
@@ -889,29 +1024,53 @@ export async function computeFootfallByCenter(opts: {
 
   const Ticket = mongoose.model("Ticket");
   const Center = mongoose.model("Center");
-  const match: any = { createdAt: { $gte: start, $lte: end } };
+
+  // Project scope (no date) — shared by both aggregations.
+  const scope: any = {};
   if (projectId) {
     const pid = projectId.toString();
     const or: any[] = [{ "metadata.projectId": pid }];
     if (mongoose.Types.ObjectId.isValid(pid))
       or.push({ "metadata.projectId": new mongoose.Types.ObjectId(pid) });
-    match.$or = or;
+    scope.$or = or;
   }
 
-  // Group by centerId (offline tickets) — online tickets use "online".
-  const groups = await Ticket.aggregate([
-    { $match: match },
-    {
-      $group: {
-        _id: { $ifNull: ["$metadata.centerId", null] },
-        uniqueStudentEmails: { $addToSet: "$metadata.studentEmail" },
-        totalResponses: { $sum: { $size: { $ifNull: ["$threads", []] } } },
-        ticketCount: { $sum: 1 },
+  // New queries created in the range, grouped by centre.
+  // Existing queries (created before the range) with a reply/comment in the
+  // range, grouped by centre — one document per ticket so $sum:1 is distinct.
+  const [newGroups, existingGroups] = await Promise.all([
+    Ticket.aggregate([
+      { $match: { ...scope, createdAt: { $gte: start, $lte: end } } },
+      {
+        $group: {
+          _id: { $ifNull: ["$metadata.centerId", null] },
+          c: { $sum: 1 },
+        },
       },
-    },
+    ]),
+    Ticket.aggregate([
+      {
+        $match: {
+          ...scope,
+          createdAt: { $lt: start },
+          $or: [
+            { threads: { $elemMatch: { createdAt: { $gte: start, $lte: end } } } },
+            {
+              comments: { $elemMatch: { createdAt: { $gte: start, $lte: end } } },
+            },
+          ],
+        },
+      },
+      {
+        $group: {
+          _id: { $ifNull: ["$metadata.centerId", null] },
+          c: { $sum: 1 },
+        },
+      },
+    ]),
   ]);
 
-  const groupIds = groups
+  const groupIds = [...newGroups, ...existingGroups]
     .map((g: any) => g._id)
     .filter(
       (id: any) =>
@@ -938,34 +1097,35 @@ export async function computeFootfallByCenter(opts: {
 
   type Row = {
     center: string;
-    uniqueStudents: number;
-    responses: number;
-    ticketCount: number;
+    newQueries: number;
+    existingActive: number;
     footfall: number;
   };
   const rowMap = new Map<string, Row>();
   for (const c of centerDocs)
     rowMap.set(String(c._id), {
       center: (c as any).centerName || "Unnamed center",
-      uniqueStudents: 0,
-      responses: 0,
-      ticketCount: 0,
+      newQueries: 0,
+      existingActive: 0,
       footfall: 0,
     });
 
   // This is a "by offline center" report — tickets with no offline center
   // (online/portal tickets, or a center outside this project) are intentionally
   // NOT counted. We only attribute footfall to real offline centers.
-  for (const g of groups) {
+  for (const g of newGroups) {
     const key = g._id ? String(g._id) : null;
     const target = key && idToName.has(key) ? rowMap.get(key)! : null;
     if (!target) continue;
-    const uniqueStudents = (g.uniqueStudentEmails || []).filter(Boolean).length;
-    const responses = g.totalResponses || 0;
-    target.uniqueStudents += uniqueStudents;
-    target.responses += responses;
-    target.ticketCount += g.ticketCount || 0;
-    target.footfall += uniqueStudents + responses;
+    target.newQueries += g.c || 0;
+    target.footfall += g.c || 0;
+  }
+  for (const g of existingGroups) {
+    const key = g._id ? String(g._id) : null;
+    const target = key && idToName.has(key) ? rowMap.get(key)! : null;
+    if (!target) continue;
+    target.existingActive += g.c || 0;
+    target.footfall += g.c || 0;
   }
 
   const data: Row[] = Array.from(rowMap.values()).sort(
@@ -974,12 +1134,11 @@ export async function computeFootfallByCenter(opts: {
 
   const totals = data.reduce(
     (acc: any, r: any) => ({
-      uniqueStudents: acc.uniqueStudents + r.uniqueStudents,
-      responses: acc.responses + r.responses,
-      ticketCount: acc.ticketCount + r.ticketCount,
+      newQueries: acc.newQueries + r.newQueries,
+      existingActive: acc.existingActive + r.existingActive,
       footfall: acc.footfall + r.footfall,
     }),
-    { uniqueStudents: 0, responses: 0, ticketCount: 0, footfall: 0 },
+    { newQueries: 0, existingActive: 0, footfall: 0 },
   );
 
   return { data, totals, meta: { dateFrom: start, dateTo: end } };
@@ -1069,6 +1228,48 @@ export const exportReport = async (req: Request, res: Response) => {
             allowedKeys,
             roleInfo?.isSuperAdmin ?? false,
           );
+
+    // Summary (pivot) export → CSV of the pivot table (dynamic columns).
+    if ((report as any).reportMode === "summary") {
+      const pRow = (report as any).pivotRow;
+      const pCol = (report as any).pivotCol;
+      if (!pRow || !pCol) {
+        return res.status(400).json({
+          success: false,
+          message: "This summary report is missing its pivot row/column fields.",
+        });
+      }
+      const summaryKeys = Array.from(new Set([pRow, pCol, ...dataPoints]));
+      const { rows: detailRows } = await runReportQuery(
+        summaryKeys,
+        (report as any).filters ?? [],
+        (report as any).sortBy,
+        (report as any).sortOrder,
+        (report as any).projectId?.toString(),
+        1,
+        10_000,
+      );
+      const pivot = buildPivotTable(detailRows, pRow, pCol);
+      const rowDp = await ReportDataPoint.findOne({ key: pRow }).lean();
+      const rowLabel = (rowDp as any)?.label ?? pRow;
+      const esc = (s: string) =>
+        s.includes(",") || s.includes('"') || s.includes("\n")
+          ? `"${s.replace(/"/g, '""')}"`
+          : s;
+      const header = pivot.columns
+        .map((c) => esc(String(c === pRow ? rowLabel : c)))
+        .join(",");
+      const csvRows = pivot.rows.map((row) =>
+        pivot.columns
+          .map((c) => esc(String(row[c] ?? (c === pRow ? "" : 0))))
+          .join(","),
+      );
+      const csv = [header, ...csvRows].join("\n");
+      const filename = `${(report as any).name.replace(/[^a-z0-9]/gi, "_")}_summary_${Date.now()}.csv`;
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      return res.send(csv);
+    }
 
     // Fetch all rows (up to 10,000 for CSV safety)
     const { rows } = await runReportQuery(

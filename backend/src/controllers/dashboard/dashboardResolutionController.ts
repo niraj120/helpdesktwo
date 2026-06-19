@@ -172,6 +172,7 @@ export async function resolveMyDashboards(
           globalDateRangeDays:
             pref?.dateRangeDays ?? template.globalDateRangeDays ?? 30,
           allowUserDateOverride: template.allowUserDateOverride ?? true,
+          allTimeStartDate: (template as any).allTimeStartDate ?? null,
           autoRefreshSeconds: (template as any).autoRefreshSeconds ?? 0,
           allowWidgetExport: (template as any).allowWidgetExport ?? true,
           scopeOverride: pref?.scopeOverride ?? null,

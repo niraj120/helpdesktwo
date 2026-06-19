@@ -107,9 +107,8 @@ const authHeaders = () => ({
 // Column labels for footfall reports (keys returned by the footfall run/aggregation).
 const FOOTFALL_COLUMN_LABELS: Record<string, string> = {
   center: "Offline Center",
-  uniqueStudents: "Unique Students",
-  responses: "Responses",
-  ticketCount: "Tickets",
+  newQueries: "New Queries",
+  existingActive: "Existing Queries (Activity)",
   footfall: "Footfall",
 };
 
@@ -932,6 +931,12 @@ function ReportBuilderSection({
   const [reportDesc, setReportDesc] = useState("");
   const [sortBy, setSortBy] = useState("ticket_created_at");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  // Summary (pivot) mode
+  const [reportMode, setReportMode] = useState<"detail" | "summary">("detail");
+  const [pivotRow, setPivotRow] = useState("");
+  const [pivotCol, setPivotCol] = useState("");
+  // Dynamic column headers returned for a pivot preview (null = detail mode)
+  const [previewColumns, setPreviewColumns] = useState<string[] | null>(null);
   const [previewRows, setPreviewRows] = useState<any[]>([]);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1000,7 +1005,13 @@ function ReportBuilderSection({
       setSortBy(editingReport.sortBy ?? "ticket_created_at");
       setSortOrder((editingReport.sortOrder as "asc" | "desc") ?? "desc");
       setSelectedProjectScope((editingReport as any).projectId ?? "");
+      setReportMode(
+        (editingReport as any).reportMode === "summary" ? "summary" : "detail",
+      );
+      setPivotRow((editingReport as any).pivotRow ?? "");
+      setPivotCol((editingReport as any).pivotCol ?? "");
       setPreviewRows([]);
+      setPreviewColumns(null);
       setError("");
       setSuccess("");
     } else {
@@ -1058,6 +1069,11 @@ function ReportBuilderSection({
     setCatFilter("all");
     setSelectedKeys([]);
     setFilters([]);
+    // Pivot dimensions belong to the previous source — clear them too.
+    setPivotRow("");
+    setPivotCol("");
+    setPreviewRows([]);
+    setPreviewColumns(null);
   };
 
   const toggleKey = (key: string) => {
@@ -1095,9 +1111,17 @@ function ReportBuilderSection({
     );
   };
 
+  const isSummary = reportMode === "summary";
+
   const handlePreview = async () => {
-    if (selectedKeys.length === 0)
+    if (isSummary) {
+      if (!pivotRow || !pivotCol)
+        return setError("Pick both a Row and a Column dimension for the summary.");
+      if (pivotRow === pivotCol)
+        return setError("Row and Column dimensions must be different.");
+    } else if (selectedKeys.length === 0) {
       return setError("Select at least one data point.");
+    }
     if (!isAdmin && !selectedProjectScope)
       return setError("Please select a project scope before previewing.");
     setPreviewLoading(true);
@@ -1107,16 +1131,21 @@ function ReportBuilderSection({
         method: "POST",
         headers: authHeaders(),
         body: JSON.stringify({
-          dataPoints: selectedKeys,
+          dataPoints: isSummary ? [pivotRow, pivotCol] : selectedKeys,
           filters,
           sortBy,
           sortOrder,
           projectId: selectedProjectScope || undefined,
+          reportMode,
+          pivotRow: isSummary ? pivotRow : undefined,
+          pivotCol: isSummary ? pivotCol : undefined,
         }),
       });
       const d = await res.json();
-      if (d.success) setPreviewRows(d.data ?? []);
-      else setError(d.message);
+      if (d.success) {
+        setPreviewRows(d.data ?? []);
+        setPreviewColumns(d.meta?.isPivot ? (d.meta.columns ?? null) : null);
+      } else setError(d.message);
     } catch {
       setError("Preview failed");
     } finally {
@@ -1126,8 +1155,14 @@ function ReportBuilderSection({
 
   const handleSave = async () => {
     if (!reportName.trim()) return setError("Report name is required.");
-    if (selectedKeys.length === 0)
+    if (isSummary) {
+      if (!pivotRow || !pivotCol)
+        return setError("Pick both a Row and a Column dimension for the summary.");
+      if (pivotRow === pivotCol)
+        return setError("Row and Column dimensions must be different.");
+    } else if (selectedKeys.length === 0) {
       return setError("Select at least one data point.");
+    }
     setSaving(true);
     setError("");
     setSuccess("");
@@ -1142,11 +1177,14 @@ function ReportBuilderSection({
         body: JSON.stringify({
           name: reportName,
           description: reportDesc,
-          dataPoints: selectedKeys,
+          dataPoints: isSummary ? [pivotRow, pivotCol] : selectedKeys,
           filters,
           sortBy,
           sortOrder,
           projectId: selectedProjectScope || undefined,
+          reportMode,
+          pivotRow: isSummary ? pivotRow : undefined,
+          pivotCol: isSummary ? pivotCol : undefined,
         }),
       });
       const d = await res.json();
@@ -1162,6 +1200,10 @@ function ReportBuilderSection({
           setSelectedKeys([]);
           setFilters([]);
           setPreviewRows([]);
+          setPreviewColumns(null);
+          setReportMode("detail");
+          setPivotRow("");
+          setPivotCol("");
         }
         onSaved?.();
       } else setError(d.message);
@@ -2011,6 +2053,108 @@ function ReportBuilderSection({
             )}
           </div>
 
+          {/* Report mode: Detail vs Summary (pivot table of counts) */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              marginBottom: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>
+              Report type:
+            </span>
+            <div
+              style={{
+                display: "flex",
+                border: "1px solid #d1d5db",
+                borderRadius: 8,
+                overflow: "hidden",
+              }}
+            >
+              {(["detail", "summary"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => {
+                    setReportMode(m);
+                    setPreviewRows([]);
+                    setPreviewColumns(null);
+                  }}
+                  style={{
+                    padding: "5px 14px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    border: "none",
+                    cursor: "pointer",
+                    background: reportMode === m ? "#6366f1" : "#fff",
+                    color: reportMode === m ? "#fff" : "#374151",
+                  }}
+                >
+                  {m === "detail" ? "Detail" : "Summary (counts)"}
+                </button>
+              ))}
+            </div>
+            {isSummary && (
+              <>
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: "#374151",
+                    marginLeft: 8,
+                  }}
+                >
+                  Rows:
+                </span>
+                <select
+                  value={pivotRow}
+                  onChange={(e) => setPivotRow(e.target.value)}
+                  style={{
+                    padding: "5px 8px",
+                    border: "1px solid #d1d5db",
+                    borderRadius: 6,
+                    fontSize: 12,
+                  }}
+                >
+                  <option value="">Select dimension…</option>
+                  {sourceScopedDps.map((d) => (
+                    <option key={d.key} value={d.key}>
+                      {d.label}
+                    </option>
+                  ))}
+                </select>
+                <span
+                  style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}
+                >
+                  Columns:
+                </span>
+                <select
+                  value={pivotCol}
+                  onChange={(e) => setPivotCol(e.target.value)}
+                  style={{
+                    padding: "5px 8px",
+                    border: "1px solid #d1d5db",
+                    borderRadius: 6,
+                    fontSize: 12,
+                  }}
+                >
+                  <option value="">Select dimension…</option>
+                  {sourceScopedDps.map((d) => (
+                    <option key={d.key} value={d.key}>
+                      {d.label}
+                    </option>
+                  ))}
+                </select>
+                <span style={{ fontSize: 11, color: "#6b7280" }}>
+                  cells = count (with a Total column)
+                </span>
+              </>
+            )}
+          </div>
+
           {/* Sort + actions */}
           <div
             style={{
@@ -2061,7 +2205,12 @@ function ReportBuilderSection({
             <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
               <button
                 onClick={handlePreview}
-                disabled={previewLoading || selectedKeys.length === 0}
+                disabled={
+                  previewLoading ||
+                  (isSummary
+                    ? !pivotRow || !pivotCol
+                    : selectedKeys.length === 0)
+                }
                 style={{
                   padding: "7px 16px",
                   background: "#6366f1",
@@ -2073,7 +2222,11 @@ function ReportBuilderSection({
                   cursor: "pointer",
                 }}
               >
-                {previewLoading ? "Loading…" : "👁 Preview (10 rows)"}
+                {previewLoading
+                  ? "Loading…"
+                  : isSummary
+                    ? "👁 Preview summary"
+                    : "👁 Preview (10 rows)"}
               </button>
               <button
                 onClick={handleSave}
@@ -2134,8 +2287,14 @@ function ReportBuilderSection({
                         borderBottom: "1px solid #e5e7eb",
                       }}
                     >
-                      {selectedKeys.map((k) => {
-                        const dp = dataPoints.find((d) => d.key === k);
+                      {(previewColumns ?? selectedKeys).map((k) => {
+                        // Pivot: only the row-dimension key maps to a data-point
+                        // label; the other columns are literal values + "Total".
+                        const label = previewColumns
+                          ? k === pivotRow
+                            ? (dataPoints.find((d) => d.key === k)?.label ?? k)
+                            : k
+                          : (dataPoints.find((d) => d.key === k)?.label ?? k);
                         return (
                           <th
                             key={k}
@@ -2147,7 +2306,7 @@ function ReportBuilderSection({
                               whiteSpace: "nowrap",
                             }}
                           >
-                            {dp?.label ?? k}
+                            {label}
                           </th>
                         );
                       })}
@@ -2162,7 +2321,7 @@ function ReportBuilderSection({
                           background: i % 2 === 0 ? "#fff" : "#f9fafb",
                         }}
                       >
-                        {selectedKeys.map((k) => (
+                        {(previewColumns ?? selectedKeys).map((k) => (
                           <td
                             key={k}
                             style={{
@@ -2215,6 +2374,9 @@ function SavedReportsSection({
     rows: any[];
     dataPoints: string[];
     total: number;
+    columns?: string[];
+    isPivot?: boolean;
+    pivotRow?: string;
   } | null>(null);
   const [runPage, setRunPage] = useState(1);
   const [runPageSize] = useState(100);
@@ -2274,6 +2436,9 @@ function SavedReportsSection({
           rows: d.data,
           dataPoints: d.meta.dataPoints,
           total: d.meta.total,
+          columns: d.meta.isPivot ? d.meta.columns : undefined,
+          isPivot: !!d.meta.isPivot,
+          pivotRow: d.meta.pivotRow,
         });
       } else setError(d.message);
     } catch {
@@ -2830,7 +2995,10 @@ function SavedReportsSection({
                     borderBottom: "1px solid #e5e7eb",
                   }}
                 >
-                  {runResult.dataPoints.map((k) => (
+                  {(runResult.isPivot && runResult.columns
+                    ? runResult.columns
+                    : runResult.dataPoints
+                  ).map((k) => (
                     <th
                       key={k}
                       style={{
@@ -2841,7 +3009,11 @@ function SavedReportsSection({
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {getDataPointLabel(k, dpMap)}
+                      {runResult.isPivot
+                        ? k === runResult.pivotRow
+                          ? getDataPointLabel(k, dpMap)
+                          : k
+                        : getDataPointLabel(k, dpMap)}
                     </th>
                   ))}
                 </tr>
@@ -2855,7 +3027,10 @@ function SavedReportsSection({
                       background: i % 2 === 0 ? "#fff" : "#f9fafb",
                     }}
                   >
-                    {runResult.dataPoints.map((k) => (
+                    {(runResult.isPivot && runResult.columns
+                      ? runResult.columns
+                      : runResult.dataPoints
+                    ).map((k) => (
                       <td
                         key={k}
                         style={{
@@ -3091,10 +3266,13 @@ function MyReportsSection() {
       );
       const d = await res.json();
       if (d.success) {
-        // Footfall reports are aggregated — their columns come back in meta.columns
-        // (the saved report has no user-selected dataPoints).
-        const cols: string[] =
-          d.meta?.reportType === "footfall" && Array.isArray(d.meta?.columns)
+        // Aggregated reports return their columns in meta.columns:
+        //  - Summary (pivot): meta.columns is a plain string[] (row dim, values…, Total)
+        //  - Footfall: meta.columns is [{ key }] objects
+        // Detail reports use the saved report's selected dataPoints.
+        const cols: string[] = d.meta?.isPivot
+          ? (d.meta.columns ?? [])
+          : d.meta?.reportType === "footfall" && Array.isArray(d.meta?.columns)
             ? d.meta.columns.map((c: { key: string }) => c.key)
             : report.dataPoints;
         setRunResult({
@@ -4955,9 +5133,8 @@ function NavItem({
 
 interface FootfallRow {
   center: string;
-  uniqueStudents: number;
-  responses: number;
-  ticketCount: number;
+  newQueries: number;
+  existingActive: number;
   footfall: number;
 }
 
@@ -4982,16 +5159,15 @@ function footfallToCsvString(
 ): string {
   const header = [
     "Offline Center",
-    "Unique Students",
-    "Responses",
+    "New Queries",
+    "Existing Queries (Activity)",
     "Footfall",
-    "Tickets",
   ];
   const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
   const lines = [header.map(esc).join(",")];
   for (const r of rows)
     lines.push(
-      [r.center, r.uniqueStudents, r.responses, r.footfall, r.ticketCount]
+      [r.center, r.newQueries, r.existingActive, r.footfall]
         .map(esc)
         .join(","),
     );
@@ -4999,10 +5175,9 @@ function footfallToCsvString(
     lines.push(
       [
         "TOTAL",
-        totals.uniqueStudents,
-        totals.responses,
+        totals.newQueries,
+        totals.existingActive,
         totals.footfall,
-        totals.ticketCount,
       ]
         .map(esc)
         .join(","),
@@ -5044,22 +5219,25 @@ function downloadFootfallPdf(
   }
   const body: (string | number)[][] = rows.map((r) => [
     r.center,
-    r.uniqueStudents,
-    r.responses,
-    r.ticketCount,
+    r.newQueries,
+    r.existingActive,
     r.footfall,
   ]);
   if (totals)
     body.push([
       "TOTAL",
-      totals.uniqueStudents,
-      totals.responses,
-      totals.ticketCount,
+      totals.newQueries,
+      totals.existingActive,
       totals.footfall,
     ]);
   autoTable(doc, {
     head: [
-      ["Offline Center", "Unique Students", "Responses", "Tickets", "Footfall"],
+      [
+        "Offline Center",
+        "New Queries",
+        "Existing Queries (Activity)",
+        "Footfall",
+      ],
     ],
     body: body.map((r) => r.map(String)),
     startY: opts.subtitle ? 27 : 22,
@@ -5098,9 +5276,10 @@ function FootfallResultTable({
           <thead>
             <tr style={{ background: "#6366f1" }}>
               <th style={FF_TH}>Offline Center</th>
-              <th style={{ ...FF_TH, textAlign: "center" }}>Unique Students</th>
-              <th style={{ ...FF_TH, textAlign: "center" }}>Responses</th>
-              <th style={{ ...FF_TH, textAlign: "center" }}>Tickets</th>
+              <th style={{ ...FF_TH, textAlign: "center" }}>New Queries</th>
+              <th style={{ ...FF_TH, textAlign: "center" }}>
+                Existing Queries (Activity)
+              </th>
               <th style={{ ...FF_TH, textAlign: "center" }}>Footfall</th>
             </tr>
           </thead>
@@ -5114,11 +5293,10 @@ function FootfallResultTable({
                   {r.center}
                 </td>
                 <td style={{ ...FF_TD, textAlign: "center" }}>
-                  {r.uniqueStudents}
+                  {r.newQueries}
                 </td>
-                <td style={{ ...FF_TD, textAlign: "center" }}>{r.responses}</td>
                 <td style={{ ...FF_TD, textAlign: "center" }}>
-                  {r.ticketCount}
+                  {r.existingActive}
                 </td>
                 <td
                   style={{
@@ -5138,13 +5316,10 @@ function FootfallResultTable({
               <tr style={{ background: "#f3f4f6" }}>
                 <td style={{ ...FF_TD, fontWeight: 700 }}>Total</td>
                 <td style={{ ...FF_TD, textAlign: "center", fontWeight: 700 }}>
-                  {totals.uniqueStudents}
+                  {totals.newQueries}
                 </td>
                 <td style={{ ...FF_TD, textAlign: "center", fontWeight: 700 }}>
-                  {totals.responses}
-                </td>
-                <td style={{ ...FF_TD, textAlign: "center", fontWeight: 700 }}>
-                  {totals.ticketCount}
+                  {totals.existingActive}
                 </td>
                 <td
                   style={{

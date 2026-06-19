@@ -17,6 +17,8 @@ export interface IDashboardTemplate extends Document {
   status: DashboardStatus;
   globalDateRangeDays: number;
   allowUserDateOverride: boolean;
+  /** "All time" floor — dashboard-level start date used when the range is "All time". ISO date (YYYY-MM-DD). */
+  allTimeStartDate?: string | null;
   isSystemTemplate: boolean; // seeded system templates cannot be deleted
   theme?: "light" | "dark" | "system"; // display theme override
   allowWidgetExport?: boolean; // allow users to export individual widget data
@@ -47,6 +49,7 @@ const DashboardTemplateSchema = new Schema<IDashboardTemplate>(
     },
     globalDateRangeDays: { type: Number, default: 30 },
     allowUserDateOverride: { type: Boolean, default: true },
+    allTimeStartDate: { type: String, default: null },
     isSystemTemplate: { type: Boolean, default: false },
     theme: {
       type: String,

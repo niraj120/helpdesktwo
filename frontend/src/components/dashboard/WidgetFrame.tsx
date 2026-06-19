@@ -275,6 +275,9 @@ export interface WidgetFrameProps {
   title?: string | null;
   visualisationType: string;
   dateRangeDays: number;
+  customStart?: string | null;
+  customEnd?: string | null;
+  allTimeStart?: string | null;
   config?: Record<string, any>;
   onCollapseChange?: (widgetKey: string, collapsed: boolean) => void;
   defaultCollapsed?: boolean;
@@ -310,6 +313,9 @@ export default function WidgetFrame({
   title,
   visualisationType,
   dateRangeDays,
+  customStart,
+  customEnd,
+  allTimeStart,
   config = {},
   onCollapseChange,
   defaultCollapsed = false,
@@ -336,6 +342,9 @@ export default function WidgetFrame({
 
   const params: WidgetDataParams = {
     dateRangeDays,
+    customStart,
+    customEnd,
+    allTimeStart,
     visualisationType,
     filters: resolvedFilters,
     targetMode: config.targetMode,
@@ -353,6 +362,9 @@ export default function WidgetFrame({
         "widget",
         widgetKey,
         dateRangeDays,
+        customStart,
+        customEnd,
+        allTimeStart,
         JSON.stringify(config),
         JSON.stringify(ctxOverrides),
       ],

@@ -125,6 +125,10 @@ apiClient.interceptors.response.use(
       localStorage.removeItem("userId");
       localStorage.removeItem("userRole");
       localStorage.removeItem("projectContext");
+      // Clear impersonation state too, so an expired impersonation token can't
+      // leave a stale "viewing as" banner after the forced logout.
+      localStorage.removeItem("impersonation");
+      localStorage.removeItem("impersonatorBackup");
 
       // Get current path to determine correct login route
       const currentPath = window.location.pathname;

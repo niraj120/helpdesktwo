@@ -99,6 +99,9 @@ export const authTokenUtils = {
     localStorage.removeItem('userRole');
     localStorage.removeItem('userPermissions');
     localStorage.removeItem('projectContext');
+    // Impersonation session/backup — cleared on full logout.
+    localStorage.removeItem('impersonation');
+    localStorage.removeItem('impersonatorBackup');
   }
 } as const;
 

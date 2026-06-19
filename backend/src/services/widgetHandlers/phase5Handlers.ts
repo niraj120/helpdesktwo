@@ -116,7 +116,7 @@ const ticketInprogressCountHandler: QueryHandler = {
     scopedQuery: Record<string, any>,
   ): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const prevStart = new Date(start.getTime() - params.dateRangeDays * 86400000);
     const statuses = await loadStatuses(ctx.tenantId);
     const pCodes = pendingCodes(statuses);
@@ -154,7 +154,7 @@ const ticketResolvedCountHandler: QueryHandler = {
     scopedQuery: Record<string, any>,
   ): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const prevStart = new Date(start.getTime() - params.dateRangeDays * 86400000);
     const statuses = await loadStatuses(ctx.tenantId);
     const dCodes = closedCodes(statuses);
@@ -200,7 +200,7 @@ const ticketBySubmissionSourceHandler: QueryHandler = {
     scopedQuery: Record<string, any>,
   ): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
 
     const agg = await Ticket.aggregate([
       {
@@ -239,7 +239,7 @@ const ticketRecentListHandler: QueryHandler = {
     scopedQuery: Record<string, any>,
   ): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const topN = (params.filters as any)?.top_n ?? 20;
     const statuses = await loadStatuses(ctx.tenantId);
     const aCodes = activeCodes(statuses);
@@ -272,7 +272,7 @@ const ticketCommentCountHandler: QueryHandler = {
     scopedQuery: Record<string, any>,
   ): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const statuses = await loadStatuses(ctx.tenantId);
     const aCodes = activeCodes(statuses);
 
@@ -344,7 +344,7 @@ const userNewRegistrationsHandler: QueryHandler = {
     _scopedQuery: Record<string, any>,
   ): Promise<WidgetData> {
     const User = getUserModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const prevStart = new Date(start.getTime() - params.dateRangeDays * 86400000);
     const projectOId = new mongoose.Types.ObjectId(ctx.tenantId);
 

@@ -88,6 +88,11 @@ export async function updateMyPreference(
 
 export interface WidgetDataParams {
   dateRangeDays?: number;
+  /** Custom range bounds (used when dateRangeDays === -3). ISO date strings (YYYY-MM-DD). */
+  customStart?: string | null;
+  customEnd?: string | null;
+  /** Dashboard-level "All time" floor (used when dateRangeDays === 0). ISO date string. */
+  allTimeStart?: string | null;
   visualisationType?: string;
   filters?: Record<string, any>;
   scopeMode?: string;
@@ -116,6 +121,9 @@ export async function fetchWidgetData(
   const qs = new URLSearchParams();
   if (params.dateRangeDays !== undefined)
     qs.set("dateRangeDays", String(params.dateRangeDays));
+  if (params.customStart) qs.set("customStart", params.customStart);
+  if (params.customEnd) qs.set("customEnd", params.customEnd);
+  if (params.allTimeStart) qs.set("allTimeStart", params.allTimeStart);
   if (params.visualisationType)
     qs.set("visualisationType", params.visualisationType);
   if (params.filters) qs.set("filters", JSON.stringify(params.filters));

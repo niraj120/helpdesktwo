@@ -56,6 +56,12 @@ export const PERMISSION_CODES = {
   USER_ASSIGN_ROLE: "USER_ASSIGN_ROLE",
   USER_RESET_PASSWORD: "USER_RESET_PASSWORD",
   USER_IMPORT: "USER_IMPORT",
+  // Impersonation ("Login as user") — token-based, audited, DPDP compliant.
+  // IMPERSONATE_USER: holder may log in as another (non-exempt) user.
+  // IMPERSONATION_EXEMPT: a role holding this CANNOT be impersonated (assign to
+  // Super Admin / Sub Admin). Configurable, never hardcoded by role name.
+  IMPERSONATE_USER: "IMPERSONATE_USER",
+  IMPERSONATION_EXEMPT: "IMPERSONATION_EXEMPT",
 
   // Reports
   REPORT_VIEW_TICKETS: "REPORT_VIEW_TICKETS",

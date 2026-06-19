@@ -60,6 +60,7 @@ interface CenterAssetMapping {
   workingAsset: number;
   notWorkingAsset: number;
   lastAuditDate?: string;
+  auditEndDate?: string;
   auditFrequencyMonths?: number;
   nextAuditDate?: string;
 }
@@ -72,6 +73,7 @@ interface CenterAssetSelection {
   lastAuditDate?: string;
   auditFrequencyMonths?: number;
   auditStartDate?: string;
+  auditEndDate?: string;
   nextAuditDate?: string;
 }
 
@@ -293,6 +295,11 @@ const CenterAssetMappingAccordion: React.FC = () => {
               newSelections[center._id].auditStartDate =
                 existingSelections[center._id]?.auditStartDate ||
                 mapping.lastAuditDate;
+            }
+            if (!newSelections[center._id].auditEndDate) {
+              newSelections[center._id].auditEndDate =
+                existingSelections[center._id]?.auditEndDate ||
+                mapping.auditEndDate;
             }
             if (!newSelections[center._id].nextAuditDate) {
               newSelections[center._id].nextAuditDate =
@@ -554,6 +561,7 @@ const CenterAssetMappingAccordion: React.FC = () => {
           assetQuantities: { ...sourceQuantities },
           lastAuditDate: sourceSel?.lastAuditDate,
           auditStartDate: sourceSel?.auditStartDate,
+          auditEndDate: sourceSel?.auditEndDate,
           auditFrequencyMonths: sourceSel?.auditFrequencyMonths,
           nextAuditDate: sourceSel?.nextAuditDate,
         };
@@ -704,6 +712,7 @@ const CenterAssetMappingAccordion: React.FC = () => {
                 applyToAllCenters: false,
                 quantities: { [centerId]: quantity }, // Map quantity to center ID
                 lastAuditDate: selection.lastAuditDate,
+                auditEndDate: selection.auditEndDate,
                 auditFrequencyMonths: selection.auditFrequencyMonths,
                 nextAuditDate: selection.nextAuditDate,
               }),
@@ -848,7 +857,9 @@ const CenterAssetMappingAccordion: React.FC = () => {
                   applyToAllCenters: false,
                   quantities: { [centerId]: quantity }, // Map quantity to center ID
                   lastAuditDate: selection.lastAuditDate,
+                  auditEndDate: selection.auditEndDate,
                   auditFrequencyMonths: selection.auditFrequencyMonths,
+                  nextAuditDate: selection.nextAuditDate,
                 }),
               },
             );
@@ -1620,6 +1631,40 @@ const CenterAssetMappingAccordion: React.FC = () => {
                                       .toISOString()
                                       .split("T")[0]
                                   : new Date().toISOString().split("T")[0]
+                              }
+                              className="rounded border border-purple-300 px-2 py-0.5 text-xs bg-white focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                            />
+                            <span className="text-xs text-purple-700">
+                              → last
+                            </span>
+                            <input
+                              type="date"
+                              min={
+                                selection?.auditStartDate
+                                  ? new Date(selection.auditStartDate)
+                                      .toISOString()
+                                      .split("T")[0]
+                                  : new Date().toISOString().split("T")[0]
+                              }
+                              title="Last submission date (deadline) — audit stays editable until this date, then the last data is archived to history."
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                const value = e.target.value;
+                                setCenterSelections((prev) => ({
+                                  ...prev,
+                                  [center._id]: {
+                                    ...prev[center._id],
+                                    auditEndDate: value || undefined,
+                                  },
+                                }));
+                              }}
+                              value={
+                                selection?.auditEndDate
+                                  ? new Date(selection.auditEndDate)
+                                      .toISOString()
+                                      .split("T")[0]
+                                  : ""
                               }
                               className="rounded border border-purple-300 px-2 py-0.5 text-xs bg-white focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
                             />

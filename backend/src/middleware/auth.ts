@@ -27,6 +27,13 @@ export interface AuthRequest extends Request {
     projectName?: string; // Display name of that project
     centreId?: string; // Primary centre assignment for centre-scoped queries
     centreIds?: string[]; // ALL centres assigned to the user (multi-centre roles)
+    // Present only for impersonation ("login as") sessions — identifies the real
+    // admin behind the session. Used to block nested impersonation & for audit.
+    impersonatedBy?: {
+      userId: string;
+      email: string;
+      name?: string;
+    };
   };
   projectContext?: ProjectContext; // Attached by attachProjectContext middleware
 }
@@ -52,7 +59,11 @@ export const authMiddleware = async (
     const cachedUser = cache.get<AuthRequest["user"]>(authCacheKey);
 
     if (cachedUser) {
-      req.user = cachedUser;
+      // impersonatedBy is a token-level claim, not part of the cached user —
+      // attach a shallow copy so we never write it into the shared cache entry.
+      req.user = decoded.impersonatedBy
+        ? { ...cachedUser, impersonatedBy: decoded.impersonatedBy }
+        : cachedUser;
       return next();
     }
 
@@ -110,7 +121,10 @@ export const authMiddleware = async (
 
       // Cache for 30 seconds — eliminates DB hit for every subsequent request
       cache.set(authCacheKey, userData, 30);
-      req.user = userData;
+      // Attach impersonatedBy AFTER caching so the shared cache stays clean.
+      req.user = decoded.impersonatedBy
+        ? { ...userData, impersonatedBy: decoded.impersonatedBy }
+        : userData;
     } else {
       req.user = {
         userId: decoded.userId,

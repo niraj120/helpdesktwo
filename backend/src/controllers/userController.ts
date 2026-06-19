@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { User } from "../models/User";
 import { Role } from "../models/Role";
 import { Project } from "../models/Project";
+import { Center } from "../models/Center";
 import { hrmsService } from "../services/hrmsService";
 import mongoose from "mongoose";
 import { logActivity } from "../utils/logger";
@@ -2303,5 +2304,229 @@ export const bulkCreateUsers = async (
   } catch (error: any) {
     console.error("Bulk create users error:", error);
     res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Build the user-list filter from query params + caller role scoping.
+ * Mirrors the filter logic in getAllUsers so export honours the SAME filters.
+ */
+async function buildUserExportFilter(
+  query: any,
+  callerRole: any,
+): Promise<any> {
+  const { search = "", role = "", isActive = "", project = "", department = "" } = query;
+  const filter: any = {};
+
+  if (search) {
+    filter.$or = [
+      { firstName: { $regex: search, $options: "i" } },
+      { lastName: { $regex: search, $options: "i" } },
+      { email: { $regex: search, $options: "i" } },
+      { employeeCode: { $regex: search, $options: "i" } },
+      { mobile: { $regex: search, $options: "i" } },
+    ];
+  }
+
+  if (role) {
+    const roleTokens = String(role).split(",").map((r) => r.trim()).filter(Boolean);
+    const roleIds: mongoose.Types.ObjectId[] = [];
+    const roleCodes: string[] = [];
+    for (const t of roleTokens) {
+      if (t.length === 24 && /^[0-9a-fA-F]{24}$/.test(t)) {
+        roleIds.push(new mongoose.Types.ObjectId(t));
+      } else roleCodes.push(t);
+    }
+    if (roleCodes.length) {
+      const roleDocs = await Role.find({
+        code: { $in: roleCodes.map((r) => new RegExp(`^${r}$`, "i")) },
+      }).select("_id");
+      roleIds.push(...roleDocs.map((r) => r._id as mongoose.Types.ObjectId));
+    }
+    // No matching roles → impossible filter (return nothing).
+    filter.role = roleIds.length ? { $in: roleIds } : new mongoose.Types.ObjectId();
+  }
+
+  if (isActive !== "") {
+    const tokens = String(isActive).split(",").map((s) => s.trim().toLowerCase())
+      .filter((s) => s === "true" || s === "false");
+    if (tokens.length === 1) filter.isActive = tokens[0] === "true";
+  }
+
+  if (project) {
+    const ids = String(project).split(",").map((p) => p.trim())
+      .filter((p) => mongoose.Types.ObjectId.isValid(p))
+      .map((p) => new mongoose.Types.ObjectId(p));
+    if (ids.length) filter.projects = { $in: ids };
+  }
+
+  if (department) filter.department = { $regex: department, $options: "i" };
+
+  if (query.createdAfter || query.createdBefore) {
+    filter.createdAt = {};
+    if (query.createdAfter) {
+      const d = new Date(query.createdAfter);
+      if (!isNaN(d.getTime())) filter.createdAt.$gte = d;
+    }
+    if (query.createdBefore) {
+      const d = new Date(query.createdBefore);
+      if (!isNaN(d.getTime())) { d.setHours(23, 59, 59, 999); filter.createdAt.$lte = d; }
+    }
+    if (Object.keys(filter.createdAt).length === 0) delete filter.createdAt;
+  }
+
+  if (query.centers) {
+    const ids = String(query.centers).split(",").map((c) => c.trim()).filter(Boolean);
+    if (ids.length) filter.centers = { $in: ids };
+  }
+
+  if (query.company) {
+    const c = String(query.company);
+    if (c === "internal") filter.payrollType = "internal";
+    else if (c === "external") filter.payrollType = "external";
+    else filter.company = c;
+  }
+
+  // Non-super-admin callers only export users within their scoped projects.
+  const isSuperAdmin =
+    callerRole?.code === "SUPER_ADMIN" || callerRole?.name === "Super Admin";
+  if (!isSuperAdmin && callerRole?.projects?.length > 0) {
+    const allowed = callerRole.projects.map((p: any) => new mongoose.Types.ObjectId(p._id || p));
+    if (filter.projects?.$in) {
+      filter.projects = {
+        $in: filter.projects.$in.filter((id: any) =>
+          allowed.some((a: any) => a.equals(id)),
+        ),
+      };
+    } else {
+      filter.projects = { $in: allowed };
+    }
+  }
+
+  // Exclude legacy string roles that break populate (same guard as getAllUsers).
+  filter.$and = filter.$and || [];
+  if (filter.role) {
+    filter.$and.push({ role: filter.role });
+    filter.$and.push({ role: { $type: "objectId" } });
+    delete filter.role;
+  } else {
+    filter.$and.push({
+      $or: [{ role: { $type: "objectId" } }, { role: null }, { role: { $exists: false } }],
+    });
+  }
+
+  return filter;
+}
+
+/**
+ * @route   GET /api/users/export
+ * @desc    Export the filtered user list to CSV or Excel. Honours the same
+ *          filters as the user list (search, role, isActive, project,
+ *          department, centers, company, date range). ?format=csv|excel.
+ * @access  Private (USER_VIEW_ALL)
+ */
+export const exportUsers = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const format = String(req.query.format || "excel").toLowerCase();
+    const callerRole = (req as any).user?.role;
+    const filter = await buildUserExportFilter(req.query, callerRole);
+
+    const users = await User.find(filter)
+      .select(
+        "firstName lastName email mobile employeeCode department payrollType isActive lastLogin createdAt role projects centers",
+      )
+      .populate("role", "name")
+      .populate("projects", "name")
+      .populate("centers", "centerName")
+      .sort({ createdAt: -1 })
+      .limit(50000)
+      .lean();
+
+    const columns: { key: string; label: string }[] = [
+      { key: "name", label: "Name" },
+      { key: "email", label: "Email" },
+      { key: "mobile", label: "Mobile" },
+      { key: "employeeCode", label: "Employee Code" },
+      { key: "role", label: "Role" },
+      { key: "department", label: "Department" },
+      { key: "payrollType", label: "Payroll Type" },
+      { key: "projects", label: "Projects" },
+      { key: "centers", label: "Centers" },
+      { key: "status", label: "Status" },
+      { key: "lastLogin", label: "Last Login" },
+      { key: "createdAt", label: "Created At" },
+    ];
+
+    const fmtDate = (d?: any): string => {
+      if (!d) return "";
+      const date = new Date(d);
+      if (isNaN(date.getTime())) return "";
+      return date.toLocaleString("en-IN", {
+        timeZone: "Asia/Kolkata",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      });
+    };
+
+    const cell = (u: any, key: string): string => {
+      switch (key) {
+        case "name": return `${u.firstName || ""} ${u.lastName || ""}`.trim();
+        case "email": return u.email || "";
+        case "mobile": return u.mobile || "";
+        case "employeeCode": return u.employeeCode || "";
+        case "role": return (u.role as any)?.name || "";
+        case "department": return u.department || "";
+        case "payrollType": return u.payrollType || "";
+        case "projects": return (u.projects || []).map((p: any) => p?.name).filter(Boolean).join(", ");
+        case "centers": return (u.centers || []).map((c: any) => c?.centerName).filter(Boolean).join(", ");
+        case "status": return u.isActive ? "Active" : "Inactive";
+        case "lastLogin": return fmtDate(u.lastLogin);
+        case "createdAt": return fmtDate(u.createdAt);
+        default: return "";
+      }
+    };
+
+    const headers = columns.map((c) => c.label);
+    const dataRows = users.map((u: any) => columns.map((c) => cell(u, c.key)));
+    const dateStamp = new Date().toISOString().split("T")[0];
+
+    if (format === "csv") {
+      const esc = (v: string) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+      const lines = [headers.map(esc).join(",")];
+      for (const row of dataRows) lines.push(row.map(esc).join(","));
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="users_export_${dateStamp}.csv"`);
+      res.send(lines.join("\n"));
+      return;
+    }
+
+    if (format === "excel") {
+      const workbook = new ExcelJS.Workbook();
+      const ws = workbook.addWorksheet("Users");
+      ws.columns = columns.map((c) => ({ header: c.label, key: c.key, width: 22 }));
+      users.forEach((u: any) => {
+        const rowObj: Record<string, string> = {};
+        columns.forEach((c) => (rowObj[c.key] = cell(u, c.key)));
+        ws.addRow(rowObj);
+      });
+      ws.getRow(1).font = { bold: true };
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      );
+      res.setHeader("Content-Disposition", `attachment; filename="users_export_${dateStamp}.xlsx"`);
+      await workbook.xlsx.write(res);
+      res.end();
+      return;
+    }
+
+    res.status(400).json({ message: 'Invalid format. Use "csv" or "excel"' });
+  } catch (error: any) {
+    console.error("Export users error:", error);
+    res.status(500).json({ success: false, message: "Failed to export users" });
   }
 };

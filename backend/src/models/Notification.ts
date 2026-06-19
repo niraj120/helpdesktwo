@@ -12,7 +12,14 @@ export type TriggerType =
   | "kb_article_updated"
   | "kb_article_archived"
   | "sla_breach_warning"
-  | "sla_breached";
+  | "sla_breached"
+  | "sr_created"
+  | "sr_task_assigned"
+  | "sr_resolved"
+  | "sr_reassigned"
+  | "sr_child_case"
+  | "sr_reopened"
+  | "sr_closed";
 
 export interface INotification extends Document {
   recipientUserId: mongoose.Types.ObjectId;
@@ -60,6 +67,13 @@ const notificationSchema = new Schema<INotification>(
         "kb_article_archived",
         "sla_breach_warning",
         "sla_breached",
+        "sr_created",
+        "sr_task_assigned",
+        "sr_resolved",
+        "sr_reassigned",
+        "sr_child_case",
+        "sr_reopened",
+        "sr_closed",
       ],
       required: true,
     },

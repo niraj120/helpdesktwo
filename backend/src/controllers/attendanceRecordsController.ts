@@ -111,8 +111,13 @@ export const getAttendanceRecords = async (
     }
 
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    // The attendance report fetches a whole month for every project employee in
+    // one call (it asks for limit=10000). Capping at 200 silently truncated the
+    // result to the 200 most-recent records — so older days (and bulk-uploaded
+    // rows for past dates) never appeared. Allow large explicit page sizes for
+    // the report; the default page (no limit param) stays small.
     const limit = Math.min(
-      200,
+      50000,
       Math.max(1, parseInt(req.query.limit as string) || 50),
     );
 

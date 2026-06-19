@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { MdHistory, MdEdit, MdSend, MdRefresh, MdClose } from 'react-icons/md';
 import { API_CONFIG } from '../config/constants';
 import DashboardLayout from './DashboardLayout';
-import ModuleHeader from './ModuleHeader';
 
 interface AssetUsage {
   _id: string;
@@ -74,6 +73,9 @@ interface MyAssetsProps {
 
 const MyAssets: React.FC<MyAssetsProps> = ({ wrapWithLayout = true }) => {
   const [assets, setAssets] = useState<AssetUsage[]>([]);
+  const [assetLinkButtons, setAssetLinkButtons] = useState<
+    Array<{ label: string; url: string }>
+  >([]);
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editData, setEditData] = useState<EditData>({
@@ -111,6 +113,9 @@ const MyAssets: React.FC<MyAssetsProps> = ({ wrapWithLayout = true }) => {
       
       if (data.success) {
         setAssets(data.data || []);
+        setAssetLinkButtons(
+          Array.isArray(data.assetLinkButtons) ? data.assetLinkButtons : [],
+        );
       } else {
         showMessage('error', data.message || 'Failed to load assets');
       }
@@ -271,24 +276,144 @@ const MyAssets: React.FC<MyAssetsProps> = ({ wrapWithLayout = true }) => {
     return lastUpdatedBy.email || '-';
   };
 
-  const content = (
-    <div className="p-6">
-      {/* Header with gradient style */}
-      <ModuleHeader
-        title="My Assets"
-        subtitle="Update and manage your assigned assets. Next audit is scheduled based on audit frequency."
-      />
+  // Derive summary stats for the header cards (only valid asset rows).
+  const validAssets = assets.filter((a) => a.assetId != null);
+  const statCards = [
+    {
+      label: 'Total Assets',
+      value: validAssets.length,
+      color: '#4f46e5',
+    },
+    {
+      label: 'Total Assigned',
+      value: validAssets.reduce((s, a) => s + (a.totalAssigned || 0), 0),
+      color: '#2563eb',
+    },
+    {
+      label: 'Working',
+      value: validAssets.reduce((s, a) => s + (a.workingAsset || 0), 0),
+      color: '#16a34a',
+    },
+    {
+      label: 'Not Working',
+      value: validAssets.reduce((s, a) => s + (a.notWorkingAsset || 0), 0),
+      color: '#dc2626',
+    },
+    {
+      label: 'Pending Audit',
+      value: validAssets.filter((a) => a.canEdit && !a.auditSubmitted).length,
+      color: '#d97706',
+    },
+  ];
 
-      {/* Action Buttons */}
-      <div className="mb-6 flex items-center justify-end">
-        <button
-          onClick={fetchMyAssets}
-          disabled={loading}
-          className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-        >
-          <MdRefresh className="h-5 w-5" />
-          Refresh
-        </button>
+  const content = (
+    <div
+      style={{
+        padding: '24px 20px 32px',
+        maxWidth: '1380px',
+        margin: '0 auto',
+        background: '#f6f8fc',
+        minHeight: '100vh',
+        fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+      }}
+    >
+      {/* Header card */}
+      <div
+        style={{
+          background: '#ffffff',
+          padding: '22px 24px',
+          borderRadius: '14px',
+          marginBottom: '16px',
+          border: '1px solid #e7ebf3',
+          boxShadow: '0 4px 18px rgba(15, 23, 42, 0.05)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '16px',
+          flexWrap: 'wrap',
+        }}
+      >
+        <div>
+          <h1
+            style={{
+              margin: '0 0 6px 0',
+              fontSize: '24px',
+              fontWeight: 700,
+              color: '#111827',
+              letterSpacing: '-0.01em',
+            }}
+          >
+            My Assets
+          </h1>
+          <p style={{ margin: 0, fontSize: '14px', color: '#6b7280' }}>
+            Update and manage your assigned assets. Next audit is scheduled
+            based on audit frequency.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Custom link buttons configured per project on the Asset Management page */}
+          {assetLinkButtons.map((b, i) => (
+            <a
+              key={`${b.label}-${i}`}
+              href={b.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+            >
+              <span>🔗</span>
+              {b.label}
+            </a>
+          ))}
+          <button
+            onClick={fetchMyAssets}
+            disabled={loading}
+            className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            <MdRefresh className="h-5 w-5" />
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      {/* Stats Cards */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+          gap: '12px',
+          marginBottom: '16px',
+        }}
+      >
+        {statCards.map((stat) => (
+          <div
+            key={stat.label}
+            style={{
+              background: '#ffffff',
+              border: '1px solid #e7ebf3',
+              borderRadius: '12px',
+              padding: '14px 16px',
+              boxShadow: '0 2px 10px rgba(15, 23, 42, 0.04)',
+            }}
+          >
+            <div
+              style={{
+                fontSize: '11px',
+                color: '#6b7280',
+                fontWeight: 600,
+                textTransform: 'uppercase',
+                letterSpacing: '0.04em',
+                marginBottom: '6px',
+              }}
+            >
+              {stat.label}
+            </div>
+            <div
+              style={{ fontSize: '24px', fontWeight: 700, color: stat.color }}
+            >
+              {stat.value}
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Message Alert */}
@@ -303,21 +428,32 @@ const MyAssets: React.FC<MyAssetsProps> = ({ wrapWithLayout = true }) => {
         </div>
       )}
 
-      {/* Assets Table */}
-      <div className="overflow-hidden rounded-lg bg-white shadow">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gradient-to-r from-yellow-400 to-yellow-500">
+      {/* Assets Table — horizontal scroll stays inside this box */}
+      <div
+        style={{
+          background: 'white',
+          borderRadius: '10px',
+          border: '1px solid #E4E7EC',
+          boxShadow: '0 1px 3px rgba(0,0,0,.06)',
+          overflowX: 'auto',
+          WebkitOverflowScrolling: 'touch',
+        }}
+      >
+        <table
+          className="divide-y divide-gray-200"
+          style={{ width: '100%', minWidth: '1100px' }}
+        >
+            <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-bold uppercase tracking-wider text-gray-900">Asset Name</th>
-                <th className="px-6 py-3 text-left text-xs font-bold uppercase tracking-wider text-gray-900">Center</th>
-                <th className="px-6 py-3 text-center text-xs font-bold uppercase tracking-wider text-gray-900">Total Assigned</th>
-                <th className="px-6 py-3 text-center text-xs font-bold uppercase tracking-wider text-gray-900">Working</th>
-                <th className="px-6 py-3 text-center text-xs font-bold uppercase tracking-wider text-gray-900">Not Working</th>
-                <th className="px-6 py-3 text-left text-xs font-bold uppercase tracking-wider text-gray-900 min-w-[200px]">Remark</th>
-                <th className="px-6 py-3 text-center text-xs font-bold uppercase tracking-wider text-gray-900">Last Updated</th>
-                <th className="px-6 py-3 text-center text-xs font-bold uppercase tracking-wider text-gray-900">Next Audit</th>
-                <th className="px-6 py-3 text-center text-xs font-bold uppercase tracking-wider text-gray-900">Actions</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Asset Name</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Center</th>
+                <th className="px-6 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-600">Total Assigned</th>
+                <th className="px-6 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-600">Working</th>
+                <th className="px-6 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-600">Not Working</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 min-w-[200px]">Remark</th>
+                <th className="px-6 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-600">Last Updated</th>
+                <th className="px-6 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-600">Next Audit</th>
+                <th className="px-6 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-600">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 bg-white">
@@ -516,7 +652,6 @@ const MyAssets: React.FC<MyAssetsProps> = ({ wrapWithLayout = true }) => {
               )}
             </tbody>
           </table>
-        </div>
       </div>
 
       {/* Audit Status Legend */}

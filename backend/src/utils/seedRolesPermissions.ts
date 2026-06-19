@@ -1404,6 +1404,22 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     description: "Can view and manage assets assigned to their center",
     category: "asset-management",
   },
+  {
+    module: "User Management",
+    name: "Login As User (Impersonate)",
+    code: "IMPERSONATE_USER",
+    description:
+      "Can log in as another user for support troubleshooting. Token-based and fully audited (DPDP compliant). Cannot impersonate exempt accounts.",
+    category: "user-management",
+  },
+  {
+    module: "User Management",
+    name: "Exempt From Impersonation",
+    code: "IMPERSONATION_EXEMPT",
+    description:
+      "Accounts with a role holding this permission can NEVER be impersonated. Assign to Super Admin / Sub Admin and other privileged roles.",
+    category: "user-management",
+  },
 ];
 
 // Default roles for the helpdesk portal (must be after helpDeskPermissions)
@@ -1789,6 +1805,70 @@ export async function seedRolesAndPermissions() {
       console.log(`   Updated: ${updateCount}`);
       console.log(`   Added: ${newPermissions.length}`);
       console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+
+      // Step 7: RECONCILE Super Admin to ALL permissions (idempotent, runs every startup).
+      // The "new permissions" block above only assigns perms inserted in THIS run, so any
+      // permission that ever landed in the DB without being assigned (a past partial/failed
+      // run, or perms predating that logic) would be skipped forever. This guarantees Super
+      // Admin always ends up with EVERY permission in the DB. Additive only — never removes.
+      try {
+        const RolePermissionModel = mongoose.model("RolePermission");
+        const superAdmin = await Role.findOne({ code: "SUPER_ADMIN" });
+        if (superAdmin) {
+          const allPerms = await Permission.find({}, "_id").lean();
+          const have = new Set(
+            (superAdmin.permissions || []).map((p: any) => p.toString()),
+          );
+          const missing = allPerms
+            .map((p: any) => p._id)
+            .filter((id: any) => !have.has(id.toString()));
+
+          if (missing.length > 0) {
+            // 1. Role.permissions array (read by JWT generation)
+            superAdmin.permissions.push(...(missing as any[]));
+            await superAdmin.save();
+
+            // 2. RolePermission junction table (kept in sync with the array)
+            await RolePermissionModel.bulkWrite(
+              missing.map((id: any) => ({
+                updateOne: {
+                  filter: { roleId: superAdmin._id, permissionId: id },
+                  update: {
+                    $setOnInsert: {
+                      roleId: superAdmin._id,
+                      permissionId: id,
+                      createdAt: new Date(),
+                      updatedAt: new Date(),
+                    },
+                  },
+                  upsert: true,
+                },
+              })),
+            );
+
+            // 3. Invalidate Super Admin sessions so the new permissions take effect
+            //    on the next request (token carries a tokenVersion).
+            const { User } = await import("../models/User");
+            await User.updateMany(
+              { role: superAdmin._id },
+              { $inc: { tokenVersion: 1 } },
+            );
+
+            console.log(
+              `🔑 Reconciled Super Admin: granted ${missing.length} missing permission(s) — now has all ${allPerms.length}.`,
+            );
+          } else {
+            console.log(
+              `✓ Super Admin already has all ${allPerms.length} permissions.`,
+            );
+          }
+        }
+      } catch (reconcileErr) {
+        console.error(
+          "⚠️ Failed to reconcile Super Admin permissions:",
+          reconcileErr,
+        );
+      }
 
       return;
     }

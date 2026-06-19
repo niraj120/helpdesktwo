@@ -68,6 +68,8 @@ export interface DashboardTemplateDetail {
   targetRoles?: string[];
   targetScope: "tenant" | "centre" | "user";
   status: "draft" | "published" | "archived";
+  /** "All time" floor date (YYYY-MM-DD) — All time counts from here. */
+  allTimeStartDate?: string | null;
   sections?: DashboardSectionSlot[];
   widgets: TemplateWidgetSlot[];
   createdAt: string;
@@ -80,6 +82,7 @@ export interface CreateTemplatePayload {
   targetRoles?: string[];
   targetScope?: "tenant" | "centre" | "user";
   status?: "draft" | "published" | "archived";
+  allTimeStartDate?: string | null;
   widgets?: TemplateWidgetSlot[];
 }
 

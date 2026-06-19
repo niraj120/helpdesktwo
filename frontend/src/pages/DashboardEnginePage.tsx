@@ -48,7 +48,11 @@ export default function DashboardEnginePage({
   const { viewMode, currentProjectId, userProjects } = useProjectContext();
   const [activeTabIndex, setActiveTabIndex] = useState(0);
   // Default to "All time" (0) on load instead of Last 30 days.
+  // Sentinels: 0=All time, -1=Today, -2=Yesterday, -3=Custom range, N>0=last N days.
   const [dateRangeDays, setDateRangeDays] = useState(0);
+  // Custom range bounds (used when dateRangeDays === -3). ISO date strings (YYYY-MM-DD).
+  const [customStart, setCustomStart] = useState<string>("");
+  const [customEnd, setCustomEnd] = useState<string>("");
   // Phase 4: global scope filter
   const [scopeMode, setScopeMode] = useState<
     "all" | "project" | "centre" | "user"
@@ -385,11 +389,50 @@ export default function DashboardEnginePage({
           >
             <option value={0}>All time</option>
             <option value={-1}>Today</option>
+            <option value={-2}>Yesterday</option>
             <option value={7}>Last 7 days</option>
             <option value={14}>Last 14 days</option>
             <option value={30}>Last 30 days</option>
             <option value={90}>Last 90 days</option>
+            <option value={-3}>Custom range</option>
           </select>
+
+          {/* Custom range date pickers — only when "Custom range" is selected */}
+          {dateRangeDays === -3 && (
+            <>
+              <input
+                type="date"
+                value={customStart}
+                max={customEnd || undefined}
+                onChange={(e) => setCustomStart(e.target.value)}
+                style={{
+                  fontSize: 13,
+                  padding: "6px 10px",
+                  border: "1px solid #DFE1E6",
+                  borderRadius: 6,
+                  color: "#172B4D",
+                  background: "#fff",
+                }}
+                aria-label="From date"
+              />
+              <span style={{ color: "#6B778C", fontSize: 13 }}>to</span>
+              <input
+                type="date"
+                value={customEnd}
+                min={customStart || undefined}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                style={{
+                  fontSize: 13,
+                  padding: "6px 10px",
+                  border: "1px solid #DFE1E6",
+                  borderRadius: 6,
+                  color: "#172B4D",
+                  background: "#fff",
+                }}
+                aria-label="To date"
+              />
+            </>
+          )}
 
           {/* Personal dashboards link — admin only */}
           {canManageDashboard && (
@@ -456,6 +499,9 @@ export default function DashboardEnginePage({
         <WidgetGrid
           tab={activeTab}
           dateRangeDays={effectiveDateRange}
+          customStart={effectiveDateRange === -3 ? customStart : null}
+          customEnd={effectiveDateRange === -3 ? customEnd : null}
+          allTimeStart={(activeTab as any)?.allTimeStartDate ?? null}
           scopeMode={scopeMode}
           ctxOverrides={ctxOverrides}
         />
@@ -469,6 +515,9 @@ export default function DashboardEnginePage({
 interface WidgetGridProps {
   tab: DashboardTab;
   dateRangeDays: number;
+  customStart?: string | null;
+  customEnd?: string | null;
+  allTimeStart?: string | null;
   scopeMode: "all" | "project" | "centre" | "user";
   ctxOverrides: Record<string, any>;
 }
@@ -476,6 +525,9 @@ interface WidgetGridProps {
 function WidgetGrid({
   tab,
   dateRangeDays,
+  customStart,
+  customEnd,
+  allTimeStart,
   scopeMode,
   ctxOverrides,
 }: WidgetGridProps) {
@@ -560,6 +612,9 @@ function WidgetGrid({
           title={widget.title ?? undefined}
           visualisationType={widget.visualisationType ?? "kpi_tile"}
           dateRangeDays={dateRangeDays}
+          customStart={customStart}
+          customEnd={customEnd}
+          allTimeStart={allTimeStart}
           config={{ ...(widget.config ?? {}), scopeMode }}
           defaultCollapsed={collapsedWidgets[widget.widgetKey] ?? false}
           onCollapseChange={handleCollapseChange}

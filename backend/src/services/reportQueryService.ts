@@ -54,6 +54,7 @@ export const DATA_POINT_FIELD_MAP: Record<string, string> = {
   // Channel
   channel_source_email: "sourceEmail",
   channel_offline_center: "centerName",
+  channel_district: "centerDistrict",
   // Agent
   agent_role_name: "assignedToRoleName",
   // Feedback (joined from FeedbackResponse)
@@ -121,6 +122,7 @@ export const DATA_POINT_FIELD_MAP: Record<string, string> = {
   fbr_form: "formName",
   fbr_answers_count: "answersCount",
   fbr_answers: "answersText",
+  fbr_center: "centerName",
 };
 
 function escapeRegex(str: string): string {
@@ -358,7 +360,7 @@ export async function runReportQuery(
               },
             },
           },
-          { $project: { centerName: 1 } },
+          { $project: { centerName: 1, city: 1 } },
         ],
       },
     },
@@ -446,16 +448,49 @@ export async function runReportQuery(
       slaBreachedAt: {
         $ifNull: ["$roleLevelSLA.breachedAt", "$ticketLevelSLA.breachedAt"],
       },
+      // SLA status is derived from the actual deadline, not just a stored
+      // breachedAt flag (which the cron may not have stamped). A ticket is
+      // "Breached" if it was explicitly flagged, OR it was resolved AFTER its
+      // due date, OR it is still open and already past its due date.
       slaStatus: {
-        $cond: {
-          if: {
-            $or: [
-              { $ifNull: ["$roleLevelSLA.breachedAt", false] },
-              { $ifNull: ["$ticketLevelSLA.breachedAt", false] },
-            ],
+        $let: {
+          vars: {
+            due: {
+              $ifNull: ["$roleLevelSLA.dueAt", "$ticketLevelSLA.dueAt"],
+            },
+            breachedFlag: {
+              $or: [
+                { $ifNull: ["$roleLevelSLA.breachedAt", false] },
+                { $ifNull: ["$ticketLevelSLA.breachedAt", false] },
+              ],
+            },
+            doneAt: { $ifNull: ["$resolvedAt", "$closedAt"] },
           },
-          then: "Breached",
-          else: "Within SLA",
+          in: {
+            $cond: {
+              if: {
+                $or: [
+                  "$$breachedFlag",
+                  {
+                    $and: [
+                      { $ne: ["$$due", null] },
+                      { $ne: ["$$doneAt", null] },
+                      { $gt: ["$$doneAt", "$$due"] },
+                    ],
+                  },
+                  {
+                    $and: [
+                      { $ne: ["$$due", null] },
+                      { $eq: ["$$doneAt", null] },
+                      { $lt: ["$$due", "$$NOW"] },
+                    ],
+                  },
+                ],
+              },
+              then: "Breached",
+              else: "Within SLA",
+            },
+          },
         },
       },
       resolutionTimeHrs: {
@@ -486,6 +521,10 @@ export async function runReportQuery(
       },
       centerName: {
         $ifNull: [{ $arrayElemAt: ["$_centerData.centerName", 0] }, ""],
+      },
+      // District is stored on the centre's `city` field (see Center model usage).
+      centerDistrict: {
+        $ifNull: [{ $arrayElemAt: ["$_centerData.city", 0] }, ""],
       },
       csatScore: {
         $ifNull: [{ $arrayElemAt: ["$_feedbackData.overallRating", 0] }, null],
@@ -690,13 +729,17 @@ async function runNonTicketQuery(
     Model = mongoose.model("FeedbackResponse");
     if (oid) baseMatch.projectId = oid;
     lookups = [
-      { $lookup: { from: "tickets", localField: "ticketId", foreignField: "_id", as: "_ticket", pipeline: [{ $project: { ticketNumber: 1 } }] } },
+      // Feedback → ticket. Also pull the ticket's center so feedback can be reported center-wise.
+      { $lookup: { from: "tickets", localField: "ticketId", foreignField: "_id", as: "_ticket", pipeline: [{ $project: { ticketNumber: 1, centerId: "$metadata.centerId" } }] } },
+      // ticket.metadata.centerId → centers.centerName (no match for online/portal tickets → blank).
+      { $lookup: { from: "centers", let: { cid: { $arrayElemAt: ["$_ticket.centerId", 0] } }, pipeline: [{ $match: { $expr: { $eq: ["$_id", "$$cid"] } } }, { $project: { centerName: 1 } }], as: "_center" } },
       { $lookup: { from: "users", localField: "studentId", foreignField: "_id", as: "_submitter", pipeline: [{ $project: { firstName: 1, lastName: 1 } }] } },
       { $lookup: { from: "projects", localField: "projectId", foreignField: "_id", as: "_proj", pipeline: [{ $project: { name: 1 } }] } },
       { $lookup: { from: "feedbackforms", localField: "formId", foreignField: "_id", as: "_form", pipeline: [{ $project: { name: 1, title: 1 } }] } },
     ];
     computed.rating = { $ifNull: ["$overallRating", null] };
     computed.ticketNumber = { $ifNull: [{ $arrayElemAt: ["$_ticket.ticketNumber", 0] }, ""] };
+    computed.centerName = { $ifNull: [{ $arrayElemAt: ["$_center.centerName", 0] }, ""] };
     computed.submitterName = {
       $trim: {
         input: {

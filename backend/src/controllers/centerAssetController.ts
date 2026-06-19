@@ -53,6 +53,7 @@ export const bulkMapAssets = async (req: Request, res: Response) => {
       applyToAllCenters,
       quantities,
       lastAuditDate,
+      auditEndDate,
       auditFrequencyMonths,
       nextAuditDate,
     } = req.body;
@@ -166,6 +167,11 @@ export const bulkMapAssets = async (req: Request, res: Response) => {
             if (lastAuditDate) {
               existingMapping.lastAuditDate = new Date(lastAuditDate);
             }
+            if (auditEndDate !== undefined) {
+              existingMapping.auditEndDate = auditEndDate
+                ? new Date(auditEndDate)
+                : undefined;
+            }
             if (auditFrequencyMonths !== undefined) {
               existingMapping.auditFrequencyMonths = auditFrequencyMonths;
             }
@@ -176,6 +182,11 @@ export const bulkMapAssets = async (req: Request, res: Response) => {
               const calculated = new Date(lastAuditDate);
               calculated.setMonth(calculated.getMonth() + auditFrequencyMonths);
               existingMapping.nextAuditDate = calculated;
+            }
+            // A (re)scheduled audit starts a fresh, open cycle.
+            if (lastAuditDate) {
+              existingMapping.auditSubmitted = false;
+              existingMapping.auditAutoArchivedAt = undefined;
             }
 
             await existingMapping.save();
@@ -203,6 +214,9 @@ export const bulkMapAssets = async (req: Request, res: Response) => {
 
             if (lastAuditDate) {
               mappingData.lastAuditDate = new Date(lastAuditDate);
+            }
+            if (auditEndDate) {
+              mappingData.auditEndDate = new Date(auditEndDate);
             }
             if (auditFrequencyMonths !== undefined) {
               mappingData.auditFrequencyMonths = auditFrequencyMonths;

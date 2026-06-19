@@ -9,10 +9,13 @@ import {
   resetPassword,
   verify2FA,
   getMe,
+  impersonateUser,
+  stopImpersonation,
 } from '../controllers/authController';
 import { refreshPermissions } from '../controllers/permissionController';
 import { auth, authMiddleware } from '../middleware/auth';
 import { authRateLimiter } from '../middleware/authRateLimiter';
+import { requirePermission } from '../middleware/permissions';
 
 const router = Router();
 
@@ -39,6 +42,21 @@ router.post('/refresh-permissions', authMiddleware, refreshPermissions);
 // @route   POST /api/auth/logout
 // @access  Private
 router.post('/logout', auth, logout);
+
+// @desc    Start "login as user" impersonation session (token-based, audited)
+// @route   POST /api/auth/impersonate/:userId
+// @access  Private — requires IMPERSONATE_USER permission
+router.post(
+  '/impersonate/:userId',
+  authMiddleware,
+  requirePermission('IMPERSONATE_USER'),
+  impersonateUser,
+);
+
+// @desc    End the current impersonation session (writes audit end-event)
+// @route   POST /api/auth/stop-impersonation
+// @access  Private — authorized by the impersonation token itself
+router.post('/stop-impersonation', authMiddleware, stopImpersonation);
 
 // @desc    Forgot password - Send OTP
 // @route   POST /api/auth/forgot-password

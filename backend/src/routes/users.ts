@@ -21,6 +21,7 @@ import {
   downloadBulkUserTemplate,
   bulkCreateUsers,
   bulkUploadMiddleware,
+  exportUsers,
 } from "../controllers/userController";
 
 const router = Router();
@@ -109,6 +110,11 @@ router.post(
   checkPermission("OFFLINE_STUDENT_REGISTER"),
   registerStudent,
 );
+
+// @desc    Export filtered users to CSV/Excel (must be before /:id)
+// @route   GET /api/users/export
+// @access  Private (USER_VIEW_ALL)
+router.get("/export", checkPermission("USER_VIEW_ALL"), exportUsers);
 
 // @desc    Get all users
 // @route   GET /api/users

@@ -83,7 +83,7 @@ const ticketClosedCountHandler: QueryHandler = {
     scopedQuery: Record<string, any>,
   ): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const prevStart = new Date(
       start.getTime() - params.dateRangeDays * 86400000,
     );
@@ -139,7 +139,7 @@ const ticketSlaComplianceHandler: QueryHandler = {
     scopedQuery: Record<string, any>,
   ): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const prevStart = new Date(
       start.getTime() - params.dateRangeDays * 86400000,
     );
@@ -204,7 +204,7 @@ const ticketTrendOverTimeHandler: QueryHandler = {
     scopedQuery: Record<string, any>,
   ): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const closedCodes = await loadClosedCodes(ctx.tenantId);
 
     const agg = await Ticket.aggregate([
@@ -372,7 +372,7 @@ const ticketEscalatedThisPeriodHandler: QueryHandler = {
     scopedQuery: Record<string, any>,
   ): Promise<WidgetData> {
     const Ticket = getTicketModel();
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const prevStart = new Date(
       start.getTime() - params.dateRangeDays * 86400000,
     );

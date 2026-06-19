@@ -35,7 +35,7 @@ const apTotalAgentsHandler: QueryHandler = {
   widgetKey: "ap_total_agents",
   cacheTtlSeconds: 600,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const ids = await getTicket().distinct("assignedTo", {
       "metadata.projectId": new mongoose.Types.ObjectId(ctx.tenantId),
       assignedTo: { $ne: null },
@@ -50,7 +50,7 @@ const apTicketsHandledHandler: QueryHandler = {
   widgetKey: "ap_tickets_handled",
   cacheTtlSeconds: 300,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const value = await getTicket().countDocuments({
       "metadata.projectId": new mongoose.Types.ObjectId(ctx.tenantId),
       assignedTo: { $ne: null },
@@ -65,7 +65,7 @@ const apAvgHandleTimeHandler: QueryHandler = {
   widgetKey: "ap_avg_handle_time",
   cacheTtlSeconds: 600,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const closedCodes = await loadClosedCodes(ctx.tenantId);
     if (closedCodes.length === 0) return { value: null, noData: true };
 
@@ -99,7 +99,7 @@ const apResolutionRateHandler: QueryHandler = {
   widgetKey: "ap_resolution_rate",
   cacheTtlSeconds: 300,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const pid = new mongoose.Types.ObjectId(ctx.tenantId);
     const closedCodes = await loadClosedCodes(ctx.tenantId);
     const [closed, total] = await Promise.all([
@@ -129,7 +129,7 @@ const apFirstContactResHandler: QueryHandler = {
   widgetKey: "ap_first_contact_res",
   cacheTtlSeconds: 600,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const pid = new mongoose.Types.ObjectId(ctx.tenantId);
     const closedCodes = await loadClosedCodes(ctx.tenantId);
 
@@ -167,7 +167,7 @@ const apCsatByAgentHandler: QueryHandler = {
   widgetKey: "ap_csat_by_agent",
   cacheTtlSeconds: 600,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const rows = await getFeedback().aggregate([
       {
         $match: {
@@ -212,7 +212,7 @@ const apSlaComplianceHandler: QueryHandler = {
   widgetKey: "ap_sla_compliance",
   cacheTtlSeconds: 300,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const pid = new mongoose.Types.ObjectId(ctx.tenantId);
     const [met, total] = await Promise.all([
       getSLA().countDocuments({
@@ -242,7 +242,7 @@ const apLeaderboardHandler: QueryHandler = {
   widgetKey: "ap_leaderboard",
   cacheTtlSeconds: 600,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const closedCodes = await loadClosedCodes(ctx.tenantId);
     if (closedCodes.length === 0) return { segments: [] };
 
@@ -285,7 +285,7 @@ const apAvgResponseTimeHandler: QueryHandler = {
   widgetKey: "ap_avg_response_time",
   cacheTtlSeconds: 600,
   async execute(ctx, params): Promise<WidgetData> {
-    const { start, end } = buildDateRange(params.dateRangeDays);
+    const { start, end } = buildDateRange(params);
     const res = await getSLA().aggregate([
       {
         $match: {

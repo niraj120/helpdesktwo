@@ -26,6 +26,7 @@ const PageLoader = () => (
 // ============================================================================
 import Login from "./components/Login";
 import ProtectedRoute from "./components/ProtectedRoute";
+import ImpersonationBanner from "./components/ImpersonationBanner";
 import { useDynamicTitle } from "./hooks/useDynamicTitle";
 import { isStudentSession } from "./utils/authToken";
 
@@ -219,6 +220,8 @@ function App() {
 
   return (
     <div>
+      {/* Persistent "you are viewing as X" banner during impersonation */}
+      <ImpersonationBanner />
       <Suspense fallback={<PageLoader />}>
         <Routes>
           {/* Public Routes - No authentication required */}

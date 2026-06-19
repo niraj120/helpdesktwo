@@ -21,12 +21,14 @@ export interface ICenterAssetMapping extends Document {
   photos: IAssetPhoto[];
   lastUpdatedBy: mongoose.Types.ObjectId;
   // Audit tracking fields
-  lastAuditDate?: Date; // Admin-configured start date
-  nextAuditDate?: Date; // When next audit is due
+  lastAuditDate?: Date; // Admin-configured START date of the current audit cycle
+  auditEndDate?: Date; // Admin-configured LAST submission date (deadline) for the current cycle
+  nextAuditDate?: Date; // When the next cycle starts (= start + frequency)
   auditFrequencyMonths?: number; // Frequency in months
   auditSubmitted?: boolean; // Whether current audit cycle is submitted
   lastAuditSubmittedAt?: Date; // When user last clicked Submit Audit
   lastAuditSubmittedBy?: mongoose.Types.ObjectId; // Who submitted the audit
+  auditAutoArchivedAt?: Date; // Set when an unsubmitted audit was auto-frozen to history at its deadline
   createdAt: Date;
   updatedAt: Date;
 }
@@ -121,6 +123,10 @@ const CenterAssetMappingSchema = new Schema<ICenterAssetMapping>(
       type: Date,
       required: false
     },
+    auditEndDate: {
+      type: Date,
+      required: false
+    },
     nextAuditDate: {
       type: Date,
       required: false
@@ -141,6 +147,10 @@ const CenterAssetMappingSchema = new Schema<ICenterAssetMapping>(
     lastAuditSubmittedBy: {
       type: Schema.Types.ObjectId,
       ref: 'User',
+      required: false
+    },
+    auditAutoArchivedAt: {
+      type: Date,
       required: false
     }
   },
