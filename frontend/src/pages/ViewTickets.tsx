@@ -30,8 +30,6 @@ interface Ticket {
   ticketNumber: string;
   subject: string;
   title: string;
-  /** Service Request typing: 'normal' (default) | 'PSR' | 'ISR' */
-  interactionType?: "normal" | "PSR" | "ISR";
   status: string | number;
   priority: string;
   category?: {
@@ -262,12 +260,6 @@ interface ViewTicketsProps {
   /** When rendered inside a project portal, lock the project filter to this ID */
   initialProjectId?: string;
   wrapWithLayout?: boolean;
-  /**
-   * Locks the list to a Service Request type. When provided (e.g. "PSR" / "ISR"
-   * from the Service Requests menu pages), the Service Type dropdown is hidden
-   * and the list shows only that type. Defaults to "normal" (standard tickets).
-   */
-  interactionType?: "normal" | "PSR" | "ISR" | "all";
 }
 
 // ─── Module-level cache ─────────────────────────────────────────────────────
@@ -298,12 +290,7 @@ const Wrapper = ({
 const ViewTickets: React.FC<ViewTicketsProps> = ({
   initialProjectId,
   wrapWithLayout = true,
-  interactionType: interactionTypeProp,
 }) => {
-  // Service Request typing: locked to the prop on PSR/ISR pages, otherwise a
-  // user-changeable filter defaulting to "normal" (standard tickets only).
-  const srTypeLocked = !!interactionTypeProp;
-  const srTypeInitial = interactionTypeProp ?? "normal";
   const navigate = useNavigate();
   const { customUrlPath } = useParams<{ customUrlPath?: string }>();
 
@@ -337,7 +324,7 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
   };
 
   // Init from module-level cache so returning to this tab is instant (no loading spinner)
-  const _vtInitCacheKey = `viewtickets:${initialProjectId || "all"}:${srTypeInitial}:p1`;
+  const _vtInitCacheKey = `viewtickets:${initialProjectId || "all"}:p1`;
   const _vtInitCached = viewTicketsCache.get(_vtInitCacheKey);
   const _vtHasCache = !!(
     _vtInitCached &&
@@ -357,9 +344,6 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
   }, []);
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterPriority, setFilterPriority] = useState("all");
-  const [filterServiceType, setFilterServiceType] = useState<
-    "normal" | "PSR" | "ISR" | "all"
-  >(srTypeInitial);
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
   const [statuses, setStatuses] = useState<
@@ -643,7 +627,6 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
   }, [
     filterStatus,
     filterPriority,
-    filterServiceType,
     filterDateFrom,
     filterDateTo,
     deferredSearchQuery,
@@ -750,7 +733,7 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
       assignedToFilter === "all" &&
       !deferredSearchQuery.trim() &&
       noOtherFiltersActive;
-    const cacheKey = `viewtickets:${projectFilter}:${filterServiceType}:p${page}`;
+    const cacheKey = `viewtickets:${projectFilter}:p${page}`;
 
     // Show cached data instantly on first (default) fetch if cache is warm
     if (isDefaultFetch) {
@@ -769,7 +752,6 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
               params: {
                 page,
                 limit: pageSize,
-                interactionType: filterServiceType,
                 ...(projectFilter !== "all"
                   ? { projectId: projectFilter }
                   : {}),
@@ -819,9 +801,6 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
       else if (assignedToFilter !== "all") params.assignedTo = assignedToFilter;
       if (filterStatus !== "all") params.status = filterStatus;
       if (filterPriority !== "all") params.priority = filterPriority;
-      // Service Request typing: "normal" excludes PSR/ISR, "PSR"/"ISR" scope to
-      // that type, "all" includes everything.
-      params.interactionType = filterServiceType;
       if (filterDateFrom) params.createdAfter = filterDateFrom;
       if (filterDateTo) params.createdBefore = filterDateTo;
       if (deferredSearchQuery.trim())
@@ -1019,8 +998,6 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
         sharedParams.priority = opts.priority;
       if (opts.dateFrom) sharedParams.dateFrom = opts.dateFrom;
       if (opts.dateTo) sharedParams.dateTo = opts.dateTo;
-      // Keep the stat tiles consistent with the table's Service-Type scope.
-      sharedParams.interactionType = filterServiceType;
       const [allRes, ...statusRes] = await Promise.all([
         axios.get(base, {
           headers,
@@ -1451,38 +1428,6 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
             >
               {ticket.subject || "No subject"}
             </div>
-            {ticket.interactionType &&
-              ticket.interactionType !== "normal" && (
-                <span
-                  style={{
-                    display: "inline-block",
-                    marginTop: "3px",
-                    padding: "1px 7px",
-                    borderRadius: "9999px",
-                    fontSize: "11px",
-                    fontWeight: 600,
-                    background:
-                      ticket.interactionType === "PSR"
-                        ? "#ecfdf5"
-                        : "#eff6ff",
-                    color:
-                      ticket.interactionType === "PSR"
-                        ? "#047857"
-                        : "#1d4ed8",
-                    border:
-                      ticket.interactionType === "PSR"
-                        ? "1px solid #a7f3d0"
-                        : "1px solid #bfdbfe",
-                  }}
-                  title={
-                    ticket.interactionType === "PSR"
-                      ? "Parent Service Request"
-                      : "Internal Service Request"
-                  }
-                >
-                  {ticket.interactionType}
-                </span>
-              )}
             {ticket.category && (
               <div
                 style={{
@@ -1769,15 +1714,7 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                     '"Noto Sans", system-ui, -apple-system, sans-serif',
                 }}
               >
-                {srTypeLocked
-                  ? interactionTypeProp === "PSR"
-                    ? "Parent Service Requests"
-                    : interactionTypeProp === "ISR"
-                      ? "Internal Service Requests"
-                      : "Service Requests"
-                  : hasViewAll
-                    ? "All Queries"
-                    : "My Queries"}
+                {hasViewAll ? "All Queries" : "My Queries"}
               </h1>
               <p
                 style={{
@@ -1789,11 +1726,9 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                     '"Noto Sans", system-ui, -apple-system, sans-serif',
                 }}
               >
-                {srTypeLocked
-                  ? `View and manage ${interactionTypeProp === "PSR" ? "parent" : interactionTypeProp === "ISR" ? "internal" : ""} service requests`
-                  : hasViewAll
-                    ? "View and manage all support queries across all projects"
-                    : "View and manage queries assigned to you"}
+                {hasViewAll
+                  ? "View and manage all support queries across all projects"
+                  : "View and manage queries assigned to you"}
               </p>
             </div>
             {/* Real-time: pending new tickets banner */}
@@ -2399,63 +2334,6 @@ const ViewTickets: React.FC<ViewTicketsProps> = ({
                     }}
                   />
                 </div>
-
-                {/* 3b. Service Type (PSR/ISR) — hidden when locked to a type */}
-                {!srTypeLocked && (
-                  <div style={{ position: "relative" }}>
-                    <select
-                      value={filterServiceType}
-                      onChange={(e) =>
-                        setFilterServiceType(
-                          e.target.value as "normal" | "PSR" | "ISR" | "all",
-                        )
-                      }
-                      style={{
-                        width: "100%",
-                        height: "42px",
-                        padding: "8px 36px 8px 10px",
-                        border:
-                          filterServiceType !== "normal"
-                            ? "1px solid #84caff"
-                            : "1px solid #d7deea",
-                        borderRadius: "10px",
-                        fontSize: "14px",
-                        background:
-                          filterServiceType !== "normal" ? "#eff6ff" : "white",
-                        color:
-                          filterServiceType !== "normal"
-                            ? "#1d4ed8"
-                            : "#374151",
-                        cursor: "pointer",
-                        appearance: "none" as const,
-                        WebkitAppearance: "none" as const,
-                        fontWeight: filterServiceType !== "normal" ? 500 : 400,
-                        outline: "none",
-                        boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
-                      }}
-                    >
-                      <option value="normal">Normal Queries</option>
-                      <option value="PSR">Parent Service Requests</option>
-                      <option value="ISR">Internal Service Requests</option>
-                      <option value="all">All Types</option>
-                    </select>
-                    <ChevronDownIcon
-                      style={{
-                        position: "absolute",
-                        right: "12px",
-                        top: "50%",
-                        transform: "translateY(-50%)",
-                        width: "13px",
-                        height: "13px",
-                        pointerEvents: "none",
-                        color:
-                          filterServiceType !== "normal"
-                            ? "#1d4ed8"
-                            : "#6B7280",
-                      }}
-                    />
-                  </div>
-                )}
 
                 {/* 4. Assigned Agent */}
                 {agents.length > 0 && (

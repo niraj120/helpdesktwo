@@ -25,7 +25,6 @@ interface Ticket {
   status: number; // 1=Open, 2=In Progress, 3=On Hold, 4=Resolved, 5=Closed
   statusName?: string;
   statusColor?: string;
-  interactionType?: "normal" | "PSR" | "ISR"; // Service Request typing
   isClosedStatus?: boolean;
   closedAt?: string;
   priority: "low" | "medium" | "high" | "urgent";
@@ -140,10 +139,6 @@ const StudentTicketDetail: React.FC = () => {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [closingTicket, setClosingTicket] = useState(false);
   const [reopeningTicket, setReopeningTicket] = useState(false);
-  // Service Request closure & feedback (connector E)
-  const [srRating, setSrRating] = useState(0);
-  const [srComment, setSrComment] = useState("");
-  const [srClosing, setSrClosing] = useState(false);
 
   // Feedback mode detection
   const showFeedbackForm = searchParams.get("feedback") === "true";
@@ -335,34 +330,6 @@ const StudentTicketDetail: React.FC = () => {
       alert(error.response?.data?.message || "Failed to close query");
     } finally {
       setClosingTicket(false);
-    }
-  };
-
-  const handleSrClosure = async (satisfied: "happy" | "unhappy") => {
-    setSrClosing(true);
-    try {
-      const token = localStorage.getItem("authToken");
-      const res = await axios.post(
-        `${API_CONFIG.API_URL}/tickets/${ticketId}/closure`,
-        {
-          satisfied,
-          rating: srRating || undefined,
-          comment: srComment.trim() || undefined,
-        },
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      setSrComment("");
-      setSrRating(0);
-      fetchData();
-      alert(
-        res.data?.data?.reopened
-          ? "Your request has been re-opened and sent to the Principal."
-          : "Thank you — your request has been closed.",
-      );
-    } catch (error: any) {
-      alert(error.response?.data?.message || "Failed to submit");
-    } finally {
-      setSrClosing(false);
     }
   };
 
@@ -931,67 +898,9 @@ const StudentTicketDetail: React.FC = () => {
               </dl>
             </div>
 
-            {/* Service Request closure + feedback (connector E) — when Resolved */}
-            {(ticket.interactionType === "PSR" ||
-              ticket.interactionType === "ISR") &&
-              ticket.status === 4 && (
-                <div className="bg-white rounded-xl shadow-sm p-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-1">
-                    Confirm Closure
-                  </h3>
-                  <p className="text-sm text-gray-500 mb-3">
-                    Your request was resolved. Are you satisfied with the
-                    resolution?
-                  </p>
-                  <div className="flex items-center gap-1 mb-3">
-                    <span className="text-sm text-gray-500 mr-1">Rating</span>
-                    {[1, 2, 3, 4, 5].map((n) => (
-                      <button
-                        key={n}
-                        type="button"
-                        onClick={() => setSrRating(n)}
-                        className="text-2xl leading-none"
-                        style={{ color: n <= srRating ? "#f59e0b" : "#d1d5db" }}
-                      >
-                        ★
-                      </button>
-                    ))}
-                  </div>
-                  <textarea
-                    value={srComment}
-                    onChange={(e) => setSrComment(e.target.value)}
-                    placeholder="Add a comment (optional)"
-                    rows={2}
-                    className="w-full border border-gray-300 rounded-lg p-2 text-sm mb-3"
-                  />
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleSrClosure("happy")}
-                      disabled={srClosing}
-                      className="flex-1 py-2 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-                    >
-                      Happy — Close
-                    </button>
-                    <button
-                      onClick={() => handleSrClosure("unhappy")}
-                      disabled={srClosing}
-                      className="flex-1 py-2 px-4 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50"
-                    >
-                      Unhappy — Re-open
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-2">
-                    Re-open can be used only once.
-                  </p>
-                </div>
-              )}
-
             {/* Close Query Button */}
             {/* 5 = Closed */}
-            {ticketSettings?.allowStudentToCloseTicket &&
-              !isTicketClosed &&
-              ticket.interactionType !== "PSR" &&
-              ticket.interactionType !== "ISR" && (
+            {ticketSettings?.allowStudentToCloseTicket && !isTicketClosed && (
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-3">
                   Actions
