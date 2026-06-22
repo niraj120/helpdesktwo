@@ -34,6 +34,24 @@ import {
 
 const router = express.Router();
 
+// Permissions allowed to SAVE on the per-project Ticket Configuration settings
+// page (/ticket-config/settings/:projectId). Mirrors the route's view gate so
+// that granting Ticket Configuration is enough to both open AND save the page.
+// PROJECT_MANAGE_SETTINGS is kept for backward compatibility (project admins).
+const TICKET_CONFIG_SAVE_PERMS = [
+  "PROJECT_MANAGE_SETTINGS",
+  "TICKET_CONFIG_MANAGE_CATEGORIES",
+  "TICKET_CONFIG_MANAGE_TABLE_COLUMNS",
+];
+
+// Permissions allowed to SAVE on the per-project Offline Module settings page
+// (/offline-module/settings/:projectId). Mirrors that page's OFFLINE_* gate so
+// granting offline-module access is enough to both open AND save the page.
+const OFFLINE_SETTINGS_SAVE_PERMS = [
+  "PROJECT_MANAGE_SETTINGS",
+  "OFFLINE_MODULE_ACCESS",
+];
+
 // Get user's assigned projects (for project switcher - no special permission required)
 // MUST be before /:id to avoid conflicts
 router.get("/my-projects", authMiddleware, getMyProjects);
@@ -67,7 +85,7 @@ router.get("/:projectId/whatsapp-widget", getWhatsappWidgetConfig);
 router.put(
   "/:projectId/ticket-settings",
   authMiddleware,
-  checkPermission("PROJECT_MANAGE_SETTINGS"),
+  checkPermission(TICKET_CONFIG_SAVE_PERMS),
   updateProjectTicketSettings,
 );
 
@@ -91,7 +109,7 @@ router.get(
 router.put(
   "/:id/offline-settings",
   authMiddleware,
-  checkPermission("PROJECT_MANAGE_SETTINGS"),
+  checkPermission(OFFLINE_SETTINGS_SAVE_PERMS),
   updateOfflineSettings,
 );
 
@@ -105,19 +123,19 @@ router.get(
 router.post(
   "/:projectId/form-fields",
   authMiddleware,
-  checkPermission("PROJECT_MANAGE_SETTINGS"),
+  checkPermission(TICKET_CONFIG_SAVE_PERMS),
   createFormField,
 );
 router.put(
   "/:projectId/form-fields/:fieldId",
   authMiddleware,
-  checkPermission("PROJECT_MANAGE_SETTINGS"),
+  checkPermission(TICKET_CONFIG_SAVE_PERMS),
   updateFormField,
 );
 router.delete(
   "/:projectId/form-fields/:fieldId",
   authMiddleware,
-  checkPermission("PROJECT_MANAGE_SETTINGS"),
+  checkPermission(TICKET_CONFIG_SAVE_PERMS),
   deleteFormField,
 );
 
