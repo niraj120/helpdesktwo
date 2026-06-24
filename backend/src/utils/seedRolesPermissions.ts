@@ -253,6 +253,20 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     description: "Can create and manage office locations",
     category: "master-data",
   },
+  {
+    module: "Master Data",
+    name: "View MDM Sources",
+    code: "MDM_VIEW",
+    description: "Can view MDM (Master Data Management) source configurations and test endpoints",
+    category: "master-data",
+  },
+  {
+    module: "Master Data",
+    name: "Manage MDM Sources",
+    code: "MDM_MANAGE",
+    description: "Can create, edit, and delete MDM (Master Data Management) source configurations",
+    category: "master-data",
+  },
   // =====================================================
   // RBAC SETUP CATEGORY
   // =====================================================

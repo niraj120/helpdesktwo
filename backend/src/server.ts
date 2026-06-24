@@ -31,6 +31,7 @@ import "./models/KBCategory";
 import "./models/KBSubcategory";
 import "./models/KnowledgeBaseArticle";
 import "./models/MasterData";
+import "./models/MDMSource";
 import "./models/EmailLog";
 import "./models/EmailConfig";
 import "./models/FAQ";
@@ -70,6 +71,7 @@ import projectRoutes from "./routes/projects";
 import roleRoutes from "./routes/roleRoutes";
 import permissionRoutes from "./routes/permissionRoutes";
 import masterRoutes from "./routes/masterRoutes"; // Country, State, City routes (consolidated)
+import mdmRoutes from "./routes/mdmRoutes"; // MDM (Master Data Management) sources
 import categoryRoutes from "./routes/categories";
 import hierarchyConfigRoutes from "./routes/hierarchyConfig";
 import statusRoutes from "./routes/statuses";
@@ -302,6 +304,7 @@ app.use("/api/projects", projectRoutes);
 app.use("/api/roles", roleRoutes);
 app.use("/api/permissions", permissionRoutes);
 app.use("/api/master", masterRoutes); // Master data: Countries, States, Cities (all endpoints)
+app.use("/api/mdm", mdmRoutes); // MDM (Master Data Management) source configuration
 app.use("/api/categories", categoryRoutes);
 app.use("/api/hierarchy-config", hierarchyConfigRoutes);
 app.use("/api/statuses", statusRoutes);

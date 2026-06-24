@@ -69,6 +69,8 @@ interface HRMSEmployee {
   lastName: string;
   email: string;
   mobile: string;
+  mdmSourceId?: string;
+  mdmSourceName?: string;
   department: string;
   designation: string;
 }
@@ -258,6 +260,35 @@ const UserManagement: React.FC<UserManagementProps> = ({
   const [hrmsSearchQuery, setHrmsSearchQuery] = useState(""); // For filtering loaded employees
   const [hrmsLoading, setHrmsLoading] = useState(false);
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]); // Array of employee IDs
+  // MDM source the HRMS data is fetched from (provenance)
+  const [mdmSources, setMdmSources] = useState<
+    { _id: string; name: string; enabled: boolean }[]
+  >([]);
+  const [selectedMdmSource, setSelectedMdmSource] = useState<string>("");
+
+  // Load configured MDM sources whenever the HRMS modal opens
+  useEffect(() => {
+    if (!showHRMSModal) return;
+    const loadMdmSources = async () => {
+      try {
+        const token = localStorage.getItem("authToken");
+        const res = await fetch(`${API_CONFIG.API_URL}/mdm`, {
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "include",
+        });
+        const data = await res.json();
+        if (data.success && Array.isArray(data.data)) {
+          setMdmSources(data.data);
+          // Auto-select the first enabled source
+          const firstEnabled = data.data.find((s: any) => s.enabled);
+          if (firstEnabled) setSelectedMdmSource(firstEnabled._id);
+        }
+      } catch (err) {
+        console.error("Failed to load MDM sources:", err);
+      }
+    };
+    loadMdmSources();
+  }, [showHRMSModal]);
   const [selectedRole, setSelectedRole] = useState("");
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
 
@@ -1185,8 +1216,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
       }
 
       const token = localStorage.getItem("authToken");
+      const sourceParam = selectedMdmSource
+        ? `&mdmSourceId=${encodeURIComponent(selectedMdmSource)}`
+        : "";
       const response = await fetch(
-        `${API_CONFIG.API_URL}/users/hrms/search?query=${encodeURIComponent(queryParam)}`,
+        `${API_CONFIG.API_URL}/users/hrms/search?query=${encodeURIComponent(queryParam)}${sourceParam}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -1274,6 +1308,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
               role: selectedRole,
               projects: selectedProjects,
               syncFromHRMS: true,
+              mdmSourceId: selectedMdmSource || undefined,
             }),
           });
 
@@ -6202,6 +6237,74 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 </p>
 
                 <div style={{ maxWidth: "600px", margin: "0 auto" }}>
+                  {/* MDM Source selector (provenance) */}
+                  <div style={{ marginBottom: "20px" }}>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "14px",
+                        fontWeight: "500",
+                        color: "#374151",
+                        marginBottom: "8px",
+                      }}
+                    >
+                      🗄️{" "}
+                      {getText(
+                        "MDM Data Source",
+                        "MDM डेटा स्रोत",
+                        "MDM डेटा स्रोत",
+                      )}
+                    </label>
+                    <select
+                      value={selectedMdmSource}
+                      onChange={(e) => setSelectedMdmSource(e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "12px",
+                        border: "1px solid #d1d5db",
+                        borderRadius: "8px",
+                        fontSize: "14px",
+                        outline: "none",
+                        boxSizing: "border-box",
+                        backgroundColor: "white",
+                      }}
+                    >
+                      {mdmSources.length === 0 ? (
+                        <option value="">
+                          {getText(
+                            "No MDM source configured — using sample data",
+                            "कोणताही MDM स्रोत कॉन्फिगर केलेला नाही — नमुना डेटा वापरत आहे",
+                            "कोणताही MDM स्रोत कॉन्फिगर केलेला नाही — नमुना डेटा वापरत आहे",
+                          )}
+                        </option>
+                      ) : (
+                        mdmSources.map((s) => (
+                          <option
+                            key={s._id}
+                            value={s._id}
+                            disabled={!s.enabled}
+                          >
+                            {s.name}
+                            {!s.enabled ? " (disabled)" : ""}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                    <p
+                      style={{
+                        fontSize: "12px",
+                        color: "#6b7280",
+                        marginTop: "4px",
+                      }}
+                    >
+                      {getText(
+                        "Imported employees are tagged with this source.",
+                        "आयात केलेले कर्मचारी या स्रोतासह टॅग केले जातात.",
+                        "आयात केलेले कर्मचारी या स्रोतासह टॅग केले जातात.",
+                      )}
+                    </p>
+                  </div>
+
                   {/* Employee Code Input */}
                   <div style={{ marginBottom: "20px" }}>
                     <label

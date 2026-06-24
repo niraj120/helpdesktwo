@@ -371,6 +371,7 @@ export const createUser = async (
       projects,
       centers,
       syncFromHRMS = false,
+      mdmSourceId,
       payrollType,
       company,
     } = req.body;
@@ -467,7 +468,10 @@ export const createUser = async (
     // Sync from HRMS if requested
     if (syncFromHRMS && employeeCode) {
       try {
-        const hrmsData = await hrmsService.syncEmployeeData(employeeCode);
+        const hrmsData = await hrmsService.syncEmployeeData(
+          employeeCode,
+          mdmSourceId,
+        );
         if (hrmsData) {
           userData = {
             ...userData,
@@ -479,6 +483,9 @@ export const createUser = async (
             mobile: mobile || hrmsData.mobile,
           };
         }
+        // Provenance: record this came from HRMS via the chosen MDM source
+        userData.registrationSource = "hrms";
+        if (mdmSourceId) userData.mdmSourceId = mdmSourceId;
 
         // Check if email from HRMS already exists
         if (userData.email) {
@@ -1068,7 +1075,7 @@ export const searchHRMSEmployees = async (
   res: Response,
 ): Promise<void> => {
   try {
-    const { query } = req.query;
+    const { query, mdmSourceId } = req.query;
 
     if (!query || typeof query !== "string") {
       res.status(400).json({
@@ -1078,7 +1085,10 @@ export const searchHRMSEmployees = async (
       return;
     }
 
-    const employees = await hrmsService.searchEmployees(query);
+    const employees = await hrmsService.searchEmployees(
+      query,
+      typeof mdmSourceId === "string" ? mdmSourceId : undefined,
+    );
 
     res.json({
       success: true,
