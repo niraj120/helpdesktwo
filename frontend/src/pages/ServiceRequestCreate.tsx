@@ -131,8 +131,12 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
   const { currentProjectId, userProjects } = useProjectContext();
   const { hasPermission } = usePermissions();
 
-  const canPSR = hasPermission(PERMISSIONS.SR_PSR_CREATE);
-  const canISR = hasPermission(PERMISSIONS.SR_ISR_CREATE);
+  // Permission booleans (global). Whether the option is actually OFFERED also
+  // depends on the SELECTED project having SR/PSR/ISR enabled (see canPSR/canISR
+  // below) — otherwise a permitted user would see SR for every project even ones
+  // where it was never turned on.
+  const permPSR = hasPermission(PERMISSIONS.SR_PSR_CREATE);
+  const permISR = hasPermission(PERMISSIONS.SR_ISR_CREATE);
   const canAssignEmails = hasPermission(PERMISSIONS.SR_ASSIGN_EMAILS);
   const canPriority = hasPermission(PERMISSIONS.SR_PRIORITY_OVERRIDE);
   const canOffline = hasPermission(PERMISSIONS.SR_OFFLINE_ENTRY);
@@ -270,6 +274,13 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
   }, [config]); // eslint-disable-line
 
   const blocks = config?.blocks || {};
+
+  // Per-project enablement gates the offering. config loads async per project;
+  // until it arrives (or if SR is off for the project) no type cards show.
+  const srEnabled = !!config?.enabled;
+  const canPSR = permPSR && srEnabled && !!config?.psr?.enabled;
+  const canISR = permISR && srEnabled && !!config?.isr?.enabled;
+  const srDisabledHere = !!projectId && config !== null && !srEnabled;
 
   /* ---- parent search ---- */
   const onParentQuery = (q: string) => {
@@ -485,7 +496,7 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
   const label = srStyles.label;
   const ctrl: React.CSSProperties = { ...srStyles.ctrl, width: "100%" };
 
-  if (!canPSR && !canISR) {
+  if (!permPSR && !permISR) {
     return (
       <SrPage title="Generate Service Request" embedded={embedded}>
         <div style={{ ...card, color: SR.sub }}>
@@ -532,6 +543,18 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
       {!projectId && (
         <p style={{ color: SR.warn, fontSize: 13, marginTop: 12 }}>
           Select a project first.
+        </p>
+      )}
+      {srDisabledHere && (
+        <p style={{ color: SR.warn, fontSize: 13, marginTop: 12 }}>
+          Service Requests are not enabled for this project. Turn them on in SR
+          Settings → General.
+        </p>
+      )}
+      {projectId && srEnabled && !canPSR && !canISR && (
+        <p style={{ color: SR.sub, fontSize: 13, marginTop: 12 }}>
+          Neither PSR nor ISR is enabled for this project (or you lack the
+          create permission).
         </p>
       )}
     </div>

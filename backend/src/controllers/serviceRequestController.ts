@@ -324,9 +324,15 @@ export const parentLookup = async (req: AuthRequest, res: Response) => {
       }
     }
 
-    // 2) Internal fallback — group matched users by parentMobile
+    // 2) Internal fallback — group internal users by parentMobile. A user whose
+    // uniqueId is "GUARDIAN" (or whose own mobile is the family key) supplies the
+    // parent identity; the rest of the group are the children. We first match by
+    // the query, then pull the FULL sibling set for the matched family keys so
+    // selecting a parent always returns every child.
     const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-    const filter: any = {
+    const sel =
+      "firstName lastName fullName email mobile parentMobile uniqueId department";
+    const matchFilter: any = {
       $or: [
         { fullName: rx },
         { firstName: rx },
@@ -337,40 +343,80 @@ export const parentLookup = async (req: AuthRequest, res: Response) => {
         { parentMobile: rx },
       ],
     };
-    if (projectId) filter.projects = projectId;
-    const users = await User.find(filter)
-      .select("firstName lastName fullName email mobile parentMobile uniqueId")
-      .limit(40)
-      .lean();
+    if (projectId) matchFilter.projects = projectId;
+    const matched = await User.find(matchFilter).select(sel).limit(60).lean();
 
-    const byParent = new Map<string, any>();
-    for (const u of users as any[]) {
-      const key = u.parentMobile || u.mobile || u.email || String(u._id);
-      const name =
-        u.fullName ||
-        `${u.firstName || ""} ${u.lastName || ""}`.trim() ||
-        u.email;
-      if (!byParent.has(key)) {
-        byParent.set(key, {
-          name,
-          mobile: u.parentMobile || u.mobile,
-          email: u.email,
-          school: undefined,
-          parentCode: key,
-          children: [],
-        });
-      }
-      byParent.get(key).children.push({
-        id: String(u._id),
-        name,
-        grade: u.uniqueId || "",
-        enrollmentId: u.uniqueId,
+    // Family keys = parentMobile (preferred) or own mobile of matched users.
+    const keys = Array.from(
+      new Set(
+        (matched as any[])
+          .map((u) => u.parentMobile || u.mobile)
+          .filter(Boolean),
+      ),
+    );
+    if (keys.length === 0) {
+      res.json({
+        success: true,
+        source: { id: null, name: "Internal directory (fallback)" },
+        data: [],
       });
+      return;
     }
+
+    const memberFilter: any = {
+      $or: [{ parentMobile: { $in: keys } }, { mobile: { $in: keys } }],
+    };
+    if (projectId) memberFilter.projects = projectId;
+    const members = await User.find(memberFilter).select(sel).limit(300).lean();
+
+    const nameOf = (u: any) =>
+      u.fullName || `${u.firstName || ""} ${u.lastName || ""}`.trim() || u.email;
+    const isGuardian = (u: any, key: string) =>
+      String(u.uniqueId || "").toUpperCase().includes("GUARDIAN") ||
+      (u.mobile === key && !u.parentMobile);
+
+    const groups = new Map<
+      string,
+      { guardian: any | null; children: any[] }
+    >();
+    for (const u of members as any[]) {
+      const key = u.parentMobile || u.mobile;
+      if (!key) continue;
+      if (!groups.has(key)) groups.set(key, { guardian: null, children: [] });
+      const g = groups.get(key)!;
+      if (isGuardian(u, key) && !g.guardian) g.guardian = u;
+      else g.children.push(u);
+    }
+
+    const data = Array.from(groups.entries()).map(([key, g]) => {
+      const gd = g.guardian;
+      // If a guardian record exists but ended up with zero children (e.g. only
+      // the guardian matched), still show it.
+      const kids = g.children.length
+        ? g.children
+        : gd
+          ? []
+          : members.filter((m: any) => (m.parentMobile || m.mobile) === key);
+      return {
+        name: gd ? nameOf(gd) : kids[0] ? nameOf(kids[0]) : key,
+        mobile: key,
+        email: gd?.email || kids[0]?.email,
+        school: gd?.department || undefined,
+        parentCode: key,
+        children: kids.map((c: any) => ({
+          id: String(c._id),
+          name: nameOf(c),
+          // demo/dev seed stores grade in department; real users fall back to uniqueId
+          grade: c.department || c.uniqueId || "",
+          enrollmentId: c.uniqueId,
+        })),
+      };
+    });
+
     res.json({
       success: true,
       source: { id: null, name: "Internal directory (fallback)" },
-      data: Array.from(byParent.values()).slice(0, 25),
+      data: data.slice(0, 25),
     });
   } catch (err) {
     fail(res, err);
