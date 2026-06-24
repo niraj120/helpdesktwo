@@ -10,6 +10,7 @@ import ServiceRequestRouting from "./ServiceRequestRouting";
 import ServiceRequestFormSchemas from "./ServiceRequestFormSchemas";
 import RoleMappingRules from "./RoleMappingRules";
 import ServiceRequestClusters from "./ServiceRequestClusters";
+import ServiceRequestClassifyChannels from "./ServiceRequestClassifyChannels";
 
 /**
  * One settings home. Pick the project once at the top, then move between the
@@ -19,6 +20,7 @@ import ServiceRequestClusters from "./ServiceRequestClusters";
 const TABS = [
   { key: "general", label: "General", icon: "⚙️" },
   { key: "routing", label: "Routing", icon: "🧭" },
+  { key: "channels", label: "Classify Channels", icon: "🗂️" },
   { key: "forms", label: "Forms", icon: "📝" },
   { key: "rolemap", label: "Role Mapping", icon: "👤" },
   { key: "clusters", label: "Clusters", icon: "🏫" },
@@ -90,6 +92,9 @@ const ServiceRequestSettingsHub: React.FC = () => {
       )}
       {active === "routing" && projectId && (
         <ServiceRequestRouting embedded projectId={projectId} />
+      )}
+      {active === "channels" && projectId && (
+        <ServiceRequestClassifyChannels embedded projectId={projectId} />
       )}
       {active === "forms" && projectId && (
         <ServiceRequestFormSchemas embedded projectId={projectId} />

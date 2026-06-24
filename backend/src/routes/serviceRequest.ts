@@ -41,6 +41,11 @@ router.get(
   c.studentLookup,
 );
 router.get(
+  "/parent-lookup",
+  checkPermission(["SR_PSR_CREATE", "SR_ISR_CREATE"]),
+  c.parentLookup,
+);
+router.get(
   "/form-schemas",
   checkPermission(["SR_CONFIG_MANAGE", "SR_PSR_CREATE", "SR_ISR_CREATE"]),
   c.listForms,

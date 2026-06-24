@@ -9,6 +9,7 @@ import { getProjectScope } from "../utils/projectScope";
 import * as srSvc from "../modules/service-request/serviceRequestService";
 import { SrError } from "../modules/service-request/serviceRequestService";
 import { createServiceRequest } from "../modules/service-request/createServiceRequest";
+import { searchParentsFromMDM } from "../services/mdmService";
 import {
   listFormSchemas,
   upsertFormSchema,
@@ -192,11 +193,30 @@ export const getOne = async (req: AuthRequest, res: Response) => {
 
 // ── Phase 3: create (online / walk-in), student lookup, form schemas ─────────
 
+const hasPerm = (req: AuthRequest, code: string): boolean => {
+  const role: any = req.user?.role;
+  if (!role) return false;
+  if (role.code === "SUPER_ADMIN" || role.code === "ADMIN") return true;
+  const perms = role.permissions || [];
+  return perms.some((p: any) => (typeof p === "string" ? p : p?.code) === code);
+};
+
 export const create = async (req: AuthRequest, res: Response) => {
   try {
+    const body = { ...req.body };
+    // Strip permission-gated fields the actor isn't allowed to set.
+    if (!hasPerm(req, "SR_ASSIGN_EMAILS")) delete body.assignedToEmails;
+    if (!hasPerm(req, "SR_PRIORITY_OVERRIDE")) {
+      delete body.priority;
+      delete body.scheduleDispatchDate;
+    }
+    if (!hasPerm(req, "SR_OFFLINE_ENTRY")) {
+      delete body.createdByRE;
+      delete body.requesterEmail;
+    }
     const result = await createServiceRequest({
-      ...req.body,
-      createdBy: req.body.createdBy || actorId(req),
+      ...body,
+      createdBy: body.createdBy || actorId(req),
     });
     res.status(201).json({ success: true, data: result });
   } catch (err) {
@@ -231,6 +251,97 @@ export const studentLookup = async (req: AuthRequest, res: Response) => {
       .limit(20)
       .lean();
     res.json({ success: true, data: users });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
+/**
+ * Existing-Parent lookup for the SR wizard. Tries the configured MDM source
+ * (parents + children) first; falls back to internal User records grouped by
+ * parentMobile so dev/testing works without an MDM endpoint.
+ */
+export const parentLookup = async (req: AuthRequest, res: Response) => {
+  try {
+    const q = String(req.query.q || req.query.query || "").trim();
+    const projectId = req.query.projectId
+      ? String(req.query.projectId)
+      : undefined;
+    const mdmSourceId = req.query.mdmSourceId
+      ? String(req.query.mdmSourceId)
+      : undefined;
+    if (q.length < 2) {
+      res.json({ success: true, data: [], source: null });
+      return;
+    }
+
+    // 1) MDM
+    try {
+      const mdm = await searchParentsFromMDM(q, projectId, mdmSourceId);
+      if (mdm) {
+        res.json({
+          success: true,
+          source: { id: String(mdm.source._id), name: mdm.source.name },
+          data: mdm.parents.slice(0, 25),
+        });
+        return;
+      }
+    } catch (e: any) {
+      // explicit source error → surface; otherwise fall through to internal
+      if (mdmSourceId) {
+        res.status(502).json({ success: false, message: e.message });
+        return;
+      }
+    }
+
+    // 2) Internal fallback — group matched users by parentMobile
+    const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    const filter: any = {
+      $or: [
+        { fullName: rx },
+        { firstName: rx },
+        { lastName: rx },
+        { email: rx },
+        { uniqueId: rx },
+        { mobile: rx },
+        { parentMobile: rx },
+      ],
+    };
+    if (projectId) filter.projects = projectId;
+    const users = await User.find(filter)
+      .select("firstName lastName fullName email mobile parentMobile uniqueId")
+      .limit(40)
+      .lean();
+
+    const byParent = new Map<string, any>();
+    for (const u of users as any[]) {
+      const key = u.parentMobile || u.mobile || u.email || String(u._id);
+      const name =
+        u.fullName ||
+        `${u.firstName || ""} ${u.lastName || ""}`.trim() ||
+        u.email;
+      if (!byParent.has(key)) {
+        byParent.set(key, {
+          name,
+          mobile: u.parentMobile || u.mobile,
+          email: u.email,
+          school: undefined,
+          parentCode: key,
+          children: [],
+        });
+      }
+      byParent.get(key).children.push({
+        id: String(u._id),
+        name,
+        grade: u.uniqueId || "",
+        enrollmentId: u.uniqueId,
+      });
+    }
+    res.json({
+      success: true,
+      source: { id: null, name: "Internal directory (fallback)" },
+      data: Array.from(byParent.values()).slice(0, 25),
+    });
   } catch (err) {
     fail(res, err);
   }

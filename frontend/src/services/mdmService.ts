@@ -5,6 +5,8 @@ export type MDMDataType =
   | "employees"
   | "principals"
   | "students"
+  | "parents"
+  | "children"
   | "custom";
 
 export type MDMAuthType = "none" | "apiKey" | "bearer" | "basic";

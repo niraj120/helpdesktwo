@@ -9,6 +9,7 @@ import mongoose from "mongoose";
 import { Ticket } from "../../models/Ticket";
 import { Project } from "../../models/Project";
 import { Category } from "../../models/Category";
+import { User } from "../../models/User";
 import { isSrEnabled } from "./serviceRequestConfig";
 import { resolveSrRouting } from "./srMasterData";
 import { findDuplicateServiceRequests } from "./srDuplicateDetection";
@@ -46,6 +47,19 @@ export interface CreateServiceRequestInput {
   studentEnrollment?: string;
   /** Explicit assignee (overrides matrix). */
   assignedTo?: string;
+  /** ISR: explicit assignee emails (first = primary, rest = cc). */
+  assignedToEmails?: string[];
+  /** Classify-channel key chosen in the wizard. */
+  classification?: string;
+  /** Existing-parent flow: selected parent + children (stored in metadata). */
+  parent?: Record<string, any>;
+  children?: Array<Record<string, any>>;
+  /** Priority & schedule override block. */
+  priority?: string;
+  scheduleDispatchDate?: string;
+  /** Offline / RE-entry block. */
+  createdByRE?: boolean;
+  requesterEmail?: string;
   formData?: Record<string, any>;
   metadata?: Record<string, any>;
   skipDuplicateCheck?: boolean;
@@ -110,6 +124,30 @@ export async function createServiceRequest(
     if (cat?.defaultPriority) priority = cat.defaultPriority;
   }
 
+  // Priority override block.
+  if (input.priority) priority = input.priority;
+
+  // Explicit assignee emails (ISR): first valid = primary, rest = cc.
+  const unresolvedEmails: string[] = [];
+  if (input.assignedToEmails?.length) {
+    const emails = input.assignedToEmails
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+    const users = await User.find({ email: { $in: emails } })
+      .select("_id email")
+      .lean();
+    const byEmail = new Map(users.map((u: any) => [u.email, u._id]));
+    const resolvedIds = emails.map((e) => byEmail.get(e)).filter(Boolean) as any[];
+    unresolvedEmails.push(...emails.filter((e) => !byEmail.has(e)));
+    if (resolvedIds.length) {
+      assignedTo = new mongoose.Types.ObjectId(resolvedIds[0]);
+      const ccExtra = resolvedIds
+        .slice(1)
+        .map((id) => new mongoose.Types.ObjectId(id));
+      cc = [...cc, ...ccExtra];
+    }
+  }
+
   const ticketNumber = await generateSrTicketNumber(input.projectId);
 
   const ticket = await Ticket.create({
@@ -131,9 +169,11 @@ export async function createServiceRequest(
       input.requestType ||
       (input.interactionType === "PSR" ? "SR" : undefined),
     modeOfContact: input.modeOfContact,
-    submissionSource: CHANNEL_TO_SOURCE[input.channel] as any,
+    submissionSource: (input.createdByRE
+      ? "offline"
+      : CHANNEL_TO_SOURCE[input.channel]) as any,
     assignedVia: assignedTo
-      ? input.assignedTo
+      ? input.assignedTo || input.assignedToEmails?.length
         ? "manual"
         : "by-user"
       : undefined,
@@ -143,6 +183,15 @@ export async function createServiceRequest(
         ? { studentEnrollment: input.studentEnrollment }
         : {}),
       ...(input.formData ? { formData: input.formData } : {}),
+      ...(input.classification ? { classification: input.classification } : {}),
+      ...(input.parent ? { parent: input.parent } : {}),
+      ...(input.children?.length ? { children: input.children } : {}),
+      ...(input.requesterEmail ? { requesterEmail: input.requesterEmail } : {}),
+      ...(input.createdByRE ? { createdByRE: true } : {}),
+      ...(input.scheduleDispatchDate
+        ? { scheduleDispatchDate: input.scheduleDispatchDate }
+        : {}),
+      ...(unresolvedEmails.length ? { assigneeEmails: unresolvedEmails } : {}),
       projectId: input.projectId,
     },
   });

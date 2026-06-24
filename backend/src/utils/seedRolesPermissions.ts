@@ -707,6 +707,30 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
   },
   {
     module: "Service Request",
+    name: "Assign SR by Email",
+    code: "SR_ASSIGN_EMAILS",
+    description:
+      "Can set explicit assignee emails when creating an SR (first = primary)",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Override SR Priority & Schedule",
+    code: "SR_PRIORITY_OVERRIDE",
+    description:
+      "Can manually override priority and schedule a dispatch date on an SR",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Offline / RE Entry",
+    code: "SR_OFFLINE_ENTRY",
+    description:
+      "Can create an SR on behalf of a requester (offline/RE entry) with email-OTP verification",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
     name: "Access Email Triage Inbox",
     code: "EMAIL_TRIAGE_ACCESS",
     description: "Can view and read the email triage inbox",

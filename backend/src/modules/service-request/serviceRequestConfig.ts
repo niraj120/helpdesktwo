@@ -3,7 +3,7 @@
  * Phase 0 foundation. Applies defaults to `Project.configuration.sr` (stored
  * as a flexible Mixed blob) so callers always get a fully-populated SrConfig.
  */
-import { SrConfig } from "./types";
+import { SrConfig, SR_DEFAULT_CLASSIFY_CHANNELS } from "./types";
 
 export const SR_CONFIG_DEFAULTS: SrConfig = {
   enabled: false, // master switch — SR module inert until a project opts in
@@ -18,6 +18,12 @@ export const SR_CONFIG_DEFAULTS: SrConfig = {
   reopen: {},
   email: { enabled: false, tatHours: 8, level2Hours: 12 },
   ivr: { enabled: false },
+  classifyChannels: SR_DEFAULT_CLASSIFY_CHANNELS,
+  blocks: {
+    assigneeEmails: { enabled: true },
+    prioritySchedule: { enabled: true },
+    offlineReEntry: { enabled: true },
+  },
 };
 
 /**
@@ -52,6 +58,21 @@ export function resolveSrConfig(raw: any): SrConfig {
         sr.email?.level2Hours ?? SR_CONFIG_DEFAULTS.email.level2Hours,
     },
     ivr: { enabled: !!sr.ivr?.enabled },
+    classifyChannels:
+      Array.isArray(sr.classifyChannels) && sr.classifyChannels.length
+        ? sr.classifyChannels
+        : SR_DEFAULT_CLASSIFY_CHANNELS,
+    blocks: {
+      assigneeEmails: {
+        enabled: sr.blocks?.assigneeEmails?.enabled ?? true,
+      },
+      prioritySchedule: {
+        enabled: sr.blocks?.prioritySchedule?.enabled ?? true,
+      },
+      offlineReEntry: {
+        enabled: sr.blocks?.offlineReEntry?.enabled ?? true,
+      },
+    },
   };
 }
 

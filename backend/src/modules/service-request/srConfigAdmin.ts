@@ -29,6 +29,12 @@ export interface SrConfigPatch {
   reopen?: { assignToUserId?: string; assignToRoleId?: string };
   email?: { enabled?: boolean; tatHours?: number; level2Hours?: number };
   ivr?: { enabled?: boolean };
+  classifyChannels?: any[];
+  blocks?: {
+    assigneeEmails?: { enabled?: boolean };
+    prioritySchedule?: { enabled?: boolean };
+    offlineReEntry?: { enabled?: boolean };
+  };
 }
 
 export async function updateSrConfigForProject(
@@ -49,6 +55,9 @@ export async function updateSrConfigForProject(
   if (patch.reopen) sr.reopen = { ...(sr.reopen || {}), ...patch.reopen };
   if (patch.email) sr.email = { ...(sr.email || {}), ...patch.email };
   if (patch.ivr) sr.ivr = { ...(sr.ivr || {}), ...patch.ivr };
+  if (Array.isArray(patch.classifyChannels))
+    sr.classifyChannels = patch.classifyChannels;
+  if (patch.blocks) sr.blocks = { ...(sr.blocks || {}), ...patch.blocks };
 
   project.markModified("configuration.sr");
   await project.save();

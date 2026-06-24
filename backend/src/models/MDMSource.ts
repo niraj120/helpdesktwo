@@ -21,6 +21,8 @@ export type MDMDataType =
   | "employees"
   | "principals"
   | "students"
+  | "parents"
+  | "children"
   | "custom";
 
 export type MDMAuthType = "none" | "apiKey" | "bearer" | "basic";
@@ -68,7 +70,15 @@ const mdmApiSchema = new Schema<IMDMApi>(
     label: { type: String, required: true, trim: true },
     dataType: {
       type: String,
-      enum: ["schools", "employees", "principals", "students", "custom"],
+      enum: [
+        "schools",
+        "employees",
+        "principals",
+        "students",
+        "parents",
+        "children",
+        "custom",
+      ],
       default: "custom",
     },
     method: { type: String, enum: ["GET", "POST"], default: "GET" },

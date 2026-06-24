@@ -237,3 +237,161 @@ export const fetchEmployeesFromMDM = async (
   const employees = extractArray(response.data).map(normalizeEmployee);
   return { source, employees };
 };
+
+/* ---------------- Parents & children (SR Existing-Parent flow) ------------- */
+
+export interface NormalizedChild {
+  name?: string;
+  grade?: string;
+  enrollmentId?: string;
+  parentCode?: string;
+}
+
+export interface NormalizedParent {
+  name?: string;
+  firstName?: string;
+  lastName?: string;
+  mobile?: string;
+  email?: string;
+  school?: string;
+  parentCode?: string;
+  children: NormalizedChild[];
+}
+
+export const normalizeChild = (raw: any): NormalizedChild => {
+  if (!raw || typeof raw !== "object") return {};
+  return {
+    name: pick(raw, ["name", "childName", "studentName", "fullName", "Name"]),
+    grade: pick(raw, ["grade", "class", "standard", "Grade", "className"]),
+    enrollmentId: pick(raw, [
+      "enrollmentId",
+      "enrolment",
+      "enrollment",
+      "admissionNo",
+      "uniqueId",
+      "studentId",
+    ]),
+    parentCode: pick(raw, ["parentCode", "parentId", "guardianCode", "parent_code"]),
+  };
+};
+
+export const normalizeParent = (raw: any): NormalizedParent => {
+  if (!raw || typeof raw !== "object") return { children: [] };
+  let firstName = pick(raw, ["firstName", "first_name", "fname", "FirstName"]);
+  let lastName = pick(raw, ["lastName", "last_name", "lname", "LastName"]);
+  const fullName = pick(raw, [
+    "name",
+    "fullName",
+    "full_name",
+    "parentName",
+    "guardianName",
+  ]);
+  if (!firstName && fullName) {
+    const parts = fullName.trim().split(/\s+/);
+    firstName = parts.shift();
+    lastName = lastName || parts.join(" ") || undefined;
+  }
+  const childrenRaw =
+    raw.children || raw.wards || raw.students || raw.kids || [];
+  return {
+    name: fullName || `${firstName || ""} ${lastName || ""}`.trim() || undefined,
+    firstName,
+    lastName,
+    mobile: pick(raw, ["mobile", "phone", "mobileNumber", "contact", "Mobile"]),
+    email: pick(raw, ["email", "emailId", "email_id", "Email"]),
+    school: pick(raw, ["school", "schoolName", "school_name", "School", "branch"]),
+    parentCode: pick(raw, ["parentCode", "parentId", "guardianCode", "code"]),
+    children: Array.isArray(childrenRaw) ? childrenRaw.map(normalizeChild) : [],
+  };
+};
+
+/** Raw array fetch from one api (throws on non-2xx). */
+const fetchRawArray = async (
+  source: IMDMSource,
+  api: IMDMApi,
+): Promise<any[]> => {
+  const auth = source.getDecryptedAuth();
+  const url = `${(api.baseUrl || "").replace(/\/+$/, "")}${api.path || ""}`;
+  const { headers, basicAuth } = buildRequestConfig(auth);
+  const response = await axios.request({
+    url,
+    method: api.method || "GET",
+    headers,
+    auth: basicAuth,
+    timeout: 15000,
+    validateStatus: () => true,
+  });
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`MDM source "${source.name}" returned HTTP ${response.status}`);
+  }
+  return extractArray(response.data);
+};
+
+export const resolveParentSource = async (
+  mdmSourceId?: string,
+): Promise<IMDMSource | null> => {
+  if (mdmSourceId) {
+    const byId = await MDMSource.findById(mdmSourceId);
+    if (byId) return byId;
+  }
+  return MDMSource.findOne({
+    enabled: true,
+    "apis.dataType": "parents",
+  });
+};
+
+/**
+ * Fetch parents (with their children) from the configured MDM source and
+ * filter by a free-text query (name / mobile / email / school).
+ * Returns null when no parents endpoint is configured (caller falls back).
+ */
+export const searchParentsFromMDM = async (
+  query: string,
+  projectId?: string,
+  mdmSourceId?: string,
+): Promise<{ source: IMDMSource; parents: NormalizedParent[] } | null> => {
+  const source = await resolveParentSource(mdmSourceId);
+  if (!source) return null;
+  const parentApi = pickApiForDataType(source, "parents", projectId);
+  if (!parentApi) return null;
+
+  const parents = (await fetchRawArray(source, parentApi)).map(normalizeParent);
+
+  // If children are not embedded, try a separate children endpoint and join.
+  const needChildren = parents.every((p) => p.children.length === 0);
+  if (needChildren) {
+    const childApi = pickApiForDataType(source, "children", projectId);
+    if (childApi) {
+      try {
+        const children = (await fetchRawArray(source, childApi)).map(
+          normalizeChild,
+        );
+        const byParent = new Map<string, NormalizedChild[]>();
+        for (const c of children) {
+          if (!c.parentCode) continue;
+          const arr = byParent.get(c.parentCode) || [];
+          arr.push(c);
+          byParent.set(c.parentCode, arr);
+        }
+        for (const p of parents) {
+          if (p.parentCode && byParent.has(p.parentCode)) {
+            p.children = byParent.get(p.parentCode)!;
+          }
+        }
+      } catch (e: any) {
+        console.error("MDM children fetch failed:", e.message);
+      }
+    }
+  }
+
+  const term = (query || "").toLowerCase().trim();
+  const filtered = term
+    ? parents.filter((p) =>
+        [p.name, p.mobile, p.email, p.school]
+          .filter(Boolean)
+          .some((v) => String(v).toLowerCase().includes(term)),
+      )
+    : parents;
+
+  return { source, parents: filtered };
+};

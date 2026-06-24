@@ -43,6 +43,8 @@ const DATA_TYPES: MDMDataType[] = [
   "employees",
   "principals",
   "students",
+  "parents",
+  "children",
   "custom",
 ];
 
@@ -51,6 +53,8 @@ const DATA_TYPE_BADGE: Record<string, string> = {
   employees: "bg-blue-100 text-blue-700",
   principals: "bg-amber-100 text-amber-700",
   students: "bg-emerald-100 text-emerald-700",
+  parents: "bg-pink-100 text-pink-700",
+  children: "bg-teal-100 text-teal-700",
   custom: "bg-gray-100 text-gray-600",
 };
 

@@ -35,6 +35,10 @@ export const serviceRequestApi = {
     api
       .get(`${base}/student-lookup`, { params: { q, projectId } })
       .then((r) => r.data),
+  parentLookup: (q: string, projectId?: string, mdmSourceId?: string) =>
+    api
+      .get(`${base}/parent-lookup`, { params: { q, projectId, mdmSourceId } })
+      .then((r) => r.data),
   duplicates: (params: Record<string, any>) =>
     api.get(`${base}/duplicates`, { params }).then((r) => r.data),
 
