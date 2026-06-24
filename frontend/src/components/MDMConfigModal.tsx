@@ -1,5 +1,16 @@
-import { useEffect, useState } from "react";
-import { XMarkIcon, PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
+import { useEffect, useRef, useState } from "react";
+import {
+  XMarkIcon,
+  PlusIcon,
+  TrashIcon,
+  PencilSquareIcon,
+  ChevronDownIcon,
+  CheckIcon,
+  ServerStackIcon,
+  ShieldCheckIcon,
+  CircleStackIcon,
+  BeakerIcon,
+} from "@heroicons/react/24/outline";
 import {
   listMDMSources,
   createMDMSource,
@@ -34,6 +45,14 @@ const DATA_TYPES: MDMDataType[] = [
   "students",
   "custom",
 ];
+
+const DATA_TYPE_BADGE: Record<string, string> = {
+  schools: "bg-purple-100 text-purple-700",
+  employees: "bg-blue-100 text-blue-700",
+  principals: "bg-amber-100 text-amber-700",
+  students: "bg-emerald-100 text-emerald-700",
+  custom: "bg-gray-100 text-gray-600",
+};
 
 const emptyApi = (): MDMApi => ({
   label: "",
@@ -84,13 +103,127 @@ const toEditState = (s?: MDMSource): EditState =>
         auth: emptyAuth(),
       };
 
-const statusBadge = (status: string) => {
-  const map: Record<string, string> = {
-    connected: "bg-green-100 text-green-700",
-    error: "bg-red-100 text-red-700",
-    untested: "bg-gray-100 text-gray-600",
+const STATUS_META: Record<string, { dot: string; cls: string; label: string }> =
+  {
+    connected: {
+      dot: "bg-emerald-500",
+      cls: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      label: "Connected",
+    },
+    error: {
+      dot: "bg-red-500",
+      cls: "bg-red-50 text-red-700 border-red-200",
+      label: "Error",
+    },
+    untested: {
+      dot: "bg-gray-400",
+      cls: "bg-gray-50 text-gray-600 border-gray-200",
+      label: "Untested",
+    },
   };
-  return map[status] || map.untested;
+
+/* ---------- Reusable project multiselect dropdown ---------- */
+const ProjectMultiSelect: React.FC<{
+  projects: ProjectOption[];
+  selected: string[];
+  onChange: (ids: string[]) => void;
+}> = ({ projects, selected, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const toggle = (id: string) =>
+    onChange(
+      selected.includes(id)
+        ? selected.filter((x) => x !== id)
+        : [...selected, id],
+    );
+
+  const labelText =
+    selected.length === 0
+      ? "All projects"
+      : `${selected.length} project${selected.length > 1 ? "s" : ""} selected`;
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between gap-2 border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white hover:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition"
+      >
+        <span
+          className={selected.length === 0 ? "text-gray-400" : "text-gray-800"}
+        >
+          {labelText}
+        </span>
+        <ChevronDownIcon
+          className={`w-4 h-4 text-gray-400 transition-transform ${
+            open ? "rotate-180" : ""
+          }`}
+        />
+      </button>
+
+      {open && (
+        <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+          <div className="flex items-center justify-between px-3 py-2 border-b sticky top-0 bg-white">
+            <span className="text-xs text-gray-500">
+              {projects.length} project(s)
+            </span>
+            {selected.length > 0 && (
+              <button
+                type="button"
+                onClick={() => onChange([])}
+                className="text-xs text-indigo-600 hover:underline"
+              >
+                Clear (all)
+              </button>
+            )}
+          </div>
+          {projects.length === 0 ? (
+            <p className="px-3 py-3 text-xs text-gray-400">
+              No projects available.
+            </p>
+          ) : (
+            projects.map((p) => {
+              const isSel = selected.includes(p._id);
+              return (
+                <button
+                  key={p._id}
+                  type="button"
+                  onClick={() => toggle(p._id)}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-indigo-50 transition"
+                >
+                  <span
+                    className={`w-4 h-4 rounded border flex items-center justify-center ${
+                      isSel
+                        ? "bg-indigo-600 border-indigo-600"
+                        : "border-gray-300"
+                    }`}
+                  >
+                    {isSel && <CheckIcon className="w-3 h-3 text-white" />}
+                  </span>
+                  <span className="text-gray-700">{p.name}</span>
+                  {p.code && (
+                    <span className="text-xs text-gray-400">({p.code})</span>
+                  )}
+                </button>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
 };
 
 const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
@@ -163,8 +296,7 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
     }));
   };
 
-  const addApi = () =>
-    setEdit((e) => ({ ...e, apis: [...e.apis, emptyApi()] }));
+  const addApi = () => setEdit((e) => ({ ...e, apis: [...e.apis, emptyApi()] }));
 
   const removeApi = (idx: number) =>
     setEdit((e) => ({ ...e, apis: e.apis.filter((_, i) => i !== idx) }));
@@ -232,47 +364,60 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
   };
 
   const inputCls =
-    "w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
-  const labelCls = "block text-xs font-semibold text-gray-600 mb-1";
+    "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition";
+  const labelCls = "block text-xs font-semibold text-gray-500 mb-1.5";
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div className="fixed inset-0 bg-black bg-opacity-50" onClick={onClose} />
+      <div
+        className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm"
+        onClick={onClose}
+      />
       <div className="flex min-h-full items-center justify-center p-4">
-        <div className="relative bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] flex flex-col">
+        <div className="relative bg-gray-50 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[92vh] flex flex-col overflow-hidden">
           {/* Header */}
-          <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center rounded-t-lg">
-            <div>
-              <h2 className="text-lg font-bold text-gray-800">
-                🗄️ MDM Master — Data Sources
-              </h2>
-              <p className="text-xs text-gray-500">
-                Company master database connections (global, shared across all
-                projects)
-              </p>
+          <div className="bg-gradient-to-r from-indigo-600 to-blue-600 px-6 py-5 flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-xl bg-white/15 flex items-center justify-center">
+                <CircleStackIcon className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-white">MDM Master</h2>
+                <p className="text-xs text-indigo-100">
+                  Company master database — global, shared across all projects
+                </p>
+              </div>
             </div>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <button
+              onClick={onClose}
+              className="text-white/80 hover:text-white hover:bg-white/10 rounded-lg p-1.5 transition"
+            >
               <XMarkIcon className="w-6 h-6" />
             </button>
           </div>
 
           <div className="p-6 overflow-y-auto">
             {error && (
-              <div className="mb-4 p-3 rounded-md bg-red-50 text-red-700 text-sm">
+              <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
                 {error}
               </div>
             )}
 
+            {/* ---------------- LIST VIEW ---------------- */}
             {view === "list" && (
               <div>
                 <div className="flex justify-between items-center mb-4">
-                  <span className="text-sm text-gray-600">
-                    {loading ? "Loading…" : `${sources.length} source(s)`}
+                  <span className="text-sm font-medium text-gray-500">
+                    {loading
+                      ? "Loading…"
+                      : `${sources.length} data source${
+                          sources.length === 1 ? "" : "s"
+                        }`}
                   </span>
                   {canManage && (
                     <button
                       onClick={startCreate}
-                      className="inline-flex items-center gap-1 bg-blue-600 text-white px-3 py-2 rounded-md text-sm hover:bg-blue-700"
+                      className="inline-flex items-center gap-1.5 bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 shadow-sm transition"
                     >
                       <PlusIcon className="w-4 h-4" /> Add Source
                     </button>
@@ -280,111 +425,152 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
                 </div>
 
                 {!loading && sources.length === 0 && (
-                  <div className="text-center text-gray-400 py-10 text-sm">
-                    No MDM sources configured yet.
+                  <div className="text-center py-14 border-2 border-dashed border-gray-200 rounded-xl bg-white">
+                    <CircleStackIcon className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                    <p className="text-sm text-gray-500">
+                      No MDM sources configured yet.
+                    </p>
+                    {canManage && (
+                      <button
+                        onClick={startCreate}
+                        className="mt-3 text-sm text-indigo-600 font-medium hover:underline"
+                      >
+                        + Add your first source
+                      </button>
+                    )}
                   </div>
                 )}
 
                 <div className="space-y-3">
-                  {sources.map((s) => (
-                    <div
-                      key={s._id}
-                      className="border rounded-lg p-4 flex justify-between items-start"
-                    >
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-gray-800">
-                            {s.name}
-                          </span>
-                          <span
-                            className={`text-xs px-2 py-0.5 rounded-full ${statusBadge(
-                              s.connectionStatus,
-                            )}`}
-                          >
-                            {s.connectionStatus}
-                          </span>
-                          {!s.enabled && (
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
-                              disabled
+                  {sources.map((s) => {
+                    const meta =
+                      STATUS_META[s.connectionStatus] || STATUS_META.untested;
+                    return (
+                      <div
+                        key={s._id}
+                        className="bg-white border border-gray-200 rounded-xl p-4 flex justify-between items-start hover:shadow-md hover:border-indigo-200 transition"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold text-gray-800">
+                              {s.name}
                             </span>
+                            <span
+                              className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${meta.cls}`}
+                            >
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full ${meta.dot}`}
+                              />
+                              {meta.label}
+                            </span>
+                            {!s.enabled && (
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
+                                disabled
+                              </span>
+                            )}
+                          </div>
+                          {s.description && (
+                            <p className="text-sm text-gray-500 mt-1">
+                              {s.description}
+                            </p>
                           )}
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            {s.apis.length === 0 ? (
+                              <span className="text-xs text-gray-400">
+                                No endpoints
+                              </span>
+                            ) : (
+                              s.apis.map((a, i) => (
+                                <span
+                                  key={i}
+                                  className={`text-xs px-2 py-0.5 rounded-md ${
+                                    DATA_TYPE_BADGE[a.dataType] ||
+                                    DATA_TYPE_BADGE.custom
+                                  }`}
+                                >
+                                  {a.label || a.dataType}
+                                </span>
+                              ))
+                            )}
+                          </div>
                         </div>
-                        {s.description && (
-                          <p className="text-xs text-gray-500 mt-1">
-                            {s.description}
-                          </p>
+                        {canManage && (
+                          <div className="flex gap-1 shrink-0 ml-3">
+                            <button
+                              onClick={() => startEdit(s)}
+                              className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
+                              title="Edit"
+                            >
+                              <PencilSquareIcon className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(s)}
+                              className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                              title="Delete"
+                            >
+                              <TrashIcon className="w-4 h-4" />
+                            </button>
+                          </div>
                         )}
-                        <p className="text-xs text-gray-400 mt-1">
-                          {s.apis.length} endpoint(s):{" "}
-                          {s.apis.map((a) => a.dataType).join(", ") || "—"}
-                        </p>
                       </div>
-                      {canManage && (
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => startEdit(s)}
-                            className="text-blue-600 text-sm hover:underline"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => handleDelete(s)}
-                            className="text-red-600 text-sm hover:underline"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
 
+            {/* ---------------- EDIT VIEW ---------------- */}
             {view === "edit" && (
               <div className="space-y-5">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className={labelCls}>Source Name *</label>
+                {/* Basic info card */}
+                <div className="bg-white border border-gray-200 rounded-xl p-5">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelCls}>Source Name *</label>
+                      <input
+                        className={inputCls}
+                        value={edit.name}
+                        onChange={(e) =>
+                          setEdit({ ...edit, name: e.target.value })
+                        }
+                        placeholder="e.g. Company MDM"
+                      />
+                    </div>
+                    <div className="flex items-end pb-1">
+                      <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500"
+                          checked={edit.enabled}
+                          onChange={(e) =>
+                            setEdit({ ...edit, enabled: e.target.checked })
+                          }
+                        />
+                        Enabled
+                      </label>
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                    <label className={labelCls}>Description</label>
                     <input
                       className={inputCls}
-                      value={edit.name}
+                      value={edit.description}
                       onChange={(e) =>
-                        setEdit({ ...edit, name: e.target.value })
+                        setEdit({ ...edit, description: e.target.value })
                       }
-                      placeholder="e.g. Company MDM"
+                      placeholder="Optional notes about this source"
                     />
                   </div>
-                  <div className="flex items-end">
-                    <label className="flex items-center gap-2 text-sm text-gray-700">
-                      <input
-                        type="checkbox"
-                        checked={edit.enabled}
-                        onChange={(e) =>
-                          setEdit({ ...edit, enabled: e.target.checked })
-                        }
-                      />
-                      Enabled
-                    </label>
+                </div>
+
+                {/* Auth card */}
+                <div className="bg-white border border-gray-200 rounded-xl p-5">
+                  <div className="flex items-center gap-2 mb-4">
+                    <ShieldCheckIcon className="w-5 h-5 text-indigo-500" />
+                    <h3 className="text-sm font-semibold text-gray-700">
+                      Authentication
+                    </h3>
                   </div>
-                </div>
-
-                <div>
-                  <label className={labelCls}>Description</label>
-                  <input
-                    className={inputCls}
-                    value={edit.description}
-                    onChange={(e) =>
-                      setEdit({ ...edit, description: e.target.value })
-                    }
-                  />
-                </div>
-
-                {/* Auth */}
-                <div className="border rounded-lg p-4 bg-gray-50">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3">
-                    Authentication
-                  </h3>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className={labelCls}>Type</label>
@@ -427,7 +613,7 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
                           <label className={labelCls}>
                             API Key{" "}
                             {edit.auth.hasApiKey && (
-                              <span className="text-green-600">
+                              <span className="text-emerald-600 font-normal">
                                 (set — leave blank to keep)
                               </span>
                             )}
@@ -452,7 +638,7 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
                         <label className={labelCls}>
                           Token{" "}
                           {edit.auth.hasToken && (
-                            <span className="text-green-600">
+                            <span className="text-emerald-600 font-normal">
                               (set — leave blank to keep)
                             </span>
                           )}
@@ -481,10 +667,7 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
                             onChange={(e) =>
                               setEdit({
                                 ...edit,
-                                auth: {
-                                  ...edit.auth,
-                                  username: e.target.value,
-                                },
+                                auth: { ...edit.auth, username: e.target.value },
                               })
                             }
                           />
@@ -493,7 +676,9 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
                           <label className={labelCls}>
                             Password{" "}
                             {edit.auth.hasPassword && (
-                              <span className="text-green-600">(set)</span>
+                              <span className="text-emerald-600 font-normal">
+                                (set)
+                              </span>
                             )}
                           </label>
                           <input
@@ -503,10 +688,7 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
                             onChange={(e) =>
                               setEdit({
                                 ...edit,
-                                auth: {
-                                  ...edit.auth,
-                                  password: e.target.value,
-                                },
+                                auth: { ...edit.auth, password: e.target.value },
                               })
                             }
                           />
@@ -516,25 +698,46 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
                   </div>
                 </div>
 
-                {/* APIs */}
-                <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <h3 className="text-sm font-semibold text-gray-700">
-                      API Endpoints
-                    </h3>
+                {/* APIs card */}
+                <div className="bg-white border border-gray-200 rounded-xl p-5">
+                  <div className="flex justify-between items-center mb-4">
+                    <div className="flex items-center gap-2">
+                      <ServerStackIcon className="w-5 h-5 text-indigo-500" />
+                      <h3 className="text-sm font-semibold text-gray-700">
+                        API Endpoints
+                      </h3>
+                    </div>
                     <button
                       onClick={addApi}
-                      className="inline-flex items-center gap-1 text-blue-600 text-sm hover:underline"
+                      className="inline-flex items-center gap-1 text-indigo-600 text-sm font-medium hover:text-indigo-700"
                     >
                       <PlusIcon className="w-4 h-4" /> Add API
                     </button>
                   </div>
 
-                  <div className="space-y-3">
+                  <div className="space-y-4">
                     {edit.apis.map((api, idx) => {
                       const result = testResults[idx];
                       return (
-                        <div key={idx} className="border rounded-lg p-3">
+                        <div
+                          key={idx}
+                          className="rounded-xl border border-gray-200 bg-gray-50/60 p-4"
+                        >
+                          <div className="flex items-center justify-between mb-3">
+                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-indigo-100 text-indigo-700 text-xs font-bold">
+                              {idx + 1}
+                            </span>
+                            {edit.apis.length > 1 && (
+                              <button
+                                onClick={() => removeApi(idx)}
+                                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                                title="Remove endpoint"
+                              >
+                                <TrashIcon className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+
                           <div className="grid grid-cols-2 gap-3">
                             <div>
                               <label className={labelCls}>Label</label>
@@ -544,6 +747,7 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
                                 onChange={(e) =>
                                   updateApi(idx, { label: e.target.value })
                                 }
+                                placeholder="Employee Directory"
                               />
                             </div>
                             <div>
@@ -590,7 +794,7 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
                                 placeholder="https://mdm.company.com"
                               />
                             </div>
-                            <div>
+                            <div className="col-span-2">
                               <label className={labelCls}>Path</label>
                               <input
                                 className={inputCls}
@@ -601,96 +805,62 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
                                 placeholder="/api/v1/employees"
                               />
                             </div>
-                            <div className="flex items-end justify-between">
-                              <label className="flex items-center gap-2 text-xs text-gray-600">
-                                <input
-                                  type="checkbox"
-                                  checked={api.isDefaultForType}
-                                  onChange={(e) =>
-                                    updateApi(idx, {
-                                      isDefaultForType: e.target.checked,
-                                    })
-                                  }
-                                />
-                                Default for type
+
+                            {/* Project mapping dropdown */}
+                            <div className="col-span-2">
+                              <label className={labelCls}>
+                                Map to Projects{" "}
+                                <span className="text-gray-400 font-normal">
+                                  (none = all projects)
+                                </span>
                               </label>
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => handleTest(idx)}
-                                  disabled={testing === idx}
-                                  className="text-xs bg-gray-700 text-white px-2 py-1 rounded hover:bg-gray-800 disabled:opacity-50"
-                                >
-                                  {testing === idx ? "Testing…" : "Test"}
-                                </button>
-                                {edit.apis.length > 1 && (
-                                  <button
-                                    onClick={() => removeApi(idx)}
-                                    className="text-red-500"
-                                  >
-                                    <TrashIcon className="w-4 h-4" />
-                                  </button>
-                                )}
-                              </div>
+                              <ProjectMultiSelect
+                                projects={projects}
+                                selected={api.projectIds}
+                                onChange={(ids) =>
+                                  updateApi(idx, { projectIds: ids })
+                                }
+                              />
                             </div>
                           </div>
 
-                          {/* Project mapping — which projects this endpoint serves */}
-                          <div className="mt-3 border-t pt-3">
-                            <label className={labelCls}>
-                              Map to Projects{" "}
-                              <span className="text-gray-400 font-normal">
-                                (none selected = all projects)
-                              </span>
+                          <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-200">
+                            <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500"
+                                checked={api.isDefaultForType}
+                                onChange={(e) =>
+                                  updateApi(idx, {
+                                    isDefaultForType: e.target.checked,
+                                  })
+                                }
+                              />
+                              Default for type
                             </label>
-                            {projects.length === 0 ? (
-                              <p className="text-xs text-gray-400">
-                                No projects available.
-                              </p>
-                            ) : (
-                              <div className="flex flex-wrap gap-2">
-                                {projects.map((p) => {
-                                  const selected = api.projectIds.includes(p._id);
-                                  return (
-                                    <button
-                                      key={p._id}
-                                      type="button"
-                                      onClick={() =>
-                                        updateApi(idx, {
-                                          projectIds: selected
-                                            ? api.projectIds.filter(
-                                                (id) => id !== p._id,
-                                              )
-                                            : [...api.projectIds, p._id],
-                                        })
-                                      }
-                                      className={`text-xs px-2 py-1 rounded-full border ${
-                                        selected
-                                          ? "bg-blue-600 text-white border-blue-600"
-                                          : "bg-white text-gray-600 border-gray-300 hover:border-blue-400"
-                                      }`}
-                                    >
-                                      {p.name}
-                                      {p.code ? ` (${p.code})` : ""}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            )}
+                            <button
+                              onClick={() => handleTest(idx)}
+                              disabled={testing === idx}
+                              className="inline-flex items-center gap-1.5 text-xs bg-slate-800 text-white px-3 py-1.5 rounded-lg hover:bg-slate-900 disabled:opacity-50 transition"
+                            >
+                              <BeakerIcon className="w-3.5 h-3.5" />
+                              {testing === idx ? "Testing…" : "Test"}
+                            </button>
                           </div>
 
                           {result && (
                             <div
-                              className={`mt-2 p-2 rounded text-xs ${
+                              className={`mt-3 p-2.5 rounded-lg text-xs border ${
                                 result.success
-                                  ? "bg-green-50 text-green-700"
-                                  : "bg-red-50 text-red-700"
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                  : "bg-red-50 text-red-700 border-red-200"
                               }`}
                             >
                               {result.success
-                                ? `✅ OK (HTTP ${result.status}) — ${result.count} record(s). Sample: ${JSON.stringify(
+                                ? `✓ OK (HTTP ${result.status}) — ${result.count} record(s). Sample: ${JSON.stringify(
                                     result.sampleData,
                                   ).slice(0, 160)}`
-                                : `❌ ${result.error}`}
+                                : `✗ ${result.error}`}
                             </div>
                           )}
                         </div>
@@ -704,17 +874,17 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
 
           {/* Footer */}
           {view === "edit" && (
-            <div className="sticky bottom-0 bg-white border-t px-6 py-4 flex justify-end gap-3 rounded-b-lg">
+            <div className="bg-white border-t px-6 py-4 flex justify-end gap-3">
               <button
                 onClick={() => setView("list")}
-                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+                className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSave}
                 disabled={saving || !canManage}
-                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                className="px-5 py-2 text-sm font-medium bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg hover:from-indigo-700 hover:to-blue-700 shadow-sm disabled:opacity-50 transition"
               >
                 {saving ? "Saving…" : "Save Source"}
               </button>
