@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import SrPage from "../components/sr/SrPage";
 import { srStyles, srButton, SR } from "../utils/srTheme";
 import { useProjectContext } from "../contexts/ProjectContext";
@@ -53,6 +53,10 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
   embedded,
 }) => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const linkedPsrId = (location.state as any)?.linkedPsrId as
+    | string
+    | undefined;
   const { currentProjectId, userProjects } = useProjectContext();
   const { hasPermission } = usePermissions();
 
@@ -133,6 +137,15 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
     if (!projectId && singleProject) setProjectId(userProjects[0]._id);
     else if (!projectId && currentProjectId) setProjectId(currentProjectId);
   }, [singleProject, userProjects, currentProjectId]); // eslint-disable-line
+
+  // Linked-ISR entry (from a PSR "Create linked ISR" button): force ISR + skip
+  // the type step.
+  useEffect(() => {
+    if (linkedPsrId) {
+      setInteractionType("ISR");
+      setStep("classify");
+    }
+  }, [linkedPsrId]);
 
   /* ---- load SR config + categories on project change ---- */
   useEffect(() => {
@@ -323,7 +336,7 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
 
       const payload: any = {
         projectId,
-        interactionType: finalInteraction(),
+        interactionType: linkedPsrId ? "ISR" : finalInteraction(),
         requestType: "SR",
         channel: "walk_in",
         categoryId,
@@ -332,6 +345,7 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
         classification: channel?.key,
         skipDuplicateCheck: true,
       };
+      if (linkedPsrId) payload.linkedPsrId = linkedPsrId;
 
       if (flow === "existing_parent" && parent) {
         payload.parent = {
@@ -994,7 +1008,24 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
       subtitle="Raise a PSR or ISR — pick the type, classify, then fill the form."
       embedded={embedded}
     >
-      {step === "type" && renderTypeStep()}
+      {linkedPsrId && (
+        <div
+          style={{
+            ...srStyles.card,
+            maxWidth: 760,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            borderLeft: "4px solid #2563EB",
+            fontSize: 13,
+            color: SR.text,
+          }}
+        >
+          🔗 Creating an <strong>ISR linked to the parent PSR</strong>. It will
+          appear under the PSR's Linked ISRs.
+        </div>
+      )}
+      {step === "type" && !linkedPsrId && renderTypeStep()}
       {step === "classify" && renderClassifyStep()}
       {step === "form" && renderFormStep()}
     </SrPage>

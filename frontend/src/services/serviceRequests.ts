@@ -31,6 +31,12 @@ export const serviceRequestApi = {
   get: (id: string) => api.get(`${base}/${id}`).then((r) => r.data),
   create: (body: any) => api.post(base, body).then((r) => r.data),
 
+  // Linked ISRs (PSR ↔ ISR)
+  linkedIsrs: (psrId: string) =>
+    api.get(`${base}/${psrId}/linked-isrs`).then((r) => r.data),
+  linkPsr: (isrId: string, psrId: string) =>
+    api.post(`${base}/${isrId}/link-psr`, { psrId }).then((r) => r.data),
+
   studentLookup: (q: string, projectId?: string) =>
     api
       .get(`${base}/student-lookup`, { params: { q, projectId } })
@@ -164,4 +170,56 @@ export const SR_STATUS_META: Record<
   5: { label: "Closed", color: "#374151", bg: "#f3f4f6" },
   6: { label: "Re-open", color: "#b91c1c", bg: "#fef2f2" },
   7: { label: "Re-Opened WIP", color: "#c2410c", bg: "#fff7ed" },
+};
+
+/** Priority name → chip colors. Priority is free-form master data; match by
+ * normalized name, fall back to a neutral gray for anything unmapped. */
+export const priorityMeta = (
+  p?: string,
+): { label: string; color: string; bg: string } => {
+  const key = (p || "").trim().toUpperCase();
+  const map: Record<string, { color: string; bg: string }> = {
+    CRITICAL: { color: "#b91c1c", bg: "#fef2f2" },
+    URGENT: { color: "#b91c1c", bg: "#fef2f2" },
+    HIGH: { color: "#c2410c", bg: "#fff7ed" },
+    MEDIUM: { color: "#b45309", bg: "#fffbeb" },
+    NORMAL: { color: "#6b7280", bg: "#f3f4f6" },
+    LOW: { color: "#047857", bg: "#ecfdf5" },
+  };
+  const m = map[key] || { color: "#6b7280", bg: "#f3f4f6" };
+  return { label: key ? key.charAt(0) + key.slice(1).toLowerCase() : "—", ...m };
+};
+
+/** submissionSource → icon + label for the Source column. */
+export const sourceMeta = (
+  s?: string,
+): { label: string; icon: string } => {
+  const key = (s || "").trim().toLowerCase();
+  const map: Record<string, { label: string; icon: string }> = {
+    online: { label: "Online", icon: "🌐" },
+    web: { label: "Web", icon: "🌐" },
+    offline: { label: "Offline", icon: "🏢" },
+    email: { label: "Email", icon: "📧" },
+    ivr: { label: "IVR", icon: "📞" },
+    whatsapp: { label: "WhatsApp", icon: "💬" },
+    sms: { label: "SMS", icon: "📱" },
+    chatbot: { label: "Chatbot", icon: "🤖" },
+  };
+  return map[key] || { label: s || "—", icon: "•" };
+};
+
+/** "5m", "3h", "2d" style compact age from an ISO date. */
+export const compactAge = (iso?: string): string => {
+  if (!iso) return "—";
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 0 || Number.isNaN(ms)) return "—";
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return "now";
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d`;
+  const mo = Math.floor(d / 30);
+  return `${mo}mo`;
 };

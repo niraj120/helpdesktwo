@@ -191,6 +191,36 @@ export const getOne = async (req: AuthRequest, res: Response) => {
   }
 };
 
+export const linkedIsrs = async (req: AuthRequest, res: Response) => {
+  try {
+    const data = await srSvc.listLinkedIsrs(
+      req.params.id,
+      getProjectScope(req),
+    );
+    res.json({ success: true, ...data });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
+export const linkPsr = async (req: AuthRequest, res: Response) => {
+  try {
+    const psrId = String(req.body?.psrId || "");
+    if (!psrId) {
+      res.status(400).json({ success: false, message: "psrId is required" });
+      return;
+    }
+    const data = await srSvc.linkIsrToPsr(
+      req.params.id,
+      psrId,
+      getProjectScope(req),
+    );
+    res.json({ success: true, data });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
 // ── Phase 3: create (online / walk-in), student lookup, form schemas ─────────
 
 const hasPerm = (req: AuthRequest, code: string): boolean => {

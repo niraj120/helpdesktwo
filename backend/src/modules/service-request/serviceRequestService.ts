@@ -456,7 +456,96 @@ export async function listServiceRequests(params: ListSrParams) {
   }
   statusCounts.all = allCount;
 
+  // Linked-ISR rollup: one aggregate over child ISRs for the PSR rows on this
+  // page. done = status Resolved(4)/Closed(5). Inline list powers the popover.
+  const psrIds = (items as any[])
+    .filter((i) => i.interactionType === "PSR")
+    .map((i) => i._id);
+  if (psrIds.length) {
+    const rollup = await Ticket.aggregate([
+      { $match: { linkedPsrId: { $in: psrIds } } },
+      { $sort: { createdAt: -1 } },
+      {
+        $group: {
+          _id: "$linkedPsrId",
+          total: { $sum: 1 },
+          done: {
+            $sum: { $cond: [{ $in: ["$status", [4, 5]] }, 1, 0] },
+          },
+          isrs: {
+            $push: {
+              _id: "$_id",
+              ticketNumber: "$ticketNumber",
+              status: "$status",
+            },
+          },
+        },
+      },
+    ]);
+    const byPsr = new Map(
+      (rollup as any[]).map((r) => [String(r._id), r]),
+    );
+    for (const it of items as any[]) {
+      const r = byPsr.get(String(it._id));
+      it.linkedIsr = { total: r?.total || 0, done: r?.done || 0 };
+      it.linkedIsrs = (r?.isrs || []).slice(0, 25);
+    }
+  }
+
   return { items, total, page, limit, statusCounts };
+}
+
+/** ISRs linked to a parent PSR (for the detail panel + popover). */
+export async function listLinkedIsrs(psrId: string, scope?: ProjectScope) {
+  if (!mongoose.Types.ObjectId.isValid(psrId)) {
+    throw new SrError("Invalid PSR id", 400);
+  }
+  const psr = await Ticket.findById(psrId).select("interactionType project").lean();
+  if (!psr || (psr as any).interactionType !== "PSR") {
+    throw new SrError("Parent PSR not found", 404);
+  }
+  if (scope && !canAccessProject(scope, (psr as any).project)) {
+    throw new SrError("Parent PSR not found", 404);
+  }
+  const items = await Ticket.find({ linkedPsrId: psrId })
+    .sort({ createdAt: -1 })
+    .select("ticketNumber subject status priority assignedTo createdAt")
+    .populate("assignedTo", "firstName lastName fullName email")
+    .lean();
+  const total = items.length;
+  const done = items.filter((i: any) => i.status === 4 || i.status === 5).length;
+  return { items, total, done };
+}
+
+/** Link an existing ISR to a parent PSR (same project, ISR not already linked elsewhere). */
+export async function linkIsrToPsr(
+  isrId: string,
+  psrId: string,
+  scope?: ProjectScope,
+) {
+  if (
+    !mongoose.Types.ObjectId.isValid(isrId) ||
+    !mongoose.Types.ObjectId.isValid(psrId)
+  ) {
+    throw new SrError("Invalid id", 400);
+  }
+  const isr = await Ticket.findById(isrId);
+  if (!isr || isr.interactionType !== "ISR") {
+    throw new SrError("ISR not found", 404);
+  }
+  const psr = await Ticket.findById(psrId).select("interactionType project").lean();
+  if (!psr || (psr as any).interactionType !== "PSR") {
+    throw new SrError("Parent PSR not found", 404);
+  }
+  if (String(isr.project) !== String((psr as any).project)) {
+    throw new SrError("ISR and PSR belong to different projects", 400);
+  }
+  if (scope && !canAccessProject(scope, isr.project)) {
+    throw new SrError("ISR not found", 404);
+  }
+  isr.linkedPsrId = new mongoose.Types.ObjectId(psrId) as any;
+  await isr.save();
+  return { ticketId: String(isr._id), linkedPsrId: psrId };
 }
 
 export async function getServiceRequest(id: string, scope?: ProjectScope) {

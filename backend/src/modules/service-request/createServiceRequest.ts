@@ -33,6 +33,8 @@ export interface CreateServiceRequestInput {
   projectId: string;
   interactionType: Exclude<InteractionType, "normal">;
   requestType?: RequestType;
+  /** ISR only: parent PSR ticket id this ISR is linked to. */
+  linkedPsrId?: string;
   channel: SrChannel;
   modeOfContact?: ModeOfContact;
   /** Deepest selected sub-category. */
@@ -87,6 +89,27 @@ export async function createServiceRequest(
     );
   }
   if (!input.subject) throw new SrError("Subject is required", 400);
+
+  // Linked-PSR validation: only an ISR may link, and only to a PSR in the same project.
+  let linkedPsrId: mongoose.Types.ObjectId | undefined;
+  if (input.linkedPsrId) {
+    if (input.interactionType !== "ISR") {
+      throw new SrError("Only an ISR can be linked to a parent PSR.", 400);
+    }
+    if (!mongoose.Types.ObjectId.isValid(input.linkedPsrId)) {
+      throw new SrError("Invalid linked PSR id.", 400);
+    }
+    const psr = await Ticket.findById(input.linkedPsrId)
+      .select("interactionType project")
+      .lean();
+    if (!psr || (psr as any).interactionType !== "PSR") {
+      throw new SrError("Linked parent PSR not found.", 404);
+    }
+    if (String((psr as any).project) !== String(input.projectId)) {
+      throw new SrError("Linked PSR belongs to a different project.", 400);
+    }
+    linkedPsrId = new mongoose.Types.ObjectId(input.linkedPsrId);
+  }
 
   // Advisory duplicate detection (PSR only) — does not block creation.
   let duplicates: any[] | undefined;
@@ -168,6 +191,7 @@ export async function createServiceRequest(
     requestType:
       input.requestType ||
       (input.interactionType === "PSR" ? "SR" : undefined),
+    linkedPsrId,
     modeOfContact: input.modeOfContact,
     submissionSource: (input.createdByRE
       ? "offline"
