@@ -34,6 +34,8 @@ export interface IComment {
   updatedAt?: Date;
   isSystemComment?: boolean;
   mergedFrom?: string; // Ticket number if comment was merged from another ticket
+  /** SR (PSR/ISR): whether this follow-up/remark is visible to the parent. Phase 2. */
+  displayToParent?: boolean;
 }
 
 export interface IInternalNote {
@@ -110,7 +112,8 @@ export interface ITicket extends Document {
     | "whatsapp"
     | "chatbot"
     | "web"
-    | "sms"; // Track where ticket was created
+    | "sms"
+    | "ivr"; // Track where ticket was created
   // Public API fields
   mobile?: string; // Normalised mobile number (91XXXXXXXXXX) for chatbot/public submissions
   isRegistered?: boolean; // true = linked to existing user, false = mobile-only (unverified)
@@ -176,6 +179,66 @@ export interface ITicket extends Document {
   assignedViaCategoryId?: mongoose.Types.ObjectId;
   /** Which source determined the SLA deadlines for this ticket */
   slaSource?: "category" | "priority" | "default";
+  // ── Service Request (PSR/ISR) — Phase 0 foundation ───────────────────────
+  /**
+   * Service Request discriminator. "normal" = standard ticket (default) and
+   * leaves all existing behavior untouched. "PSR"/"ISR" opt a ticket into the
+   * Service Request module. Indexed for list filtering.
+   */
+  interactionType?: "normal" | "PSR" | "ISR";
+  /** PSR request type: OCR = on-call resolution (quick close), SR = full workflow. */
+  requestType?: "OCR" | "SR";
+  /** How the requester contacted the school (PSR mode of contact). */
+  modeOfContact?:
+    | "telephone"
+    | "walk_in"
+    | "email"
+    | "portal"
+    | "ivr"
+    | "digital";
+  /** SR watchers (CC) — notified on assignment/updates (e.g. PSL). */
+  cc?: mongoose.Types.ObjectId[];
+  /** WIP committed-closure-date tracking (Vector "future committed date"). */
+  wip?: {
+    committedDate?: Date;
+    revisionCount?: number; // how many committed dates have been set
+    reminderSentAt?: Date; // last 48h-before reminder
+    escalatedAt?: Date; // set when committed date expired and escalation fired
+    history?: Array<{
+      committedDate: Date;
+      setBy?: mongoose.Types.ObjectId;
+      setAt: Date;
+      reason?: string;
+    }>;
+  };
+  /** Temporary delegation (assignee on leave/left); does not change the matrix. */
+  delegation?: {
+    delegatedTo?: mongoose.Types.ObjectId;
+    delegatedBy?: mongoose.Types.ObjectId;
+    delegatedAt?: Date;
+    reason?: string;
+    originalAssignee?: mongoose.Types.ObjectId;
+  };
+  /** Re-open tracking — parent/PSL may re-open once. */
+  reopen?: {
+    count?: number;
+    reopenedBy?: mongoose.Types.ObjectId;
+    reopenedAt?: Date;
+  };
+  /** Parent final closure + feedback. */
+  parentClosure?: {
+    satisfied?: boolean;
+    closedAt?: Date;
+    comments?: string;
+  };
+  /** PSL satisfaction-call (dissatisfied parent not re-opening). */
+  pslCall?: {
+    spoken?: boolean; // "Did you speak to the parent?"
+    parentSatisfied?: boolean;
+    comments?: string;
+    calledBy?: mongoose.Types.ObjectId;
+    calledAt?: Date;
+  };
 }
 
 const AttachmentSchema = new Schema({
@@ -212,6 +275,8 @@ const CommentSchema = new Schema({
   updatedAt: { type: Date },
   isSystemComment: { type: Boolean, default: false },
   mergedFrom: { type: String }, // Ticket number if merged from another ticket
+  // SR (PSR/ISR): whether this follow-up/remark is shown to the parent. Phase 2.
+  displayToParent: { type: Boolean, default: false },
 });
 
 const InternalNoteSchema = new Schema({
@@ -356,7 +421,16 @@ const TicketSchema: Schema = new Schema(
     ],
     submissionSource: {
       type: String,
-      enum: ["online", "offline", "email", "whatsapp", "chatbot", "web", "sms"],
+      enum: [
+        "online",
+        "offline",
+        "email",
+        "whatsapp",
+        "chatbot",
+        "web",
+        "sms",
+        "ivr",
+      ],
       default: "online",
       index: true,
     },
@@ -511,6 +585,70 @@ const TicketSchema: Schema = new Schema(
       enum: ["category", "priority", "default", null],
       default: undefined,
     },
+    // ── Service Request (PSR/ISR) — Phase 0 foundation ───────────────────────
+    interactionType: {
+      type: String,
+      enum: ["normal", "PSR", "ISR"],
+      default: "normal",
+      index: true,
+    },
+    requestType: {
+      type: String,
+      enum: ["OCR", "SR", null],
+      default: undefined,
+    },
+    modeOfContact: {
+      type: String,
+      enum: [
+        "telephone",
+        "walk_in",
+        "email",
+        "portal",
+        "ivr",
+        "digital",
+        null,
+      ],
+      default: undefined,
+    },
+    cc: [{ type: Schema.Types.ObjectId, ref: "User" }],
+    wip: {
+      committedDate: { type: Date },
+      revisionCount: { type: Number, default: 0 },
+      reminderSentAt: { type: Date },
+      escalatedAt: { type: Date },
+      history: [
+        {
+          committedDate: { type: Date, required: true },
+          setBy: { type: Schema.Types.ObjectId, ref: "User" },
+          setAt: { type: Date, default: Date.now },
+          reason: { type: String },
+        },
+      ],
+    },
+    delegation: {
+      delegatedTo: { type: Schema.Types.ObjectId, ref: "User" },
+      delegatedBy: { type: Schema.Types.ObjectId, ref: "User" },
+      delegatedAt: { type: Date },
+      reason: { type: String },
+      originalAssignee: { type: Schema.Types.ObjectId, ref: "User" },
+    },
+    reopen: {
+      count: { type: Number, default: 0 },
+      reopenedBy: { type: Schema.Types.ObjectId, ref: "User" },
+      reopenedAt: { type: Date },
+    },
+    parentClosure: {
+      satisfied: { type: Boolean },
+      closedAt: { type: Date },
+      comments: { type: String },
+    },
+    pslCall: {
+      spoken: { type: Boolean },
+      parentSatisfied: { type: Boolean },
+      comments: { type: String },
+      calledBy: { type: Schema.Types.ObjectId, ref: "User" },
+      calledAt: { type: Date },
+    },
   },
   {
     timestamps: true,
@@ -545,5 +683,9 @@ TicketSchema.index({ project: 1, category: 1, createdAt: -1 });
 TicketSchema.index({ project: 1, assignedTo: 1, status: 1 });
 TicketSchema.index({ project: 1, closedAt: -1 });
 TicketSchema.index({ project: 1, sla_due_at: 1 });
+// Service Request list filtering (PSR/ISR vs normal)
+TicketSchema.index({ project: 1, interactionType: 1, status: 1, createdAt: -1 });
+// WIP committed-date reminder/escalation cron lookups
+TicketSchema.index({ interactionType: 1, "wip.committedDate": 1 });
 
 export const Ticket = mongoose.model<ITicket>("Ticket", TicketSchema);

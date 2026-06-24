@@ -617,6 +617,102 @@ export const helpDeskPermissions: HelpDeskPermission[] = [
     category: "ticket-configuration",
   },
   // =====================================================
+  // SERVICE REQUEST CATEGORY (PSR / ISR) — Phase 0 foundation
+  // =====================================================
+  {
+    module: "Service Request",
+    name: "Create Parent Service Request",
+    code: "SR_PSR_CREATE",
+    description: "Can raise a Parent Service Request (PSR)",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Receive Parent Service Request",
+    code: "SR_PSR_RECEIVE",
+    description: "Eligible to be assigned PSRs (forms the PSR assignment pool)",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Create Internal Service Request",
+    code: "SR_ISR_CREATE",
+    description: "Can raise an Internal Service Request (ISR)",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Receive Internal Service Request",
+    code: "SR_ISR_RECEIVE",
+    description: "Eligible to be assigned ISRs (forms the ISR assignment pool)",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Reassign Service Request",
+    code: "SR_REASSIGN",
+    description: "Can reassign an SR to another department/sub-category/user",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Delegate Service Request",
+    code: "SR_DELEGATE",
+    description:
+      "Can delegate an SR to another employee (e.g. PSL, when assignee is on leave/left)",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Close Service Request",
+    code: "SR_CLOSE",
+    description: "Can close/resolve an SR (closure access)",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Re-open Service Request",
+    code: "SR_REOPEN",
+    description: "Can re-open a closed SR on behalf of the parent",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Display Remarks to Parent",
+    code: "SR_DISPLAY_TO_PARENT",
+    description: "Can mark SR remarks/follow-ups as visible to the parent",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Manage Service Request Config",
+    code: "SR_CONFIG_MANAGE",
+    description:
+      "Can manage SR module configuration (channels, forms, assignment/TAT matrix)",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Access Email Triage Inbox",
+    code: "EMAIL_TRIAGE_ACCESS",
+    description: "Can view and read the email triage inbox",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Convert Email (Triage)",
+    code: "EMAIL_TRIAGE_CONVERT",
+    description: "Can convert a triaged email into a PSR/ISR/lead",
+    category: "service-request",
+  },
+  {
+    module: "Service Request",
+    name: "Respond to Email (Triage)",
+    code: "EMAIL_TRIAGE_RESPOND",
+    description: "Can reply to an email from the triage inbox",
+    category: "service-request",
+  },
+  // =====================================================
   // KNOWLEDGE BASE CATEGORY - Legacy System (DEPRECATED)
   // =====================================================
   {

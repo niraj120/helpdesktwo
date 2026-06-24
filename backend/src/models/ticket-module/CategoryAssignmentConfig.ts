@@ -22,6 +22,10 @@ export interface ICategoryAssignmentConfig extends Document {
   agentPool: mongoose.Types.ObjectId[];
   /** Role ObjectIds used for by-role mode */
   rolePool: mongoose.Types.ObjectId[];
+  /** SR (PSR/ISR): users CC'd as watchers on assignment (e.g. PSL). Phase 1. */
+  ccUsers?: mongoose.Types.ObjectId[];
+  /** SR (PSR/ISR): roles CC'd as watchers on assignment. Phase 1. */
+  ccRoles?: mongoose.Types.ObjectId[];
   isActive: boolean;
   createdBy?: mongoose.Types.ObjectId;
   updatedBy?: mongoose.Types.ObjectId;
@@ -56,6 +60,19 @@ const CategoryAssignmentConfigSchema = new Schema<ICategoryAssignmentConfig>(
       },
     ],
     rolePool: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "Role",
+      },
+    ],
+    // SR (PSR/ISR) CC watchers — Phase 1
+    ccUsers: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
+    ccRoles: [
       {
         type: Schema.Types.ObjectId,
         ref: "Role",

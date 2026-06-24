@@ -90,6 +90,14 @@ const ConditionalStudentLayout = lazy(
 
 // Ticket Management
 const ViewTickets = lazy(() => import("./pages/ViewTickets"));
+// Service Requests — two consolidated hubs (one "work" page, one "settings" page)
+const ServiceRequestsHub = lazy(() => import("./pages/ServiceRequestsHub"));
+const ServiceRequestSettingsHub = lazy(
+  () => import("./pages/ServiceRequestSettingsHub"),
+);
+const ServiceRequestDetail = lazy(
+  () => import("./pages/ServiceRequestDetail"),
+);
 const MyTickets = lazy(() => import("./pages/MyTickets"));
 const TicketAssignment = lazy(() => import("./pages/TicketAssignment"));
 const AgentTicketDetail = lazy(() => import("./pages/AgentTicketDetail"));
@@ -563,6 +571,90 @@ function App() {
             element={
               <ProtectedRoute permission="TICKET_VIEW_ALL">
                 <ViewTickets />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Service Requests (PSR/ISR) — one hub, tabbed by channel */}
+          <Route
+            path="/service-requests"
+            element={
+              <ProtectedRoute
+                permission={[
+                  "SR_PSR_RECEIVE",
+                  "SR_PSR_CREATE",
+                  "SR_ISR_CREATE",
+                  "EMAIL_TRIAGE_ACCESS",
+                  "TICKET_VIEW_ALL",
+                ]}
+              >
+                <ServiceRequestsHub />
+              </ProtectedRoute>
+            }
+          />
+          {/* Service Request Settings — one tabbed settings hub */}
+          <Route
+            path="/sr-settings"
+            element={
+              <ProtectedRoute
+                permission={[
+                  "SR_CONFIG_MANAGE",
+                  "USER_ASSIGN_ROLE",
+                  "USER_IMPORT",
+                ]}
+              >
+                <ServiceRequestSettingsHub />
+              </ProtectedRoute>
+            }
+          />
+          {/* Legacy paths → redirect into the new hubs (keeps old links working) */}
+          <Route
+            path="/service-requests/create"
+            element={<Navigate to="/service-requests?tab=new" replace />}
+          />
+          <Route
+            path="/email-triage"
+            element={<Navigate to="/service-requests?tab=email" replace />}
+          />
+          <Route
+            path="/ivr-calls"
+            element={<Navigate to="/service-requests?tab=ivr" replace />}
+          />
+          <Route
+            path="/leads"
+            element={<Navigate to="/service-requests?tab=leads" replace />}
+          />
+          <Route
+            path="/service-requests/settings"
+            element={<Navigate to="/sr-settings" replace />}
+          />
+          <Route
+            path="/service-requests/routing"
+            element={<Navigate to="/sr-settings?tab=routing" replace />}
+          />
+          <Route
+            path="/service-requests/forms"
+            element={<Navigate to="/sr-settings?tab=forms" replace />}
+          />
+          <Route
+            path="/service-requests/clusters"
+            element={<Navigate to="/sr-settings?tab=clusters" replace />}
+          />
+          <Route
+            path="/role-mapping"
+            element={<Navigate to="/sr-settings?tab=rolemap" replace />}
+          />
+          <Route
+            path="/service-requests/:id"
+            element={
+              <ProtectedRoute
+                permission={[
+                  "SR_PSR_RECEIVE",
+                  "SR_PSR_CREATE",
+                  "TICKET_VIEW_ALL",
+                ]}
+              >
+                <ServiceRequestDetail />
               </ProtectedRoute>
             }
           />

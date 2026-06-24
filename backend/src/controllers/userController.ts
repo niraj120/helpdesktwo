@@ -4,6 +4,7 @@ import { Role } from "../models/Role";
 import { Project } from "../models/Project";
 import { Center } from "../models/Center";
 import { hrmsService } from "../services/hrmsService";
+import { resolveRoleFromHRMS } from "../services/roleMappingService";
 import mongoose from "mongoose";
 import { logActivity } from "../utils/logger";
 import { validatePasswordPolicy } from "../utils/passwordPolicyUtils";
@@ -1156,23 +1157,19 @@ export const bulkImportFromHRMS = async (
       return;
     }
 
-    if (!roleId) {
-      res.status(400).json({
-        success: false,
-        error: "Role ID is required",
-      });
-      return;
+    // Role is optional (Phase 6): if provided it applies to all imported users;
+    // otherwise each user's role is resolved from the configurable
+    // RoleMappingRule set by their HRMS code / department / designation.
+    if (roleId) {
+      const role = await Role.findById(roleId);
+      if (!role) {
+        res.status(400).json({ success: false, error: "Invalid role ID" });
+        return;
+      }
     }
-
-    // Validate role
-    const role = await Role.findById(roleId);
-    if (!role) {
-      res.status(400).json({
-        success: false,
-        error: "Invalid role ID",
-      });
-      return;
-    }
+    const mappingProjectId = Array.isArray(projectIds)
+      ? projectIds[0]
+      : projectIds;
 
     const results = {
       success: [] as any[],
@@ -1203,9 +1200,25 @@ export const bulkImportFromHRMS = async (
           continue;
         }
 
+        // Resolve role: explicit roleId wins; else map from HRMS attributes.
+        const resolvedRoleId =
+          roleId ||
+          (await resolveRoleFromHRMS(mappingProjectId, {
+            hrmsCode: employeeCode,
+            department: (hrmsData as any).department,
+            designation: (hrmsData as any).designation,
+          }));
+        if (!resolvedRoleId) {
+          results.failed.push({
+            employeeCode,
+            reason: "No role provided and no role-mapping rule matched",
+          });
+          continue;
+        }
+
         const user = new User({
           ...hrmsData,
-          role: roleId,
+          role: resolvedRoleId,
           projects: projectIds || [],
           password: Math.random().toString(36).slice(-10), // Random password
         });

@@ -15,6 +15,16 @@ export interface ICategory extends Document {
   parentId?: mongoose.Types.ObjectId | null; // Parent category ID (null for Level 1 items)
   path?: string; // Display path (e.g., "Engineering > Computer Science > Programming")
   hierarchyPath?: mongoose.Types.ObjectId[]; // Array of ancestor IDs for efficient querying
+  // ── Service Request (PSR/ISR) — Phase 1 master data ──────────────────────
+  /** Owning department for routing (Academics, IT, Transport, …). Optional. */
+  department?: mongoose.Types.ObjectId | null;
+  /** SR-specific metadata for this category/sub-category. */
+  sr?: {
+    /** Policy/help text shown to the parent before raising an SR (deflection). */
+    proactiveHelpText?: string;
+    /** Which SR types this category applies to; empty/undefined = both. */
+    appliesTo?: ("PSR" | "ISR")[];
+  };
   createdBy?: mongoose.Types.ObjectId;
   updatedBy?: mongoose.Types.ObjectId;
   createdAt: Date;
@@ -87,6 +97,17 @@ const CategorySchema = new Schema<ICategory>(
         ref: "Category",
       },
     ],
+    // ── Service Request (PSR/ISR) — Phase 1 master data ──────────────────────
+    department: {
+      type: Schema.Types.ObjectId,
+      ref: "Department",
+      default: null,
+      index: true,
+    },
+    sr: {
+      proactiveHelpText: { type: String, trim: true },
+      appliesTo: [{ type: String, enum: ["PSR", "ISR"] }],
+    },
     createdBy: {
       type: Schema.Types.ObjectId,
       ref: "User",

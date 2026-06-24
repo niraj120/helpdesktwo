@@ -72,6 +72,24 @@ export interface IProject extends Document {
 
   // Additional Configuration
   configuration?: {
+    /**
+     * Service Request (PSR/ISR) module config — Phase 0 foundation.
+     * `enabled` is the master flag; when false (default) the SR module is
+     * entirely inert for this project and standard ticketing is unchanged.
+     * Stored flexibly (Mixed) so later phases can extend channels, form-schema
+     * keys, assignment/TAT overrides etc. without a schema migration each time.
+     */
+    sr?: {
+      enabled?: boolean; // master switch (default false)
+      psr?: { enabled?: boolean };
+      isr?: { enabled?: boolean };
+      wip?: {
+        maxRevisions?: number; // default 3
+        maxDaysPerRevision?: number; // default 8
+        reminderHoursBefore?: number; // default 48
+      };
+      [key: string]: any; // forward-compat for later phases
+    };
     maxUsers?: number;
     maxStorage?: number; // in GB
     allowedDomains?: string[]; // Email domains allowed
@@ -471,6 +489,10 @@ const projectSchema = new Schema<IProject>(
 
     // Additional Configuration
     configuration: {
+      // Service Request (PSR/ISR) module config — Phase 0 foundation.
+      // Mixed so later phases extend it without a schema migration; defaults
+      // applied in code (serviceRequestConfig.ts). Master flag defaults off.
+      sr: { type: Schema.Types.Mixed, default: undefined },
       maxUsers: { type: Number, default: 100 },
       maxStorage: { type: Number, default: 10 }, // GB
       allowedDomains: [String],

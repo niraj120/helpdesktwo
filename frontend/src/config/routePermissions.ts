@@ -51,6 +51,22 @@ export const superAdminRoutes: RoutePermission[] = [
     description: "View tickets - requires TICKET_VIEW_ALL or TICKET_VIEW_OWN",
   },
   {
+    path: "/service-requests",
+    permission: [
+      "SR_PSR_RECEIVE",
+      "SR_PSR_CREATE",
+      "SR_ISR_CREATE",
+      "EMAIL_TRIAGE_ACCESS",
+      "TICKET_VIEW_ALL",
+    ],
+    description: "Service Requests hub (all channels in one page)",
+  },
+  {
+    path: "/sr-settings",
+    permission: ["SR_CONFIG_MANAGE", "USER_ASSIGN_ROLE", "USER_IMPORT"],
+    description: "Service Request settings hub (general/routing/forms/role-mapping/clusters)",
+  },
+  {
     path: "/tickets/assign",
     permission: "TICKET_ASSIGN",
     description: "Assign tickets - requires TICKET_ASSIGN permission",

@@ -59,6 +59,12 @@ import studentAuthRoutes from "./routes/studentAuth";
 import keycloakAuthRoutes from "./routes/keycloakAuth";
 import userRoutes from "./routes/users";
 import ticketRoutes from "./routes/tickets";
+import serviceRequestRoutes from "./routes/serviceRequest";
+import clusterRoutes from "./routes/clusters";
+import emailIntakeRoutes from "./routes/emailIntake";
+import leadRoutes from "./routes/leads";
+import ivrRoutes from "./routes/ivr";
+import roleMappingRoutes from "./routes/roleMappingRules";
 import eulaRoutes from "./routes/eula";
 import projectRoutes from "./routes/projects";
 import roleRoutes from "./routes/roleRoutes";
@@ -139,6 +145,7 @@ import { seedNotificationSettings } from "./utils/seedNotificationSettings";
 import { emailPollingService } from "./services/emailPollingService";
 import { emailProcessingWorker } from "./services/emailProcessingWorker";
 import { autoEscalationService } from "./services/autoEscalationService";
+import { srWipScheduler } from "./services/srWipScheduler";
 import { registerPhase1Handlers } from "./services/widgetHandlers/phase1Handlers";
 import { registerPhase2Handlers } from "./services/widgetHandlers/phase2Handlers";
 import { registerPhase3Handlers } from "./services/widgetHandlers/phase3Handlers";
@@ -285,6 +292,12 @@ app.use("/api/auth", eulaRoutes);
 app.use("/api/otp", otpRoutes); // OTP verification for fields
 app.use("/api/users", userRoutes);
 app.use("/api/tickets", ticketRoutes);
+app.use("/api/service-requests", serviceRequestRoutes);
+app.use("/api/clusters", clusterRoutes);
+app.use("/api/email-intake", emailIntakeRoutes);
+app.use("/api/leads", leadRoutes);
+app.use("/api/ivr", ivrRoutes);
+app.use("/api/role-mapping-rules", roleMappingRoutes);
 app.use("/api/projects", projectRoutes);
 app.use("/api/roles", roleRoutes);
 app.use("/api/permissions", permissionRoutes);
@@ -519,6 +532,9 @@ httpServer.listen(PORT, async () => {
     // Start auto-escalation service (monitors and escalates tickets based on SLA)
     console.log("⏰ Starting Auto-Escalation Service...");
     autoEscalationService.start();
+
+    // Start SR WIP committed-date reminder scheduler (inert until SR enabled)
+    srWipScheduler.start();
 
     // Start attendance sync scheduler (per-project AFT cron jobs)
     console.log("📅 Starting Attendance Sync Scheduler...");

@@ -205,6 +205,35 @@ export const menuConfig: MenuItem[] = [
     ],
   },
 
+  // Service Requests (PSR/ISR) — one hub for all channels
+  {
+    path: "/service-requests",
+    icon: <MdConfirmationNumber />,
+    label: "Service Requests",
+    labelHi: "सेवा अनुरोध",
+    labelMr: "सेवा विनंती",
+    permission: [
+      PERMISSIONS.SR_PSR_RECEIVE,
+      PERMISSIONS.SR_PSR_CREATE,
+      PERMISSIONS.SR_ISR_CREATE,
+      PERMISSIONS.EMAIL_TRIAGE_ACCESS,
+    ],
+  },
+
+  // Service Request Settings — one place to configure everything
+  {
+    path: "/sr-settings",
+    icon: <MdSettings />,
+    label: "SR Settings",
+    labelHi: "एसआर सेटिंग्स",
+    labelMr: "एसआर सेटिंग्ज",
+    permission: [
+      PERMISSIONS.SR_CONFIG_MANAGE,
+      PERMISSIONS.USER_ASSIGN_ROLE,
+      PERMISSIONS.USER_IMPORT,
+    ],
+  },
+
   // Query Configuration - Super Admin only
   {
     path: "/ticket-config",

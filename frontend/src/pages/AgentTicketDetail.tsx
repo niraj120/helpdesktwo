@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import DOMPurify from "dompurify";
 import { useParams, useNavigate } from "react-router-dom";
+import SrLifecyclePanel from "../components/sr/SrLifecyclePanel";
 
 // Known boilerplate patterns injected by mail servers / Outlook (mirrors backend stripEmailBoilerplate)
 const EMAIL_BOILERPLATE_PATTERNS: RegExp[] = [
@@ -5817,10 +5818,28 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
     </>
   );
 
+  // Service Request (PSR/ISR) lifecycle actions — shown for SR tickets so a PSR
+  // opened from the normal queue is fully actionable (audit Step E).
+  const isServiceRequest =
+    !!ticket &&
+    ((ticket as any).interactionType === "PSR" ||
+      (ticket as any).interactionType === "ISR");
+  const srPanel = isServiceRequest ? (
+    <div style={{ padding: "16px 24px 0" }}>
+      <SrLifecyclePanel ticket={ticket} onChanged={fetchTicketDetails} />
+    </div>
+  ) : null;
+
   return wrapWithLayout ? (
-    <DashboardLayout>{content}</DashboardLayout>
+    <DashboardLayout>
+      {srPanel}
+      {content}
+    </DashboardLayout>
   ) : (
-    content
+    <>
+      {srPanel}
+      {content}
+    </>
   );
 };
 

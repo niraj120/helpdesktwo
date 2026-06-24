@@ -81,7 +81,7 @@ export const getCategoriesByProject = async (req: AuthRequest, res: Response) =>
 export const createCategory = async (req: AuthRequest, res: Response) => {
   try {
     const { projectId } = req.params;
-    const { name, code, description, color, icon, order, defaultPriority } = req.body;
+    const { name, code, description, color, icon, order, defaultPriority, department, sr } = req.body;
     const userId = req.user?.userId;
 
     if (!name) {
@@ -146,6 +146,9 @@ export const createCategory = async (req: AuthRequest, res: Response) => {
       icon,
       order,
       defaultPriority,
+      // SR (PSR/ISR) master-data fields — Phase 1
+      ...(department !== undefined ? { department: department || null } : {}),
+      ...(sr !== undefined ? { sr } : {}),
       createdBy: userId,
     });
 
@@ -227,7 +230,7 @@ export const createCategory = async (req: AuthRequest, res: Response) => {
 export const updateCategory = async (req: AuthRequest, res: Response) => {
   try {
     const { categoryId } = req.params;
-    const { name, code, description, color, icon, order, isActive, defaultPriority } = req.body;
+    const { name, code, description, color, icon, order, isActive, defaultPriority, department, sr } = req.body;
     const userId = req.user?.userId;
 
     const category = await Category.findById(categoryId);
@@ -278,6 +281,9 @@ export const updateCategory = async (req: AuthRequest, res: Response) => {
     if (order !== undefined) category.order = order;
     if (isActive !== undefined) category.isActive = isActive;
     if (defaultPriority !== undefined) category.defaultPriority = defaultPriority;
+    // SR (PSR/ISR) master-data fields — Phase 1
+    if (department !== undefined) (category as any).department = department || null;
+    if (sr !== undefined) (category as any).sr = sr;
     category.updatedBy = userId as any;
 
     await category.save();

@@ -55,7 +55,14 @@ export const upsertAssignmentConfig = async (
 ): Promise<void> => {
   try {
     const { categoryId } = req.params;
-    const { mode, agentPool = [], rolePool = [], isActive = true } = req.body;
+    const {
+      mode,
+      agentPool = [],
+      rolePool = [],
+      ccUsers = [],
+      ccRoles = [],
+      isActive = true,
+    } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(categoryId)) {
       res.status(400).json({ success: false, error: "Invalid categoryId" });
@@ -89,6 +96,9 @@ export const upsertAssignmentConfig = async (
           mode,
           agentPool: agentPool.map((id: string) => new mongoose.Types.ObjectId(id)),
           rolePool: rolePool.map((id: string) => new mongoose.Types.ObjectId(id)),
+          // SR (PSR/ISR) CC watchers — Phase 1
+          ccUsers: ccUsers.map((id: string) => new mongoose.Types.ObjectId(id)),
+          ccRoles: ccRoles.map((id: string) => new mongoose.Types.ObjectId(id)),
           isActive,
           updatedBy: userId,
         },
