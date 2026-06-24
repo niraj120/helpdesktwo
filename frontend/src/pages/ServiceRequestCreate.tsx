@@ -49,6 +49,77 @@ interface ClassifyChannel {
 
 type Step = "type" | "classify" | "form";
 
+/** Mirrors backend SR_DEFAULT_CLASSIFY_CHANNELS — used as a safety fallback so
+ * the wizard never dead-ends if a project has no channels persisted yet. */
+const DEFAULT_CHANNELS: ClassifyChannel[] = [
+  {
+    key: "existing_parent",
+    label: "Existing Parent",
+    description: "A current parent / student raising a request.",
+    icon: "👪",
+    color: "#2563EB",
+    enabled: true,
+    order: 1,
+    flow: "existing_parent",
+    routing: { interactionType: "PSR", target: "sr" },
+  },
+  {
+    key: "prospect_parent",
+    label: "Prospect Parent",
+    description: "Admissions or new-school enquiry. Forwards to CRM.",
+    icon: "🌱",
+    color: "#16a34a",
+    enabled: true,
+    order: 2,
+    flow: "prospect_parent",
+    routing: { target: "lead" },
+  },
+  {
+    key: "vendor",
+    label: "Vendor / Business",
+    description: "Supplies, licensing or services. Routes an SR to Procurement.",
+    icon: "📦",
+    color: "#b45309",
+    enabled: true,
+    order: 3,
+    flow: "vendor",
+    routing: { interactionType: "ISR", target: "procurement" },
+  },
+  {
+    key: "job",
+    label: "Job Application",
+    description: "Careers, teaching openings, or resumes. Routes an SR to HR.",
+    icon: "💼",
+    color: "#7c3aed",
+    enabled: true,
+    order: 4,
+    flow: "job",
+    routing: { interactionType: "ISR", target: "hr" },
+  },
+  {
+    key: "others",
+    label: "Others / General",
+    description: "General feedback or support questions. Routes a custom SR.",
+    icon: "🗂️",
+    color: "#0891b2",
+    enabled: true,
+    order: 5,
+    flow: "others",
+    routing: { interactionType: "PSR", target: "sr" },
+  },
+  {
+    key: "junk",
+    label: "Junk / Telemarketing",
+    description: "Spam, wrong number or blank voicemail. Archived as junk.",
+    icon: "🗑️",
+    color: "#6b7280",
+    enabled: true,
+    order: 6,
+    flow: "junk",
+    routing: { target: "junk_archive" },
+  },
+];
+
 const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
   embedded,
 }) => {
@@ -187,8 +258,12 @@ const ServiceRequestCreate: React.FC<{ embedded?: boolean }> = ({
   }, [categories]);
 
   const channels: ClassifyChannel[] = useMemo(() => {
-    const list: ClassifyChannel[] = config?.classifyChannels || [];
-    return list
+    // Fall back to the bundled defaults when the project has none persisted yet
+    // (e.g. config not seeded, or backend not yet restarted on this build).
+    const raw: ClassifyChannel[] = config?.classifyChannels?.length
+      ? config.classifyChannels
+      : DEFAULT_CHANNELS;
+    return raw
       .filter((c) => c.enabled)
       .filter((c) => !c.requiredPermission || hasPermission(c.requiredPermission))
       .sort((a, b) => a.order - b.order);

@@ -7,6 +7,7 @@ import { Project } from "../../models/Project";
 import { resolveSrConfig } from "./serviceRequestConfig";
 import { seedPsrStatuses } from "./srStatusSeed";
 import { SrError } from "./serviceRequestService";
+import { SR_DEFAULT_CLASSIFY_CHANNELS } from "./types";
 
 export async function getSrConfigForProject(projectId: string) {
   const project = await Project.findById(projectId)
@@ -58,6 +59,15 @@ export async function updateSrConfigForProject(
   if (Array.isArray(patch.classifyChannels))
     sr.classifyChannels = patch.classifyChannels;
   if (patch.blocks) sr.blocks = { ...(sr.blocks || {}), ...patch.blocks };
+
+  // Seed the default classify channels the first time SR is enabled, so they
+  // become concrete (editable + always available) instead of read-time-only.
+  if (
+    sr.enabled &&
+    (!Array.isArray(sr.classifyChannels) || sr.classifyChannels.length === 0)
+  ) {
+    sr.classifyChannels = SR_DEFAULT_CLASSIFY_CHANNELS;
+  }
 
   project.markModified("configuration.sr");
   await project.save();
