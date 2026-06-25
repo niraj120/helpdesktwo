@@ -13,6 +13,8 @@ import {
   CommandLineIcon,
   ClipboardDocumentIcon,
   ClipboardDocumentCheckIcon,
+  CheckCircleIcon,
+  ExclamationTriangleIcon,
 } from "@heroicons/react/24/outline";
 import {
   listMDMSources,
@@ -416,6 +418,97 @@ const ProjectMultiSelect: React.FC<{
           )}
         </div>
       )}
+    </div>
+  );
+};
+
+/* ---------- Beautified test-result panel ---------- */
+const TestResultPanel: React.FC<{ result: MDMTestResult }> = ({ result }) => {
+  if (!result.success) {
+    return (
+      <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 flex items-start gap-2">
+        <ExclamationTriangleIcon className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
+        <div className="min-w-0">
+          <p className="text-xs font-semibold text-red-700">Request failed</p>
+          <p className="text-xs text-red-600 break-words">
+            {result.error || "Unknown error"}
+          </p>
+          {result.status ? (
+            <p className="text-[10px] text-red-400 mt-0.5">
+              HTTP {result.status}
+            </p>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  const sample: any = result.sampleData;
+  const rec = Array.isArray(sample) ? sample[0] : sample;
+  const fieldsObj =
+    rec &&
+    typeof rec === "object" &&
+    rec.attributes &&
+    typeof rec.attributes === "object"
+      ? rec.attributes
+      : rec;
+  const fields =
+    fieldsObj && typeof fieldsObj === "object" ? Object.keys(fieldsObj) : [];
+  let pretty: string;
+  try {
+    pretty = JSON.stringify(rec ?? sample, null, 2);
+  } catch {
+    pretty = String(sample);
+  }
+
+  return (
+    <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50/60 overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-emerald-200">
+        <CheckCircleIcon className="w-4 h-4 text-emerald-600 shrink-0" />
+        <span className="text-xs font-semibold text-emerald-700">
+          Connection OK
+        </span>
+        <span className="ml-auto flex items-center gap-1.5">
+          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+            HTTP {result.status}
+          </span>
+          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white text-emerald-700 border border-emerald-200">
+            {result.count} record{result.count === 1 ? "" : "s"}
+          </span>
+        </span>
+      </div>
+
+      {fields.length > 0 && (
+        <div className="px-3 pt-2.5">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-600/80 mb-1">
+            Fields ({fields.length})
+          </p>
+          <div className="flex flex-wrap gap-1">
+            {fields.slice(0, 30).map((f) => (
+              <span
+                key={f}
+                className="text-[10px] px-1.5 py-0.5 rounded bg-white border border-emerald-200 text-emerald-800 font-mono"
+              >
+                {f}
+              </span>
+            ))}
+            {fields.length > 30 && (
+              <span className="text-[10px] text-emerald-600 self-center">
+                +{fields.length - 30} more
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="px-3 py-2.5">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-600/80 mb-1">
+          Sample record{Array.isArray(sample) ? " (1 of many)" : ""}
+        </p>
+        <pre className="max-h-56 overflow-auto rounded-lg bg-slate-900 text-emerald-200 text-[11px] leading-relaxed font-mono p-3 whitespace-pre">
+          {pretty}
+        </pre>
+      </div>
     </div>
   );
 };
@@ -1208,21 +1301,7 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
                             </div>
                           )}
 
-                          {result && (
-                            <div
-                              className={`mt-3 p-2.5 rounded-lg text-xs border ${
-                                result.success
-                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                  : "bg-red-50 text-red-700 border-red-200"
-                              }`}
-                            >
-                              {result.success
-                                ? `✓ OK (HTTP ${result.status}) — ${result.count} record(s). Sample: ${JSON.stringify(
-                                    result.sampleData,
-                                  ).slice(0, 160)}`
-                                : `✗ ${result.error}`}
-                            </div>
-                          )}
+                          {result && <TestResultPanel result={result} />}
                         </div>
                       );
                     })}
