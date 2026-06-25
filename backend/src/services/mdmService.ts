@@ -153,12 +153,100 @@ const pick = (obj: any, keys: string[]): string | undefined => {
   return undefined;
 };
 
+/** Key normaliser: lowercase + strip non-alphanumerics so "Group_Employee_Code",
+ * "groupEmployeeCode" and "group employee code" all collapse to one form. */
+const normKey = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/**
+ * Flatten a record into a single scalar-friendly object. Unwraps Strapi's
+ * `{ id, attributes: {...} }` envelope so the real columns are top-level.
+ */
+export const flattenRecord = (raw: any): Record<string, any> => {
+  if (!raw || typeof raw !== "object") return {};
+  const attrs =
+    raw.attributes && typeof raw.attributes === "object" ? raw.attributes : null;
+  const merged: Record<string, any> = attrs ? { ...raw, ...attrs } : { ...raw };
+  delete (merged as any).attributes;
+  return merged;
+};
+
+/** Fuzzy field pick over a flattened record using key-normalised candidates. */
+const fuzzyPick = (
+  flat: Record<string, any>,
+  candidates: string[],
+): string | undefined => {
+  const map = new Map<string, any>();
+  for (const [k, v] of Object.entries(flat)) {
+    if (v === null || v === undefined || v === "") continue;
+    if (typeof v === "object") continue; // skip nested relations
+    map.set(normKey(k), v);
+  }
+  for (const c of candidates) {
+    const v = map.get(normKey(c));
+    if (v !== undefined) return String(v);
+  }
+  return undefined;
+};
+
+const FIELD_CANDIDATES: Record<keyof NormalizedEmployee, string[]> = {
+  firstName: ["firstName", "first_name", "fname", "First_Name"],
+  lastName: ["lastName", "last_name", "lname", "Last_Name"],
+  email: [
+    "email",
+    "emailId",
+    "email_id",
+    "officialEmail",
+    "official_email",
+    "work_email",
+    "Email_Id",
+    "Official_Email",
+  ],
+  mobile: [
+    "mobile",
+    "phone",
+    "mobileNumber",
+    "mobile_number",
+    "contact",
+    "Mobile_Number",
+    "Contact_Number",
+  ],
+  employeeCode: [
+    "employeeCode",
+    "employee_code",
+    "empCode",
+    "code",
+    "employeeId",
+    "employee_id",
+    "Group_Employee_Code",
+    "Employee_Code_Company",
+    "Employee_Code_HRMantra",
+  ],
+  department: ["department", "dept", "Department", "Department_Name"],
+  designation: [
+    "designation",
+    "title",
+    "role",
+    "job_title",
+    "Designation",
+    "Designation_Name",
+  ],
+};
+
 /** Best-effort mapping of an arbitrary MDM record to our employee shape. */
 export const normalizeEmployee = (raw: any): NormalizedEmployee => {
   if (!raw || typeof raw !== "object") return {};
-  let firstName = pick(raw, ["firstName", "first_name", "fname", "FirstName"]);
-  let lastName = pick(raw, ["lastName", "last_name", "lname", "LastName"]);
-  const fullName = pick(raw, ["name", "fullName", "full_name", "employeeName", "EmployeeName"]);
+  const flat = flattenRecord(raw);
+  let firstName = fuzzyPick(flat, FIELD_CANDIDATES.firstName);
+  let lastName = fuzzyPick(flat, FIELD_CANDIDATES.lastName);
+  const fullName = fuzzyPick(flat, [
+    "name",
+    "fullName",
+    "full_name",
+    "employeeName",
+    "employee_name",
+    "Full_Name",
+    "Employee_Name",
+  ]);
   if (!firstName && fullName) {
     const parts = fullName.trim().split(/\s+/);
     firstName = parts.shift();
@@ -167,18 +255,43 @@ export const normalizeEmployee = (raw: any): NormalizedEmployee => {
   return {
     firstName,
     lastName,
-    email: pick(raw, ["email", "emailId", "email_id", "Email", "officialEmail"]),
-    mobile: pick(raw, ["mobile", "phone", "mobileNumber", "contact", "Mobile"]),
-    employeeCode: pick(raw, [
-      "employeeCode",
-      "employee_code",
-      "empCode",
-      "code",
-      "employeeId",
-      "EmployeeCode",
-    ]),
-    department: pick(raw, ["department", "dept", "Department"]),
-    designation: pick(raw, ["designation", "title", "role", "Designation"]),
+    email: fuzzyPick(flat, FIELD_CANDIDATES.email),
+    mobile: fuzzyPick(flat, FIELD_CANDIDATES.mobile),
+    employeeCode: fuzzyPick(flat, FIELD_CANDIDATES.employeeCode),
+    department: fuzzyPick(flat, FIELD_CANDIDATES.department),
+    designation: fuzzyPick(flat, FIELD_CANDIDATES.designation),
+  };
+};
+
+/** Map a flat record to NormalizedEmployee using an explicit field mapping
+ * (API field name per target). Falls back to auto-detect for any unset target. */
+export const normalizeEmployeeWithMapping = (
+  raw: any,
+  mapping?: Partial<Record<keyof NormalizedEmployee | "fullName", string>>,
+): NormalizedEmployee => {
+  const auto = normalizeEmployee(raw);
+  if (!mapping) return auto;
+  const flat = flattenRecord(raw);
+  const get = (f?: string) =>
+    f && flat[f] !== undefined && flat[f] !== null && flat[f] !== ""
+      ? String(flat[f])
+      : undefined;
+  let firstName = get(mapping.firstName) ?? auto.firstName;
+  let lastName = get(mapping.lastName) ?? auto.lastName;
+  const fullName = get(mapping.fullName);
+  if (mapping.fullName && fullName && !mapping.firstName) {
+    const parts = fullName.trim().split(/\s+/);
+    firstName = parts.shift();
+    lastName = lastName || parts.join(" ") || undefined;
+  }
+  return {
+    firstName,
+    lastName,
+    email: get(mapping.email) ?? auto.email,
+    mobile: get(mapping.mobile) ?? auto.mobile,
+    employeeCode: get(mapping.employeeCode) ?? auto.employeeCode,
+    department: get(mapping.department) ?? auto.department,
+    designation: get(mapping.designation) ?? auto.designation,
   };
 };
 
@@ -205,10 +318,24 @@ export const resolveEmployeeSource = async (
  * Fetch + normalize the employee/principal list from an MDM source.
  * Returns null when no source/endpoint is configured (caller may fall back).
  */
-export const fetchEmployeesFromMDM = async (
+export interface RawEmployeeRow {
+  _raw: Record<string, any>;
+  norm: NormalizedEmployee;
+}
+
+/**
+ * Fetch the employee/principal list and return BOTH the flattened raw records
+ * and the auto-normalized shape, plus the union of discovered field names
+ * (for the dynamic column picker). Returns null when no source/endpoint exists.
+ */
+export const fetchEmployeesRawFromMDM = async (
   mdmSourceId?: string,
   projectId?: string,
-): Promise<{ source: IMDMSource; employees: NormalizedEmployee[] } | null> => {
+): Promise<{
+  source: IMDMSource;
+  rows: RawEmployeeRow[];
+  fields: string[];
+} | null> => {
   const source = await resolveEmployeeSource(mdmSourceId);
   if (!source) return null;
 
@@ -226,7 +353,7 @@ export const fetchEmployeesFromMDM = async (
     method: api.method || "GET",
     headers,
     auth: basicAuth,
-    timeout: 15000,
+    timeout: 20000,
     validateStatus: () => true,
   });
 
@@ -234,8 +361,29 @@ export const fetchEmployeesFromMDM = async (
     throw new Error(`MDM source "${source.name}" returned HTTP ${response.status}`);
   }
 
-  const employees = extractArray(response.data).map(normalizeEmployee);
-  return { source, employees };
+  const rows: RawEmployeeRow[] = extractArray(response.data).map((r) => ({
+    _raw: flattenRecord(r),
+    norm: normalizeEmployee(r),
+  }));
+
+  // Field union across a sample of rows (covers sparse columns).
+  const fieldSet = new Set<string>();
+  for (const r of rows.slice(0, 100)) {
+    for (const [k, v] of Object.entries(r._raw)) {
+      if (typeof v === "object" && v !== null) continue; // skip nested relations
+      fieldSet.add(k);
+    }
+  }
+  return { source, rows, fields: Array.from(fieldSet) };
+};
+
+export const fetchEmployeesFromMDM = async (
+  mdmSourceId?: string,
+  projectId?: string,
+): Promise<{ source: IMDMSource; employees: NormalizedEmployee[] } | null> => {
+  const raw = await fetchEmployeesRawFromMDM(mdmSourceId, projectId);
+  if (!raw) return null;
+  return { source: raw.source, employees: raw.rows.map((r) => r.norm) };
 };
 
 /* ---------------- Parents & children (SR Existing-Parent flow) ------------- */

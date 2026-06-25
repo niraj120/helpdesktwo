@@ -1,5 +1,7 @@
 import { Request, Response } from "express";
+import { AuthRequest } from "../middleware/auth";
 import { User } from "../models/User";
+import { MDMFieldConfig } from "../models/MDMFieldConfig";
 import { Role } from "../models/Role";
 import { Project } from "../models/Project";
 import { Center } from "../models/Center";
@@ -1076,23 +1078,26 @@ export const searchHRMSEmployees = async (
 ): Promise<void> => {
   try {
     const { query, mdmSourceId } = req.query;
+    const q = typeof query === "string" ? query : "";
+    const sid = typeof mdmSourceId === "string" ? mdmSourceId : undefined;
 
-    if (!query || typeof query !== "string") {
-      res.status(400).json({
-        success: false,
-        error: "Search query is required",
-      });
-      return;
+    // Blank query is allowed → loads all (needed for "Load all from MDM").
+    const employees = await hrmsService.searchEmployees(q, sid);
+
+    // Field union across the returned rows for the dynamic column picker.
+    const fieldSet = new Set<string>();
+    for (const e of employees) {
+      const raw = (e as any)._raw || e;
+      for (const [k, v] of Object.entries(raw)) {
+        if (v !== null && typeof v === "object") continue;
+        fieldSet.add(k);
+      }
     }
-
-    const employees = await hrmsService.searchEmployees(
-      query,
-      typeof mdmSourceId === "string" ? mdmSourceId : undefined,
-    );
 
     res.json({
       success: true,
       data: employees,
+      fields: Array.from(fieldSet),
     });
   } catch (error: any) {
     console.error("Error searching HRMS employees:", error);
@@ -1101,6 +1106,80 @@ export const searchHRMSEmployees = async (
       error: "Failed to search HRMS employees",
       message: error.message,
     });
+  }
+};
+
+/**
+ * Discover the field list (+ small sample) for a source — used when the admin
+ * picks an MDM source in the dropdown so the column picker can populate before
+ * searching.
+ */
+export const getHRMSFields = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { mdmSourceId } = req.query;
+    const out = await hrmsService.getFields(
+      typeof mdmSourceId === "string" ? mdmSourceId : undefined,
+    );
+    res.json({ success: true, ...out });
+  } catch (error: any) {
+    console.error("Error loading HRMS fields:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to load fields",
+      message: error.message,
+    });
+  }
+};
+
+/** Get the saved field-selection + mapping config for a source (or defaults). */
+export const getMdmFieldConfig = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const mdmSourceId =
+      typeof req.query.mdmSourceId === "string" ? req.query.mdmSourceId : "";
+    const dataType =
+      typeof req.query.dataType === "string" ? req.query.dataType : "employees";
+    if (!mdmSourceId) {
+      res.json({ success: true, data: null });
+      return;
+    }
+    const cfg = await MDMFieldConfig.findOne({ mdmSourceId, dataType }).lean();
+    res.json({ success: true, data: cfg || null });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/** Upsert the field-selection + mapping config for a source. */
+export const saveMdmFieldConfig = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { mdmSourceId, dataType, selectedFields, fieldMapping } = req.body;
+    if (!mdmSourceId) {
+      res.status(400).json({ success: false, error: "mdmSourceId is required" });
+      return;
+    }
+    const cfg = await MDMFieldConfig.findOneAndUpdate(
+      { mdmSourceId, dataType: dataType || "employees" },
+      {
+        mdmSourceId,
+        dataType: dataType || "employees",
+        selectedFields: Array.isArray(selectedFields) ? selectedFields : [],
+        fieldMapping: fieldMapping || {},
+        updatedBy: req.user?.userId,
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    ).lean();
+    res.json({ success: true, data: cfg });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
   }
 };
 

@@ -73,11 +73,78 @@ interface HRMSEmployee {
   mdmSourceName?: string;
   department: string;
   designation: string;
+  /** Flattened raw record from the MDM API (any columns). */
+  _raw?: Record<string, any>;
+  [key: string]: any;
 }
 
 interface UserManagementProps {
   wrapWithLayout?: boolean; // If false, renders content only without DashboardLayout
 }
+
+/** Import-mapping targets: which user-account field each API column feeds. */
+const HRMS_MAP_TARGETS: { key: string; label: string }[] = [
+  { key: "employeeCode", label: "Employee Code" },
+  { key: "firstName", label: "First Name" },
+  { key: "lastName", label: "Last Name" },
+  { key: "fullName", label: "Full Name (split)" },
+  { key: "email", label: "Email" },
+  { key: "mobile", label: "Mobile" },
+  { key: "department", label: "Department" },
+  { key: "designation", label: "Designation" },
+];
+
+/** Sensible default display columns from a discovered field list. */
+const pickDefaultCols = (fields: string[]): string[] => {
+  if (!fields.length) return [];
+  const want = [
+    /group.*emp.*code|^employee.?code$|^emp.?code$|^code$/i,
+    /full.?name|^name$/i,
+    /first.?name/i,
+    /last.?name/i,
+    /email/i,
+    /mobile|phone/i,
+    /designation|title/i,
+    /department|dept/i,
+  ];
+  const chosen: string[] = [];
+  for (const re of want) {
+    const f = fields.find((x) => re.test(x) && !chosen.includes(x));
+    if (f) chosen.push(f);
+  }
+  if (chosen.length < 3) {
+    for (const f of fields) {
+      if (chosen.length >= 5) break;
+      if (!chosen.includes(f) && f !== "id") chosen.push(f);
+    }
+  }
+  return chosen;
+};
+
+/** Read a column value off an employee row (raw record first). */
+const hrmsCell = (emp: any, col: string): string => {
+  const v = emp?._raw?.[col] ?? emp?.[col];
+  if (v === null || v === undefined || v === "") return "—";
+  return typeof v === "object" ? JSON.stringify(v) : String(v);
+};
+
+/** Match a row against a search term across every raw value. */
+const hrmsMatch = (emp: any, search: string): boolean => {
+  if (!search) return true;
+  const t = search.toLowerCase();
+  const raw = emp?._raw || emp || {};
+  for (const v of Object.values(raw)) {
+    if (v === null || v === undefined || typeof v === "object") continue;
+    if (String(v).toLowerCase().includes(t)) return true;
+  }
+  return [
+    emp.firstName,
+    emp.lastName,
+    emp.email,
+    emp.employeeCode,
+    emp.designation,
+  ].some((v) => v && String(v).toLowerCase().includes(t));
+};
 
 const UserManagement: React.FC<UserManagementProps> = ({
   wrapWithLayout = true,
@@ -265,6 +332,14 @@ const UserManagement: React.FC<UserManagementProps> = ({
     { _id: string; name: string; enabled: boolean }[]
   >([]);
   const [selectedMdmSource, setSelectedMdmSource] = useState<string>("");
+  // Dynamic field discovery + column selection + import mapping
+  const [hrmsFields, setHrmsFields] = useState<string[]>([]);
+  const [selectedCols, setSelectedCols] = useState<string[]>([]);
+  const [fieldMapping, setFieldMapping] = useState<Record<string, string>>({});
+  const [showColPicker, setShowColPicker] = useState(false);
+  const [showMapping, setShowMapping] = useState(false);
+  const [cfgSaving, setCfgSaving] = useState(false);
+  const [cfgMsg, setCfgMsg] = useState("");
 
   // Load configured MDM sources whenever the HRMS modal opens
   useEffect(() => {
@@ -289,6 +364,42 @@ const UserManagement: React.FC<UserManagementProps> = ({
     };
     loadMdmSources();
   }, [showHRMSModal]);
+
+  // When a source is picked, discover its fields + load any saved column/mapping
+  // config so the picker + import mapping populate before searching.
+  useEffect(() => {
+    if (!showHRMSModal) return;
+    const token = localStorage.getItem("authToken");
+    const headers = { Authorization: `Bearer ${token}` };
+    const src = selectedMdmSource
+      ? `?mdmSourceId=${encodeURIComponent(selectedMdmSource)}`
+      : "";
+    (async () => {
+      try {
+        const fRes = await fetch(`${API_CONFIG.API_URL}/users/hrms/fields${src}`, {
+          headers,
+          credentials: "include",
+        });
+        const f = await fRes.json();
+        const fields: string[] = (f.success && f.fields) || [];
+        setHrmsFields(fields);
+
+        const cRes = await fetch(
+          `${API_CONFIG.API_URL}/users/hrms/field-config${src ? src + "&" : "?"}dataType=employees`,
+          { headers, credentials: "include" },
+        );
+        const c = await cRes.json();
+        const cfg = c.data;
+        const defCols = pickDefaultCols(fields);
+        setSelectedCols(
+          cfg?.selectedFields?.length ? cfg.selectedFields : defCols,
+        );
+        setFieldMapping(cfg?.fieldMapping || {});
+      } catch (err) {
+        console.error("Failed to load HRMS fields/config:", err);
+      }
+    })();
+  }, [showHRMSModal, selectedMdmSource]);
   const [selectedRole, setSelectedRole] = useState("");
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
 
@@ -1198,22 +1309,14 @@ const UserManagement: React.FC<UserManagementProps> = ({
     try {
       setHrmsLoading(true);
 
-      // Build query based on employee codes input
-      let queryParam = "";
-      if (hrmsEmployeeCodes.trim()) {
-        // Split by comma and trim each code
-        const codes = hrmsEmployeeCodes
-          .split(",")
-          .map((c) => c.trim())
-          .filter((c) => c);
-        if (codes.length > 0) {
-          // Use first code as search query (HRMS API searches across all fields)
-          queryParam = codes[0];
-        }
-      } else {
-        // If no codes provided, use 'emp' to get all employees (matches all employeeCodes)
-        queryParam = "emp";
-      }
+      // Build query from the input. Blank = load ALL (backend allows empty);
+      // a value matches across every field (name, group code, designation…).
+      const queryParam = hrmsEmployeeCodes
+        .split(",")
+        .map((c) => c.trim())
+        .filter(Boolean)[0]
+        ? hrmsEmployeeCodes.split(",")[0].trim()
+        : "";
 
       const token = localStorage.getItem("authToken");
       const sourceParam = selectedMdmSource
@@ -1234,6 +1337,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
       if (data.success && data.data) {
         // API already searches across all fields, just use the results
         setHrmsEmployees(data.data);
+        // Capture discovered fields → seed default columns if not set yet
+        if (Array.isArray(data.fields) && data.fields.length) {
+          setHrmsFields(data.fields);
+          setSelectedCols((prev) =>
+            prev.length ? prev : pickDefaultCols(data.fields),
+          );
+        }
 
         // Show message if no results found
         if (data.data.length === 0) {
@@ -1261,6 +1371,41 @@ const UserManagement: React.FC<UserManagementProps> = ({
       setHrmsLoading(false);
     }
   };
+
+  // Save the column-selection + import mapping config (separate collection)
+  const saveFieldConfig = async () => {
+    try {
+      setCfgSaving(true);
+      setCfgMsg("");
+      const token = localStorage.getItem("authToken");
+      const res = await fetch(`${API_CONFIG.API_URL}/users/hrms/field-config`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          mdmSourceId: selectedMdmSource || undefined,
+          dataType: "employees",
+          selectedFields: selectedCols,
+          fieldMapping,
+        }),
+      });
+      const data = await res.json();
+      setCfgMsg(data.success ? "Saved ✓" : data.error || "Failed to save");
+    } catch (e) {
+      setCfgMsg("Failed to save");
+    } finally {
+      setCfgSaving(false);
+      setTimeout(() => setCfgMsg(""), 2500);
+    }
+  };
+
+  // Rows after the in-modal search box (matches across every raw field).
+  const hrmsFiltered = hrmsEmployees.filter((e) =>
+    hrmsMatch(e, hrmsSearchQuery),
+  );
 
   // Handle HRMS confirm - Add selected employees
   const handleConfirmHRMS = async () => {
@@ -6437,97 +6582,289 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     />
                   </div>
 
-                  {/* Selection Controls */}
+                  {/* Selection + field toolbar */}
                   <div
                     style={{
                       display: "flex",
                       justifyContent: "space-between",
                       alignItems: "center",
-                      marginBottom: "16px",
+                      gap: 8,
+                      flexWrap: "wrap",
+                      marginBottom: "12px",
                     }}
                   >
-                    <div>
-                      <span
+                    <span
+                      style={{
+                        fontSize: "14px",
+                        fontWeight: "500",
+                        color: "#374151",
+                      }}
+                    >
+                      {getText("Selected", "निवडले", "निवडले")}:{" "}
+                      <span style={{ color: "#7c3aed", fontWeight: "600" }}>
+                        {selectedEmployees.length}
+                      </span>{" "}
+                      / {hrmsFiltered.length}
+                    </span>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <button
+                        onClick={() => setShowColPicker((v) => !v)}
                         style={{
-                          fontSize: "14px",
-                          fontWeight: "500",
+                          padding: "8px 12px",
+                          background: "white",
+                          border: "1px solid #d1d5db",
+                          borderRadius: 6,
+                          fontSize: 13,
+                          cursor: "pointer",
                           color: "#374151",
                         }}
                       >
-                        {getText("Selected", "निवडले", "निवडले")}:{" "}
-                        <span style={{ color: "#7c3aed", fontWeight: "600" }}>
-                          {selectedEmployees.length}
-                        </span>{" "}
-                        /{" "}
-                        {
-                          hrmsEmployees.filter((emp) => {
-                            if (!hrmsSearchQuery) return true;
-                            const search = hrmsSearchQuery.toLowerCase();
-                            return (
-                              emp.employeeCode
-                                ?.toLowerCase()
-                                .includes(search) ||
-                              emp.firstName?.toLowerCase().includes(search) ||
-                              emp.lastName?.toLowerCase().includes(search) ||
-                              emp.email?.toLowerCase().includes(search) ||
-                              emp.designation?.toLowerCase().includes(search)
-                            );
-                          }).length
-                        }
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => {
-                        const filtered = hrmsEmployees.filter((emp) => {
-                          if (!hrmsSearchQuery) return true;
-                          const search = hrmsSearchQuery.toLowerCase();
-                          return (
-                            emp.employeeCode?.toLowerCase().includes(search) ||
-                            emp.firstName?.toLowerCase().includes(search) ||
-                            emp.lastName?.toLowerCase().includes(search) ||
-                            emp.email?.toLowerCase().includes(search) ||
-                            emp.designation?.toLowerCase().includes(search)
-                          );
-                        });
-                        if (selectedEmployees.length === filtered.length) {
-                          setSelectedEmployees([]);
-                        } else {
+                        🧩 {getText("Columns", "स्तंभ", "स्तंभ")} (
+                        {selectedCols.length})
+                      </button>
+                      <button
+                        onClick={() => setShowMapping((v) => !v)}
+                        style={{
+                          padding: "8px 12px",
+                          background: "white",
+                          border: "1px solid #d1d5db",
+                          borderRadius: 6,
+                          fontSize: 13,
+                          cursor: "pointer",
+                          color: "#374151",
+                        }}
+                      >
+                        🔗 {getText("Field Mapping", "फील्ड मॅपिंग", "फील्ड मॅपिंग")}
+                      </button>
+                      <button
+                        onClick={saveFieldConfig}
+                        disabled={cfgSaving}
+                        style={{
+                          padding: "8px 12px",
+                          background: "#10b981",
+                          border: "1px solid #10b981",
+                          borderRadius: 6,
+                          fontSize: 13,
+                          cursor: cfgSaving ? "not-allowed" : "pointer",
+                          color: "white",
+                          fontWeight: 500,
+                        }}
+                      >
+                        {cfgSaving
+                          ? "Saving…"
+                          : getText("Save Config", "कॉन्फिग जतन करा", "कॉन्फिग जतन करा")}
+                      </button>
+                      {cfgMsg && (
+                        <span
+                          style={{
+                            fontSize: 12,
+                            color: cfgMsg.includes("✓") ? "#059669" : "#dc2626",
+                          }}
+                        >
+                          {cfgMsg}
+                        </span>
+                      )}
+                      <button
+                        onClick={() => {
+                          const codes = hrmsFiltered
+                            .map((e) => e.employeeCode)
+                            .filter(Boolean);
                           setSelectedEmployees(
-                            filtered.map((emp) => emp.employeeCode),
+                            selectedEmployees.length === codes.length &&
+                              codes.length > 0
+                              ? []
+                              : codes,
                           );
-                        }
-                      }}
+                        }}
+                        style={{
+                          padding: "8px 16px",
+                          backgroundColor: "#7c3aed",
+                          color: "white",
+                          border: "none",
+                          borderRadius: "6px",
+                          fontSize: "14px",
+                          fontWeight: "500",
+                          cursor: "pointer",
+                        }}
+                      >
+                        {selectedEmployees.length ===
+                          hrmsFiltered.filter((e) => e.employeeCode).length &&
+                        selectedEmployees.length > 0
+                          ? getText("✓ Deselect All", "✓ सर्व अनिवडा", "✓ सर्व अनिवडा")
+                          : getText("Select All", "सर्व निवडा", "सर्व निवडा")}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Column picker */}
+                  {showColPicker && (
+                    <div
                       style={{
-                        padding: "8px 20px",
-                        backgroundColor: "#7c3aed",
-                        color: "white",
-                        border: "none",
-                        borderRadius: "6px",
-                        fontSize: "14px",
-                        fontWeight: "500",
-                        cursor: "pointer",
+                        border: "1px solid #e5e7eb",
+                        borderRadius: 8,
+                        padding: 12,
+                        marginBottom: 12,
+                        background: "#f9fafb",
                       }}
                     >
-                      {selectedEmployees.length ===
-                        hrmsEmployees.filter((emp) => {
-                          if (!hrmsSearchQuery) return true;
-                          const search = hrmsSearchQuery.toLowerCase();
-                          return (
-                            emp.employeeCode?.toLowerCase().includes(search) ||
-                            emp.firstName?.toLowerCase().includes(search) ||
-                            emp.lastName?.toLowerCase().includes(search) ||
-                            emp.email?.toLowerCase().includes(search) ||
-                            emp.designation?.toLowerCase().includes(search)
-                          );
-                        }).length && selectedEmployees.length > 0
-                        ? getText(
-                            "✓ Deselect All",
-                            "✓ सर्व अनिवडा",
-                            "✓ सर्व अनिवडा",
-                          )
-                        : getText("Select All", "सर्व निवडा", "सर्व निवडा")}
-                    </button>
-                  </div>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: "#374151",
+                          marginBottom: 8,
+                        }}
+                      >
+                        {getText(
+                          "Choose columns to display",
+                          "दाखवायचे स्तंभ निवडा",
+                          "दाखवायचे स्तंभ निवडा",
+                        )}
+                      </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          flexWrap: "wrap",
+                          gap: 10,
+                          maxHeight: 140,
+                          overflowY: "auto",
+                        }}
+                      >
+                        {hrmsFields.length === 0 ? (
+                          <span style={{ fontSize: 12, color: "#9ca3af" }}>
+                            {getText(
+                              "Load employees to discover fields.",
+                              "फील्ड शोधण्यासाठी कर्मचारी लोड करा.",
+                              "फील्ड शोधण्यासाठी कर्मचारी लोड करा.",
+                            )}
+                          </span>
+                        ) : (
+                          hrmsFields.map((f) => (
+                            <label
+                              key={f}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 4,
+                                fontSize: 12,
+                                color: "#374151",
+                                cursor: "pointer",
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedCols.includes(f)}
+                                onChange={() =>
+                                  setSelectedCols((p) =>
+                                    p.includes(f)
+                                      ? p.filter((x) => x !== f)
+                                      : [...p, f],
+                                  )
+                                }
+                              />
+                              {f}
+                            </label>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Import field mapping */}
+                  {showMapping && (
+                    <div
+                      style={{
+                        border: "1px solid #e5e7eb",
+                        borderRadius: 8,
+                        padding: 12,
+                        marginBottom: 12,
+                        background: "#f9fafb",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: "#374151",
+                          marginBottom: 8,
+                        }}
+                      >
+                        {getText(
+                          "Map API fields → user account (used on import)",
+                          "API फील्ड → वापरकर्ता खाते मॅप करा (आयातावेळी)",
+                          "API फील्ड → वापरकर्ता खाते मॅप करा (आयातावेळी)",
+                        )}
+                      </div>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns:
+                            "repeat(auto-fit, minmax(200px, 1fr))",
+                          gap: 8,
+                        }}
+                      >
+                        {HRMS_MAP_TARGETS.map((t) => (
+                          <div key={t.key}>
+                            <label
+                              style={{
+                                fontSize: 11,
+                                color: "#6b7280",
+                                display: "block",
+                                marginBottom: 2,
+                              }}
+                            >
+                              {t.label}
+                            </label>
+                            <select
+                              value={fieldMapping[t.key] || ""}
+                              onChange={(e) =>
+                                setFieldMapping((m) => ({
+                                  ...m,
+                                  [t.key]: e.target.value,
+                                }))
+                              }
+                              style={{
+                                width: "100%",
+                                padding: "6px",
+                                border: "1px solid #d1d5db",
+                                borderRadius: 6,
+                                fontSize: 12,
+                              }}
+                            >
+                              <option value="">
+                                {getText("(auto-detect)", "(स्वयं)", "(स्वयं)")}
+                              </option>
+                              {hrmsFields.map((f) => (
+                                <option key={f} value={f}>
+                                  {f}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                      <p
+                        style={{
+                          fontSize: 11,
+                          color: "#6b7280",
+                          marginTop: 6,
+                        }}
+                      >
+                        {getText(
+                          "Leave blank to auto-detect. Click Save Config to persist.",
+                          "स्वयं-शोधासाठी रिक्त ठेवा. जतन करण्यासाठी Save Config दाबा.",
+                          "स्वयं-शोधासाठी रिक्त ठेवा. जतन करण्यासाठी Save Config दाबा.",
+                        )}
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Employee List - Scrollable Area */}
@@ -6540,172 +6877,124 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     backgroundColor: "#f9fafb",
                   }}
                 >
-                  <table
-                    style={{
-                      width: "100%",
-                      borderCollapse: "collapse",
-                      backgroundColor: "white",
-                    }}
-                  >
-                    <thead>
-                      <tr
+                  {(() => {
+                    const cols =
+                      selectedCols.length > 0
+                        ? selectedCols
+                        : ["employeeCode", "__name", "email"];
+                    const thStyle: React.CSSProperties = {
+                      padding: "12px 8px",
+                      textAlign: "left",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#6b7280",
+                      textTransform: "uppercase",
+                      whiteSpace: "nowrap",
+                    };
+                    return (
+                      <table
                         style={{
-                          backgroundColor: "#f9fafb",
-                          borderBottom: "2px solid #e5e7eb",
+                          width: "100%",
+                          borderCollapse: "collapse",
+                          backgroundColor: "white",
                         }}
                       >
-                        <th
-                          style={{
-                            padding: "12px 8px",
-                            textAlign: "left",
-                            fontSize: "12px",
-                            fontWeight: "600",
-                            color: "#6b7280",
-                            textTransform: "uppercase",
-                            width: "40px",
-                          }}
-                        ></th>
-                        <th
-                          style={{
-                            padding: "12px 8px",
-                            textAlign: "left",
-                            fontSize: "12px",
-                            fontWeight: "600",
-                            color: "#6b7280",
-                            textTransform: "uppercase",
-                          }}
-                        >
-                          {getText(
-                            "Employee Code",
-                            "कर्मचारी कोड",
-                            "कर्मचारी कोड",
-                          )}
-                        </th>
-                        <th
-                          style={{
-                            padding: "12px 8px",
-                            textAlign: "left",
-                            fontSize: "12px",
-                            fontWeight: "600",
-                            color: "#6b7280",
-                            textTransform: "uppercase",
-                          }}
-                        >
-                          {getText("Name", "नाव", "नाव")}
-                        </th>
-                        <th
-                          style={{
-                            padding: "12px 8px",
-                            textAlign: "left",
-                            fontSize: "12px",
-                            fontWeight: "600",
-                            color: "#6b7280",
-                            textTransform: "uppercase",
-                          }}
-                        >
-                          {getText("Email", "ईमेल", "ईमेल")}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {hrmsEmployees
-                        .filter((emp) => {
-                          if (!hrmsSearchQuery) return true;
-                          const search = hrmsSearchQuery.toLowerCase();
-                          return (
-                            emp.employeeCode?.toLowerCase().includes(search) ||
-                            emp.firstName?.toLowerCase().includes(search) ||
-                            emp.lastName?.toLowerCase().includes(search) ||
-                            emp.email?.toLowerCase().includes(search) ||
-                            emp.designation?.toLowerCase().includes(search)
-                          );
-                        })
-                        .map((employee) => (
+                        <thead>
                           <tr
-                            key={employee.employeeCode}
                             style={{
-                              borderBottom: "1px solid #e5e7eb",
-                              cursor: "pointer",
-                              backgroundColor: selectedEmployees.includes(
-                                employee.employeeCode,
-                              )
-                                ? "#fef3c7"
-                                : "transparent",
-                            }}
-                            onClick={() => {
-                              const empId = employee.employeeCode;
-                              setSelectedEmployees((prev) =>
-                                prev.includes(empId)
-                                  ? prev.filter((id) => id !== empId)
-                                  : [...prev, empId],
-                              );
+                              backgroundColor: "#f9fafb",
+                              borderBottom: "2px solid #e5e7eb",
                             }}
                           >
-                            <td style={{ padding: "12px 8px" }}>
-                              <input
-                                type="checkbox"
-                                checked={selectedEmployees.includes(
-                                  employee.employeeCode,
-                                )}
-                                onChange={(e) => {
-                                  e.stopPropagation();
-                                  const empId = employee.employeeCode;
+                            <th style={{ ...thStyle, width: "40px" }}></th>
+                            {cols.map((col) => (
+                              <th key={col} style={thStyle}>
+                                {col === "__name"
+                                  ? getText("Name", "नाव", "नाव")
+                                  : col}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {hrmsFiltered.map((employee, ri) => {
+                            const id = employee.employeeCode;
+                            const isSel = selectedEmployees.includes(id);
+                            return (
+                              <tr
+                                key={id || ri}
+                                style={{
+                                  borderBottom: "1px solid #e5e7eb",
+                                  cursor: id ? "pointer" : "default",
+                                  backgroundColor: isSel
+                                    ? "#fef3c7"
+                                    : "transparent",
+                                }}
+                                onClick={() => {
+                                  if (!id) return;
                                   setSelectedEmployees((prev) =>
-                                    e.target.checked
-                                      ? [...prev, empId]
-                                      : prev.filter((id) => id !== empId),
+                                    prev.includes(id)
+                                      ? prev.filter((x) => x !== id)
+                                      : [...prev, id],
                                   );
                                 }}
-                                style={{
-                                  cursor: "pointer",
-                                  width: "16px",
-                                  height: "16px",
-                                }}
-                              />
-                            </td>
-                            <td
-                              style={{
-                                padding: "12px 8px",
-                                fontSize: "14px",
-                                color: "#374151",
-                                fontWeight: "500",
-                              }}
-                            >
-                              {employee.employeeCode || "-"}
-                            </td>
-                            <td
-                              style={{
-                                padding: "12px 8px",
-                                fontSize: "14px",
-                                color: "#374151",
-                              }}
-                            >
-                              {employee.firstName} {employee.lastName}
-                            </td>
-                            <td
-                              style={{
-                                padding: "12px 8px",
-                                fontSize: "14px",
-                                color: "#6b7280",
-                              }}
-                            >
-                              {employee.email || "-"}
-                            </td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                  {hrmsEmployees.filter((emp) => {
-                    if (!hrmsSearchQuery) return true;
-                    const search = hrmsSearchQuery.toLowerCase();
-                    return (
-                      emp.employeeCode?.toLowerCase().includes(search) ||
-                      emp.firstName?.toLowerCase().includes(search) ||
-                      emp.lastName?.toLowerCase().includes(search) ||
-                      emp.email?.toLowerCase().includes(search) ||
-                      emp.designation?.toLowerCase().includes(search)
+                              >
+                                <td style={{ padding: "12px 8px" }}>
+                                  <input
+                                    type="checkbox"
+                                    disabled={!id}
+                                    checked={isSel}
+                                    onChange={(e) => {
+                                      e.stopPropagation();
+                                      if (!id) return;
+                                      setSelectedEmployees((prev) =>
+                                        e.target.checked
+                                          ? [...prev, id]
+                                          : prev.filter((x) => x !== id),
+                                      );
+                                    }}
+                                    style={{
+                                      cursor: "pointer",
+                                      width: "16px",
+                                      height: "16px",
+                                    }}
+                                  />
+                                </td>
+                                {cols.map((col) => (
+                                  <td
+                                    key={col}
+                                    style={{
+                                      padding: "12px 8px",
+                                      fontSize: "14px",
+                                      color: "#374151",
+                                      whiteSpace: "nowrap",
+                                      maxWidth: 260,
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                    }}
+                                    title={
+                                      col === "__name"
+                                        ? `${employee.firstName || ""} ${
+                                            employee.lastName || ""
+                                          }`.trim()
+                                        : hrmsCell(employee, col)
+                                    }
+                                  >
+                                    {col === "__name"
+                                      ? `${employee.firstName || ""} ${
+                                          employee.lastName || ""
+                                        }`.trim() || "—"
+                                      : hrmsCell(employee, col)}
+                                  </td>
+                                ))}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     );
-                  }).length === 0 && (
+                  })()}
+                  {hrmsFiltered.length === 0 && (
                     <div
                       style={{
                         textAlign: "center",

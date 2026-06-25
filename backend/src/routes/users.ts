@@ -11,6 +11,9 @@ import {
   resetUserPassword,
   getUserPermissions,
   searchHRMSEmployees,
+  getHRMSFields,
+  getMdmFieldConfig,
+  saveMdmFieldConfig,
   validateEmployeeCode,
   searchUserByEmail,
   registerStudent,
@@ -34,6 +37,13 @@ router.use(auth);
 // @route   GET /api/users/hrms/search
 // @access  Private
 router.get("/hrms/search", checkPermission("USER_CREATE"), searchHRMSEmployees);
+
+// @desc    Discover field list for a source (dynamic column picker)
+router.get("/hrms/fields", checkPermission("USER_CREATE"), getHRMSFields);
+
+// @desc    Get / save field-selection + mapping config (separate collection)
+router.get("/hrms/field-config", checkPermission("USER_CREATE"), getMdmFieldConfig);
+router.put("/hrms/field-config", checkPermission("USER_CREATE"), saveMdmFieldConfig);
 
 // @desc    Validate employee code
 // @route   GET /api/users/hrms/validate/:employeeCode
