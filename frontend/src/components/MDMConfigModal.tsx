@@ -531,6 +531,7 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [curlOpen, setCurlOpen] = useState<number | null>(null);
   const [copiedCurl, setCopiedCurl] = useState(false);
+  const [showSecret, setShowSecret] = useState(false);
   const [importIdx, setImportIdx] = useState<number | null>(null);
   const [importText, setImportText] = useState("");
   const [importMsg, setImportMsg] = useState<{ ok: boolean; text: string } | null>(
@@ -547,23 +548,40 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
     }
     // Fill the endpoint row (label / dataType / project mapping are left to the user)
     updateApi(idx, { method: p.method, baseUrl: p.baseUrl, path: p.path });
-    // Auth + extra headers are source-level
+
+    const hasAuth = p.auth.type !== "none";
+    const hasExtra = Object.keys(p.extraHeaders || {}).length > 0;
+    // Only overwrite Authentication when the curl actually carries it — a bare
+    // curl must NOT wipe a token the user already typed.
     setEdit((e) => ({
       ...e,
-      auth: {
-        ...emptyAuth(),
-        type: p.auth.type,
-        headerName: p.auth.headerName || emptyAuth().headerName,
-        username: p.auth.username || "",
-        apiKey: p.auth.apiKey,
-        token: p.auth.token,
-        password: p.auth.password,
-        extraHeaders: p.extraHeaders,
-      },
+      auth: hasAuth
+        ? {
+            ...emptyAuth(),
+            type: p.auth.type,
+            headerName: p.auth.headerName || emptyAuth().headerName,
+            username: p.auth.username || "",
+            apiKey: p.auth.apiKey,
+            token: p.auth.token,
+            password: p.auth.password,
+            extraHeaders: { ...e.auth.extraHeaders, ...p.extraHeaders },
+          }
+        : {
+            ...e.auth,
+            extraHeaders: hasExtra
+              ? { ...e.auth.extraHeaders, ...p.extraHeaders }
+              : e.auth.extraHeaders,
+          },
     }));
     setImportMsg({
       ok: true,
-      text: ["Imported ✓ — fields filled.", ...p.notes].join(" "),
+      text: [
+        "Imported ✓ — URL/Path filled.",
+        hasAuth
+          ? "Auth set from curl."
+          : "No auth in curl — kept your Authentication. Add the Bearer token below.",
+        ...p.notes,
+      ].join(" "),
     });
   };
 
@@ -904,6 +922,15 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
                     <h3 className="text-sm font-semibold text-gray-700">
                       Authentication
                     </h3>
+                    {edit.auth.type !== "none" && (
+                      <button
+                        type="button"
+                        onClick={() => setShowSecret((v) => !v)}
+                        className="ml-auto text-xs text-indigo-600 hover:underline"
+                      >
+                        {showSecret ? "Hide secrets" : "Show secrets"}
+                      </button>
+                    )}
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -953,7 +980,7 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
                             )}
                           </label>
                           <input
-                            type="password"
+                            type={showSecret ? "text" : "password"}
                             className={inputCls}
                             value={edit.auth.apiKey || ""}
                             onChange={(e) =>
@@ -978,7 +1005,7 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
                           )}
                         </label>
                         <input
-                          type="password"
+                          type={showSecret ? "text" : "password"}
                           className={inputCls}
                           value={edit.auth.token || ""}
                           onChange={(e) =>
@@ -1016,7 +1043,7 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
                             )}
                           </label>
                           <input
-                            type="password"
+                            type={showSecret ? "text" : "password"}
                             className={inputCls}
                             value={edit.auth.password || ""}
                             onChange={(e) =>
