@@ -57,14 +57,20 @@ const rawValues = (emp: HRMSEmployeeData): string[] => {
 const matchesQuery = (emp: HRMSEmployeeData, term: string): boolean =>
   rawValues(emp).some((v) => v.toLowerCase().includes(term));
 
-/** Load the field-mapping override for a source (if the admin saved one). */
+/** Load the default field-mapping for a source (Default preset, else first). */
 async function loadMapping(mdmSourceId?: string) {
   if (!mdmSourceId) return undefined;
   try {
-    const cfg = await MDMFieldConfig.findOne({
-      mdmSourceId,
-      dataType: "employees",
-    }).lean();
+    const cfg =
+      (await MDMFieldConfig.findOne({
+        mdmSourceId,
+        dataType: "employees",
+        name: "Default",
+      }).lean()) ||
+      (await MDMFieldConfig.findOne({
+        mdmSourceId,
+        dataType: "employees",
+      }).lean());
     return cfg?.fieldMapping;
   } catch {
     return undefined;
@@ -119,15 +125,24 @@ export const hrmsService = {
   async syncEmployeeData(
     employeeCode: string,
     mdmSourceId?: string,
+    mappingOverride?: Record<string, string>,
   ): Promise<HRMSEmployeeData | null> {
     const { rows } = await loadEmployees(mdmSourceId);
     const term = employeeCode.toLowerCase();
-    return (
+    const found =
       rows.find((emp) => emp.employeeCode?.toLowerCase() === term) ||
       // fall back to a raw-value match so any code column resolves
       rows.find((emp) => matchesQuery(emp, term)) ||
-      null
-    );
+      null;
+    if (!found) return null;
+    // Apply an explicit per-import mapping (overrides the saved default).
+    if (mappingOverride && found._raw) {
+      return {
+        ...found,
+        ...normalizeEmployeeWithMapping(found._raw, mappingOverride),
+      };
+    }
+    return found;
   },
 
   async searchEmployees(

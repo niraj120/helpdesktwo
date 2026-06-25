@@ -473,6 +473,7 @@ export const createUser = async (
         const hrmsData = await hrmsService.syncEmployeeData(
           employeeCode,
           mdmSourceId,
+          req.body?.fieldMapping,
         );
         if (hrmsData) {
           userData = {
@@ -1094,10 +1095,25 @@ export const searchHRMSEmployees = async (
       }
     }
 
+    // Which of these employee codes already exist as User accounts (dedupe UI).
+    const codes = employees
+      .map((e) => e.employeeCode)
+      .filter((c): c is string => !!c);
+    let existingCodes: string[] = [];
+    if (codes.length) {
+      const existing = await User.find({ employeeCode: { $in: codes } })
+        .select("employeeCode")
+        .lean();
+      existingCodes = existing
+        .map((u: any) => u.employeeCode)
+        .filter(Boolean);
+    }
+
     res.json({
       success: true,
       data: employees,
       fields: Array.from(fieldSet),
+      existingCodes,
     });
   } catch (error: any) {
     console.error("Error searching HRMS employees:", error);
@@ -1134,7 +1150,7 @@ export const getHRMSFields = async (
   }
 };
 
-/** Get the saved field-selection + mapping config for a source (or defaults). */
+/** List all saved field-config presets for a source/dataType. */
 export const getMdmFieldConfig = async (
   req: Request,
   res: Response,
@@ -1145,32 +1161,37 @@ export const getMdmFieldConfig = async (
     const dataType =
       typeof req.query.dataType === "string" ? req.query.dataType : "employees";
     if (!mdmSourceId) {
-      res.json({ success: true, data: null });
+      res.json({ success: true, data: [] });
       return;
     }
-    const cfg = await MDMFieldConfig.findOne({ mdmSourceId, dataType }).lean();
-    res.json({ success: true, data: cfg || null });
+    const presets = await MDMFieldConfig.find({ mdmSourceId, dataType })
+      .sort({ name: 1 })
+      .lean();
+    res.json({ success: true, data: presets });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
 };
 
-/** Upsert the field-selection + mapping config for a source. */
+/** Upsert a named field-config preset (selectedFields + import mapping). */
 export const saveMdmFieldConfig = async (
   req: AuthRequest,
   res: Response,
 ): Promise<void> => {
   try {
-    const { mdmSourceId, dataType, selectedFields, fieldMapping } = req.body;
+    const { mdmSourceId, dataType, name, selectedFields, fieldMapping } =
+      req.body;
     if (!mdmSourceId) {
       res.status(400).json({ success: false, error: "mdmSourceId is required" });
       return;
     }
+    const presetName = (name && String(name).trim()) || "Default";
     const cfg = await MDMFieldConfig.findOneAndUpdate(
-      { mdmSourceId, dataType: dataType || "employees" },
+      { mdmSourceId, dataType: dataType || "employees", name: presetName },
       {
         mdmSourceId,
         dataType: dataType || "employees",
+        name: presetName,
         selectedFields: Array.isArray(selectedFields) ? selectedFields : [],
         fieldMapping: fieldMapping || {},
         updatedBy: req.user?.userId,
@@ -1178,6 +1199,28 @@ export const saveMdmFieldConfig = async (
       { upsert: true, new: true, setDefaultsOnInsert: true },
     ).lean();
     res.json({ success: true, data: cfg });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/** Delete a named preset. */
+export const deleteMdmFieldConfig = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const mdmSourceId =
+      typeof req.query.mdmSourceId === "string" ? req.query.mdmSourceId : "";
+    const dataType =
+      typeof req.query.dataType === "string" ? req.query.dataType : "employees";
+    const name = typeof req.query.name === "string" ? req.query.name : "";
+    if (!mdmSourceId || !name) {
+      res.status(400).json({ success: false, error: "mdmSourceId + name required" });
+      return;
+    }
+    await MDMFieldConfig.deleteOne({ mdmSourceId, dataType, name });
+    res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }

@@ -13,6 +13,7 @@ import mongoose, { Document, Schema } from "mongoose";
 export interface IMDMFieldConfig extends Document {
   mdmSourceId: mongoose.Types.ObjectId;
   dataType: string; // "employees" | "principals" | ...
+  name: string; // preset name (multiple presets per source/dataType)
   selectedFields: string[];
   fieldMapping: {
     firstName?: string;
@@ -38,6 +39,7 @@ const MDMFieldConfigSchema = new Schema<IMDMFieldConfig>(
       index: true,
     },
     dataType: { type: String, default: "employees", index: true },
+    name: { type: String, default: "Default", trim: true },
     selectedFields: { type: [String], default: [] },
     fieldMapping: {
       firstName: { type: String },
@@ -54,7 +56,10 @@ const MDMFieldConfigSchema = new Schema<IMDMFieldConfig>(
   { timestamps: true },
 );
 
-MDMFieldConfigSchema.index({ mdmSourceId: 1, dataType: 1 }, { unique: true });
+MDMFieldConfigSchema.index(
+  { mdmSourceId: 1, dataType: 1, name: 1 },
+  { unique: true },
+);
 
 export const MDMFieldConfig = mongoose.model<IMDMFieldConfig>(
   "MDMFieldConfig",

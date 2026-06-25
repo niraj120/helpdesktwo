@@ -14,6 +14,7 @@ import {
   getHRMSFields,
   getMdmFieldConfig,
   saveMdmFieldConfig,
+  deleteMdmFieldConfig,
   validateEmployeeCode,
   searchUserByEmail,
   registerStudent,
@@ -44,6 +45,11 @@ router.get("/hrms/fields", checkPermission("USER_CREATE"), getHRMSFields);
 // @desc    Get / save field-selection + mapping config (separate collection)
 router.get("/hrms/field-config", checkPermission("USER_CREATE"), getMdmFieldConfig);
 router.put("/hrms/field-config", checkPermission("USER_CREATE"), saveMdmFieldConfig);
+router.delete(
+  "/hrms/field-config",
+  checkPermission("USER_CREATE"),
+  deleteMdmFieldConfig,
+);
 
 // @desc    Validate employee code
 // @route   GET /api/users/hrms/validate/:employeeCode

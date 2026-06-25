@@ -340,6 +340,18 @@ const UserManagement: React.FC<UserManagementProps> = ({
   const [showMapping, setShowMapping] = useState(false);
   const [cfgSaving, setCfgSaving] = useState(false);
   const [cfgMsg, setCfgMsg] = useState("");
+  // Presets (named column/mapping configs)
+  const [presets, setPresets] = useState<any[]>([]);
+  const [presetName, setPresetName] = useState("Default");
+  // Already-imported employee codes (existing User accounts)
+  const [existingCodes, setExistingCodes] = useState<string[]>([]);
+  // Per-employee role override (empId -> roleId); falls back to global role
+  const [roleByEmp, setRoleByEmp] = useState<Record<string, string>>({});
+  // Pagination over the loaded rows
+  const [hrmsPage, setHrmsPage] = useState(1);
+  const HRMS_PAGE_SIZE = 50;
+  // Mapping preview toggle
+  const [showPreview, setShowPreview] = useState(false);
 
   // Load configured MDM sources whenever the HRMS modal opens
   useEffect(() => {
@@ -389,12 +401,16 @@ const UserManagement: React.FC<UserManagementProps> = ({
           { headers, credentials: "include" },
         );
         const c = await cRes.json();
-        const cfg = c.data;
+        const list: any[] = Array.isArray(c.data) ? c.data : [];
+        setPresets(list);
+        const def =
+          list.find((p) => p.name === "Default") || list[0] || null;
         const defCols = pickDefaultCols(fields);
+        setPresetName(def?.name || "Default");
         setSelectedCols(
-          cfg?.selectedFields?.length ? cfg.selectedFields : defCols,
+          def?.selectedFields?.length ? def.selectedFields : defCols,
         );
-        setFieldMapping(cfg?.fieldMapping || {});
+        setFieldMapping(def?.fieldMapping || {});
       } catch (err) {
         console.error("Failed to load HRMS fields/config:", err);
       }
@@ -1337,6 +1353,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
       if (data.success && data.data) {
         // API already searches across all fields, just use the results
         setHrmsEmployees(data.data);
+        setExistingCodes(
+          Array.isArray(data.existingCodes) ? data.existingCodes : [],
+        );
+        setHrmsPage(1);
         // Capture discovered fields → seed default columns if not set yet
         if (Array.isArray(data.fields) && data.fields.length) {
           setHrmsFields(data.fields);
@@ -1372,8 +1392,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
     }
   };
 
-  // Save the column-selection + import mapping config (separate collection)
-  const saveFieldConfig = async () => {
+  // Save the current columns + mapping into a named preset (separate collection)
+  const saveFieldConfig = async (nameArg?: string) => {
+    const name = (nameArg || presetName || "Default").trim();
     try {
       setCfgSaving(true);
       setCfgMsg("");
@@ -1388,12 +1409,25 @@ const UserManagement: React.FC<UserManagementProps> = ({
         body: JSON.stringify({
           mdmSourceId: selectedMdmSource || undefined,
           dataType: "employees",
+          name,
           selectedFields: selectedCols,
           fieldMapping,
         }),
       });
       const data = await res.json();
-      setCfgMsg(data.success ? "Saved ✓" : data.error || "Failed to save");
+      if (data.success) {
+        setCfgMsg(`Saved "${name}" ✓`);
+        setPresetName(name);
+        // refresh preset list
+        setPresets((prev) => {
+          const others = prev.filter((p) => p.name !== name);
+          return [...others, data.data].sort((a, b) =>
+            a.name.localeCompare(b.name),
+          );
+        });
+      } else {
+        setCfgMsg(data.error || "Failed to save");
+      }
     } catch (e) {
       setCfgMsg("Failed to save");
     } finally {
@@ -1402,10 +1436,82 @@ const UserManagement: React.FC<UserManagementProps> = ({
     }
   };
 
+  const applyPreset = (name: string) => {
+    setPresetName(name);
+    const p = presets.find((x) => x.name === name);
+    if (p) {
+      setSelectedCols(p.selectedFields?.length ? p.selectedFields : selectedCols);
+      setFieldMapping(p.fieldMapping || {});
+    }
+  };
+
+  const saveAsPreset = () => {
+    const name = window.prompt("Save preset as (name):", presetName || "Default");
+    if (name && name.trim()) saveFieldConfig(name.trim());
+  };
+
+  const deletePreset = async () => {
+    if (!presetName) return;
+    if (!window.confirm(`Delete preset "${presetName}"?`)) return;
+    const token = localStorage.getItem("authToken");
+    const src = selectedMdmSource
+      ? `mdmSourceId=${encodeURIComponent(selectedMdmSource)}&`
+      : "";
+    await fetch(
+      `${API_CONFIG.API_URL}/users/hrms/field-config?${src}dataType=employees&name=${encodeURIComponent(presetName)}`,
+      {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
+      },
+    );
+    setPresets((prev) => prev.filter((p) => p.name !== presetName));
+    setPresetName("Default");
+    setCfgMsg("Preset deleted");
+    setTimeout(() => setCfgMsg(""), 2000);
+  };
+
   // Rows after the in-modal search box (matches across every raw field).
   const hrmsFiltered = hrmsEmployees.filter((e) =>
     hrmsMatch(e, hrmsSearchQuery),
   );
+  const isImported = (code?: string) => !!code && existingCodes.includes(code);
+  const hrmsTotalPages = Math.max(
+    1,
+    Math.ceil(hrmsFiltered.length / HRMS_PAGE_SIZE),
+  );
+  const hrmsPaged = hrmsFiltered.slice(
+    (hrmsPage - 1) * HRMS_PAGE_SIZE,
+    hrmsPage * HRMS_PAGE_SIZE,
+  );
+  // Resolve a row to user-account fields using the CURRENT mapping (preview).
+  const previewResolved = (emp: any) => {
+    const get = (target: string) => {
+      const mapped = fieldMapping[target];
+      if (mapped) return hrmsCell(emp, mapped);
+      const v = emp?.[target];
+      return v === undefined || v === null || v === "" ? "—" : String(v);
+    };
+    let firstName = get("firstName");
+    let lastName = get("lastName");
+    if (fieldMapping.fullName) {
+      const full = hrmsCell(emp, fieldMapping.fullName);
+      const parts = full.split(/\s+/);
+      firstName = parts.shift() || firstName;
+      lastName = parts.join(" ") || lastName;
+    }
+    return {
+      employeeCode: get("employeeCode"),
+      name: `${firstName} ${lastName}`.trim(),
+      email: get("email"),
+      mobile: get("mobile"),
+      department: get("department"),
+      designation: get("designation"),
+    };
+  };
+  const previewEmp =
+    hrmsEmployees.find((e) => selectedEmployees.includes(e.employeeCode)) ||
+    hrmsFiltered[0];
 
   // Handle HRMS confirm - Add selected employees
   const handleConfirmHRMS = async () => {
@@ -1420,9 +1526,17 @@ const UserManagement: React.FC<UserManagementProps> = ({
       return;
     }
 
-    if (!selectedRole) {
+    // A role is needed per employee: per-row override OR the global default.
+    const missingRole = selectedEmployees.filter(
+      (id) => !(roleByEmp[id] || selectedRole),
+    );
+    if (missingRole.length) {
       alert(
-        getText("Please select a role", "कृपया रोल निवडा", "कृपया रोल निवडा"),
+        getText(
+          "Select a role — either the global role or a per-employee role for every selected employee.",
+          "रोल निवडा — जागतिक रोल किंवा प्रत्येक निवडलेल्या कर्मचाऱ्यासाठी रोल.",
+          "रोल निवडा — जागतिक रोल किंवा प्रत्येक निवडलेल्या कर्मचाऱ्यासाठी रोल.",
+        ),
       );
       return;
     }
@@ -1450,10 +1564,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
             credentials: "include",
             body: JSON.stringify({
               employeeCode: employee.employeeCode,
-              role: selectedRole,
+              role: roleByEmp[employeeId] || selectedRole,
               projects: selectedProjects,
               syncFromHRMS: true,
               mdmSourceId: selectedMdmSource || undefined,
+              fieldMapping,
             }),
           });
 
@@ -6569,7 +6684,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         "नाव, ईमेल किंवा कर्मचारी कोडद्वारे शोधा...",
                       )}
                       value={hrmsSearchQuery}
-                      onChange={(e) => setHrmsSearchQuery(e.target.value)}
+                      onChange={(e) => {
+                        setHrmsSearchQuery(e.target.value);
+                        setHrmsPage(1);
+                      }}
                       style={{
                         width: "100%",
                         padding: "12px 12px 12px 40px",
@@ -6580,6 +6698,106 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         boxSizing: "border-box",
                       }}
                     />
+                  </div>
+
+                  {/* Preset bar */}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      flexWrap: "wrap",
+                      marginBottom: "10px",
+                      padding: "8px 10px",
+                      background: "#f5f3ff",
+                      border: "1px solid #ede9fe",
+                      borderRadius: 8,
+                    }}
+                  >
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "#6d28d9" }}>
+                      💾 {getText("Preset", "प्रीसेट", "प्रीसेट")}
+                    </span>
+                    <select
+                      value={presetName}
+                      onChange={(e) => applyPreset(e.target.value)}
+                      style={{
+                        padding: "6px 8px",
+                        border: "1px solid #d1d5db",
+                        borderRadius: 6,
+                        fontSize: 13,
+                        background: "white",
+                        minWidth: 140,
+                      }}
+                    >
+                      {(presets.length
+                        ? presets.map((p) => p.name)
+                        : ["Default"]
+                      )
+                        .filter((n, i, a) => a.indexOf(n) === i)
+                        .map((n) => (
+                          <option key={n} value={n}>
+                            {n}
+                          </option>
+                        ))}
+                    </select>
+                    <button
+                      onClick={() => saveFieldConfig()}
+                      disabled={cfgSaving}
+                      style={{
+                        padding: "6px 12px",
+                        background: "#10b981",
+                        color: "white",
+                        border: "none",
+                        borderRadius: 6,
+                        fontSize: 12,
+                        fontWeight: 500,
+                        cursor: cfgSaving ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {cfgSaving ? "Saving…" : getText("Save", "जतन करा", "जतन करा")}
+                    </button>
+                    <button
+                      onClick={saveAsPreset}
+                      style={{
+                        padding: "6px 12px",
+                        background: "white",
+                        color: "#374151",
+                        border: "1px solid #d1d5db",
+                        borderRadius: 6,
+                        fontSize: 12,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {getText("Save As…", "असे जतन करा…", "असे जतन करा…")}
+                    </button>
+                    <button
+                      onClick={deletePreset}
+                      disabled={!presets.some((p) => p.name === presetName)}
+                      style={{
+                        padding: "6px 12px",
+                        background: "white",
+                        color: "#dc2626",
+                        border: "1px solid #fecaca",
+                        borderRadius: 6,
+                        fontSize: 12,
+                        cursor: "pointer",
+                        opacity: presets.some((p) => p.name === presetName)
+                          ? 1
+                          : 0.5,
+                      }}
+                    >
+                      {getText("Delete", "हटवा", "हटवा")}
+                    </button>
+                    {cfgMsg && (
+                      <span
+                        style={{
+                          fontSize: 12,
+                          color: cfgMsg.includes("✓") ? "#059669" : "#6b7280",
+                        }}
+                      >
+                        {cfgMsg}
+                      </span>
+                    )}
                   </div>
 
                   {/* Selection + field toolbar */}
@@ -6644,38 +6862,24 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         🔗 {getText("Field Mapping", "फील्ड मॅपिंग", "फील्ड मॅपिंग")}
                       </button>
                       <button
-                        onClick={saveFieldConfig}
-                        disabled={cfgSaving}
+                        onClick={() => setShowPreview((v) => !v)}
                         style={{
                           padding: "8px 12px",
-                          background: "#10b981",
-                          border: "1px solid #10b981",
+                          background: "white",
+                          border: "1px solid #d1d5db",
                           borderRadius: 6,
                           fontSize: 13,
-                          cursor: cfgSaving ? "not-allowed" : "pointer",
-                          color: "white",
-                          fontWeight: 500,
+                          cursor: "pointer",
+                          color: "#374151",
                         }}
                       >
-                        {cfgSaving
-                          ? "Saving…"
-                          : getText("Save Config", "कॉन्फिग जतन करा", "कॉन्फिग जतन करा")}
+                        👁 {getText("Preview", "पूर्वावलोकन", "पूर्वावलोकन")}
                       </button>
-                      {cfgMsg && (
-                        <span
-                          style={{
-                            fontSize: 12,
-                            color: cfgMsg.includes("✓") ? "#059669" : "#dc2626",
-                          }}
-                        >
-                          {cfgMsg}
-                        </span>
-                      )}
                       <button
                         onClick={() => {
                           const codes = hrmsFiltered
                             .map((e) => e.employeeCode)
-                            .filter(Boolean);
+                            .filter((c) => c && !isImported(c));
                           setSelectedEmployees(
                             selectedEmployees.length === codes.length &&
                               codes.length > 0
@@ -6695,8 +6899,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         }}
                       >
                         {selectedEmployees.length ===
-                          hrmsFiltered.filter((e) => e.employeeCode).length &&
-                        selectedEmployees.length > 0
+                          hrmsFiltered.filter(
+                            (e) => e.employeeCode && !isImported(e.employeeCode),
+                          ).length && selectedEmployees.length > 0
                           ? getText("✓ Deselect All", "✓ सर्व अनिवडा", "✓ सर्व अनिवडा")
                           : getText("Select All", "सर्व निवडा", "सर्व निवडा")}
                       </button>
@@ -6858,11 +7063,76 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         }}
                       >
                         {getText(
-                          "Leave blank to auto-detect. Click Save Config to persist.",
-                          "स्वयं-शोधासाठी रिक्त ठेवा. जतन करण्यासाठी Save Config दाबा.",
-                          "स्वयं-शोधासाठी रिक्त ठेवा. जतन करण्यासाठी Save Config दाबा.",
+                          "Leave blank to auto-detect. Click Save to persist.",
+                          "स्वयं-शोधासाठी रिक्त ठेवा. जतन करण्यासाठी Save दाबा.",
+                          "स्वयं-शोधासाठी रिक्त ठेवा. जतन करण्यासाठी Save दाबा.",
                         )}
                       </p>
+                    </div>
+                  )}
+
+                  {/* Import preview (mapping applied to a sample row) */}
+                  {showPreview && previewEmp && (
+                    <div
+                      style={{
+                        border: "1px solid #bfdbfe",
+                        borderRadius: 8,
+                        padding: 12,
+                        marginBottom: 12,
+                        background: "#eff6ff",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: "#1d4ed8",
+                          marginBottom: 8,
+                        }}
+                      >
+                        👁{" "}
+                        {getText(
+                          "Import preview — how this employee resolves to a user account",
+                          "आयात पूर्वावलोकन — हा कर्मचारी वापरकर्ता खात्यात कसा रूपांतरित होतो",
+                          "आयात पूर्वावलोकन — हा कर्मचारी वापरकर्ता खात्यात कसा रूपांतरित होतो",
+                        )}
+                      </div>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns:
+                            "repeat(auto-fit, minmax(160px, 1fr))",
+                          gap: 8,
+                        }}
+                      >
+                        {Object.entries(previewResolved(previewEmp)).map(
+                          ([k, v]) => (
+                            <div
+                              key={k}
+                              style={{
+                                background: "white",
+                                border: "1px solid #dbeafe",
+                                borderRadius: 6,
+                                padding: "6px 8px",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontSize: 10,
+                                  textTransform: "uppercase",
+                                  color: "#6b7280",
+                                  fontWeight: 600,
+                                }}
+                              >
+                                {k}
+                              </div>
+                              <div style={{ fontSize: 13, color: "#111827" }}>
+                                {v || "—"}
+                              </div>
+                            </div>
+                          ),
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -6914,24 +7184,31 @@ const UserManagement: React.FC<UserManagementProps> = ({
                                   : col}
                               </th>
                             ))}
+                            <th style={{ ...thStyle, minWidth: 160 }}>
+                              {getText("Role", "रोल", "रोल")}
+                            </th>
                           </tr>
                         </thead>
                         <tbody>
-                          {hrmsFiltered.map((employee, ri) => {
+                          {hrmsPaged.map((employee, ri) => {
                             const id = employee.employeeCode;
+                            const imported = isImported(id);
                             const isSel = selectedEmployees.includes(id);
                             return (
                               <tr
                                 key={id || ri}
                                 style={{
                                   borderBottom: "1px solid #e5e7eb",
-                                  cursor: id ? "pointer" : "default",
+                                  cursor: id && !imported ? "pointer" : "default",
                                   backgroundColor: isSel
                                     ? "#fef3c7"
-                                    : "transparent",
+                                    : imported
+                                      ? "#f9fafb"
+                                      : "transparent",
+                                  opacity: imported ? 0.6 : 1,
                                 }}
                                 onClick={() => {
-                                  if (!id) return;
+                                  if (!id || imported) return;
                                   setSelectedEmployees((prev) =>
                                     prev.includes(id)
                                       ? prev.filter((x) => x !== id)
@@ -6942,11 +7219,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
                                 <td style={{ padding: "12px 8px" }}>
                                   <input
                                     type="checkbox"
-                                    disabled={!id}
+                                    disabled={!id || imported}
                                     checked={isSel}
                                     onChange={(e) => {
                                       e.stopPropagation();
-                                      if (!id) return;
+                                      if (!id || imported) return;
                                       setSelectedEmployees((prev) =>
                                         e.target.checked
                                           ? [...prev, id]
@@ -6960,7 +7237,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                                     }}
                                   />
                                 </td>
-                                {cols.map((col) => (
+                                {cols.map((col, ci) => (
                                   <td
                                     key={col}
                                     style={{
@@ -6985,8 +7262,65 @@ const UserManagement: React.FC<UserManagementProps> = ({
                                           employee.lastName || ""
                                         }`.trim() || "—"
                                       : hrmsCell(employee, col)}
+                                    {ci === 0 && imported && (
+                                      <span
+                                        style={{
+                                          marginLeft: 6,
+                                          fontSize: 10,
+                                          fontWeight: 600,
+                                          color: "#059669",
+                                          background: "#d1fae5",
+                                          padding: "1px 6px",
+                                          borderRadius: 9999,
+                                        }}
+                                      >
+                                        {getText("Imported", "आयात", "आयात")}
+                                      </span>
+                                    )}
                                   </td>
                                 ))}
+                                <td
+                                  style={{ padding: "8px" }}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {isSel ? (
+                                    <select
+                                      value={roleByEmp[id] || ""}
+                                      onChange={(e) =>
+                                        setRoleByEmp((m) => ({
+                                          ...m,
+                                          [id]: e.target.value,
+                                        }))
+                                      }
+                                      style={{
+                                        padding: "6px",
+                                        border: "1px solid #d1d5db",
+                                        borderRadius: 6,
+                                        fontSize: 12,
+                                        minWidth: 150,
+                                      }}
+                                    >
+                                      <option value="">
+                                        {getText(
+                                          "(use global)",
+                                          "(जागतिक)",
+                                          "(जागतिक)",
+                                        )}
+                                      </option>
+                                      {roles.map((role) => (
+                                        <option key={role._id} value={role._id}>
+                                          {role.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <span
+                                      style={{ fontSize: 12, color: "#d1d5db" }}
+                                    >
+                                      —
+                                    </span>
+                                  )}
+                                </td>
                               </tr>
                             );
                           })}
@@ -7010,6 +7344,64 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     </div>
                   )}
                 </div>
+
+                {/* Pagination */}
+                {hrmsFiltered.length > HRMS_PAGE_SIZE && (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "flex-end",
+                      gap: 12,
+                      padding: "10px 24px",
+                      borderTop: "1px solid #e5e7eb",
+                      fontSize: 13,
+                      color: "#6b7280",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <span>
+                      {getText("Showing", "दाखवत आहे", "दाखवत आहे")}{" "}
+                      {(hrmsPage - 1) * HRMS_PAGE_SIZE + 1}–
+                      {Math.min(hrmsPage * HRMS_PAGE_SIZE, hrmsFiltered.length)}{" "}
+                      / {hrmsFiltered.length}
+                    </span>
+                    <button
+                      onClick={() => setHrmsPage((p) => Math.max(1, p - 1))}
+                      disabled={hrmsPage <= 1}
+                      style={{
+                        padding: "6px 12px",
+                        borderRadius: 6,
+                        border: "1px solid #e5e7eb",
+                        background: "white",
+                        cursor: hrmsPage <= 1 ? "default" : "pointer",
+                        color: hrmsPage <= 1 ? "#d1d5db" : "#374151",
+                      }}
+                    >
+                      {getText("Prev", "मागील", "मागील")}
+                    </button>
+                    <span>
+                      {hrmsPage} / {hrmsTotalPages}
+                    </span>
+                    <button
+                      onClick={() =>
+                        setHrmsPage((p) => Math.min(hrmsTotalPages, p + 1))
+                      }
+                      disabled={hrmsPage >= hrmsTotalPages}
+                      style={{
+                        padding: "6px 12px",
+                        borderRadius: 6,
+                        border: "1px solid #e5e7eb",
+                        background: "white",
+                        cursor:
+                          hrmsPage >= hrmsTotalPages ? "default" : "pointer",
+                        color: hrmsPage >= hrmsTotalPages ? "#d1d5db" : "#374151",
+                      }}
+                    >
+                      {getText("Next", "पुढील", "पुढील")}
+                    </button>
+                  </div>
+                )}
 
                 {/* Role and Project Assignment - Fixed Footer */}
                 {selectedEmployees.length > 0 && (
