@@ -91,6 +91,163 @@ const buildCurl = (api: MDMApi, auth: MDMAuthMasked): string => {
   return lines.join(" \\\n  ");
 };
 
+/** Shell-aware tokenizer: splits a curl string honouring quotes + `\` line
+ * continuations. */
+const splitArgs = (input: string): string[] => {
+  const s = input.replace(/\\\r?\n/g, " ");
+  const out: string[] = [];
+  let cur = "";
+  let q: "" | "'" | '"' = "";
+  let started = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (q) {
+      if (c === q) q = "";
+      else cur += c;
+      started = true;
+    } else if (c === "'" || c === '"') {
+      q = c;
+      started = true;
+    } else if (/\s/.test(c)) {
+      if (started) {
+        out.push(cur);
+        cur = "";
+        started = false;
+      }
+    } else {
+      cur += c;
+      started = true;
+    }
+  }
+  if (started) out.push(cur);
+  return out;
+};
+
+interface ParsedCurl {
+  method: "GET" | "POST";
+  baseUrl: string;
+  path: string;
+  auth: Partial<MDMAuthMasked> & { type: MDMAuthMasked["type"] };
+  extraHeaders: Record<string, string>;
+  body?: string;
+  notes: string[];
+}
+
+/** Parse a curl command into MDM form values. Throws on no URL. */
+const parseCurl = (raw: string): ParsedCurl => {
+  const toks = splitArgs(raw.trim());
+  if (toks[0] === "curl") toks.shift();
+  if (toks.length === 0) throw new Error("Nothing to parse.");
+
+  let method = "";
+  let url = "";
+  let user = "";
+  let body = "";
+  const headers: Array<[string, string]> = [];
+  const notes: string[] = [];
+
+  const valueFlags = new Set([
+    "-X",
+    "--request",
+    "-H",
+    "--header",
+    "-u",
+    "--user",
+    "-d",
+    "--data",
+    "--data-raw",
+    "--data-binary",
+    "--data-urlencode",
+    "--url",
+  ]);
+
+  for (let i = 0; i < toks.length; i++) {
+    const t = toks[i];
+    if (t === "-X" || t === "--request") method = (toks[++i] || "").toUpperCase();
+    else if (t === "-H" || t === "--header") {
+      const h = toks[++i] || "";
+      const ci = h.indexOf(":");
+      if (ci > 0) headers.push([h.slice(0, ci).trim(), h.slice(ci + 1).trim()]);
+    } else if (t === "-u" || t === "--user") user = toks[++i] || "";
+    else if (
+      t === "-d" ||
+      t === "--data" ||
+      t === "--data-raw" ||
+      t === "--data-binary" ||
+      t === "--data-urlencode"
+    )
+      body = toks[++i] || "";
+    else if (t === "--url") url = toks[++i] || "";
+    else if (t === "-G" || t === "--get") method = method || "GET";
+    else if (t.startsWith("-")) {
+      // unknown flag — if it looks like it takes a value, skip the next token
+      if (valueFlags.has(t)) i++;
+    } else if (!url) url = t;
+  }
+
+  if (!url) throw new Error("No URL found in the curl command.");
+
+  let baseUrl = url;
+  let path = "";
+  try {
+    const u = new URL(url);
+    baseUrl = u.origin;
+    path = u.pathname + u.search;
+  } catch {
+    const m = url.match(/^(https?:\/\/[^/]+)(.*)$/i);
+    if (m) {
+      baseUrl = m[1];
+      path = m[2];
+    } else {
+      notes.push("URL had no scheme/host — put the host in Base URL manually.");
+    }
+  }
+
+  let auth: ParsedCurl["auth"] = { type: "none" };
+  const extraHeaders: Record<string, string> = {};
+  for (const [k, v] of headers) {
+    if (/^authorization$/i.test(k)) {
+      const bearer = v.match(/^Bearer\s+(.+)$/i);
+      const basic = v.match(/^Basic\s+(.+)$/i);
+      if (bearer) auth = { type: "bearer", token: bearer[1] };
+      else if (basic) {
+        let un = "";
+        let pw = "";
+        try {
+          const dec = atob(basic[1]);
+          const ci = dec.indexOf(":");
+          un = ci < 0 ? dec : dec.slice(0, ci);
+          pw = ci < 0 ? "" : dec.slice(ci + 1);
+        } catch {
+          notes.push("Could not decode Basic credentials — enter them manually.");
+        }
+        auth = { type: "basic", username: un, password: pw };
+      } else extraHeaders[k] = v;
+    } else if (/api[-_ ]?key/i.test(k)) {
+      auth = { type: "apiKey", headerName: k, apiKey: v };
+    } else if (/^content-type$/i.test(k)) {
+      // implied by POST body handling — don't surface as an extra header
+    } else extraHeaders[k] = v;
+  }
+
+  if (user) {
+    const ci = user.indexOf(":");
+    auth = {
+      type: "basic",
+      username: ci < 0 ? user : user.slice(0, ci),
+      password: ci < 0 ? "" : user.slice(ci + 1),
+    };
+  }
+
+  let m: "GET" | "POST" = method === "POST" || (!method && body) ? "POST" : "GET";
+  if (method && method !== "GET" && method !== "POST") {
+    notes.push(`Method ${method} not supported here — set to ${m}.`);
+  }
+  if (body) notes.push("Request body parsed but not stored (no body field yet).");
+
+  return { method: m, baseUrl, path, auth, extraHeaders, body, notes };
+};
+
 const emptyApi = (): MDMApi => ({
   label: "",
   dataType: "custom",
@@ -281,6 +438,41 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [curlOpen, setCurlOpen] = useState<number | null>(null);
   const [copiedCurl, setCopiedCurl] = useState(false);
+  const [importIdx, setImportIdx] = useState<number | null>(null);
+  const [importText, setImportText] = useState("");
+  const [importMsg, setImportMsg] = useState<{ ok: boolean; text: string } | null>(
+    null,
+  );
+
+  const applyCurl = (idx: number) => {
+    let p;
+    try {
+      p = parseCurl(importText);
+    } catch (e: any) {
+      setImportMsg({ ok: false, text: e?.message || "Could not parse the curl." });
+      return;
+    }
+    // Fill the endpoint row (label / dataType / project mapping are left to the user)
+    updateApi(idx, { method: p.method, baseUrl: p.baseUrl, path: p.path });
+    // Auth + extra headers are source-level
+    setEdit((e) => ({
+      ...e,
+      auth: {
+        ...emptyAuth(),
+        type: p.auth.type,
+        headerName: p.auth.headerName || emptyAuth().headerName,
+        username: p.auth.username || "",
+        apiKey: p.auth.apiKey,
+        token: p.auth.token,
+        password: p.auth.password,
+        extraHeaders: p.extraHeaders,
+      },
+    }));
+    setImportMsg({
+      ok: true,
+      text: ["Imported ✓ — fields filled.", ...p.notes].join(" "),
+    });
+  };
 
   const copyCurl = async (text: string) => {
     try {
@@ -776,16 +968,82 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
                             <span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-indigo-100 text-indigo-700 text-xs font-bold">
                               {idx + 1}
                             </span>
-                            {edit.apis.length > 1 && (
+                            <div className="flex items-center gap-1">
                               <button
-                                onClick={() => removeApi(idx)}
-                                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
-                                title="Remove endpoint"
+                                onClick={() => {
+                                  setImportIdx(importIdx === idx ? null : idx);
+                                  setImportText("");
+                                  setImportMsg(null);
+                                }}
+                                className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-700 font-medium px-2 py-1 rounded-lg hover:bg-indigo-50 transition"
+                                title="Paste a curl command to auto-fill this endpoint"
                               >
-                                <TrashIcon className="w-4 h-4" />
+                                <CommandLineIcon className="w-4 h-4" />
+                                {importIdx === idx ? "Close import" : "Import cURL"}
                               </button>
-                            )}
+                              {edit.apis.length > 1 && (
+                                <button
+                                  onClick={() => removeApi(idx)}
+                                  className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                                  title="Remove endpoint"
+                                >
+                                  <TrashIcon className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
                           </div>
+
+                          {importIdx === idx && (
+                            <div className="mb-3 rounded-lg border border-indigo-200 bg-indigo-50/50 p-3">
+                              <label className={labelCls}>
+                                Paste cURL — auto-fills Method, Base URL, Path &
+                                Auth
+                              </label>
+                              <textarea
+                                className={`${inputCls} font-mono text-xs`}
+                                rows={4}
+                                value={importText}
+                                onChange={(e) => setImportText(e.target.value)}
+                                placeholder={
+                                  "curl -X GET 'https://mdm.company.com/api/v1/employees' \\\n  -H 'Authorization: Bearer <token>'"
+                                }
+                              />
+                              <div className="flex items-center gap-2 mt-2">
+                                <button
+                                  onClick={() => applyCurl(idx)}
+                                  disabled={!importText.trim()}
+                                  className="inline-flex items-center gap-1.5 text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition"
+                                >
+                                  <CheckIcon className="w-3.5 h-3.5" />
+                                  Apply
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setImportText("");
+                                    setImportMsg(null);
+                                  }}
+                                  className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1.5"
+                                >
+                                  Clear
+                                </button>
+                                {importMsg && (
+                                  <span
+                                    className={`text-xs ${
+                                      importMsg.ok
+                                        ? "text-emerald-600"
+                                        : "text-red-600"
+                                    }`}
+                                  >
+                                    {importMsg.text}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-gray-500 mt-1.5">
+                                You still set Label, Data Type & project mapping
+                                below. Auth applies to the whole source.
+                              </p>
+                            </div>
+                          )}
 
                           <div className="grid grid-cols-2 gap-3">
                             <div>
