@@ -10,6 +10,9 @@ import {
   ShieldCheckIcon,
   CircleStackIcon,
   BeakerIcon,
+  CommandLineIcon,
+  ClipboardDocumentIcon,
+  ClipboardDocumentCheckIcon,
 } from "@heroicons/react/24/outline";
 import {
   listMDMSources,
@@ -56,6 +59,36 @@ const DATA_TYPE_BADGE: Record<string, string> = {
   parents: "bg-pink-100 text-pink-700",
   children: "bg-teal-100 text-teal-700",
   custom: "bg-gray-100 text-gray-600",
+};
+
+/** Build a runnable curl command from an API row + the source auth. Typed
+ * secrets are inlined; saved-but-masked secrets render as <PLACEHOLDER> so the
+ * user can paste their real value before running. */
+const buildCurl = (api: MDMApi, auth: MDMAuthMasked): string => {
+  const url = `${(api.baseUrl || "").replace(/\/+$/, "")}${api.path || ""}`;
+  const q = (s: string) => `'${String(s).replace(/'/g, "'\\''")}'`;
+  const lines: string[] = [`curl -X ${api.method || "GET"} ${q(url || "<URL>")}`];
+
+  if (auth.type === "apiKey") {
+    const v = auth.apiKey || (auth.hasApiKey ? "<API_KEY>" : "<API_KEY>");
+    lines.push(`-H ${q(`${auth.headerName || "X-API-Key"}: ${v}`)}`);
+  } else if (auth.type === "bearer") {
+    const v = auth.token || (auth.hasToken ? "<TOKEN>" : "<TOKEN>");
+    lines.push(`-H ${q(`Authorization: Bearer ${v}`)}`);
+  } else if (auth.type === "basic") {
+    const pw = auth.password || (auth.hasPassword ? "<PASSWORD>" : "<PASSWORD>");
+    lines.push(`-u ${q(`${auth.username || "<USER>"}:${pw}`)}`);
+  }
+
+  for (const [k, v] of Object.entries(auth.extraHeaders || {})) {
+    if (k) lines.push(`-H ${q(`${k}: ${v}`)}`);
+  }
+
+  if (api.method === "POST") {
+    lines.push(`-H ${q("Content-Type: application/json")}`);
+    lines.push(`-d ${q("{}")}`);
+  }
+  return lines.join(" \\\n  ");
 };
 
 const emptyApi = (): MDMApi => ({
@@ -246,6 +279,18 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
     {},
   );
   const [projects, setProjects] = useState<ProjectOption[]>([]);
+  const [curlOpen, setCurlOpen] = useState<number | null>(null);
+  const [copiedCurl, setCopiedCurl] = useState(false);
+
+  const copyCurl = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedCurl(true);
+      setTimeout(() => setCopiedCurl(false), 1500);
+    } catch {
+      /* clipboard blocked — user can select the text manually */
+    }
+  };
 
   const loadSources = async () => {
     setLoading(true);
@@ -842,15 +887,68 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
                               />
                               Default for type
                             </label>
-                            <button
-                              onClick={() => handleTest(idx)}
-                              disabled={testing === idx}
-                              className="inline-flex items-center gap-1.5 text-xs bg-slate-800 text-white px-3 py-1.5 rounded-lg hover:bg-slate-900 disabled:opacity-50 transition"
-                            >
-                              <BeakerIcon className="w-3.5 h-3.5" />
-                              {testing === idx ? "Testing…" : "Test"}
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => {
+                                  setCopiedCurl(false);
+                                  setCurlOpen(curlOpen === idx ? null : idx);
+                                }}
+                                className="inline-flex items-center gap-1.5 text-xs bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg hover:border-indigo-400 hover:text-indigo-600 transition"
+                                title="Generate a curl command for this endpoint"
+                              >
+                                <CommandLineIcon className="w-3.5 h-3.5" />
+                                {curlOpen === idx ? "Hide cURL" : "cURL"}
+                              </button>
+                              <button
+                                onClick={() => handleTest(idx)}
+                                disabled={testing === idx}
+                                className="inline-flex items-center gap-1.5 text-xs bg-slate-800 text-white px-3 py-1.5 rounded-lg hover:bg-slate-900 disabled:opacity-50 transition"
+                              >
+                                <BeakerIcon className="w-3.5 h-3.5" />
+                                {testing === idx ? "Testing…" : "Test"}
+                              </button>
+                            </div>
                           </div>
+
+                          {curlOpen === idx && (
+                            <div className="mt-3 rounded-lg border border-slate-700 bg-slate-900 overflow-hidden">
+                              <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">
+                                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                                  cURL command
+                                </span>
+                                <button
+                                  onClick={() =>
+                                    copyCurl(buildCurl(api, edit.auth))
+                                  }
+                                  className="inline-flex items-center gap-1 text-[11px] text-slate-300 hover:text-white transition"
+                                >
+                                  {copiedCurl ? (
+                                    <>
+                                      <ClipboardDocumentCheckIcon className="w-3.5 h-3.5 text-emerald-400" />
+                                      Copied
+                                    </>
+                                  ) : (
+                                    <>
+                                      <ClipboardDocumentIcon className="w-3.5 h-3.5" />
+                                      Copy
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+                              <pre className="px-3 py-2.5 text-[11px] leading-relaxed text-emerald-300 whitespace-pre-wrap break-all font-mono">
+                                {buildCurl(api, edit.auth)}
+                              </pre>
+                              {(edit.auth.type !== "none" &&
+                                !edit.auth.apiKey &&
+                                !edit.auth.token &&
+                                !edit.auth.password) && (
+                                <p className="px-3 pb-2 text-[10px] text-slate-500">
+                                  Saved secrets are masked — replace the
+                                  &lt;PLACEHOLDER&gt; before running.
+                                </p>
+                              )}
+                            </div>
+                          )}
 
                           {result && (
                             <div
