@@ -1380,7 +1380,12 @@ const UserManagement: React.FC<UserManagementProps> = ({
         // Clear the employee codes input after loading
         setHrmsEmployeeCodes("");
       } else {
-        alert(data.error || "Failed to fetch employees from HRMS");
+        // Surface the real backend reason (e.g. "MDM source … returned HTTP 403")
+        alert(
+          data.message ||
+            data.error ||
+            "Failed to fetch employees from HRMS",
+        );
         setHrmsEmployees([]);
       }
     } catch (error) {

@@ -358,7 +358,13 @@ export const fetchEmployeesRawFromMDM = async (
   });
 
   if (response.status < 200 || response.status >= 300) {
-    throw new Error(`MDM source "${source.name}" returned HTTP ${response.status}`);
+    const authHint =
+      response.status === 401 || response.status === 403
+        ? ` — the API rejected the request (check the source's Authentication / token in MDM Master).`
+        : "";
+    throw new Error(
+      `MDM source "${source.name}" returned HTTP ${response.status}${authHint}`,
+    );
   }
 
   const rows: RawEmployeeRow[] = extractArray(response.data).map((r) => ({
