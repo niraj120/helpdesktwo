@@ -1,6 +1,6 @@
 # PSR List — Extra Columns + Linked-ISR Widget — Feature Plan
 
-Status: **Planned** (not yet implemented). Decisions locked below.
+Status: **Implemented** (commit 67945e0e on ISR/PSR, both apps build clean). Decisions locked below. Runtime not yet tested (needs Mongo + linked ISRs).
 
 ## Locked decisions
 1. **Linked ISR scope = FULL**: add `linkedPsrId` linkage field + list aggregate + a "Create / Link ISR" action on PSR detail so the widget shows real data end-to-end.

@@ -83,7 +83,7 @@ async function loadMapping(mdmSourceId?: string) {
  */
 async function loadEmployees(
   mdmSourceId?: string,
-): Promise<{ rows: HRMSEmployeeData[]; fields: string[] }> {
+): Promise<{ rows: HRMSEmployeeData[]; fields: string[]; totalAvailable: number }> {
   try {
     const result = await fetchEmployeesRawFromMDM(mdmSourceId);
     if (result) {
@@ -95,7 +95,11 @@ async function loadEmployees(
         mdmSourceId: sourceId,
         mdmSourceName: result.source.name,
       }));
-      return { rows, fields: result.fields };
+      return {
+        rows,
+        fields: result.fields,
+        totalAvailable: result.totalAvailable || rows.length,
+      };
     }
   } catch (error: any) {
     console.error("HRMS Service: MDM fetch failed:", error.message);
@@ -110,16 +114,44 @@ async function loadEmployees(
     "department",
     "designation",
   ];
-  return { rows: mockEmployees.map((m) => ({ ...m, _raw: { ...m } })), fields };
+  return {
+    rows: mockEmployees.map((m) => ({ ...m, _raw: { ...m } })),
+    fields,
+    totalAvailable: mockEmployees.length,
+  };
 }
+
+type EmployeeSearchOptions = {
+  mode?: "all" | "range";
+  start?: number;
+  end?: number;
+  limit?: number;
+};
+
+const applyRange = (
+  rows: HRMSEmployeeData[],
+  options: EmployeeSearchOptions = {},
+) => {
+  if (options.mode !== "range") return rows;
+  const start = Math.max(1, Math.floor(options.start || 1));
+  const limit = options.limit
+    ? Math.max(1, Math.floor(options.limit))
+    : undefined;
+  const end = options.end
+    ? Math.max(start, Math.floor(options.end))
+    : limit
+      ? start + limit - 1
+      : start;
+  return rows.slice(start - 1, end);
+};
 
 export const hrmsService = {
   /** Discover the field list (+ a small sample) for the column picker. */
   async getFields(
     mdmSourceId?: string,
   ): Promise<{ fields: string[]; count: number; sample: HRMSEmployeeData[] }> {
-    const { rows, fields } = await loadEmployees(mdmSourceId);
-    return { fields, count: rows.length, sample: rows.slice(0, 3) };
+    const { rows, fields, totalAvailable } = await loadEmployees(mdmSourceId);
+    return { fields, count: totalAvailable || rows.length, sample: rows.slice(0, 3) };
   },
 
   async syncEmployeeData(
@@ -149,12 +181,47 @@ export const hrmsService = {
     query: string,
     mdmSourceId?: string,
   ): Promise<HRMSEmployeeData[]> {
-    const { rows } = await loadEmployees(mdmSourceId);
+    const result = await this.searchEmployeesWithMeta(query, mdmSourceId);
+    return result.rows;
+  },
+
+  async searchEmployeesWithMeta(
+    query: string,
+    mdmSourceId?: string,
+    options: EmployeeSearchOptions = {},
+  ): Promise<{
+    rows: HRMSEmployeeData[];
+    totalAvailable: number;
+    matchedCount: number;
+    loadedCount: number;
+    mode: "all" | "range";
+    rangeStart?: number;
+    rangeEnd?: number;
+  }> {
+    const { rows, totalAvailable } = await loadEmployees(mdmSourceId);
+    let matchedRows = rows;
     if (!query || query.trim().length < 1) {
-      return mdmSourceId ? rows : [];
+      matchedRows = mdmSourceId ? rows : [];
+    } else {
+      const term = query.toLowerCase();
+      matchedRows = rows.filter((emp) => matchesQuery(emp, term));
     }
-    const term = query.toLowerCase();
-    return rows.filter((emp) => matchesQuery(emp, term));
+    const mode = options.mode === "range" ? "range" : "all";
+    const slicedRows = applyRange(matchedRows, { ...options, mode });
+    const start = mode === "range" ? Math.max(1, Math.floor(options.start || 1)) : undefined;
+    const end =
+      mode === "range"
+        ? start! + slicedRows.length - 1
+        : undefined;
+    return {
+      rows: slicedRows,
+      totalAvailable,
+      matchedCount: matchedRows.length,
+      loadedCount: slicedRows.length,
+      mode,
+      rangeStart: start,
+      rangeEnd: end,
+    };
   },
 
   async validateEmployeeCode(

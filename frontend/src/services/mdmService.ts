@@ -77,7 +77,24 @@ const request = async <T>(
       headers: { ...getAuthHeaders(), ...(options.headers || {}) },
       credentials: "include",
     });
-    return await res.json();
+    const text = await res.text();
+    let payload: Partial<ApiResponse<T>> = {};
+    try {
+      payload = text ? JSON.parse(text) : {};
+    } catch {
+      payload = { success: false, error: text || "Invalid server response" };
+    }
+    if (!res.ok || payload.success === false) {
+      return {
+        success: false,
+        error:
+          payload.error ||
+          payload.message ||
+          `Request failed with status ${res.status}`,
+        message: payload.message,
+      };
+    }
+    return { success: true, ...payload } as ApiResponse<T>;
   } catch (error: any) {
     return { success: false, error: error?.message || "Request failed" };
   }

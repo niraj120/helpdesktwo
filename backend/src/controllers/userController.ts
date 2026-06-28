@@ -14,6 +14,67 @@ import ExcelJS from "exceljs";
 import multer from "multer";
 import { dashboardEvents } from "../services/dashboardEventBus";
 
+const resolveHrmsImportRole = async (
+  projectId: any,
+  attrs: {
+    hrmsCode?: string;
+    department?: string;
+    designation?: string;
+  },
+  explicitRole?: string,
+) => {
+  if (explicitRole) return explicitRole;
+
+  const mappedRole = await resolveRoleFromHRMS(projectId, attrs);
+  if (mappedRole) return mappedRole;
+
+  const projectScopedAgent = projectId
+    ? await Role.findOne({
+        code: "AGENT",
+        isActive: true,
+        $or: [{ projects: projectId }, { projectId }],
+      }).select("_id")
+    : null;
+  if (projectScopedAgent?._id) return projectScopedAgent._id;
+
+  const globalAgent = await Role.findOne({
+    code: "AGENT",
+    isActive: true,
+  }).select("_id");
+  if (globalAgent?._id) return globalAgent._id;
+
+  const agentLikeRole = projectId
+    ? await Role.findOne({
+        isAgent: true,
+        isActive: true,
+        $or: [{ projects: projectId }, { projectId }],
+      }).select("_id")
+    : null;
+  if (agentLikeRole?._id) return agentLikeRole._id;
+
+  return null;
+};
+
+const makeHrmsPlaceholderEmail = (
+  employeeCode?: string,
+  mdmSourceId?: string,
+) => {
+  const code = String(employeeCode || "")
+    .trim()
+    .toLowerCase();
+  if (!code) return "";
+
+  const safeCode = code
+    .replace(/[^a-z0-9._-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  const sourcePart = mdmSourceId
+    ? `.${String(mdmSourceId).slice(-6).toLowerCase()}`
+    : "";
+
+  return `${safeCode}${sourcePart}@hrms.local`;
+};
+
 // Multer config for bulk upload (memory storage, Excel files only)
 const bulkUploadStorage = multer.memoryStorage();
 export const bulkUploadMiddleware = multer({
@@ -377,10 +438,11 @@ export const createUser = async (
       payrollType,
       company,
     } = req.body;
+    let resolvedRole = role;
 
     // Validate required fields
     // When syncing from HRMS with employeeCode, email can be fetched from HRMS
-    if (!role) {
+    if (!resolvedRole && !syncFromHRMS) {
       res.status(400).json({
         success: false,
         error: "Role is required",
@@ -428,23 +490,13 @@ export const createUser = async (
       }
     }
 
-    // Validate role exists
-    const roleDoc = await Role.findById(role);
-    if (!roleDoc) {
-      res.status(400).json({
-        success: false,
-        error: "Invalid role ID",
-      });
-      return;
-    }
-
     let userData: any = {
       email,
       password: password || Math.random().toString(36).slice(-10), // Generate random password if not provided
       firstName,
       lastName,
       mobile: mobile || undefined,
-      role,
+      role: resolvedRole,
       department,
       designation,
       reportingManager,
@@ -490,18 +542,29 @@ export const createUser = async (
         userData.registrationSource = "hrms";
         if (mdmSourceId) userData.mdmSourceId = mdmSourceId;
 
-        // Check if email from HRMS already exists
-        if (userData.email) {
-          const existingUserByEmail = await User.findOne({
-            email: userData.email,
+        if (!userData.email) {
+          userData.email = makeHrmsPlaceholderEmail(employeeCode, mdmSourceId);
+        }
+
+        if (!userData.email) {
+          res.status(400).json({
+            success: false,
+            error:
+              "HRMS employee has no email and no employee code to create an internal HRMS email",
           });
-          if (existingUserByEmail) {
-            res.status(400).json({
-              success: false,
-              error: `User with email ${userData.email} already exists`,
-            });
-            return;
-          }
+          return;
+        }
+
+        // Check if email from HRMS already exists
+        const existingUserByEmail = await User.findOne({
+          email: userData.email,
+        });
+        if (existingUserByEmail) {
+          res.status(400).json({
+            success: false,
+            error: `User with email ${userData.email} already exists`,
+          });
+          return;
         }
       } catch (hrmsError: any) {
         res.status(400).json({
@@ -515,6 +578,38 @@ export const createUser = async (
       // Only set employeeCode if it's not empty
       userData.employeeCode = employeeCode;
     }
+
+    if (syncFromHRMS && !resolvedRole) {
+      const mappingProjectId = Array.isArray(projects) ? projects[0] : projects;
+      resolvedRole = await resolveHrmsImportRole(
+        mappingProjectId,
+        {
+          hrmsCode: employeeCode,
+          department: userData.department,
+          designation: userData.designation,
+        },
+        resolvedRole,
+      );
+
+      if (!resolvedRole) {
+        res.status(400).json({
+          success: false,
+          error:
+            "No role mapping rule matched this HRMS employee and no AGENT fallback role is configured",
+        });
+        return;
+      }
+    }
+
+    const roleDoc = await Role.findById(resolvedRole);
+    if (!roleDoc) {
+      res.status(400).json({
+        success: false,
+        error: "Invalid role ID",
+      });
+      return;
+    }
+    userData.role = resolvedRole;
 
     if (joiningDate) {
       userData.joiningDate = new Date(joiningDate);
@@ -1081,9 +1176,22 @@ export const searchHRMSEmployees = async (
     const { query, mdmSourceId } = req.query;
     const q = typeof query === "string" ? query : "";
     const sid = typeof mdmSourceId === "string" ? mdmSourceId : undefined;
+    const loadMode = req.query.loadMode === "range" ? "range" : "all";
+    const start =
+      typeof req.query.start === "string" ? Number(req.query.start) : undefined;
+    const end =
+      typeof req.query.end === "string" ? Number(req.query.end) : undefined;
+    const limit =
+      typeof req.query.limit === "string" ? Number(req.query.limit) : undefined;
 
     // Blank query is allowed → loads all (needed for "Load all from MDM").
-    const employees = await hrmsService.searchEmployees(q, sid);
+    const searchResult = await hrmsService.searchEmployeesWithMeta(q, sid, {
+      mode: loadMode,
+      start: Number.isFinite(start) ? start : undefined,
+      end: Number.isFinite(end) ? end : undefined,
+      limit: Number.isFinite(limit) ? limit : undefined,
+    });
+    const employees = searchResult.rows;
 
     // Field union across the returned rows for the dynamic column picker.
     const fieldSet = new Set<string>();
@@ -1114,6 +1222,14 @@ export const searchHRMSEmployees = async (
       data: employees,
       fields: Array.from(fieldSet),
       existingCodes,
+      meta: {
+        totalAvailable: searchResult.totalAvailable,
+        matchedCount: searchResult.matchedCount,
+        loadedCount: searchResult.loadedCount,
+        loadMode: searchResult.mode,
+        rangeStart: searchResult.rangeStart,
+        rangeEnd: searchResult.rangeEnd,
+      },
     });
   } catch (error: any) {
     console.error("Error searching HRMS employees:", error);
@@ -1333,23 +1449,39 @@ export const bulkImportFromHRMS = async (
         }
 
         // Resolve role: explicit roleId wins; else map from HRMS attributes.
-        const resolvedRoleId =
-          roleId ||
-          (await resolveRoleFromHRMS(mappingProjectId, {
+        const resolvedRoleId = await resolveHrmsImportRole(
+          mappingProjectId,
+          {
             hrmsCode: employeeCode,
             department: (hrmsData as any).department,
             designation: (hrmsData as any).designation,
-          }));
+          },
+          roleId,
+        );
         if (!resolvedRoleId) {
           results.failed.push({
             employeeCode,
-            reason: "No role provided and no role-mapping rule matched",
+            reason:
+              "No role provided, no role-mapping rule matched, and no AGENT fallback role is configured",
+          });
+          continue;
+        }
+
+        const userEmail =
+          (hrmsData as any).email || makeHrmsPlaceholderEmail(employeeCode);
+        if (!userEmail) {
+          results.failed.push({
+            employeeCode,
+            reason:
+              "HRMS employee has no email and no employee code to create an internal HRMS email",
           });
           continue;
         }
 
         const user = new User({
           ...hrmsData,
+          email: userEmail,
+          registrationSource: "hrms",
           role: resolvedRoleId,
           projects: projectIds || [],
           password: Math.random().toString(36).slice(-10), // Random password

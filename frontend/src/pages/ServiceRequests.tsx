@@ -1,14 +1,18 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
+import {
+  ChevronDownIcon,
+  FunnelIcon,
+  MagnifyingGlassIcon,
+  XMarkIcon,
+} from "@heroicons/react/24/outline";
 import SrPage from "../components/sr/SrPage";
-import { srStyles, srButton } from "../utils/srTheme";
+import { SR, srStyles, srButton } from "../utils/srTheme";
 import { useProjectContext } from "../contexts/ProjectContext";
 import {
   serviceRequestApi,
   SR_STATUS_META,
   priorityMeta,
-  sourceMeta,
   compactAge,
 } from "../services/serviceRequests";
 
@@ -36,9 +40,83 @@ interface SrRow {
   };
   linkedIsr?: { total: number; done: number };
   linkedIsrs?: LinkedIsrRef[];
+  wip?: { committedDate?: string };
   createdAt: string;
   updatedAt?: string;
 }
+
+interface SelectOption {
+  value: string;
+  label: string;
+}
+
+interface SrFilters {
+  createdFrom: string;
+  createdTo: string;
+  updatedFrom: string;
+  updatedTo: string;
+  priority: string;
+  wipFrom: string;
+  wipTo: string;
+  wipState: string;
+  source: string;
+  classification: string;
+  linkedIsrState: string;
+  sortBy: string;
+  sortOrder: string;
+}
+
+const DEFAULT_FILTERS: SrFilters = {
+  createdFrom: "",
+  createdTo: "",
+  updatedFrom: "",
+  updatedTo: "",
+  priority: "",
+  wipFrom: "",
+  wipTo: "",
+  wipState: "",
+  source: "",
+  classification: "",
+  linkedIsrState: "",
+  sortBy: "createdAt",
+  sortOrder: "desc",
+};
+
+const SOURCE_OPTIONS: SelectOption[] = [
+  { value: "", label: "Any source" },
+  { value: "online", label: "Online" },
+  { value: "offline", label: "Offline" },
+  { value: "email", label: "Email" },
+  { value: "ivr", label: "IVR" },
+  { value: "whatsapp", label: "WhatsApp" },
+  { value: "sms", label: "SMS" },
+  { value: "chatbot", label: "Chatbot" },
+];
+
+const CHANNEL_OPTIONS: SelectOption[] = [
+  { value: "", label: "Any channel" },
+  { value: "existing_parent", label: "Existing Parent" },
+  { value: "prospect_parent", label: "Prospect Parent" },
+  { value: "vendor", label: "Vendor / Business" },
+  { value: "job", label: "Job Application" },
+  { value: "others", label: "Others / General" },
+  { value: "junk", label: "Junk / Telemarketing" },
+];
+
+const WIP_STATE_OPTIONS: SelectOption[] = [
+  { value: "", label: "Any WIP date" },
+  { value: "overdue", label: "Overdue" },
+  { value: "today", label: "Due today" },
+  { value: "week", label: "Due this week" },
+  { value: "none", label: "No WIP date" },
+];
+
+const LINKED_ISR_OPTIONS: SelectOption[] = [
+  { value: "", label: "Any ISR state" },
+  { value: "none", label: "No linked ISRs" },
+  { value: "pending", label: "Has pending ISRs" },
+  { value: "completed", label: "All ISRs done" },
+];
 
 /** existing_parent → "Existing Parent" */
 const humanize = (k?: string) =>
@@ -56,6 +134,12 @@ const name = (u?: {
   !u
     ? "—"
     : u.fullName || `${u.firstName || ""} ${u.lastName || ""}`.trim() || "—";
+
+const formatDate = (value?: string) =>
+  value ? new Date(value).toLocaleDateString() : "-";
+
+const optionLabel = (options: SelectOption[], value: string) =>
+  options.find((o) => o.value === value)?.label || value;
 
 const StatusChip: React.FC<{ status: number }> = ({ status }) => {
   const m = SR_STATUS_META[status] || {
@@ -109,25 +193,6 @@ const PriorityChip: React.FC<{ value?: string }> = ({ value }) => {
     <Pill color={m.color} bg={m.bg}>
       {m.label}
     </Pill>
-  );
-};
-
-const SourceTag: React.FC<{ value?: string }> = ({ value }) => {
-  const m = sourceMeta(value);
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 5,
-        fontSize: 13,
-        color: "#374151",
-        whiteSpace: "nowrap",
-      }}
-    >
-      <span aria-hidden>{m.icon}</span>
-      {m.label}
-    </span>
   );
 };
 
@@ -210,6 +275,7 @@ const LinkedIsrCell: React.FC<{
               }}
             />
           </div>
+
           {pending > 0 && (
             <div
               style={{
@@ -334,19 +400,162 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
   const [search, setSearch] = useState("");
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
   const [page, setPage] = useState(1);
+  const [filtersOpen, setFiltersOpen] = useState(true);
+  const [filters, setFilters] = useState<SrFilters>(DEFAULT_FILTERS);
+  const [priorityOptions, setPriorityOptions] = useState<SelectOption[]>([
+    { value: "", label: "Any priority" },
+  ]);
+  const [statusOptions, setStatusOptions] = useState<SelectOption[]>([]);
   const limit = 20;
+
+  const projectId =
+    viewMode === "single" && currentProjectId ? currentProjectId : undefined;
+
+  const filterValue = (key: keyof SrFilters, value: string) => {
+    setPage(1);
+    setFilters((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const resetFilters = () => {
+    setPage(1);
+    setStatus("all");
+    setSearch("");
+    setFilters(DEFAULT_FILTERS);
+  };
+
+  const activeFilters = [
+    search.trim()
+      ? { key: "search", label: `Search: ${search.trim()}` }
+      : undefined,
+    status !== "all"
+      ? { key: "status", label: `Status: ${optionLabel(statusOptions, status)}` }
+      : undefined,
+    filters.createdFrom
+      ? { key: "createdFrom", label: `Created from ${filters.createdFrom}` }
+      : undefined,
+    filters.createdTo
+      ? { key: "createdTo", label: `Created to ${filters.createdTo}` }
+      : undefined,
+    filters.updatedFrom
+      ? { key: "updatedFrom", label: `Updated from ${filters.updatedFrom}` }
+      : undefined,
+    filters.updatedTo
+      ? { key: "updatedTo", label: `Updated to ${filters.updatedTo}` }
+      : undefined,
+    filters.priority
+      ? {
+          key: "priority",
+          label: `Priority: ${optionLabel(priorityOptions, filters.priority)}`,
+        }
+      : undefined,
+    filters.wipFrom
+      ? { key: "wipFrom", label: `WIP from ${filters.wipFrom}` }
+      : undefined,
+    filters.wipTo ? { key: "wipTo", label: `WIP to ${filters.wipTo}` } : undefined,
+    filters.wipState
+      ? {
+          key: "wipState",
+          label: optionLabel(WIP_STATE_OPTIONS, filters.wipState),
+        }
+      : undefined,
+    filters.source
+      ? { key: "source", label: `Source: ${optionLabel(SOURCE_OPTIONS, filters.source)}` }
+      : undefined,
+    filters.classification
+      ? {
+          key: "classification",
+          label: `Channel: ${optionLabel(CHANNEL_OPTIONS, filters.classification)}`,
+        }
+      : undefined,
+    filters.linkedIsrState
+      ? {
+          key: "linkedIsrState",
+          label: optionLabel(LINKED_ISR_OPTIONS, filters.linkedIsrState),
+        }
+      : undefined,
+  ].filter(Boolean) as Array<{ key: string; label: string }>;
+
+  const activeFilterCount = activeFilters.length;
+
+  const clearChip = (key: string) => {
+    setPage(1);
+    if (key === "search") setSearch("");
+    else if (key === "status") setStatus("all");
+    else setFilters((prev) => ({ ...prev, [key as keyof SrFilters]: "" }));
+  };
+
+  useEffect(() => {
+    let mounted = true;
+    const fallbackStatuses = [
+      { value: "all", label: "All statuses" },
+      ...Object.entries(SR_STATUS_META).map(([code, meta]) => ({
+        value: code,
+        label: meta.label,
+      })),
+    ];
+
+    serviceRequestApi
+      .activePriorities(projectId)
+      .then((res) => {
+        if (!mounted) return;
+        const data = Array.isArray(res?.data) ? res.data : [];
+        const options = data
+          .map((p: any) => ({
+            value: String(p.code || p.name || "").trim(),
+            label: String(p.name || p.code || "").trim(),
+          }))
+          .filter((p: SelectOption) => p.value && p.label);
+        setPriorityOptions([{ value: "", label: "Any priority" }, ...options]);
+      })
+      .catch(() => {
+        if (mounted) setPriorityOptions([{ value: "", label: "Any priority" }]);
+      });
+
+    if (!projectId) {
+      setStatusOptions(fallbackStatuses);
+      return () => {
+        mounted = false;
+      };
+    }
+
+    serviceRequestApi
+      .projectStatuses(projectId)
+      .then((res) => {
+        if (!mounted) return;
+        const data = Array.isArray(res?.data) ? res.data : [];
+        const options = data
+          .map((s: any) => ({
+            value: String(s.code || "").trim(),
+            label: String(s.name || s.label || "").trim(),
+          }))
+          .filter((s: SelectOption) => s.value && s.label);
+        setStatusOptions(
+          options.length
+            ? [{ value: "all", label: "All statuses" }, ...options]
+            : fallbackStatuses,
+        );
+      })
+      .catch(() => {
+        if (mounted) setStatusOptions(fallbackStatuses);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [projectId]);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      const cleanedFilters = Object.fromEntries(
+        Object.entries(filters).filter(([, value]) => value),
+      );
       const res = await serviceRequestApi.list({
         interactionType: "PSR",
         status,
         search: search.trim() || undefined,
-        projectId:
-          viewMode === "single" && currentProjectId
-            ? currentProjectId
-            : undefined,
+        projectId,
+        ...cleanedFilters,
         page,
         limit,
       });
@@ -359,7 +568,7 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
     } finally {
       setLoading(false);
     }
-  }, [status, search, page, currentProjectId, viewMode]);
+  }, [status, search, projectId, filters, page]);
 
   useEffect(() => {
     load();
@@ -388,6 +597,66 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
     color: disabled ? "#9ca3af" : "#374151",
     cursor: disabled ? "default" : "pointer",
   });
+
+  const filterLabel: React.CSSProperties = {
+    display: "block",
+    marginBottom: 7,
+    color: "#667085",
+    fontSize: 10,
+    fontWeight: 800,
+    letterSpacing: "0.06em",
+    textTransform: "uppercase",
+    lineHeight: 1,
+  };
+
+  const filterInput: React.CSSProperties = {
+    ...srStyles.ctrl,
+    width: "100%",
+    height: 36,
+    minHeight: 36,
+    minWidth: 0,
+    padding: "7px 12px",
+    borderRadius: 9,
+    borderColor: "#dbe3ef",
+    background: "#fff",
+    color: "#1f2937",
+    fontSize: 12,
+    fontWeight: 500,
+    boxShadow: "0 1px 0 rgba(15, 23, 42, 0.02)",
+  };
+
+  const selectControl = (
+    label: string,
+    key: keyof SrFilters,
+    options: SelectOption[],
+  ) => (
+    <label style={{ minWidth: 0 }}>
+      <span style={filterLabel}>{label}</span>
+      <select
+        value={filters[key]}
+        onChange={(e) => filterValue(key, e.target.value)}
+        style={filterInput}
+      >
+        {options.map((option) => (
+          <option key={option.value || "any"} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+
+  const dateControl = (label: string, key: keyof SrFilters) => (
+    <label style={{ minWidth: 0 }}>
+      <span style={filterLabel}>{label}</span>
+      <input
+        type="date"
+        value={filters[key]}
+        onChange={(e) => filterValue(key, e.target.value)}
+        style={filterInput}
+      />
+    </label>
+  );
 
   return (
     <SrPage
@@ -506,13 +775,217 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
           </div>
         </div>
 
+        <div
+          style={{
+            ...srStyles.card,
+            padding: "16px 14px 14px",
+            borderRadius: 12,
+            boxShadow: "0 3px 14px rgba(15, 23, 42, 0.045)",
+            borderColor: activeFilterCount ? "#bfdbfe" : undefined,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 8,
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setFiltersOpen((v) => !v)}
+              style={{
+                ...srButton("neutral"),
+                background: activeFilterCount ? SR.primary : "#6b7280",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 7,
+                height: 36,
+                padding: "0 13px",
+                borderRadius: 9,
+                fontSize: 12,
+                fontWeight: 800,
+                boxShadow: activeFilterCount
+                  ? "0 6px 14px rgba(37, 99, 235, 0.18)"
+                  : "0 4px 10px rgba(15, 23, 42, 0.1)",
+              }}
+            >
+              <FunnelIcon style={{ width: 14, height: 14 }} />
+              Filters
+              {activeFilterCount > 0 && (
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    minWidth: 17,
+                    height: 17,
+                    padding: "0 5px",
+                    borderRadius: 999,
+                    background: "#fff",
+                    color: "#2563eb",
+                    fontSize: 10,
+                    fontWeight: 800,
+                  }}
+                >
+                  {activeFilterCount}
+                </span>
+              )}
+              <ChevronDownIcon
+                style={{
+                  width: 13,
+                  height: 13,
+                  transform: filtersOpen ? "rotate(180deg)" : "rotate(0deg)",
+                  transition: "transform 0.15s ease",
+                }}
+              />
+            </button>
+
+            <button
+              type="button"
+              onClick={resetFilters}
+              disabled={activeFilterCount === 0}
+              style={{
+                ...srButton("neutral"),
+                height: 36,
+                padding: "0 14px",
+                borderRadius: 9,
+                background: "#9ca3af",
+                fontSize: 12,
+                fontWeight: 800,
+                opacity: activeFilterCount === 0 ? 0.7 : 1,
+                cursor: activeFilterCount === 0 ? "default" : "pointer",
+              }}
+            >
+              Reset
+            </button>
+          </div>
+
+          {filtersOpen && (
+            <div
+              style={{
+                marginTop: 12,
+                paddingTop: 14,
+                borderTop: "1px solid #e8edf5",
+              }}
+            >
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(158px, 1fr))",
+                  gap: "13px 10px",
+                  alignItems: "end",
+                }}
+              >
+                {dateControl("Created from", "createdFrom")}
+                {dateControl("Created to", "createdTo")}
+                <label style={{ minWidth: 0 }}>
+                  <span style={filterLabel}>Status</span>
+                  <select
+                    value={status}
+                    onChange={(e) => {
+                      setPage(1);
+                      setStatus(e.target.value);
+                    }}
+                    style={filterInput}
+                  >
+                    {(statusOptions.length
+                      ? statusOptions
+                      : [
+                          { value: "all", label: "All statuses" },
+                          ...Object.entries(SR_STATUS_META).map(
+                            ([code, meta]) => ({
+                              value: code,
+                              label: meta.label,
+                            }),
+                          ),
+                        ]
+                    ).map((option) => (
+                      <option key={`status-${option.value}`} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {selectControl("Priority", "priority", priorityOptions)}
+                {selectControl("WIP state", "wipState", WIP_STATE_OPTIONS)}
+                {dateControl("WIP from", "wipFrom")}
+                {dateControl("WIP to", "wipTo")}
+                {selectControl("Source", "source", SOURCE_OPTIONS)}
+                {selectControl("Channel", "classification", CHANNEL_OPTIONS)}
+                {selectControl("Linked ISR", "linkedIsrState", LINKED_ISR_OPTIONS)}
+                {dateControl("Updated from", "updatedFrom")}
+                {dateControl("Updated to", "updatedTo")}
+                {selectControl("Sort by", "sortBy", [
+                  { value: "createdAt", label: "Created date" },
+                  { value: "updatedAt", label: "Updated date" },
+                  { value: "wip.committedDate", label: "WIP date" },
+                  { value: "priority", label: "Priority" },
+                  { value: "status", label: "Status" },
+                ])}
+                {selectControl("Order", "sortOrder", [
+                  { value: "desc", label: "Newest first" },
+                  { value: "asc", label: "Oldest first" },
+                ])}
+              </div>
+            </div>
+          )}
+
+          {activeFilters.length > 0 && (
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 6,
+                marginTop: 12,
+              }}
+            >
+              {activeFilters.map((chip) => (
+                <button
+                  key={chip.key}
+                  type="button"
+                  onClick={() => clearChip(chip.key)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 5,
+                    maxWidth: "100%",
+                    minHeight: 24,
+                    border: "1px solid #dbeafe",
+                    borderRadius: 999,
+                    background: "#f8fbff",
+                    color: "#1e40af",
+                    padding: "4px 8px",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                  title="Clear filter"
+                >
+                  <span
+                    style={{
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {chip.label}
+                  </span>
+                  <XMarkIcon style={{ width: 12, height: 12, flex: "0 0 auto" }} />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div style={{ ...srStyles.card, padding: 0, overflow: "hidden" }}>
           <div style={{ overflowX: "auto" }}>
           <table
             style={{
               width: "100%",
               borderCollapse: "collapse",
-              minWidth: 1180,
+              minWidth: 1280,
             }}
           >
             <thead>
@@ -522,13 +995,13 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
                 <th style={th}>Category</th>
                 <th style={th}>Priority</th>
                 <th style={th}>Status</th>
-                <th style={th}>Source</th>
                 <th style={th}>Mode</th>
                 <th style={th}>Linked ISRs</th>
                 <th style={th}>Assigned To</th>
                 <th style={th}>Student</th>
                 <th style={th}>Channel</th>
                 <th style={th}>Age</th>
+                <th style={th}>WIP Date</th>
                 <th style={th}>Updated</th>
                 <th style={th}>Created</th>
               </tr>
@@ -587,9 +1060,6 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
                     <td style={td}>
                       <StatusChip status={r.status} />
                     </td>
-                    <td style={td}>
-                      <SourceTag value={r.submissionSource} />
-                    </td>
                     <td style={td}>{r.modeOfContact || "—"}</td>
                     <td style={td}>
                       <LinkedIsrCell
@@ -611,6 +1081,22 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
                         title={new Date(r.createdAt).toLocaleString()}
                       >
                         {compactAge(r.createdAt)}
+                      </span>
+                    </td>
+                    <td style={td}>
+                      <span
+                        style={{
+                          color:
+                            r.wip?.committedDate &&
+                            new Date(r.wip.committedDate) < new Date() &&
+                            [2, 7].includes(r.status)
+                              ? "#b91c1c"
+                              : "#6b7280",
+                          fontWeight: r.wip?.committedDate ? 600 : 500,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {formatDate(r.wip?.committedDate)}
                       </span>
                     </td>
                     <td style={{ ...td, color: "#6b7280" }}>

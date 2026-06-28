@@ -6,6 +6,7 @@ import React, {
   useCallback,
 } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import DashboardLayout from "./DashboardLayout";
 import { getText } from "../utils/language";
 import { usePermissions } from "../hooks/usePermissions";
@@ -78,6 +79,15 @@ interface HRMSEmployee {
   [key: string]: any;
 }
 
+interface HRMSLoadMeta {
+  totalAvailable: number;
+  matchedCount: number;
+  loadedCount: number;
+  loadMode: "all" | "range";
+  rangeStart?: number;
+  rangeEnd?: number;
+}
+
 interface UserManagementProps {
   wrapWithLayout?: boolean; // If false, renders content only without DashboardLayout
 }
@@ -146,10 +156,39 @@ const hrmsMatch = (emp: any, search: string): boolean => {
   ].some((v) => v && String(v).toLowerCase().includes(t));
 };
 
+const isHrmsPlaceholderEmail = (email?: string) =>
+  Boolean(email && email.toLowerCase().endsWith("@hrms.local"));
+
+const UserEmailDisplay: React.FC<{ email?: string }> = ({ email }) => {
+  if (isHrmsPlaceholderEmail(email)) {
+    return (
+      <span
+        title={email}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          padding: "4px 10px",
+          borderRadius: "999px",
+          background: "#f3f4f6",
+          color: "#64748b",
+          fontSize: "12px",
+          fontWeight: 700,
+          whiteSpace: "nowrap",
+        }}
+      >
+        No email in HRMS
+      </span>
+    );
+  }
+
+  return <>{email || "-"}</>;
+};
+
 const UserManagement: React.FC<UserManagementProps> = ({
   wrapWithLayout = true,
 }) => {
   const { i18n } = useTranslation();
+  const navigate = useNavigate();
   const { hasPermission } = usePermissions();
   const { viewMode, currentProjectId, userProjects } = useProjectContext();
 
@@ -172,6 +211,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
   const [filterProjects, setFilterProjects] = useState<string[]>([]);
   const [filterCenters, setFilterCenters] = useState<string[]>([]);
   const [filterCompany, setFilterCompany] = useState<string>("");
+  const [recentlyImportedCodes, setRecentlyImportedCodes] = useState<string[]>(
+    [],
+  );
   const [companies, setCompanies] = useState<{ _id: string; name: string }[]>(
     [],
   );
@@ -326,6 +368,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
   const [hrmsEmployeeCodes, setHrmsEmployeeCodes] = useState(""); // For initial employee code input
   const [hrmsSearchQuery, setHrmsSearchQuery] = useState(""); // For filtering loaded employees
   const [hrmsLoading, setHrmsLoading] = useState(false);
+  const [hrmsLoadMode, setHrmsLoadMode] = useState<"all" | "range">("all");
+  const [hrmsRangeStart, setHrmsRangeStart] = useState("1");
+  const [hrmsRangeEnd, setHrmsRangeEnd] = useState("50");
+  const [hrmsLoadMeta, setHrmsLoadMeta] = useState<HRMSLoadMeta | null>(null);
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]); // Array of employee IDs
   // MDM source the HRMS data is fetched from (provenance)
   const [mdmSources, setMdmSources] = useState<
@@ -337,6 +383,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
   const [selectedCols, setSelectedCols] = useState<string[]>([]);
   const [fieldMapping, setFieldMapping] = useState<Record<string, string>>({});
   const [showColPicker, setShowColPicker] = useState(false);
+  const [hrmsColumnSearch, setHrmsColumnSearch] = useState("");
   const [showMapping, setShowMapping] = useState(false);
   const [cfgSaving, setCfgSaving] = useState(false);
   const [cfgMsg, setCfgMsg] = useState("");
@@ -345,11 +392,12 @@ const UserManagement: React.FC<UserManagementProps> = ({
   const [presetName, setPresetName] = useState("Default");
   // Already-imported employee codes (existing User accounts)
   const [existingCodes, setExistingCodes] = useState<string[]>([]);
-  // Per-employee role override (empId -> roleId); falls back to global role
-  const [roleByEmp, setRoleByEmp] = useState<Record<string, string>>({});
   // Pagination over the loaded rows
   const [hrmsPage, setHrmsPage] = useState(1);
   const HRMS_PAGE_SIZE = 50;
+  const [hrmsImportStep, setHrmsImportStep] = useState<
+    "employees" | "projects"
+  >("employees");
   // Mapping preview toggle
   const [showPreview, setShowPreview] = useState(false);
 
@@ -395,6 +443,14 @@ const UserManagement: React.FC<UserManagementProps> = ({
         const f = await fRes.json();
         const fields: string[] = (f.success && f.fields) || [];
         setHrmsFields(fields);
+        if (f.success && typeof f.count === "number") {
+          setHrmsLoadMeta({
+            totalAvailable: f.count,
+            matchedCount: f.count,
+            loadedCount: 0,
+            loadMode: "all",
+          });
+        }
 
         const cRes = await fetch(
           `${API_CONFIG.API_URL}/users/hrms/field-config${src ? src + "&" : "?"}dataType=employees`,
@@ -416,8 +472,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
       }
     })();
   }, [showHRMSModal, selectedMdmSource]);
-  const [selectedRole, setSelectedRole] = useState("");
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
+  const [hrmsProjectSearch, setHrmsProjectSearch] = useState("");
 
   const [saving, setSaving] = useState(false);
 
@@ -538,23 +594,39 @@ const UserManagement: React.FC<UserManagementProps> = ({
   };
 
   // Fetch users
-  const fetchUsers = async () => {
+  const fetchUsers = async (overrides?: {
+    page?: number;
+    search?: string;
+    roles?: string[];
+    statuses?: string[];
+    projects?: string[];
+    centers?: string[];
+    company?: string;
+  }) => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
-      params.append("page", currentPage.toString());
+      const page = overrides?.page ?? currentPage;
+      const search = overrides?.search ?? searchQuery;
+      const rolesFilter = overrides?.roles ?? filterRoles;
+      const statusesFilter = overrides?.statuses ?? filterStatuses;
+      const projectsFilter = overrides?.projects ?? filterProjects;
+      const centersFilter = overrides?.centers ?? filterCenters;
+      const companyFilter = overrides?.company ?? filterCompany;
+
+      params.append("page", page.toString());
       params.append("limit", usersPerPage.toString());
-      if (searchQuery) params.append("search", searchQuery);
-      if (filterRoles.length > 0) params.append("role", filterRoles.join(","));
-      if (filterStatuses.length > 0)
-        params.append("isActive", filterStatuses.join(","));
+      if (search) params.append("search", search);
+      if (rolesFilter.length > 0) params.append("role", rolesFilter.join(","));
+      if (statusesFilter.length > 0)
+        params.append("isActive", statusesFilter.join(","));
 
       // Add project filter from dropdown
-      if (filterProjects.length > 0) {
-        params.append("project", filterProjects.join(","));
+      if (projectsFilter.length > 0) {
+        params.append("project", projectsFilter.join(","));
         console.log(
           "👤 [USER MGMT] Filtering by dropdown projects:",
-          filterProjects,
+          projectsFilter,
         );
       }
       // Filter by project based on viewMode from context (if no dropdown filter)
@@ -568,13 +640,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
       }
 
       // Add center filter from dropdown
-      if (filterCenters.length > 0) {
-        params.append("centers", filterCenters.join(","));
-        console.log("👤 [USER MGMT] Filtering by centers:", filterCenters);
+      if (centersFilter.length > 0) {
+        params.append("centers", centersFilter.join(","));
+        console.log("👤 [USER MGMT] Filtering by centers:", centersFilter);
       }
 
-      if (filterCompany) {
-        params.append("company", filterCompany);
+      if (companyFilter) {
+        params.append("company", companyFilter);
       }
 
       const token = localStorage.getItem("authToken");
@@ -794,6 +866,20 @@ const UserManagement: React.FC<UserManagementProps> = ({
 
     return () => clearTimeout(timer);
   }, [searchQuery]);
+
+  useEffect(() => {
+    if (recentlyImportedCodes.length === 0) return;
+    const timer = window.setTimeout(() => {
+      setRecentlyImportedCodes([]);
+    }, 15000);
+    return () => window.clearTimeout(timer);
+  }, [recentlyImportedCodes]);
+
+  useEffect(() => {
+    if (selectedEmployees.length === 0 && hrmsImportStep === "projects") {
+      setHrmsImportStep("employees");
+    }
+  }, [selectedEmployees.length, hrmsImportStep]);
 
   useEffect(() => {
     // Initial load
@@ -1335,11 +1421,18 @@ const UserManagement: React.FC<UserManagementProps> = ({
         : "";
 
       const token = localStorage.getItem("authToken");
-      const sourceParam = selectedMdmSource
-        ? `&mdmSourceId=${encodeURIComponent(selectedMdmSource)}`
-        : "";
+      const params = new URLSearchParams();
+      params.set("query", queryParam);
+      params.set("loadMode", hrmsLoadMode);
+      if (selectedMdmSource) params.set("mdmSourceId", selectedMdmSource);
+      if (hrmsLoadMode === "range") {
+        const start = Math.max(1, Number(hrmsRangeStart) || 1);
+        const end = Math.max(start, Number(hrmsRangeEnd) || start);
+        params.set("start", String(start));
+        params.set("end", String(end));
+      }
       const response = await fetch(
-        `${API_CONFIG.API_URL}/users/hrms/search?query=${encodeURIComponent(queryParam)}${sourceParam}`,
+        `${API_CONFIG.API_URL}/users/hrms/search?${params.toString()}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -1353,10 +1446,15 @@ const UserManagement: React.FC<UserManagementProps> = ({
       if (data.success && data.data) {
         // API already searches across all fields, just use the results
         setHrmsEmployees(data.data);
+        if (data.meta) setHrmsLoadMeta(data.meta);
         setExistingCodes(
           Array.isArray(data.existingCodes) ? data.existingCodes : [],
         );
+        setSelectedEmployees([]);
+        setSelectedProjects([]);
         setHrmsPage(1);
+        setHrmsImportStep("employees");
+        setHrmsColumnSearch("");
         // Capture discovered fields → seed default columns if not set yet
         if (Array.isArray(data.fields) && data.fields.length) {
           setHrmsFields(data.fields);
@@ -1485,10 +1583,6 @@ const UserManagement: React.FC<UserManagementProps> = ({
     1,
     Math.ceil(hrmsFiltered.length / HRMS_PAGE_SIZE),
   );
-  const hrmsPaged = hrmsFiltered.slice(
-    (hrmsPage - 1) * HRMS_PAGE_SIZE,
-    hrmsPage * HRMS_PAGE_SIZE,
-  );
   // Resolve a row to user-account fields using the CURRENT mapping (preview).
   const previewResolved = (emp: any) => {
     const get = (target: string) => {
@@ -1517,6 +1611,101 @@ const UserManagement: React.FC<UserManagementProps> = ({
   const previewEmp =
     hrmsEmployees.find((e) => selectedEmployees.includes(e.employeeCode)) ||
     hrmsFiltered[0];
+  const hrmsColumnSearchTerm = hrmsColumnSearch.trim().toLowerCase();
+  const hrmsVisibleFields = useMemo(() => {
+    if (!hrmsColumnSearchTerm) return hrmsFields;
+    return hrmsFields.filter((field) =>
+      field.toLowerCase().includes(hrmsColumnSearchTerm),
+    );
+  }, [hrmsColumnSearchTerm, hrmsFields]);
+  const hrmsSelectableCodes = hrmsFiltered
+    .map((e) => e.employeeCode)
+    .filter((code) => code && !isImported(code));
+  const hrmsImportedCount = hrmsFiltered.length - hrmsSelectableCodes.length;
+  const hrmsAllSelectableSelected =
+    hrmsSelectableCodes.length > 0 &&
+    hrmsSelectableCodes.every((code) => selectedEmployees.includes(code));
+  const hrmsRequiresProjectSelection =
+    viewMode === "unified" &&
+    selectedEmployees.length > 0 &&
+    selectedProjects.length === 0;
+  const hrmsCanSubmit =
+    selectedEmployees.length > 0 && !hrmsRequiresProjectSelection;
+  const hrmsPrimaryDisabled =
+    hrmsImportStep === "employees"
+      ? selectedEmployees.length === 0
+      : saving || !hrmsCanSubmit;
+  const hrmsFilteredProjects = useMemo(() => {
+    const query = hrmsProjectSearch.trim().toLowerCase();
+    if (!query) return projects;
+
+    return projects.filter((project) => {
+      const name = project.name?.toLowerCase() || "";
+      const code = project.code?.toLowerCase() || "";
+      const status = project.status?.toLowerCase() || "";
+      return (
+        name.includes(query) ||
+        code.includes(query) ||
+        status.includes(query)
+      );
+    });
+  }, [hrmsProjectSearch, projects]);
+  const selectedHrmsProjects = projects.filter((project) =>
+    selectedProjects.includes(project._id),
+  );
+  const visibleHrmsProjectIds = hrmsFilteredProjects.map((project) => project._id);
+  const allVisibleHrmsProjectsSelected =
+    visibleHrmsProjectIds.length > 0 &&
+    visibleHrmsProjectIds.every((id) => selectedProjects.includes(id));
+  const selectedVisibleHrmsProjectCount = visibleHrmsProjectIds.filter((id) =>
+    selectedProjects.includes(id),
+  ).length;
+
+  const toggleVisibleHrmsProjects = () => {
+    if (allVisibleHrmsProjectsSelected) {
+      setSelectedProjects((prev) =>
+        prev.filter((id) => !visibleHrmsProjectIds.includes(id)),
+      );
+      return;
+    }
+
+    setSelectedProjects((prev) =>
+      Array.from(new Set([...prev, ...visibleHrmsProjectIds])),
+    );
+  };
+
+  const closeHrmsModal = () => {
+    setShowHRMSModal(false);
+    setHrmsEmployees([]);
+    setSelectedEmployees([]);
+    setSelectedProjects([]);
+    setHrmsProjectSearch("");
+    setHrmsColumnSearch("");
+    setHrmsLoadMeta(null);
+    setHrmsLoadMode("all");
+    setHrmsRangeStart("1");
+    setHrmsRangeEnd("50");
+    setHrmsEmployeeCodes("");
+    setHrmsSearchQuery("");
+    setHrmsPage(1);
+    setHrmsImportStep("employees");
+    setShowColPicker(false);
+    setShowMapping(false);
+    setShowPreview(false);
+    setCfgMsg("");
+  };
+
+  const hrmsToolbarButtonStyle = (active = false): React.CSSProperties => ({
+    padding: "9px 14px",
+    background: active ? "#fff7ed" : "white",
+    border: `1px solid ${active ? "#fdba74" : "#d1d5db"}`,
+    borderRadius: 10,
+    fontSize: 13,
+    cursor: "pointer",
+    color: active ? "#c2410c" : "#374151",
+    fontWeight: active ? 600 : 500,
+    boxShadow: active ? "0 4px 10px rgba(249, 115, 22, 0.10)" : "none",
+  });
 
   // Handle HRMS confirm - Add selected employees
   const handleConfirmHRMS = async () => {
@@ -1530,19 +1719,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
       );
       return;
     }
-
-    // A role is needed per employee: per-row override OR the global default.
-    const missingRole = selectedEmployees.filter(
-      (id) => !(roleByEmp[id] || selectedRole),
-    );
-    if (missingRole.length) {
-      alert(
-        getText(
-          "Select a role — either the global role or a per-employee role for every selected employee.",
-          "रोल निवडा — जागतिक रोल किंवा प्रत्येक निवडलेल्या कर्मचाऱ्यासाठी रोल.",
-          "रोल निवडा — जागतिक रोल किंवा प्रत्येक निवडलेल्या कर्मचाऱ्यासाठी रोल.",
-        ),
-      );
+    if (hrmsRequiresProjectSelection) {
+      alert("Select at least one project before importing HRMS users.");
       return;
     }
 
@@ -1550,6 +1728,14 @@ const UserManagement: React.FC<UserManagementProps> = ({
       setSaving(true);
       let successCount = 0;
       let failCount = 0;
+      const importedCodes: string[] = [];
+      const failedImports: string[] = [];
+      const importProjectIds =
+        selectedProjects.length > 0
+          ? selectedProjects
+          : currentProjectId
+            ? [currentProjectId]
+            : [];
 
       // Add each selected employee
       for (const employeeId of selectedEmployees) {
@@ -1569,8 +1755,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
             credentials: "include",
             body: JSON.stringify({
               employeeCode: employee.employeeCode,
-              role: roleByEmp[employeeId] || selectedRole,
-              projects: selectedProjects,
+              projects: importProjectIds,
               syncFromHRMS: true,
               mdmSourceId: selectedMdmSource || undefined,
               fieldMapping,
@@ -1581,33 +1766,66 @@ const UserManagement: React.FC<UserManagementProps> = ({
 
           if (data.success) {
             successCount++;
+            importedCodes.push(employee.employeeCode);
           } else {
             failCount++;
+            const reason = [data.error, data.message]
+              .filter(Boolean)
+              .join(": ");
+            failedImports.push(
+              `${employee.employeeCode}: ${reason || "Unknown error"}`,
+            );
             console.error(
               `Failed to add ${employee.employeeCode}:`,
-              data.error,
+              reason,
             );
           }
         } catch (error) {
           failCount++;
+          failedImports.push(`${employee.employeeCode}: Network or server error`);
           console.error(`Error adding ${employee.employeeCode}:`, error);
         }
       }
 
+      const failureDetails =
+        failedImports.length > 0
+          ? `\n\nFailed:\n${failedImports.slice(0, 5).join("\n")}${
+              failedImports.length > 5
+                ? `\n...and ${failedImports.length - 5} more`
+                : ""
+            }`
+          : "";
       const message = getText(
-        `Added ${successCount} user(s) successfully${failCount > 0 ? `, ${failCount} failed` : ""}`,
+        `Added ${successCount} user(s) successfully${failCount > 0 ? `, ${failCount} failed` : ""}${failureDetails}`,
         `${successCount} वापरकर्ते यशस्वीरित्या जोडले${failCount > 0 ? `, ${failCount} अयशस्वी` : ""}`,
         `${successCount} वापरकर्ते यशस्वीरित्या जोडले${failCount > 0 ? `, ${failCount} अयशस्वी` : ""}`,
       );
 
       alert(message);
 
-      setShowHRMSModal(false);
-      setHrmsEmployees([]);
-      setSelectedEmployees([]);
-      setSelectedRole("");
-      setSelectedProjects([]);
-      fetchUsers();
+      if (successCount > 0) {
+        setRecentlyImportedCodes(importedCodes);
+        setSearchQuery("");
+        setDebouncedSearchQuery("");
+        setFilterRoles([]);
+        setFilterStatuses([]);
+        setFilterCenters([]);
+        setFilterCompany("");
+        setFilterProjects(importProjectIds);
+        setCurrentPage(1);
+        navigate("/users");
+        await fetchUsers({
+          page: 1,
+          search: "",
+          roles: [],
+          statuses: [],
+          projects: importProjectIds,
+          centers: [],
+          company: "",
+        });
+      }
+
+      closeHrmsModal();
     } catch (error) {
       console.error("Error adding users from HRMS:", error);
       alert("Failed to add users");
@@ -3028,7 +3246,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         textOverflow: "ellipsis",
                       }}
                     >
-                      {user.email}
+                      <UserEmailDisplay email={user.email} />
                     </div>
                   </div>
                   {hasPermission("USER_DELETE") && (
@@ -3395,11 +3613,16 @@ const UserManagement: React.FC<UserManagementProps> = ({
                           : "none",
                       background: selectedUserIds.has(user._id)
                         ? "#FEF2F2"
-                        : "white",
+                        : recentlyImportedCodes.includes(user.employeeCode || "")
+                          ? "#ECFDF5"
+                          : "white",
                       transition: "background 0.15s ease",
                     }}
                     onMouseEnter={(e) => {
-                      if (!selectedUserIds.has(user._id))
+                      if (
+                        !selectedUserIds.has(user._id) &&
+                        !recentlyImportedCodes.includes(user.employeeCode || "")
+                      )
                         e.currentTarget.style.background = "#F9FAFB";
                     }}
                     onMouseLeave={(e) => {
@@ -3407,7 +3630,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         user._id,
                       )
                         ? "#FEF2F2"
-                        : "white";
+                        : recentlyImportedCodes.includes(user.employeeCode || "")
+                          ? "#ECFDF5"
+                          : "white";
                     }}
                   >
                     {hasPermission("USER_DELETE") && (
@@ -3443,6 +3668,26 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         >
                           {user.firstName} {user.lastName}
                         </div>
+                        {recentlyImportedCodes.includes(
+                          user.employeeCode || "",
+                        ) && (
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              marginTop: "6px",
+                              padding: "3px 8px",
+                              borderRadius: 999,
+                              background: "#dcfce7",
+                              color: "#166534",
+                              fontSize: 11,
+                              fontWeight: 700,
+                              border: "1px solid #bbf7d0",
+                            }}
+                          >
+                            Imported now
+                          </span>
+                        )}
                         {user.mobile && (
                           <div
                             style={{
@@ -3490,7 +3735,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                           '"Noto Sans", system-ui, -apple-system, sans-serif',
                       }}
                     >
-                      {user.email}
+                      <UserEmailDisplay email={user.email} />
                     </td>
                     <td style={{ padding: "16px 24px" }}>
                       {user.employeeCode ? (
@@ -6419,65 +6664,112 @@ const UserManagement: React.FC<UserManagementProps> = ({
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            backgroundColor: "rgba(15, 23, 42, 0.52)",
+            backdropFilter: "blur(6px)",
             display: "flex",
-            alignItems: "center",
+            alignItems: "stretch",
             justifyContent: "center",
             zIndex: 1000,
             padding: "20px",
+            overflowY: "auto",
           }}
         >
+          <style>
+            {`
+              .hrms-modal-scroll {
+                scrollbar-width: thin;
+                scrollbar-color: #cbd5e1 transparent;
+              }
+              .hrms-modal-scroll::-webkit-scrollbar {
+                width: 10px;
+                height: 10px;
+              }
+              .hrms-modal-scroll::-webkit-scrollbar-track {
+                background: transparent;
+              }
+              .hrms-modal-scroll::-webkit-scrollbar-thumb {
+                background: #cbd5e1;
+                border-radius: 999px;
+                border: 2px solid transparent;
+                background-clip: padding-box;
+              }
+              .hrms-modal-scroll::-webkit-scrollbar-thumb:hover {
+                background: #94a3b8;
+                background-clip: padding-box;
+              }
+            `}
+          </style>
           <div
             style={{
               backgroundColor: "white",
-              borderRadius: "12px",
-              maxWidth: "1000px",
+              borderRadius: "18px",
+              maxWidth: "1120px",
               width: "100%",
-              height: "85vh",
+              height: "min(900px, calc(100vh - 40px))",
+              maxHeight: "calc(100vh - 40px)",
               display: "flex",
               flexDirection: "column",
+              margin: "auto",
+              border: "1px solid #e5e7eb",
+              boxShadow: "0 30px 80px rgba(15, 23, 42, 0.22)",
+              overflow: "hidden",
             }}
           >
             <div
               style={{
-                padding: "24px",
+                padding: "22px 28px",
                 borderBottom: "1px solid #e5e7eb",
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
                 flexShrink: 0,
+                background:
+                  "linear-gradient(180deg, rgba(255,247,237,0.8) 0%, rgba(255,255,255,1) 100%)",
               }}
             >
-              <h2
-                style={{
-                  fontSize: "20px",
-                  fontWeight: "600",
-                  color: "#1f2937",
-                  margin: 0,
-                }}
-              >
-                {getText(
-                  "Add Users from HRMS",
-                  "HRMS मधून वापरकर्ते जोडा",
-                  "HRMS मधून वापरकर्ते जोडा",
-                )}
-              </h2>
+              <div>
+                <h2
+                  style={{
+                    fontSize: "24px",
+                    fontWeight: "700",
+                    color: "#111827",
+                    margin: 0,
+                    lineHeight: 1.1,
+                  }}
+                >
+                  {getText(
+                    "Add Users from HRMS",
+                    "HRMS मधून वापरकर्ते जोडा",
+                    "HRMS मधून वापरकर्ते जोडा",
+                  )}
+                </h2>
+                <p
+                  style={{
+                    margin: "6px 0 0",
+                    fontSize: "13px",
+                    color: "#6b7280",
+                  }}
+                >
+                  Search, preview, map fields, and import HRMS employees.
+                </p>
+              </div>
               <button
-                onClick={() => {
-                  setShowHRMSModal(false);
-                  setHrmsEmployees([]);
-                  setSelectedEmployees([]);
-                  setSelectedRole("");
-                  setSelectedProjects([]);
-                  setHrmsEmployeeCodes("");
-                  setHrmsSearchQuery("");
-                }}
+                onClick={closeHrmsModal}
+                aria-label="Close HRMS import modal"
+                title="Close"
                 style={{
                   background: "none",
-                  border: "none",
+                  border: "1px solid #e5e7eb",
+                  width: "40px",
+                  height: "40px",
+                  borderRadius: "999px",
                   fontSize: "24px",
+                  lineHeight: 1,
                   cursor: "pointer",
                   color: "#6b7280",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
               >
                 ✕
@@ -6485,7 +6777,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
             </div>
 
             {hrmsEmployees.length === 0 ? (
-              <div style={{ padding: "32px" }}>
+              <div
+                className="hrms-modal-scroll"
+                style={{
+                  padding: "32px",
+                  overflowY: "auto",
+                }}
+              >
                 <p
                   style={{
                     fontSize: "14px",
@@ -6621,6 +6919,170 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     </p>
                   </div>
 
+                  <div
+                    style={{
+                      marginBottom: "20px",
+                      padding: "14px",
+                      border: "1px solid #dbeafe",
+                      borderRadius: 14,
+                      background: "#eff6ff",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: 12,
+                        flexWrap: "wrap",
+                        marginBottom: 12,
+                      }}
+                    >
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: "#475569",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          People in source
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 24,
+                            fontWeight: 800,
+                            color: "#1d4ed8",
+                            lineHeight: 1.1,
+                          }}
+                        >
+                          {hrmsLoadMeta?.totalAvailable ?? "Loading..."}
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          display: "inline-flex",
+                          padding: 4,
+                          borderRadius: 12,
+                          background: "white",
+                          border: "1px solid #bfdbfe",
+                          gap: 4,
+                        }}
+                      >
+                        {(["all", "range"] as const).map((mode) => (
+                          <button
+                            key={mode}
+                            type="button"
+                            onClick={() => setHrmsLoadMode(mode)}
+                            style={{
+                              border: "none",
+                              borderRadius: 9,
+                              padding: "8px 12px",
+                              cursor: "pointer",
+                              fontSize: 13,
+                              fontWeight: 700,
+                              color:
+                                hrmsLoadMode === mode ? "white" : "#1d4ed8",
+                              background:
+                                hrmsLoadMode === mode ? "#2563eb" : "white",
+                            }}
+                          >
+                            {mode === "all" ? "All people" : "Range"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {hrmsLoadMode === "range" && (
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns:
+                            "repeat(auto-fit, minmax(140px, 1fr))",
+                          gap: 10,
+                        }}
+                      >
+                        <label
+                          style={{
+                            fontSize: 12,
+                            color: "#334155",
+                            fontWeight: 700,
+                          }}
+                        >
+                          Start row
+                          <input
+                            type="number"
+                            min={1}
+                            value={hrmsRangeStart}
+                            onChange={(e) => setHrmsRangeStart(e.target.value)}
+                            style={{
+                              width: "100%",
+                              boxSizing: "border-box",
+                              marginTop: 6,
+                              padding: "10px 12px",
+                              border: "1px solid #bfdbfe",
+                              borderRadius: 10,
+                              fontSize: 14,
+                              outline: "none",
+                              background: "white",
+                            }}
+                          />
+                        </label>
+                        <label
+                          style={{
+                            fontSize: 12,
+                            color: "#334155",
+                            fontWeight: 700,
+                          }}
+                        >
+                          End row
+                          <input
+                            type="number"
+                            min={1}
+                            value={hrmsRangeEnd}
+                            onChange={(e) => setHrmsRangeEnd(e.target.value)}
+                            style={{
+                              width: "100%",
+                              boxSizing: "border-box",
+                              marginTop: 6,
+                              padding: "10px 12px",
+                              border: "1px solid #bfdbfe",
+                              borderRadius: 10,
+                              fontSize: 14,
+                              outline: "none",
+                              background: "white",
+                            }}
+                          />
+                        </label>
+                        <div
+                          style={{
+                            alignSelf: "end",
+                            fontSize: 12,
+                            color: "#475569",
+                            padding: "10px 0",
+                          }}
+                        >
+                          Loads rows {Math.max(1, Number(hrmsRangeStart) || 1)}-
+                          {Math.max(
+                            Math.max(1, Number(hrmsRangeStart) || 1),
+                            Number(hrmsRangeEnd) || 1,
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    <p
+                      style={{
+                        margin: hrmsLoadMode === "range" ? "8px 0 0" : 0,
+                        color: "#64748b",
+                        fontSize: 12,
+                      }}
+                    >
+                      Count is exact when MDM API returns total metadata. If the
+                      source only returns one page, this shows rows returned by
+                      that source.
+                    </p>
+                  </div>
+
                   {/* Load Button */}
                   <div style={{ textAlign: "center" }}>
                     <button
@@ -6662,17 +7124,28 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 {/* Search and Selection Controls - Fixed Header */}
                 <div
                   style={{
-                    padding: "16px 24px",
+                    display: hrmsImportStep === "employees" ? "block" : "none",
+                    padding: "18px 24px 14px",
                     borderBottom: "1px solid #e5e7eb",
                     flexShrink: 0,
+                    background: "#ffffff",
                   }}
                 >
                   {/* Search box */}
-                  <div style={{ position: "relative", marginBottom: "16px" }}>
+                  <div
+                    style={{
+                      position: "relative",
+                      marginBottom: "16px",
+                      padding: "14px",
+                      border: "1px solid #e5e7eb",
+                      borderRadius: 14,
+                      background: "#f8fafc",
+                    }}
+                  >
                     <span
                       style={{
                         position: "absolute",
-                        left: "12px",
+                        left: "26px",
                         top: "50%",
                         transform: "translateY(-50%)",
                         color: "#9ca3af",
@@ -6696,11 +7169,12 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       style={{
                         width: "100%",
                         padding: "12px 12px 12px 40px",
-                        border: "1px solid #d1d5db",
-                        borderRadius: "8px",
+                        border: "1px solid #d7deea",
+                        borderRadius: "10px",
                         fontSize: "14px",
                         outline: "none",
                         boxSizing: "border-box",
+                        background: "white",
                       }}
                     />
                   </div>
@@ -6714,12 +7188,12 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       flexWrap: "wrap",
                       marginBottom: "10px",
                       padding: "8px 10px",
-                      background: "#f5f3ff",
-                      border: "1px solid #ede9fe",
-                      borderRadius: 8,
+                      background: "#fff7ed",
+                      border: "1px solid #fed7aa",
+                      borderRadius: 12,
                     }}
                   >
-                    <span style={{ fontSize: 12, fontWeight: 600, color: "#6d28d9" }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "#c2410c" }}>
                       💾 {getText("Preset", "प्रीसेट", "प्रीसेट")}
                     </span>
                     <select
@@ -6819,8 +7293,12 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     <span
                       style={{
                         fontSize: "14px",
-                        fontWeight: "500",
+                        fontWeight: "600",
                         color: "#374151",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        flexWrap: "wrap",
                       }}
                     >
                       {getText("Selected", "निवडले", "निवडले")}:{" "}
@@ -6828,6 +7306,65 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         {selectedEmployees.length}
                       </span>{" "}
                       / {hrmsFiltered.length}
+                      {hrmsLoadMeta && (
+                        <span
+                          style={{
+                            fontSize: 12,
+                            color: "#1d4ed8",
+                            background: "#eff6ff",
+                            border: "1px solid #bfdbfe",
+                            borderRadius: 9999,
+                            padding: "4px 10px",
+                          }}
+                        >
+                          Total {hrmsLoadMeta.totalAvailable}
+                        </span>
+                      )}
+                      {hrmsLoadMeta && (
+                        <span
+                          style={{
+                            fontSize: 12,
+                            color: "#475569",
+                            background: "#f8fafc",
+                            border: "1px solid #e2e8f0",
+                            borderRadius: 9999,
+                            padding: "4px 10px",
+                          }}
+                        >
+                          Loaded {hrmsLoadMeta.loadedCount}
+                          {hrmsLoadMeta.loadMode === "range" &&
+                          hrmsLoadMeta.rangeStart &&
+                          hrmsLoadMeta.rangeEnd
+                            ? ` (${hrmsLoadMeta.rangeStart}-${hrmsLoadMeta.rangeEnd})`
+                            : ""}
+                        </span>
+                      )}
+                      <span
+                        style={{
+                          fontSize: 12,
+                          color: "#64748b",
+                          background: "#f8fafc",
+                          border: "1px solid #e2e8f0",
+                          borderRadius: 9999,
+                          padding: "4px 10px",
+                        }}
+                      >
+                        Ready {hrmsSelectableCodes.length}
+                      </span>
+                      {hrmsImportedCount > 0 && (
+                        <span
+                          style={{
+                            fontSize: 12,
+                            color: "#166534",
+                            background: "#ecfdf5",
+                            border: "1px solid #bbf7d0",
+                            borderRadius: 9999,
+                            padding: "4px 10px",
+                          }}
+                        >
+                          Imported {hrmsImportedCount}
+                        </span>
+                      )}
                     </span>
                     <div
                       style={{
@@ -6838,75 +7375,59 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       }}
                     >
                       <button
-                        onClick={() => setShowColPicker((v) => !v)}
-                        style={{
-                          padding: "8px 12px",
-                          background: "white",
-                          border: "1px solid #d1d5db",
-                          borderRadius: 6,
-                          fontSize: 13,
-                          cursor: "pointer",
-                          color: "#374151",
+                        onClick={() => {
+                          setHrmsEmployees([]);
+                          setSelectedEmployees([]);
+                          setHrmsSearchQuery("");
+                          setHrmsImportStep("employees");
                         }}
+                        style={hrmsToolbarButtonStyle(false)}
+                      >
+                        Change load
+                      </button>
+                      <button
+                        onClick={() => setShowColPicker((v) => !v)}
+                        style={hrmsToolbarButtonStyle(showColPicker)}
                       >
                         🧩 {getText("Columns", "स्तंभ", "स्तंभ")} (
                         {selectedCols.length})
                       </button>
                       <button
                         onClick={() => setShowMapping((v) => !v)}
-                        style={{
-                          padding: "8px 12px",
-                          background: "white",
-                          border: "1px solid #d1d5db",
-                          borderRadius: 6,
-                          fontSize: 13,
-                          cursor: "pointer",
-                          color: "#374151",
-                        }}
+                        style={hrmsToolbarButtonStyle(showMapping)}
                       >
                         🔗 {getText("Field Mapping", "फील्ड मॅपिंग", "फील्ड मॅपिंग")}
                       </button>
                       <button
                         onClick={() => setShowPreview((v) => !v)}
-                        style={{
-                          padding: "8px 12px",
-                          background: "white",
-                          border: "1px solid #d1d5db",
-                          borderRadius: 6,
-                          fontSize: 13,
-                          cursor: "pointer",
-                          color: "#374151",
-                        }}
+                        style={hrmsToolbarButtonStyle(showPreview)}
                       >
                         👁 {getText("Preview", "पूर्वावलोकन", "पूर्वावलोकन")}
                       </button>
                       <button
                         onClick={() => {
-                          const codes = hrmsFiltered
-                            .map((e) => e.employeeCode)
-                            .filter((c) => c && !isImported(c));
                           setSelectedEmployees(
-                            selectedEmployees.length === codes.length &&
-                              codes.length > 0
+                            hrmsAllSelectableSelected &&
+                              hrmsSelectableCodes.length > 0
                               ? []
-                              : codes,
+                              : hrmsSelectableCodes,
                           );
                         }}
                         style={{
-                          padding: "8px 16px",
-                          backgroundColor: "#7c3aed",
+                          padding: "9px 16px",
+                          backgroundColor: hrmsAllSelectableSelected
+                            ? "#ea580c"
+                            : "#f97316",
                           color: "white",
                           border: "none",
-                          borderRadius: "6px",
+                          borderRadius: "10px",
                           fontSize: "14px",
-                          fontWeight: "500",
+                          fontWeight: "600",
                           cursor: "pointer",
+                          boxShadow: "0 8px 18px rgba(249, 115, 22, 0.18)",
                         }}
                       >
-                        {selectedEmployees.length ===
-                          hrmsFiltered.filter(
-                            (e) => e.employeeCode && !isImported(e.employeeCode),
-                          ).length && selectedEmployees.length > 0
+                        {hrmsAllSelectableSelected && selectedEmployees.length > 0
                           ? getText("✓ Deselect All", "✓ सर्व अनिवडा", "✓ सर्व अनिवडा")
                           : getText("Select All", "सर्व निवडा", "सर्व निवडा")}
                       </button>
@@ -6918,10 +7439,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     <div
                       style={{
                         border: "1px solid #e5e7eb",
-                        borderRadius: 8,
-                        padding: 12,
+                        borderRadius: 12,
+                        padding: 14,
                         marginBottom: 12,
-                        background: "#f9fafb",
+                        background: "#f8fafc",
                       }}
                     >
                       <div
@@ -6940,11 +7461,93 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       </div>
                       <div
                         style={{
+                          display: "grid",
+                          gridTemplateColumns: "minmax(220px, 1fr) auto",
+                          gap: 10,
+                          alignItems: "center",
+                          marginBottom: 12,
+                        }}
+                      >
+                        <div style={{ position: "relative" }}>
+                          <span
+                            style={{
+                              position: "absolute",
+                              left: 12,
+                              top: "50%",
+                              transform: "translateY(-50%)",
+                              color: "#94a3b8",
+                              fontSize: 13,
+                              fontWeight: 700,
+                              pointerEvents: "none",
+                            }}
+                          >
+                            Search
+                          </span>
+                          <input
+                            type="text"
+                            value={hrmsColumnSearch}
+                            onChange={(e) =>
+                              setHrmsColumnSearch(e.target.value)
+                            }
+                            placeholder="Search columns by field name..."
+                            style={{
+                              width: "100%",
+                              boxSizing: "border-box",
+                              padding: "10px 40px 10px 64px",
+                              border: "1px solid #d7deea",
+                              borderRadius: 12,
+                              background: "white",
+                              color: "#111827",
+                              fontSize: 13,
+                              outline: "none",
+                            }}
+                          />
+                          {hrmsColumnSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setHrmsColumnSearch("")}
+                              style={{
+                                position: "absolute",
+                                right: 8,
+                                top: "50%",
+                                transform: "translateY(-50%)",
+                                border: "none",
+                                background: "#f1f5f9",
+                                color: "#475569",
+                                borderRadius: 999,
+                                width: 24,
+                                height: 24,
+                                cursor: "pointer",
+                                lineHeight: "24px",
+                                fontSize: 12,
+                              }}
+                              aria-label="Clear column search"
+                            >
+                              x
+                            </button>
+                          )}
+                        </div>
+                        <span
+                          style={{
+                            fontSize: 12,
+                            color: "#64748b",
+                            fontWeight: 700,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {hrmsVisibleFields.length} of {hrmsFields.length}{" "}
+                          fields
+                        </span>
+                      </div>
+                      <div
+                        className="hrms-modal-scroll"
+                        style={{
                           display: "flex",
                           flexWrap: "wrap",
                           gap: 10,
-                          maxHeight: 140,
+                          maxHeight: 156,
                           overflowY: "auto",
+                          paddingRight: 4,
                         }}
                       >
                         {hrmsFields.length === 0 ? (
@@ -6955,17 +7558,42 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               "फील्ड शोधण्यासाठी कर्मचारी लोड करा.",
                             )}
                           </span>
+                        ) : hrmsVisibleFields.length === 0 ? (
+                          <span
+                            style={{
+                              fontSize: 12,
+                              color: "#64748b",
+                              background: "white",
+                              border: "1px dashed #cbd5e1",
+                              borderRadius: 12,
+                              padding: "12px 14px",
+                              width: "100%",
+                              textAlign: "center",
+                            }}
+                          >
+                            No columns match "{hrmsColumnSearch}".
+                          </span>
                         ) : (
-                          hrmsFields.map((f) => (
+                          hrmsVisibleFields.map((f) => (
                             <label
                               key={f}
                               style={{
                                 display: "flex",
                                 alignItems: "center",
-                                gap: 4,
+                                gap: 6,
                                 fontSize: 12,
                                 color: "#374151",
                                 cursor: "pointer",
+                                padding: "6px 10px",
+                                borderRadius: 9999,
+                                background: selectedCols.includes(f)
+                                  ? "#ffedd5"
+                                  : "white",
+                                border: `1px solid ${
+                                  selectedCols.includes(f)
+                                    ? "#fdba74"
+                                    : "#e5e7eb"
+                                }`,
                               }}
                             >
                               <input
@@ -6992,10 +7620,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     <div
                       style={{
                         border: "1px solid #e5e7eb",
-                        borderRadius: 8,
-                        padding: 12,
+                        borderRadius: 12,
+                        padding: 14,
                         marginBottom: 12,
-                        background: "#f9fafb",
+                        background: "#f8fafc",
                       }}
                     >
                       <div
@@ -7025,9 +7653,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             <label
                               style={{
                                 fontSize: 11,
+                                fontWeight: 600,
                                 color: "#6b7280",
                                 display: "block",
-                                marginBottom: 2,
+                                marginBottom: 4,
                               }}
                             >
                               {t.label}
@@ -7042,10 +7671,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               }
                               style={{
                                 width: "100%",
-                                padding: "6px",
+                                padding: "8px 10px",
                                 border: "1px solid #d1d5db",
-                                borderRadius: 6,
+                                borderRadius: 10,
                                 fontSize: 12,
+                                background: "white",
                               }}
                             >
                               <option value="">
@@ -7143,11 +7773,14 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 </div>
 
                 {/* Employee List - Scrollable Area */}
+                {hrmsImportStep === "employees" && (
                 <div
+                  className="hrms-modal-scroll"
                   style={{
                     flex: "1 1 auto",
                     overflowY: "auto",
-                    padding: "0",
+                    overflowX: "auto",
+                    padding: "0 24px 16px",
                     minHeight: "200px",
                     backgroundColor: "#f9fafb",
                   }}
@@ -7165,11 +7798,25 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       color: "#6b7280",
                       textTransform: "uppercase",
                       whiteSpace: "nowrap",
+                      position: "sticky",
+                      top: 0,
+                      zIndex: 1,
+                      backgroundColor: "#f8fafc",
                     };
                     return (
-                      <table
+                      <div
+                        style={{
+                          border: "1px solid #e5e7eb",
+                          borderRadius: 14,
+                          overflow: "hidden",
+                          backgroundColor: "white",
+                          minWidth: "100%",
+                        }}
+                      >
+                        <table
                         style={{
                           width: "100%",
+                          minWidth: 760,
                           borderCollapse: "collapse",
                           backgroundColor: "white",
                         }}
@@ -7177,25 +7824,22 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         <thead>
                           <tr
                             style={{
-                              backgroundColor: "#f9fafb",
+                              backgroundColor: "#f8fafc",
                               borderBottom: "2px solid #e5e7eb",
                             }}
                           >
                             <th style={{ ...thStyle, width: "40px" }}></th>
                             {cols.map((col) => (
-                              <th key={col} style={thStyle}>
+                                  <th key={col} style={thStyle}>
                                 {col === "__name"
                                   ? getText("Name", "नाव", "नाव")
                                   : col}
                               </th>
                             ))}
-                            <th style={{ ...thStyle, minWidth: 160 }}>
-                              {getText("Role", "रोल", "रोल")}
-                            </th>
                           </tr>
                         </thead>
                         <tbody>
-                          {hrmsPaged.map((employee, ri) => {
+                          {hrmsFiltered.map((employee, ri) => {
                             const id = employee.employeeCode;
                             const imported = isImported(id);
                             const isSel = selectedEmployees.includes(id);
@@ -7217,7 +7861,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                                   setSelectedEmployees((prev) =>
                                     prev.includes(id)
                                       ? prev.filter((x) => x !== id)
-                                      : [...prev, id],
+                                      : Array.from(new Set([...prev, id])),
                                   );
                                 }}
                               >
@@ -7226,12 +7870,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
                                     type="checkbox"
                                     disabled={!id || imported}
                                     checked={isSel}
+                                    onClick={(e) => e.stopPropagation()}
                                     onChange={(e) => {
                                       e.stopPropagation();
                                       if (!id || imported) return;
                                       setSelectedEmployees((prev) =>
                                         e.target.checked
-                                          ? [...prev, id]
+                                          ? Array.from(new Set([...prev, id]))
                                           : prev.filter((x) => x !== id),
                                       );
                                     }}
@@ -7284,53 +7929,12 @@ const UserManagement: React.FC<UserManagementProps> = ({
                                     )}
                                   </td>
                                 ))}
-                                <td
-                                  style={{ padding: "8px" }}
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  {isSel ? (
-                                    <select
-                                      value={roleByEmp[id] || ""}
-                                      onChange={(e) =>
-                                        setRoleByEmp((m) => ({
-                                          ...m,
-                                          [id]: e.target.value,
-                                        }))
-                                      }
-                                      style={{
-                                        padding: "6px",
-                                        border: "1px solid #d1d5db",
-                                        borderRadius: 6,
-                                        fontSize: 12,
-                                        minWidth: 150,
-                                      }}
-                                    >
-                                      <option value="">
-                                        {getText(
-                                          "(use global)",
-                                          "(जागतिक)",
-                                          "(जागतिक)",
-                                        )}
-                                      </option>
-                                      {roles.map((role) => (
-                                        <option key={role._id} value={role._id}>
-                                          {role.name}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  ) : (
-                                    <span
-                                      style={{ fontSize: 12, color: "#d1d5db" }}
-                                    >
-                                      —
-                                    </span>
-                                  )}
-                                </td>
                               </tr>
                             );
                           })}
                         </tbody>
-                      </table>
+                        </table>
+                      </div>
                     );
                   })()}
                   {hrmsFiltered.length === 0 && (
@@ -7349,9 +7953,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     </div>
                   )}
                 </div>
+                )}
 
                 {/* Pagination */}
-                {hrmsFiltered.length > HRMS_PAGE_SIZE && (
+                {false && hrmsFiltered.length > HRMS_PAGE_SIZE && (
                   <div
                     style={{
                       display: "flex",
@@ -7408,106 +8013,300 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   </div>
                 )}
 
-                {/* Role and Project Assignment - Fixed Footer */}
-                {selectedEmployees.length > 0 && (
+                {/* Project Assignment - Fixed Footer */}
+                {hrmsImportStep === "projects" && selectedEmployees.length > 0 && (
                   <div
+                    className="hrms-modal-scroll"
                     style={{
-                      padding: "16px 24px",
-                      borderTop: "2px solid #e5e7eb",
-                      backgroundColor: "#fefce8",
-                      flexShrink: 0,
-                      maxHeight: "35vh",
+                      padding: "24px",
+                      borderTop: "1px solid #e2e8f0",
+                      backgroundColor: "#f8fafc",
+                      flex: "1 1 auto",
+                      minHeight: 0,
                       overflowY: "auto",
-                    }}
-                  >
-                    <div style={{ marginBottom: "12px" }}>
-                      <label
-                        style={{
-                          display: "block",
-                          fontSize: "14px",
-                          fontWeight: "600",
-                          color: "#854d0e",
-                          marginBottom: "6px",
-                        }}
-                      >
-                        📋{" "}
-                        {getText(
-                          "Assign Role to Selected Employees",
-                          "निवडलेल्या कर्मचाऱ्यांना रोल नियुक्त करा",
-                          "निवडलेल्या कर्मचाऱ्यांना रोल नियुक्त करा",
-                        )}{" "}
-                        <span style={{ color: "#ef4444" }}>*</span>
-                      </label>
-                      <select
-                        value={selectedRole}
-                        onChange={(e) => setSelectedRole(e.target.value)}
-                        style={{
-                          width: "100%",
-                          padding: "10px",
-                          border: "2px solid #ca8a04",
-                          borderRadius: "6px",
-                          fontSize: "14px",
-                          outline: "none",
-                          backgroundColor: "white",
-                          fontWeight: "500",
-                        }}
-                      >
-                        <option value="">
-                          {getText(
-                            "⚠️ Select Role for All Selected Employees",
-                            "⚠️ सर्व निवडलेल्या कर्मचाऱ्यांसाठी रोल निवडा",
-                            "⚠️ सर्व निवडलेल्या कर्मचाऱ्यांसाठी रोल निवडा",
-                          )}
-                        </option>
-                        {roles.map((role) => (
-                          <option key={role._id} value={role._id}>
-                            {role.name}
-                          </option>
-                        ))}
-                      </select>
-                      <p
-                        style={{
-                          fontSize: "12px",
-                          color: "#92400e",
-                          marginTop: "6px",
-                          fontStyle: "italic",
-                        }}
-                      >
-                        💡{" "}
-                        {getText(
-                          "Tip: Employees with the same HRMS code (designation) should typically get the same role.",
-                          "टीप: समान HRMS कोड (पदनाम) असलेल्या कर्मचाऱ्यांना सामान्यतः समान रोल मिळावी.",
-                          "टीप: समान HRMS कोड (पदनाम) असलेल्या कर्मचाऱ्यांना सामान्यतः समान रोल मिळावी.",
-                        )}
-                      </p>
-                    </div>
-
+                  }}
+                >
                     {/* Project Assignment */}
-                    <div style={{ marginTop: "16px" }}>
+                    <div
+                      style={{
+                        border: "1px solid #dbeafe",
+                        borderRadius: 16,
+                        background:
+                          "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
+                        boxShadow: "0 12px 28px rgba(37, 99, 235, 0.08)",
+                        padding: 16,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 12,
+                          marginBottom: 10,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <div>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 10,
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontSize: 15,
+                                color: "#0f172a",
+                                fontWeight: 800,
+                              }}
+                            >
+                              Assign Projects
+                            </span>
+                            <span
+                              style={{
+                                fontSize: 12,
+                                color: "#2563eb",
+                                background: "#eff6ff",
+                                border: "1px solid #bfdbfe",
+                                borderRadius: 999,
+                                padding: "4px 10px",
+                                fontWeight: 700,
+                              }}
+                            >
+                              {selectedEmployees.length} employee
+                              {selectedEmployees.length === 1 ? "" : "s"} ready
+                            </span>
+                          </div>
+                          <div
+                            style={{
+                              color: "#64748b",
+                              fontSize: 12,
+                              marginTop: 4,
+                            }}
+                          >
+                            Choose projects before import. Listing opens with
+                            selected project filter.
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: "#2563eb",
+                            background: "#eff6ff",
+                            border: "1px solid #bfdbfe",
+                            borderRadius: 999,
+                            padding: "4px 10px",
+                            fontWeight: 600,
+                          }}
+                        >
+                          Roles auto-assigned by Role Mapping Rules
+                        </div>
+                      </div>
                       <label
                         style={{
-                          display: "block",
+                          display: "none",
                           fontSize: "14px",
                           fontWeight: "600",
-                          color: "#854d0e",
+                          color: "#334155",
                           marginBottom: "6px",
                         }}
                       >
                         🏢{" "}
                         {getText(
-                          "Assign Projects (Optional)",
+                          "Assign Projects",
                           "प्रकल्प नियुक्त करा (वैकल्पिक)",
                           "प्रकल्प नियुक्त करा (वैकल्पिक)",
                         )}
                       </label>
+                      {selectedHrmsProjects.length > 0 && (
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 8,
+                            flexWrap: "wrap",
+                            marginBottom: 12,
+                          }}
+                        >
+                          {selectedHrmsProjects.map((project) => (
+                            <span
+                              key={project._id}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 8,
+                                padding: "6px 9px 6px 10px",
+                                borderRadius: 999,
+                                border: "1px solid #bfdbfe",
+                                background: "#eff6ff",
+                                color: "#1e3a8a",
+                                fontSize: 12,
+                                fontWeight: 700,
+                              }}
+                            >
+                              {project.name}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setSelectedProjects((prev) =>
+                                    prev.filter((id) => id !== project._id),
+                                  )
+                                }
+                                style={{
+                                  border: "none",
+                                  background: "#dbeafe",
+                                  color: "#1e40af",
+                                  borderRadius: 999,
+                                  width: 18,
+                                  height: 18,
+                                  cursor: "pointer",
+                                  lineHeight: "18px",
+                                  fontSize: 12,
+                                }}
+                                aria-label={`Remove ${project.name}`}
+                              >
+                                x
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                       <div
                         style={{
-                          border: "2px solid #ca8a04",
-                          borderRadius: "6px",
+                          position: "relative",
+                          marginBottom: "8px",
+                        }}
+                      >
+                        <input
+                          type="text"
+                          value={hrmsProjectSearch}
+                          onChange={(e) => setHrmsProjectSearch(e.target.value)}
+                          placeholder="Search project by name, code, or status..."
+                          style={{
+                            width: "100%",
+                            boxSizing: "border-box",
+                            padding: "12px 42px 12px 14px",
+                            border: "1px solid #dbeafe",
+                            borderRadius: "12px",
+                            background: "white",
+                            color: "#111827",
+                            fontSize: "14px",
+                            outline: "none",
+                            boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)",
+                          }}
+                        />
+                        {hrmsProjectSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setHrmsProjectSearch("")}
+                            style={{
+                              position: "absolute",
+                              right: 8,
+                              top: "50%",
+                              transform: "translateY(-50%)",
+                              border: "none",
+                              background: "#f1f5f9",
+                              color: "#475569",
+                              borderRadius: 999,
+                              width: 24,
+                              height: 24,
+                              cursor: "pointer",
+                              lineHeight: "24px",
+                            }}
+                            aria-label="Clear project search"
+                          >
+                            x
+                          </button>
+                        )}
+                      </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          gap: 10,
+                          marginBottom: 10,
+                          color: "#64748b",
+                          fontSize: 12,
+                          fontWeight: 600,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <span>
+                          {hrmsFilteredProjects.length} of {projects.length}{" "}
+                          projects
+                        </span>
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 8,
+                            alignItems: "center",
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <span>
+                            {selectedProjects.length} selected
+                            {hrmsFilteredProjects.length > 0
+                              ? `, ${selectedVisibleHrmsProjectCount} visible`
+                              : ""}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={toggleVisibleHrmsProjects}
+                            disabled={visibleHrmsProjectIds.length === 0}
+                            style={{
+                              border: "1px solid #bfdbfe",
+                              background: "white",
+                              color: "#1d4ed8",
+                              borderRadius: 999,
+                              padding: "5px 10px",
+                              fontSize: 12,
+                              fontWeight: 700,
+                              cursor:
+                                visibleHrmsProjectIds.length === 0
+                                  ? "not-allowed"
+                                  : "pointer",
+                              opacity:
+                                visibleHrmsProjectIds.length === 0 ? 0.5 : 1,
+                            }}
+                          >
+                            {allVisibleHrmsProjectsSelected
+                              ? "Clear visible"
+                              : "Select visible"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedProjects([])}
+                            disabled={selectedProjects.length === 0}
+                            style={{
+                              border: "1px solid #e5e7eb",
+                              background: "white",
+                              color: "#475569",
+                              borderRadius: 999,
+                              padding: "5px 10px",
+                              fontSize: 12,
+                              fontWeight: 700,
+                              cursor:
+                                selectedProjects.length === 0
+                                  ? "not-allowed"
+                                  : "pointer",
+                              opacity: selectedProjects.length === 0 ? 0.5 : 1,
+                            }}
+                          >
+                            Clear all
+                          </button>
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          border: "1px solid #dbeafe",
+                          borderRadius: "14px",
                           backgroundColor: "white",
-                          maxHeight: "120px",
+                          maxHeight: "420px",
                           overflowY: "auto",
-                          padding: "8px",
+                          padding: "10px",
                         }}
                       >
                         {projects.length === 0 ? (
@@ -7525,25 +8324,53 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               "कोणतेही प्रकल्प उपलब्ध नाहीत",
                             )}
                           </div>
+                        ) : hrmsFilteredProjects.length === 0 ? (
+                          <div
+                            style={{
+                              padding: "18px 12px",
+                              textAlign: "center",
+                              color: "#64748b",
+                              fontSize: "13px",
+                            }}
+                          >
+                            No projects match this search.
+                          </div>
                         ) : (
-                          projects.map((project) => (
+                          hrmsFilteredProjects.map((project) => (
                             <label
                               key={project._id}
                               style={{
                                 display: "flex",
                                 alignItems: "center",
-                                padding: "8px",
+                                gap: 12,
+                                padding: "12px 14px",
+                                marginBottom: 8,
                                 cursor: "pointer",
-                                borderRadius: "4px",
-                                transition: "background-color 0.2s",
+                                borderRadius: "12px",
+                                border: selectedProjects.includes(project._id)
+                                  ? "1px solid #93c5fd"
+                                  : "1px solid #e2e8f0",
+                                backgroundColor: selectedProjects.includes(
+                                  project._id,
+                                )
+                                  ? "#eff6ff"
+                                  : "white",
+                                boxShadow: selectedProjects.includes(project._id)
+                                  ? "0 8px 18px rgba(37, 99, 235, 0.08)"
+                                  : "none",
+                                transition: "all 0.2s ease",
                               }}
                               onMouseEnter={(e) =>
                                 (e.currentTarget.style.backgroundColor =
-                                  "#fef9c3")
+                                  selectedProjects.includes(project._id)
+                                    ? "#eff6ff"
+                                    : "#f8fafc")
                               }
                               onMouseLeave={(e) =>
                                 (e.currentTarget.style.backgroundColor =
-                                  "transparent")
+                                  selectedProjects.includes(project._id)
+                                    ? "#eff6ff"
+                                    : "white")
                               }
                             >
                               <input
@@ -7564,18 +8391,18 @@ const UserManagement: React.FC<UserManagementProps> = ({
                                   }
                                 }}
                                 style={{
-                                  width: "16px",
-                                  height: "16px",
-                                  marginRight: "10px",
+                                  width: "18px",
+                                  height: "18px",
                                   cursor: "pointer",
+                                  accentColor: "#2563eb",
                                 }}
                               />
                               <div style={{ flex: 1 }}>
                                 <div
                                   style={{
                                     fontSize: "14px",
-                                    fontWeight: "500",
-                                    color: "#374151",
+                                    fontWeight: "700",
+                                    color: "#0f172a",
                                   }}
                                 >
                                   {project.name}
@@ -7596,7 +8423,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               <span
                                 style={{
                                   fontSize: "11px",
-                                  padding: "2px 8px",
+                                  padding: "4px 9px",
                                   borderRadius: "12px",
                                   backgroundColor:
                                     project.status === "active"
@@ -7606,7 +8433,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                                     project.status === "active"
                                       ? "#166534"
                                       : "#991b1b",
-                                  fontWeight: "500",
+                                  fontWeight: "700",
                                 }}
                               >
                                 {project.status}
@@ -7618,14 +8445,14 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       <p
                         style={{
                           fontSize: "12px",
-                          color: "#92400e",
+                          color: "#64748b",
                           marginTop: "6px",
                           fontStyle: "italic",
                         }}
                       >
                         💡{" "}
                         {getText(
-                          "Select one or more projects to assign to the selected employees.",
+                          "Select projects for assignment. In single-project mode, the current project is used automatically.",
                           "निवडलेल्या कर्मचाऱ्यांना नियुक्त करण्यासाठी एक किंवा अधिक प्रकल्प निवडा.",
                           "निवडलेल्या कर्मचाऱ्यांना नियुक्त करण्यासाठी एक किंवा अधिक प्रकल्प निवडा.",
                         )}
@@ -7645,23 +8472,16 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     gap: "12px",
                     flexShrink: 0,
                     backgroundColor: "white",
+                    boxShadow: "0 -10px 24px rgba(15, 23, 42, 0.06)",
                   }}
                 >
                   <button
-                    onClick={() => {
-                      setShowHRMSModal(false);
-                      setHrmsEmployees([]);
-                      setSelectedEmployees([]);
-                      setSelectedRole("");
-                      setSelectedProjects([]);
-                      setHrmsEmployeeCodes("");
-                      setHrmsSearchQuery("");
-                    }}
+                    onClick={closeHrmsModal}
                     disabled={saving}
                     style={{
                       padding: "10px 20px",
                       border: "1px solid #d1d5db",
-                      borderRadius: "6px",
+                      borderRadius: "10px",
                       backgroundColor: "white",
                       color: "#374151",
                       fontSize: "14px",
@@ -7672,33 +8492,76 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   >
                     {getText("Cancel", "रद्द करा", "रद्द करा")}
                   </button>
+                  {hrmsImportStep === "projects" && hrmsRequiresProjectSelection && (
+                    <div
+                      style={{
+                        color: "#b45309",
+                        background: "#fffbeb",
+                        border: "1px solid #fde68a",
+                        borderRadius: 999,
+                        padding: "7px 12px",
+                        fontSize: 12,
+                        fontWeight: 700,
+                      }}
+                    >
+                      Select project to enable import
+                    </div>
+                  )}
+                  {hrmsImportStep === "projects" && (
+                    <button
+                      type="button"
+                      onClick={() => setHrmsImportStep("employees")}
+                      disabled={saving}
+                      style={{
+                        padding: "10px 18px",
+                        border: "1px solid #d1d5db",
+                        borderRadius: "10px",
+                        backgroundColor: "white",
+                        color: "#374151",
+                        fontSize: "14px",
+                        fontWeight: "600",
+                        cursor: saving ? "not-allowed" : "pointer",
+                        opacity: saving ? 0.5 : 1,
+                      }}
+                    >
+                      Back to employees
+                    </button>
+                  )}
                   <button
-                    onClick={handleConfirmHRMS}
-                    disabled={
-                      saving || selectedEmployees.length === 0 || !selectedRole
+                    onClick={
+                      hrmsImportStep === "employees"
+                        ? () => setHrmsImportStep("projects")
+                        : handleConfirmHRMS
                     }
+                    disabled={hrmsPrimaryDisabled}
                     style={{
                       padding: "10px 32px",
                       border: "none",
-                      borderRadius: "6px",
+                      borderRadius: "10px",
                       backgroundColor:
-                        selectedEmployees.length === 0 ||
-                        !selectedRole ||
-                        saving
+                        hrmsPrimaryDisabled
                           ? "#d1d5db"
-                          : "#f97316",
+                          : hrmsImportStep === "employees"
+                            ? "#2563eb"
+                            : "#f97316",
                       color: "white",
                       fontSize: "14px",
-                      fontWeight: "500",
+                      fontWeight: "600",
+                      boxShadow:
+                        hrmsPrimaryDisabled
+                          ? "none"
+                          : hrmsImportStep === "employees"
+                            ? "0 10px 20px rgba(37, 99, 235, 0.22)"
+                            : "0 10px 20px rgba(249, 115, 22, 0.22)",
                       cursor:
-                        selectedEmployees.length === 0 ||
-                        !selectedRole ||
-                        saving
+                        hrmsPrimaryDisabled
                           ? "not-allowed"
                           : "pointer",
                     }}
                   >
-                    {saving
+                    {hrmsImportStep === "employees"
+                      ? `Next: Assign Projects (${selectedEmployees.length})`
+                      : saving
                       ? getText("Adding...", "जोडत आहे...", "जोडत आहे...")
                       : getText(
                           `Add ${selectedEmployees.length} User(s)`,
@@ -7818,7 +8681,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   border: "none",
                   background: "transparent",
                   cursor: "pointer",
-                  borderRadius: "6px",
+                      borderRadius: "10px",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -8280,7 +9143,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     display: "block",
                     fontSize: "14px",
-                    fontWeight: "500",
+                      fontWeight: "600",
                     color: "#374151",
                     marginBottom: "6px",
                   }}

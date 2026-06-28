@@ -523,6 +523,7 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
   const [view, setView] = useState<"list" | "edit">("list");
   const [edit, setEdit] = useState<EditState>(toEditState());
   const [saving, setSaving] = useState(false);
+  const [deletingSourceId, setDeletingSourceId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [testing, setTesting] = useState<number | null>(null);
   const [testResults, setTestResults] = useState<Record<number, MDMTestResult>>(
@@ -710,9 +711,16 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
 
   const handleDelete = async (s: MDMSource) => {
     if (!window.confirm(`Delete MDM source "${s.name}"?`)) return;
+    setDeletingSourceId(s._id);
+    setError("");
     const res = await deleteMDMSource(s._id);
-    if (res.success) loadSources();
-    else alert(res.error || "Failed to delete");
+    setDeletingSourceId(null);
+    if (res.success) {
+      setSources((current) => current.filter((source) => source._id !== s._id));
+      await loadSources();
+    } else {
+      setError(res.error || res.message || "Failed to delete MDM source");
+    }
   };
 
   const inputCls =
@@ -857,7 +865,8 @@ const MDMConfigModal: React.FC<MDMConfigModalProps> = ({
                             </button>
                             <button
                               onClick={() => handleDelete(s)}
-                              className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                              disabled={deletingSourceId === s._id}
+                              className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
                               title="Delete"
                             >
                               <TrashIcon className="w-4 h-4" />

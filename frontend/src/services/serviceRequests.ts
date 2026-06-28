@@ -10,6 +10,20 @@ export interface SrListParams {
   status?: string;
   assignedTo?: string;
   search?: string;
+  createdFrom?: string;
+  createdTo?: string;
+  updatedFrom?: string;
+  updatedTo?: string;
+  priority?: string;
+  wipFrom?: string;
+  wipTo?: string;
+  wipState?: string;
+  source?: string;
+  classification?: string;
+  categoryId?: string;
+  linkedIsrState?: string;
+  sortBy?: string;
+  sortOrder?: string;
   page?: number;
   limit?: number;
 }
@@ -30,6 +44,12 @@ export const serviceRequestApi = {
     api.get<SrListResponse>(base, { params }).then((r) => r.data),
   get: (id: string) => api.get(`${base}/${id}`).then((r) => r.data),
   create: (body: any) => api.post(base, body).then((r) => r.data),
+  activePriorities: (projectId?: string) =>
+    api
+      .get("/priorities/active", { params: { projectId } })
+      .then((r) => r.data),
+  projectStatuses: (projectId: string) =>
+    api.get(`/statuses/project/${projectId}`).then((r) => r.data),
 
   // Linked ISRs (PSR ↔ ISR)
   linkedIsrs: (psrId: string) =>

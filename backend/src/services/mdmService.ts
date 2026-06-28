@@ -63,6 +63,37 @@ const extractArray = (body: any): any[] => {
   return [body];
 };
 
+const pickNumber = (body: any, paths: string[][]): number | undefined => {
+  for (const path of paths) {
+    let cur = body;
+    for (const key of path) cur = cur?.[key];
+    const value =
+      typeof cur === "string" && cur.trim() !== "" ? Number(cur) : cur;
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return undefined;
+};
+
+const extractTotalCount = (body: any, fallback: number): number => {
+  if (!body || typeof body !== "object") return fallback;
+  return (
+    pickNumber(body, [
+      ["total"],
+      ["totalCount"],
+      ["total_count"],
+      ["totalRecords"],
+      ["recordsTotal"],
+      ["count"],
+      ["pagination", "total"],
+      ["pagination", "totalCount"],
+      ["meta", "total"],
+      ["meta", "totalCount"],
+      ["meta", "pagination", "total"],
+      ["meta", "pagination", "totalCount"],
+    ]) ?? fallback
+  );
+};
+
 /** Fire a single MDM API request. Never throws — returns a structured result. */
 export const callMdmApi = async (
   api: IMDMApi,
@@ -335,6 +366,7 @@ export const fetchEmployeesRawFromMDM = async (
   source: IMDMSource;
   rows: RawEmployeeRow[];
   fields: string[];
+  totalAvailable: number;
 } | null> => {
   const source = await resolveEmployeeSource(mdmSourceId);
   if (!source) return null;
@@ -371,6 +403,7 @@ export const fetchEmployeesRawFromMDM = async (
     _raw: flattenRecord(r),
     norm: normalizeEmployee(r),
   }));
+  const totalAvailable = extractTotalCount(response.data, rows.length);
 
   // Field union across a sample of rows (covers sparse columns).
   const fieldSet = new Set<string>();
@@ -380,7 +413,7 @@ export const fetchEmployeesRawFromMDM = async (
       fieldSet.add(k);
     }
   }
-  return { source, rows, fields: Array.from(fieldSet) };
+  return { source, rows, fields: Array.from(fieldSet), totalAvailable };
 };
 
 export const fetchEmployeesFromMDM = async (

@@ -1,5 +1,8 @@
 import { Request, Response } from "express";
+import mongoose from "mongoose";
+import MDMFieldConfig from "../models/MDMFieldConfig";
 import MDMSource from "../models/MDMSource";
+import { User } from "../models/User";
 import { callMdmApi, pickApiForDataType } from "../services/mdmService";
 
 /**
@@ -139,11 +142,26 @@ export const deleteMDMSource = async (
   res: Response,
 ): Promise<void> => {
   try {
-    const source = await MDMSource.findByIdAndDelete(req.params.id);
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      res.status(400).json({ success: false, error: "Invalid MDM source id" });
+      return;
+    }
+
+    const source = await MDMSource.findById(req.params.id);
     if (!source) {
       res.status(404).json({ success: false, error: "MDM source not found" });
       return;
     }
+
+    await Promise.all([
+      MDMFieldConfig.deleteMany({ mdmSourceId: source._id }),
+      User.updateMany(
+        { mdmSourceId: source._id },
+        { $unset: { mdmSourceId: "" } },
+      ),
+    ]);
+    await source.deleteOne();
+
     res.json({ success: true, message: "MDM source deleted" });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });

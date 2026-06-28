@@ -136,3 +136,5 @@ bitbucket-pipelines.yml
 # Backend uploaded files
 backend/uploads/tickets/*
 !backend/uploads/tickets/.gitkeep
+# Added by code-review-graph
+.code-review-graph/

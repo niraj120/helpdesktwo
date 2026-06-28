@@ -85,6 +85,53 @@ export interface SrBlockToggle {
   enabled: boolean;
 }
 
+export interface SrDetailStatusStep {
+  code: number;
+  label: string;
+  enabled: boolean;
+}
+
+export interface SrDetailCardConfig {
+  key:
+    | "sla"
+    | "wipCommitment"
+    | "pslAssignment"
+    | "parentStudent"
+    | "psrDetails"
+    | "lifecycleActions"
+    | "linkedIsr";
+  label: string;
+  enabled: boolean;
+  order: number;
+  width: "full" | "half" | "third";
+  requiredPermission?: string;
+}
+
+export interface SrDetailTabConfig {
+  key:
+    | "replies"
+    | "linkedisr"
+    | "notes"
+    | "pslcall"
+    | "history"
+    | "audit"
+    | "emails";
+  label: string;
+  enabled: boolean;
+  order: number;
+  requiredPermission?: string;
+}
+
+export interface SrDetailConfig {
+  statusProgress: {
+    enabled: boolean;
+    defaultOpen: boolean;
+    steps: SrDetailStatusStep[];
+  };
+  cards: SrDetailCardConfig[];
+  tabs: SrDetailTabConfig[];
+}
+
 /** Resolved (fully-defaulted) per-project SR configuration. */
 export interface SrConfig {
   enabled: boolean;
@@ -102,6 +149,7 @@ export interface SrConfig {
     prioritySchedule: SrBlockToggle;
     offlineReEntry: SrBlockToggle;
   };
+  psrDetail: SrDetailConfig;
   [key: string]: any; // forward-compat for later phases
 }
 

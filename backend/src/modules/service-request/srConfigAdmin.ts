@@ -31,6 +31,7 @@ export interface SrConfigPatch {
   email?: { enabled?: boolean; tatHours?: number; level2Hours?: number };
   ivr?: { enabled?: boolean };
   classifyChannels?: any[];
+  psrDetail?: any;
   blocks?: {
     assigneeEmails?: { enabled?: boolean };
     prioritySchedule?: { enabled?: boolean };
@@ -58,6 +59,7 @@ export async function updateSrConfigForProject(
   if (patch.ivr) sr.ivr = { ...(sr.ivr || {}), ...patch.ivr };
   if (Array.isArray(patch.classifyChannels))
     sr.classifyChannels = patch.classifyChannels;
+  if (patch.psrDetail) sr.psrDetail = patch.psrDetail;
   if (patch.blocks) sr.blocks = { ...(sr.blocks || {}), ...patch.blocks };
 
   // Seed the default classify channels the first time SR is enabled, so they
