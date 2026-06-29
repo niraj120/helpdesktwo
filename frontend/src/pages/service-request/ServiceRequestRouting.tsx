@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import SrPage from "../components/sr/SrPage";
-import { srButton } from "../utils/srTheme";
-import { useProjectContext } from "../contexts/ProjectContext";
-import { api } from "../utils/api";
-import { serviceRequestApi } from "../services/serviceRequests";
+import SrPage from "../../components/sr/SrPage";
+import { srButton } from "../../utils/srTheme";
+import { useProjectContext } from "../../contexts/ProjectContext";
+import { api } from "../../utils/api";
+import { serviceRequestApi } from "../../services/serviceRequests";
 
 interface ProjectOpt {
   _id: string;
@@ -192,8 +192,8 @@ const ServiceRequestRouting: React.FC<{
 
   const card: React.CSSProperties = {
     background: "#fff",
-    border: "1px solid #e7ebf3",
-    borderRadius: 14,
+    border: "1px solid #e2e8f0",
+    borderRadius: 16,
     boxShadow: "0 4px 18px rgba(15, 23, 42, 0.05)",
     padding: 20,
     marginBottom: 16,

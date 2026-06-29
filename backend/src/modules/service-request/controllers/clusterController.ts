@@ -3,8 +3,8 @@
  * Permission-gated on the routes (SR_CONFIG_MANAGE).
  */
 import { Response } from "express";
-import { AuthRequest } from "../middleware/auth";
-import { Cluster } from "../models/Cluster";
+import { AuthRequest } from "../../../middleware/auth";
+import { Cluster } from "../../../models/Cluster";
 
 export const listClusters = async (_req: AuthRequest, res: Response) => {
   try {

@@ -803,16 +803,16 @@ const MasterDataManagement = () => {
         alignItems: isMobile ? "flex-start" : "center",
         gap: "10px",
         padding: "6px 0",
-        borderBottom: "1px dashed #e5e7eb",
+        borderBottom: "1px dashed #e2e8f0",
       }}
     >
-      <span style={{ fontSize: "12px", color: "#667085", fontWeight: 600 }}>
+      <span style={{ fontSize: "12px", color: "#475569", fontWeight: 600 }}>
         {label}
       </span>
       <span
         style={{
           fontSize: "13px",
-          color: "#101828",
+          color: "#0f172a",
           textAlign: isMobile ? "left" : "right",
           width: isMobile ? "100%" : "auto",
           wordBreak: "break-word",
@@ -842,9 +842,9 @@ const MasterDataManagement = () => {
             gap: "6px",
             padding: "8px",
             border: "none",
-            background: "#dbeafe",
-            color: "#1e40af",
-            borderRadius: "6px",
+            background: "#eef2ff",
+            color: "#4f46e5",
+            borderRadius: "8px",
             cursor: "pointer",
             flex: isMobile ? "1 1 120px" : "0 0 auto",
           }}
@@ -865,7 +865,7 @@ const MasterDataManagement = () => {
             border: "none",
             background: "#fee2e2",
             color: "#991b1b",
-            borderRadius: "6px",
+            borderRadius: "8px",
             cursor: "pointer",
             flex: isMobile ? "1 1 120px" : "0 0 auto",
           }}
@@ -883,10 +883,11 @@ const MasterDataManagement = () => {
       <div
         key={item._id}
         style={{
-          background: "white",
-          border: "1px solid #E4E7EC",
-          borderRadius: "10px",
-          boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+          background: "#ffffff",
+          border: "1px solid #e2e8f0",
+          borderRadius: "16px",
+          boxShadow:
+            "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
           padding: "12px",
           overflow: "hidden",
         }}
@@ -1026,8 +1027,9 @@ const MasterDataManagement = () => {
                 style={{
                   width: "100%",
                   padding: "8px",
-                  border: "1px solid #ddd",
-                  borderRadius: "4px",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
+                  background: "#fff",
                 }}
                 required
               />
@@ -1051,8 +1053,9 @@ const MasterDataManagement = () => {
                 style={{
                   width: "100%",
                   padding: "8px",
-                  border: "1px solid #ddd",
-                  borderRadius: "4px",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
+                  background: "#fff",
                 }}
                 required
               />
@@ -1079,8 +1082,9 @@ const MasterDataManagement = () => {
                 style={{
                   width: "100%",
                   padding: "8px",
-                  border: "1px solid #ddd",
-                  borderRadius: "4px",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
+                  background: "#fff",
                 }}
                 maxLength={3}
                 required
@@ -1110,8 +1114,9 @@ const MasterDataManagement = () => {
                 style={{
                   width: "100%",
                   padding: "8px",
-                  border: "1px solid #ddd",
-                  borderRadius: "4px",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
+                  background: "#fff",
                 }}
                 required
               >
@@ -1142,8 +1147,9 @@ const MasterDataManagement = () => {
                 style={{
                   width: "100%",
                   padding: "8px",
-                  border: "1px solid #ddd",
-                  borderRadius: "4px",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
+                  background: "#fff",
                 }}
                 required
               />
@@ -1167,8 +1173,9 @@ const MasterDataManagement = () => {
                 style={{
                   width: "100%",
                   padding: "8px",
-                  border: "1px solid #ddd",
-                  borderRadius: "4px",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
+                  background: "#fff",
                 }}
                 required
               />
@@ -1204,8 +1211,9 @@ const MasterDataManagement = () => {
                 style={{
                   width: "100%",
                   padding: "8px",
-                  border: "1px solid #ddd",
-                  borderRadius: "4px",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
+                  background: "#fff",
                 }}
                 required
               >
@@ -1235,8 +1243,9 @@ const MasterDataManagement = () => {
                 style={{
                   width: "100%",
                   padding: "8px",
-                  border: "1px solid #ddd",
-                  borderRadius: "4px",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
+                  background: "#fff",
                 }}
                 required
                 disabled={!formData.country}
@@ -1268,8 +1277,9 @@ const MasterDataManagement = () => {
                 style={{
                   width: "100%",
                   padding: "8px",
-                  border: "1px solid #ddd",
-                  borderRadius: "4px",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
+                  background: "#fff",
                 }}
                 required
               />
@@ -1293,8 +1303,9 @@ const MasterDataManagement = () => {
                 style={{
                   width: "100%",
                   padding: "8px",
-                  border: "1px solid #ddd",
-                  borderRadius: "4px",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
+                  background: "#fff",
                 }}
                 required
               />
@@ -1324,8 +1335,9 @@ const MasterDataManagement = () => {
                 style={{
                   width: "100%",
                   padding: "8px",
-                  border: "1px solid #ddd",
-                  borderRadius: "4px",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
+                  background: "#fff",
                 }}
                 required
               />
@@ -1348,8 +1360,9 @@ const MasterDataManagement = () => {
                 style={{
                   width: "100%",
                   padding: "8px",
-                  border: "1px solid #ddd",
-                  borderRadius: "4px",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
+                  background: "#fff",
                   minHeight: "80px",
                 }}
               />
@@ -1372,8 +1385,9 @@ const MasterDataManagement = () => {
                 style={{
                   width: "100%",
                   padding: "8px",
-                  border: "1px solid #ddd",
-                  borderRadius: "4px",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
+                  background: "#fff",
                 }}
               >
                 <option value="">No default priority</option>
@@ -1403,8 +1417,9 @@ const MasterDataManagement = () => {
                 style={{
                   width: "100%",
                   padding: "4px",
-                  border: "1px solid #ddd",
-                  borderRadius: "4px",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
+                  background: "#fff",
                 }}
               />
             </div>
@@ -1456,13 +1471,14 @@ const MasterDataManagement = () => {
                 style={{
                   width: "100%",
                   padding: "8px",
-                  border: "1px solid #ddd",
-                  borderRadius: "4px",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
+                  background: "#fff",
                 }}
                 required
                 placeholder="e.g., Furniture, Electronics"
               />
-              <small style={{ color: "#6b7280", fontSize: "12px" }}>
+              <small style={{ color: "#94a3b8", fontSize: "12px" }}>
                 Code will be auto-generated from name
               </small>
             </div>
@@ -1484,8 +1500,9 @@ const MasterDataManagement = () => {
                 style={{
                   width: "100%",
                   padding: "8px",
-                  border: "1px solid #ddd",
-                  borderRadius: "4px",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
+                  background: "#fff",
                   minHeight: "80px",
                 }}
                 placeholder="Optional description for this asset category"
@@ -1510,8 +1527,9 @@ const MasterDataManagement = () => {
                 style={{
                   width: "100%",
                   padding: "4px",
-                  border: "1px solid #ddd",
-                  borderRadius: "4px",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
+                  background: "#fff",
                 }}
               />
             </div>
@@ -1531,8 +1549,8 @@ const MasterDataManagement = () => {
                   gridTemplateColumns: "repeat(5, 1fr)",
                   gap: "8px",
                   padding: "8px",
-                  border: "1px solid #ddd",
-                  borderRadius: "4px",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
                   maxHeight: "200px",
                   overflowY: "auto",
                 }}
@@ -1548,11 +1566,11 @@ const MasterDataManagement = () => {
                       padding: "12px",
                       border:
                         formData.icon === icon.emoji
-                          ? "2px solid var(--primary-main)"
-                          : "1px solid #ddd",
-                      borderRadius: "8px",
+                          ? "2px solid #4f46e5"
+                          : "1.5px solid #e2e8f0",
+                      borderRadius: "12px",
                       background:
-                        formData.icon === icon.emoji ? "#eff6ff" : "white",
+                        formData.icon === icon.emoji ? "#eef2ff" : "white",
                       cursor: "pointer",
                       fontSize: "24px",
                       display: "flex",
@@ -1564,7 +1582,7 @@ const MasterDataManagement = () => {
                     title={icon.label}
                     onMouseEnter={(e) => {
                       if (formData.icon !== icon.emoji) {
-                        e.currentTarget.style.background = "#f9fafb";
+                        e.currentTarget.style.background = "#f8fafc";
                         e.currentTarget.style.transform = "scale(1.05)";
                       }
                     }}
@@ -1581,7 +1599,7 @@ const MasterDataManagement = () => {
               </div>
               <small
                 style={{
-                  color: "#6b7280",
+                  color: "#94a3b8",
                   fontSize: "12px",
                   display: "block",
                   marginTop: "8px",
@@ -1617,8 +1635,9 @@ const MasterDataManagement = () => {
                 style={{
                   width: "100%",
                   padding: "8px",
-                  border: "1px solid #ddd",
-                  borderRadius: "4px",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
+                  background: "#fff",
                 }}
                 required
               />
@@ -1645,8 +1664,9 @@ const MasterDataManagement = () => {
                 style={{
                   width: "100%",
                   padding: "8px",
-                  border: "1px solid #ddd",
-                  borderRadius: "4px",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
+                  background: "#fff",
                 }}
                 required
               />
@@ -1670,8 +1690,9 @@ const MasterDataManagement = () => {
                 style={{
                   width: "100%",
                   padding: "4px",
-                  border: "1px solid #ddd",
-                  borderRadius: "4px",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
+                  background: "#fff",
                 }}
               />
             </div>
@@ -1693,8 +1714,9 @@ const MasterDataManagement = () => {
                 style={{
                   width: "100%",
                   padding: "8px",
-                  border: "1px solid #ddd",
-                  borderRadius: "4px",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
+                  background: "#fff",
                   minHeight: "80px",
                 }}
               />
@@ -1709,6 +1731,7 @@ const MasterDataManagement = () => {
                   onChange={(e) =>
                     setFormData({ ...formData, isClosed: e.target.checked })
                   }
+                  style={{ accentColor: "#4f46e5" }}
                 />
                 <span>Is Closed Status</span>
               </label>
@@ -1738,8 +1761,9 @@ const MasterDataManagement = () => {
                 style={{
                   width: "100%",
                   padding: "8px",
-                  border: "1px solid #ddd",
-                  borderRadius: "4px",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
+                  background: "#fff",
                 }}
                 required
               />
@@ -1762,8 +1786,9 @@ const MasterDataManagement = () => {
                 style={{
                   width: "100%",
                   padding: "8px",
-                  border: "1px solid #ddd",
-                  borderRadius: "4px",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
+                  background: "#fff",
                   minHeight: "80px",
                 }}
               />
@@ -1793,8 +1818,9 @@ const MasterDataManagement = () => {
                 style={{
                   width: "100%",
                   padding: "8px",
-                  border: "1px solid #ddd",
-                  borderRadius: "4px",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
+                  background: "#fff",
                 }}
                 required
               />
@@ -1816,7 +1842,7 @@ const MasterDataManagement = () => {
           boxSizing: "border-box",
           maxWidth: "1400px",
           margin: "0 auto",
-          background: "#F8F9FC",
+          background: "#f8fafc",
           minHeight: "100vh",
           overflowX: "hidden",
         }}
@@ -1825,10 +1851,11 @@ const MasterDataManagement = () => {
           style={{
             background: "#ffffff",
             padding: isMobile ? "16px" : "22px 24px",
-            borderRadius: "14px",
+            borderRadius: "16px",
             marginBottom: "16px",
-            border: "1px solid #e7ebf3",
-            boxShadow: "0 4px 18px rgba(15, 23, 42, 0.05)",
+            border: "1px solid #e2e8f0",
+            boxShadow:
+              "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
           }}
         >
           <h1
@@ -1836,9 +1863,9 @@ const MasterDataManagement = () => {
               margin: "0 0 6px 0",
               fontSize: isMobile ? "20px" : "24px",
               fontWeight: 700,
-              color: "#111827",
-              letterSpacing: "-0.01em",
-              fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+              color: "#0f172a",
+              letterSpacing: "-0.02em",
+              fontFamily: '"DM Serif Display", Georgia, serif',
             }}
           >
             Master Data Management
@@ -1847,7 +1874,7 @@ const MasterDataManagement = () => {
             style={{
               margin: 0,
               fontSize: "14px",
-              color: "#6b7280",
+              color: "#475569",
               fontWeight: 400,
               fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
             }}
@@ -1878,11 +1905,12 @@ const MasterDataManagement = () => {
                     ? "100%"
                     : "calc(50% - 8px)"
                   : "180px",
-                background: "white",
-                borderRadius: "10px",
+                background: "#ffffff",
+                borderRadius: "16px",
                 padding: isMobile ? "14px 14px" : "20px 24px",
-                border: "1px solid #E4E7EC",
-                boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+                border: "1px solid #e2e8f0",
+                boxShadow:
+                  "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
                 display: "flex",
                 alignItems: "center",
                 gap: isMobile ? "10px" : "16px",
@@ -1908,7 +1936,7 @@ const MasterDataManagement = () => {
                   style={{
                     fontSize: isMobile ? "20px" : "28px",
                     fontWeight: 700,
-                    color: "#101828",
+                    color: "#0f172a",
                     lineHeight: 1.2,
                   }}
                 >
@@ -1917,7 +1945,7 @@ const MasterDataManagement = () => {
                 <div
                   style={{
                     fontSize: "13px",
-                    color: "#667085",
+                    color: "#475569",
                     marginTop: "2px",
                   }}
                 >
@@ -1932,10 +1960,11 @@ const MasterDataManagement = () => {
           style={{
             marginBottom: "16px",
             background: "#ffffff",
-            borderRadius: "14px",
-            border: "1px solid #e7ebf3",
+            borderRadius: "16px",
+            border: "1px solid #e2e8f0",
             padding: "14px",
-            boxShadow: "0 4px 16px rgba(15, 23, 42, 0.04)",
+            boxShadow:
+              "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
           }}
         >
           <div
@@ -1959,13 +1988,13 @@ const MasterDataManagement = () => {
                   height: "38px",
                   padding: "0 14px",
                   backgroundColor:
-                    activeTab === category.key ? "#eff6ff" : "white",
-                  color: activeTab === category.key ? "#1d4ed8" : "#374151",
+                    activeTab === category.key ? "#eef2ff" : "white",
+                  color: activeTab === category.key ? "#4f46e5" : "#334155",
                   border:
                     activeTab === category.key
-                      ? "1px solid #84caff"
-                      : "1px solid #d7deea",
-                  borderRadius: "10px",
+                      ? "1px solid #4f46e5"
+                      : "1px solid #e2e8f0",
+                  borderRadius: "12px",
                   fontSize: "14px",
                   fontWeight: activeTab === category.key ? 600 : 500,
                   cursor: "pointer",
@@ -1983,10 +2012,11 @@ const MasterDataManagement = () => {
         <div
           style={{
             background: "#ffffff",
-            borderRadius: "14px",
-            border: "1px solid #e7ebf3",
+            borderRadius: "16px",
+            border: "1px solid #e2e8f0",
             padding: "14px",
-            boxShadow: "0 4px 16px rgba(15, 23, 42, 0.04)",
+            boxShadow:
+              "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
             marginBottom: "16px",
           }}
         >
@@ -2013,7 +2043,7 @@ const MasterDataManagement = () => {
                   left: "14px",
                   top: "50%",
                   transform: "translateY(-50%)",
-                  color: "#9CA3AF",
+                  color: "#94a3b8",
                 }}
               />
               <input
@@ -2025,11 +2055,11 @@ const MasterDataManagement = () => {
                   width: "100%",
                   height: "42px",
                   padding: "10px 14px 10px 40px",
-                  border: "1px solid #d7deea",
-                  borderRadius: "10px",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
                   fontSize: "14px",
                   boxSizing: "border-box",
-                  background: "white",
+                  background: "#fff",
                   outline: "none",
                   boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
                 }}
@@ -2045,12 +2075,12 @@ const MasterDataManagement = () => {
                   padding: "8px 12px",
                   border:
                     selectedProjectId !== ""
-                      ? "1px solid #84caff"
-                      : "1px solid #d7deea",
-                  borderRadius: "10px",
+                      ? "1.5px solid #4f46e5"
+                      : "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
                   fontSize: "14px",
-                  color: selectedProjectId !== "" ? "#1d4ed8" : "#6b7280",
-                  background: selectedProjectId !== "" ? "#eff6ff" : "white",
+                  color: selectedProjectId !== "" ? "#4f46e5" : "#475569",
+                  background: selectedProjectId !== "" ? "#eef2ff" : "#fff",
                   cursor: "pointer",
                   minWidth: isMobile ? "100%" : "240px",
                 }}
@@ -2084,10 +2114,16 @@ const MasterDataManagement = () => {
                   background:
                     currentCategory?.requiresProject && !selectedProjectId
                       ? "#9ca3af"
-                      : "#7F56D9",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "10px",
+                      : "#fff",
+                  color:
+                    currentCategory?.requiresProject && !selectedProjectId
+                      ? "white"
+                      : "#334155",
+                  border:
+                    currentCategory?.requiresProject && !selectedProjectId
+                      ? "none"
+                      : "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
                   fontSize: "14px",
                   fontWeight: 600,
                   cursor:
@@ -2122,12 +2158,16 @@ const MasterDataManagement = () => {
                   background:
                     currentCategory?.requiresProject && !selectedProjectId
                       ? "#9ca3af"
-                      : "#175CD3",
-                  color: "white",
+                      : "linear-gradient(160deg, #4f46e5, #4338ca)",
+                  color: "#fff",
                   border: "none",
-                  borderRadius: "10px",
+                  borderRadius: "8px",
                   fontSize: "14px",
                   fontWeight: 600,
+                  boxShadow:
+                    currentCategory?.requiresProject && !selectedProjectId
+                      ? "none"
+                      : "0 4px 14px rgba(67,56,202,.35)",
                   cursor:
                     currentCategory?.requiresProject && !selectedProjectId
                       ? "not-allowed"
@@ -2158,12 +2198,13 @@ const MasterDataManagement = () => {
         {loading ? (
           <div
             style={{
-              background: "white",
-              borderRadius: "10px",
+              background: "#ffffff",
+              borderRadius: "16px",
               padding: "40px",
               textAlign: "center",
-              border: "1px solid #E4E7EC",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+              border: "1px solid #e2e8f0",
+              boxShadow:
+                "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
             }}
           >
             Loading...
@@ -2171,15 +2212,16 @@ const MasterDataManagement = () => {
         ) : currentCategory?.requiresProject && !selectedProjectId ? (
           <div
             style={{
-              background: "white",
-              borderRadius: "10px",
+              background: "#ffffff",
+              borderRadius: "16px",
               padding: "40px",
               textAlign: "center",
-              border: "1px solid #E4E7EC",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+              border: "1px solid #e2e8f0",
+              boxShadow:
+                "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
             }}
           >
-            <p style={{ fontSize: "16px", color: "#6b7280" }}>
+            <p style={{ fontSize: "16px", color: "#475569" }}>
               Please select a project to view{" "}
               {currentCategory?.label.toLowerCase()}
             </p>
@@ -2189,13 +2231,14 @@ const MasterDataManagement = () => {
             {filteredItems.length === 0 ? (
               <div
                 style={{
-                  background: "white",
-                  borderRadius: "10px",
+                  background: "#ffffff",
+                  borderRadius: "16px",
                   padding: "30px 16px",
                   textAlign: "center",
-                  border: "1px solid #E4E7EC",
-                  boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-                  color: "#6b7280",
+                  border: "1px solid #e2e8f0",
+                  boxShadow:
+                    "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
+                  color: "#475569",
                 }}
               >
                 {searchTerm
@@ -2209,11 +2252,12 @@ const MasterDataManagement = () => {
         ) : (
           <div
             style={{
-              background: "white",
-              borderRadius: "10px",
+              background: "#ffffff",
+              borderRadius: "16px",
               overflow: "hidden",
-              border: "1px solid #E4E7EC",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+              border: "1px solid #e2e8f0",
+              boxShadow:
+                "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
             }}
           >
             <div
@@ -2228,159 +2272,559 @@ const MasterDataManagement = () => {
               >
                 <thead
                   style={{
-                    background: "#f9fafb",
-                    borderBottom: "2px solid #e5e7eb",
+                    background: "#f8fafc",
+                    borderBottom: "1px solid #e2e8f0",
                   }}
                 >
                   <tr>
                     {activeTab === "countries" && (
                       <>
-                        <th style={{ padding: "12px", textAlign: "left" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "left",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Key
                         </th>
-                        <th style={{ padding: "12px", textAlign: "left" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "left",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Country Name
                         </th>
-                        <th style={{ padding: "12px", textAlign: "left" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "left",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           ISO Code
                         </th>
-                        <th style={{ padding: "12px", textAlign: "center" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "center",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Status
                         </th>
-                        <th style={{ padding: "12px", textAlign: "center" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "center",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Actions
                         </th>
                       </>
                     )}
                     {activeTab === "states" && (
                       <>
-                        <th style={{ padding: "12px", textAlign: "left" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "left",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Key
                         </th>
-                        <th style={{ padding: "12px", textAlign: "left" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "left",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           State Name
                         </th>
-                        <th style={{ padding: "12px", textAlign: "left" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "left",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Country
                         </th>
-                        <th style={{ padding: "12px", textAlign: "center" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "center",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Status
                         </th>
-                        <th style={{ padding: "12px", textAlign: "center" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "center",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Actions
                         </th>
                       </>
                     )}
                     {activeTab === "cities" && (
                       <>
-                        <th style={{ padding: "12px", textAlign: "left" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "left",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Key
                         </th>
-                        <th style={{ padding: "12px", textAlign: "left" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "left",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           City Name
                         </th>
-                        <th style={{ padding: "12px", textAlign: "left" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "left",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           State
                         </th>
-                        <th style={{ padding: "12px", textAlign: "left" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "left",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Country
                         </th>
-                        <th style={{ padding: "12px", textAlign: "center" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "center",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Status
                         </th>
-                        <th style={{ padding: "12px", textAlign: "center" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "center",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Actions
                         </th>
                       </>
                     )}
                     {activeTab === "categories" && (
                       <>
-                        <th style={{ padding: "12px", textAlign: "left" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "left",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Category Name
                         </th>
-                        <th style={{ padding: "12px", textAlign: "left" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "left",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Default Priority
                         </th>
-                        <th style={{ padding: "12px", textAlign: "center" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "center",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Color
                         </th>
-                        <th style={{ padding: "12px", textAlign: "center" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "center",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Status
                         </th>
-                        <th style={{ padding: "12px", textAlign: "center" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "center",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Actions
                         </th>
                       </>
                     )}
                     {activeTab === "assetCategories" && (
                       <>
-                        <th style={{ padding: "12px", textAlign: "left" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "left",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Icon
                         </th>
-                        <th style={{ padding: "12px", textAlign: "left" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "left",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Category Name
                         </th>
-                        <th style={{ padding: "12px", textAlign: "left" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "left",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Code
                         </th>
-                        <th style={{ padding: "12px", textAlign: "center" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "center",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Color
                         </th>
-                        <th style={{ padding: "12px", textAlign: "center" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "center",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Status
                         </th>
-                        <th style={{ padding: "12px", textAlign: "center" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "center",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Actions
                         </th>
                       </>
                     )}
                     {activeTab === "statuses" && (
                       <>
-                        <th style={{ padding: "12px", textAlign: "left" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "left",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Status Name
                         </th>
-                        <th style={{ padding: "12px", textAlign: "left" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "left",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Code
                         </th>
-                        <th style={{ padding: "12px", textAlign: "center" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "center",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Color
                         </th>
-                        <th style={{ padding: "12px", textAlign: "center" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "center",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Closed
                         </th>
-                        <th style={{ padding: "12px", textAlign: "center" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "center",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Active
                         </th>
-                        <th style={{ padding: "12px", textAlign: "center" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "center",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Actions
                         </th>
                       </>
                     )}
                     {activeTab === "departments" && (
                       <>
-                        <th style={{ padding: "12px", textAlign: "left" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "left",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Department Name
                         </th>
-                        <th style={{ padding: "12px", textAlign: "left" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "left",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Description
                         </th>
-                        <th style={{ padding: "12px", textAlign: "center" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "center",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Status
                         </th>
-                        <th style={{ padding: "12px", textAlign: "center" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "center",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Actions
                         </th>
                       </>
                     )}
                     {activeTab === "companies" && (
                       <>
-                        <th style={{ padding: "12px", textAlign: "left" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "left",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Company Name
                         </th>
-                        <th style={{ padding: "12px", textAlign: "center" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "center",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Status
                         </th>
-                        <th style={{ padding: "12px", textAlign: "center" }}>
+                        <th
+                          style={{
+                            padding: "12px",
+                            textAlign: "center",
+                            color: "#94a3b8",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                          }}
+                        >
                           Actions
                         </th>
                       </>
@@ -2395,7 +2839,7 @@ const MasterDataManagement = () => {
                         style={{
                           padding: "40px",
                           textAlign: "center",
-                          color: "#6b7280",
+                          color: "#475569",
                         }}
                       >
                         {searchTerm
@@ -2407,7 +2851,7 @@ const MasterDataManagement = () => {
                     filteredItems.map((item) => (
                       <tr
                         key={item._id}
-                        style={{ borderBottom: "1px solid #e5e7eb" }}
+                        style={{ borderBottom: "1px solid #e2e8f0" }}
                       >
                         {activeTab === "countries" && (
                           <>
@@ -2441,9 +2885,9 @@ const MasterDataManagement = () => {
                                     marginRight: "8px",
                                     padding: "6px",
                                     border: "none",
-                                    background: "#dbeafe",
-                                    color: "#1e40af",
-                                    borderRadius: "4px",
+                                    background: "#eef2ff",
+                                    color: "#4f46e5",
+                                    borderRadius: "8px",
                                     cursor: "pointer",
                                   }}
                                 >
@@ -2460,7 +2904,7 @@ const MasterDataManagement = () => {
                                     border: "none",
                                     background: "#fef2f2",
                                     color: "#dc2626",
-                                    borderRadius: "4px",
+                                    borderRadius: "8px",
                                     cursor: "pointer",
                                   }}
                                 >
@@ -2505,9 +2949,9 @@ const MasterDataManagement = () => {
                                     marginRight: "8px",
                                     padding: "6px",
                                     border: "none",
-                                    background: "#dbeafe",
-                                    color: "#1e40af",
-                                    borderRadius: "4px",
+                                    background: "#eef2ff",
+                                    color: "#4f46e5",
+                                    borderRadius: "8px",
                                     cursor: "pointer",
                                   }}
                                 >
@@ -2524,7 +2968,7 @@ const MasterDataManagement = () => {
                                     border: "none",
                                     background: "#fee2e2",
                                     color: "#991b1b",
-                                    borderRadius: "4px",
+                                    borderRadius: "8px",
                                     cursor: "pointer",
                                   }}
                                 >
@@ -2573,9 +3017,9 @@ const MasterDataManagement = () => {
                                     marginRight: "8px",
                                     padding: "6px",
                                     border: "none",
-                                    background: "#dbeafe",
-                                    color: "#1e40af",
-                                    borderRadius: "4px",
+                                    background: "#eef2ff",
+                                    color: "#4f46e5",
+                                    borderRadius: "8px",
                                     cursor: "pointer",
                                   }}
                                 >
@@ -2592,7 +3036,7 @@ const MasterDataManagement = () => {
                                     border: "none",
                                     background: "#fee2e2",
                                     color: "#991b1b",
-                                    borderRadius: "4px",
+                                    borderRadius: "8px",
                                     cursor: "pointer",
                                   }}
                                 >
@@ -2676,9 +3120,9 @@ const MasterDataManagement = () => {
                                     marginRight: "8px",
                                     padding: "6px",
                                     border: "none",
-                                    background: "#dbeafe",
-                                    color: "#1e40af",
-                                    borderRadius: "4px",
+                                    background: "#eef2ff",
+                                    color: "#4f46e5",
+                                    borderRadius: "8px",
                                     cursor: "pointer",
                                   }}
                                 >
@@ -2695,7 +3139,7 @@ const MasterDataManagement = () => {
                                     border: "none",
                                     background: "#fee2e2",
                                     color: "#991b1b",
-                                    borderRadius: "4px",
+                                    borderRadius: "8px",
                                     cursor: "pointer",
                                   }}
                                 >
@@ -2761,9 +3205,9 @@ const MasterDataManagement = () => {
                                     marginRight: "8px",
                                     padding: "6px",
                                     border: "none",
-                                    background: "#dbeafe",
-                                    color: "#1e40af",
-                                    borderRadius: "4px",
+                                    background: "#eef2ff",
+                                    color: "#4f46e5",
+                                    borderRadius: "8px",
                                     cursor: "pointer",
                                   }}
                                 >
@@ -2780,7 +3224,7 @@ const MasterDataManagement = () => {
                                     border: "none",
                                     background: "#fee2e2",
                                     color: "#991b1b",
-                                    borderRadius: "4px",
+                                    borderRadius: "8px",
                                     cursor: "pointer",
                                   }}
                                 >
@@ -2853,9 +3297,9 @@ const MasterDataManagement = () => {
                                     marginRight: "8px",
                                     padding: "6px",
                                     border: "none",
-                                    background: "#dbeafe",
-                                    color: "#1e40af",
-                                    borderRadius: "4px",
+                                    background: "#eef2ff",
+                                    color: "#4f46e5",
+                                    borderRadius: "8px",
                                     cursor: "pointer",
                                   }}
                                 >
@@ -2872,7 +3316,7 @@ const MasterDataManagement = () => {
                                     border: "none",
                                     background: "#fee2e2",
                                     color: "#991b1b",
-                                    borderRadius: "4px",
+                                    borderRadius: "8px",
                                     cursor: "pointer",
                                   }}
                                 >
@@ -2890,7 +3334,7 @@ const MasterDataManagement = () => {
                             <td
                               style={{
                                 padding: "12px",
-                                color: "#6b7280",
+                                color: "#475569",
                                 fontSize: "13px",
                               }}
                             >
@@ -2923,9 +3367,9 @@ const MasterDataManagement = () => {
                                     marginRight: "8px",
                                     padding: "6px",
                                     border: "none",
-                                    background: "#dbeafe",
-                                    color: "#1e40af",
-                                    borderRadius: "4px",
+                                    background: "#eef2ff",
+                                    color: "#4f46e5",
+                                    borderRadius: "8px",
                                     cursor: "pointer",
                                   }}
                                 >
@@ -2942,7 +3386,7 @@ const MasterDataManagement = () => {
                                     border: "none",
                                     background: "#fee2e2",
                                     color: "#991b1b",
-                                    borderRadius: "4px",
+                                    borderRadius: "8px",
                                     cursor: "pointer",
                                   }}
                                 >
@@ -2984,9 +3428,9 @@ const MasterDataManagement = () => {
                                     marginRight: "8px",
                                     padding: "6px",
                                     border: "none",
-                                    background: "#dbeafe",
-                                    color: "#1e40af",
-                                    borderRadius: "4px",
+                                    background: "#eef2ff",
+                                    color: "#4f46e5",
+                                    borderRadius: "8px",
                                     cursor: "pointer",
                                   }}
                                 >
@@ -3003,7 +3447,7 @@ const MasterDataManagement = () => {
                                     border: "none",
                                     background: "#fee2e2",
                                     color: "#991b1b",
-                                    borderRadius: "4px",
+                                    borderRadius: "8px",
                                     cursor: "pointer",
                                   }}
                                 >
@@ -3041,14 +3485,15 @@ const MasterDataManagement = () => {
           >
             <div
               style={{
-                background: "white",
-                borderRadius: "12px",
+                background: "#ffffff",
+                borderRadius: "20px",
                 padding: isMobile ? "16px" : "24px",
                 width: "100%",
                 maxWidth: "560px",
                 maxHeight: isMobile ? "calc(100vh - 20px)" : "90vh",
                 overflow: "auto",
-                boxShadow: "0 20px 60px rgba(0,0,0,.3)",
+                boxShadow:
+                  "0 24px 64px rgba(15,23,42,.22), 0 8px 24px rgba(15,23,42,.12)",
               }}
             >
               <div
@@ -3087,7 +3532,7 @@ const MasterDataManagement = () => {
               </div>
 
               <p
-                style={{ marginTop: 0, marginBottom: "14px", color: "#667085" }}
+                style={{ marginTop: 0, marginBottom: "14px", color: "#475569" }}
               >
                 Upload CSV rows for <strong>{currentCategory?.label}</strong>.
                 {currentCategory?.requiresProject
@@ -3112,9 +3557,10 @@ const MasterDataManagement = () => {
                     style={{
                       width: "100%",
                       padding: "10px",
-                      border: "1px solid #d1d5db",
+                      border: "1.5px solid #e2e8f0",
                       borderRadius: "8px",
                       fontSize: "14px",
+                      background: "#fff",
                     }}
                   >
                     <option value="">-- Select a Project --</option>
@@ -3159,8 +3605,8 @@ const MasterDataManagement = () => {
                   onClick={downloadBulkTemplate}
                   style={{
                     marginTop: "10px",
-                    border: "1px solid #cbd5e1",
-                    background: "white",
+                    border: "1.5px solid #e2e8f0",
+                    background: "#fff",
                     borderRadius: "8px",
                     padding: "8px 12px",
                     cursor: "pointer",
@@ -3247,8 +3693,9 @@ const MasterDataManagement = () => {
                   style={{
                     padding: "10px 16px",
                     borderRadius: "8px",
-                    border: "1px solid #d1d5db",
-                    background: "white",
+                    border: "1.5px solid #e2e8f0",
+                    background: "#fff",
+                    color: "#334155",
                     cursor: "pointer",
                     width: isMobile ? "100%" : "auto",
                   }}
@@ -3263,8 +3710,13 @@ const MasterDataManagement = () => {
                     padding: "10px 16px",
                     borderRadius: "8px",
                     border: "none",
-                    background: bulkUploading ? "#9ca3af" : "#7F56D9",
-                    color: "white",
+                    background: bulkUploading
+                      ? "#9ca3af"
+                      : "linear-gradient(160deg, #4f46e5, #4338ca)",
+                    color: "#fff",
+                    boxShadow: bulkUploading
+                      ? "none"
+                      : "0 4px 14px rgba(67,56,202,.35)",
                     cursor: bulkUploading ? "not-allowed" : "pointer",
                     fontWeight: 600,
                     width: isMobile ? "100%" : "auto",
@@ -3296,13 +3748,15 @@ const MasterDataManagement = () => {
           >
             <div
               style={{
-                background: "white",
-                borderRadius: "8px",
+                background: "#ffffff",
+                borderRadius: "20px",
                 padding: isMobile ? "16px" : "24px",
                 width: "100%",
                 maxWidth: "500px",
                 maxHeight: isMobile ? "calc(100vh - 20px)" : "90vh",
                 overflow: "auto",
+                boxShadow:
+                  "0 24px 64px rgba(15,23,42,.22), 0 8px 24px rgba(15,23,42,.12)",
               }}
             >
               <div
@@ -3335,19 +3789,19 @@ const MasterDataManagement = () => {
                   style={{
                     marginBottom: "20px",
                     padding: "12px",
-                    background: "#eff6ff",
-                    border: "1px solid #bfdbfe",
-                    borderRadius: "6px",
+                    background: "#eef2ff",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: "12px",
                   }}
                 >
-                  <p style={{ fontSize: "14px", color: "#1e40af", margin: 0 }}>
+                  <p style={{ fontSize: "14px", color: "#4f46e5", margin: 0 }}>
                     <strong>Project:</strong>{" "}
                     {projects.find((p) => p._id === selectedProjectId)?.name}
                   </p>
                   <p
                     style={{
                       fontSize: "12px",
-                      color: "#6b7280",
+                      color: "#475569",
                       margin: "4px 0 0 0",
                     }}
                   >
@@ -3383,8 +3837,9 @@ const MasterDataManagement = () => {
                     style={{
                       width: "100%",
                       padding: "8px",
-                      border: "1px solid #ddd",
-                      borderRadius: "4px",
+                      border: "1.5px solid #e2e8f0",
+                      borderRadius: "8px",
+                      background: "#fff",
                     }}
                   />
                 </div>
@@ -3403,6 +3858,7 @@ const MasterDataManagement = () => {
                       onChange={(e) =>
                         setFormData({ ...formData, isActive: e.target.checked })
                       }
+                      style={{ accentColor: "#4f46e5" }}
                     />
                     <span>Active</span>
                   </label>
@@ -3421,9 +3877,10 @@ const MasterDataManagement = () => {
                     onClick={() => setShowModal(false)}
                     style={{
                       padding: "10px 20px",
-                      border: "1px solid #d1d5db",
-                      background: "white",
-                      borderRadius: "6px",
+                      border: "1.5px solid #e2e8f0",
+                      background: "#fff",
+                      color: "#334155",
+                      borderRadius: "8px",
                       cursor: "pointer",
                       width: isMobile ? "100%" : "auto",
                     }}
@@ -3434,10 +3891,11 @@ const MasterDataManagement = () => {
                     type="submit"
                     style={{
                       padding: "10px 20px",
-                      background: "var(--primary-main)",
-                      color: "white",
+                      background: "linear-gradient(160deg, #4f46e5, #4338ca)",
+                      color: "#fff",
                       border: "none",
-                      borderRadius: "6px",
+                      borderRadius: "8px",
+                      boxShadow: "0 4px 14px rgba(67,56,202,.35)",
                       cursor: "pointer",
                       display: "flex",
                       alignItems: "center",

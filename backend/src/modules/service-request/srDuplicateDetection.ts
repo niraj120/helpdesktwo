@@ -8,7 +8,7 @@ import { Ticket } from "../../models/Ticket";
 import { SR_STATUS } from "./srWorkflow";
 
 /** Statuses considered "still active" for dedup purposes. */
-export const SR_OPEN_STATUSES: number[] = [
+const SR_OPEN_STATUSES: number[] = [
   SR_STATUS.OPEN,
   SR_STATUS.WIP,
   SR_STATUS.RESOLVED,

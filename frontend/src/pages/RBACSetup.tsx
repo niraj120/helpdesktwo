@@ -782,7 +782,7 @@ const RBACSetup = () => {
           padding: isMobile ? "16px" : "24px 20px 32px",
           maxWidth: "1380px",
           margin: "0 auto",
-          background: "#f6f8fc",
+          background: "#f8fafc",
           minHeight: "100vh",
           fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
         }}
@@ -791,10 +791,11 @@ const RBACSetup = () => {
           style={{
             background: "#ffffff",
             padding: isMobile ? "16px" : "22px 24px",
-            borderRadius: "14px",
+            borderRadius: "16px",
             marginBottom: "16px",
-            border: "1px solid #e7ebf3",
-            boxShadow: "0 4px 18px rgba(15, 23, 42, 0.05)",
+            border: "1px solid #e2e8f0",
+            boxShadow:
+              "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
           }}
         >
           <h1
@@ -802,9 +803,9 @@ const RBACSetup = () => {
               margin: "0 0 6px 0",
               fontSize: isMobile ? "20px" : "24px",
               fontWeight: 700,
-              color: "#111827",
-              letterSpacing: "-0.01em",
-              fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+              color: "#0f172a",
+              letterSpacing: "-0.02em",
+              fontFamily: '"DM Serif Display", Georgia, serif',
             }}
           >
             RBAC Setup
@@ -813,7 +814,7 @@ const RBACSetup = () => {
             style={{
               margin: 0,
               fontSize: "14px",
-              color: "#6b7280",
+              color: "#475569",
               fontWeight: 400,
             }}
           >
@@ -836,10 +837,11 @@ const RBACSetup = () => {
               key={card.title}
               style={{
                 background: "#ffffff",
-                border: "1px solid #e7ebf3",
+                border: "1px solid #e2e8f0",
                 borderRadius: "12px",
                 padding: "12px",
-                boxShadow: "0 2px 10px rgba(15, 23, 42, 0.05)",
+                boxShadow:
+                  "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
               }}
             >
               <div
@@ -855,7 +857,7 @@ const RBACSetup = () => {
                 style={{
                   fontSize: "12px",
                   fontWeight: 600,
-                  color: "#64748b",
+                  color: "#94a3b8",
                   marginBottom: "6px",
                   textTransform: "uppercase",
                   letterSpacing: "0.02em",
@@ -896,10 +898,11 @@ const RBACSetup = () => {
           style={{
             marginBottom: "16px",
             background: "#ffffff",
-            borderRadius: "14px",
-            border: "1px solid #e7ebf3",
+            borderRadius: "16px",
+            border: "1px solid #e2e8f0",
             padding: "14px",
-            boxShadow: "0 4px 16px rgba(15, 23, 42, 0.04)",
+            boxShadow:
+              "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
             display: "flex",
             justifyContent: "space-between",
             alignItems: isMobile ? "stretch" : "center",
@@ -919,7 +922,7 @@ const RBACSetup = () => {
                 background: "#ef4444",
                 color: "white",
                 border: "none",
-                borderRadius: "10px",
+                borderRadius: "8px",
                 fontSize: "14px",
                 fontWeight: "600",
                 cursor: "pointer",
@@ -952,27 +955,27 @@ const RBACSetup = () => {
                 gap: "8px",
                 height: "42px",
                 padding: "0 16px",
-                background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-                color: "white",
+                background: "linear-gradient(160deg, #4f46e5, #4338ca)",
+                color: "#fff",
                 border: "none",
-                borderRadius: "10px",
+                borderRadius: "8px",
                 fontSize: "14px",
                 fontWeight: "600",
                 cursor: "pointer",
                 transition: "all 0.2s",
-                boxShadow: "0 4px 15px rgba(102, 126, 234, 0.4)",
+                boxShadow: "0 4px 14px rgba(67,56,202,.35)",
                 width: isMobile ? "100%" : "auto",
                 justifyContent: "center",
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.transform = "translateY(-2px)";
                 e.currentTarget.style.boxShadow =
-                  "0 6px 20px rgba(102, 126, 234, 0.4)";
+                  "0 6px 20px rgba(67,56,202,.45)";
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.transform = "translateY(0)";
                 e.currentTarget.style.boxShadow =
-                  "0 4px 15px rgba(102, 126, 234, 0.4)";
+                  "0 4px 14px rgba(67,56,202,.35)";
               }}
             >
               <MdAdd size={20} />
@@ -986,10 +989,11 @@ const RBACSetup = () => {
           style={{
             marginBottom: "16px",
             background: "#ffffff",
-            borderRadius: "14px",
-            border: "1px solid #e7ebf3",
+            borderRadius: "16px",
+            border: "1px solid #e2e8f0",
             padding: "14px",
-            boxShadow: "0 4px 16px rgba(15, 23, 42, 0.04)",
+            boxShadow:
+              "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
           }}
         >
           <div
@@ -1015,7 +1019,7 @@ const RBACSetup = () => {
                   left: "14px",
                   top: "50%",
                   transform: "translateY(-50%)",
-                  color: "#9CA3AF",
+                  color: "#94a3b8",
                 }}
               />
               <input
@@ -1027,11 +1031,11 @@ const RBACSetup = () => {
                   width: "100%",
                   height: "42px",
                   padding: "10px 14px 10px 40px",
-                  border: "1px solid #d7deea",
-                  borderRadius: "10px",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
                   fontSize: "14px",
                   boxSizing: "border-box",
-                  background: "white",
+                  background: "#fff",
                   outline: "none",
                   boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
                 }}
@@ -1045,12 +1049,12 @@ const RBACSetup = () => {
                 padding: "8px 12px",
                 border:
                   filterProject !== "all"
-                    ? "1px solid #84caff"
-                    : "1px solid #d7deea",
-                borderRadius: "10px",
+                    ? "1.5px solid #4f46e5"
+                    : "1.5px solid #e2e8f0",
+                borderRadius: "8px",
                 fontSize: "14px",
-                color: filterProject !== "all" ? "#1d4ed8" : "#6b7280",
-                background: filterProject !== "all" ? "#eff6ff" : "white",
+                color: filterProject !== "all" ? "#4f46e5" : "#475569",
+                background: filterProject !== "all" ? "#eef2ff" : "#fff",
                 cursor: "pointer",
                 minWidth: isMobile ? "100%" : "200px",
                 fontWeight: filterProject !== "all" ? 500 : 400,
@@ -1073,13 +1077,13 @@ const RBACSetup = () => {
                 style={{
                   height: "38px",
                   padding: "0 14px",
-                  backgroundColor: filterType === type ? "#eff6ff" : "white",
-                  color: filterType === type ? "#1d4ed8" : "#374151",
+                  backgroundColor: filterType === type ? "#eef2ff" : "#fff",
+                  color: filterType === type ? "#4f46e5" : "#334155",
                   border:
                     filterType === type
-                      ? "1px solid #84caff"
-                      : "1px solid #d7deea",
-                  borderRadius: "10px",
+                      ? "1.5px solid #4f46e5"
+                      : "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
                   fontSize: "14px",
                   fontWeight: filterType === type ? 600 : 500,
                   cursor: "pointer",
@@ -1095,11 +1099,12 @@ const RBACSetup = () => {
         {/* Roles Table */}
         <div
           style={{
-            backgroundColor: "white",
-            borderRadius: "10px",
-            border: "1px solid #E4E7EC",
+            backgroundColor: "#ffffff",
+            borderRadius: "16px",
+            border: "1px solid #e2e8f0",
             overflow: "hidden",
-            boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+            boxShadow:
+              "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
           }}
         >
           <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
@@ -1113,8 +1118,8 @@ const RBACSetup = () => {
               <thead>
                 <tr
                   style={{
-                    backgroundColor: "#f9fafb",
-                    borderBottom: "1px solid #E4E7EC",
+                    backgroundColor: "#f8fafc",
+                    borderBottom: "1px solid #e2e8f0",
                   }}
                 >
                   <th style={{ padding: "12px 16px", width: "40px" }}>
@@ -1140,10 +1145,11 @@ const RBACSetup = () => {
                     style={{
                       padding: "12px 16px",
                       textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: "600",
-                      color: "#6b7280",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: "#94a3b8",
                       textTransform: "uppercase",
+                      letterSpacing: "0.06em",
                     }}
                   >
                     Master
@@ -1152,10 +1158,11 @@ const RBACSetup = () => {
                     style={{
                       padding: "12px 16px",
                       textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: "600",
-                      color: "#6b7280",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: "#94a3b8",
                       textTransform: "uppercase",
+                      letterSpacing: "0.06em",
                     }}
                   >
                     Role Name
@@ -1164,10 +1171,11 @@ const RBACSetup = () => {
                     style={{
                       padding: "12px 16px",
                       textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: "600",
-                      color: "#6b7280",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: "#94a3b8",
                       textTransform: "uppercase",
+                      letterSpacing: "0.06em",
                     }}
                   >
                     Code
@@ -1176,10 +1184,11 @@ const RBACSetup = () => {
                     style={{
                       padding: "12px 16px",
                       textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: "600",
-                      color: "#6b7280",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: "#94a3b8",
                       textTransform: "uppercase",
+                      letterSpacing: "0.06em",
                     }}
                   >
                     Type
@@ -1188,10 +1197,11 @@ const RBACSetup = () => {
                     style={{
                       padding: "12px 16px",
                       textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: "600",
-                      color: "#6b7280",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: "#94a3b8",
                       textTransform: "uppercase",
+                      letterSpacing: "0.06em",
                     }}
                   >
                     Permissions
@@ -1200,10 +1210,11 @@ const RBACSetup = () => {
                     style={{
                       padding: "12px 16px",
                       textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: "600",
-                      color: "#6b7280",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: "#94a3b8",
                       textTransform: "uppercase",
+                      letterSpacing: "0.06em",
                     }}
                   >
                     Projects
@@ -1212,10 +1223,11 @@ const RBACSetup = () => {
                     style={{
                       padding: "12px 16px",
                       textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: "600",
-                      color: "#6b7280",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: "#94a3b8",
                       textTransform: "uppercase",
+                      letterSpacing: "0.06em",
                     }}
                   >
                     Agents
@@ -1224,10 +1236,11 @@ const RBACSetup = () => {
                     style={{
                       padding: "12px 16px",
                       textAlign: "right",
-                      fontSize: "12px",
-                      fontWeight: "600",
-                      color: "#6b7280",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: "#94a3b8",
                       textTransform: "uppercase",
+                      letterSpacing: "0.06em",
                     }}
                   >
                     Actions
@@ -1239,9 +1252,9 @@ const RBACSetup = () => {
                   <tr
                     key={role._id}
                     style={{
-                      borderBottom: "1px solid #F2F4F7",
+                      borderBottom: "1px solid #e2e8f0",
                       background: selectedRoleIds.has(role._id)
-                        ? "#EFF6FF"
+                        ? "#eef2ff"
                         : "white",
                     }}
                   >
@@ -1274,7 +1287,7 @@ const RBACSetup = () => {
                           border: "none",
                           cursor:
                             role.type === "custom" ? "pointer" : "not-allowed",
-                          color: role.isMaster ? "#f59e0b" : "#d1d5db",
+                          color: role.isMaster ? "#f59e0b" : "#94a3b8",
                         }}
                         title={role.isMaster ? "Master Role" : "Mark as Master"}
                       >
@@ -1287,11 +1300,11 @@ const RBACSetup = () => {
                     </td>
                     <td style={{ padding: "12px 16px" }}>
                       <div>
-                        <div style={{ fontWeight: "500", color: "#111827" }}>
+                        <div style={{ fontWeight: "500", color: "#0f172a" }}>
                           {role.name}
                         </div>
                         {role.description && (
-                          <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                          <div style={{ fontSize: "12px", color: "#475569" }}>
                             {role.description}
                           </div>
                         )}
@@ -1300,7 +1313,7 @@ const RBACSetup = () => {
                     <td
                       style={{
                         padding: "12px 16px",
-                        color: "#6b7280",
+                        color: "#475569",
                         fontSize: "14px",
                         fontFamily: '"Fira Code", "Consolas", monospace',
                         letterSpacing: "0.02em",
@@ -1327,7 +1340,7 @@ const RBACSetup = () => {
                     <td
                       style={{
                         padding: "12px 16px",
-                        color: "#6b7280",
+                        color: "#475569",
                         fontSize: "14px",
                       }}
                     >
@@ -1338,7 +1351,7 @@ const RBACSetup = () => {
                     <td
                       style={{
                         padding: "12px 16px",
-                        color: "#6b7280",
+                        color: "#475569",
                         fontSize: "14px",
                       }}
                     >
@@ -1347,7 +1360,7 @@ const RBACSetup = () => {
                     <td
                       style={{
                         padding: "12px 16px",
-                        color: "#6b7280",
+                        color: "#475569",
                         fontSize: "14px",
                       }}
                     >
@@ -1381,11 +1394,11 @@ const RBACSetup = () => {
                           onClick={() => openEditModal(role)}
                           style={{
                             padding: "6px 8px",
-                            backgroundColor: "#eff6ff",
-                            border: "1px solid #bfdbfe",
+                            backgroundColor: "#eef2ff",
+                            border: "1px solid #e2e8f0",
                             borderRadius: "8px",
                             cursor: "pointer",
-                            color: "#1d4ed8",
+                            color: "#4f46e5",
                           }}
                           title="Edit Role"
                         >
@@ -1437,24 +1450,24 @@ const RBACSetup = () => {
             <div
               style={{
                 backgroundColor: "white",
-                borderRadius: "16px",
+                borderRadius: "20px",
                 width: "100%",
                 maxWidth: "900px",
                 maxHeight: "90vh",
                 overflow: "auto",
-                border: "1px solid #e5eaf4",
-                boxShadow: "0 26px 70px rgba(15, 23, 42, 0.24)",
+                border: "1px solid #e2e8f0",
+                boxShadow:
+                  "0 24px 64px rgba(15,23,42,.22), 0 8px 24px rgba(15,23,42,.12)",
               }}
             >
               <div
                 style={{
                   padding: isMobile ? "16px" : "18px 24px",
-                  borderBottom: "1px solid #e6ebf3",
+                  borderBottom: "1px solid #e2e8f0",
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
-                  background:
-                    "linear-gradient(180deg, #fbfcff 0%, #f6f9ff 100%)",
+                  background: "#f8fafc",
                 }}
               >
                 <h2
@@ -1462,7 +1475,7 @@ const RBACSetup = () => {
                     fontSize: isMobile ? "18px" : "20px",
                     fontWeight: 700,
                     margin: 0,
-                    color: "#111827",
+                    color: "#0f172a",
                   }}
                 >
                   {editingRole ? "Edit Role" : "Create New Role"}
@@ -1476,8 +1489,8 @@ const RBACSetup = () => {
                     resetForm();
                   }}
                   style={{
-                    background: "#f3f4f6",
-                    border: "1px solid #e5e7eb",
+                    background: "#fff",
+                    border: "1.5px solid #e2e8f0",
                     borderRadius: "8px",
                     width: "34px",
                     height: "34px",
@@ -1499,10 +1512,10 @@ const RBACSetup = () => {
                   <div
                     style={{
                       marginBottom: "18px",
-                      border: "1px solid #e8edf5",
-                      borderRadius: "12px",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: "16px",
                       padding: isMobile ? "12px" : "14px",
-                      backgroundColor: "#fbfdff",
+                      backgroundColor: "#ffffff",
                     }}
                   >
                     <h3
@@ -1510,7 +1523,7 @@ const RBACSetup = () => {
                         fontSize: "16px",
                         fontWeight: "700",
                         margin: "0 0 14px 0",
-                        color: "#1f2937",
+                        color: "#0f172a",
                       }}
                     >
                       Basic Information
@@ -1554,8 +1567,8 @@ const RBACSetup = () => {
                             width: "100%",
                             height: "40px",
                             padding: "8px 12px",
-                            border: "1px solid #d7deea",
-                            borderRadius: "10px",
+                            border: "1.5px solid #e2e8f0",
+                            borderRadius: "8px",
                             fontSize: "14px",
                             boxSizing: "border-box",
                           }}
@@ -1596,14 +1609,14 @@ const RBACSetup = () => {
                             width: "100%",
                             height: "40px",
                             padding: "8px 12px",
-                            border: "1px solid #d7deea",
-                            borderRadius: "10px",
+                            border: "1.5px solid #e2e8f0",
+                            borderRadius: "8px",
                             fontSize: "14px",
                             boxSizing: "border-box",
                             backgroundColor:
                               editingRole?.type === "system"
-                                ? "#f3f4f6"
-                                : "#f9fafb",
+                                ? "#f1f5f9"
+                                : "#fff",
                           }}
                           placeholder="Auto-generated from name"
                         />
@@ -1632,8 +1645,8 @@ const RBACSetup = () => {
                         style={{
                           width: "100%",
                           padding: "8px 12px",
-                          border: "1px solid #d7deea",
-                          borderRadius: "10px",
+                          border: "1.5px solid #e2e8f0",
+                          borderRadius: "8px",
                           fontSize: "14px",
                           resize: "vertical",
                           boxSizing: "border-box",
@@ -1669,9 +1682,9 @@ const RBACSetup = () => {
                         <div
                           style={{
                             padding: "12px",
-                            backgroundColor: "#eff6ff",
-                            border: "1px solid #bfdbfe",
-                            borderRadius: "10px",
+                            backgroundColor: "#eef2ff",
+                            border: "1px solid #e2e8f0",
+                            borderRadius: "12px",
                             marginBottom: "8px",
                             display: "flex",
                             justifyContent: "space-between",
@@ -1693,7 +1706,7 @@ const RBACSetup = () => {
                               style={{
                                 marginLeft: "12px",
                                 fontSize: "12px",
-                                color: "#3b82f6",
+                                color: "#4f46e5",
                                 textDecoration: "underline",
                               }}
                             >
@@ -1756,8 +1769,8 @@ const RBACSetup = () => {
                         style={{
                           width: "100%",
                           padding: "8px",
-                          border: "1px solid #d7deea",
-                          borderRadius: "10px",
+                          border: "1.5px solid #e2e8f0",
+                          borderRadius: "8px",
                           fontSize: "14px",
                           boxSizing: "border-box",
                         }}
@@ -1809,10 +1822,10 @@ const RBACSetup = () => {
                           width: "100%",
                           height: "40px",
                           padding: "8px 12px",
-                          border: "1px solid #d7deea",
-                          borderRadius: "10px",
+                          border: "1.5px solid #e2e8f0",
+                          borderRadius: "8px",
                           fontSize: "14px",
-                          backgroundColor: "white",
+                          backgroundColor: "#fff",
                           boxSizing: "border-box",
                         }}
                       >
@@ -1921,10 +1934,10 @@ const RBACSetup = () => {
                     <div
                       style={{
                         marginBottom: "18px",
-                        border: "1px solid #e8edf5",
-                        borderRadius: "12px",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: "16px",
                         padding: isMobile ? "12px" : "14px",
-                        backgroundColor: "#fbfdff",
+                        backgroundColor: "#ffffff",
                       }}
                     >
                       <h3
@@ -1979,8 +1992,8 @@ const RBACSetup = () => {
                           style={{
                             position: "relative",
                             padding: "10px",
-                            backgroundColor: "#f8fbff",
-                            borderRadius: "10px",
+                            backgroundColor: "#f8fafc",
+                            borderRadius: "12px",
                             border: "1px solid #e2e8f0",
                           }}
                         >
@@ -1992,16 +2005,16 @@ const RBACSetup = () => {
                             style={{
                               width: "100%",
                               height: "40px",
-                              borderRadius: "10px",
-                              border: "1px solid #d7deea",
-                              background: "white",
+                              borderRadius: "8px",
+                              border: "1.5px solid #e2e8f0",
+                              background: "#fff",
                               cursor: "pointer",
                               display: "flex",
                               justifyContent: "space-between",
                               alignItems: "center",
                               padding: "0 12px",
                               fontSize: "14px",
-                              color: "#1f2937",
+                              color: "#0f172a",
                               fontWeight: 500,
                             }}
                           >
@@ -2026,9 +2039,9 @@ const RBACSetup = () => {
                             <div
                               style={{
                                 marginTop: "10px",
-                                border: "1px solid #d7deea",
-                                borderRadius: "10px",
-                                background: "white",
+                                border: "1.5px solid #e2e8f0",
+                                borderRadius: "8px",
+                                background: "#fff",
                                 overflow: "hidden",
                               }}
                             >
@@ -2052,7 +2065,7 @@ const RBACSetup = () => {
                                     width: "100%",
                                     height: "36px",
                                     borderRadius: "8px",
-                                    border: "1px solid #d7deea",
+                                    border: "1.5px solid #e2e8f0",
                                     padding: "0 10px",
                                     fontSize: "13px",
                                     boxSizing: "border-box",
@@ -2090,12 +2103,12 @@ const RBACSetup = () => {
                                       alignItems: "center",
                                       gap: "8px",
                                       cursor: "pointer",
-                                      border: "1px solid #e5e7eb",
+                                      border: "1px solid #e2e8f0",
                                       borderRadius: "8px",
                                       padding: "8px 10px",
                                       backgroundColor:
                                         formData.projects.includes(project._id)
-                                          ? "#eff6ff"
+                                          ? "#eef2ff"
                                           : "#fff",
                                     }}
                                   >
@@ -2137,7 +2150,7 @@ const RBACSetup = () => {
                               style={{
                                 marginTop: "8px",
                                 fontSize: "12px",
-                                color: "#2563eb",
+                                color: "#4f46e5",
                                 fontWeight: 500,
                               }}
                             >
@@ -2172,10 +2185,10 @@ const RBACSetup = () => {
                   {/* Permissions */}
                   <div
                     style={{
-                      border: "1px solid #e8edf5",
-                      borderRadius: "12px",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: "16px",
                       padding: isMobile ? "12px" : "14px",
-                      backgroundColor: "#fbfdff",
+                      backgroundColor: "#ffffff",
                     }}
                   >
                     <h3
@@ -2194,9 +2207,9 @@ const RBACSetup = () => {
                           marginLeft: "10px",
                           fontSize: "12px",
                           fontWeight: 600,
-                          color: "#1d4ed8",
-                          backgroundColor: "#eff6ff",
-                          border: "1px solid #bfdbfe",
+                          color: "#4f46e5",
+                          backgroundColor: "#eef2ff",
+                          border: "1px solid #e2e8f0",
                           borderRadius: "999px",
                           padding: "2px 8px",
                           verticalAlign: "middle",
@@ -2209,7 +2222,7 @@ const RBACSetup = () => {
                     <div
                       style={{
                         border: "1px solid #e2e8f0",
-                        borderRadius: "10px",
+                        borderRadius: "12px",
                         overflow: "hidden",
                       }}
                     >
@@ -2217,7 +2230,7 @@ const RBACSetup = () => {
                         ({ category, modules, total, selected }) => (
                           <div
                             key={category}
-                            style={{ borderBottom: "1px solid #e5e7eb" }}
+                            style={{ borderBottom: "1px solid #e2e8f0" }}
                           >
                             <button
                               type="button"
@@ -2225,7 +2238,9 @@ const RBACSetup = () => {
                               style={{
                                 width: "100%",
                                 padding: "12px 16px",
-                                backgroundColor: "#f7f9fc",
+                                backgroundColor: expandedCategories.has(category)
+                                  ? "#eef2ff"
+                                  : "#f8fafc",
                                 border: "none",
                                 display: "flex",
                                 justifyContent: "space-between",
@@ -2233,6 +2248,9 @@ const RBACSetup = () => {
                                 cursor: "pointer",
                                 fontSize: "14px",
                                 fontWeight: "600",
+                                color: expandedCategories.has(category)
+                                  ? "#4f46e5"
+                                  : "#0f172a",
                                 textAlign: "left",
                               }}
                             >
@@ -2249,12 +2267,12 @@ const RBACSetup = () => {
                               >
                                 <span
                                   style={{
-                                    color: selected > 0 ? "#1d4ed8" : "#64748b",
+                                    color: selected > 0 ? "#4f46e5" : "#94a3b8",
                                     backgroundColor:
-                                      selected > 0 ? "#eff6ff" : "#f1f5f9",
+                                      selected > 0 ? "#eef2ff" : "#f1f5f9",
                                     border:
                                       selected > 0
-                                        ? "1px solid #bfdbfe"
+                                        ? "1px solid #e2e8f0"
                                         : "1px solid #e2e8f0",
                                     borderRadius: "999px",
                                     padding: "2px 8px",
@@ -2307,7 +2325,7 @@ const RBACSetup = () => {
                                             style={{
                                               fontSize: "14px",
                                               fontWeight: "600",
-                                              color: "#374151",
+                                              color: "#0f172a",
                                             }}
                                           >
                                             {module}
@@ -2362,7 +2380,7 @@ const RBACSetup = () => {
                                                 <div
                                                   style={{
                                                     fontSize: "13px",
-                                                    color: "#374151",
+                                                    color: "#0f172a",
                                                   }}
                                                 >
                                                   {permission.name}
@@ -2371,7 +2389,7 @@ const RBACSetup = () => {
                                                   <div
                                                     style={{
                                                       fontSize: "12px",
-                                                      color: "#6b7280",
+                                                      color: "#475569",
                                                     }}
                                                   >
                                                     {permission.description}
@@ -2397,11 +2415,11 @@ const RBACSetup = () => {
                 <div
                   style={{
                     padding: isMobile ? "12px" : "14px 24px",
-                    borderTop: "1px solid #e6ebf3",
+                    borderTop: "1px solid #e2e8f0",
                     display: "flex",
                     justifyContent: "flex-end",
                     gap: "12px",
-                    backgroundColor: "#fbfcff",
+                    backgroundColor: "#f8fafc",
                   }}
                 >
                   <button
@@ -2416,10 +2434,10 @@ const RBACSetup = () => {
                     style={{
                       height: "40px",
                       padding: "0 16px",
-                      backgroundColor: "white",
-                      color: "#374151",
-                      border: "1px solid #d7deea",
-                      borderRadius: "10px",
+                      backgroundColor: "#fff",
+                      color: "#334155",
+                      border: "1.5px solid #e2e8f0",
+                      borderRadius: "8px",
                       fontSize: "14px",
                       fontWeight: "600",
                       cursor: "pointer",
@@ -2435,14 +2453,14 @@ const RBACSetup = () => {
                       gap: "8px",
                       height: "40px",
                       padding: "0 16px",
-                      backgroundColor: "#2563eb",
-                      color: "white",
+                      background: "linear-gradient(160deg, #4f46e5, #4338ca)",
+                      color: "#fff",
                       border: "none",
-                      borderRadius: "10px",
+                      borderRadius: "8px",
                       fontSize: "14px",
                       fontWeight: "600",
                       cursor: "pointer",
-                      boxShadow: "0 4px 14px rgba(37, 99, 235, 0.25)",
+                      boxShadow: "0 4px 14px rgba(67,56,202,.35)",
                     }}
                   >
                     <MdSave size={18} />
@@ -2475,12 +2493,13 @@ const RBACSetup = () => {
             <div
               style={{
                 backgroundColor: "white",
-                borderRadius: "16px",
+                borderRadius: "20px",
                 width: "100%",
                 maxWidth: "500px",
                 maxHeight: "90vh",
-                border: "1px solid #e5eaf4",
-                boxShadow: "0 26px 70px rgba(15, 23, 42, 0.24)",
+                border: "1px solid #e2e8f0",
+                boxShadow:
+                  "0 24px 64px rgba(15,23,42,.22), 0 8px 24px rgba(15,23,42,.12)",
                 overflow: "hidden",
                 display: "flex",
                 flexDirection: "column",
@@ -2489,12 +2508,11 @@ const RBACSetup = () => {
               <div
                 style={{
                   padding: isMobile ? "16px" : "18px 24px",
-                  borderBottom: "1px solid #e6ebf3",
+                  borderBottom: "1px solid #e2e8f0",
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
-                  background:
-                    "linear-gradient(180deg, #fbfcff 0%, #f6f9ff 100%)",
+                  background: "#f8fafc",
                 }}
               >
                 <h2
@@ -2502,7 +2520,7 @@ const RBACSetup = () => {
                     fontSize: isMobile ? "18px" : "20px",
                     fontWeight: 700,
                     margin: 0,
-                    color: "#111827",
+                    color: "#0f172a",
                   }}
                 >
                   Clone Role
@@ -2516,8 +2534,8 @@ const RBACSetup = () => {
                     resetForm();
                   }}
                   style={{
-                    background: "#f3f4f6",
-                    border: "1px solid #e5e7eb",
+                    background: "#fff",
+                    border: "1.5px solid #e2e8f0",
                     borderRadius: "8px",
                     width: "34px",
                     height: "34px",
@@ -2551,12 +2569,12 @@ const RBACSetup = () => {
                   <div
                     style={{
                       padding: "12px",
-                      backgroundColor: "#eff6ff",
-                      border: "1px solid #bfdbfe",
-                      borderRadius: "10px",
+                      backgroundColor: "#eef2ff",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: "12px",
                       marginBottom: "16px",
                       fontSize: "14px",
-                      color: "#1e40af",
+                      color: "#4f46e5",
                     }}
                   >
                     Cloning from: <strong>{cloneMasterRole.name}</strong>
@@ -2596,8 +2614,8 @@ const RBACSetup = () => {
                         width: "100%",
                         height: "40px",
                         padding: "8px 12px",
-                        border: "1px solid #d7deea",
-                        borderRadius: "10px",
+                        border: "1.5px solid #e2e8f0",
+                        borderRadius: "8px",
                         fontSize: "14px",
                         boxSizing: "border-box",
                       }}
@@ -2638,10 +2656,10 @@ const RBACSetup = () => {
                         width: "100%",
                         height: "40px",
                         padding: "8px 12px",
-                        border: "1px solid #d7deea",
-                        borderRadius: "10px",
+                        border: "1.5px solid #e2e8f0",
+                        borderRadius: "8px",
                         fontSize: "14px",
-                        backgroundColor: "#f9fafb",
+                        backgroundColor: "#fff",
                         boxSizing: "border-box",
                       }}
                       placeholder="Auto-generated from name"
@@ -2671,8 +2689,8 @@ const RBACSetup = () => {
                       style={{
                         width: "100%",
                         padding: "8px 12px",
-                        border: "1px solid #d7deea",
-                        borderRadius: "10px",
+                        border: "1.5px solid #e2e8f0",
+                        borderRadius: "8px",
                         fontSize: "14px",
                         resize: "vertical",
                         boxSizing: "border-box",
@@ -2696,9 +2714,9 @@ const RBACSetup = () => {
                       style={{
                         position: "relative",
                         border: "1px solid #e2e8f0",
-                        borderRadius: "10px",
+                        borderRadius: "12px",
                         padding: "10px",
-                        backgroundColor: "#f8fbff",
+                        backgroundColor: "#f8fafc",
                       }}
                     >
                       <button
@@ -2709,16 +2727,16 @@ const RBACSetup = () => {
                         style={{
                           width: "100%",
                           height: "40px",
-                          borderRadius: "10px",
-                          border: "1px solid #d7deea",
-                          background: "white",
+                          borderRadius: "8px",
+                          border: "1.5px solid #e2e8f0",
+                          background: "#fff",
                           cursor: "pointer",
                           display: "flex",
                           justifyContent: "space-between",
                           alignItems: "center",
                           padding: "0 12px",
                           fontSize: "14px",
-                          color: "#1f2937",
+                          color: "#0f172a",
                           fontWeight: 500,
                         }}
                       >
@@ -2743,9 +2761,9 @@ const RBACSetup = () => {
                         <div
                           style={{
                             marginTop: "10px",
-                            border: "1px solid #d7deea",
-                            borderRadius: "10px",
-                            background: "white",
+                            border: "1.5px solid #e2e8f0",
+                            borderRadius: "8px",
+                            background: "#fff",
                             overflow: "hidden",
                           }}
                         >
@@ -2769,7 +2787,7 @@ const RBACSetup = () => {
                                 width: "100%",
                                 height: "36px",
                                 borderRadius: "8px",
-                                border: "1px solid #d7deea",
+                                border: "1.5px solid #e2e8f0",
                                 padding: "0 10px",
                                 fontSize: "13px",
                                 boxSizing: "border-box",
@@ -2807,13 +2825,13 @@ const RBACSetup = () => {
                                   alignItems: "center",
                                   gap: "8px",
                                   cursor: "pointer",
-                                  border: "1px solid #e5e7eb",
+                                  border: "1px solid #e2e8f0",
                                   borderRadius: "8px",
                                   padding: "8px 10px",
                                   backgroundColor: formData.projects.includes(
                                     project._id,
                                   )
-                                    ? "#eff6ff"
+                                    ? "#eef2ff"
                                     : "#fff",
                                 }}
                               >
@@ -2855,7 +2873,7 @@ const RBACSetup = () => {
                           style={{
                             marginTop: "8px",
                             fontSize: "12px",
-                            color: "#2563eb",
+                            color: "#4f46e5",
                             fontWeight: 500,
                           }}
                         >
@@ -2870,11 +2888,11 @@ const RBACSetup = () => {
                 <div
                   style={{
                     padding: isMobile ? "12px" : "14px 24px",
-                    borderTop: "1px solid #e6ebf3",
+                    borderTop: "1px solid #e2e8f0",
                     display: "flex",
                     justifyContent: "flex-end",
                     gap: "12px",
-                    backgroundColor: "#fbfcff",
+                    backgroundColor: "#f8fafc",
                   }}
                 >
                   <button
@@ -2889,10 +2907,10 @@ const RBACSetup = () => {
                     style={{
                       height: "40px",
                       padding: "0 16px",
-                      backgroundColor: "white",
-                      color: "#374151",
-                      border: "1px solid #d7deea",
-                      borderRadius: "10px",
+                      backgroundColor: "#fff",
+                      color: "#334155",
+                      border: "1.5px solid #e2e8f0",
+                      borderRadius: "8px",
                       fontSize: "14px",
                       fontWeight: "600",
                       cursor: "pointer",
@@ -2911,7 +2929,7 @@ const RBACSetup = () => {
                       backgroundColor: "#059669",
                       color: "white",
                       border: "none",
-                      borderRadius: "10px",
+                      borderRadius: "8px",
                       fontSize: "14px",
                       fontWeight: "600",
                       cursor: "pointer",
@@ -2946,11 +2964,12 @@ const RBACSetup = () => {
             <div
               style={{
                 backgroundColor: "white",
-                borderRadius: "12px",
+                borderRadius: "20px",
                 width: "90%",
                 maxWidth: "500px",
                 padding: "28px",
-                boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
+                boxShadow:
+                  "0 24px 64px rgba(15,23,42,.22), 0 8px 24px rgba(15,23,42,.12)",
               }}
             >
               <div
@@ -2981,7 +3000,7 @@ const RBACSetup = () => {
                       margin: 0,
                       fontSize: "18px",
                       fontWeight: "700",
-                      color: "#111827",
+                      color: "#0f172a",
                     }}
                   >
                     Delete {selectedRoleIds.size} Role
@@ -2991,7 +3010,7 @@ const RBACSetup = () => {
                     style={{
                       margin: "4px 0 0",
                       fontSize: "13px",
-                      color: "#6b7280",
+                      color: "#475569",
                     }}
                   >
                     This action cannot be undone.
@@ -3038,7 +3057,7 @@ const RBACSetup = () => {
                         style={{
                           fontWeight: "600",
                           fontSize: "14px",
-                          color: "#111827",
+                          color: "#0f172a",
                           flex: 1,
                         }}
                       >
@@ -3085,9 +3104,9 @@ const RBACSetup = () => {
                   disabled={bulkDeleting}
                   style={{
                     padding: "9px 20px",
-                    background: "white",
-                    color: "#374151",
-                    border: "1px solid #d1d5db",
+                    background: "#fff",
+                    color: "#334155",
+                    border: "1.5px solid #e2e8f0",
                     borderRadius: "8px",
                     fontSize: "14px",
                     fontWeight: "600",

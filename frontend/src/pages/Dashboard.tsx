@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import DashboardLayout from "../components/DashboardLayout";
-import ModuleHeader from "../components/ModuleHeader";
+import PageHeader from "../components/ui/PageHeader";
+import MetricCard from "../components/ui/MetricCard";
 import ViewModeSelector from "../components/ViewModeSelector";
+import { tokens, styles } from "../theme/oneos";
 import TeamBreakdown from "../components/TeamBreakdown";
 import { API_CONFIG } from "../config/constants";
 import { usePermissions } from "../hooks/usePermissions";
@@ -189,27 +191,18 @@ const Dashboard = () => {
 
   return (
     <DashboardLayout>
-      <div style={{ padding: "20px" }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: "20px",
-          }}
-        >
-          <ModuleHeader
-            title="Dashboard"
-            subtitle={`Overview of ${viewMode === "self" ? "your" : viewMode === "team" ? "your team's" : viewMode === "hierarchy" ? "your hierarchy's" : "all"} work`}
-          />
-
-          {/* View Mode Selector */}
-          <ViewModeSelector
-            value={viewMode}
-            onChange={handleViewModeChange}
-            disabled={loading}
-          />
-        </div>
+      <div style={{ ...styles.page, maxWidth: "none" }}>
+        <PageHeader
+          title="Dashboard"
+          subtitle={`Overview of ${viewMode === "self" ? "your" : viewMode === "team" ? "your team's" : viewMode === "hierarchy" ? "your hierarchy's" : "all"} work`}
+          actions={
+            <ViewModeSelector
+              value={viewMode}
+              onChange={handleViewModeChange}
+              disabled={loading}
+            />
+          }
+        />
 
         {/* Stats Cards */}
         <div
@@ -220,125 +213,40 @@ const Dashboard = () => {
             marginBottom: "24px",
           }}
         >
-          <div
-            style={{
-              background: "white",
-              borderRadius: "8px",
-              padding: "20px",
-              boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-            }}
-          >
-            <p
-              style={{
-                fontSize: "14px",
-                color: "#6b7280",
-                marginBottom: "8px",
-              }}
-            >
-              Total Queries
-            </p>
-            <p
-              style={{ fontSize: "32px", fontWeight: "bold", color: "#111827" }}
-            >
-              {loading ? "-" : ticketStats.total}
-            </p>
-          </div>
+          <MetricCard
+            label="Total Queries"
+            value={loading ? "-" : ticketStats.total}
+            color={tokens.text}
+            accent={tokens.primary}
+          />
 
-          <div
-            style={{
-              background: "white",
-              borderRadius: "8px",
-              padding: "20px",
-              boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-            }}
-          >
-            <p
-              style={{
-                fontSize: "14px",
-                color: "#6b7280",
-                marginBottom: "8px",
-              }}
-            >
-              Pending
-            </p>
-            <p
-              style={{ fontSize: "32px", fontWeight: "bold", color: "#f59e0b" }}
-            >
-              {loading ? "-" : ticketStats.pending}
-            </p>
-          </div>
+          <MetricCard
+            label="Pending"
+            value={loading ? "-" : ticketStats.pending}
+            color={tokens.warn}
+            accent={tokens.warn}
+          />
 
-          <div
-            style={{
-              background: "white",
-              borderRadius: "8px",
-              padding: "20px",
-              boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-            }}
-          >
-            <p
-              style={{
-                fontSize: "14px",
-                color: "#6b7280",
-                marginBottom: "8px",
-              }}
-            >
-              Resolved
-            </p>
-            <p
-              style={{ fontSize: "32px", fontWeight: "bold", color: "#10b981" }}
-            >
-              {loading ? "-" : ticketStats.resolved}
-            </p>
-          </div>
+          <MetricCard
+            label="Resolved"
+            value={loading ? "-" : ticketStats.resolved}
+            color={tokens.success}
+            accent={tokens.success}
+          />
 
-          <div
-            style={{
-              background: "white",
-              borderRadius: "8px",
-              padding: "20px",
-              boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-            }}
-          >
-            <p
-              style={{
-                fontSize: "14px",
-                color: "#6b7280",
-                marginBottom: "8px",
-              }}
-            >
-              Closed
-            </p>
-            <p
-              style={{ fontSize: "32px", fontWeight: "bold", color: "#6b7280" }}
-            >
-              {loading ? "-" : ticketStats.closed}
-            </p>
-          </div>
+          <MetricCard
+            label="Closed"
+            value={loading ? "-" : ticketStats.closed}
+            color={tokens.sub}
+            accent={tokens.muted}
+          />
 
-          <div
-            style={{
-              background: "white",
-              borderRadius: "8px",
-              padding: "20px",
-              boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-            }}
-          >
-            <p
-              style={{
-                fontSize: "14px",
-                color: "#6b7280",
-                marginBottom: "8px",
-              }}
-            >
-              Footfall Count
-            </p>
-            <p
-              style={{ fontSize: "32px", fontWeight: "bold", color: "#6366f1" }}
-            >
-              {loading ? "-" : ticketStats.footfallCount}
-            </p>
-          </div>
+          <MetricCard
+            label="Footfall Count"
+            value={loading ? "-" : ticketStats.footfallCount}
+            color={tokens.primary}
+            accent={tokens.primary}
+          />
         </div>
 
         {/* Team Breakdown - Show only if permission exists and data available */}
@@ -361,9 +269,9 @@ const Dashboard = () => {
         {(ticketStats.fallbackAssignmentsThisMonth ?? 0) > 0 && (
           <div
             style={{
-              background: "#fffbeb",
-              border: "1px solid #f59e0b",
-              borderRadius: "8px",
+              background: tokens.warnBg,
+              border: "1px solid #fde68a",
+              borderRadius: 12,
               padding: "16px 20px",
               marginBottom: "24px",
               display: "flex",
@@ -400,20 +308,14 @@ const Dashboard = () => {
         )}
 
         {/* Recent Activity */}
-        <div
-          style={{
-            background: "white",
-            borderRadius: "8px",
-            padding: "20px",
-            boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-          }}
-        >
+        <div style={styles.card}>
           <h2
             style={{
-              fontSize: "18px",
-              fontWeight: "600",
+              fontFamily: tokens.displayFont,
+              fontSize: "20px",
+              fontWeight: 700,
               marginBottom: "16px",
-              color: "#111827",
+              color: tokens.text,
             }}
           >
             Recent Activity
@@ -429,9 +331,9 @@ const Dashboard = () => {
                   key={activity.ticketId}
                   style={{
                     padding: "12px",
-                    borderRadius: "6px",
-                    background: "#f9fafb",
-                    border: "1px solid #e5e7eb",
+                    borderRadius: 10,
+                    background: tokens.pageBg,
+                    border: `1px solid ${tokens.border}`,
                   }}
                 >
                   <p
@@ -472,26 +374,24 @@ const Dashboard = () => {
         {jobLog && hasPermission(PERMISSIONS.ESCALATION_MATRIX_VIEW) && (
           <div
             style={{
+              ...styles.card,
               marginTop: "24px",
-              background: "white",
-              borderRadius: "8px",
-              padding: "20px",
-              boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
               borderLeft: `4px solid ${
                 jobLog.status === "success"
-                  ? "#10b981"
+                  ? tokens.success
                   : jobLog.status === "partial"
-                    ? "#f59e0b"
-                    : "#ef4444"
+                    ? tokens.warn
+                    : tokens.danger
               }`,
             }}
           >
             <h2
               style={{
-                fontSize: "18px",
-                fontWeight: "600",
+                fontFamily: tokens.displayFont,
+                fontSize: "20px",
+                fontWeight: 700,
                 marginBottom: "12px",
-                color: "#111827",
+                color: tokens.text,
               }}
             >
               Auto-Escalation Monitor

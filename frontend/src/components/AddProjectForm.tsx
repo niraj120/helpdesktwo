@@ -1202,7 +1202,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
         style={{
           backgroundColor: "#FFFFFF",
           borderRadius: "16px",
-          border: "1px solid #E4E7EC",
+          border: "1px solid #e2e8f0",
           width: "100%",
           maxWidth: "1400px",
           maxHeight: "94vh",
@@ -1216,7 +1216,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
         <div
           style={{
             padding: "20px 24px",
-            borderBottom: "1px solid #E4E7EC",
+            borderBottom: "1px solid #e2e8f0",
             display: "flex",
             justifyContent: "space-between",
             alignItems: "flex-start",
@@ -1228,7 +1228,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
               style={{
                 fontSize: "24px",
                 fontWeight: 700,
-                color: "#101828",
+                color: "#0f172a",
                 margin: "0 0 4px 0",
                 letterSpacing: "-0.01em",
               }}
@@ -1249,7 +1249,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
               style={{
                 margin: 0,
                 fontSize: "14px",
-                color: "#667085",
+                color: "#475569",
                 fontWeight: 400,
               }}
             >
@@ -1265,16 +1265,16 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              border: "1px solid #D0D5DD",
+              border: "1px solid #e2e8f0",
               background: "#FFFFFF",
               borderRadius: "8px",
               cursor: "pointer",
               fontSize: "20px",
-              color: "#667085",
+              color: "#475569",
               transition: "all 0.2s",
             }}
             onMouseOver={(e) =>
-              (e.currentTarget.style.backgroundColor = "#F9FAFB")
+              (e.currentTarget.style.backgroundColor = "#f8fafc")
             }
             onMouseOut={(e) =>
               (e.currentTarget.style.backgroundColor = "#FFFFFF")
@@ -1290,9 +1290,9 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
           <div
             style={{
               width: "252px",
-              borderRight: "1px solid #E4E7EC",
+              borderRight: "1px solid #e2e8f0",
               padding: "16px 10px",
-              background: "#F9FAFB",
+              background: "#f8fafc",
               overflowY: "auto",
             }}
           >
@@ -1307,8 +1307,8 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   alignItems: "center",
                   gap: "12px",
                   padding: "10px 12px",
-                  background: activeTab === tab.id ? "#F4F3FF" : "transparent",
-                  color: activeTab === tab.id ? "#6941C6" : "#475467",
+                  background: activeTab === tab.id ? "#eef2ff" : "transparent",
+                  color: activeTab === tab.id ? "#4f46e5" : "#475569",
                   fontWeight: activeTab === tab.id ? "600" : "500",
                   fontSize: "14px",
                   cursor: "pointer",
@@ -1317,19 +1317,19 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   borderRadius: "8px",
                   border:
                     activeTab === tab.id
-                      ? "1px solid #DDD6FE"
+                      ? "1px solid #4f46e5"
                       : "1px solid transparent",
                 }}
                 onMouseOver={(e) => {
                   if (activeTab !== tab.id) {
-                    e.currentTarget.style.backgroundColor = "#F2F4F7";
-                    e.currentTarget.style.color = "#101828";
+                    e.currentTarget.style.backgroundColor = "#f1f5f9";
+                    e.currentTarget.style.color = "#0f172a";
                   }
                 }}
                 onMouseOut={(e) => {
                   if (activeTab !== tab.id) {
                     e.currentTarget.style.backgroundColor = "transparent";
-                    e.currentTarget.style.color = "#475467";
+                    e.currentTarget.style.color = "#475569";
                   }
                 }}
               >
@@ -1378,15 +1378,15 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   <div
                     style={{
                       padding: "12px 16px",
-                      backgroundColor: "#f3f4f6",
+                      backgroundColor: "#f8fafc",
                       borderRadius: "6px",
-                      borderLeft: "3px solid #3F41D1",
+                      borderLeft: "3px solid #4f46e5",
                     }}
                   >
                     <p
                       style={{
                         fontSize: "13px",
-                        color: "#6b7280",
+                        color: "#475569",
                         margin: 0,
                         lineHeight: "1.5",
                       }}
@@ -1404,7 +1404,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         display: "block",
                         fontSize: "14px",
                         fontWeight: "500",
-                        color: "#111827",
+                        color: "#0f172a",
                         marginBottom: "6px",
                       }}
                     >
@@ -1413,7 +1413,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                     <p
                       style={{
                         fontSize: "12px",
-                        color: "#6b7280",
+                        color: "#475569",
                         marginBottom: "8px",
                         lineHeight: "1.5",
                       }}
@@ -1494,7 +1494,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         display: "block",
                         fontSize: "14px",
                         fontWeight: "500",
-                        color: "#111827",
+                        color: "#0f172a",
                         marginBottom: "6px",
                       }}
                     >
@@ -1504,7 +1504,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                     <p
                       style={{
                         fontSize: "12px",
-                        color: "#6b7280",
+                        color: "#475569",
                         marginBottom: "8px",
                         lineHeight: "1.5",
                       }}
@@ -1587,7 +1587,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         display: "block",
                         fontSize: "14px",
                         fontWeight: "500",
-                        color: "#111827",
+                        color: "#0f172a",
                         marginBottom: "6px",
                       }}
                     >
@@ -1596,7 +1596,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                     <p
                       style={{
                         fontSize: "12px",
-                        color: "#6b7280",
+                        color: "#475569",
                         marginBottom: "8px",
                         lineHeight: "1.5",
                       }}
@@ -1632,7 +1632,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         display: "block",
                         fontSize: "14px",
                         fontWeight: "500",
-                        color: "#111827",
+                        color: "#0f172a",
                         marginBottom: "6px",
                       }}
                     >
@@ -1642,7 +1642,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                     <p
                       style={{
                         fontSize: "12px",
-                        color: "#6b7280",
+                        color: "#475569",
                         marginBottom: "8px",
                         lineHeight: "1.5",
                       }}
@@ -1668,12 +1668,12 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           display: "flex",
                           alignItems: "center",
                           padding: "0 12px",
-                          backgroundColor: "#f9fafb",
-                          border: "1px solid #d1d5db",
+                          backgroundColor: "#f8fafc",
+                          border: "1px solid #e2e8f0",
                           borderRight: "none",
                           borderRadius: "6px 0 0 6px",
                           fontSize: "14px",
-                          color: "#6b7280",
+                          color: "#475569",
                           whiteSpace: "nowrap",
                           height: "40px",
                           lineHeight: "1",
@@ -1749,7 +1749,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         display: "block",
                         fontSize: "14px",
                         fontWeight: "500",
-                        color: "#111827",
+                        color: "#0f172a",
                         marginBottom: "6px",
                       }}
                     >
@@ -1758,7 +1758,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                     <p
                       style={{
                         fontSize: "12px",
-                        color: "#6b7280",
+                        color: "#475569",
                         marginBottom: "16px",
                         lineHeight: "1.5",
                       }}
@@ -1777,12 +1777,12 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                             <span
                               key={format}
                               style={{
-                                backgroundColor: "#f3f4f6",
+                                backgroundColor: "#f8fafc",
                                 padding: "2px 6px",
                                 borderRadius: "3px",
                                 fontSize: "11px",
                                 fontWeight: "500",
-                                color: "#6b7280",
+                                color: "#475569",
                               }}
                             >
                               {format}
@@ -1802,26 +1802,26 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       {/* Logo */}
                       <div
                         style={{
-                          border: "2px dashed #d1d5db",
+                          border: "2px dashed #e2e8f0",
                           borderRadius: "8px",
                           padding: "20px",
-                          backgroundColor: "#fafbfc",
+                          backgroundColor: "#f8fafc",
                           transition: "all 0.2s ease",
                         }}
                         onDragOver={(e) => {
                           e.preventDefault();
-                          e.currentTarget.style.borderColor = "#3F41D1";
+                          e.currentTarget.style.borderColor = "#4f46e5";
                           e.currentTarget.style.backgroundColor =
-                            "rgba(63, 65, 209, 0.02)";
+                            "rgba(79, 70, 229, 0.06)";
                         }}
                         onDragLeave={(e) => {
-                          e.currentTarget.style.borderColor = "#d1d5db";
-                          e.currentTarget.style.backgroundColor = "#fafbfc";
+                          e.currentTarget.style.borderColor = "#e2e8f0";
+                          e.currentTarget.style.backgroundColor = "#f8fafc";
                         }}
                         onDrop={(e) => {
                           e.preventDefault();
-                          e.currentTarget.style.borderColor = "#d1d5db";
-                          e.currentTarget.style.backgroundColor = "#fafbfc";
+                          e.currentTarget.style.borderColor = "#e2e8f0";
+                          e.currentTarget.style.backgroundColor = "#f8fafc";
                           const file = e.dataTransfer.files[0];
                           if (file) handleFileUpload(file, "logo");
                         }}
@@ -1831,7 +1831,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                             style={{
                               fontSize: "14px",
                               fontWeight: "500",
-                              color: "#111827",
+                              color: "#0f172a",
                             }}
                           >
                             Logo
@@ -1839,7 +1839,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           <p
                             style={{
                               fontSize: "12px",
-                              color: "#6b7280",
+                              color: "#475569",
                               margin: "4px 0",
                               lineHeight: "1.5",
                             }}
@@ -1852,8 +1852,8 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                             width: "100%",
                             minHeight: "120px",
                             border: formData.logo
-                              ? "1px solid #e5e7eb"
-                              : "2px dashed #e5e7eb",
+                              ? "1px solid #e2e8f0"
+                              : "2px dashed #e2e8f0",
                             borderRadius: "6px",
                             display: "flex",
                             alignItems: "center",
@@ -1888,21 +1888,21 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                               >
                                 <path
                                   d="M21 15V19C21 19.5304 20.7893 20.0391 20.4142 20.4142C20.0391 20.7893 19.5304 21 19 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V15"
-                                  stroke="#9ca3af"
+                                  stroke="#94a3b8"
                                   strokeWidth="2"
                                   strokeLinecap="round"
                                   strokeLinejoin="round"
                                 />
                                 <path
                                   d="M17 8L12 3L7 8"
-                                  stroke="#9ca3af"
+                                  stroke="#94a3b8"
                                   strokeWidth="2"
                                   strokeLinecap="round"
                                   strokeLinejoin="round"
                                 />
                                 <path
                                   d="M12 3V15"
-                                  stroke="#9ca3af"
+                                  stroke="#94a3b8"
                                   strokeWidth="2"
                                   strokeLinecap="round"
                                   strokeLinejoin="round"
@@ -1911,7 +1911,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                               <p
                                 style={{
                                   fontSize: "13px",
-                                  color: "#6b7280",
+                                  color: "#475569",
                                   margin: "0",
                                 }}
                               >
@@ -1925,10 +1925,10 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                             style={{
                               flex: 1,
                               padding: "10px 16px",
-                              border: "1px solid #3F41D1",
+                              border: "1px solid #4f46e5",
                               borderRadius: "6px",
                               backgroundColor: "white",
-                              color: "#3F41D1",
+                              color: "#4f46e5",
                               fontSize: "14px",
                               fontWeight: "500",
                               cursor: "pointer",
@@ -1941,7 +1941,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                             }}
                             onMouseEnter={(e) => {
                               e.currentTarget.style.backgroundColor =
-                                "rgba(63, 65, 209, 0.04)";
+                                "rgba(79, 70, 229, 0.06)";
                             }}
                             onMouseLeave={(e) => {
                               e.currentTarget.style.backgroundColor = "white";
@@ -2024,26 +2024,26 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       {/* Favicon */}
                       <div
                         style={{
-                          border: "2px dashed #d1d5db",
+                          border: "2px dashed #e2e8f0",
                           borderRadius: "8px",
                           padding: "20px",
-                          backgroundColor: "#fafbfc",
+                          backgroundColor: "#f8fafc",
                           transition: "all 0.2s ease",
                         }}
                         onDragOver={(e) => {
                           e.preventDefault();
-                          e.currentTarget.style.borderColor = "#3F41D1";
+                          e.currentTarget.style.borderColor = "#4f46e5";
                           e.currentTarget.style.backgroundColor =
-                            "rgba(63, 65, 209, 0.02)";
+                            "rgba(79, 70, 229, 0.06)";
                         }}
                         onDragLeave={(e) => {
-                          e.currentTarget.style.borderColor = "#d1d5db";
-                          e.currentTarget.style.backgroundColor = "#fafbfc";
+                          e.currentTarget.style.borderColor = "#e2e8f0";
+                          e.currentTarget.style.backgroundColor = "#f8fafc";
                         }}
                         onDrop={(e) => {
                           e.preventDefault();
-                          e.currentTarget.style.borderColor = "#d1d5db";
-                          e.currentTarget.style.backgroundColor = "#fafbfc";
+                          e.currentTarget.style.borderColor = "#e2e8f0";
+                          e.currentTarget.style.backgroundColor = "#f8fafc";
                           const file = e.dataTransfer.files[0];
                           if (file) handleFileUpload(file, "favicon");
                         }}
@@ -2053,7 +2053,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                             style={{
                               fontSize: "14px",
                               fontWeight: "500",
-                              color: "#111827",
+                              color: "#0f172a",
                             }}
                           >
                             Favicon
@@ -2061,7 +2061,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           <p
                             style={{
                               fontSize: "12px",
-                              color: "#6b7280",
+                              color: "#475569",
                               margin: "4px 0",
                               lineHeight: "1.5",
                             }}
@@ -2074,8 +2074,8 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                             width: "100%",
                             minHeight: "120px",
                             border: formData.favicon
-                              ? "1px solid #e5e7eb"
-                              : "2px dashed #e5e7eb",
+                              ? "1px solid #e2e8f0"
+                              : "2px dashed #e2e8f0",
                             borderRadius: "6px",
                             display: "flex",
                             alignItems: "center",
@@ -2110,21 +2110,21 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                               >
                                 <path
                                   d="M21 15V19C21 19.5304 20.7893 20.0391 20.4142 20.4142C20.0391 20.7893 19.5304 21 19 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V15"
-                                  stroke="#9ca3af"
+                                  stroke="#94a3b8"
                                   strokeWidth="2"
                                   strokeLinecap="round"
                                   strokeLinejoin="round"
                                 />
                                 <path
                                   d="M17 8L12 3L7 8"
-                                  stroke="#9ca3af"
+                                  stroke="#94a3b8"
                                   strokeWidth="2"
                                   strokeLinecap="round"
                                   strokeLinejoin="round"
                                 />
                                 <path
                                   d="M12 3V15"
-                                  stroke="#9ca3af"
+                                  stroke="#94a3b8"
                                   strokeWidth="2"
                                   strokeLinecap="round"
                                   strokeLinejoin="round"
@@ -2133,7 +2133,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                               <p
                                 style={{
                                   fontSize: "13px",
-                                  color: "#6b7280",
+                                  color: "#475569",
                                   margin: "0",
                                 }}
                               >
@@ -2147,10 +2147,10 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                             style={{
                               flex: 1,
                               padding: "10px 16px",
-                              border: "1px solid #3F41D1",
+                              border: "1px solid #4f46e5",
                               borderRadius: "6px",
                               backgroundColor: "white",
-                              color: "#3F41D1",
+                              color: "#4f46e5",
                               fontSize: "14px",
                               fontWeight: "500",
                               cursor: "pointer",
@@ -2163,7 +2163,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                             }}
                             onMouseEnter={(e) => {
                               e.currentTarget.style.backgroundColor =
-                                "rgba(63, 65, 209, 0.04)";
+                                "rgba(79, 70, 229, 0.06)";
                             }}
                             onMouseLeave={(e) => {
                               e.currentTarget.style.backgroundColor = "white";
@@ -2254,7 +2254,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         display: "block",
                         fontSize: "14px",
                         fontWeight: "500",
-                        color: "#111827",
+                        color: "#0f172a",
                         marginBottom: "6px",
                       }}
                     >
@@ -2308,7 +2308,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         display: "block",
                         fontSize: "14px",
                         fontWeight: "500",
-                        color: "#111827",
+                        color: "#0f172a",
                         marginBottom: "6px",
                       }}
                     >
@@ -2317,7 +2317,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                     <p
                       style={{
                         fontSize: "12px",
-                        color: "#6b7280",
+                        color: "#475569",
                         marginBottom: "16px",
                         lineHeight: "1.5",
                       }}
@@ -2340,7 +2340,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                             display: "block",
                             fontSize: "13px",
                             fontWeight: "500",
-                            color: "#111827",
+                            color: "#0f172a",
                             marginBottom: "6px",
                           }}
                         >
@@ -2394,7 +2394,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                             display: "block",
                             fontSize: "13px",
                             fontWeight: "500",
-                            color: "#111827",
+                            color: "#0f172a",
                             marginBottom: "6px",
                           }}
                         >
@@ -2448,7 +2448,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                             display: "block",
                             fontSize: "13px",
                             fontWeight: "500",
-                            color: "#111827",
+                            color: "#0f172a",
                             marginBottom: "6px",
                           }}
                         >
@@ -2502,7 +2502,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                             display: "block",
                             fontSize: "13px",
                             fontWeight: "500",
-                            color: "#111827",
+                            color: "#0f172a",
                             marginBottom: "6px",
                           }}
                         >
@@ -2558,7 +2558,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         display: "block",
                         fontSize: "14px",
                         fontWeight: "600",
-                        color: "#1f2937",
+                        color: "#0f172a",
                         marginBottom: "4px",
                       }}
                     >
@@ -2567,7 +2567,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                     <p
                       style={{
                         fontSize: "13px",
-                        color: "#6b7280",
+                        color: "#475569",
                         marginBottom: "12px",
                       }}
                     >
@@ -2590,7 +2590,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       style={{
                         width: "100%",
                         padding: "10px 12px",
-                        border: "1px solid #d1d5db",
+                        border: "1px solid #e2e8f0",
                         borderRadius: "6px",
                         fontSize: "14px",
                         outline: "none",
@@ -2606,9 +2606,9 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         onClick={() => setShowBannerPreview(true)}
                         style={{
                           padding: "8px 16px",
-                          backgroundColor: "#f3f4f6",
-                          color: "#374151",
-                          border: "1px solid #d1d5db",
+                          backgroundColor: "#f8fafc",
+                          color: "#475569",
+                          border: "1px solid #e2e8f0",
                           borderRadius: "6px",
                           fontSize: "14px",
                           fontWeight: "500",
@@ -2648,7 +2648,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   display: 'block',
                   fontSize: '14px',
                   fontWeight: '600',
-                  color: '#1f2937',
+                  color: '#0f172a',
                   marginBottom: '12px'
                 }}>
                   File Download Settings
@@ -2664,7 +2664,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       onChange={(e) => setFormData({ ...formData, fileDownloadPermission: 'logged-in-permission' })}
                       style={{ cursor: 'pointer' }}
                     />
-                    <span style={{ fontSize: '14px', color: '#374151' }}>
+                    <span style={{ fontSize: '14px', color: '#475569' }}>
                       Allow only if the user has permission to view the ticket (requires user to be logged in).
                     </span>
                   </label>
@@ -2678,7 +2678,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       onChange={(e) => setFormData({ ...formData, fileDownloadPermission: 'logged-in' })}
                       style={{ cursor: 'pointer' }}
                     />
-                    <span style={{ fontSize: '14px', color: '#374151' }}>
+                    <span style={{ fontSize: '14px', color: '#475569' }}>
                       Allow any agent or customer to download (requires user to be logged in).
                     </span>
                   </label>
@@ -2692,7 +2692,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       onChange={(e) => setFormData({ ...formData, fileDownloadPermission: 'anyone' })}
                       style={{ cursor: 'pointer' }}
                     />
-                    <span style={{ fontSize: '14px', color: '#374151' }}>
+                    <span style={{ fontSize: '14px', color: '#475569' }}>
                       Allow anyone who has a file download link to download file without having to log in.
                     </span>
                   </label>
@@ -2706,7 +2706,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   display: 'block',
                   fontSize: '14px',
                   fontWeight: '600',
-                  color: '#1f2937',
+                  color: '#0f172a',
                   marginBottom: '12px'
                 }}>
                   Inline Image Attachment Settings
@@ -2720,7 +2720,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                     style={{ width: '16px', height: '16px', cursor: 'pointer', marginTop: '2px' }}
                   />
                   <div>
-                    <span style={{ fontSize: '14px', color: '#374151', display: 'block' }}>
+                    <span style={{ fontSize: '14px', color: '#475569', display: 'block' }}>
                       To download or view an image, users must be logged into the portal. Images in emails will appear as broken links unless the user is logged into the portal.
                     </span>
                   </div>
@@ -2734,7 +2734,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   display: 'block',
                   fontSize: '14px',
                   fontWeight: '600',
-                  color: '#1f2937',
+                  color: '#0f172a',
                   marginBottom: '12px'
                 }}>
                   File Attachment Settings (Email)
@@ -2748,7 +2748,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                     style={{ width: '16px', height: '16px', cursor: 'pointer', marginTop: '2px' }}
                   />
                   <div>
-                    <span style={{ fontSize: '14px', color: '#374151', display: 'block' }}>
+                    <span style={{ fontSize: '14px', color: '#475569', display: 'block' }}>
                       Files will be attached to emails directly rather than being added as link in the email body.
                     </span>
                   </div>
@@ -2774,10 +2774,10 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       style={{
                         fontSize: "16px",
                         fontWeight: "600",
-                        color: "#1f2937",
+                        color: "#0f172a",
                         marginBottom: "16px",
                         paddingBottom: "8px",
-                        borderBottom: "1px solid #e5e7eb",
+                        borderBottom: "1px solid #e2e8f0",
                       }}
                     >
                       Single Sign-On (SSO)
@@ -2797,9 +2797,9 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           alignItems: "flex-start",
                           gap: "12px",
                           padding: "16px",
-                          backgroundColor: "#f9fafb",
+                          backgroundColor: "#f8fafc",
                           borderRadius: "6px",
-                          border: "1px solid #e5e7eb",
+                          border: "1px solid #e2e8f0",
                         }}
                       >
                         <input
@@ -2826,7 +2826,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                               display: "block",
                               fontSize: "14px",
                               fontWeight: "600",
-                              color: "#1f2937",
+                              color: "#0f172a",
                               marginBottom: "4px",
                               cursor: "pointer",
                             }}
@@ -2836,7 +2836,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           <p
                             style={{
                               fontSize: "13px",
-                              color: "#6b7280",
+                              color: "#475569",
                               margin: 0,
                               lineHeight: "1.5",
                             }}
@@ -2887,7 +2887,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                   display: "block",
                                   fontSize: "13px",
                                   fontWeight: "600",
-                                  color: "#374151",
+                                  color: "#475569",
                                   marginBottom: "6px",
                                 }}
                               >
@@ -2907,7 +2907,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                   width: "100%",
                                   padding: "8px 12px",
                                   fontSize: "13px",
-                                  border: "1px solid #d1d5db",
+                                  border: "1px solid #e2e8f0",
                                   borderRadius: "6px",
                                   outline: "none",
                                   boxSizing: "border-box",
@@ -2920,7 +2920,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                   display: "block",
                                   fontSize: "13px",
                                   fontWeight: "600",
-                                  color: "#374151",
+                                  color: "#475569",
                                   marginBottom: "6px",
                                 }}
                               >
@@ -2940,7 +2940,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                   width: "100%",
                                   padding: "8px 12px",
                                   fontSize: "13px",
-                                  border: "1px solid #d1d5db",
+                                  border: "1px solid #e2e8f0",
                                   borderRadius: "6px",
                                   outline: "none",
                                   boxSizing: "border-box",
@@ -2963,7 +2963,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                   display: "block",
                                   fontSize: "13px",
                                   fontWeight: "600",
-                                  color: "#374151",
+                                  color: "#475569",
                                   marginBottom: "6px",
                                 }}
                               >
@@ -2983,7 +2983,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                   width: "100%",
                                   padding: "8px 12px",
                                   fontSize: "13px",
-                                  border: "1px solid #d1d5db",
+                                  border: "1px solid #e2e8f0",
                                   borderRadius: "6px",
                                   outline: "none",
                                   boxSizing: "border-box",
@@ -2996,7 +2996,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                   display: "block",
                                   fontSize: "13px",
                                   fontWeight: "600",
-                                  color: "#374151",
+                                  color: "#475569",
                                   marginBottom: "6px",
                                 }}
                               >
@@ -3005,7 +3005,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                   style={{
                                     fontSize: "11px",
                                     fontWeight: "400",
-                                    color: "#6b7280",
+                                    color: "#475569",
                                     marginLeft: "6px",
                                   }}
                                 >
@@ -3027,7 +3027,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                   width: "100%",
                                   padding: "8px 12px",
                                   fontSize: "13px",
-                                  border: "1px solid #d1d5db",
+                                  border: "1px solid #e2e8f0",
                                   borderRadius: "6px",
                                   outline: "none",
                                   boxSizing: "border-box",
@@ -3039,7 +3039,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           <p
                             style={{
                               fontSize: "12px",
-                              color: "#6b7280",
+                              color: "#475569",
                               margin: 0,
                             }}
                           >
@@ -3059,10 +3059,10 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       style={{
                         fontSize: "16px",
                         fontWeight: "600",
-                        color: "#1f2937",
+                        color: "#0f172a",
                         marginBottom: "16px",
                         paddingBottom: "8px",
-                        borderBottom: "1px solid #e5e7eb",
+                        borderBottom: "1px solid #e2e8f0",
                       }}
                     >
                       Form Login
@@ -3081,9 +3081,9 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           alignItems: "flex-start",
                           gap: "12px",
                           padding: "16px",
-                          backgroundColor: "#f9fafb",
+                          backgroundColor: "#f8fafc",
                           borderRadius: "6px",
-                          border: "1px solid #e5e7eb",
+                          border: "1px solid #e2e8f0",
                         }}
                       >
                         <input
@@ -3108,7 +3108,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                               display: "block",
                               fontSize: "14px",
                               fontWeight: "600",
-                              color: "#1f2937",
+                              color: "#0f172a",
                               marginBottom: "4px",
                               cursor: "pointer",
                             }}
@@ -3118,7 +3118,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           <p
                             style={{
                               fontSize: "13px",
-                              color: "#6b7280",
+                              color: "#475569",
                               margin: 0,
                               lineHeight: "1.5",
                             }}
@@ -3137,9 +3137,9 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           alignItems: "flex-start",
                           gap: "12px",
                           padding: "16px",
-                          backgroundColor: "#f9fafb",
+                          backgroundColor: "#f8fafc",
                           borderRadius: "6px",
-                          border: "1px solid #e5e7eb",
+                          border: "1px solid #e2e8f0",
                         }}
                       >
                         <input
@@ -3164,7 +3164,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                               display: "block",
                               fontSize: "14px",
                               fontWeight: "600",
-                              color: "#1f2937",
+                              color: "#0f172a",
                               marginBottom: "4px",
                               cursor: "pointer",
                             }}
@@ -3187,7 +3187,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           <p
                             style={{
                               fontSize: "13px",
-                              color: "#6b7280",
+                              color: "#475569",
                               margin: 0,
                               lineHeight: "1.5",
                             }}
@@ -3218,10 +3218,10 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       style={{
                         fontSize: "16px",
                         fontWeight: "600",
-                        color: "#1f2937",
+                        color: "#0f172a",
                         marginBottom: "16px",
                         paddingBottom: "8px",
-                        borderBottom: "1px solid #e5e7eb",
+                        borderBottom: "1px solid #e2e8f0",
                       }}
                     >
                       General Settings
@@ -3234,9 +3234,9 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                     alignItems: 'flex-start',
                     gap: '12px',
                     padding: '16px',
-                    backgroundColor: '#f9fafb',
+                    backgroundColor: '#f8fafc',
                     borderRadius: '6px',
-                    border: '1px solid #e5e7eb'
+                    border: '1px solid #e2e8f0'
                   }}>
                     <input
                       type="checkbox"
@@ -3254,7 +3254,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         display: 'block',
                         fontSize: '14px',
                         fontWeight: '600',
-                        color: '#1f2937',
+                        color: '#0f172a',
                         marginBottom: '4px',
                         cursor: 'pointer'
                       }}>
@@ -3262,7 +3262,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       </label>
                       <p style={{
                         fontSize: '13px',
-                        color: '#6b7280',
+                        color: '#475569',
                         margin: 0,
                         lineHeight: '1.5'
                       }}>
@@ -3276,9 +3276,9 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                     alignItems: 'flex-start',
                     gap: '12px',
                     padding: '16px',
-                    backgroundColor: '#f9fafb',
+                    backgroundColor: '#f8fafc',
                     borderRadius: '6px',
-                    border: '1px solid #e5e7eb'
+                    border: '1px solid #e2e8f0'
                   }}>
                     <input
                       type="checkbox"
@@ -3296,7 +3296,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         display: 'block',
                         fontSize: '14px',
                         fontWeight: '600',
-                        color: '#1f2937',
+                        color: '#0f172a',
                         marginBottom: '4px',
                         cursor: 'pointer'
                       }}>
@@ -3304,7 +3304,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       </label>
                       <p style={{
                         fontSize: '13px',
-                        color: '#6b7280',
+                        color: '#475569',
                         margin: 0,
                         lineHeight: '1.5'
                       }}>
@@ -3322,7 +3322,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       style={{
                         fontSize: "16px",
                         fontWeight: "600",
-                        color: "#1f2937",
+                        color: "#0f172a",
                         marginBottom: "4px",
                       }}
                     >
@@ -3335,9 +3335,9 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         alignItems: "flex-start",
                         gap: "12px",
                         padding: "16px",
-                        backgroundColor: "#f9fafb",
+                        backgroundColor: "#f8fafc",
                         borderRadius: "6px",
-                        border: "1px solid #e5e7eb",
+                        border: "1px solid #e2e8f0",
                         marginTop: "16px",
                       }}
                     >
@@ -3363,7 +3363,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                             display: "block",
                             fontSize: "14px",
                             fontWeight: "600",
-                            color: "#1f2937",
+                            color: "#0f172a",
                             marginBottom: "4px",
                             cursor: "pointer",
                           }}
@@ -3373,7 +3373,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         <p
                           style={{
                             fontSize: "13px",
-                            color: "#6b7280",
+                            color: "#475569",
                             margin: 0,
                             lineHeight: "1.5",
                           }}
@@ -3393,7 +3393,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       style={{
                         fontSize: "16px",
                         fontWeight: "600",
-                        color: "#1f2937",
+                        color: "#0f172a",
                         marginBottom: "4px",
                       }}
                     >
@@ -3402,7 +3402,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                     <p
                       style={{
                         fontSize: "13px",
-                        color: "#6b7280",
+                        color: "#475569",
                         marginBottom: "16px",
                       }}
                     >
@@ -3444,7 +3444,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           style={{
                             fontSize: "14px",
                             fontWeight: "500",
-                            color: "#1f2937",
+                            color: "#0f172a",
                           }}
                         >
                           Default Policy
@@ -3478,7 +3478,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           style={{
                             fontSize: "14px",
                             fontWeight: "500",
-                            color: "#1f2937",
+                            color: "#0f172a",
                           }}
                         >
                           Custom Policy
@@ -3493,9 +3493,9 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           flexDirection: "column",
                           gap: "12px",
                           padding: "16px",
-                          backgroundColor: "#f9fafb",
+                          backgroundColor: "#f8fafc",
                           borderRadius: "6px",
-                          border: "1px solid #e5e7eb",
+                          border: "1px solid #e2e8f0",
                         }}
                       >
                         <label
@@ -3521,7 +3521,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                               cursor: "pointer",
                             }}
                           />
-                          <span style={{ fontSize: "14px", color: "#374151" }}>
+                          <span style={{ fontSize: "14px", color: "#475569" }}>
                             Require at least one lower case letter (a-z).
                           </span>
                         </label>
@@ -3549,7 +3549,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                               cursor: "pointer",
                             }}
                           />
-                          <span style={{ fontSize: "14px", color: "#374151" }}>
+                          <span style={{ fontSize: "14px", color: "#475569" }}>
                             Require at least one upper case letter (A-Z).
                           </span>
                         </label>
@@ -3577,7 +3577,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                               cursor: "pointer",
                             }}
                           />
-                          <span style={{ fontSize: "14px", color: "#374151" }}>
+                          <span style={{ fontSize: "14px", color: "#475569" }}>
                             Require at least one number (0-9).
                           </span>
                         </label>
@@ -3605,7 +3605,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                               cursor: "pointer",
                             }}
                           />
-                          <span style={{ fontSize: "14px", color: "#374151" }}>
+                          <span style={{ fontSize: "14px", color: "#475569" }}>
                             Require at least one special character
                             (@!%*?"#$?()[]^~_+-=).
                           </span>
@@ -3622,7 +3622,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                             <span
                               style={{
                                 fontSize: "14px",
-                                color: "#374151",
+                                color: "#475569",
                                 whiteSpace: "nowrap",
                               }}
                             >
@@ -3640,7 +3640,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                               }
                               style={{
                                 padding: "6px 12px",
-                                border: "1px solid #d1d5db",
+                                border: "1px solid #e2e8f0",
                                 borderRadius: "6px",
                                 fontSize: "14px",
                                 backgroundColor: "white",
@@ -3655,7 +3655,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                               ))}
                             </select>
                             <span
-                              style={{ fontSize: "14px", color: "#6b7280" }}
+                              style={{ fontSize: "14px", color: "#475569" }}
                             >
                               characters.
                             </span>
@@ -3673,7 +3673,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                             <span
                               style={{
                                 fontSize: "14px",
-                                color: "#374151",
+                                color: "#475569",
                                 whiteSpace: "nowrap",
                               }}
                             >
@@ -3721,9 +3721,9 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   <div
                     style={{
                       padding: "20px",
-                      backgroundColor: "#f9fafb",
+                      backgroundColor: "#f8fafc",
                       borderRadius: "8px",
-                      border: "1px solid #e5e7eb",
+                      border: "1px solid #e2e8f0",
                     }}
                   >
                     <h3
@@ -3731,13 +3731,13 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         margin: "0 0 8px 0",
                         fontSize: "18px",
                         fontWeight: "600",
-                        color: "#1f2937",
+                        color: "#0f172a",
                       }}
                     >
                       Student Ticket Submission Portal
                     </h3>
                     <p
-                      style={{ margin: 0, fontSize: "14px", color: "#6b7280" }}
+                      style={{ margin: 0, fontSize: "14px", color: "#475569" }}
                     >
                       Configure how students can submit support tickets - online
                       forms, offline centers, or both.
@@ -3750,7 +3750,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       padding: "20px",
                       backgroundColor: "white",
                       borderRadius: "8px",
-                      border: "1px solid #e5e7eb",
+                      border: "1px solid #e2e8f0",
                     }}
                   >
                     <h4
@@ -3758,7 +3758,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         margin: "0 0 16px 0",
                         fontSize: "16px",
                         fontWeight: "600",
-                        color: "#1f2937",
+                        color: "#0f172a",
                       }}
                     >
                       Ticket Submission Mode
@@ -3803,12 +3803,12 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                             style={{
                               fontSize: "15px",
                               fontWeight: "500",
-                              color: "#1f2937",
+                              color: "#0f172a",
                             }}
                           >
                             Online Only
                           </div>
-                          <div style={{ fontSize: "13px", color: "#6b7280" }}>
+                          <div style={{ fontSize: "13px", color: "#475569" }}>
                             Students can only submit tickets through online
                             forms
                           </div>
@@ -3847,12 +3847,12 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                             style={{
                               fontSize: "15px",
                               fontWeight: "500",
-                              color: "#1f2937",
+                              color: "#0f172a",
                             }}
                           >
                             Offline Only
                           </div>
-                          <div style={{ fontSize: "13px", color: "#6b7280" }}>
+                          <div style={{ fontSize: "13px", color: "#475569" }}>
                             Students can only visit offline support centers
                           </div>
                         </div>
@@ -3890,12 +3890,12 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                             style={{
                               fontSize: "15px",
                               fontWeight: "500",
-                              color: "#1f2937",
+                              color: "#0f172a",
                             }}
                           >
                             Both Online & Offline
                           </div>
-                          <div style={{ fontSize: "13px", color: "#6b7280" }}>
+                          <div style={{ fontSize: "13px", color: "#475569" }}>
                             Students can choose between online forms or visiting
                             centers
                           </div>
@@ -3910,7 +3910,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       padding: "20px",
                       backgroundColor: "white",
                       borderRadius: "8px",
-                      border: "1px solid #e5e7eb",
+                      border: "1px solid #e2e8f0",
                     }}
                   >
                     <h4
@@ -3918,7 +3918,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         margin: "0 0 8px 0",
                         fontSize: "16px",
                         fontWeight: "600",
-                        color: "#1f2937",
+                        color: "#0f172a",
                       }}
                     >
                       Knowledge Base
@@ -3927,7 +3927,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       style={{
                         margin: "0 0 16px 0",
                         fontSize: "13px",
-                        color: "#6b7280",
+                        color: "#475569",
                       }}
                     >
                       When enabled, a "Knowledge Base" tab will appear on the
@@ -3965,12 +3965,12 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           style={{
                             fontSize: "15px",
                             fontWeight: "500",
-                            color: "#1f2937",
+                            color: "#0f172a",
                           }}
                         >
                           Show Knowledge Base tab on submit page
                         </div>
-                        <div style={{ fontSize: "13px", color: "#6b7280" }}>
+                        <div style={{ fontSize: "13px", color: "#475569" }}>
                           Disable to hide the Knowledge Base tab from the public
                           ticket portal for this project
                         </div>
@@ -3984,7 +3984,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       padding: "20px",
                       backgroundColor: "white",
                       borderRadius: "8px",
-                      border: "1px solid #e5e7eb",
+                      border: "1px solid #e2e8f0",
                     }}
                   >
                     <h4
@@ -3992,7 +3992,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         margin: "0 0 8px 0",
                         fontSize: "16px",
                         fontWeight: "600",
-                        color: "#1f2937",
+                        color: "#0f172a",
                       }}
                     >
                       Announcement Banner
@@ -4001,7 +4001,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       style={{
                         margin: "0 0 16px 0",
                         fontSize: "13px",
-                        color: "#6b7280",
+                        color: "#475569",
                       }}
                     >
                       Display an important message at the top of the ticket
@@ -4020,7 +4020,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       style={{
                         width: "100%",
                         padding: "12px",
-                        border: "1px solid #d1d5db",
+                        border: "1px solid #e2e8f0",
                         borderRadius: "6px",
                         fontSize: "14px",
                         fontFamily: "inherit",
@@ -4060,7 +4060,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         display: "block",
                         fontSize: "14px",
                         fontWeight: "600",
-                        color: "#1f2937",
+                        color: "#0f172a",
                         marginBottom: "12px",
                       }}
                     >
@@ -4071,7 +4071,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       style={{
                         margin: "0 0 16px 0",
                         fontSize: "13px",
-                        color: "#6b7280",
+                        color: "#475569",
                         lineHeight: "1.5",
                       }}
                     >
@@ -4093,7 +4093,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                             display: "block",
                             fontSize: "14px",
                             fontWeight: "500",
-                            color: "#1f2937",
+                            color: "#0f172a",
                             marginBottom: "8px",
                           }}
                         >
@@ -4110,7 +4110,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           style={{
                             width: "100%",
                             padding: "10px 12px",
-                            border: "1px solid #d1d5db",
+                            border: "1px solid #e2e8f0",
                             borderRadius: "6px",
                             fontSize: "14px",
                             backgroundColor: "white",
@@ -4246,7 +4246,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                   display: "block",
                                   fontSize: "14px",
                                   fontWeight: "500",
-                                  color: "#1f2937",
+                                  color: "#0f172a",
                                   marginBottom: "8px",
                                 }}
                               >
@@ -4265,7 +4265,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                 style={{
                                   width: "100%",
                                   padding: "10px 12px",
-                                  border: "1px solid #d1d5db",
+                                  border: "1px solid #e2e8f0",
                                   borderRadius: "6px",
                                   fontSize: "14px",
                                   backgroundColor: "white",
@@ -4288,7 +4288,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                 style={{
                                   margin: "6px 0 0 0",
                                   fontSize: "12px",
-                                  color: "#6b7280",
+                                  color: "#475569",
                                 }}
                               >
                                 Only roles with "Assign Ticket" permission are
@@ -4349,7 +4349,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                               }}
                             />
                             <span
-                              style={{ fontSize: "14px", color: "#374151" }}
+                              style={{ fontSize: "14px", color: "#475569" }}
                             >
                               Send email notification to agent on assignment
                             </span>
@@ -4379,7 +4379,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                               }}
                             />
                             <span
-                              style={{ fontSize: "14px", color: "#374151" }}
+                              style={{ fontSize: "14px", color: "#475569" }}
                             >
                               Automatically reassign when ticket is escalated
                             </span>
@@ -4395,7 +4395,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       padding: "20px",
                       backgroundColor: "white",
                       borderRadius: "8px",
-                      border: "1px solid #e5e7eb",
+                      border: "1px solid #e2e8f0",
                     }}
                   >
                     <h4
@@ -4403,7 +4403,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         margin: "0 0 16px 0",
                         fontSize: "16px",
                         fontWeight: "600",
-                        color: "#1f2937",
+                        color: "#0f172a",
                       }}
                     >
                       Portal Messages
@@ -4415,7 +4415,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           display: "block",
                           fontSize: "14px",
                           fontWeight: "500",
-                          color: "#374151",
+                          color: "#475569",
                           marginBottom: "8px",
                         }}
                       >
@@ -4434,7 +4434,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         style={{
                           width: "100%",
                           padding: "12px",
-                          border: "1px solid #d1d5db",
+                          border: "1px solid #e2e8f0",
                           borderRadius: "6px",
                           fontSize: "14px",
                           fontFamily: "inherit",
@@ -4449,7 +4449,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           display: "block",
                           fontSize: "14px",
                           fontWeight: "500",
-                          color: "#374151",
+                          color: "#475569",
                           marginBottom: "8px",
                         }}
                       >
@@ -4468,7 +4468,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         style={{
                           width: "100%",
                           padding: "12px",
-                          border: "1px solid #d1d5db",
+                          border: "1px solid #e2e8f0",
                           borderRadius: "6px",
                           fontSize: "14px",
                           fontFamily: "inherit",
@@ -4485,7 +4485,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         padding: "20px",
                         backgroundColor: "white",
                         borderRadius: "8px",
-                        border: "1px solid #e5e7eb",
+                        border: "1px solid #e2e8f0",
                       }}
                     >
                       <h4
@@ -4493,7 +4493,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           margin: "0 0 16px 0",
                           fontSize: "16px",
                           fontWeight: "600",
-                          color: "#1f2937",
+                          color: "#0f172a",
                         }}
                       >
                         Online Form Configuration
@@ -4514,7 +4514,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                               margin: 0,
                               fontSize: "15px",
                               fontWeight: "600",
-                              color: "#1f2937",
+                              color: "#0f172a",
                             }}
                           >
                             Form Fields
@@ -4559,10 +4559,10 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           <div
                             style={{
                               padding: "20px",
-                              backgroundColor: "#f9fafb",
+                              backgroundColor: "#f8fafc",
                               borderRadius: "6px",
                               textAlign: "center",
-                              color: "#6b7280",
+                              color: "#475569",
                               fontSize: "14px",
                             }}
                           >
@@ -4584,9 +4584,9 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                 key={index}
                                 style={{
                                   padding: "16px",
-                                  backgroundColor: "#f9fafb",
+                                  backgroundColor: "#f8fafc",
                                   borderRadius: "6px",
-                                  border: "1px solid #e5e7eb",
+                                  border: "1px solid #e2e8f0",
                                 }}
                               >
                                 <div
@@ -4614,7 +4614,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                     style={{
                                       flex: 1,
                                       padding: "10px 12px",
-                                      border: "1px solid #d1d5db",
+                                      border: "1px solid #e2e8f0",
                                       borderRadius: "6px",
                                       fontSize: "14px",
                                     }}
@@ -4635,7 +4635,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                     style={{
                                       flex: 1,
                                       padding: "10px 12px",
-                                      border: "1px solid #d1d5db",
+                                      border: "1px solid #e2e8f0",
                                       borderRadius: "6px",
                                       fontSize: "14px",
                                     }}
@@ -4700,7 +4700,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                     style={{
                                       flex: 1,
                                       padding: "10px 12px",
-                                      border: "1px solid #d1d5db",
+                                      border: "1px solid #e2e8f0",
                                       borderRadius: "6px",
                                       fontSize: "14px",
                                     }}
@@ -4712,7 +4712,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                       gap: "8px",
                                       padding: "10px 12px",
                                       backgroundColor: "white",
-                                      border: "1px solid #d1d5db",
+                                      border: "1px solid #e2e8f0",
                                       borderRadius: "6px",
                                       cursor: "pointer",
                                     }}
@@ -4740,7 +4740,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                     <span
                                       style={{
                                         fontSize: "14px",
-                                        color: "#374151",
+                                        color: "#475569",
                                       }}
                                     >
                                       Required
@@ -4754,7 +4754,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                         display: "block",
                                         fontSize: "13px",
                                         fontWeight: "500",
-                                        color: "#374151",
+                                        color: "#475569",
                                         marginBottom: "6px",
                                       }}
                                     >
@@ -4792,7 +4792,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                       style={{
                                         width: "100%",
                                         padding: "10px 12px",
-                                        border: "1px solid #d1d5db",
+                                        border: "1px solid #e2e8f0",
                                         borderRadius: "6px",
                                         fontSize: "14px",
                                         fontFamily: "inherit",
@@ -4811,7 +4811,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                         display: "block",
                                         fontSize: "13px",
                                         fontWeight: "500",
-                                        color: "#374151",
+                                        color: "#475569",
                                         marginBottom: "6px",
                                       }}
                                     >
@@ -4848,7 +4848,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                       style={{
                                         width: "100%",
                                         padding: "10px 12px",
-                                        border: "1px solid #d1d5db",
+                                        border: "1px solid #e2e8f0",
                                         borderRadius: "6px",
                                         fontSize: "14px",
                                         fontFamily: "inherit",
@@ -4911,12 +4911,12 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                                 field.allowedFileTypes || []
                                               ).includes(ext)
                                                 ? "#dbeafe"
-                                                : "#f9fafb",
+                                                : "#f8fafc",
                                               border: (
                                                 field.allowedFileTypes || []
                                               ).includes(ext)
                                                 ? "1px solid #3b82f6"
-                                                : "1px solid #e5e7eb",
+                                                : "1px solid #e2e8f0",
                                               borderRadius: "4px",
                                               cursor: "pointer",
                                               fontSize: "12px",
@@ -4962,7 +4962,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                             />
                                             <span
                                               style={{
-                                                color: "#374151",
+                                                color: "#475569",
                                                 fontWeight: "500",
                                               }}
                                             >
@@ -5003,7 +5003,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                                         style={{
                                           width: "120px",
                                           padding: "8px 10px",
-                                          border: "1px solid #d1d5db",
+                                          border: "1px solid #e2e8f0",
                                           borderRadius: "6px",
                                           fontSize: "13px",
                                         }}
@@ -5075,7 +5075,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       style={{
                         fontSize: "16px",
                         fontWeight: "600",
-                        color: "#111827",
+                        color: "#0f172a",
                         marginBottom: "16px",
                       }}
                     >
@@ -5088,7 +5088,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           display: "block",
                           fontSize: "14px",
                           fontWeight: "500",
-                          color: "#374151",
+                          color: "#475569",
                           marginBottom: "8px",
                         }}
                       >
@@ -5097,7 +5097,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       <div
                         style={{
                           fontSize: "12px",
-                          color: "#6b7280",
+                          color: "#475569",
                           marginBottom: "8px",
                         }}
                       >
@@ -5122,7 +5122,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                               height: "68px",
                               objectFit: "cover",
                               borderRadius: "4px",
-                              border: "1px solid #e5e7eb",
+                              border: "1px solid #e2e8f0",
                             }}
                           />
                         )}
@@ -5135,10 +5135,10 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           }
                           style={{
                             padding: "8px 16px",
-                            border: "1px solid #d1d5db",
+                            border: "1px solid #e2e8f0",
                             borderRadius: "6px",
                             backgroundColor: "white",
-                            color: "#374151",
+                            color: "#475569",
                             fontSize: "14px",
                             fontWeight: "500",
                             cursor: "pointer",
@@ -5173,7 +5173,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       style={{
                         fontSize: "16px",
                         fontWeight: "600",
-                        color: "#111827",
+                        color: "#0f172a",
                         marginBottom: "16px",
                       }}
                     >
@@ -5204,7 +5204,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           style={{
                             fontSize: "14px",
                             fontWeight: "500",
-                            color: "#374151",
+                            color: "#475569",
                           }}
                         >
                           Light
@@ -5232,7 +5232,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           style={{
                             fontSize: "14px",
                             fontWeight: "500",
-                            color: "#374151",
+                            color: "#475569",
                           }}
                         >
                           Dark
@@ -5253,7 +5253,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           display: "block",
                           fontSize: "14px",
                           fontWeight: "500",
-                          color: "#374151",
+                          color: "#475569",
                           marginBottom: "8px",
                         }}
                       >
@@ -5263,7 +5263,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                             style={{
                               fontSize: "12px",
                               fontWeight: "400",
-                              color: "#6b7280",
+                              color: "#475569",
                             }}
                           >
                             (Not applicable for dark theme)
@@ -5273,7 +5273,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       <div
                         style={{
                           fontSize: "12px",
-                          color: "#6b7280",
+                          color: "#475569",
                           marginBottom: "8px",
                         }}
                       >
@@ -5318,7 +5318,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                               backgroundColor: color,
                               border:
                                 formData.themeColor === color
-                                  ? "2px solid #111827"
+                                  ? "2px solid #0f172a"
                                   : "2px solid transparent",
                               cursor:
                                 formData.themeMode === "dark"
@@ -5366,7 +5366,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           style={{
                             width: "48px",
                             height: "40px",
-                            border: "1px solid #d1d5db",
+                            border: "1px solid #e2e8f0",
                             borderRadius: "6px",
                             cursor:
                               formData.themeMode === "dark"
@@ -5388,13 +5388,13 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           style={{
                             flex: 1,
                             padding: "8px 12px",
-                            border: "1px solid #d1d5db",
+                            border: "1px solid #e2e8f0",
                             borderRadius: "6px",
                             fontSize: "14px",
                             fontFamily: "monospace",
                             backgroundColor:
                               formData.themeMode === "dark"
-                                ? "#f3f4f6"
+                                ? "#f8fafc"
                                 : "white",
                             cursor:
                               formData.themeMode === "dark"
@@ -5407,7 +5407,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           disabled={formData.themeMode === "dark"}
                           style={{
                             padding: "8px 12px",
-                            border: "1px solid #d1d5db",
+                            border: "1px solid #e2e8f0",
                             borderRadius: "6px",
                             backgroundColor: "white",
                             cursor:
@@ -5429,7 +5429,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       style={{
                         fontSize: "16px",
                         fontWeight: "600",
-                        color: "#111827",
+                        color: "#0f172a",
                         marginBottom: "16px",
                       }}
                     >
@@ -5480,7 +5480,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           style={{
                             fontSize: "14px",
                             fontWeight: "500",
-                            color: "#374151",
+                            color: "#475569",
                           }}
                         >
                           Custom CSS
@@ -5492,7 +5492,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                             padding: "4px 12px",
                             border: "none",
                             backgroundColor: "transparent",
-                            color: "#a855f7",
+                            color: "#4f46e5",
                             fontSize: "13px",
                             fontWeight: "500",
                             cursor: "pointer",
@@ -5518,7 +5518,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           style={{
                             fontSize: "14px",
                             fontWeight: "500",
-                            color: "#374151",
+                            color: "#475569",
                           }}
                         >
                           Custom JS
@@ -5530,7 +5530,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                             padding: "4px 12px",
                             border: "none",
                             backgroundColor: "transparent",
-                            color: "#a855f7",
+                            color: "#4f46e5",
                             fontSize: "13px",
                             fontWeight: "500",
                             cursor: "pointer",
@@ -5550,7 +5550,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
             <div
               style={{
                 padding: "14px 20px",
-                borderTop: "1px solid #E4E7EC",
+                borderTop: "1px solid #e2e8f0",
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
@@ -5563,7 +5563,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   padding: "0",
                   border: "none",
                   background: "transparent",
-                  color: "#6b7280",
+                  color: "#475569",
                   fontSize: "14px",
                   fontWeight: "400",
                   cursor: "pointer",
@@ -5573,8 +5573,8 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   gap: "4px",
                   transition: "color 0.2s ease",
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.color = "#3F41D1")}
-                onMouseLeave={(e) => (e.currentTarget.style.color = "#6b7280")}
+                onMouseEnter={(e) => (e.currentTarget.style.color = "#4f46e5")}
+                onMouseLeave={(e) => (e.currentTarget.style.color = "#475569")}
               >
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                   <path
@@ -5603,9 +5603,9 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   className="btn"
                   style={{
                     textTransform: "none",
-                    backgroundColor: "#FFFFFF",
-                    border: "1px solid #D0D5DD",
-                    color: "#344054",
+                    backgroundColor: "#fff",
+                    border: "1.5px solid #e2e8f0",
+                    color: "#334155",
                     fontWeight: "500",
                     padding: "10px 20px",
                     height: "40px",
@@ -5613,12 +5613,12 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                     transition: "all 0.2s ease",
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = "#F9FAFB";
-                    e.currentTarget.style.borderColor = "#98A2B3";
+                    e.currentTarget.style.backgroundColor = "#f8fafc";
+                    e.currentTarget.style.borderColor = "#cbd5e1";
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.backgroundColor = "#FFFFFF";
-                    e.currentTarget.style.borderColor = "#D0D5DD";
+                    e.currentTarget.style.borderColor = "#e2e8f0";
                   }}
                 >
                   {getText(
@@ -5633,9 +5633,11 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   className="btn"
                   style={{
                     textTransform: "none",
-                    backgroundColor: saving ? "#98A2B3" : "#7F56D9",
+                    background: saving
+                      ? "#94a3b8"
+                      : "linear-gradient(160deg, #4f46e5, #4338ca)",
                     border: "none",
-                    color: "#ffffff",
+                    color: "#fff",
                     fontWeight: "600",
                     padding: "10px 24px",
                     height: "40px",
@@ -5649,20 +5651,18 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                     transition: "all 0.2s ease",
                     boxShadow: saving
                       ? "none"
-                      : "0 1px 2px rgba(0, 0, 0, 0.05)",
+                      : "0 4px 14px rgba(67,56,202,.35)",
                   }}
                   onMouseEnter={(e) => {
                     if (!saving) {
-                      e.currentTarget.style.backgroundColor = "#6941C6";
                       e.currentTarget.style.boxShadow =
-                        "0 2px 4px rgba(0, 0, 0, 0.1)";
+                        "0 6px 18px rgba(67,56,202,.45)";
                     }
                   }}
                   onMouseLeave={(e) => {
                     if (!saving) {
-                      e.currentTarget.style.backgroundColor = "#7F56D9";
                       e.currentTarget.style.boxShadow =
-                        "0 1px 2px rgba(0, 0, 0, 0.05)";
+                        "0 4px 14px rgba(67,56,202,.35)";
                     }
                   }}
                 >
@@ -5757,7 +5757,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   margin: "0 0 8px 0",
                   fontSize: "18px",
                   fontWeight: "600",
-                  color: "#111827",
+                  color: "#0f172a",
                 }}
               >
                 Discard Changes?
@@ -5766,7 +5766,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                 style={{
                   margin: "0",
                   fontSize: "14px",
-                  color: "#6b7280",
+                  color: "#475569",
                   lineHeight: "1.5",
                 }}
               >
@@ -5789,17 +5789,17 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                 onClick={() => setShowDiscardConfirm(false)}
                 style={{
                   padding: "10px 20px",
-                  border: "1px solid #d1d5db",
+                  border: "1px solid #e2e8f0",
                   borderRadius: "6px",
                   backgroundColor: "white",
-                  color: "#6b7280",
+                  color: "#475569",
                   fontSize: "14px",
                   fontWeight: "500",
                   cursor: "pointer",
                   transition: "all 0.2s ease",
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = "#f9fafb";
+                  e.currentTarget.style.backgroundColor = "#f8fafc";
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.backgroundColor = "white";
@@ -5872,7 +5872,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                 justifyContent: "space-between",
                 alignItems: "center",
                 padding: "20px 24px",
-                borderBottom: "1px solid #e5e7eb",
+                borderBottom: "1px solid #e2e8f0",
               }}
             >
               <h3
@@ -5880,7 +5880,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   margin: 0,
                   fontSize: "18px",
                   fontWeight: "600",
-                  color: "#1f2937",
+                  color: "#0f172a",
                 }}
               >
                 Map Custom Domain
@@ -5892,7 +5892,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   border: "none",
                   fontSize: "24px",
                   cursor: "pointer",
-                  color: "#6b7280",
+                  color: "#475569",
                   padding: "0",
                   width: "30px",
                   height: "30px",
@@ -5913,7 +5913,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                     display: "block",
                     fontSize: "14px",
                     fontWeight: "600",
-                    color: "#1f2937",
+                    color: "#0f172a",
                     marginBottom: "8px",
                   }}
                 >
@@ -5925,19 +5925,19 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                     alignItems: "center",
                     gap: "8px",
                     padding: "10px 12px",
-                    border: "1px solid #e5e7eb",
+                    border: "1px solid #e2e8f0",
                     borderRadius: "6px",
-                    backgroundColor: "#f9fafb",
+                    backgroundColor: "#f8fafc",
                     fontSize: "14px",
-                    color: "#374151",
+                    color: "#475569",
                   }}
                 >
-                  <span style={{ color: "#6b7280" }}>
+                  <span style={{ color: "#475569" }}>
                     https://www.hubblehox.com/
                   </span>
                   <span
                     style={{
-                      color: "#a855f7",
+                      color: "#4f46e5",
                       fontWeight: "500",
                       flex: 1,
                     }}
@@ -6067,7 +6067,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                 justifyContent: "flex-end",
                 gap: "12px",
                 padding: "16px 24px",
-                borderTop: "1px solid #e5e7eb",
+                borderTop: "1px solid #e2e8f0",
               }}
             >
               <button
@@ -6075,10 +6075,10 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                 onClick={() => setShowMapModal(false)}
                 style={{
                   padding: "10px 24px",
-                  border: "1px solid #d1d5db",
+                  border: "1px solid #e2e8f0",
                   borderRadius: "6px",
                   backgroundColor: "white",
-                  color: "#374151",
+                  color: "#475569",
                   fontSize: "14px",
                   fontWeight: "500",
                   cursor: "pointer",
@@ -6142,7 +6142,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                 justifyContent: "space-between",
                 alignItems: "center",
                 padding: "20px 24px",
-                borderBottom: "1px solid #e5e7eb",
+                borderBottom: "1px solid #e2e8f0",
               }}
             >
               <h3
@@ -6150,7 +6150,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   margin: 0,
                   fontSize: "18px",
                   fontWeight: "600",
-                  color: "#1f2937",
+                  color: "#0f172a",
                 }}
               >
                 Add Custom CSS
@@ -6162,7 +6162,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   border: "none",
                   fontSize: "24px",
                   cursor: "pointer",
-                  color: "#6b7280",
+                  color: "#475569",
                   padding: "0",
                   width: "30px",
                   height: "30px",
@@ -6181,7 +6181,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                 <div
                   style={{
                     fontSize: "12px",
-                    color: "#6b7280",
+                    color: "#475569",
                     marginBottom: "8px",
                     display: "flex",
                     justifyContent: "space-between",
@@ -6201,7 +6201,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   style={{
                     width: "100%",
                     padding: "12px",
-                    border: "1px solid #a855f7",
+                    border: "1px solid #e2e8f0",
                     borderRadius: "6px",
                     fontSize: "13px",
                     fontFamily: "monospace",
@@ -6212,7 +6212,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                 <div
                   style={{
                     fontSize: "12px",
-                    color: "#6b7280",
+                    color: "#475569",
                     marginTop: "8px",
                   }}
                 >
@@ -6225,7 +6225,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
             <div
               style={{
                 padding: "16px 24px",
-                borderTop: "1px solid #e5e7eb",
+                borderTop: "1px solid #e2e8f0",
                 display: "flex",
                 justifyContent: "flex-end",
                 gap: "12px",
@@ -6236,10 +6236,10 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                 onClick={() => setShowCustomCSSModal(false)}
                 style={{
                   padding: "8px 20px",
-                  border: "1px solid #d1d5db",
+                  border: "1px solid #e2e8f0",
                   borderRadius: "6px",
                   backgroundColor: "white",
-                  color: "#374151",
+                  color: "#475569",
                   fontSize: "14px",
                   fontWeight: "500",
                   cursor: "pointer",
@@ -6294,7 +6294,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                 justifyContent: "space-between",
                 alignItems: "center",
                 padding: "20px 24px",
-                borderBottom: "1px solid #e5e7eb",
+                borderBottom: "1px solid #e2e8f0",
               }}
             >
               <h3
@@ -6302,7 +6302,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   margin: 0,
                   fontSize: "18px",
                   fontWeight: "600",
-                  color: "#1f2937",
+                  color: "#0f172a",
                 }}
               >
                 Add Custom JS
@@ -6314,7 +6314,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   border: "none",
                   fontSize: "24px",
                   cursor: "pointer",
-                  color: "#6b7280",
+                  color: "#475569",
                   padding: "0",
                   width: "30px",
                   height: "30px",
@@ -6333,7 +6333,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                 <div
                   style={{
                     fontSize: "12px",
-                    color: "#6b7280",
+                    color: "#475569",
                     marginBottom: "8px",
                     display: "flex",
                     justifyContent: "space-between",
@@ -6353,7 +6353,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   style={{
                     width: "100%",
                     padding: "12px",
-                    border: "1px solid #a855f7",
+                    border: "1px solid #e2e8f0",
                     borderRadius: "6px",
                     fontSize: "13px",
                     fontFamily: "monospace",
@@ -6364,7 +6364,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                 <div
                   style={{
                     fontSize: "12px",
-                    color: "#6b7280",
+                    color: "#475569",
                     marginTop: "8px",
                   }}
                 >
@@ -6377,7 +6377,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
             <div
               style={{
                 padding: "16px 24px",
-                borderTop: "1px solid #e5e7eb",
+                borderTop: "1px solid #e2e8f0",
                 display: "flex",
                 justifyContent: "flex-end",
                 gap: "12px",
@@ -6388,10 +6388,10 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                 onClick={() => setShowCustomJSModal(false)}
                 style={{
                   padding: "8px 20px",
-                  border: "1px solid #d1d5db",
+                  border: "1px solid #e2e8f0",
                   borderRadius: "6px",
                   backgroundColor: "white",
-                  color: "#374151",
+                  color: "#475569",
                   fontSize: "14px",
                   fontWeight: "500",
                   cursor: "pointer",
@@ -6445,7 +6445,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
             <div
               style={{
                 padding: "20px 24px",
-                borderBottom: "1px solid #e5e7eb",
+                borderBottom: "1px solid #e2e8f0",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
@@ -6456,7 +6456,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   margin: 0,
                   fontSize: "18px",
                   fontWeight: "600",
-                  color: "#111827",
+                  color: "#0f172a",
                 }}
               >
                 Login Screen Preview
@@ -6468,7 +6468,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   border: "none",
                   cursor: "pointer",
                   padding: "4px",
-                  color: "#6b7280",
+                  color: "#475569",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -6496,7 +6496,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
               <p
                 style={{
                   fontSize: "13px",
-                  color: "#6b7280",
+                  color: "#475569",
                   marginBottom: "16px",
                 }}
               >
@@ -6507,7 +6507,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
               {/* Mock Login Screen */}
               <div
                 style={{
-                  border: "2px solid #e5e7eb",
+                  border: "2px solid #e2e8f0",
                   borderRadius: "8px",
                   overflow: "hidden",
                   boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
@@ -6625,7 +6625,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                         style={{
                           fontSize: "24px",
                           fontWeight: "600",
-                          color: "#111827",
+                          color: "#0f172a",
                           marginBottom: "8px",
                         }}
                       >
@@ -6633,7 +6633,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                       </h2>
                       <p
                         style={{
-                          color: "#6b7280",
+                          color: "#475569",
                           marginBottom: "24px",
                           fontSize: "14px",
                         }}
@@ -6648,7 +6648,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                             display: "block",
                             fontSize: "14px",
                             fontWeight: "500",
-                            color: "#374151",
+                            color: "#475569",
                             marginBottom: "6px",
                           }}
                         >
@@ -6661,10 +6661,10 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           style={{
                             width: "100%",
                             padding: "10px 12px",
-                            border: "1px solid #d1d5db",
+                            border: "1px solid #e2e8f0",
                             borderRadius: "6px",
                             fontSize: "14px",
-                            backgroundColor: "#f9fafb",
+                            backgroundColor: "#f8fafc",
                             boxSizing: "border-box",
                           }}
                         />
@@ -6677,7 +6677,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                             display: "block",
                             fontSize: "14px",
                             fontWeight: "500",
-                            color: "#374151",
+                            color: "#475569",
                             marginBottom: "6px",
                           }}
                         >
@@ -6690,10 +6690,10 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                           style={{
                             width: "100%",
                             padding: "10px 12px",
-                            border: "1px solid #d1d5db",
+                            border: "1px solid #e2e8f0",
                             borderRadius: "6px",
                             fontSize: "14px",
-                            backgroundColor: "#f9fafb",
+                            backgroundColor: "#f8fafc",
                             boxSizing: "border-box",
                           }}
                         />
@@ -6846,7 +6846,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                   margin: 0,
                   fontSize: "14px",
                   fontWeight: "500",
-                  color: "#111827",
+                  color: "#0f172a",
                   lineHeight: "1.5",
                 }}
               >
@@ -6862,7 +6862,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                 style={{
                   margin: "4px 0 0 0",
                   fontSize: "13px",
-                  color: "#6b7280",
+                  color: "#475569",
                   lineHeight: "1.5",
                 }}
               >
@@ -6880,7 +6880,7 @@ const AddProjectForm = ({ project, onClose, onSave }: AddProjectFormProps) => {
                 border: "none",
                 cursor: "pointer",
                 padding: "0",
-                color: "#9ca3af",
+                color: "#94a3b8",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",

@@ -2,8 +2,8 @@
  * RoleMappingRule CRUD. Phase 6 — onboarding role mapping.
  */
 import { Response } from "express";
-import { AuthRequest } from "../middleware/auth";
-import { RoleMappingRule } from "../models/RoleMappingRule";
+import { AuthRequest } from "../../../middleware/auth";
+import { RoleMappingRule } from "../../../models/RoleMappingRule";
 
 export const listRules = async (req: AuthRequest, res: Response) => {
   try {

@@ -259,10 +259,11 @@ export default function DashboardEnginePage({
         style={{
           background: "#ffffff",
           padding: "22px 24px",
-          borderRadius: "14px",
+          borderRadius: 16,
           marginBottom: "16px",
-          border: "1px solid #e7ebf3",
-          boxShadow: "0 4px 18px rgba(15, 23, 42, 0.05)",
+          border: "1px solid #e2e8f0",
+          boxShadow:
+            "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
@@ -276,9 +277,9 @@ export default function DashboardEnginePage({
               margin: "0 0 6px 0",
               fontSize: 24,
               fontWeight: 700,
-              color: "#111827",
-              letterSpacing: "-0.01em",
-              fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+              color: "#0f172a",
+              letterSpacing: "-0.02em",
+              fontFamily: '"DM Serif Display", Georgia, serif',
             }}
           >
             {viewMode === "unified"
@@ -329,8 +330,8 @@ export default function DashboardEnginePage({
               style={{
                 fontSize: 13,
                 padding: "6px 12px",
-                border: "1px solid #DFE1E6",
-                borderRadius: 6,
+                border: "1.5px solid #e2e8f0",
+                borderRadius: 8,
                 color: "#172B4D",
                 background: "#fff",
                 cursor: "pointer",
@@ -355,8 +356,8 @@ export default function DashboardEnginePage({
               style={{
                 fontSize: 13,
                 padding: "6px 12px",
-                border: "1px solid #DFE1E6",
-                borderRadius: 6,
+                border: "1.5px solid #e2e8f0",
+                borderRadius: 8,
                 color: "#172B4D",
                 background: "#fff",
                 cursor: "pointer",
@@ -378,8 +379,8 @@ export default function DashboardEnginePage({
             style={{
               fontSize: 13,
               padding: "6px 12px",
-              border: "1px solid #DFE1E6",
-              borderRadius: 6,
+              border: "1.5px solid #e2e8f0",
+              borderRadius: 8,
               color: "#172B4D",
               background: "#fff",
               cursor: "pointer",
@@ -408,8 +409,8 @@ export default function DashboardEnginePage({
                 style={{
                   fontSize: 13,
                   padding: "6px 10px",
-                  border: "1px solid #DFE1E6",
-                  borderRadius: 6,
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: 8,
                   color: "#172B4D",
                   background: "#fff",
                 }}
@@ -424,8 +425,8 @@ export default function DashboardEnginePage({
                 style={{
                   fontSize: 13,
                   padding: "6px 10px",
-                  border: "1px solid #DFE1E6",
-                  borderRadius: 6,
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: 8,
                   color: "#172B4D",
                   background: "#fff",
                 }}
@@ -442,14 +443,15 @@ export default function DashboardEnginePage({
                 display: "flex",
                 alignItems: "center",
                 gap: 6,
-                background: "#0052CC",
+                background: "linear-gradient(160deg, #4f46e5, #4338ca)",
                 color: "#fff",
                 border: "none",
-                borderRadius: 6,
+                borderRadius: 8,
                 padding: "7px 14px",
                 fontSize: 13,
                 fontWeight: 600,
                 cursor: "pointer",
+                boxShadow: "0 4px 14px rgba(67,56,202,.35)",
               }}
             >
               <MdAdd size={15} /> My Dashboards
@@ -469,7 +471,7 @@ export default function DashboardEnginePage({
             borderRadius: 10,
             padding: "4px",
             width: "fit-content",
-            border: "1px solid #DFE1E6",
+            border: "1px solid #e2e8f0",
           }}
         >
           {tabs.map((tab, idx) => (
@@ -480,7 +482,7 @@ export default function DashboardEnginePage({
                 padding: "7px 18px",
                 fontSize: 13,
                 fontWeight: activeTabIndex === idx ? 700 : 500,
-                color: activeTabIndex === idx ? "#0052CC" : "#44546F",
+                color: activeTabIndex === idx ? "#4f46e5" : "#44546F",
                 background: activeTabIndex === idx ? "#DEEBFF" : "transparent",
                 border: "none",
                 borderRadius: 6,
@@ -692,7 +694,7 @@ function WidgetGrid({
                 style={{
                   flex: 1,
                   height: 1,
-                  background: "#DFE1E6",
+                  background: "#e2e8f0",
                 }}
               />
             </div>
@@ -729,7 +731,7 @@ function WidgetGrid({
               >
                 Other
               </span>
-              <div style={{ flex: 1, height: 1, background: "#DFE1E6" }} />
+              <div style={{ flex: 1, height: 1, background: "#e2e8f0" }} />
             </div>
           )}
           {gridWrap(unsectioned.map(renderWidgetCard))}
@@ -792,9 +794,9 @@ function CentreMultiSelect({
         style={{
           fontSize: 13,
           padding: "6px 12px",
-          border: `1px solid ${selectedIds.length > 0 ? "#0052CC" : "#DFE1E6"}`,
-          borderRadius: 6,
-          color: selectedIds.length > 0 ? "#0052CC" : "#172B4D",
+          border: `1.5px solid ${selectedIds.length > 0 ? "#4f46e5" : "#e2e8f0"}`,
+          borderRadius: 8,
+          color: selectedIds.length > 0 ? "#4f46e5" : "#172B4D",
           background: selectedIds.length > 0 ? "#DEEBFF" : "#fff",
           cursor: "pointer",
           outline: "none",
@@ -815,9 +817,10 @@ function CentreMultiSelect({
             top: "calc(100% + 4px)",
             left: 0,
             background: "#fff",
-            border: "1px solid #DFE1E6",
-            borderRadius: 8,
-            boxShadow: "0 4px 16px rgba(15,23,42,0.12)",
+            border: "1px solid #e2e8f0",
+            borderRadius: 16,
+            boxShadow:
+              "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
             zIndex: 200,
             minWidth: 200,
             maxHeight: 260,
@@ -843,7 +846,7 @@ function CentreMultiSelect({
               type="checkbox"
               checked={selectedIds.length === 0}
               onChange={() => onChange([])}
-              style={{ accentColor: "#0052CC" }}
+              style={{ accentColor: "#4f46e5" }}
             />
             All Centres
           </label>
@@ -873,7 +876,7 @@ function CentreMultiSelect({
                   type="checkbox"
                   checked={checked}
                   onChange={() => toggle(c._id)}
-                  style={{ accentColor: "#0052CC" }}
+                  style={{ accentColor: "#4f46e5" }}
                 />
                 {c.name}
                 {c.code && (

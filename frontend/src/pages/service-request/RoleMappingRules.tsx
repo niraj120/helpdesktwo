@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from "react";
-import SrPage from "../components/sr/SrPage";
-import { srButton } from "../utils/srTheme";
-import { useProjectContext } from "../contexts/ProjectContext";
-import { api } from "../utils/api";
-import { serviceRequestApi } from "../services/serviceRequests";
+import SrPage from "../../components/sr/SrPage";
+import { srButton } from "../../utils/srTheme";
+import { useProjectContext } from "../../contexts/ProjectContext";
+import { api } from "../../utils/api";
+import { serviceRequestApi } from "../../services/serviceRequests";
 
 interface ProjectOpt {
   _id: string;
@@ -127,8 +127,8 @@ const RoleMappingRules: React.FC<{
   };
   const card: React.CSSProperties = {
     background: "#fff",
-    border: "1px solid #e7ebf3",
-    borderRadius: 14,
+    border: "1px solid #e2e8f0",
+    borderRadius: 16,
     boxShadow: "0 4px 18px rgba(15, 23, 42, 0.05)",
     padding: 16,
     marginBottom: 16,
@@ -185,7 +185,7 @@ const RoleMappingRules: React.FC<{
             </div>
             <div style={{ marginTop: 10, display: "flex", gap: 10 }}>
               <button onClick={save} style={srButton("success")}>Save</button>
-              <button onClick={() => setDraft(null)} style={{ padding: "9px 18px", borderRadius: 10, border: "1px solid #e7ebf3", background: "#fff", fontWeight: 600, fontSize: 14, color: "#374151", cursor: "pointer" }}>Cancel</button>
+              <button onClick={() => setDraft(null)} style={{ padding: "9px 18px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", fontWeight: 600, fontSize: 14, color: "#374151", cursor: "pointer" }}>Cancel</button>
             </div>
           </div>
         )}
@@ -217,7 +217,7 @@ const RoleMappingRules: React.FC<{
                       <td style={td}>{roleName(r.roleId)}</td>
                       <td style={td}>{r.isActive ? "Yes" : "No"}</td>
                       <td style={td}>
-                        <button onClick={() => setDraft({ ...r, roleId: typeof r.roleId === "object" ? r.roleId._id : r.roleId })} style={{ padding: "5px 12px", borderRadius: 8, border: "1px solid #e7ebf3", background: "#fff", fontSize: 13, fontWeight: 600, color: "#374151", cursor: "pointer" }}>Edit</button>{" "}
+                        <button onClick={() => setDraft({ ...r, roleId: typeof r.roleId === "object" ? r.roleId._id : r.roleId })} style={{ padding: "5px 12px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 13, fontWeight: 600, color: "#374151", cursor: "pointer" }}>Edit</button>{" "}
                         <button onClick={async () => { await serviceRequestApi.roleMapping.remove(r._id); load(projectId); }} style={{ padding: "5px 12px", borderRadius: 8, border: "1px solid #fecaca", background: "#fff", fontSize: 13, fontWeight: 600, color: "#b91c1c", cursor: "pointer" }}>Delete</button>
                       </td>
                     </tr>

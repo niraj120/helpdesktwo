@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import SrPage from "../components/sr/SrPage";
-import SrTabs from "../components/sr/SrTabs";
-import { srStyles, SR } from "../utils/srTheme";
-import { useProjectContext } from "../contexts/ProjectContext";
-import { api } from "../utils/api";
+import SrPage from "../../components/sr/SrPage";
+import SrTabs from "../../components/sr/SrTabs";
+import { srStyles, SR } from "../../utils/srTheme";
+import { useProjectContext } from "../../contexts/ProjectContext";
+import { api } from "../../utils/api";
 import ServiceRequestSettings from "./ServiceRequestSettings";
 import ServiceRequestRouting from "./ServiceRequestRouting";
 import ServiceRequestFormSchemas from "./ServiceRequestFormSchemas";

@@ -30,7 +30,7 @@ export interface SrTransition {
  * Allowed transitions per current status. Reassign/Delegate are assignment
  * actions (handled separately) and are NOT status transitions.
  */
-export const SR_TRANSITIONS: Record<number, SrTransition[]> = {
+const SR_TRANSITIONS: Record<number, SrTransition[]> = {
   [SR_STATUS.OPEN]: [
     { to: SR_STATUS.WIP, committedDateRequired: true },
     { to: SR_STATUS.RESOLVED },
@@ -55,10 +55,6 @@ export function getTransition(
   to: number,
 ): SrTransition | null {
   return SR_TRANSITIONS[from]?.find((t) => t.to === to) ?? null;
-}
-
-export function canTransition(from: number, to: number): boolean {
-  return !!getTransition(from, to);
 }
 
 export interface WipValidationResult {

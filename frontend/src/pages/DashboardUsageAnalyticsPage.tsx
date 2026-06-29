@@ -75,8 +75,10 @@ export default function DashboardUsageAnalyticsPage() {
             <h1
               style={{
                 fontSize: 22,
+                fontFamily: '"DM Serif Display", Georgia, serif',
                 fontWeight: 700,
-                color: "#101828",
+                color: "#0f172a",
+                letterSpacing: "-0.02em",
                 margin: 0,
               }}
             >
@@ -199,10 +201,11 @@ export default function DashboardUsageAnalyticsPage() {
               <div
                 style={{
                   background: "#fff",
-                  border: "1px solid #E4E7EC",
-                  borderRadius: 10,
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 16,
                   padding: "20px 22px",
-                  boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+                  boxShadow:
+                    "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
                 }}
               >
                 <h2
@@ -235,17 +238,18 @@ export default function DashboardUsageAnalyticsPage() {
                     }}
                   >
                     <thead>
-                      <tr style={{ background: "#F9FAFB" }}>
+                      <tr style={{ background: "#f8fafc" }}>
                         <th
                           style={{
                             textAlign: "left",
                             padding: "8px 10px",
-                            color: "#667085",
-                            fontWeight: 600,
+                            background: "#f8fafc",
+                            color: "#94a3b8",
+                            fontWeight: 700,
                             fontSize: 11,
                             textTransform: "uppercase",
-                            letterSpacing: "0.05em",
-                            borderBottom: "1px solid #E4E7EC",
+                            letterSpacing: "0.06em",
+                            borderBottom: "1px solid #e2e8f0",
                           }}
                         >
                           #
@@ -254,12 +258,13 @@ export default function DashboardUsageAnalyticsPage() {
                           style={{
                             textAlign: "left",
                             padding: "8px 10px",
-                            color: "#667085",
-                            fontWeight: 600,
+                            background: "#f8fafc",
+                            color: "#94a3b8",
+                            fontWeight: 700,
                             fontSize: 11,
                             textTransform: "uppercase",
-                            letterSpacing: "0.05em",
-                            borderBottom: "1px solid #E4E7EC",
+                            letterSpacing: "0.06em",
+                            borderBottom: "1px solid #e2e8f0",
                           }}
                         >
                           Widget Key
@@ -268,12 +273,13 @@ export default function DashboardUsageAnalyticsPage() {
                           style={{
                             textAlign: "right",
                             padding: "8px 10px",
-                            color: "#667085",
-                            fontWeight: 600,
+                            background: "#f8fafc",
+                            color: "#94a3b8",
+                            fontWeight: 700,
                             fontSize: 11,
                             textTransform: "uppercase",
-                            letterSpacing: "0.05em",
-                            borderBottom: "1px solid #E4E7EC",
+                            letterSpacing: "0.06em",
+                            borderBottom: "1px solid #e2e8f0",
                           }}
                         >
                           Views
@@ -320,10 +326,11 @@ export default function DashboardUsageAnalyticsPage() {
               <div
                 style={{
                   background: "#fff",
-                  border: "1px solid #E4E7EC",
-                  borderRadius: 10,
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 16,
                   padding: "20px 22px",
-                  boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+                  boxShadow:
+                    "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
                 }}
               >
                 <h2
@@ -356,17 +363,18 @@ export default function DashboardUsageAnalyticsPage() {
                     }}
                   >
                     <thead>
-                      <tr style={{ background: "#F9FAFB" }}>
+                      <tr style={{ background: "#f8fafc" }}>
                         <th
                           style={{
                             textAlign: "left",
                             padding: "8px 10px",
-                            color: "#667085",
-                            fontWeight: 600,
+                            background: "#f8fafc",
+                            color: "#94a3b8",
+                            fontWeight: 700,
                             fontSize: 11,
                             textTransform: "uppercase",
-                            letterSpacing: "0.05em",
-                            borderBottom: "1px solid #E4E7EC",
+                            letterSpacing: "0.06em",
+                            borderBottom: "1px solid #e2e8f0",
                           }}
                         >
                           #
@@ -375,12 +383,13 @@ export default function DashboardUsageAnalyticsPage() {
                           style={{
                             textAlign: "left",
                             padding: "8px 10px",
-                            color: "#667085",
-                            fontWeight: 600,
+                            background: "#f8fafc",
+                            color: "#94a3b8",
+                            fontWeight: 700,
                             fontSize: 11,
                             textTransform: "uppercase",
-                            letterSpacing: "0.05em",
-                            borderBottom: "1px solid #E4E7EC",
+                            letterSpacing: "0.06em",
+                            borderBottom: "1px solid #e2e8f0",
                           }}
                         >
                           Dashboard
@@ -389,12 +398,13 @@ export default function DashboardUsageAnalyticsPage() {
                           style={{
                             textAlign: "right",
                             padding: "8px 10px",
-                            color: "#667085",
-                            fontWeight: 600,
+                            background: "#f8fafc",
+                            color: "#94a3b8",
+                            fontWeight: 700,
                             fontSize: 11,
                             textTransform: "uppercase",
-                            letterSpacing: "0.05em",
-                            borderBottom: "1px solid #E4E7EC",
+                            letterSpacing: "0.06em",
+                            borderBottom: "1px solid #e2e8f0",
                           }}
                         >
                           Views
@@ -452,11 +462,12 @@ function KpiCard({
     <div
       style={{
         background: "#fff",
-        border: "1px solid #E4E7EC",
-        borderRadius: 10,
+        border: "1px solid #e2e8f0",
+        borderRadius: 16,
         padding: "18px 20px",
         borderTop: `4px solid ${color}`,
-        boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+        boxShadow:
+          "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
       }}
     >
       <div

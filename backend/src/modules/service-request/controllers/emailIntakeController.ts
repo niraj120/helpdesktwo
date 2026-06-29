@@ -2,10 +2,10 @@
  * Email triage inbox — HTTP controller. Phase 4.
  */
 import { Response } from "express";
-import { AuthRequest } from "../middleware/auth";
-import * as triage from "../modules/service-request/emailTriage";
-import { SrError } from "../modules/service-request/serviceRequestService";
-import { getProjectScope } from "../utils/projectScope";
+import { AuthRequest } from "../../../middleware/auth";
+import * as triage from "../emailTriage";
+import { SrError } from "../serviceRequestService";
+import { getProjectScope } from "../../../utils/projectScope";
 
 function actorId(req: AuthRequest): string {
   const id = req.user?.userId;

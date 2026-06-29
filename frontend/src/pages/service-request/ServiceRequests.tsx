@@ -1,13 +1,13 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
-import SrPage from "../components/sr/SrPage";
-import { srStyles, srButton } from "../utils/srTheme";
-import { useProjectContext } from "../contexts/ProjectContext";
+import SrPage from "../../components/sr/SrPage";
+import { srStyles, srButton } from "../../utils/srTheme";
+import { useProjectContext } from "../../contexts/ProjectContext";
 import {
   serviceRequestApi,
   SR_STATUS_META,
-} from "../services/serviceRequests";
+} from "../../services/serviceRequests";
 
 interface SrRow {
   _id: string;
@@ -102,7 +102,7 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
   const td = srStyles.td;
 
   const statCards = [
-    { key: "all", label: "All Requests", color: "#2563EB", bg: "#eff6ff" },
+    { key: "all", label: "All Requests", color: "#4f46e5", bg: "#eef2ff" },
     ...Object.entries(SR_STATUS_META).map(([code, m]) => ({
       key: code,
       label: m.label,
@@ -114,7 +114,7 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
   const pagerBtn = (disabled: boolean): React.CSSProperties => ({
     padding: "7px 14px",
     borderRadius: 8,
-    border: "1px solid #e7ebf3",
+    border: "1px solid #e2e8f0",
     background: "#fff",
     fontSize: 13,
     fontWeight: 600,
@@ -158,7 +158,7 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
                 }}
                 style={{
                   background: active ? s.bg : "#fff",
-                  border: active ? `2px solid ${s.color}` : "1px solid #e7ebf3",
+                  border: active ? `2px solid ${s.color}` : "1px solid #e2e8f0",
                   borderRadius: 12,
                   padding: active ? "11px 13px" : "12px 14px",
                   boxShadow: active
@@ -176,7 +176,7 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
                 }}
                 onMouseLeave={(e) => {
                   if (!active) {
-                    e.currentTarget.style.borderColor = "#e7ebf3";
+                    e.currentTarget.style.borderColor = "#e2e8f0";
                     e.currentTarget.style.transform = "translateY(0)";
                   }
                 }}
@@ -273,14 +273,14 @@ const ServiceRequests: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
                     onClick={() => navigate(`/tickets/${r._id}`)}
                     style={{ cursor: "pointer", transition: "background 0.12s ease" }}
                     onMouseEnter={(e) =>
-                      (e.currentTarget.style.background = "#f6f8fc")
+                      (e.currentTarget.style.background = "#f8fafc")
                     }
                     onMouseLeave={(e) =>
                       (e.currentTarget.style.background = "transparent")
                     }
                   >
                     <td style={td}>
-                      <span style={{ color: "#2563EB", fontWeight: 600 }}>
+                      <span style={{ color: "#4f46e5", fontWeight: 600 }}>
                         {r.ticketNumber}
                       </span>
                     </td>

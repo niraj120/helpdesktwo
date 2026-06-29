@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { UserIcon, UsersIcon, UserGroupIcon, GlobeAltIcon } from '@heroicons/react/24/outline';
 import { usePermissions } from '../hooks/usePermissions';
 import { PERMISSIONS } from '../constants/permissions';
+import { tokens } from '../theme/oneos';
 
 type ViewMode = 'self' | 'team' | 'hierarchy' | 'all';
 
@@ -126,22 +127,25 @@ const ViewModeSelector: React.FC<ViewModeSelectorProps> = ({
               onClick={() => !disabled && onChange(mode)}
               disabled={disabled}
               title={config.tooltip}
-              className={`
-                flex items-center gap-2 px-4 py-2 rounded-md font-medium text-sm
-                transition-all duration-200 ease-in-out
-                ${
-                  isActive
-                    ? `bg-${config.color}-500 text-white shadow-md`
-                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                }
-                ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
-              `}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "8px 16px",
+                borderRadius: 8,
+                border: "none",
+                fontWeight: 600,
+                fontSize: 13,
+                fontFamily: tokens.font,
+                cursor: disabled ? "not-allowed" : "pointer",
+                opacity: disabled ? 0.5 : 1,
+                background: isActive ? tokens.primary : "transparent",
+                color: isActive ? "#fff" : "#475569",
+                transition: "all 0.15s ease",
+              }}
             >
-              <Icon className="h-5 w-5" />
-              <span className="whitespace-nowrap">{config.label}</span>
-              {isActive && (
-                <span className="ml-1 h-2 w-2 rounded-full bg-white opacity-80" />
-              )}
+              <Icon style={{ height: 18, width: 18 }} />
+              <span style={{ whiteSpace: "nowrap" }}>{config.label}</span>
             </button>
           );
         })}

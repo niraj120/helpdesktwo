@@ -137,7 +137,7 @@ const SrLifecyclePanel: React.FC<Props> = ({ ticket, onChanged }) => {
       style={{
         background: SR.bg,
         border: `1px solid ${SR.border}`,
-        borderRadius: 14,
+        borderRadius: 16,
         boxShadow: SR.cardShadow,
         padding: 16,
         marginBottom: 16,

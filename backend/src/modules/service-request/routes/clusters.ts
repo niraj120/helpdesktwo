@@ -2,8 +2,8 @@
  * Cluster (school-group) routes. Phase 1 — Service Request master data.
  */
 import { Router } from "express";
-import { authMiddleware } from "../middleware/auth";
-import { checkPermission } from "../middleware/permissions";
+import { authMiddleware } from "../../../middleware/auth";
+import { checkPermission } from "../../../middleware/permissions";
 import {
   listClusters,
   createCluster,

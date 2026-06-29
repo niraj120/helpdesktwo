@@ -19,36 +19,36 @@
 @layer base {
   /* Design System Base Styles */
   :root {
-    /* Primary Colors (30% - Core Brand - Blue Palette) */
-    --primary-main: #3F41D1;
-    --primary-variant: #4BA4D4;
-    --primary-light: #7B7FDE;
+    /* Primary Colors (30% - Core Brand - OneOS Indigo Palette) */
+    --primary-main: #4f46e5;
+    --primary-variant: #4338ca;
+    --primary-light: #a5b4fc;
     --primary-on: #FFFFFF;
     
     /* Background & Surface (60% - Neutral Tones) */
     --background-primary: #FFFFFF;
-    --background-secondary: #F7F7F7;
+    --background-secondary: #f8fafc;
     --background-subtle: #FFFFFF;
     --surface-default: #FFFFFF;
-    --surface-variant: #F0F2F4;
+    --surface-variant: #f1f5f9;
     
     /* Text Colors */
-    --text-primary: #212121;
-    --text-secondary: #666666;
-    --text-tertiary: #A3A3A3;
-    --text-disabled: #BDBDBD;
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-tertiary: #94a3b8;
+    --text-disabled: #cbd5e1;
     
-    /* Accent Colors (10% - Pink Palette) */
-    --accent-main: #E697AB;
-    --accent-variant: #EA8DBE;
-    --accent-light: #EBDEE5;
-    --accent-on-dark: #010000;
+    /* Accent Colors (10% - Secondary Accents) */
+    --accent-main: #6366f1;
+    --accent-variant: #7c3aed;
+    --accent-light: #eef2ff;
+    --accent-on-dark: #FFFFFF;
     
     /* Status Colors */
-    --success-main: #06C270;
-    --success-bg: #E6393E;
-    --error-main: #E6393E;
-    --error-bg: #FEE;
+    --success-main: #22a55f;
+    --success-bg: #dcfce7;
+    --error-main: #ef4444;
+    --error-bg: #fee2e2;
     
     /* Borders */
     --border-light: #E0E0E0;

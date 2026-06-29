@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import SrPage from "../components/sr/SrPage";
-import { srStyles, srButton } from "../utils/srTheme";
-import { useProjectContext } from "../contexts/ProjectContext";
-import { api } from "../utils/api";
-import { serviceRequestApi } from "../services/serviceRequests";
+import SrPage from "../../components/sr/SrPage";
+import { srStyles, srButton } from "../../utils/srTheme";
+import { useProjectContext } from "../../contexts/ProjectContext";
+import { api } from "../../utils/api";
+import { serviceRequestApi } from "../../services/serviceRequests";
 
 interface ProjectOpt {
   _id: string;
@@ -58,7 +58,7 @@ const Chip: React.FC<{ text: string; color: string; bg: string }> = ({ text, col
 );
 
 const CALL_STATUS_META: Record<string, { color: string; bg: string }> = {
-  new: { color: "#1d4ed8", bg: "#eff6ff" },
+  new: { color: "#1d4ed8", bg: "#eef2ff" },
   assigned: { color: "#b45309", bg: "#fffbeb" },
   converted: { color: "#047857", bg: "#ecfdf5" },
 };
@@ -196,7 +196,7 @@ const IVRCalls: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
   const cancelBtn: React.CSSProperties = {
     padding: "9px 18px",
     borderRadius: 10,
-    border: "1px solid #e7ebf3",
+    border: "1px solid #e2e8f0",
     background: "#fff",
     fontWeight: 600,
     fontSize: 14,
@@ -206,9 +206,9 @@ const IVRCalls: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
   const tab = (active: boolean): React.CSSProperties => ({
     padding: "7px 14px",
     borderRadius: 9999,
-    border: "1px solid " + (active ? "#2563EB" : "#e7ebf3"),
-    background: active ? "#eff6ff" : "#fff",
-    color: active ? "#2563EB" : "#374151",
+    border: "1px solid " + (active ? "#4f46e5" : "#e2e8f0"),
+    background: active ? "#eef2ff" : "#fff",
+    color: active ? "#4f46e5" : "#374151",
     fontSize: 13,
     fontWeight: 600,
     cursor: "pointer",
@@ -293,7 +293,7 @@ const IVRCalls: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
                       key={c._id}
                       style={{ transition: "background 0.12s ease" }}
                       onMouseEnter={(e) =>
-                        (e.currentTarget.style.background = "#f6f8fc")
+                        (e.currentTarget.style.background = "#f8fafc")
                       }
                       onMouseLeave={(e) =>
                         (e.currentTarget.style.background = "transparent")

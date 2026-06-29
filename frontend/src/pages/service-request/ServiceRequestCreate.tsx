@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import SrPage from "../components/sr/SrPage";
-import { srStyles, srButton, SR } from "../utils/srTheme";
-import { useProjectContext } from "../contexts/ProjectContext";
-import { api } from "../utils/api";
-import { serviceRequestApi } from "../services/serviceRequests";
+import SrPage from "../../components/sr/SrPage";
+import { srStyles, srButton, SR } from "../../utils/srTheme";
+import { useProjectContext } from "../../contexts/ProjectContext";
+import { api } from "../../utils/api";
+import { serviceRequestApi } from "../../services/serviceRequests";
 
 interface ProjectOpt {
   _id: string;

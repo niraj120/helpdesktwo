@@ -167,8 +167,10 @@ export default function AdminTargetsPage() {
             style={{
               fontSize: 22,
               fontWeight: 700,
-              color: "#101828",
+              color: "#0f172a",
               margin: 0,
+              fontFamily: '"DM Serif Display", Georgia, serif',
+              letterSpacing: "-0.02em",
             }}
           >
             Target Management
@@ -225,9 +227,10 @@ export default function AdminTargetsPage() {
             <div
               style={{
                 overflowX: "auto",
-                borderRadius: 10,
-                border: "1px solid #E4E7EC",
-                boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+                borderRadius: 16,
+                border: "1px solid #e2e8f0",
+                boxShadow:
+                  "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
                 background: "#fff",
               }}
             >
@@ -241,8 +244,8 @@ export default function AdminTargetsPage() {
                 <thead>
                   <tr
                     style={{
-                      background: "#F9FAFB",
-                      borderBottom: "1px solid #E4E7EC",
+                      background: "#f8fafc",
+                      borderBottom: "1px solid #e2e8f0",
                     }}
                   >
                     {[
@@ -259,12 +262,12 @@ export default function AdminTargetsPage() {
                         style={{
                           padding: "10px 14px",
                           textAlign: "left",
-                          fontWeight: 600,
-                          color: "#667085",
+                          fontWeight: 700,
+                          color: "#94a3b8",
                           whiteSpace: "nowrap",
                           fontSize: 11,
                           textTransform: "uppercase",
-                          letterSpacing: "0.05em",
+                          letterSpacing: "0.06em",
                         }}
                       >
                         {h}
@@ -365,8 +368,8 @@ export default function AdminTargetsPage() {
                                 autoFocus
                                 style={{
                                   width: 80,
-                                  border: "1px solid #6366f1",
-                                  borderRadius: 4,
+                                  border: "1.5px solid #e2e8f0",
+                                  borderRadius: 8,
                                   padding: "4px 8px",
                                   fontSize: 13,
                                   outline: "none",
@@ -425,10 +428,10 @@ export default function AdminTargetsPage() {
                                 }
                                 style={{
                                   fontSize: 11,
-                                  color: "#6366f1",
+                                  color: "#4f46e5",
                                   background: "none",
                                   border: "1px solid #c7d2fe",
-                                  borderRadius: 4,
+                                  borderRadius: 8,
                                   padding: "2px 8px",
                                   cursor: "pointer",
                                 }}
@@ -556,7 +559,7 @@ export default function AdminTargetsPage() {
                   style={{
                     padding: "6px 16px",
                     fontSize: 13,
-                    border: "1px solid #D0D5DD",
+                    border: "1px solid #e2e8f0",
                     borderRadius: 8,
                     background: "#fff",
                     cursor: page === 1 ? "not-allowed" : "pointer",
@@ -580,7 +583,7 @@ export default function AdminTargetsPage() {
                   style={{
                     padding: "6px 16px",
                     fontSize: 13,
-                    border: "1px solid #D0D5DD",
+                    border: "1px solid #e2e8f0",
                     borderRadius: 8,
                     background: "#fff",
                     cursor: page === totalPages ? "not-allowed" : "pointer",

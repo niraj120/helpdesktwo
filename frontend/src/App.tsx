@@ -91,12 +91,14 @@ const ConditionalStudentLayout = lazy(
 // Ticket Management
 const ViewTickets = lazy(() => import("./pages/ViewTickets"));
 // Service Requests — two consolidated hubs (one "work" page, one "settings" page)
-const ServiceRequestsHub = lazy(() => import("./pages/ServiceRequestsHub"));
+const ServiceRequestsHub = lazy(
+  () => import("./pages/service-request/ServiceRequestsHub"),
+);
 const ServiceRequestSettingsHub = lazy(
-  () => import("./pages/ServiceRequestSettingsHub"),
+  () => import("./pages/service-request/ServiceRequestSettingsHub"),
 );
 const ServiceRequestDetail = lazy(
-  () => import("./pages/ServiceRequestDetail"),
+  () => import("./pages/service-request/ServiceRequestDetail"),
 );
 const MyTickets = lazy(() => import("./pages/MyTickets"));
 const TicketAssignment = lazy(() => import("./pages/TicketAssignment"));

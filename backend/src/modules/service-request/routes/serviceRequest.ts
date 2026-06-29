@@ -3,8 +3,8 @@
  * Permission-gated; does not touch existing /api/tickets endpoints.
  */
 import { Router } from "express";
-import { authMiddleware } from "../middleware/auth";
-import { checkPermission } from "../middleware/permissions";
+import { authMiddleware } from "../../../middleware/auth";
+import { checkPermission } from "../../../middleware/permissions";
 import * as c from "../controllers/serviceRequestController";
 
 const router = Router();

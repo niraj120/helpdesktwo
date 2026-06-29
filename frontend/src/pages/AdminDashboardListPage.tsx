@@ -347,8 +347,10 @@ export default function AdminDashboardListPage() {
             <h1
               style={{
                 fontSize: 22,
+                fontFamily: '"DM Serif Display", Georgia, serif',
                 fontWeight: 700,
-                color: "#101828",
+                letterSpacing: "-0.02em",
+                color: "#0f172a",
                 margin: 0,
               }}
             >
@@ -363,10 +365,11 @@ export default function AdminDashboardListPage() {
             <button
               onClick={() => navigate("/admin/dashboard-builder")}
               style={{
-                background: "#7F56D9",
+                background: "linear-gradient(160deg, #4f46e5, #4338ca)",
                 color: "#fff",
                 border: "none",
                 borderRadius: 8,
+                boxShadow: "0 4px 14px rgba(67,56,202,.35)",
                 padding: "9px 18px",
                 fontSize: 13,
                 fontWeight: 600,
@@ -442,10 +445,11 @@ export default function AdminDashboardListPage() {
               style={{
                 flex: "1 1 160px",
                 background: "#fff",
-                borderRadius: 10,
+                borderRadius: 16,
                 padding: "18px 20px",
-                border: "1px solid #E4E7EC",
-                boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+                border: "1px solid #e2e8f0",
+                boxShadow:
+                  "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
                 display: "flex",
                 alignItems: "center",
                 gap: 14,
@@ -489,10 +493,11 @@ export default function AdminDashboardListPage() {
         <div
           style={{
             background: "#fff",
-            borderRadius: 12,
+            borderRadius: 16,
             padding: "12px 16px",
-            boxShadow: "0 1px 4px rgba(0,0,0,.06)",
-            border: "1px solid #F3F4F6",
+            boxShadow:
+              "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
+            border: "1px solid #e2e8f0",
             marginBottom: 16,
             display: "flex",
             gap: 10,
@@ -524,7 +529,7 @@ export default function AdminDashboardListPage() {
                 width: "100%",
                 paddingLeft: 32,
                 padding: "9px 10px 9px 32px",
-                border: "1px solid #E5E7EB",
+                border: "1.5px solid #e2e8f0",
                 borderRadius: 8,
                 background: "#F9FAFB",
                 fontSize: 14,
@@ -543,12 +548,12 @@ export default function AdminDashboardListPage() {
             style={{
               padding: "9px 28px 9px 10px",
               border: statusFilter
-                ? "1.5px solid #3B82F6"
-                : "1px solid #E5E7EB",
+                ? "1.5px solid #4f46e5"
+                : "1.5px solid #e2e8f0",
               borderRadius: 8,
               background: statusFilter ? "#EFF6FF" : "#F9FAFB",
               fontSize: 14,
-              color: statusFilter ? "#1D4ED8" : "#101828",
+              color: statusFilter ? "#4f46e5" : "#101828",
               fontWeight: statusFilter ? 500 : 400,
               outline: "none",
               cursor: "pointer",
@@ -565,7 +570,7 @@ export default function AdminDashboardListPage() {
                 setStatusFilter("");
               }}
               style={{
-                border: "1px solid #E5E7EB",
+                border: "1px solid #e2e8f0",
                 borderRadius: 8,
                 background: "#fff",
                 color: "#6B7280",
@@ -583,9 +588,10 @@ export default function AdminDashboardListPage() {
         <div
           style={{
             background: "#fff",
-            borderRadius: 10,
-            border: "1px solid #E4E7EC",
-            boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+            borderRadius: 16,
+            border: "1px solid #e2e8f0",
+            boxShadow:
+              "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
             overflow: "hidden",
           }}
         >
@@ -614,7 +620,7 @@ export default function AdminDashboardListPage() {
                 onClick={loadTemplates}
                 style={{
                   marginLeft: 8,
-                  color: "#3b82f6",
+                  color: "#4f46e5",
                   background: "none",
                   border: "none",
                   cursor: "pointer",
@@ -642,8 +648,8 @@ export default function AdminDashboardListPage() {
               <thead>
                 <tr
                   style={{
-                    background: "#F9FAFB",
-                    borderBottom: "1px solid #E4E7EC",
+                    background: "#f8fafc",
+                    borderBottom: "1px solid #e2e8f0",
                   }}
                 >
                   {[
@@ -658,11 +664,11 @@ export default function AdminDashboardListPage() {
                       key={col}
                       style={{
                         padding: "12px 16px",
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: "#667085",
+                        fontSize: 11,
+                        fontWeight: 700,
+                        color: "#94a3b8",
                         textTransform: "uppercase",
-                        letterSpacing: 0.5,
+                        letterSpacing: "0.06em",
                         textAlign: col === "Actions" ? "right" : "left",
                         whiteSpace: "nowrap",
                       }}
@@ -825,7 +831,7 @@ export default function AdminDashboardListPage() {
                           }}
                           style={{
                             background: "none",
-                            border: "1px solid #E4E7EC",
+                            border: "1px solid #e2e8f0",
                             borderRadius: 6,
                             padding: "5px 10px",
                             fontSize: 14,
@@ -842,7 +848,7 @@ export default function AdminDashboardListPage() {
                               top: menuAnchor?.top ?? 0,
                               right: menuAnchor?.right ?? 0,
                               background: "#fff",
-                              border: "1px solid #E4E7EC",
+                              border: "1px solid #e2e8f0",
                               borderRadius: 8,
                               boxShadow: "0 4px 16px rgba(0,0,0,.12)",
                               zIndex: 9999,
@@ -1111,7 +1117,7 @@ export default function AdminDashboardListPage() {
               ) : (
                 <div
                   style={{
-                    border: "1px solid #E4E7EC",
+                    border: "1px solid #e2e8f0",
                     borderRadius: 8,
                     overflow: "hidden",
                   }}
@@ -1222,7 +1228,7 @@ export default function AdminDashboardListPage() {
                 background: "#F9FAFB",
                 borderRadius: 10,
                 padding: "16px",
-                border: "1px solid #E4E7EC",
+                border: "1px solid #e2e8f0",
               }}
             >
               <div
@@ -1354,10 +1360,16 @@ export default function AdminDashboardListPage() {
                 disabled={!newAssigneeId || addingAssignment}
                 style={{
                   background:
-                    !newAssigneeId || addingAssignment ? "#D0C8F0" : "#7F56D9",
+                    !newAssigneeId || addingAssignment
+                      ? "#D0C8F0"
+                      : "linear-gradient(160deg, #4f46e5, #4338ca)",
                   color: "#fff",
                   border: "none",
                   borderRadius: 8,
+                  boxShadow:
+                    !newAssigneeId || addingAssignment
+                      ? "none"
+                      : "0 4px 14px rgba(67,56,202,.35)",
                   padding: "9px 20px",
                   fontSize: 13,
                   fontWeight: 600,
@@ -1395,7 +1407,7 @@ const menuItemStyle: React.CSSProperties = {
 const inputStyle: React.CSSProperties = {
   width: "100%",
   padding: "9px 10px",
-  border: "1px solid #E5E7EB",
+  border: "1.5px solid #e2e8f0",
   borderRadius: 8,
   background: "#fff",
   fontSize: 13,

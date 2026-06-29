@@ -192,7 +192,7 @@ const ProjectManagement = () => {
           padding: "24px 20px 32px",
           maxWidth: "1380px",
           margin: "0 auto",
-          background: "#F8F9FC",
+          background: "#f8fafc",
           minHeight: "100vh",
           fontFamily:
             '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -202,10 +202,11 @@ const ProjectManagement = () => {
           style={{
             background: "#ffffff",
             padding: "22px 24px",
-            borderRadius: "14px",
+            borderRadius: "16px",
             marginBottom: "16px",
-            border: "1px solid #E4E7EC",
-            boxShadow: "0 4px 18px rgba(15, 23, 42, 0.05)",
+            border: "1px solid #e2e8f0",
+            boxShadow:
+              "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
           }}
         >
           <h1
@@ -213,8 +214,9 @@ const ProjectManagement = () => {
               margin: "0 0 6px 0",
               fontSize: "24px",
               fontWeight: 700,
-              color: "#101828",
-              letterSpacing: "-0.01em",
+              color: "#0f172a",
+              letterSpacing: "-0.02em",
+              fontFamily: '"DM Serif Display", Georgia, serif',
             }}
           >
             Projects
@@ -223,7 +225,7 @@ const ProjectManagement = () => {
             style={{
               margin: 0,
               fontSize: "14px",
-              color: "#667085",
+              color: "#475569",
               fontWeight: 400,
             }}
           >
@@ -245,10 +247,11 @@ const ProjectManagement = () => {
               style={{
                 flex: "1 1 200px",
                 background: "#ffffff",
-                borderRadius: "10px",
+                borderRadius: "16px",
                 padding: "20px 24px",
-                border: "1px solid #E4E7EC",
-                boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+                border: "1px solid #e2e8f0",
+                boxShadow:
+                  "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
                 display: "flex",
                 alignItems: "center",
                 gap: "16px",
@@ -274,7 +277,7 @@ const ProjectManagement = () => {
                   style={{
                     fontSize: "28px",
                     fontWeight: 700,
-                    color: "#101828",
+                    color: "#0f172a",
                     lineHeight: 1.2,
                   }}
                 >
@@ -302,17 +305,18 @@ const ProjectManagement = () => {
             gap: "12px",
             marginBottom: "16px",
             background: "#ffffff",
-            borderRadius: "12px",
-            border: "1px solid #E4E7EC",
+            borderRadius: "16px",
+            border: "1px solid #e2e8f0",
             padding: "12px 14px",
-            boxShadow: "0 1px 4px rgba(0,0,0,.06)",
+            boxShadow:
+              "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
             flexWrap: "wrap",
           }}
         >
           <div
             style={{
               fontSize: "13px",
-              color: "#667085",
+              color: "#475569",
               fontWeight: 500,
             }}
           >
@@ -332,14 +336,14 @@ const ProjectManagement = () => {
                   alignItems: "center",
                   gap: "8px",
                   padding: "10px 16px",
-                  background: "#7F56D9",
-                  color: "white",
+                  background: "linear-gradient(160deg, #4f46e5, #4338ca)",
+                  color: "#fff",
                   border: "none",
                   borderRadius: "8px",
                   fontSize: "14px",
                   fontWeight: 600,
                   cursor: "pointer",
-                  boxShadow: "0 4px 12px rgba(127, 86, 217, 0.28)",
+                  boxShadow: "0 4px 14px rgba(67,56,202,.35)",
                   transition: "all 0.2s ease",
                 }}
                 onClick={() => {
@@ -349,12 +353,12 @@ const ProjectManagement = () => {
                 onMouseEnter={(e) => {
                   e.currentTarget.style.transform = "translateY(-2px)";
                   e.currentTarget.style.boxShadow =
-                    "0 6px 18px rgba(127, 86, 217, 0.35)";
+                    "0 6px 18px rgba(67,56,202,.45)";
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.transform = "translateY(0)";
                   e.currentTarget.style.boxShadow =
-                    "0 4px 12px rgba(127, 86, 217, 0.28)";
+                    "0 4px 14px rgba(67,56,202,.35)";
                 }}
               >
                 <svg
@@ -380,12 +384,13 @@ const ProjectManagement = () => {
           <div
             style={{
               background: "#ffffff",
-              borderRadius: "10px",
-              border: "1px solid #E4E7EC",
-              boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+              borderRadius: "16px",
+              border: "1px solid #e2e8f0",
+              boxShadow:
+                "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
               textAlign: "center",
               padding: "56px 24px",
-              color: "#667085",
+              color: "#475569",
             }}
           >
             <div
@@ -393,8 +398,8 @@ const ProjectManagement = () => {
                 width: "34px",
                 height: "34px",
                 borderRadius: "999px",
-                border: "3px solid #E2E8F0",
-                borderTopColor: "#7F56D9",
+                border: "3px solid #e2e8f0",
+                borderTopColor: "#4f46e5",
                 margin: "0 auto 10px",
                 animation: "spin 1s linear infinite",
               }}
@@ -405,9 +410,10 @@ const ProjectManagement = () => {
           <div
             style={{
               background: "#ffffff",
-              borderRadius: "10px",
-              border: "1px solid #E4E7EC",
-              boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+              borderRadius: "16px",
+              border: "1px solid #e2e8f0",
+              boxShadow:
+                "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
               textAlign: "center",
               padding: "56px 24px",
             }}
@@ -442,7 +448,7 @@ const ProjectManagement = () => {
                 margin: "0 0 12px 0",
                 fontSize: "20px",
                 fontWeight: 700,
-                color: "#111827",
+                color: "#0f172a",
                 fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
               }}
             >
@@ -451,7 +457,7 @@ const ProjectManagement = () => {
             <p
               style={{
                 margin: 0,
-                color: "#6B7280",
+                color: "#475569",
                 fontSize: "14px",
                 fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
               }}
@@ -463,10 +469,11 @@ const ProjectManagement = () => {
           <div
             style={{
               background: "#ffffff",
-              borderRadius: "10px",
-              border: "1px solid #E4E7EC",
+              borderRadius: "16px",
+              border: "1px solid #e2e8f0",
               overflow: "hidden",
-              boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+              boxShadow:
+                "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
             }}
           >
             <table
@@ -478,19 +485,19 @@ const ProjectManagement = () => {
               <thead>
                 <tr
                   style={{
-                    background: "#F9FAFB",
-                    borderBottom: "1px solid #E4E7EC",
+                    background: "#f8fafc",
+                    borderBottom: "1px solid #e2e8f0",
                   }}
                 >
                   <th
                     style={{
                       padding: "12px 24px",
                       textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: "#6B7280",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: "#94a3b8",
                       textTransform: "uppercase",
-                      letterSpacing: "0.05em",
+                      letterSpacing: "0.06em",
                     }}
                   >
                     Project ID
@@ -499,11 +506,11 @@ const ProjectManagement = () => {
                     style={{
                       padding: "12px 24px",
                       textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: "#6B7280",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: "#94a3b8",
                       textTransform: "uppercase",
-                      letterSpacing: "0.05em",
+                      letterSpacing: "0.06em",
                     }}
                   >
                     Name
@@ -512,11 +519,11 @@ const ProjectManagement = () => {
                     style={{
                       padding: "12px 24px",
                       textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: "#6B7280",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: "#94a3b8",
                       textTransform: "uppercase",
-                      letterSpacing: "0.05em",
+                      letterSpacing: "0.06em",
                     }}
                   >
                     Code
@@ -525,11 +532,11 @@ const ProjectManagement = () => {
                     style={{
                       padding: "12px 24px",
                       textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: "#6B7280",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: "#94a3b8",
                       textTransform: "uppercase",
-                      letterSpacing: "0.05em",
+                      letterSpacing: "0.06em",
                     }}
                   >
                     Users
@@ -538,11 +545,11 @@ const ProjectManagement = () => {
                     style={{
                       padding: "12px 24px",
                       textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: "#6B7280",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: "#94a3b8",
                       textTransform: "uppercase",
-                      letterSpacing: "0.05em",
+                      letterSpacing: "0.06em",
                     }}
                   >
                     Status
@@ -551,11 +558,11 @@ const ProjectManagement = () => {
                     style={{
                       padding: "12px 24px",
                       textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: "#6B7280",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: "#94a3b8",
                       textTransform: "uppercase",
-                      letterSpacing: "0.05em",
+                      letterSpacing: "0.06em",
                     }}
                   >
                     Created
@@ -564,11 +571,11 @@ const ProjectManagement = () => {
                     style={{
                       padding: "12px 24px",
                       textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: "#6B7280",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: "#94a3b8",
                       textTransform: "uppercase",
-                      letterSpacing: "0.05em",
+                      letterSpacing: "0.06em",
                     }}
                   >
                     Actions
@@ -581,13 +588,13 @@ const ProjectManagement = () => {
                   .map((project) => (
                     <tr
                       key={project._id}
-                      style={{ borderBottom: "1px solid #F2F4F7" }}
+                      style={{ borderBottom: "1px solid #e2e8f0" }}
                     >
                       <td
                         style={{
                           padding: "12px 16px",
                           fontSize: "13px",
-                          color: "#667085",
+                          color: "#94a3b8",
                         }}
                       >
                         {project.projectId || "N/A"}
@@ -596,7 +603,7 @@ const ProjectManagement = () => {
                         style={{
                           padding: "12px 16px",
                           fontSize: "13px",
-                          color: "#101828",
+                          color: "#0f172a",
                           fontWeight: 600,
                         }}
                       >
@@ -606,16 +613,18 @@ const ProjectManagement = () => {
                         style={{
                           padding: "12px 16px",
                           fontSize: "13px",
-                          color: "#667085",
+                          color: "#475569",
                         }}
                       >
                         <span
                           style={{
                             padding: "3px 10px",
-                            backgroundColor: "#F2F4F7",
-                            borderRadius: "20px",
+                            backgroundColor: "#f8fafc",
+                            border: "1px solid #e2e8f0",
+                            borderRadius: "12px",
                             fontFamily: "monospace",
                             fontSize: "12px",
+                            color: "#475569",
                           }}
                         >
                           {project.code}
@@ -625,7 +634,7 @@ const ProjectManagement = () => {
                         style={{
                           padding: "12px 16px",
                           fontSize: "13px",
-                          color: "#344054",
+                          color: "#475569",
                         }}
                       >
                         {project.users || 0}
@@ -651,7 +660,7 @@ const ProjectManagement = () => {
                         style={{
                           padding: "12px 16px",
                           fontSize: "13px",
-                          color: "#667085",
+                          color: "#94a3b8",
                         }}
                       >
                         {new Date(project.createdAt).toLocaleDateString()}
@@ -665,13 +674,11 @@ const ProjectManagement = () => {
                             disabled={loadingProject}
                             style={{
                               padding: "7px 12px",
-                              background: loadingProject
-                                ? "#EAECF0"
-                                : "#F9FAFB",
-                              border: "1px solid #D0D5DD",
+                              background: loadingProject ? "#f1f5f9" : "#fff",
+                              border: "1.5px solid #e2e8f0",
                               borderRadius: "8px",
                               fontSize: "13px",
-                              color: "#344054",
+                              color: "#334155",
                               cursor: loadingProject
                                 ? "not-allowed"
                                 : "pointer",
@@ -721,10 +728,10 @@ const ProjectManagement = () => {
                   alignItems: "center",
                   justifyContent: "space-between",
                   padding: "14px 24px",
-                  borderTop: "1px solid #E4E7EC",
+                  borderTop: "1px solid #e2e8f0",
                 }}
               >
-                <span style={{ fontSize: "13px", color: "#6B7280" }}>
+                <span style={{ fontSize: "13px", color: "#475569" }}>
                   Showing {(currentPage - 1) * PAGE_SIZE + 1}–
                   {Math.min(currentPage * PAGE_SIZE, projects.length)} of{" "}
                   {projects.length} projects
@@ -743,10 +750,10 @@ const ProjectManagement = () => {
                     style={{
                       padding: "6px 10px",
                       fontSize: "13px",
-                      border: "1px solid #D1D5DB",
-                      borderRadius: "6px",
-                      background: currentPage === 1 ? "#F9FAFB" : "#ffffff",
-                      color: currentPage === 1 ? "#9CA3AF" : "#374151",
+                      border: "1.5px solid #e2e8f0",
+                      borderRadius: "8px",
+                      background: currentPage === 1 ? "#f8fafc" : "#fff",
+                      color: currentPage === 1 ? "#94a3b8" : "#334155",
                       cursor: currentPage === 1 ? "not-allowed" : "pointer",
                     }}
                   >
@@ -783,7 +790,7 @@ const ProjectManagement = () => {
                           key={`ellipsis-${idx}`}
                           style={{
                             padding: "6px 4px",
-                            color: "#9CA3AF",
+                            color: "#94a3b8",
                             fontSize: "13px",
                           }}
                         >
@@ -797,13 +804,13 @@ const ProjectManagement = () => {
                             width: "34px",
                             height: "34px",
                             fontSize: "13px",
-                            border: "1px solid",
+                            border: "1.5px solid",
                             borderColor:
-                              currentPage === item ? "#7F56D9" : "#D1D5DB",
-                            borderRadius: "6px",
+                              currentPage === item ? "#4f46e5" : "#e2e8f0",
+                            borderRadius: "8px",
                             background:
-                              currentPage === item ? "#7F56D9" : "#ffffff",
-                            color: currentPage === item ? "white" : "#374151",
+                              currentPage === item ? "#4f46e5" : "#fff",
+                            color: currentPage === item ? "white" : "#334155",
                             cursor: "pointer",
                             fontWeight: currentPage === item ? 600 : 400,
                           }}
@@ -826,11 +833,11 @@ const ProjectManagement = () => {
                     style={{
                       padding: "6px 10px",
                       fontSize: "13px",
-                      border: "1px solid #D1D5DB",
-                      borderRadius: "6px",
+                      border: "1.5px solid #e2e8f0",
+                      borderRadius: "8px",
                       background:
-                        currentPage === totalPages ? "#F9FAFB" : "#ffffff",
-                      color: currentPage === totalPages ? "#9CA3AF" : "#374151",
+                        currentPage === totalPages ? "#f8fafc" : "#fff",
+                      color: currentPage === totalPages ? "#94a3b8" : "#334155",
                       cursor:
                         currentPage === totalPages ? "not-allowed" : "pointer",
                     }}
@@ -885,8 +892,8 @@ const ProjectManagement = () => {
         >
           <div
             style={{
-              backgroundColor: "white",
-              borderRadius: "12px",
+              backgroundColor: "#fff",
+              borderRadius: "16px",
               width: "90%",
               maxWidth: "440px",
               boxShadow:
@@ -923,7 +930,7 @@ const ProjectManagement = () => {
                   margin: "0 0 8px 0",
                   fontSize: "18px",
                   fontWeight: "600",
-                  color: "#111827",
+                  color: "#0f172a",
                 }}
               >
                 Delete Project?
@@ -932,7 +939,7 @@ const ProjectManagement = () => {
                 style={{
                   margin: "0",
                   fontSize: "14px",
-                  color: "#6b7280",
+                  color: "#475569",
                   lineHeight: "1.5",
                 }}
               >
@@ -961,10 +968,10 @@ const ProjectManagement = () => {
                 disabled={deleting}
                 style={{
                   padding: "10px 20px",
-                  border: "1px solid #d1d5db",
-                  borderRadius: "6px",
-                  backgroundColor: "white",
-                  color: "#6b7280",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
+                  backgroundColor: "#fff",
+                  color: "#334155",
                   fontSize: "14px",
                   fontWeight: "500",
                   cursor: deleting ? "not-allowed" : "pointer",
@@ -973,10 +980,10 @@ const ProjectManagement = () => {
                 }}
                 onMouseEnter={(e) => {
                   if (!deleting)
-                    e.currentTarget.style.backgroundColor = "#f9fafb";
+                    e.currentTarget.style.backgroundColor = "#f8fafc";
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = "white";
+                  e.currentTarget.style.backgroundColor = "#fff";
                 }}
               >
                 Cancel
@@ -988,7 +995,7 @@ const ProjectManagement = () => {
                 style={{
                   padding: "10px 20px",
                   border: "none",
-                  borderRadius: "6px",
+                  borderRadius: "8px",
                   backgroundColor: deleting ? "#9ca3af" : "#ef4444",
                   color: "white",
                   fontSize: "14px",

@@ -10,11 +10,11 @@
  * handled when SR SLA/escalation goes live.
  */
 import * as cron from "node-cron";
-import { Ticket } from "../models/Ticket";
-import { Project } from "../models/Project";
-import { EmailIntake } from "../models/EmailIntake";
-import { SR_STATUS } from "../modules/service-request/srWorkflow";
-import { resolveSrConfig } from "../modules/service-request/serviceRequestConfig";
+import { Ticket } from "../../../models/Ticket";
+import { Project } from "../../../models/Project";
+import { EmailIntake } from "../../../models/EmailIntake";
+import { SR_STATUS } from "../srWorkflow";
+import { resolveSrConfig } from "../serviceRequestConfig";
 
 const WIP_STATUSES = [SR_STATUS.WIP, SR_STATUS.REOPEN_WIP];
 const DEFAULT_REMINDER_HOURS = 48; // per-project override applied in a later pass

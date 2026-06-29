@@ -2,10 +2,10 @@
  * IVR call triage — HTTP controller. Phase 5.
  */
 import { Response } from "express";
-import { AuthRequest } from "../middleware/auth";
-import * as ivr from "../modules/service-request/callTriage";
-import { SrError } from "../modules/service-request/serviceRequestService";
-import { getProjectScope } from "../utils/projectScope";
+import { AuthRequest } from "../../../middleware/auth";
+import * as ivr from "../callTriage";
+import { SrError } from "../serviceRequestService";
+import { getProjectScope } from "../../../utils/projectScope";
 
 function actorId(req: AuthRequest): string {
   const id = req.user?.userId;

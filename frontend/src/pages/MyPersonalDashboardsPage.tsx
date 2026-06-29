@@ -102,8 +102,10 @@ export default function MyPersonalDashboardsPage() {
             <h1
               style={{
                 fontSize: 22,
+                fontFamily: '"DM Serif Display", Georgia, serif',
                 fontWeight: 700,
-                color: "#101828",
+                letterSpacing: "-0.02em",
+                color: "#0f172a",
                 margin: 0,
               }}
             >
@@ -119,7 +121,7 @@ export default function MyPersonalDashboardsPage() {
               display: "flex",
               alignItems: "center",
               gap: 6,
-              background: "#7F56D9",
+              background: "linear-gradient(160deg, #4f46e5, #4338ca)",
               color: "#fff",
               border: "none",
               borderRadius: 8,
@@ -127,6 +129,7 @@ export default function MyPersonalDashboardsPage() {
               fontWeight: 600,
               fontSize: 14,
               cursor: "pointer",
+              boxShadow: "0 4px 14px rgba(67,56,202,.35)",
             }}
           >
             <MdAdd size={18} />
@@ -160,9 +163,9 @@ export default function MyPersonalDashboardsPage() {
               style={{
                 marginTop: 8,
                 fontSize: 13,
-                color: "#7F56D9",
+                color: "#4f46e5",
                 background: "none",
-                border: "1px solid #7F56D9",
+                border: "1px solid #4f46e5",
                 borderRadius: 8,
                 padding: "6px 16px",
                 cursor: "pointer",
@@ -184,9 +187,9 @@ export default function MyPersonalDashboardsPage() {
               minHeight: 280,
               gap: 12,
               background: "#fff",
-              borderRadius: 10,
-              border: "2px dashed #E4E7EC",
-              boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+              borderRadius: 16,
+              border: "2px dashed #e2e8f0",
+              boxShadow: "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
             }}
           >
             <MdDashboard size={48} color="#D0D5DD" />
@@ -200,7 +203,7 @@ export default function MyPersonalDashboardsPage() {
               onClick={() => navigate("/my-dashboards/new")}
               style={{
                 marginTop: 4,
-                background: "#7F56D9",
+                background: "linear-gradient(160deg, #4f46e5, #4338ca)",
                 color: "#fff",
                 border: "none",
                 borderRadius: 8,
@@ -208,6 +211,7 @@ export default function MyPersonalDashboardsPage() {
                 fontWeight: 600,
                 fontSize: 14,
                 cursor: "pointer",
+                boxShadow: "0 4px 14px rgba(67,56,202,.35)",
               }}
             >
               Create Dashboard
@@ -267,10 +271,10 @@ function DashboardCard({
     <div
       style={{
         background: "#fff",
-        border: "1px solid #E4E7EC",
-        borderRadius: 10,
+        border: "1px solid #e2e8f0",
+        borderRadius: 16,
         overflow: "hidden",
-        boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+        boxShadow: "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
         display: "flex",
         flexDirection: "column",
       }}
@@ -390,14 +394,15 @@ function DashboardCard({
             alignItems: "center",
             justifyContent: "center",
             gap: 4,
-            background: "#eff6ff",
-            color: "#3b82f6",
+            background: "linear-gradient(160deg, #4f46e5, #4338ca)",
+            color: "#fff",
             border: "none",
-            borderRadius: 6,
+            borderRadius: 8,
             padding: "6px 10px",
             fontSize: 12,
             fontWeight: 600,
             cursor: "pointer",
+            boxShadow: "0 4px 14px rgba(67,56,202,.35)",
           }}
         >
           <MdEdit size={14} /> Edit
@@ -408,7 +413,7 @@ function DashboardCard({
           title={dash.isDefault ? "Already default" : "Set as default"}
           style={{
             background: "none",
-            border: "1px solid #e5e7eb",
+            border: "1px solid #e2e8f0",
             borderRadius: 6,
             padding: "6px 9px",
             cursor: dash.isDefault || settingDefault ? "default" : "pointer",

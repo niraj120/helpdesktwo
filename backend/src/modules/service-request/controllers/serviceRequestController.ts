@@ -3,21 +3,21 @@
  * Thin layer over the lifecycle service; permission gating lives on the routes.
  */
 import { Response } from "express";
-import { AuthRequest } from "../middleware/auth";
-import { User } from "../models/User";
-import { getProjectScope } from "../utils/projectScope";
-import * as srSvc from "../modules/service-request/serviceRequestService";
-import { SrError } from "../modules/service-request/serviceRequestService";
-import { createServiceRequest } from "../modules/service-request/createServiceRequest";
+import { AuthRequest } from "../../../middleware/auth";
+import { User } from "../../../models/User";
+import { getProjectScope } from "../../../utils/projectScope";
+import * as srSvc from "../serviceRequestService";
+import { SrError } from "../serviceRequestService";
+import { createServiceRequest } from "../createServiceRequest";
 import {
   listFormSchemas,
   upsertFormSchema,
   deleteFormSchema,
-} from "../modules/service-request/srForms";
+} from "../srForms";
 import {
   getSrConfigForProject,
   updateSrConfigForProject,
-} from "../modules/service-request/srConfigAdmin";
+} from "../srConfigAdmin";
 
 function actorId(req: AuthRequest): string {
   const id = req.user?.userId;

@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
-import SrPage from "../components/sr/SrPage";
-import { srStyles, srButton } from "../utils/srTheme";
-import { useProjectContext } from "../contexts/ProjectContext";
-import { api } from "../utils/api";
-import { serviceRequestApi } from "../services/serviceRequests";
+import SrPage from "../../components/sr/SrPage";
+import { srStyles, srButton } from "../../utils/srTheme";
+import { useProjectContext } from "../../contexts/ProjectContext";
+import { api } from "../../utils/api";
+import { serviceRequestApi } from "../../services/serviceRequests";
 
 interface ProjectOpt {
   _id: string;
@@ -163,7 +163,7 @@ const EmailTriageInbox: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
   const cancelBtn: React.CSSProperties = {
     padding: "9px 18px",
     borderRadius: 10,
-    border: "1px solid #e7ebf3",
+    border: "1px solid #e2e8f0",
     background: "#fff",
     fontWeight: 600,
     fontSize: 14,
@@ -234,12 +234,12 @@ const EmailTriageInbox: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
                     onClick={() => setSelected(r)}
                     style={{
                       cursor: "pointer",
-                      background: selected?._id === r._id ? "#eff6ff" : "transparent",
+                      background: selected?._id === r._id ? "#eef2ff" : "transparent",
                       transition: "background 0.12s ease",
                     }}
                     onMouseEnter={(e) => {
                       if (selected?._id !== r._id)
-                        e.currentTarget.style.background = "#f6f8fc";
+                        e.currentTarget.style.background = "#f8fafc";
                     }}
                     onMouseLeave={(e) => {
                       if (selected?._id !== r._id)

@@ -1741,15 +1741,15 @@ const UserManagement: React.FC<UserManagementProps> = ({
             style={{
               width: "48px",
               height: "48px",
-              border: "3px solid #E5E7EB",
-              borderTop: "3px solid #2563EB",
+              border: "3px solid #e2e8f0",
+              borderTop: "3px solid #4f46e5",
               borderRadius: "50%",
               animation: "spin 1s linear infinite",
             }}
           ></div>
           <p
             style={{
-              color: "#6B7280",
+              color: "#475569",
               fontSize: "14px",
               margin: 0,
               fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
@@ -1794,7 +1794,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
         padding: isMobileViewport ? "14px 10px 20px" : "24px 20px 32px",
         maxWidth: "1380px",
         margin: "0 auto",
-        background: "#f6f8fc",
+        background: "#f8fafc",
         minHeight: "100vh",
         fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
       }}
@@ -1804,10 +1804,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
         style={{
           background: "#ffffff",
           padding: "22px 24px",
-          borderRadius: "14px",
+          borderRadius: "16px",
           marginBottom: "16px",
-          border: "1px solid #e7ebf3",
-          boxShadow: "0 4px 18px rgba(15, 23, 42, 0.05)",
+          border: "1px solid #e2e8f0",
+          boxShadow:
+            "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
         }}
       >
         <h1
@@ -1815,9 +1816,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
             margin: "0 0 6px 0",
             fontSize: "24px",
             fontWeight: 700,
-            color: "#111827",
-            letterSpacing: "-0.01em",
-            fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
+            color: "#0f172a",
+            letterSpacing: "-0.02em",
+            fontFamily: '"DM Serif Display", Georgia, serif',
           }}
         >
           {getText(
@@ -1830,7 +1831,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
           style={{
             margin: 0,
             fontSize: "14px",
-            color: "#6b7280",
+            color: "#475569",
             fontWeight: 400,
             fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
           }}
@@ -1856,8 +1857,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
           {
             label: getText("Total Users", "एकूण वापरकर्ते", "एकूण वापरकर्ते"),
             value: userStats.total,
-            color: "#1d4ed8",
-            bg: "#eff6ff",
+            color: "#4f46e5",
+            bg: "#eef2ff",
           },
           {
             label: getText("Active", "सक्रिय", "सक्रिय"),
@@ -1874,24 +1875,25 @@ const UserManagement: React.FC<UserManagementProps> = ({
           {
             label: getText("Projects", "प्रकल्प", "प्रकल्प"),
             value: userStats.projects,
-            color: "#7c3aed",
-            bg: "#f5f3ff",
+            color: "#4f46e5",
+            bg: "#eef2ff",
           },
         ].map((stat) => (
           <div
             key={stat.label}
             style={{
               background: "#ffffff",
-              border: "1px solid #e7ebf3",
+              border: "1px solid #e2e8f0",
               borderRadius: "12px",
               padding: "14px 16px",
-              boxShadow: "0 2px 10px rgba(15, 23, 42, 0.04)",
+              boxShadow:
+                "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
             }}
           >
             <div
               style={{
                 fontSize: "12px",
-                color: "#6b7280",
+                color: "#475569",
                 marginBottom: "8px",
                 fontWeight: 600,
                 textTransform: "uppercase",
@@ -1930,10 +1932,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
           alignItems: "start",
           marginBottom: "16px",
           background: "#ffffff",
-          borderRadius: "14px",
-          border: "1px solid #e7ebf3",
+          borderRadius: "16px",
+          border: "1px solid #e2e8f0",
           padding: "14px",
-          boxShadow: "0 4px 16px rgba(15, 23, 42, 0.04)",
+          boxShadow:
+            "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
         }}
       >
         {/* Filters Section */}
@@ -1960,7 +1963,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
               height="18"
               viewBox="0 0 24 24"
               fill="none"
-              stroke="#9CA3AF"
+              stroke="#94a3b8"
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -1988,8 +1991,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 width: "100%",
                 height: "42px",
                 padding: "10px 14px 10px 44px",
-                border: "1px solid #d7deea",
-                borderRadius: "10px",
+                border: "1.5px solid #e2e8f0",
+                borderRadius: "8px",
                 fontSize: "14px",
                 outline: "none",
                 transition: "all 0.2s ease",
@@ -1998,12 +2001,12 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
               }}
               onFocus={(e) => {
-                e.target.style.borderColor = "#84caff";
+                e.target.style.borderColor = "#4f46e5";
                 e.target.style.boxShadow =
-                  "0 0 0 3px rgba(132, 202, 255, 0.25)";
+                  "0 0 0 3px rgba(79, 70, 229, 0.18)";
               }}
               onBlur={(e) => {
-                e.target.style.borderColor = "#d7deea";
+                e.target.style.borderColor = "#e2e8f0";
                 e.target.style.boxShadow = "0 1px 3px rgba(0, 0, 0, 0.04)";
               }}
             />
@@ -2034,8 +2037,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
             style={{
               height: "42px",
               padding: "8px 10px",
-              border: "1px solid #d7deea",
-              borderRadius: "10px",
+              border: "1.5px solid #e2e8f0",
+              borderRadius: "8px",
               fontSize: "14px",
               outline: "none",
               backgroundColor: "white",
@@ -2045,11 +2048,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
               boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
             }}
             onFocus={(e) => {
-              e.target.style.borderColor = "#84caff";
-              e.target.style.boxShadow = "0 0 0 3px rgba(132, 202, 255, 0.25)";
+              e.target.style.borderColor = "#4f46e5";
+              e.target.style.boxShadow = "0 0 0 3px rgba(79, 70, 229, 0.18)";
             }}
             onBlur={(e) => {
-              e.target.style.borderColor = "#d7deea";
+              e.target.style.borderColor = "#e2e8f0";
               e.target.style.boxShadow = "0 1px 3px rgba(0, 0, 0, 0.04)";
             }}
           >
@@ -2090,8 +2093,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
             style={{
               height: "42px",
               padding: "8px 10px",
-              border: "1px solid #d7deea",
-              borderRadius: "10px",
+              border: "1.5px solid #e2e8f0",
+              borderRadius: "8px",
               fontSize: "14px",
               outline: "none",
               backgroundColor:
@@ -2105,13 +2108,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
             }}
             onFocus={(e) => {
               if (projectScopeForFilters.length > 0) {
-                e.target.style.borderColor = "#84caff";
+                e.target.style.borderColor = "#4f46e5";
                 e.target.style.boxShadow =
-                  "0 0 0 3px rgba(132, 202, 255, 0.25)";
+                  "0 0 0 3px rgba(79, 70, 229, 0.18)";
               }
             }}
             onBlur={(e) => {
-              e.target.style.borderColor = "#d7deea";
+              e.target.style.borderColor = "#e2e8f0";
               e.target.style.boxShadow = "0 1px 3px rgba(0, 0, 0, 0.04)";
             }}
           >
@@ -2148,8 +2151,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
             style={{
               height: "42px",
               padding: "8px 10px",
-              border: "1px solid #d7deea",
-              borderRadius: "10px",
+              border: "1.5px solid #e2e8f0",
+              borderRadius: "8px",
               fontSize: "14px",
               outline: "none",
               backgroundColor:
@@ -2163,13 +2166,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
             }}
             onFocus={(e) => {
               if (projectScopeForFilters.length > 0) {
-                e.target.style.borderColor = "#84caff";
+                e.target.style.borderColor = "#4f46e5";
                 e.target.style.boxShadow =
-                  "0 0 0 3px rgba(132, 202, 255, 0.25)";
+                  "0 0 0 3px rgba(79, 70, 229, 0.18)";
               }
             }}
             onBlur={(e) => {
-              e.target.style.borderColor = "#d7deea";
+              e.target.style.borderColor = "#e2e8f0";
               e.target.style.boxShadow = "0 1px 3px rgba(0, 0, 0, 0.04)";
             }}
           >
@@ -2211,8 +2214,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
             style={{
               height: "42px",
               padding: "8px 10px",
-              border: "1px solid #d7deea",
-              borderRadius: "10px",
+              border: "1.5px solid #e2e8f0",
+              borderRadius: "8px",
               fontSize: "14px",
               outline: "none",
               backgroundColor:
@@ -2226,13 +2229,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
             }}
             onFocus={(e) => {
               if (projectScopeForFilters.length > 0) {
-                e.target.style.borderColor = "#84caff";
+                e.target.style.borderColor = "#4f46e5";
                 e.target.style.boxShadow =
-                  "0 0 0 3px rgba(132, 202, 255, 0.25)";
+                  "0 0 0 3px rgba(79, 70, 229, 0.18)";
               }
             }}
             onBlur={(e) => {
-              e.target.style.borderColor = "#d7deea";
+              e.target.style.borderColor = "#e2e8f0";
               e.target.style.boxShadow = "0 1px 3px rgba(0, 0, 0, 0.04)";
             }}
           >
@@ -2257,8 +2260,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
             style={{
               height: "42px",
               padding: "8px 10px",
-              border: "1px solid #d7deea",
-              borderRadius: "10px",
+              border: "1.5px solid #e2e8f0",
+              borderRadius: "8px",
               fontSize: "14px",
               outline: "none",
               backgroundColor: "white",
@@ -2268,11 +2271,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
               boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
             }}
             onFocus={(e) => {
-              e.target.style.borderColor = "#84caff";
-              e.target.style.boxShadow = "0 0 0 3px rgba(132, 202, 255, 0.25)";
+              e.target.style.borderColor = "#4f46e5";
+              e.target.style.boxShadow = "0 0 0 3px rgba(79, 70, 229, 0.18)";
             }}
             onBlur={(e) => {
-              e.target.style.borderColor = "#d7deea";
+              e.target.style.borderColor = "#e2e8f0";
               e.target.style.boxShadow = "0 1px 3px rgba(0, 0, 0, 0.04)";
             }}
           >
@@ -2301,7 +2304,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
               flexWrap: "wrap",
               gap: "12px",
               fontSize: "12px",
-              color: "#6B7280",
+              color: "#475569",
             }}
           >
             <span>
@@ -2317,7 +2320,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
               style={{
                 border: "none",
                 background: "transparent",
-                color: "#2563EB",
+                color: "#4f46e5",
                 cursor: "pointer",
                 fontSize: "12px",
                 fontWeight: 600,
@@ -2513,28 +2516,30 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 alignItems: "center",
                 gap: "8px",
                 padding: "10px 16px",
-                background: "#2563EB",
-                color: "white",
+                background: "linear-gradient(160deg, #4f46e5, #4338ca)",
+                color: "#fff",
                 border: "none",
                 borderRadius: "8px",
                 fontSize: "14px",
                 fontWeight: 600,
                 cursor: "pointer",
-                boxShadow: "0 2px 6px rgba(37, 99, 235, 0.24)",
+                boxShadow: "0 4px 14px rgba(67,56,202,.35)",
                 transition: "all 0.2s ease",
                 fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
                 outline: "none",
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = "#1d4ed8";
+                e.currentTarget.style.background =
+                  "linear-gradient(160deg, #4338ca, #3730a3)";
                 e.currentTarget.style.boxShadow =
-                  "0 4px 12px rgba(37, 99, 235, 0.32)";
+                  "0 6px 18px rgba(67,56,202,.42)";
                 e.currentTarget.style.transform = "translateY(-1px)";
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = "#2563EB";
+                e.currentTarget.style.background =
+                  "linear-gradient(160deg, #4f46e5, #4338ca)";
                 e.currentTarget.style.boxShadow =
-                  "0 2px 6px rgba(37, 99, 235, 0.24)";
+                  "0 4px 14px rgba(67,56,202,.35)";
                 e.currentTarget.style.transform = "translateY(0)";
               }}
             >
@@ -2602,10 +2607,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
       <div
         style={{
           background: "white",
-          borderRadius: "14px",
-          border: "1px solid #e7ebf3",
+          borderRadius: "16px",
+          border: "1px solid #e2e8f0",
           overflow: "hidden",
-          boxShadow: "0 4px 16px rgba(15, 23, 42, 0.05)",
+          boxShadow:
+            "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
         }}
       >
         {filteredUsers.length === 0 ? (
@@ -2620,7 +2626,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 width: "96px",
                 height: "96px",
                 margin: "0 auto 24px",
-                background: "linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)",
+                background: "linear-gradient(135deg, #eef2ff 0%, #eef2ff 100%)",
                 borderRadius: "50%",
                 display: "flex",
                 alignItems: "center",
@@ -2632,7 +2638,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 height="48"
                 viewBox="0 0 24 24"
                 fill="none"
-                stroke="#2563EB"
+                stroke="#4f46e5"
                 strokeWidth="1.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -2648,7 +2654,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 margin: "0 0 12px 0",
                 fontSize: "20px",
                 fontWeight: 700,
-                color: "#111827",
+                color: "#0f172a",
                 fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
               }}
             >
@@ -2661,7 +2667,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
             <p
               style={{
                 margin: "0",
-                color: "#6B7280",
+                color: "#475569",
                 fontSize: "14px",
                 maxWidth: "420px",
                 marginLeft: "auto",
@@ -2690,7 +2696,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
               <div
                 key={user._id}
                 style={{
-                  border: "1px solid #e5e7eb",
+                  border: "1px solid #e2e8f0",
                   borderRadius: "12px",
                   padding: "12px",
                   background: selectedUserIds.has(user._id)
@@ -2712,7 +2718,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       style={{
                         fontSize: "15px",
                         fontWeight: 700,
-                        color: "#111827",
+                        color: "#0f172a",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                       }}
@@ -2722,7 +2728,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     <div
                       style={{
                         fontSize: "12px",
-                        color: "#6b7280",
+                        color: "#475569",
                         marginTop: "2px",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
@@ -2753,20 +2759,20 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     marginTop: "10px",
                   }}
                 >
-                  <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                  <div style={{ fontSize: "12px", color: "#475569" }}>
                     {getText("Role", "रोल", "रोल")}:{" "}
                     {user.role?.name ||
                       getText("No Role", "भूमिका नाही", "भूमिका नाही")}
                   </div>
-                  <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                  <div style={{ fontSize: "12px", color: "#475569" }}>
                     {getText("Employee", "कर्मचारी", "कर्मचारी")}:{" "}
                     {user.employeeCode || "-"}
                   </div>
-                  <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                  <div style={{ fontSize: "12px", color: "#475569" }}>
                     {getText("Projects", "प्रकल्प", "प्रकल्प")}:{" "}
                     {user.projects?.length || 0}
                   </div>
-                  <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                  <div style={{ fontSize: "12px", color: "#475569" }}>
                     {getText("Centers", "केंद्रे", "केंद्रे")}:{" "}
                     {user.centers?.length || 0}
                   </div>
@@ -2842,7 +2848,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       style={{
                         fontSize: "12px",
                         fontWeight: 600,
-                        color: user.isActive ? "#047857" : "#6B7280",
+                        color: user.isActive ? "#047857" : "#475569",
                       }}
                     >
                       {user.isActive
@@ -2857,12 +2863,12 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         onClick={() => handleEditUser(user)}
                         style={{
                           padding: "6px 8px",
-                          border: "1px solid #d1d5db",
+                          border: "1.5px solid #e2e8f0",
                           borderRadius: "8px",
                           background: "#ffffff",
                           cursor: "pointer",
                           fontSize: "12px",
-                          color: "#2563eb",
+                          color: "#4f46e5",
                         }}
                       >
                         {getText("Edit", "संपादित", "संपादित")}
@@ -2920,7 +2926,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 <tr
                   style={{
                     background: "#f8fafc",
-                    borderBottom: "1px solid #e7ebf3",
+                    borderBottom: "1px solid #e2e8f0",
                   }}
                 >
                   {hasPermission("USER_DELETE") && (
@@ -2951,11 +2957,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       padding: "12px 24px",
                       textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: "#6B7280",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: "#94a3b8",
                       textTransform: "uppercase",
-                      letterSpacing: "0.05em",
+                      letterSpacing: "0.06em",
                       fontFamily:
                         '"Noto Sans", system-ui, -apple-system, sans-serif',
                     }}
@@ -2966,11 +2972,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       padding: "12px 24px",
                       textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: "#6B7280",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: "#94a3b8",
                       textTransform: "uppercase",
-                      letterSpacing: "0.05em",
+                      letterSpacing: "0.06em",
                       fontFamily:
                         '"Noto Sans", system-ui, -apple-system, sans-serif',
                     }}
@@ -2981,11 +2987,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       padding: "12px 24px",
                       textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: "#6B7280",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: "#94a3b8",
                       textTransform: "uppercase",
-                      letterSpacing: "0.05em",
+                      letterSpacing: "0.06em",
                       fontFamily:
                         '"Noto Sans", system-ui, -apple-system, sans-serif',
                     }}
@@ -2996,11 +3002,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       padding: "12px 24px",
                       textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: "#6B7280",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: "#94a3b8",
                       textTransform: "uppercase",
-                      letterSpacing: "0.05em",
+                      letterSpacing: "0.06em",
                       fontFamily:
                         '"Noto Sans", system-ui, -apple-system, sans-serif',
                     }}
@@ -3011,11 +3017,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       padding: "12px 24px",
                       textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: "#6B7280",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: "#94a3b8",
                       textTransform: "uppercase",
-                      letterSpacing: "0.05em",
+                      letterSpacing: "0.06em",
                       fontFamily:
                         '"Noto Sans", system-ui, -apple-system, sans-serif',
                     }}
@@ -3026,11 +3032,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       padding: "12px 24px",
                       textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: "#6B7280",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: "#94a3b8",
                       textTransform: "uppercase",
-                      letterSpacing: "0.05em",
+                      letterSpacing: "0.06em",
                       fontFamily:
                         '"Noto Sans", system-ui, -apple-system, sans-serif',
                     }}
@@ -3041,11 +3047,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       padding: "12px 24px",
                       textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: "#6B7280",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: "#94a3b8",
                       textTransform: "uppercase",
-                      letterSpacing: "0.05em",
+                      letterSpacing: "0.06em",
                       fontFamily:
                         '"Noto Sans", system-ui, -apple-system, sans-serif',
                     }}
@@ -3056,11 +3062,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       padding: "12px 24px",
                       textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: "#6B7280",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: "#94a3b8",
                       textTransform: "uppercase",
-                      letterSpacing: "0.05em",
+                      letterSpacing: "0.06em",
                       fontFamily:
                         '"Noto Sans", system-ui, -apple-system, sans-serif',
                     }}
@@ -3071,11 +3077,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       padding: "12px 24px",
                       textAlign: "left",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: "#6B7280",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: "#94a3b8",
                       textTransform: "uppercase",
-                      letterSpacing: "0.05em",
+                      letterSpacing: "0.06em",
                       fontFamily:
                         '"Noto Sans", system-ui, -apple-system, sans-serif',
                     }}
@@ -3091,7 +3097,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       borderBottom:
                         index < filteredUsers.length - 1
-                          ? "1px solid #E5E7EB"
+                          ? "1px solid #e2e8f0"
                           : "none",
                       background: selectedUserIds.has(user._id)
                         ? "#FEF2F2"
@@ -3135,7 +3141,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         <div
                           style={{
                             fontWeight: 600,
-                            color: "#111827",
+                            color: "#0f172a",
                             fontSize: "14px",
                             fontFamily:
                               '"Noto Sans", system-ui, -apple-system, sans-serif',
@@ -3147,7 +3153,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                           <div
                             style={{
                               fontSize: "12px",
-                              color: "#6B7280",
+                              color: "#475569",
                               marginTop: "4px",
                               display: "flex",
                               alignItems: "center",
@@ -3161,7 +3167,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               height="12"
                               viewBox="0 0 24 24"
                               fill="none"
-                              stroke="#6B7280"
+                              stroke="#475569"
                               strokeWidth="2"
                               strokeLinecap="round"
                               strokeLinejoin="round"
@@ -3185,7 +3191,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       style={{
                         padding: "16px 24px",
                         fontSize: "14px",
-                        color: "#6B7280",
+                        color: "#475569",
                         fontFamily:
                           '"Noto Sans", system-ui, -apple-system, sans-serif',
                       }}
@@ -3199,9 +3205,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             display: "inline-flex",
                             alignItems: "center",
                             padding: "4px 10px",
-                            backgroundColor: "#EFF6FF",
-                            color: "#1d4ed8",
-                            borderRadius: "6px",
+                            backgroundColor: "#eef2ff",
+                            color: "#4f46e5",
+                            borderRadius: "12px",
                             fontSize: "12px",
                             fontWeight: 600,
                             fontFamily:
@@ -3211,7 +3217,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                           {user.employeeCode}
                         </span>
                       ) : (
-                        <span style={{ color: "#9ca3af", fontSize: "14px" }}>
+                        <span style={{ color: "#94a3b8", fontSize: "14px" }}>
                           -
                         </span>
                       )}
@@ -3225,7 +3231,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             padding: "4px 10px",
                             backgroundColor: "#F3E8FF",
                             color: "#7e22ce",
-                            borderRadius: "6px",
+                            borderRadius: "12px",
                             fontSize: "12px",
                             fontWeight: 600,
                             fontFamily:
@@ -3242,7 +3248,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             padding: "4px 10px",
                             backgroundColor: "#FEF2F2",
                             color: "#dc2626",
-                            borderRadius: "6px",
+                            borderRadius: "12px",
                             fontSize: "12px",
                             fontWeight: 600,
                             fontFamily:
@@ -3262,7 +3268,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             gap: "6px",
                             padding: "4px 10px",
                             background: "#F0FDF4",
-                            borderRadius: "6px",
+                            borderRadius: "12px",
                           }}
                         >
                           <svg
@@ -3291,7 +3297,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                           </span>
                         </div>
                       ) : (
-                        <span style={{ color: "#9ca3af", fontSize: "14px" }}>
+                        <span style={{ color: "#94a3b8", fontSize: "14px" }}>
                           -
                         </span>
                       )}
@@ -3305,7 +3311,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             gap: "6px",
                             padding: "4px 10px",
                             background: "#FEF3C7",
-                            borderRadius: "6px",
+                            borderRadius: "12px",
                           }}
                         >
                           <svg
@@ -3334,7 +3340,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                           </span>
                         </div>
                       ) : (
-                        <span style={{ color: "#9ca3af", fontSize: "14px" }}>
+                        <span style={{ color: "#94a3b8", fontSize: "14px" }}>
                           -
                         </span>
                       )}
@@ -3349,7 +3355,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             padding: "4px 10px",
                             backgroundColor: "#ECFDF5",
                             color: "#065F46",
-                            borderRadius: "6px",
+                            borderRadius: "12px",
                             fontSize: "12px",
                             fontWeight: 600,
                             fontFamily:
@@ -3366,7 +3372,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             padding: "4px 10px",
                             backgroundColor: "#FFF7ED",
                             color: "#92400E",
-                            borderRadius: "6px",
+                            borderRadius: "12px",
                             fontSize: "12px",
                             fontWeight: 600,
                             fontFamily:
@@ -3378,7 +3384,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             : user.company}
                         </span>
                       ) : (
-                        <span style={{ color: "#9ca3af", fontSize: "14px" }}>
+                        <span style={{ color: "#94a3b8", fontSize: "14px" }}>
                           -
                         </span>
                       )}
@@ -3451,9 +3457,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             backgroundColor: user.isActive
                               ? "#DCFCE7"
                               : "#F3F4F6",
-                            color: user.isActive ? "#047857" : "#6B7280",
+                            color: user.isActive ? "#047857" : "#475569",
                             padding: "4px 10px",
-                            borderRadius: "6px",
+                            borderRadius: "12px",
                             fontSize: "12px",
                             fontWeight: 600,
                             fontFamily:
@@ -3479,19 +3485,19 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               alignItems: "center",
                               justifyContent: "center",
                               background: "white",
-                              border: "1.5px solid #E5E7EB",
+                              border: "1.5px solid #e2e8f0",
                               borderRadius: "8px",
                               cursor: "pointer",
                               transition: "all 0.15s ease",
                               outline: "none",
                             }}
                             onMouseEnter={(e) => {
-                              e.currentTarget.style.background = "#EFF6FF";
-                              e.currentTarget.style.borderColor = "#2563EB";
+                              e.currentTarget.style.background = "#eef2ff";
+                              e.currentTarget.style.borderColor = "#4f46e5";
                             }}
                             onMouseLeave={(e) => {
                               e.currentTarget.style.background = "white";
-                              e.currentTarget.style.borderColor = "#E5E7EB";
+                              e.currentTarget.style.borderColor = "#e2e8f0";
                             }}
                             title={getText(
                               "Edit",
@@ -3504,7 +3510,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               height="16"
                               viewBox="0 0 24 24"
                               fill="none"
-                              stroke="#6B7280"
+                              stroke="#475569"
                               strokeWidth="2"
                               strokeLinecap="round"
                               strokeLinejoin="round"
@@ -3526,7 +3532,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                                 alignItems: "center",
                                 justifyContent: "center",
                                 background: "white",
-                                border: "1.5px solid #E5E7EB",
+                                border: "1.5px solid #e2e8f0",
                                 borderRadius: "8px",
                                 cursor: "pointer",
                                 transition: "all 0.15s ease",
@@ -3538,7 +3544,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               }}
                               onMouseLeave={(e) => {
                                 e.currentTarget.style.background = "white";
-                                e.currentTarget.style.borderColor = "#E5E7EB";
+                                e.currentTarget.style.borderColor = "#e2e8f0";
                               }}
                               title={getText(
                                 "Login as this user",
@@ -3573,7 +3579,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               alignItems: "center",
                               justifyContent: "center",
                               background: "white",
-                              border: "1.5px solid #E5E7EB",
+                              border: "1.5px solid #e2e8f0",
                               borderRadius: "8px",
                               cursor: "pointer",
                               transition: "all 0.15s ease",
@@ -3585,7 +3591,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             }}
                             onMouseLeave={(e) => {
                               e.currentTarget.style.background = "white";
-                              e.currentTarget.style.borderColor = "#E5E7EB";
+                              e.currentTarget.style.borderColor = "#e2e8f0";
                             }}
                             title={getText(
                               "View Credentials",
@@ -3598,7 +3604,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               height="16"
                               viewBox="0 0 24 24"
                               fill="none"
-                              stroke="#6B7280"
+                              stroke="#475569"
                               strokeWidth="2"
                               strokeLinecap="round"
                               strokeLinejoin="round"
@@ -3619,7 +3625,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               alignItems: "center",
                               justifyContent: "center",
                               background: "white",
-                              border: "1.5px solid #E5E7EB",
+                              border: "1.5px solid #e2e8f0",
                               borderRadius: "8px",
                               cursor: "pointer",
                               transition: "all 0.15s ease",
@@ -3631,7 +3637,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             }}
                             onMouseLeave={(e) => {
                               e.currentTarget.style.background = "white";
-                              e.currentTarget.style.borderColor = "#E5E7EB";
+                              e.currentTarget.style.borderColor = "#e2e8f0";
                             }}
                             title={getText("Delete", "हटवा", "हटवा")}
                           >
@@ -3669,7 +3675,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
             padding: "14px 16px",
             background: "white",
             borderRadius: "12px",
-            border: "1px solid #e7ebf3",
+            border: "1px solid #e2e8f0",
             boxShadow: "0 2px 8px rgba(0, 0, 0, 0.03)",
             display: "flex",
             justifyContent: isMobileViewport ? "center" : "space-between",
@@ -3682,7 +3688,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
           <div
             style={{
               fontSize: "14px",
-              color: "#6b7280",
+              color: "#475569",
               fontWeight: 500,
             }}
           >
@@ -3707,8 +3713,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
               style={{
                 padding: "8px 12px",
                 background: currentPage === 1 ? "#f3f4f6" : "white",
-                color: currentPage === 1 ? "#9ca3af" : "#667eea",
-                border: "1px solid #e5e7eb",
+                color: currentPage === 1 ? "#9ca3af" : "#4f46e5",
+                border: "1px solid #e2e8f0",
                 borderRadius: "8px",
                 fontSize: "14px",
                 fontWeight: 600,
@@ -3718,13 +3724,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
               onMouseEnter={(e) => {
                 if (currentPage !== 1) {
                   e.currentTarget.style.background = "#f9fafb";
-                  e.currentTarget.style.borderColor = "#667eea";
+                  e.currentTarget.style.borderColor = "#4f46e5";
                 }
               }}
               onMouseLeave={(e) => {
                 if (currentPage !== 1) {
                   e.currentTarget.style.background = "white";
-                  e.currentTarget.style.borderColor = "#e5e7eb";
+                  e.currentTarget.style.borderColor = "#e2e8f0";
                 }
               }}
             >
@@ -3737,8 +3743,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
               style={{
                 padding: "8px 12px",
                 background: currentPage === 1 ? "#f3f4f6" : "white",
-                color: currentPage === 1 ? "#9ca3af" : "#667eea",
-                border: "1px solid #e5e7eb",
+                color: currentPage === 1 ? "#9ca3af" : "#4f46e5",
+                border: "1px solid #e2e8f0",
                 borderRadius: "8px",
                 fontSize: "14px",
                 fontWeight: 600,
@@ -3748,13 +3754,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
               onMouseEnter={(e) => {
                 if (currentPage !== 1) {
                   e.currentTarget.style.background = "#f9fafb";
-                  e.currentTarget.style.borderColor = "#667eea";
+                  e.currentTarget.style.borderColor = "#4f46e5";
                 }
               }}
               onMouseLeave={(e) => {
                 if (currentPage !== 1) {
                   e.currentTarget.style.background = "white";
-                  e.currentTarget.style.borderColor = "#e5e7eb";
+                  e.currentTarget.style.borderColor = "#e2e8f0";
                 }
               }}
             >
@@ -3790,10 +3796,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       minWidth: "40px",
                       background:
                         currentPage === pageNum
-                          ? "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
+                          ? "linear-gradient(160deg, #4f46e5, #4338ca)"
                           : "white",
-                      color: currentPage === pageNum ? "white" : "#667eea",
-                      border: "1px solid #e5e7eb",
+                      color: currentPage === pageNum ? "white" : "#4f46e5",
+                      border: "1px solid #e2e8f0",
                       borderRadius: "8px",
                       fontSize: "14px",
                       fontWeight: 600,
@@ -3803,13 +3809,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     onMouseEnter={(e) => {
                       if (currentPage !== pageNum) {
                         e.currentTarget.style.background = "#f9fafb";
-                        e.currentTarget.style.borderColor = "#667eea";
+                        e.currentTarget.style.borderColor = "#4f46e5";
                       }
                     }}
                     onMouseLeave={(e) => {
                       if (currentPage !== pageNum) {
                         e.currentTarget.style.background = "white";
-                        e.currentTarget.style.borderColor = "#e5e7eb";
+                        e.currentTarget.style.borderColor = "#e2e8f0";
                       }
                     }}
                   >
@@ -3827,8 +3833,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
               style={{
                 padding: "8px 12px",
                 background: currentPage === totalPages ? "#f3f4f6" : "white",
-                color: currentPage === totalPages ? "#9ca3af" : "#667eea",
-                border: "1px solid #e5e7eb",
+                color: currentPage === totalPages ? "#9ca3af" : "#4f46e5",
+                border: "1px solid #e2e8f0",
                 borderRadius: "8px",
                 fontSize: "14px",
                 fontWeight: 600,
@@ -3838,13 +3844,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
               onMouseEnter={(e) => {
                 if (currentPage !== totalPages) {
                   e.currentTarget.style.background = "#f9fafb";
-                  e.currentTarget.style.borderColor = "#667eea";
+                  e.currentTarget.style.borderColor = "#4f46e5";
                 }
               }}
               onMouseLeave={(e) => {
                 if (currentPage !== totalPages) {
                   e.currentTarget.style.background = "white";
-                  e.currentTarget.style.borderColor = "#e5e7eb";
+                  e.currentTarget.style.borderColor = "#e2e8f0";
                 }
               }}
             >
@@ -3857,8 +3863,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
               style={{
                 padding: "8px 12px",
                 background: currentPage === totalPages ? "#f3f4f6" : "white",
-                color: currentPage === totalPages ? "#9ca3af" : "#667eea",
-                border: "1px solid #e5e7eb",
+                color: currentPage === totalPages ? "#9ca3af" : "#4f46e5",
+                border: "1px solid #e2e8f0",
                 borderRadius: "8px",
                 fontSize: "14px",
                 fontWeight: 600,
@@ -3868,13 +3874,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
               onMouseEnter={(e) => {
                 if (currentPage !== totalPages) {
                   e.currentTarget.style.background = "#f9fafb";
-                  e.currentTarget.style.borderColor = "#667eea";
+                  e.currentTarget.style.borderColor = "#4f46e5";
                 }
               }}
               onMouseLeave={(e) => {
                 if (currentPage !== totalPages) {
                   e.currentTarget.style.background = "white";
-                  e.currentTarget.style.borderColor = "#e5e7eb";
+                  e.currentTarget.style.borderColor = "#e2e8f0";
                 }
               }}
             >
@@ -3890,7 +3896,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(0,0,0,0.5)",
+            background: "rgba(15,23,42,.5)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -3902,10 +3908,12 @@ const UserManagement: React.FC<UserManagementProps> = ({
           <div
             style={{
               background: "white",
-              borderRadius: "14px",
+              borderRadius: "20px",
               padding: "24px",
               width: "100%",
               maxWidth: "460px",
+              boxShadow:
+                "0 24px 64px rgba(15,23,42,.22), 0 8px 24px rgba(15,23,42,.12)",
               fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
             }}
             onClick={(e) => e.stopPropagation()}
@@ -3914,7 +3922,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
               style={{
                 fontSize: "18px",
                 fontWeight: 700,
-                color: "#111827",
+                color: "#0f172a",
                 margin: "0 0 6px 0",
               }}
             >
@@ -3923,7 +3931,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
             <p
               style={{
                 fontSize: "13px",
-                color: "#6b7280",
+                color: "#475569",
                 margin: "0 0 16px 0",
               }}
             >
@@ -3940,7 +3948,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 display: "block",
                 fontSize: "12px",
                 fontWeight: 600,
-                color: "#374151",
+                color: "#334155",
                 marginBottom: "6px",
               }}
             >
@@ -3954,7 +3962,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
               placeholder="e.g. Reproducing a ticket-submission issue reported by this user"
               style={{
                 width: "100%",
-                border: "1px solid #D1D5DB",
+                border: "1.5px solid #e2e8f0",
                 borderRadius: "8px",
                 padding: "8px 10px",
                 fontSize: "13px",
@@ -3993,8 +4001,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 disabled={impersonating}
                 style={{
                   padding: "9px 18px",
-                  background: "white",
-                  border: "1px solid #D1D5DB",
+                  background: "#fff",
+                  color: "#334155",
+                  border: "1.5px solid #e2e8f0",
                   borderRadius: "8px",
                   cursor: impersonating ? "not-allowed" : "pointer",
                   fontSize: "14px",
@@ -4033,7 +4042,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: "rgba(15, 23, 42, 0.45)",
+            backgroundColor: "rgba(15,23,42,.5)",
             backdropFilter: "blur(2px)",
             display: "flex",
             alignItems: "center",
@@ -4045,21 +4054,22 @@ const UserManagement: React.FC<UserManagementProps> = ({
           <div
             style={{
               backgroundColor: "white",
-              borderRadius: "16px",
+              borderRadius: "20px",
               maxWidth: isMobileViewport ? "100%" : "920px",
               width: "100%",
               maxHeight: isMobileViewport ? "96vh" : "92vh",
               overflow: "hidden",
               display: "flex",
               flexDirection: "column",
-              border: "1px solid #e5e7eb",
-              boxShadow: "0 24px 60px rgba(15, 23, 42, 0.2)",
+              border: "1px solid #e2e8f0",
+              boxShadow:
+                "0 24px 64px rgba(15,23,42,.22), 0 8px 24px rgba(15,23,42,.12)",
             }}
           >
             <div
               style={{
                 padding: isMobileViewport ? "14px 12px" : "18px 24px",
-                borderBottom: "1px solid #e5e7eb",
+                borderBottom: "1px solid #e2e8f0",
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: isMobileViewport ? "start" : "center",
@@ -4073,7 +4083,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     fontSize: "20px",
                     fontWeight: "700",
-                    color: "#111827",
+                    color: "#0f172a",
                     margin: 0,
                     letterSpacing: "-0.01em",
                   }}
@@ -4094,7 +4104,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     margin: "4px 0 0 0",
                     fontSize: "13px",
-                    color: "#6b7280",
+                    color: "#475569",
                   }}
                 >
                   {getText(
@@ -4111,11 +4121,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   height: "34px",
                   borderRadius: "999px",
                   background: "#f3f4f6",
-                  border: "1px solid #e5e7eb",
+                  border: "1px solid #e2e8f0",
                   fontSize: "20px",
                   lineHeight: 1,
                   cursor: "pointer",
-                  color: "#6b7280",
+                  color: "#475569",
                 }}
                 title={getText("Close", "बंद करा", "बंद करा")}
               >
@@ -4136,8 +4146,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 style={{
                   marginBottom: "20px",
                   padding: "16px",
-                  backgroundColor: "#f0f7ff",
-                  border: "1px solid #bfdbfe",
+                  backgroundColor: "#eef2ff",
+                  border: "1px solid #e2e8f0",
                   borderRadius: "12px",
                 }}
               >
@@ -4146,7 +4156,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     display: "block",
                     fontSize: "14px",
                     fontWeight: "600",
-                    color: "#1e3a8a",
+                    color: "#4f46e5",
                     marginBottom: "8px",
                   }}
                 >
@@ -4211,8 +4221,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     width: "100%",
                     padding: "10px 12px",
-                    border: "1px solid #93c5fd",
-                    borderRadius: "10px",
+                    border: "1.5px solid #e2e8f0",
+                    borderRadius: "8px",
                     fontSize: "14px",
                     outline: "none",
                     boxSizing: "border-box",
@@ -4246,7 +4256,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 <p
                   style={{
                     fontSize: "12px",
-                    color: "#1e40af",
+                    color: "#4f46e5",
                     marginTop: "8px",
                     fontStyle: "italic",
                   }}
@@ -4288,7 +4298,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       display: "block",
                       fontSize: "14px",
                       fontWeight: "500",
-                      color: "#374151",
+                      color: "#334155",
                       marginBottom: "6px",
                     }}
                   >
@@ -4304,8 +4314,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       width: "100%",
                       padding: "12px",
-                      border: `1px solid ${nameFieldErrors.firstName ? "#ef4444" : "#d1d5db"}`,
-                      borderRadius: "6px",
+                      border: `1.5px solid ${nameFieldErrors.firstName ? "#ef4444" : "#e2e8f0"}`,
+                      borderRadius: "8px",
                       fontSize: "14px",
                       outline: "none",
                       boxSizing: "border-box",
@@ -4329,7 +4339,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       display: "block",
                       fontSize: "14px",
                       fontWeight: "500",
-                      color: "#374151",
+                      color: "#334155",
                       marginBottom: "6px",
                     }}
                   >
@@ -4345,8 +4355,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       width: "100%",
                       padding: "12px",
-                      border: `1px solid ${nameFieldErrors.lastName ? "#ef4444" : "#d1d5db"}`,
-                      borderRadius: "6px",
+                      border: `1.5px solid ${nameFieldErrors.lastName ? "#ef4444" : "#e2e8f0"}`,
+                      borderRadius: "8px",
                       fontSize: "14px",
                       outline: "none",
                       boxSizing: "border-box",
@@ -4372,7 +4382,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     display: "block",
                     fontSize: "14px",
                     fontWeight: "500",
-                    color: "#374151",
+                    color: "#334155",
                     marginBottom: "6px",
                   }}
                 >
@@ -4388,8 +4398,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     width: "100%",
                     padding: "12px",
-                    border: "1px solid #d1d5db",
-                    borderRadius: "6px",
+                    border: "1.5px solid #e2e8f0",
+                    borderRadius: "8px",
                     fontSize: "14px",
                     outline: "none",
                     boxSizing: "border-box",
@@ -4411,7 +4421,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       display: "block",
                       fontSize: "14px",
                       fontWeight: "500",
-                      color: "#374151",
+                      color: "#334155",
                       marginBottom: "6px",
                     }}
                   >
@@ -4433,8 +4443,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       width: "100%",
                       padding: "12px",
-                      border: "1px solid #d1d5db",
-                      borderRadius: "6px",
+                      border: "1.5px solid #e2e8f0",
+                      borderRadius: "8px",
                       fontSize: "14px",
                       outline: "none",
                       boxSizing: "border-box",
@@ -4443,7 +4453,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   <p
                     style={{
                       fontSize: "12px",
-                      color: "#6b7280",
+                      color: "#475569",
                       marginTop: "4px",
                     }}
                   >
@@ -4460,7 +4470,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       display: "block",
                       fontSize: "14px",
                       fontWeight: "500",
-                      color: "#374151",
+                      color: "#334155",
                       marginBottom: "6px",
                     }}
                   >
@@ -4475,8 +4485,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       width: "100%",
                       padding: "12px",
-                      border: "1px solid #d1d5db",
-                      borderRadius: "6px",
+                      border: "1.5px solid #e2e8f0",
+                      borderRadius: "8px",
                       fontSize: "14px",
                       outline: "none",
                       boxSizing: "border-box",
@@ -4499,7 +4509,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       display: "block",
                       fontSize: "14px",
                       fontWeight: "500",
-                      color: "#374151",
+                      color: "#334155",
                       marginBottom: "6px",
                     }}
                   >
@@ -4515,8 +4525,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       width: "100%",
                       padding: "12px",
-                      border: "1px solid #d1d5db",
-                      borderRadius: "6px",
+                      border: "1.5px solid #e2e8f0",
+                      borderRadius: "8px",
                       fontSize: "14px",
                       outline: "none",
                       boxSizing: "border-box",
@@ -4529,7 +4539,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       display: "block",
                       fontSize: "14px",
                       fontWeight: "500",
-                      color: "#374151",
+                      color: "#334155",
                       marginBottom: "6px",
                     }}
                   >
@@ -4548,8 +4558,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       width: "100%",
                       padding: "12px",
-                      border: "1px solid #d1d5db",
-                      borderRadius: "6px",
+                      border: "1.5px solid #e2e8f0",
+                      borderRadius: "8px",
                       fontSize: "14px",
                       outline: "none",
                       boxSizing: "border-box",
@@ -4577,7 +4587,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       display: "block",
                       fontSize: "14px",
                       fontWeight: "500",
-                      color: "#374151",
+                      color: "#334155",
                       marginBottom: "6px",
                     }}
                   >
@@ -4599,8 +4609,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       width: "100%",
                       padding: "12px",
-                      border: "1px solid #d1d5db",
-                      borderRadius: "6px",
+                      border: "1.5px solid #e2e8f0",
+                      borderRadius: "8px",
                       fontSize: "14px",
                       outline: "none",
                       boxSizing: "border-box",
@@ -4637,7 +4647,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         display: "block",
                         fontSize: "14px",
                         fontWeight: "500",
-                        color: "#374151",
+                        color: "#334155",
                         marginBottom: "6px",
                       }}
                     >
@@ -4651,8 +4661,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       style={{
                         width: "100%",
                         padding: "12px",
-                        border: "1px solid #d1d5db",
-                        borderRadius: "6px",
+                        border: "1.5px solid #e2e8f0",
+                        borderRadius: "8px",
                         fontSize: "14px",
                         outline: "none",
                         boxSizing: "border-box",
@@ -4683,7 +4693,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       display: "block",
                       fontSize: "14px",
                       fontWeight: "500",
-                      color: "#374151",
+                      color: "#334155",
                       marginBottom: "6px",
                     }}
                   >
@@ -4705,8 +4715,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       width: "100%",
                       padding: "12px",
-                      border: "1px solid #d1d5db",
-                      borderRadius: "6px",
+                      border: "1.5px solid #e2e8f0",
+                      borderRadius: "8px",
                       fontSize: "14px",
                       outline: "none",
                       boxSizing: "border-box",
@@ -4715,7 +4725,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   <p
                     style={{
                       fontSize: "12px",
-                      color: "#6b7280",
+                      color: "#475569",
                       marginTop: "4px",
                     }}
                   >
@@ -4734,7 +4744,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     display: "block",
                     fontSize: "14px",
                     fontWeight: "500",
-                    color: "#374151",
+                    color: "#334155",
                     marginBottom: "6px",
                   }}
                 >
@@ -4750,8 +4760,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     width: "100%",
                     padding: "12px",
-                    border: "1px solid #d1d5db",
-                    borderRadius: "6px",
+                    border: "1.5px solid #e2e8f0",
+                    borderRadius: "8px",
                     fontSize: "14px",
                     outline: "none",
                     boxSizing: "border-box",
@@ -4819,7 +4829,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     display: "block",
                     fontSize: "14px",
                     fontWeight: "500",
-                    color: "#374151",
+                    color: "#334155",
                     marginBottom: "6px",
                   }}
                 >
@@ -4832,7 +4842,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     <span
                       style={{
                         fontSize: "12px",
-                        color: "#6b7280",
+                        color: "#475569",
                         fontWeight: "normal",
                         marginLeft: "8px",
                       }}
@@ -4851,8 +4861,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     maxHeight: "180px",
                     overflowY: "auto",
-                    border: "1px solid #d1d5db",
-                    borderRadius: "10px",
+                    border: "1.5px solid #e2e8f0",
+                    borderRadius: "8px",
                     padding: "8px",
                     backgroundColor: "white",
                   }}
@@ -4866,7 +4876,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                           alignItems: "center",
                           padding: "8px",
                           cursor: "pointer",
-                          borderRadius: "4px",
+                          borderRadius: "8px",
                           transition: "background-color 0.2s",
                         }}
                         onMouseEnter={(e) =>
@@ -4924,7 +4934,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                           <span
                             style={{
                               fontSize: "14px",
-                              color: "#374151",
+                              color: "#334155",
                               fontWeight: "500",
                             }}
                           >
@@ -4934,7 +4944,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             <span
                               style={{
                                 fontSize: "12px",
-                                color: "#6b7280",
+                                color: "#475569",
                                 marginLeft: "8px",
                               }}
                             >
@@ -4948,8 +4958,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                                 marginLeft: "8px",
                                 padding: "2px 8px",
                                 borderRadius: "12px",
-                                backgroundColor: "#dbeafe",
-                                color: "#1e40af",
+                                backgroundColor: "#eef2ff",
+                                color: "#4f46e5",
                                 fontWeight: "500",
                               }}
                             >
@@ -4963,7 +4973,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     <p
                       style={{
                         fontSize: "12px",
-                        color: "#9ca3af",
+                        color: "#94a3b8",
                         fontStyle: "italic",
                         margin: 0,
                         padding: "8px",
@@ -4980,7 +4990,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 <p
                   style={{
                     fontSize: "12px",
-                    color: "#6b7280",
+                    color: "#475569",
                     marginTop: "6px",
                     fontStyle: "italic",
                   }}
@@ -5009,7 +5019,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       display: "block",
                       fontSize: "14px",
                       fontWeight: "500",
-                      color: "#374151",
+                      color: "#334155",
                       marginBottom: "8px",
                     }}
                   >
@@ -5021,7 +5031,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   </label>
                   {formData.projects.length === 0 ? (
                     <p
-                      style={{ fontSize: "12px", color: "#9ca3af", margin: 0 }}
+                      style={{ fontSize: "12px", color: "#94a3b8", margin: 0 }}
                     >
                       {getText(
                         "Select projects above to map departments",
@@ -5050,7 +5060,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               alignItems: "center",
                               gap: "12px",
                               padding: "8px 10px",
-                              border: "1px solid #e5e7eb",
+                              border: "1px solid #e2e8f0",
                               borderRadius: "8px",
                               background: "#ffffff",
                             }}
@@ -5059,7 +5069,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               style={{
                                 minWidth: isMobileViewport ? "120px" : "200px",
                                 fontSize: "13px",
-                                color: "#374151",
+                                color: "#334155",
                                 fontWeight: "500",
                               }}
                             >
@@ -5070,9 +5080,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
                                     fontSize: "11px",
                                     marginLeft: "6px",
                                     padding: "1px 6px",
-                                    borderRadius: "10px",
-                                    backgroundColor: "#dbeafe",
-                                    color: "#1e40af",
+                                    borderRadius: "12px",
+                                    backgroundColor: "#eef2ff",
+                                    color: "#4f46e5",
                                   }}
                                 >
                                   {getText("Primary", "प्राथमिक", "प्राथमिक")}
@@ -5095,8 +5105,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               style={{
                                 flex: 1,
                                 padding: "8px 12px",
-                                border: "1px solid #d1d5db",
-                                borderRadius: "6px",
+                                border: "1.5px solid #e2e8f0",
+                                borderRadius: "8px",
                                 fontSize: "14px",
                                 outline: "none",
                                 background: "white",
@@ -5121,7 +5131,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       display: "block",
                       fontSize: "14px",
                       fontWeight: "500",
-                      color: "#374151",
+                      color: "#334155",
                       marginBottom: "6px",
                     }}
                   >
@@ -5141,8 +5151,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       width: "100%",
                       padding: "12px",
-                      border: "1px solid #d1d5db",
-                      borderRadius: "10px",
+                      border: "1.5px solid #e2e8f0",
+                      borderRadius: "8px",
                       fontSize: "14px",
                       outline: "none",
                       boxSizing: "border-box",
@@ -5156,8 +5166,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 style={{
                   marginTop: "16px",
                   padding: "14px",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: "10px",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "12px",
                   background: "#ffffff",
                 }}
               >
@@ -5166,7 +5176,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     display: "block",
                     fontSize: "14px",
                     fontWeight: "500",
-                    color: "#374151",
+                    color: "#334155",
                     marginBottom: "6px",
                   }}
                 >
@@ -5179,7 +5189,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     <span
                       style={{
                         fontSize: "12px",
-                        color: "#6b7280",
+                        color: "#475569",
                         fontWeight: "normal",
                         marginLeft: "8px",
                       }}
@@ -5206,8 +5216,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     width: "100%",
                     padding: "12px",
-                    border: "1px solid #d1d5db",
-                    borderRadius: "6px",
+                    border: "1.5px solid #e2e8f0",
+                    borderRadius: "8px",
                     fontSize: "14px",
                     outline: "none",
                     boxSizing: "border-box",
@@ -5270,7 +5280,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   <p
                     style={{
                       fontSize: "12px",
-                      color: "#6b7280",
+                      color: "#475569",
                       marginTop: "4px",
                     }}
                   >
@@ -5289,8 +5299,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 style={{
                   marginTop: "16px",
                   padding: "14px",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: "10px",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "12px",
                   background: "#ffffff",
                 }}
               >
@@ -5299,7 +5309,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     display: "block",
                     fontSize: "14px",
                     fontWeight: "500",
-                    color: "#374151",
+                    color: "#334155",
                     marginBottom: "6px",
                   }}
                 >
@@ -5312,7 +5322,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     <span
                       style={{
                         fontSize: "12px",
-                        color: "#6b7280",
+                        color: "#475569",
                         fontWeight: "normal",
                         marginLeft: "8px",
                       }}
@@ -5331,8 +5341,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     maxHeight: "200px",
                     overflowY: "auto",
-                    border: "1px solid #d1d5db",
-                    borderRadius: "10px",
+                    border: "1.5px solid #e2e8f0",
+                    borderRadius: "8px",
                     padding: "8px",
                     backgroundColor: !formData.primaryProject
                       ? "#f3f4f6"
@@ -5343,7 +5353,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     <p
                       style={{
                         fontSize: "12px",
-                        color: "#9ca3af",
+                        color: "#94a3b8",
                         fontStyle: "italic",
                         margin: 0,
                         padding: "8px",
@@ -5365,7 +5375,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                           alignItems: "center",
                           padding: "8px",
                           cursor: "pointer",
-                          borderRadius: "4px",
+                          borderRadius: "8px",
                           transition: "background-color 0.2s",
                         }}
                         onMouseEnter={(e) =>
@@ -5400,7 +5410,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         <span
                           style={{
                             fontSize: "14px",
-                            color: "#374151",
+                            color: "#334155",
                             flex: 1,
                           }}
                         >
@@ -5412,7 +5422,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     <p
                       style={{
                         fontSize: "12px",
-                        color: "#9ca3af",
+                        color: "#94a3b8",
                         fontStyle: "italic",
                         margin: 0,
                         padding: "8px",
@@ -5429,7 +5439,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 <p
                   style={{
                     fontSize: "12px",
-                    color: "#6b7280",
+                    color: "#475569",
                     marginTop: "6px",
                     fontStyle: "italic",
                   }}
@@ -5447,7 +5457,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
             <div
               style={{
                 padding: isMobileViewport ? "12px" : "14px 24px",
-                borderTop: "1px solid #e5e7eb",
+                borderTop: "1px solid #e2e8f0",
                 display: "flex",
                 justifyContent: "flex-end",
                 gap: "12px",
@@ -5460,10 +5470,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 disabled={saving}
                 style={{
                   padding: "10px 18px",
-                  border: "1px solid #d1d5db",
-                  borderRadius: "10px",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
                   backgroundColor: "white",
-                  color: "#374151",
+                  color: "#334155",
                   fontSize: "14px",
                   fontWeight: "500",
                   cursor: saving ? "not-allowed" : "pointer",
@@ -5484,16 +5494,24 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 style={{
                   padding: "10px 18px",
                   border: "none",
-                  borderRadius: "10px",
-                  backgroundColor:
+                  borderRadius: "8px",
+                  background:
                     !formData.firstName ||
                     !formData.lastName ||
                     !formData.email ||
                     !formData.role ||
                     saving
-                      ? "#d1d5db"
-                      : "#a855f7",
-                  color: "white",
+                      ? "#9ca3af"
+                      : "linear-gradient(160deg, #4f46e5, #4338ca)",
+                  boxShadow:
+                    !formData.firstName ||
+                    !formData.lastName ||
+                    !formData.email ||
+                    !formData.role ||
+                    saving
+                      ? "none"
+                      : "0 4px 14px rgba(67,56,202,.35)",
+                  color: "#fff",
                   fontSize: "14px",
                   fontWeight: "500",
                   cursor:
@@ -5534,7 +5552,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            backgroundColor: "rgba(15,23,42,.5)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -5545,19 +5563,21 @@ const UserManagement: React.FC<UserManagementProps> = ({
           <div
             style={{
               backgroundColor: "white",
-              borderRadius: "12px",
+              borderRadius: "20px",
               maxWidth: "720px",
               width: "100%",
               maxHeight: "85vh",
               display: "flex",
               flexDirection: "column",
+              boxShadow:
+                "0 24px 64px rgba(15,23,42,.22), 0 8px 24px rgba(15,23,42,.12)",
             }}
           >
             {/* Header */}
             <div
               style={{
                 padding: "24px",
-                borderBottom: "1px solid #e5e7eb",
+                borderBottom: "1px solid #e2e8f0",
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
@@ -5568,7 +5588,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 style={{
                   fontSize: "20px",
                   fontWeight: "600",
-                  color: "#1f2937",
+                  color: "#0f172a",
                   margin: 0,
                 }}
               >
@@ -5589,7 +5609,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   border: "none",
                   fontSize: "24px",
                   cursor: "pointer",
-                  color: "#6b7280",
+                  color: "#475569",
                 }}
               >
                 ✕
@@ -5603,9 +5623,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 style={{
                   marginBottom: "24px",
                   padding: "20px",
-                  backgroundColor: "#f0f9ff",
+                  backgroundColor: "#eef2ff",
                   borderRadius: "8px",
-                  border: "1px solid #bae6fd",
+                  border: "1px solid #e2e8f0",
                 }}
               >
                 <div
@@ -5624,7 +5644,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       width: "28px",
                       height: "28px",
                       borderRadius: "50%",
-                      backgroundColor: "#2563eb",
+                      backgroundColor: "#4f46e5",
                       color: "white",
                       fontSize: "14px",
                       fontWeight: "bold",
@@ -5637,7 +5657,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       fontWeight: 600,
                       fontSize: "15px",
-                      color: "#1f2937",
+                      color: "#0f172a",
                     }}
                   >
                     {getText(
@@ -5650,7 +5670,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 <p
                   style={{
                     fontSize: "13px",
-                    color: "#6b7280",
+                    color: "#475569",
                     margin: "0 0 12px 40px",
                   }}
                 >
@@ -5668,10 +5688,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       alignItems: "center",
                       gap: "8px",
                       padding: "8px 16px",
-                      background: "#2563eb",
-                      color: "white",
+                      background: "linear-gradient(160deg, #4f46e5, #4338ca)",
+                      boxShadow: "0 4px 14px rgba(67,56,202,.35)",
+                      color: "#fff",
                       border: "none",
-                      borderRadius: "6px",
+                      borderRadius: "8px",
                       fontSize: "13px",
                       fontWeight: 600,
                       cursor: "pointer",
@@ -5739,7 +5760,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       fontWeight: 600,
                       fontSize: "15px",
-                      color: "#1f2937",
+                      color: "#0f172a",
                     }}
                   >
                     {getText(
@@ -5765,7 +5786,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   <div
                     onClick={() => bulkFileInputRef.current?.click()}
                     style={{
-                      border: "2px dashed #d1d5db",
+                      border: "2px dashed #e2e8f0",
                       borderRadius: "8px",
                       padding: "24px",
                       textAlign: "center",
@@ -5804,7 +5825,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         <p
                           style={{
                             fontSize: "12px",
-                            color: "#6b7280",
+                            color: "#475569",
                             margin: "4px 0 0",
                           }}
                         >
@@ -5823,7 +5844,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                           height="32"
                           viewBox="0 0 24 24"
                           fill="none"
-                          stroke="#9ca3af"
+                          stroke="#94a3b8"
                           strokeWidth="2"
                           strokeLinecap="round"
                           strokeLinejoin="round"
@@ -5836,7 +5857,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         <p
                           style={{
                             fontSize: "14px",
-                            color: "#6b7280",
+                            color: "#475569",
                             margin: 0,
                           }}
                         >
@@ -5859,14 +5880,14 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     padding: "20px",
                     backgroundColor: "#f9fafb",
                     borderRadius: "8px",
-                    border: "1px solid #e5e7eb",
+                    border: "1px solid #e2e8f0",
                   }}
                 >
                   <h3
                     style={{
                       fontSize: "16px",
                       fontWeight: 600,
-                      color: "#1f2937",
+                      color: "#0f172a",
                       margin: "0 0 12px",
                     }}
                   >
@@ -5897,7 +5918,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       >
                         {bulkUploadResults.created}
                       </div>
-                      <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                      <div style={{ fontSize: "12px", color: "#475569" }}>
                         {getText("Created", "तयार केले", "तयार केले")}
                       </div>
                     </div>
@@ -5919,14 +5940,14 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       >
                         {bulkUploadResults.failed}
                       </div>
-                      <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                      <div style={{ fontSize: "12px", color: "#475569" }}>
                         {getText("Failed", "अयशस्वी", "अयशस्वी")}
                       </div>
                     </div>
                     <div
                       style={{
                         padding: "12px 20px",
-                        backgroundColor: "#f0f9ff",
+                        backgroundColor: "#eef2ff",
                         borderRadius: "8px",
                         flex: 1,
                         textAlign: "center",
@@ -5936,12 +5957,12 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         style={{
                           fontSize: "24px",
                           fontWeight: "bold",
-                          color: "#2563eb",
+                          color: "#4f46e5",
                         }}
                       >
                         {bulkUploadResults.total}
                       </div>
-                      <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                      <div style={{ fontSize: "12px", color: "#475569" }}>
                         {getText("Total", "एकूण", "एकूण")}
                       </div>
                     </div>
@@ -5971,7 +5992,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                           maxHeight: "200px",
                           overflowY: "auto",
                           border: "1px solid #fecaca",
-                          borderRadius: "6px",
+                          borderRadius: "12px",
                         }}
                       >
                         <table
@@ -6049,7 +6070,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
             <div
               style={{
                 padding: "16px 24px",
-                borderTop: "1px solid #e5e7eb",
+                borderTop: "1px solid #e2e8f0",
                 display: "flex",
                 justifyContent: "flex-end",
                 gap: "12px",
@@ -6064,10 +6085,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 }}
                 style={{
                   padding: "10px 20px",
-                  border: "1px solid #d1d5db",
-                  borderRadius: "6px",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: "8px",
                   backgroundColor: "white",
-                  color: "#374151",
+                  color: "#334155",
                   fontSize: "14px",
                   fontWeight: "500",
                   cursor: "pointer",
@@ -6081,7 +6102,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 style={{
                   padding: "10px 20px",
                   border: "none",
-                  borderRadius: "6px",
+                  borderRadius: "8px",
                   backgroundColor:
                     !bulkUploadFile || bulkUploading ? "#d1d5db" : "#f59e0b",
                   color: "white",
@@ -6119,7 +6140,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            backgroundColor: "rgba(15,23,42,.5)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -6130,18 +6151,20 @@ const UserManagement: React.FC<UserManagementProps> = ({
           <div
             style={{
               backgroundColor: "white",
-              borderRadius: "12px",
+              borderRadius: "20px",
               maxWidth: "1000px",
               width: "100%",
               height: "85vh",
               display: "flex",
               flexDirection: "column",
+              boxShadow:
+                "0 24px 64px rgba(15,23,42,.22), 0 8px 24px rgba(15,23,42,.12)",
             }}
           >
             <div
               style={{
                 padding: "24px",
-                borderBottom: "1px solid #e5e7eb",
+                borderBottom: "1px solid #e2e8f0",
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
@@ -6152,7 +6175,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 style={{
                   fontSize: "20px",
                   fontWeight: "600",
-                  color: "#1f2937",
+                  color: "#0f172a",
                   margin: 0,
                 }}
               >
@@ -6177,7 +6200,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   border: "none",
                   fontSize: "24px",
                   cursor: "pointer",
-                  color: "#6b7280",
+                  color: "#475569",
                 }}
               >
                 ✕
@@ -6189,7 +6212,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 <p
                   style={{
                     fontSize: "14px",
-                    color: "#6b7280",
+                    color: "#475569",
                     marginBottom: "20px",
                     textAlign: "center",
                   }}
@@ -6209,7 +6232,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         display: "block",
                         fontSize: "14px",
                         fontWeight: "500",
-                        color: "#374151",
+                        color: "#334155",
                         marginBottom: "8px",
                       }}
                     >
@@ -6231,7 +6254,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       style={{
                         width: "100%",
                         padding: "12px",
-                        border: "1px solid #d1d5db",
+                        border: "1.5px solid #e2e8f0",
                         borderRadius: "8px",
                         fontSize: "14px",
                         outline: "none",
@@ -6241,7 +6264,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     <p
                       style={{
                         fontSize: "12px",
-                        color: "#6b7280",
+                        color: "#475569",
                         marginTop: "4px",
                       }}
                     >
@@ -6295,7 +6318,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 <div
                   style={{
                     padding: "16px 24px",
-                    borderBottom: "1px solid #e5e7eb",
+                    borderBottom: "1px solid #e2e8f0",
                     flexShrink: 0,
                   }}
                 >
@@ -6307,7 +6330,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         left: "12px",
                         top: "50%",
                         transform: "translateY(-50%)",
-                        color: "#9ca3af",
+                        color: "#94a3b8",
                         fontSize: "18px",
                       }}
                     >
@@ -6325,7 +6348,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       style={{
                         width: "100%",
                         padding: "12px 12px 12px 40px",
-                        border: "1px solid #d1d5db",
+                        border: "1.5px solid #e2e8f0",
                         borderRadius: "8px",
                         fontSize: "14px",
                         outline: "none",
@@ -6348,11 +6371,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         style={{
                           fontSize: "14px",
                           fontWeight: "500",
-                          color: "#374151",
+                          color: "#334155",
                         }}
                       >
                         {getText("Selected", "निवडले", "निवडले")}:{" "}
-                        <span style={{ color: "#7c3aed", fontWeight: "600" }}>
+                        <span style={{ color: "#4f46e5", fontWeight: "600" }}>
                           {selectedEmployees.length}
                         </span>{" "}
                         /{" "}
@@ -6396,10 +6419,11 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       }}
                       style={{
                         padding: "8px 20px",
-                        backgroundColor: "#7c3aed",
-                        color: "white",
+                        background: "linear-gradient(160deg, #4f46e5, #4338ca)",
+                        boxShadow: "0 4px 14px rgba(67,56,202,.35)",
+                        color: "#fff",
                         border: "none",
-                        borderRadius: "6px",
+                        borderRadius: "8px",
                         fontSize: "14px",
                         fontWeight: "500",
                         cursor: "pointer",
@@ -6448,7 +6472,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       <tr
                         style={{
                           backgroundColor: "#f9fafb",
-                          borderBottom: "2px solid #e5e7eb",
+                          borderBottom: "2px solid #e2e8f0",
                         }}
                       >
                         <th
@@ -6457,7 +6481,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             textAlign: "left",
                             fontSize: "12px",
                             fontWeight: "600",
-                            color: "#6b7280",
+                            color: "#475569",
                             textTransform: "uppercase",
                             width: "40px",
                           }}
@@ -6468,7 +6492,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             textAlign: "left",
                             fontSize: "12px",
                             fontWeight: "600",
-                            color: "#6b7280",
+                            color: "#475569",
                             textTransform: "uppercase",
                           }}
                         >
@@ -6484,7 +6508,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             textAlign: "left",
                             fontSize: "12px",
                             fontWeight: "600",
-                            color: "#6b7280",
+                            color: "#475569",
                             textTransform: "uppercase",
                           }}
                         >
@@ -6496,7 +6520,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             textAlign: "left",
                             fontSize: "12px",
                             fontWeight: "600",
-                            color: "#6b7280",
+                            color: "#475569",
                             textTransform: "uppercase",
                           }}
                         >
@@ -6521,7 +6545,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                           <tr
                             key={employee.employeeCode}
                             style={{
-                              borderBottom: "1px solid #e5e7eb",
+                              borderBottom: "1px solid #e2e8f0",
                               cursor: "pointer",
                               backgroundColor: selectedEmployees.includes(
                                 employee.employeeCode,
@@ -6564,7 +6588,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               style={{
                                 padding: "12px 8px",
                                 fontSize: "14px",
-                                color: "#374151",
+                                color: "#334155",
                                 fontWeight: "500",
                               }}
                             >
@@ -6574,7 +6598,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               style={{
                                 padding: "12px 8px",
                                 fontSize: "14px",
-                                color: "#374151",
+                                color: "#334155",
                               }}
                             >
                               {employee.firstName} {employee.lastName}
@@ -6583,7 +6607,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               style={{
                                 padding: "12px 8px",
                                 fontSize: "14px",
-                                color: "#6b7280",
+                                color: "#475569",
                               }}
                             >
                               {employee.email || "-"}
@@ -6607,7 +6631,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       style={{
                         textAlign: "center",
                         padding: "32px",
-                        color: "#9ca3af",
+                        color: "#94a3b8",
                       }}
                     >
                       {getText(
@@ -6624,7 +6648,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   <div
                     style={{
                       padding: "16px 24px",
-                      borderTop: "2px solid #e5e7eb",
+                      borderTop: "2px solid #e2e8f0",
                       backgroundColor: "#fefce8",
                       flexShrink: 0,
                       maxHeight: "35vh",
@@ -6656,7 +6680,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                           width: "100%",
                           padding: "10px",
                           border: "2px solid #ca8a04",
-                          borderRadius: "6px",
+                          borderRadius: "8px",
                           fontSize: "14px",
                           outline: "none",
                           backgroundColor: "white",
@@ -6714,7 +6738,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       <div
                         style={{
                           border: "2px solid #ca8a04",
-                          borderRadius: "6px",
+                          borderRadius: "12px",
                           backgroundColor: "white",
                           maxHeight: "120px",
                           overflowY: "auto",
@@ -6745,7 +6769,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                                 alignItems: "center",
                                 padding: "8px",
                                 cursor: "pointer",
-                                borderRadius: "4px",
+                                borderRadius: "8px",
                                 transition: "background-color 0.2s",
                               }}
                               onMouseEnter={(e) =>
@@ -6786,7 +6810,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                                   style={{
                                     fontSize: "14px",
                                     fontWeight: "500",
-                                    color: "#374151",
+                                    color: "#334155",
                                   }}
                                 >
                                   {project.name}
@@ -6795,7 +6819,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                                   <div
                                     style={{
                                       fontSize: "12px",
-                                      color: "#6b7280",
+                                      color: "#475569",
                                       marginTop: "2px",
                                     }}
                                   >
@@ -6849,7 +6873,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 <div
                   style={{
                     padding: "16px 24px",
-                    borderTop: "1px solid #e5e7eb",
+                    borderTop: "1px solid #e2e8f0",
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
@@ -6871,10 +6895,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     disabled={saving}
                     style={{
                       padding: "10px 20px",
-                      border: "1px solid #d1d5db",
-                      borderRadius: "6px",
+                      border: "1.5px solid #e2e8f0",
+                      borderRadius: "8px",
                       backgroundColor: "white",
-                      color: "#374151",
+                      color: "#334155",
                       fontSize: "14px",
                       fontWeight: "500",
                       cursor: saving ? "not-allowed" : "pointer",
@@ -6891,7 +6915,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       padding: "10px 32px",
                       border: "none",
-                      borderRadius: "6px",
+                      borderRadius: "8px",
                       backgroundColor:
                         selectedEmployees.length === 0 ||
                         !selectedRole ||
@@ -6933,7 +6957,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            backgroundColor: "rgba(15,23,42,.5)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -6944,20 +6968,20 @@ const UserManagement: React.FC<UserManagementProps> = ({
           <div
             style={{
               backgroundColor: "white",
-              borderRadius: "12px",
+              borderRadius: "20px",
               maxWidth: "500px",
               width: "100%",
               maxHeight: "90vh",
               overflow: "auto",
               boxShadow:
-                "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
+                "0 24px 64px rgba(15,23,42,.22), 0 8px 24px rgba(15,23,42,.12)",
             }}
           >
             {/* Header */}
             <div
               style={{
                 padding: "24px",
-                borderBottom: "1px solid #e5e7eb",
+                borderBottom: "1px solid #e2e8f0",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
@@ -6997,7 +7021,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       fontSize: "20px",
                       fontWeight: "700",
-                      color: "#111827",
+                      color: "#0f172a",
                       margin: 0,
                     }}
                   >
@@ -7010,7 +7034,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   <p
                     style={{
                       fontSize: "14px",
-                      color: "#6b7280",
+                      color: "#475569",
                       margin: "4px 0 0 0",
                     }}
                   >
@@ -7029,7 +7053,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   border: "none",
                   background: "transparent",
                   cursor: "pointer",
-                  borderRadius: "6px",
+                  borderRadius: "8px",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -7040,7 +7064,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   height="24"
                   viewBox="0 0 24 24"
                   fill="none"
-                  stroke="#6B7280"
+                  stroke="#475569"
                   strokeWidth="2"
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -7062,7 +7086,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         display: "block",
                         fontSize: "14px",
                         fontWeight: "600",
-                        color: "#374151",
+                        color: "#334155",
                         marginBottom: "12px",
                       }}
                     >
@@ -7095,7 +7119,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                             style={{
                               padding: "12px",
                               backgroundColor: "#f9fafb",
-                              border: "1px solid #e5e7eb",
+                              border: "1px solid #e2e8f0",
                               borderRadius: "8px",
                               display: "flex",
                               alignItems: "center",
@@ -7108,7 +7132,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                                 style={{
                                   fontSize: "13px",
                                   fontWeight: "600",
-                                  color: "#111827",
+                                  color: "#0f172a",
                                   marginBottom: "4px",
                                 }}
                               >
@@ -7138,7 +7162,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                               style={{
                                 padding: "6px 12px",
                                 border: "1px solid #10B981",
-                                borderRadius: "6px",
+                                borderRadius: "8px",
                                 backgroundColor: "white",
                                 color: "#10B981",
                                 fontSize: "12px",
@@ -7163,7 +7187,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     display: "block",
                     fontSize: "14px",
                     fontWeight: "600",
-                    color: "#374151",
+                    color: "#334155",
                     marginBottom: "8px",
                   }}
                 >
@@ -7178,10 +7202,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     padding: "12px",
                     backgroundColor: "#f9fafb",
-                    border: "1px solid #e5e7eb",
+                    border: "1px solid #e2e8f0",
                     borderRadius: "8px",
                     fontSize: "14px",
-                    color: "#111827",
+                    color: "#0f172a",
                     fontFamily: "monospace",
                     display: "flex",
                     alignItems: "center",
@@ -7205,8 +7229,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     }}
                     style={{
                       padding: "4px 8px",
-                      border: "1px solid #d1d5db",
-                      borderRadius: "4px",
+                      border: "1.5px solid #e2e8f0",
+                      borderRadius: "8px",
                       backgroundColor: "white",
                       cursor: "pointer",
                       fontSize: "12px",
@@ -7224,7 +7248,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     display: "block",
                     fontSize: "14px",
                     fontWeight: "600",
-                    color: "#374151",
+                    color: "#334155",
                     marginBottom: "8px",
                   }}
                 >
@@ -7234,10 +7258,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     padding: "12px",
                     backgroundColor: "#f9fafb",
-                    border: "1px solid #e5e7eb",
+                    border: "1px solid #e2e8f0",
                     borderRadius: "8px",
                     fontSize: "14px",
-                    color: "#111827",
+                    color: "#0f172a",
                     fontFamily: "monospace",
                     display: "flex",
                     alignItems: "center",
@@ -7261,8 +7285,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     }}
                     style={{
                       padding: "4px 8px",
-                      border: "1px solid #d1d5db",
-                      borderRadius: "4px",
+                      border: "1.5px solid #e2e8f0",
+                      borderRadius: "8px",
                       backgroundColor: "white",
                       cursor: "pointer",
                       fontSize: "12px",
@@ -7277,8 +7301,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
               <div
                 style={{
                   padding: "12px",
-                  backgroundColor: "#DBEAFE",
-                  border: "1px solid #3B82F6",
+                  backgroundColor: "#eef2ff",
+                  border: "1px solid #e2e8f0",
                   borderRadius: "8px",
                   marginBottom: "20px",
                 }}
@@ -7310,10 +7334,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     flex: 1,
                     padding: "12px",
-                    border: "1px solid #d1d5db",
+                    border: "1.5px solid #e2e8f0",
                     borderRadius: "8px",
                     backgroundColor: "white",
-                    color: "#374151",
+                    color: "#334155",
                     fontSize: "14px",
                     fontWeight: "600",
                     cursor: "pointer",
@@ -7340,9 +7364,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       padding: "12px",
                       border: "none",
                       borderRadius: "8px",
-                      background:
-                        "linear-gradient(135deg, #2563EB 0%, #1d4ed8 100%)",
-                      color: "white",
+                      background: "linear-gradient(160deg, #4f46e5, #4338ca)",
+                      boxShadow: "0 4px 14px rgba(67,56,202,.35)",
+                      color: "#fff",
                       fontSize: "14px",
                       fontWeight: "600",
                       cursor: "pointer",
@@ -7370,7 +7394,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            backgroundColor: "rgba(15,23,42,.5)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -7381,25 +7405,25 @@ const UserManagement: React.FC<UserManagementProps> = ({
           <div
             style={{
               backgroundColor: "white",
-              borderRadius: "12px",
+              borderRadius: "20px",
               maxWidth: "450px",
               width: "100%",
               boxShadow:
-                "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
+                "0 24px 64px rgba(15,23,42,.22), 0 8px 24px rgba(15,23,42,.12)",
             }}
           >
             {/* Header */}
             <div
               style={{
                 padding: "24px",
-                borderBottom: "1px solid #e5e7eb",
+                borderBottom: "1px solid #e2e8f0",
               }}
             >
               <h3
                 style={{
                   fontSize: "18px",
                   fontWeight: "600",
-                  color: "#111827",
+                  color: "#0f172a",
                   margin: 0,
                 }}
               >
@@ -7412,7 +7436,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
               <p
                 style={{
                   fontSize: "14px",
-                  color: "#6B7280",
+                  color: "#475569",
                   margin: "8px 0 0 0",
                 }}
               >
@@ -7432,7 +7456,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 <p
                   style={{
                     fontSize: "13px",
-                    color: "#6B7280",
+                    color: "#475569",
                     marginBottom: "12px",
                   }}
                 >
@@ -7442,8 +7466,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
               {!loadingResetPolicy && resetPasswordPolicy && (
                 <div
                   style={{
-                    background: "#f0f9ff",
-                    border: "1px solid #bae6fd",
+                    background: "#eef2ff",
+                    border: "1px solid #e2e8f0",
                     borderRadius: "8px",
                     padding: "12px 16px",
                     marginBottom: "16px",
@@ -7453,7 +7477,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   <p
                     style={{
                       fontWeight: 600,
-                      color: "#0369a1",
+                      color: "#4f46e5",
                       margin: "0 0 6px 0",
                     }}
                   >
@@ -7463,7 +7487,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     style={{
                       margin: 0,
                       paddingLeft: "18px",
-                      color: "#374151",
+                      color: "#334155",
                       lineHeight: "1.8",
                     }}
                   >
@@ -7492,7 +7516,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     display: "block",
                     fontSize: "14px",
                     fontWeight: "500",
-                    color: "#374151",
+                    color: "#334155",
                     marginBottom: "6px",
                   }}
                 >
@@ -7516,7 +7540,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     width: "100%",
                     padding: "10px 12px",
-                    border: "1px solid #d1d5db",
+                    border: "1.5px solid #e2e8f0",
                     borderRadius: "8px",
                     fontSize: "14px",
                     outline: "none",
@@ -7531,7 +7555,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     display: "block",
                     fontSize: "14px",
                     fontWeight: "500",
-                    color: "#374151",
+                    color: "#334155",
                     marginBottom: "6px",
                   }}
                 >
@@ -7557,7 +7581,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     width: "100%",
                     padding: "10px 12px",
-                    border: "1px solid #d1d5db",
+                    border: "1.5px solid #e2e8f0",
                     borderRadius: "8px",
                     fontSize: "14px",
                     outline: "none",
@@ -7594,10 +7618,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
                   style={{
                     flex: 1,
                     padding: "12px",
-                    border: "1px solid #d1d5db",
+                    border: "1.5px solid #e2e8f0",
                     borderRadius: "8px",
                     backgroundColor: "white",
-                    color: "#374151",
+                    color: "#334155",
                     fontSize: "14px",
                     fontWeight: "600",
                     cursor: "pointer",
@@ -7613,7 +7637,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     border: "none",
                     borderRadius: "8px",
                     background:
-                      "linear-gradient(135deg, #2563EB 0%, #1d4ed8 100%)",
+                      "linear-gradient(135deg, #4f46e5 0%, #4f46e5 100%)",
                     color: "white",
                     fontSize: "14px",
                     fontWeight: "600",
@@ -7638,7 +7662,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(0,0,0,0.5)",
+            background: "rgba(15,23,42,.5)",
             zIndex: 1000,
             display: "flex",
             alignItems: "center",
@@ -7648,13 +7672,14 @@ const UserManagement: React.FC<UserManagementProps> = ({
           <div
             style={{
               background: "white",
-              borderRadius: "12px",
+              borderRadius: "20px",
               padding: "28px",
               width: "520px",
               maxWidth: "90vw",
               maxHeight: "80vh",
               overflowY: "auto",
-              boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+              boxShadow:
+                "0 24px 64px rgba(15,23,42,.22), 0 8px 24px rgba(15,23,42,.12)",
             }}
           >
             <h3
@@ -7662,7 +7687,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 margin: "0 0 8px 0",
                 fontSize: "18px",
                 fontWeight: 700,
-                color: "#111827",
+                color: "#0f172a",
               }}
             >
               Delete {selectedUserIds.size} User
@@ -7672,7 +7697,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
               style={{
                 margin: "0 0 16px 0",
                 fontSize: "14px",
-                color: "#6B7280",
+                color: "#475569",
               }}
             >
               This action cannot be undone. The following user
@@ -7724,7 +7749,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                         style={{
                           fontWeight: 600,
                           fontSize: "14px",
-                          color: "#111827",
+                          color: "#0f172a",
                         }}
                       >
                         {u.firstName} {u.lastName}
@@ -7732,7 +7757,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       <div
                         style={{
                           fontSize: "12px",
-                          color: "#6B7280",
+                          color: "#475569",
                           marginTop: "2px",
                         }}
                       >
@@ -7772,10 +7797,10 @@ const UserManagement: React.FC<UserManagementProps> = ({
                 disabled={bulkDeleting}
                 style={{
                   padding: "10px 20px",
-                  border: "1px solid #D1D5DB",
+                  border: "1.5px solid #e2e8f0",
                   borderRadius: "8px",
-                  background: "white",
-                  color: "#374151",
+                  background: "#fff",
+                  color: "#334155",
                   fontSize: "14px",
                   fontWeight: 600,
                   cursor: bulkDeleting ? "not-allowed" : "pointer",

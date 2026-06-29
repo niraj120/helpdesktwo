@@ -292,18 +292,19 @@ const DashboardLayout = ({
     const palette = menuColorPalette[hash % menuColorPalette.length];
 
     if (active) {
+      // OneOS active nav: primary-50 fill, indigo label + icon, soft border.
       return {
-        itemBackground: "linear-gradient(135deg, #4F46E5 0%, #2563EB 100%)",
-        itemColor: "#FFFFFF",
-        iconBackground: "rgba(255, 255, 255, 0.18)",
-        iconColor: "#FFFFFF",
-        borderColor: "rgba(79, 70, 229, 0.9)",
+        itemBackground: "#eef2ff",
+        itemColor: "#4f46e5",
+        iconBackground: "rgba(79, 70, 229, 0.12)",
+        iconColor: "#4f46e5",
+        borderColor: "#e0e7ff",
       };
     }
 
     return {
       itemBackground: "transparent",
-      itemColor: "var(--text-primary)",
+      itemColor: "#334155",
       iconBackground: palette.iconBg,
       iconColor: palette.iconColor,
       borderColor: "transparent",
@@ -515,7 +516,7 @@ const DashboardLayout = ({
           fontFamily:
             i18n.language === "mr"
               ? '"Noto Sans Devanagari", sans-serif'
-              : designSystem.typography.fontFamily.primary,
+              : '"Instrument Sans", "Helvetica Neue", Arial, sans-serif',
         }}
       >
         {/* Sidebar Navigation */}
@@ -529,9 +530,8 @@ const DashboardLayout = ({
           )}
           style={{
             width: sidebarWidth,
-            background:
-              "linear-gradient(180deg, #FCFDFF 0%, #F8FAFF 46%, #F5F8FF 100%)",
-            borderRight: "1px solid #E6ECF7",
+            background: "#ffffff",
+            borderRight: "1px solid #e2e8f0",
             display: "flex",
             flexDirection: "column",
             position: "fixed",
@@ -540,7 +540,7 @@ const DashboardLayout = ({
             overflowX: "visible",
             transition: "width 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)",
             zIndex: 100,
-            boxShadow: "6px 0 24px rgba(15, 23, 42, 0.06)",
+            boxShadow: "none",
             // Custom scrollbar styles
             scrollbarWidth: "thin",
             scrollbarColor: "rgba(0, 0, 0, 0.1) transparent",
@@ -553,7 +553,7 @@ const DashboardLayout = ({
               height: "64px",
               boxSizing: "border-box",
               padding: isSidebarCollapsed ? "0 12px" : "0 16px",
-              borderBottom: "1px solid #E6ECF7",
+              borderBottom: "1px solid #e2e8f0",
               display: "flex",
               alignItems: "center",
               justifyContent: isSidebarCollapsed ? "center" : "flex-start",
@@ -633,7 +633,7 @@ const DashboardLayout = ({
             <div
               style={{
                 padding: "10px 12px",
-                borderBottom: "1px solid #E6ECF7",
+                borderBottom: "1px solid #e2e8f0",
                 position: "relative",
                 zIndex: 200,
                 overflow: "visible",
@@ -649,7 +649,7 @@ const DashboardLayout = ({
           <div
             style={{
               padding: "6px 12px",
-              borderBottom: "1px solid #E6ECF7",
+              borderBottom: "1px solid #e2e8f0",
               flexShrink: 0,
             }}
           >
@@ -662,12 +662,12 @@ const DashboardLayout = ({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                backgroundColor: "#F1F5FF",
-                color: "#3B4BC4",
+                backgroundColor: "#eef2ff",
+                color: "#4f46e5",
                 fontSize: "20px",
                 cursor: "pointer",
                 borderRadius: "8px",
-                border: "1px solid #D9E3FA",
+                border: "1px solid #e0e7ff",
               }}
               aria-label={
                 isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"
@@ -977,9 +977,7 @@ const DashboardLayout = ({
                           ? "center"
                           : "flex-start",
                         border: `1px solid ${itemAccent.borderColor}`,
-                        boxShadow: isActive
-                          ? "0 8px 18px rgba(37, 99, 235, 0.22)"
-                          : "none",
+                        boxShadow: "none",
                         lineHeight: "1.5",
                       }}
                       onMouseOver={(e) => {
@@ -1234,7 +1232,7 @@ const DashboardLayout = ({
           <div
             style={{
               padding: isSidebarCollapsed ? "12px 4px" : "16px 12px",
-              borderTop: "1px solid #E6ECF7",
+              borderTop: "1px solid #e2e8f0",
               marginTop: "auto",
             }}
           >
@@ -1343,11 +1341,13 @@ const DashboardLayout = ({
           style={{
             marginLeft: sidebarWidth,
             flex: 1,
+            // OneOS canvas
+            // (see docs/ONEOS_DESIGN_SYSTEM.md)
             // Allow this flex item to shrink to the available width instead of
             // growing to fit a wide child (e.g. a many-column attendance table).
             // Without min-width:0 a wide table pushes the whole page sideways.
             minWidth: 0,
-            backgroundColor: "var(--background-secondary)",
+            backgroundColor: "#f8fafc",
             transition: "margin-left 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)",
             minHeight: "100vh",
             display: "flex",
@@ -1358,8 +1358,8 @@ const DashboardLayout = ({
           <header
             style={{
               height: "64px",
-              backgroundColor: "var(--background-primary)",
-              borderBottom: "1px solid var(--border-light)",
+              backgroundColor: "#ffffff",
+              borderBottom: "1px solid #e2e8f0",
               display: "flex",
               alignItems: "center",
               justifyContent: "flex-end",

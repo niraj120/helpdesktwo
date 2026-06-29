@@ -2,9 +2,9 @@
  * Lead (admission enquiry) CRUD. Phase 4.
  */
 import { Response } from "express";
-import { AuthRequest } from "../middleware/auth";
-import { Lead } from "../models/Lead";
-import { applyProjectScope, getProjectScope } from "../utils/projectScope";
+import { AuthRequest } from "../../../middleware/auth";
+import { Lead } from "../../../models/Lead";
+import { applyProjectScope, getProjectScope } from "../../../utils/projectScope";
 
 export const listLeads = async (req: AuthRequest, res: Response) => {
   try {

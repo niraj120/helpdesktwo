@@ -2,8 +2,8 @@
  * Email triage inbox routes. Phase 4.
  */
 import { Router } from "express";
-import { authMiddleware } from "../middleware/auth";
-import { checkPermission } from "../middleware/permissions";
+import { authMiddleware } from "../../../middleware/auth";
+import { checkPermission } from "../../../middleware/permissions";
 import * as c from "../controllers/emailIntakeController";
 
 const router = Router();

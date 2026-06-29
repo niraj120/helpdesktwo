@@ -4,7 +4,7 @@ import { srStyles, SR } from "../../utils/srTheme";
 
 /**
  * Standard page shell for the Service Request module — matches the View Queries
- * page chrome (Noto Sans, #f6f8fc canvas, white header card with title/subtitle
+ * page chrome (Noto Sans, #f8fafc canvas, white header card with title/subtitle
  * + optional actions).
  *
  * When `embedded` is set the chrome (DashboardLayout, canvas, big header) is

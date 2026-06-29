@@ -1210,57 +1210,23 @@ const MyTickets: React.FC<MyTicketsProps> = ({
     switch (columnKey) {
       case "ticketNumber":
         return (
-          <td
-            style={{
-              padding: isMobile ? "10px 12px" : "12px 16px",
-              fontSize: 13,
-              color: "#2563EB",
-              fontWeight: 600,
-              whiteSpace: "nowrap",
-            }}
-          >
+          <td className="px-4 py-3 sm:px-6 text-sm text-primary-600 font-semibold font-mono whitespace-nowrap">
             #{ticket.ticketNumber}
           </td>
         );
       case "subject":
         return (
-          <td
-            style={{
-              padding: isMobile ? "10px 12px" : "12px 16px",
-              minWidth: isMobile ? 180 : 220,
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                marginBottom: 2,
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 13,
-                  color: "#101828",
-                  fontWeight: isHighlighted ? 700 : 600,
-                }}
-              >
+          <td className="px-4 py-3 sm:px-6 min-w-[180px] lg:min-w-[220px]">
+            <div className="flex items-center gap-2 mb-0.5">
+              <span className={`text-sm text-slate-900 ${isHighlighted ? "font-bold" : "font-semibold"}`}>
                 {ticket.subject || "No subject"}
               </span>
               {ticket.hasNewReply && (
-                <span
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: "50%",
-                    background: "#F59E0B",
-                    display: "inline-block",
-                  }}
-                />
+                <span className="w-2 h-2 rounded-full bg-primary-600 animate-pulse" />
               )}
             </div>
             {ticket.category?.name && (
-              <div style={{ fontSize: 12, color: "#667085" }}>
+              <div className="text-xs text-slate-400 font-sans">
                 {ticket.category.name}
               </div>
             )}
@@ -1268,25 +1234,13 @@ const MyTickets: React.FC<MyTicketsProps> = ({
         );
       case "requestedBy":
         return (
-          <td
-            style={{
-              padding: isMobile ? "10px 12px" : "12px 16px",
-              fontSize: 13,
-              color: "#344054",
-            }}
-          >
+          <td className="px-4 py-3 sm:px-6 text-sm text-slate-600 font-sans">
             {requestedBy}
           </td>
         );
       case "assignee":
         return (
-          <td
-            style={{
-              padding: isMobile ? "10px 12px" : "12px 16px",
-              fontSize: 13,
-              color: "#344054",
-            }}
-          >
+          <td className="px-4 py-3 sm:px-6 text-sm text-slate-600 font-sans">
             {ticket.assignedTo
               ? `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}`
               : "Unassigned"}
@@ -1294,97 +1248,84 @@ const MyTickets: React.FC<MyTicketsProps> = ({
         );
       case "source":
         return (
-          <td style={{ padding: isMobile ? "10px 12px" : "12px 16px" }}>
+          <td className="px-4 py-3 sm:px-6">
             <span
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap border shadow-sm"
               style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 4,
-                padding: "3px 10px",
-                borderRadius: "20px",
-                fontSize: 12,
-                fontWeight: 600,
                 color: sourceBadge.color,
                 backgroundColor: sourceBadge.bgColor,
-                whiteSpace: "nowrap",
+                borderColor: `${sourceBadge.color}15`,
               }}
             >
               {sourceBadge.icon} {sourceBadge.label}
             </span>
           </td>
         );
-      case "priority":
+      case "priority": {
+        const priority = (ticket.priority || "low").toLowerCase();
+        let badgeClass = "bg-slate-50 text-slate-700 border-slate-100";
+        if (priority === "low") {
+          badgeClass = "bg-emerald-50 text-emerald-700 border-emerald-100";
+        } else if (priority === "medium" || priority === "normal") {
+          badgeClass = "bg-amber-50 text-amber-700 border-amber-100";
+        } else if (priority === "high") {
+          badgeClass = "bg-rose-50 text-rose-700 border-rose-100";
+        } else if (priority === "critical" || priority === "urgent") {
+          badgeClass = "bg-indigo-50 text-indigo-700 border-indigo-100";
+        }
         return (
-          <td style={{ padding: isMobile ? "10px 12px" : "12px 16px" }}>
-            <span
-              style={{
-                padding: "3px 10px",
-                borderRadius: "20px",
-                fontSize: "12px",
-                fontWeight: 600,
-                color: "white",
-                background: getPriorityColor(ticket.priority),
-                textTransform: "capitalize",
-                whiteSpace: "nowrap",
-              }}
-            >
+          <td className="px-4 py-3 sm:px-6">
+            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border capitalize whitespace-nowrap shadow-sm ${badgeClass}`}>
               {ticket.priority || "N/A"}
             </span>
           </td>
         );
-      case "status":
+      }
+      case "status": {
+        const statusVal = (ticket.status || "").toLowerCase();
+        let badgeClass = "bg-slate-50 text-slate-700 border-slate-100";
+        if (statusVal === "open" || statusVal === "1") {
+          badgeClass = "bg-blue-50 text-blue-700 border-blue-100";
+        } else if (statusVal === "in-progress" || statusVal === "2") {
+          badgeClass = "bg-orange-50 text-orange-700 border-orange-100";
+        } else if (statusVal === "pending" || statusVal === "3" || statusVal === "on-hold") {
+          badgeClass = "bg-amber-50 text-amber-700 border-amber-100";
+        } else if (statusVal === "resolved" || statusVal === "4") {
+          badgeClass = "bg-emerald-50 text-emerald-700 border-emerald-100";
+        } else if (statusVal === "closed" || statusVal === "5") {
+          badgeClass = "bg-slate-100 text-slate-600 border-slate-200";
+        }
         return (
-          <td style={{ padding: isMobile ? "10px 12px" : "12px 16px" }}>
-            <span
-              style={{
-                padding: "3px 10px",
-                borderRadius: "20px",
-                fontSize: "12px",
-                fontWeight: 600,
-                background:
-                  (getStatusColor(ticket.status, ticket) || "#6B7280") + "20",
-                color: getStatusColor(ticket.status, ticket),
-                whiteSpace: "nowrap",
-              }}
-            >
+          <td className="px-4 py-3 sm:px-6">
+            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border whitespace-nowrap shadow-sm ${badgeClass}`}>
               {getStatusName(ticket.status, ticket)}
             </span>
           </td>
         );
+      }
       case "sla":
         return (
-          <td style={{ padding: isMobile ? "10px 12px" : "12px 16px" }}>
+          <td className="px-4 py-3 sm:px-6">
             {slaPill ? (
               <span
                 title={slaPill.tooltip}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border whitespace-nowrap shadow-sm"
                 style={{
-                  padding: "3px 8px",
-                  borderRadius: "20px",
-                  fontSize: "11px",
-                  fontWeight: 600,
                   color: slaPill.color,
                   background: slaPill.bg,
-                  border: `1px solid ${slaPill.color}30`,
-                  whiteSpace: "nowrap",
+                  borderColor: `${slaPill.color}15`,
                 }}
               >
                 ⏱ {slaPill.label}
               </span>
             ) : (
-              <span style={{ color: "#98A2B3", fontSize: 12 }}>-</span>
+              <span className="text-slate-300 text-sm">-</span>
             )}
           </td>
         );
       case "createdAt":
         return (
-          <td
-            style={{
-              padding: isMobile ? "10px 12px" : "12px 16px",
-              fontSize: 13,
-              color: "#344054",
-              whiteSpace: "nowrap",
-            }}
-          >
+          <td className="px-4 py-3 sm:px-6 text-sm text-slate-500 font-mono whitespace-nowrap">
             {new Date(ticket.createdAt).toLocaleString(undefined, {
               day: "2-digit",
               month: "short",
@@ -1397,17 +1338,13 @@ const MyTickets: React.FC<MyTicketsProps> = ({
         );
       case "center":
         return (
-          <td style={{ padding: isMobile ? "10px 12px" : "12px 16px" }}>
+          <td className="px-4 py-3 sm:px-6">
             <span
-              style={{
-                padding: "3px 10px",
-                borderRadius: "20px",
-                fontSize: "12px",
-                fontWeight: 600,
-                background: centerName === "Online" ? "#DBEAFE" : "#FEF3C7",
-                color: centerName === "Online" ? "#1E40AF" : "#92400E",
-                whiteSpace: "nowrap",
-              }}
+              className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border whitespace-nowrap shadow-sm ${
+                centerName === "Online"
+                  ? "bg-sky-50 text-sky-700 border-sky-100"
+                  : "bg-amber-50 text-amber-700 border-amber-100"
+              }`}
             >
               {centerName}
             </span>
@@ -1415,57 +1352,25 @@ const MyTickets: React.FC<MyTicketsProps> = ({
         );
       case "district":
         return (
-          <td
-            style={{
-              padding: isMobile ? "10px 12px" : "12px 16px",
-              fontSize: 13,
-              color: "#374151",
-            }}
-          >
-            {centerDistrict || <span style={{ color: "#9ca3af" }}>—</span>}
+          <td className="px-4 py-3 sm:px-6 text-sm text-slate-600 font-sans">
+            {centerDistrict || <span className="text-slate-300">—</span>}
           </td>
         );
       case "project":
         return (
-          <td
-            style={{
-              padding: isMobile ? "10px 12px" : "12px 16px",
-              fontSize: 13,
-              color: "#344054",
-            }}
-          >
+          <td className="px-4 py-3 sm:px-6">
             {projectName ? (
-              <span
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  padding: "3px 10px",
-                  borderRadius: "20px",
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  color: "#5925DC",
-                  background: "#F4F3FF",
-                  whiteSpace: "nowrap",
-                }}
-              >
+              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border whitespace-nowrap shadow-sm bg-indigo-50 text-indigo-700 border-indigo-100">
                 {projectName}
               </span>
             ) : (
-              <span style={{ color: "#98A2B3" }}>-</span>
+              <span className="text-slate-300">-</span>
             )}
           </td>
         );
       case "category":
         return (
-          <td
-            style={{
-              padding: isMobile ? "10px 12px" : "12px 16px",
-              fontSize: 13,
-              color: "#344054",
-            }}
-          >
-            {/* Show the true Level-1 category, not the deepest hierarchy level
-                that the legacy `category` field holds for offline tickets. */}
+          <td className="px-4 py-3 sm:px-6 text-sm text-slate-600 font-sans">
             {(ticket as any).categoryHierarchyNames?.level1 ||
               ticket.category?.name ||
               "-"}
@@ -1473,13 +1378,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({
         );
       case "mergedCount":
         return (
-          <td
-            style={{
-              padding: isMobile ? "10px 12px" : "12px 16px",
-              fontSize: 13,
-              color: "#344054",
-            }}
-          >
+          <td className="px-4 py-3 sm:px-6 text-sm text-slate-600 font-mono">
             {ticket.mergedTickets?.length || 0}
           </td>
         );
@@ -1489,13 +1388,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({
           const fieldName = columnKey.replace(/^field_/, "");
           const value = ticket.metadata?.customFields?.[fieldName];
           return (
-            <td
-              style={{
-                padding: isMobile ? "10px 12px" : "12px 16px",
-                fontSize: 13,
-                color: "#344054",
-              }}
-            >
+            <td className="px-4 py-3 sm:px-6 text-sm text-slate-600 font-sans">
               {value !== undefined && value !== null && value !== ""
                 ? String(value)
                 : "—"}
@@ -1511,13 +1404,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({
           const name =
             (ticket as any).categoryHierarchyNames?.[`level${levelNum}`] || "—";
           return (
-            <td
-              style={{
-                padding: isMobile ? "10px 12px" : "12px 16px",
-                fontSize: 13,
-                color: "#344054",
-              }}
-            >
+            <td className="px-4 py-3 sm:px-6 text-sm text-slate-600 font-sans">
               {name}
             </td>
           );
@@ -1801,56 +1688,17 @@ const MyTickets: React.FC<MyTicketsProps> = ({
   ];
 
   const content = (
-    <div
-      style={{
-        padding: isMobile ? "16px" : "24px",
-        maxWidth: "1400px",
-        margin: "0 auto",
-      }}
-    >
-      <div
-        style={{
-          background: "#ffffff",
-          padding: isMobile ? "16px" : "22px 24px",
-          borderRadius: "14px",
-          marginBottom: "16px",
-          border: "1px solid #e7ebf3",
-          boxShadow: "0 4px 18px rgba(15, 23, 42, 0.05)",
-        }}
-      >
-        <h1
-          style={{
-            margin: "0 0 6px 0",
-            fontSize: isMobile ? "20px" : "24px",
-            fontWeight: 700,
-            color: "#111827",
-            letterSpacing: "-0.01em",
-            fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
-          }}
-        >
+    <div className="p-4 sm:p-6 max-w-7xl mx-auto">
+      <div className="bg-white p-4 md:py-5 md:px-6 rounded-2xl mb-4 border border-slate-200/80 shadow-sm">
+        <h1 className="m-0 mb-1.5 text-xl md:text-2xl font-bold text-slate-900 tracking-tight font-sans">
           {getPageTitle()}
         </h1>
-        <p
-          style={{
-            margin: 0,
-            fontSize: "14px",
-            color: "#6b7280",
-            fontWeight: 400,
-            fontFamily: '"Noto Sans", system-ui, -apple-system, sans-serif',
-          }}
-        >
+        <p className="m-0 text-sm text-slate-500 font-normal font-sans">
           {getPageSubtitle()}
         </p>
       </div>
 
-      <div
-        style={{
-          display: "flex",
-          gap: "16px",
-          marginBottom: "20px",
-          flexWrap: "wrap",
-        }}
-      >
+      <div className="flex flex-wrap gap-4 mb-5">
         {statsCards.map((stat) => {
           const isActive = statusFilter === stat.filterValue;
           return (
@@ -1860,181 +1708,81 @@ const MyTickets: React.FC<MyTicketsProps> = ({
                 setStatusFilter(stat.filterValue);
                 setCurrentPage(1);
               }}
-              style={{
-                flex: isMobile ? "1 1 140px" : "1 1 180px",
-                background: isActive ? stat.bg : "white",
-                borderRadius: "10px",
-                padding: isMobile ? "14px 14px" : "20px 24px",
-                border: isActive
-                  ? `2px solid ${stat.color}55`
-                  : "1px solid #E4E7EC",
-                boxShadow: isActive
-                  ? `0 6px 18px ${stat.color}26`
-                  : "0 1px 3px rgba(0,0,0,.06)",
-                display: "flex",
-                alignItems: "center",
-                gap: isMobile ? "10px" : "16px",
-                cursor: "pointer",
-                transition: "all 0.15s ease",
-              }}
+              className={`relative flex-grow flex-shrink-0 basis-[140px] md:basis-[180px] bg-white rounded-xl p-4 md:py-5 md:px-6 border cursor-pointer transition-all duration-200 overflow-hidden group select-none shadow-sm ${
+                isActive
+                  ? "border-primary-500 ring-2 ring-primary-500/20 shadow-md translate-y-[-2px]"
+                  : "border-slate-200 hover:border-slate-300 hover:shadow-md hover:translate-y-[-2px]"
+              }`}
             >
+              {/* Top Accent Line */}
               <div
-                style={{
-                  width: isMobile ? "38px" : "48px",
-                  height: isMobile ? "38px" : "48px",
-                  borderRadius: "50%",
-                  background: stat.bg,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: isMobile ? "16px" : "20px",
-                  flexShrink: 0,
-                }}
-              >
-                {stat.icon}
-              </div>
-              <div>
-                <div
-                  style={{
-                    fontSize: isMobile ? "20px" : "28px",
-                    fontWeight: 700,
-                    color: isActive ? stat.color : "#101828",
-                    lineHeight: 1.2,
-                  }}
-                >
-                  {stat.value.toLocaleString()}
-                </div>
-                <div
-                  style={{
-                    fontSize: "13px",
-                    color: isActive ? stat.color : "#667085",
-                    marginTop: "2px",
-                  }}
-                >
+                className="absolute top-0 left-0 right-0 h-[3px] transition-all"
+                style={{ backgroundColor: stat.color }}
+              />
+
+              <div className="flex justify-between items-start gap-2 mb-2">
+                <span className="text-[10px] md:text-xs font-semibold uppercase tracking-wider text-slate-400 font-sans block truncate">
                   {stat.label}
-                </div>
-                <div
-                  style={{
-                    fontSize: "11px",
-                    color: "#98A2B3",
-                    marginTop: "2px",
-                  }}
-                >
-                  {stat.sub}
-                </div>
-              </div>
-              {isActive && (
-                <span
-                  style={{
-                    marginLeft: "auto",
-                    alignSelf: "flex-start",
-                    fontSize: "11px",
-                    fontWeight: 700,
-                    color: "white",
-                    background: stat.color,
-                    borderRadius: "9999px",
-                    padding: "3px 8px",
-                  }}
-                >
-                  Active
                 </span>
-              )}
+                <span className="text-base md:text-lg select-none filter drop-shadow-sm group-hover:scale-110 transition-transform">
+                  {stat.icon}
+                </span>
+              </div>
+
+              <div className="flex items-baseline justify-between mt-1">
+                <span className="font-display text-2xl md:text-3xl font-bold text-slate-900 leading-none">
+                  {stat.value.toLocaleString()}
+                </span>
+                {isActive ? (
+                  <span
+                    className="text-[9px] font-bold text-white px-2 py-0.5 rounded-full select-none shadow-sm"
+                    style={{ backgroundColor: stat.color }}
+                  >
+                    Active
+                  </span>
+                ) : (
+                  <span className="text-[9px] font-medium text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                    Filter
+                  </span>
+                )}
+              </div>
+
+              <div className="text-[10px] text-slate-400 mt-1.5 font-sans leading-none">
+                {stat.sub}
+              </div>
             </div>
           );
         })}
       </div>
 
       {error && !error.includes("Not Found") && (
-        <div
-          style={{
-            background: "#FEE2E2",
-            border: "1px solid #EF4444",
-            borderRadius: "8px",
-            padding: "12px 16px",
-            marginBottom: "16px",
-            color: "#991B1B",
-          }}
-        >
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3.5 text-red-700 text-sm mb-4 font-sans">
           {error}
         </div>
       )}
 
       {/* Filters */}
-      <div
-        style={{
-          background: "#ffffff",
-          borderRadius: "14px",
-          border: "1px solid #e7ebf3",
-          padding: "14px",
-          boxShadow: "0 4px 16px rgba(15, 23, 42, 0.04)",
-          marginBottom: "16px",
-        }}
-      >
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm mb-4">
         {/* Row 1: Search + actions */}
-        <div
-          style={{
-            display: "flex",
-            gap: "12px",
-            alignItems: "center",
-            marginBottom: "12px",
-            flexWrap: isMobile ? "wrap" : "nowrap",
-          }}
-        >
-          <div
-            style={{
-              position: "relative",
-              flex: 1,
-              minWidth: isMobile ? "100%" : "220px",
-            }}
-          >
-            <MagnifyingGlassIcon
-              style={{
-                position: "absolute",
-                left: "14px",
-                top: "50%",
-                transform: "translateY(-50%)",
-                width: "16px",
-                height: "16px",
-                color: "#9CA3AF",
-                pointerEvents: "none",
-              }}
-            />
+        <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center mb-3">
+          <div className="relative flex-1 min-w-full md:min-w-[220px]">
+            <MagnifyingGlassIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
             <input
               type="text"
               placeholder="Search by ticket #, subject, student..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               style={{
-                width: "100%",
-                height: "42px",
-                padding: `10px ${searchTerm ? "36px" : "14px"} 10px 40px`,
-                border: "1px solid #d7deea",
-                borderRadius: "10px",
-                fontSize: "14px",
-                boxSizing: "border-box",
-                background: "white",
-                outline: "none",
-                boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
+                paddingRight: searchTerm ? "36px" : "14px",
               }}
+              className="w-full h-10 pl-10 border border-slate-200 rounded-xl text-sm bg-white outline-none shadow-sm transition-all focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 text-slate-700 placeholder-slate-400"
             />
             {searchTerm && (
               <button
                 onClick={() => setSearchTerm("")}
-                style={{
-                  position: "absolute",
-                  right: "10px",
-                  top: "50%",
-                  transform: "translateY(-50%)",
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  color: "#9CA3AF",
-                  padding: "2px",
-                  display: "flex",
-                  alignItems: "center",
-                }}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 bg-transparent border-none cursor-pointer text-slate-400 p-0.5 flex items-center hover:text-slate-600 transition-colors"
               >
-                <XMarkIcon style={{ width: "14px", height: "14px" }} />
+                <XMarkIcon className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
@@ -2042,25 +1790,9 @@ const MyTickets: React.FC<MyTicketsProps> = ({
           {canExport && (
             <button
               onClick={() => setShowExportModal(true)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                height: "42px",
-                padding: "0 16px",
-                background: "#059669",
-                color: "white",
-                border: "none",
-                borderRadius: "10px",
-                fontSize: "14px",
-                fontWeight: 600,
-                cursor: "pointer",
-                whiteSpace: "nowrap",
-                width: isMobile ? "100%" : "auto",
-                justifyContent: "center",
-              }}
+              className="flex items-center justify-center gap-1.5 h-10 px-4 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white border-none rounded-xl text-sm font-semibold cursor-pointer whitespace-nowrap w-full md:w-auto transition-colors shadow-sm"
             >
-              <ArrowDownTrayIcon style={{ width: "15px", height: "15px" }} />
+              <ArrowDownTrayIcon className="w-3.5 h-3.5" />
               Export
             </button>
           )}
@@ -2076,25 +1808,9 @@ const MyTickets: React.FC<MyTicketsProps> = ({
                   `/ticket-config/settings/${configProjectId}?tab=tableColumns`,
                 );
               }}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                height: "42px",
-                padding: "0 14px",
-                background: "#2563EB",
-                color: "white",
-                border: "none",
-                borderRadius: "10px",
-                fontSize: "13px",
-                fontWeight: 600,
-                cursor: "pointer",
-                whiteSpace: "nowrap",
-                width: isMobile ? "100%" : "auto",
-                justifyContent: "center",
-              }}
+              className="flex items-center justify-center gap-1.5 h-10 px-3.5 bg-primary-600 hover:bg-primary-700 active:bg-primary-800 text-white border-none rounded-xl text-xs font-semibold cursor-pointer whitespace-nowrap w-full md:w-auto transition-colors shadow-sm"
             >
-              <Cog6ToothIcon style={{ width: "15px", height: "15px" }} />
+              <Cog6ToothIcon className="w-3.5 h-3.5" />
               Configure Columns
             </button>
           )}
@@ -2119,68 +1835,29 @@ const MyTickets: React.FC<MyTicketsProps> = ({
                 setDateToFilter("");
                 setCurrentPage(1);
               }}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "4px",
-                height: "42px",
-                padding: "0 14px",
-                border: "1px solid #d7deea",
-                borderRadius: "10px",
-                background: "white",
-                color: "#6B7280",
-                fontSize: "13px",
-                fontWeight: 600,
-                cursor: "pointer",
-                whiteSpace: "nowrap",
-                width: isMobile ? "100%" : "auto",
-                justifyContent: "center",
-              }}
+              className="flex items-center justify-center gap-1 h-10 px-3.5 border border-slate-200 rounded-xl bg-white hover:bg-slate-50 text-slate-500 hover:text-slate-700 text-xs font-semibold cursor-pointer whitespace-nowrap w-full md:w-auto transition-colors"
             >
-              <XMarkIcon style={{ width: "13px", height: "13px" }} />
+              <XMarkIcon className="w-3 h-3" />
               Clear filters
             </button>
           )}
         </div>
 
         {/* Row 2: Filter grid */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: isMobile
-              ? "1fr"
-              : "repeat(auto-fit, minmax(190px, 1fr))",
-            gap: "12px",
-            alignItems: "center",
-          }}
-        >
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 items-center">
           {projectOptions.length > 0 && (
-            <div style={{ position: "relative" }}>
+            <div className="relative">
               <select
                 value={projectFilter}
                 onChange={(e) => {
                   setProjectFilter(e.target.value);
                   setCurrentPage(1);
                 }}
-                style={{
-                  width: "100%",
-                  height: "42px",
-                  padding: "8px 36px 8px 10px",
-                  border:
-                    projectFilter !== "all"
-                      ? "1px solid #84caff"
-                      : "1px solid #d7deea",
-                  borderRadius: "10px",
-                  fontSize: "14px",
-                  background: projectFilter !== "all" ? "#eff6ff" : "white",
-                  color: projectFilter !== "all" ? "#1d4ed8" : "#374151",
-                  cursor: "pointer",
-                  appearance: "none" as const,
-                  WebkitAppearance: "none" as const,
-                  fontWeight: projectFilter !== "all" ? 500 : 400,
-                  outline: "none",
-                  boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
-                }}
+                className={`w-full h-10 pl-3 pr-10 border rounded-xl text-sm cursor-pointer appearance-none bg-white outline-none shadow-sm transition-all focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 ${
+                  projectFilter !== "all"
+                    ? "border-primary-300 bg-primary-50/50 text-primary-700 font-medium"
+                    : "border-slate-200 text-slate-700 font-normal"
+                }`}
               >
                 <option value="all">All Projects</option>
                 {projectOptions.map((p) => (
@@ -2190,46 +1867,25 @@ const MyTickets: React.FC<MyTicketsProps> = ({
                 ))}
               </select>
               <ChevronDownIcon
-                style={{
-                  position: "absolute",
-                  right: "12px",
-                  top: "50%",
-                  transform: "translateY(-50%)",
-                  width: "13px",
-                  height: "13px",
-                  pointerEvents: "none",
-                  color: projectFilter !== "all" ? "#1d4ed8" : "#6B7280",
-                }}
+                className={`absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none transition-colors ${
+                  projectFilter !== "all" ? "text-primary-600" : "text-slate-400"
+                }`}
               />
             </div>
           )}
 
-          <div style={{ position: "relative" }}>
+          <div className="relative">
             <select
               value={statusFilter}
               onChange={(e) => {
                 setStatusFilter(e.target.value);
                 setCurrentPage(1);
               }}
-              style={{
-                width: "100%",
-                height: "42px",
-                padding: "8px 36px 8px 10px",
-                border:
-                  statusFilter !== "all"
-                    ? "1px solid #84caff"
-                    : "1px solid #d7deea",
-                borderRadius: "10px",
-                fontSize: "14px",
-                background: statusFilter !== "all" ? "#eff6ff" : "white",
-                color: statusFilter !== "all" ? "#1d4ed8" : "#374151",
-                cursor: "pointer",
-                appearance: "none" as const,
-                WebkitAppearance: "none" as const,
-                fontWeight: statusFilter !== "all" ? 500 : 400,
-                outline: "none",
-                boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
-              }}
+              className={`w-full h-10 pl-3 pr-10 border rounded-xl text-sm cursor-pointer appearance-none bg-white outline-none shadow-sm transition-all focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 ${
+                statusFilter !== "all"
+                  ? "border-primary-300 bg-primary-50/50 text-primary-700 font-medium"
+                  : "border-slate-200 text-slate-700 font-normal"
+              }`}
             >
               <option value="all">All Status</option>
               {statuses.map((s, i) => (
@@ -2239,45 +1895,24 @@ const MyTickets: React.FC<MyTicketsProps> = ({
               ))}
             </select>
             <ChevronDownIcon
-              style={{
-                position: "absolute",
-                right: "12px",
-                top: "50%",
-                transform: "translateY(-50%)",
-                width: "13px",
-                height: "13px",
-                pointerEvents: "none",
-                color: statusFilter !== "all" ? "#1d4ed8" : "#6B7280",
-              }}
+              className={`absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none transition-colors ${
+                statusFilter !== "all" ? "text-primary-600" : "text-slate-400"
+              }`}
             />
           </div>
 
-          <div style={{ position: "relative" }}>
+          <div className="relative">
             <select
               value={priorityFilter}
               onChange={(e) => {
                 setPriorityFilter(e.target.value);
                 setCurrentPage(1);
               }}
-              style={{
-                width: "100%",
-                height: "42px",
-                padding: "8px 36px 8px 10px",
-                border:
-                  priorityFilter !== "all"
-                    ? "1px solid #84caff"
-                    : "1px solid #d7deea",
-                borderRadius: "10px",
-                fontSize: "14px",
-                background: priorityFilter !== "all" ? "#eff6ff" : "white",
-                color: priorityFilter !== "all" ? "#1d4ed8" : "#374151",
-                cursor: "pointer",
-                appearance: "none" as const,
-                WebkitAppearance: "none" as const,
-                fontWeight: priorityFilter !== "all" ? 500 : 400,
-                outline: "none",
-                boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
-              }}
+              className={`w-full h-10 pl-3 pr-10 border rounded-xl text-sm cursor-pointer appearance-none bg-white outline-none shadow-sm transition-all focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 ${
+                priorityFilter !== "all"
+                  ? "border-primary-300 bg-primary-50/50 text-primary-700 font-medium"
+                  : "border-slate-200 text-slate-700 font-normal"
+              }`}
             >
               <option value="all">All Priority</option>
               {priorities.map((p, i) => (
@@ -2287,16 +1922,9 @@ const MyTickets: React.FC<MyTicketsProps> = ({
               ))}
             </select>
             <ChevronDownIcon
-              style={{
-                position: "absolute",
-                right: "12px",
-                top: "50%",
-                transform: "translateY(-50%)",
-                width: "13px",
-                height: "13px",
-                pointerEvents: "none",
-                color: priorityFilter !== "all" ? "#1d4ed8" : "#6B7280",
-              }}
+              className={`absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none transition-colors ${
+                priorityFilter !== "all" ? "text-primary-600" : "text-slate-400"
+              }`}
             />
           </div>
 
@@ -2349,7 +1977,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({
             .map((f) => {
               const currentVal = customFieldFilters[f.key] || "";
               return (
-                <div key={f.key} style={{ position: "relative" }}>
+                <div key={f.key} className="relative">
                   <select
                     value={currentVal}
                     onChange={(e) => {
@@ -2359,24 +1987,11 @@ const MyTickets: React.FC<MyTicketsProps> = ({
                       }));
                       setCurrentPage(1);
                     }}
-                    style={{
-                      width: "100%",
-                      height: "42px",
-                      padding: "8px 36px 8px 10px",
-                      border: currentVal
-                        ? "1px solid #84caff"
-                        : "1px solid #d7deea",
-                      borderRadius: "10px",
-                      fontSize: "14px",
-                      background: currentVal ? "#eff6ff" : "white",
-                      color: currentVal ? "#1d4ed8" : "#374151",
-                      cursor: "pointer",
-                      appearance: "none" as const,
-                      WebkitAppearance: "none" as const,
-                      fontWeight: currentVal ? 500 : 400,
-                      outline: "none",
-                      boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
-                    }}
+                    className={`w-full h-10 pl-3 pr-10 border rounded-xl text-sm cursor-pointer appearance-none bg-white outline-none shadow-sm transition-all focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 ${
+                      currentVal
+                        ? "border-primary-300 bg-primary-50/50 text-primary-700 font-medium"
+                        : "border-slate-200 text-slate-700 font-normal"
+                    }`}
                   >
                     <option value="">All {f.label}</option>
                     {f.options.map((o) => (
@@ -2386,47 +2001,26 @@ const MyTickets: React.FC<MyTicketsProps> = ({
                     ))}
                   </select>
                   <ChevronDownIcon
-                    style={{
-                      position: "absolute",
-                      right: "12px",
-                      top: "50%",
-                      transform: "translateY(-50%)",
-                      width: "13px",
-                      height: "13px",
-                      pointerEvents: "none",
-                      color: currentVal ? "#1d4ed8" : "#6B7280",
-                    }}
+                    className={`absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none transition-colors ${
+                      currentVal ? "text-primary-600" : "text-slate-400"
+                    }`}
                   />
                 </div>
               );
             })}
 
-          <div style={{ position: "relative" }}>
+          <div className="relative">
             <select
               value={assignedToFilter}
               onChange={(e) => {
                 setAssignedToFilter(e.target.value);
                 setCurrentPage(1);
               }}
-              style={{
-                width: "100%",
-                height: "42px",
-                padding: "8px 36px 8px 10px",
-                border:
-                  assignedToFilter !== "all"
-                    ? "1px solid #84caff"
-                    : "1px solid #d7deea",
-                borderRadius: "10px",
-                fontSize: "14px",
-                background: assignedToFilter !== "all" ? "#eff6ff" : "white",
-                color: assignedToFilter !== "all" ? "#1d4ed8" : "#374151",
-                cursor: "pointer",
-                appearance: "none" as const,
-                WebkitAppearance: "none" as const,
-                fontWeight: assignedToFilter !== "all" ? 500 : 400,
-                outline: "none",
-                boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
-              }}
+              className={`w-full h-10 pl-3 pr-10 border rounded-xl text-sm cursor-pointer appearance-none bg-white outline-none shadow-sm transition-all focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 ${
+                assignedToFilter !== "all"
+                  ? "border-primary-300 bg-primary-50/50 text-primary-700 font-medium"
+                  : "border-slate-200 text-slate-700 font-normal"
+              }`}
             >
               <option value="all">All Agents</option>
               <option value="unassigned">Unassigned</option>
@@ -2437,59 +2031,25 @@ const MyTickets: React.FC<MyTicketsProps> = ({
               ))}
             </select>
             <ChevronDownIcon
-              style={{
-                position: "absolute",
-                right: "12px",
-                top: "50%",
-                transform: "translateY(-50%)",
-                width: "13px",
-                height: "13px",
-                pointerEvents: "none",
-                color: assignedToFilter !== "all" ? "#1d4ed8" : "#6B7280",
-              }}
+              className={`absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none transition-colors ${
+                assignedToFilter !== "all" ? "text-primary-600" : "text-slate-400"
+              }`}
             />
           </div>
 
-          <div style={{ position: "relative" }}>
-            <span
-              style={{
-                position: "absolute",
-                top: "-9px",
-                left: "10px",
-                fontSize: "10px",
-                fontWeight: 700,
-                color: "#9ca3af",
-                background: "white",
-                padding: "0 4px",
-                zIndex: 1,
-                letterSpacing: "0.04em",
-                textTransform: "uppercase" as const,
-              }}
-            >
+          <div className="relative">
+            <span className="absolute -top-2 left-2.5 text-[9px] font-bold text-slate-400 bg-white px-1.5 z-10 tracking-wider uppercase font-sans">
               From
             </span>
             <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                height: "42px",
-                border: dateFromFilter
-                  ? "1px solid #84caff"
-                  : "1px solid #d7deea",
-                borderRadius: "10px",
-                padding: "0 10px",
-                background: dateFromFilter ? "#eff6ff" : "white",
-                boxShadow: "0 1px 3px rgba(0,0,0,.04)",
-                gap: "6px",
-              }}
+              className={`flex items-center h-10 border rounded-xl px-2.5 bg-white shadow-sm gap-1.5 transition-all focus-within:border-primary-500 focus-within:ring-2 focus-within:ring-primary-500/20 ${
+                dateFromFilter ? "border-primary-300 bg-primary-50/30" : "border-slate-200"
+              }`}
             >
               <CalendarDaysIcon
-                style={{
-                  width: "14px",
-                  height: "14px",
-                  color: dateFromFilter ? "#1d4ed8" : "#9CA3AF",
-                  flexShrink: 0,
-                }}
+                className={`w-3.5 h-3.5 flex-shrink-0 transition-colors ${
+                  dateFromFilter ? "text-primary-600" : "text-slate-400"
+                }`}
               />
               <input
                 type="date"
@@ -2498,76 +2058,34 @@ const MyTickets: React.FC<MyTicketsProps> = ({
                   setDateFromFilter(e.target.value);
                   setCurrentPage(1);
                 }}
-                style={{
-                  border: "none",
-                  background: "transparent",
-                  fontSize: "13px",
-                  outline: "none",
-                  color: dateFromFilter ? "#1d4ed8" : "#6B7280",
-                  width: "100%",
-                  cursor: "pointer",
-                  fontWeight: dateFromFilter ? 500 : 400,
-                }}
+                className={`border-none bg-transparent text-xs outline-none w-full cursor-pointer transition-colors ${
+                  dateFromFilter ? "text-primary-700 font-medium" : "text-slate-500 font-normal"
+                }`}
               />
               {dateFromFilter && (
                 <button
                   onClick={() => setDateFromFilter("")}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    color: "#9CA3AF",
-                    padding: 0,
-                    display: "flex",
-                    flexShrink: 0,
-                  }}
+                  className="bg-transparent border-none cursor-pointer text-slate-400 p-0 flex flex-shrink-0 hover:text-slate-600"
                 >
-                  <XMarkIcon style={{ width: "12px", height: "12px" }} />
+                  <XMarkIcon className="w-3 h-3" />
                 </button>
               )}
             </div>
           </div>
 
-          <div style={{ position: "relative" }}>
-            <span
-              style={{
-                position: "absolute",
-                top: "-9px",
-                left: "10px",
-                fontSize: "10px",
-                fontWeight: 700,
-                color: "#9ca3af",
-                background: "white",
-                padding: "0 4px",
-                zIndex: 1,
-                letterSpacing: "0.04em",
-                textTransform: "uppercase" as const,
-              }}
-            >
+          <div className="relative">
+            <span className="absolute -top-2 left-2.5 text-[9px] font-bold text-slate-400 bg-white px-1.5 z-10 tracking-wider uppercase font-sans">
               To
             </span>
             <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                height: "42px",
-                border: dateToFilter
-                  ? "1px solid #84caff"
-                  : "1px solid #d7deea",
-                borderRadius: "10px",
-                padding: "0 10px",
-                background: dateToFilter ? "#eff6ff" : "white",
-                boxShadow: "0 1px 3px rgba(0,0,0,.04)",
-                gap: "6px",
-              }}
+              className={`flex items-center h-10 border rounded-xl px-2.5 bg-white shadow-sm gap-1.5 transition-all focus-within:border-primary-500 focus-within:ring-2 focus-within:ring-primary-500/20 ${
+                dateToFilter ? "border-primary-300 bg-primary-50/30" : "border-slate-200"
+              }`}
             >
               <CalendarDaysIcon
-                style={{
-                  width: "14px",
-                  height: "14px",
-                  color: dateToFilter ? "#1d4ed8" : "#9CA3AF",
-                  flexShrink: 0,
-                }}
+                className={`w-3.5 h-3.5 flex-shrink-0 transition-colors ${
+                  dateToFilter ? "text-primary-600" : "text-slate-400"
+                }`}
               />
               <input
                 type="date"
@@ -2576,39 +2094,24 @@ const MyTickets: React.FC<MyTicketsProps> = ({
                   setDateToFilter(e.target.value);
                   setCurrentPage(1);
                 }}
-                style={{
-                  border: "none",
-                  background: "transparent",
-                  fontSize: "13px",
-                  outline: "none",
-                  color: dateToFilter ? "#1d4ed8" : "#6B7280",
-                  width: "100%",
-                  cursor: "pointer",
-                  fontWeight: dateToFilter ? 500 : 400,
-                }}
+                className={`border-none bg-transparent text-xs outline-none w-full cursor-pointer transition-colors ${
+                  dateToFilter ? "text-primary-700 font-medium" : "text-slate-500 font-normal"
+                }`}
               />
               {dateToFilter && (
                 <button
                   onClick={() => setDateToFilter("")}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    color: "#9CA3AF",
-                    padding: 0,
-                    display: "flex",
-                    flexShrink: 0,
-                  }}
+                  className="bg-transparent border-none cursor-pointer text-slate-400 p-0 flex flex-shrink-0 hover:text-slate-600"
                 >
-                  <XMarkIcon style={{ width: "12px", height: "12px" }} />
+                  <XMarkIcon className="w-3 h-3" />
                 </button>
               )}
             </div>
           </div>
         </div>
-        <div style={{ marginTop: "8px", fontSize: "11px", color: "#6B7280" }}>
+        <div className="mt-2 text-[10px] text-slate-500 font-sans">
           Filter order:{" "}
-          <strong style={{ fontWeight: 600, color: "#374151" }}>Project</strong>{" "}
+          <strong className="font-semibold text-slate-700">Project</strong>{" "}
           → Status → Priority → Assignee → Date range
         </div>
 
@@ -2616,15 +2119,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({
         {filterableColumnKeys.filter(
           (k) => k.startsWith("field_") || k.startsWith("hierarchy_level_"),
         ).length > 0 && (
-          <div
-            style={{
-              marginTop: "12px",
-              display: "flex",
-              flexWrap: "wrap",
-              gap: "10px",
-              alignItems: "center",
-            }}
-          >
+          <div className="mt-3 flex flex-wrap gap-2.5 items-center">
             {filterableColumnKeys
               .filter(
                 (k) =>
@@ -2662,38 +2157,14 @@ const MyTickets: React.FC<MyTicketsProps> = ({
                 const currentVal = customFieldFilters[colKey] || "";
 
                 return (
-                  <div key={colKey} style={{ position: "relative" }}>
-                    <span
-                      style={{
-                        position: "absolute",
-                        top: "-9px",
-                        left: "10px",
-                        fontSize: "10px",
-                        fontWeight: 700,
-                        color: "#9ca3af",
-                        background: "white",
-                        padding: "0 4px",
-                        zIndex: 1,
-                        letterSpacing: "0.04em",
-                        textTransform: "uppercase" as const,
-                      }}
-                    >
+                  <div key={colKey} className="relative">
+                    <span className="absolute -top-2 left-2.5 text-[9px] font-bold text-slate-400 bg-white px-1.5 z-10 tracking-wider uppercase font-sans">
                       {label}
                     </span>
                     <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        height: "38px",
-                        border: currentVal
-                          ? "1px solid #84caff"
-                          : "1px solid #d7deea",
-                        borderRadius: "10px",
-                        padding: "0 10px",
-                        background: currentVal ? "#eff6ff" : "white",
-                        gap: "6px",
-                        minWidth: "150px",
-                      }}
+                      className={`flex items-center h-9 border rounded-xl px-2.5 shadow-sm gap-1.5 min-w-[150px] transition-all focus-within:border-primary-500 focus-within:ring-2 focus-within:ring-primary-500/20 ${
+                        currentVal ? "border-primary-300 bg-primary-50/30" : "border-slate-200 bg-white"
+                      }`}
                     >
                       {hasOptions ? (
                         <select
@@ -2705,16 +2176,9 @@ const MyTickets: React.FC<MyTicketsProps> = ({
                             }));
                             setCurrentPage(1);
                           }}
-                          style={{
-                            border: "none",
-                            background: "transparent",
-                            fontSize: "13px",
-                            outline: "none",
-                            color: currentVal ? "#1d4ed8" : "#6B7280",
-                            width: "100%",
-                            cursor: "pointer",
-                            fontWeight: currentVal ? 500 : 400,
-                          }}
+                          className={`border-none bg-transparent text-xs outline-none w-full cursor-pointer font-sans transition-colors ${
+                            currentVal ? "text-primary-700 font-medium" : "text-slate-500 font-normal"
+                          }`}
                         >
                           <option value="">All</option>
                           {fieldDef!.options!.map((opt) => (
@@ -2735,15 +2199,9 @@ const MyTickets: React.FC<MyTicketsProps> = ({
                             }));
                             setCurrentPage(1);
                           }}
-                          style={{
-                            border: "none",
-                            background: "transparent",
-                            fontSize: "13px",
-                            outline: "none",
-                            color: currentVal ? "#1d4ed8" : "#6B7280",
-                            width: "100%",
-                            fontWeight: currentVal ? 500 : 400,
-                          }}
+                          className={`border-none bg-transparent text-xs outline-none w-full font-sans transition-colors placeholder-slate-400 ${
+                            currentVal ? "text-primary-700 font-medium" : "text-slate-600 font-normal"
+                          }`}
                         />
                       )}
                       {currentVal && (
@@ -2755,19 +2213,9 @@ const MyTickets: React.FC<MyTicketsProps> = ({
                             }));
                             setCurrentPage(1);
                           }}
-                          style={{
-                            background: "none",
-                            border: "none",
-                            cursor: "pointer",
-                            color: "#9CA3AF",
-                            padding: 0,
-                            display: "flex",
-                            flexShrink: 0,
-                          }}
+                          className="bg-transparent border-none cursor-pointer text-slate-400 p-0 flex flex-shrink-0 hover:text-slate-600"
                         >
-                          <XMarkIcon
-                            style={{ width: "12px", height: "12px" }}
-                          />
+                          <XMarkIcon className="w-3 h-3" />
                         </button>
                       )}
                     </div>
@@ -2779,17 +2227,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({
       </div>
 
       {bulkMergeStep === "idle" && bulkError && (
-        <div
-          style={{
-            background: "#FEF2F2",
-            border: "1px solid #FECACA",
-            borderRadius: "8px",
-            padding: "10px 14px",
-            color: "#B91C1C",
-            fontSize: "13px",
-            marginBottom: "12px",
-          }}
-        >
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3.5 text-red-700 text-sm mb-3 font-sans">
           {bulkError}
         </div>
       )}
@@ -2804,17 +2242,8 @@ const MyTickets: React.FC<MyTicketsProps> = ({
         return (
           <>
             {filteredTickets.length === 0 ? (
-              <div
-                style={{
-                  background: "white",
-                  borderRadius: "10px",
-                  padding: "48px",
-                  textAlign: "center",
-                  border: "1px solid #E4E7EC",
-                  boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-                }}
-              >
-                <p style={{ color: "#667085", margin: 0 }}>No queries found</p>
+              <div className="bg-white border border-slate-200 rounded-2xl py-12 px-6 text-center shadow-sm">
+                <p className="text-slate-500 text-sm m-0 font-sans">No queries found</p>
               </div>
             ) : (
               <>
@@ -2824,20 +2253,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({
                       setPendingNewTickets(0);
                       fetchMyTickets();
                     }}
-                    style={{
-                      background: "#EFF6FF",
-                      border: "1.5px solid #BFDBFE",
-                      borderRadius: "8px",
-                      padding: "10px 16px",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      cursor: "pointer",
-                      fontSize: "14px",
-                      color: "#1D4ED8",
-                      fontWeight: 500,
-                      marginBottom: "10px",
-                    }}
+                    className="bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-2.5 flex items-center gap-2 cursor-pointer text-sm text-indigo-700 font-semibold mb-4 transition-all hover:bg-indigo-100/70 font-sans"
                   >
                     <span>🔔</span>
                     <span>
@@ -2848,22 +2264,11 @@ const MyTickets: React.FC<MyTicketsProps> = ({
                   </div>
                 )}
 
-                <div
-                  style={{
-                    background: "#FFFFFF",
-                    borderRadius: "10px",
-                    border: "1px solid #E4E7EC",
-                    boxShadow: "0 1px 3px rgba(0,0,0,.06)",
-                    overflowX: "auto",
-                    WebkitOverflowScrolling: "touch",
-                  }}
-                >
-                  <div style={{ overflowX: "auto" }}>
+                <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                  <div className="overflow-x-auto scrollbar-thin">
                     <table
+                      className="w-full border-collapse border-spacing-0"
                       style={{
-                        width: "100%",
-                        borderCollapse: "separate",
-                        borderSpacing: 0,
                         minWidth: `${Math.max(
                           (tableDataColumnCount +
                             (canMerge || canAssign ? 1 : 0) +
@@ -2874,14 +2279,9 @@ const MyTickets: React.FC<MyTicketsProps> = ({
                       }}
                     >
                       <thead>
-                        <tr
-                          style={{
-                            background: "#F9FAFB",
-                            borderBottom: "1px solid #E4E7EC",
-                          }}
-                        >
+                        <tr className="bg-slate-50/75 border-b border-slate-200/80">
                           {(canMerge || canAssign) && (
-                            <th style={{ padding: "12px 12px", width: 36 }}>
+                            <th className="p-3 w-9 text-center">
                               <input
                                 type="checkbox"
                                 checked={
@@ -2890,63 +2290,29 @@ const MyTickets: React.FC<MyTicketsProps> = ({
                                     filteredTickets.length
                                 }
                                 onChange={toggleSelectAll}
-                                style={{
-                                  width: "16px",
-                                  height: "16px",
-                                  cursor: "pointer",
-                                }}
+                                className="w-4 h-4 rounded text-primary-600 border-slate-300 focus:ring-primary-500 cursor-pointer"
                               />
                             </th>
                           )}
                           {visibleColumnDefs.map((col) => (
                             <React.Fragment key={`header-${col.key}`}>
-                              <th
-                                style={{
-                                  padding: "12px 16px",
-                                  fontSize: 12,
-                                  fontWeight: 600,
-                                  color: "#667085",
-                                  textTransform: "uppercase",
-                                  letterSpacing: "0.5px",
-                                  textAlign: "left",
-                                }}
-                              >
+                              <th className="px-4 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider text-left font-sans">
                                 {col.label}
                               </th>
                               {col.key === "requestedBy" &&
                                 showSenderEmailColumn && (
-                                  <th
-                                    style={{
-                                      padding: "12px 16px",
-                                      fontSize: 12,
-                                      fontWeight: 600,
-                                      color: "#667085",
-                                      textTransform: "uppercase",
-                                      letterSpacing: "0.5px",
-                                      textAlign: "left",
-                                    }}
-                                  >
+                                  <th className="px-4 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider text-left font-sans">
                                     Sender Email
                                   </th>
                                 )}
                             </React.Fragment>
                           ))}
-                          <th
-                            style={{
-                              padding: "12px 16px",
-                              fontSize: 12,
-                              fontWeight: 600,
-                              color: "#667085",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.5px",
-                              textAlign: "right",
-                            }}
-                          >
+                          <th className="px-4 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider text-right font-sans">
                             Action
                           </th>
                         </tr>
                       </thead>
-                      <tbody>
+                      <tbody className="divide-y divide-slate-100">
                         {paginatedTickets.map((ticket) => {
                           const isSelected = selectedTicketIds.has(ticket._id);
                           const isHighlighted = isStudentView
@@ -2982,36 +2348,17 @@ const MyTickets: React.FC<MyTicketsProps> = ({
                             <tr
                               key={ticket._id}
                               onClick={() => handleTicketClick(ticket._id)}
-                              style={{
-                                background: isSelected
-                                  ? "#EFF6FF"
+                              className={`border-b border-slate-100 cursor-pointer transition-colors ${
+                                isSelected
+                                  ? "bg-indigo-50/50 hover:bg-indigo-50"
                                   : isHighlighted
-                                    ? "#FFFBEB"
-                                    : "#FFFFFF",
-                                borderBottom: "1px solid #F2F4F7",
-                                cursor: "pointer",
-                                borderLeft: isHighlighted
-                                  ? "3px solid #F59E0B"
-                                  : "3px solid transparent",
-                              }}
-                              onMouseEnter={(e) => {
-                                if (!isSelected && !isHighlighted) {
-                                  e.currentTarget.style.background = "#F9FAFB";
-                                }
-                              }}
-                              onMouseLeave={(e) => {
-                                if (!isSelected && !isHighlighted) {
-                                  e.currentTarget.style.background = "#FFFFFF";
-                                }
-                              }}
+                                    ? "bg-slate-50/70 hover:bg-slate-100 border-l-4 border-primary-500"
+                                    : "bg-white hover:bg-slate-50 border-l-4 border-transparent"
+                              }`}
                             >
                               {(canMerge || canAssign) && (
                                 <td
-                                  style={{
-                                    padding: isMobile
-                                      ? "10px 10px"
-                                      : "12px 12px",
-                                  }}
+                                  className="p-3 text-center"
                                   onClick={(e) => e.stopPropagation()}
                                 >
                                   <input
@@ -3020,11 +2367,7 @@ const MyTickets: React.FC<MyTicketsProps> = ({
                                     onChange={() =>
                                       toggleTicketSelect(ticket._id)
                                     }
-                                    style={{
-                                      width: "16px",
-                                      height: "16px",
-                                      cursor: "pointer",
-                                    }}
+                                    className="w-4 h-4 rounded text-primary-600 border-slate-300 focus:ring-primary-500 cursor-pointer"
                                   />
                                 </td>
                               )}
@@ -3039,41 +2382,25 @@ const MyTickets: React.FC<MyTicketsProps> = ({
                                   )}
                                   {col.key === "requestedBy" &&
                                     showSenderEmailColumn && (
-                                      <td
-                                        style={{
-                                          padding: isMobile
-                                            ? "10px 12px"
-                                            : "12px 16px",
-                                          fontSize: 13,
-                                          color: "#344054",
-                                        }}
-                                      >
+                                      <td className="px-4 py-3 sm:px-6 text-sm text-slate-600 font-sans">
                                         {ticket.submissionSource === "email" &&
                                         ticket.sourceEmail ? (
                                           <a
                                             href={`mailto:${ticket.sourceEmail}`}
                                             onClick={(e) => e.stopPropagation()}
-                                            style={{
-                                              color: "#175CD3",
-                                              textDecoration: "none",
-                                            }}
+                                            className="text-primary-600 hover:underline"
                                           >
                                             {ticket.sourceEmail}
                                           </a>
                                         ) : (
-                                          <span style={{ color: "#98A2B3" }}>
-                                            -
-                                          </span>
+                                          <span className="text-slate-300">-</span>
                                         )}
                                       </td>
                                     )}
                                 </React.Fragment>
                               ))}
                               <td
-                                style={{
-                                  padding: isMobile ? "10px 12px" : "12px 16px",
-                                  textAlign: "right",
-                                }}
+                                className="px-4 py-3 sm:px-6 text-right"
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 {canMerge && !ticket.isMerged ? (
@@ -3082,33 +2409,13 @@ const MyTickets: React.FC<MyTicketsProps> = ({
                                       setSelectedTicket(ticket);
                                       setShowMergeModal(true);
                                     }}
-                                    style={{
-                                      display: "inline-flex",
-                                      alignItems: "center",
-                                      gap: "6px",
-                                      padding: isMobile
-                                        ? "6px 8px"
-                                        : "6px 10px",
-                                      background: "#3B82F6",
-                                      color: "white",
-                                      border: "none",
-                                      borderRadius: "8px",
-                                      fontSize: "12px",
-                                      fontWeight: 600,
-                                      cursor: "pointer",
-                                    }}
+                                    className="inline-flex items-center gap-1 py-1 px-2.5 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg text-xs transition-colors shadow-sm active:scale-95"
                                   >
-                                    <ArrowsPointingInIcon
-                                      style={{ width: "14px", height: "14px" }}
-                                    />
-                                    {isMobile ? "" : "Merge"}
+                                    <ArrowsPointingInIcon className="w-3.5 h-3.5" />
+                                    <span>Merge</span>
                                   </button>
                                 ) : (
-                                  <span
-                                    style={{ color: "#98A2B3", fontSize: 12 }}
-                                  >
-                                    -
-                                  </span>
+                                  <span className="text-slate-300 text-xs">-</span>
                                 )}
                               </td>
                             </tr>
@@ -3119,42 +2426,20 @@ const MyTickets: React.FC<MyTicketsProps> = ({
                   </div>
                 </div>
 
-                <div
-                  style={{
-                    marginTop: "16px",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: isMobile ? "flex-start" : "center",
-                    flexDirection: isMobile ? "column" : "row",
-                    gap: isMobile ? "10px" : "0",
-                    fontSize: "14px",
-                    color: "#6B7280",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      width: isMobile ? "100%" : "auto",
-                      justifyContent: isMobile ? "space-between" : "flex-start",
-                    }}
-                  >
+                <div className="mt-4 flex flex-col sm:flex-row justify-between items-center gap-4 text-sm text-slate-500 font-sans">
+                  <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-start">
                     <button
                       onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                       disabled={currentPage <= 1}
-                      style={{
-                        padding: "6px 12px",
-                        borderRadius: "6px",
-                        border: "1px solid #D1D5DB",
-                        background: currentPage <= 1 ? "#F3F4F6" : "white",
-                        color: currentPage <= 1 ? "#9CA3AF" : "#374151",
-                        cursor: currentPage <= 1 ? "not-allowed" : "pointer",
-                      }}
+                      className={`px-3 py-1.5 rounded-xl border border-slate-200 text-sm font-semibold transition-all ${
+                        currentPage <= 1
+                          ? "bg-slate-50 text-slate-400 cursor-not-allowed border-slate-100"
+                          : "bg-white text-slate-700 hover:bg-slate-50"
+                      }`}
                     >
                       {isMobile ? "←" : "← Previous"}
                     </button>
-                    <span style={{ padding: "0 12px" }}>
+                    <span className="px-3">
                       Page {currentPage} of {Math.max(1, totalPages)}
                     </span>
                     <button
@@ -3162,22 +2447,16 @@ const MyTickets: React.FC<MyTicketsProps> = ({
                         setCurrentPage((p) => Math.min(totalPages, p + 1))
                       }
                       disabled={currentPage >= totalPages}
-                      style={{
-                        padding: "6px 12px",
-                        borderRadius: "6px",
-                        border: "1px solid #D1D5DB",
-                        background:
-                          currentPage >= totalPages ? "#F3F4F6" : "white",
-                        color:
-                          currentPage >= totalPages ? "#9CA3AF" : "#374151",
-                        cursor:
-                          currentPage >= totalPages ? "not-allowed" : "pointer",
-                      }}
+                      className={`px-3 py-1.5 rounded-xl border border-slate-200 text-sm font-semibold transition-all ${
+                        currentPage >= totalPages
+                          ? "bg-slate-50 text-slate-400 cursor-not-allowed border-slate-100"
+                          : "bg-white text-slate-700 hover:bg-slate-50"
+                      }`}
                     >
                       {isMobile ? "→" : "Next →"}
                     </button>
                   </div>
-                  <div style={{ width: isMobile ? "100%" : "auto" }}>
+                  <div className="w-full sm:w-auto text-center sm:text-right text-slate-500">
                     Showing{" "}
                     {filteredTickets.length > 0
                       ? (currentPage - 1) * pageSize + 1
@@ -3194,40 +2473,12 @@ const MyTickets: React.FC<MyTicketsProps> = ({
       })()}
 
       {(canMerge || canAssign) && selectedTicketIds.size > 0 && (
-        <div
-          style={{
-            position: "fixed",
-            bottom: isMobile ? "16px" : "28px",
-            left: "50%",
-            transform: "translateX(-50%)",
-            background: "#1E293B",
-            color: "white",
-            borderRadius: "12px",
-            padding: isMobile ? "10px 12px" : "12px 20px",
-            display: "flex",
-            alignItems: "center",
-            gap: isMobile ? "8px" : "12px",
-            flexWrap: "wrap",
-            justifyContent: "center",
-            boxShadow: "0 8px 32px rgba(0,0,0,.3)",
-            zIndex: 200,
-            whiteSpace: isMobile ? "normal" : "nowrap",
-            width: isMobile ? "calc(100% - 20px)" : "auto",
-            maxWidth: isMobile ? "580px" : "none",
-          }}
-        >
-          <span style={{ fontWeight: 600, fontSize: "14px" }}>
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white rounded-2xl py-3 px-5 flex items-center gap-3 shadow-2xl z-50 animate-in fade-in slide-in-from-bottom-4 duration-300 w-[calc(100%-24px)] max-w-lg sm:w-auto sm:max-w-none flex-wrap justify-center font-sans">
+          <span className="font-semibold text-sm">
             {selectedTicketIds.size} ticket
             {selectedTicketIds.size !== 1 ? "s" : ""} selected
           </span>
-          <div
-            style={{
-              width: "1px",
-              height: "20px",
-              background: "rgba(255,255,255,.2)",
-              display: isMobile ? "none" : "block",
-            }}
-          />
+          <div className="hidden sm:block w-px h-5 bg-white/20" />
           {selectedTicketIds.size >= 2 && (
             <button
               onClick={() => {
@@ -3250,40 +2501,16 @@ const MyTickets: React.FC<MyTicketsProps> = ({
                 setBulkMergePrimaryId("");
                 setBulkError("");
               }}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "6px 12px",
-                background: "rgba(255,255,255,.18)",
-                color: "white",
-                border: "1px solid rgba(255,255,255,.35)",
-                borderRadius: "8px",
-                cursor: "pointer",
-                fontSize: "13px",
-                fontWeight: 600,
-              }}
+              className="inline-flex items-center gap-1.5 py-1.5 px-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-xs font-semibold text-white transition-all active:scale-95"
             >
-              <ArrowsPointingInIcon style={{ width: "14px", height: "14px" }} />
+              <ArrowsPointingInIcon className="w-3.5 h-3.5" />
               Merge Selected
             </button>
           )}
           {canAssign && (
             <button
               onClick={handleOpenBulkAssignModal}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "6px 12px",
-                background: "rgba(14,116,144,.85)",
-                color: "white",
-                border: "1px solid rgba(14,116,144,.45)",
-                borderRadius: "8px",
-                cursor: "pointer",
-                fontSize: "13px",
-                fontWeight: 600,
-              }}
+              className="inline-flex items-center gap-1.5 py-1.5 px-3 bg-cyan-700 hover:bg-cyan-800 border border-cyan-600 rounded-xl text-xs font-semibold text-white transition-all active:scale-95"
             >
               Assign Selected
             </button>
@@ -3293,20 +2520,9 @@ const MyTickets: React.FC<MyTicketsProps> = ({
               setSelectedTicketIds(new Set());
               setBulkError("");
             }}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "4px",
-              padding: "6px 10px",
-              background: "transparent",
-              border: "1px solid rgba(255,255,255,.28)",
-              borderRadius: "8px",
-              color: "#E5E7EB",
-              cursor: "pointer",
-              fontSize: "13px",
-            }}
+            className="inline-flex items-center gap-1 py-1.5 px-2.5 bg-transparent border border-white/25 rounded-xl text-xs text-slate-300 hover:text-white transition-colors"
           >
-            <XMarkIcon style={{ width: "12px", height: "12px" }} />
+            <XMarkIcon className="w-3 h-3" />
             Clear
           </button>
         </div>

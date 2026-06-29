@@ -2,8 +2,8 @@
  * Lead (admission enquiry) routes. Phase 4.
  */
 import { Router } from "express";
-import { authMiddleware } from "../middleware/auth";
-import { checkPermission } from "../middleware/permissions";
+import { authMiddleware } from "../../../middleware/auth";
+import { checkPermission } from "../../../middleware/permissions";
 import {
   listLeads,
   createLead,

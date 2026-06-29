@@ -34,7 +34,7 @@ const TeamBreakdown: React.FC<TeamBreakdownProps> = ({
 }) => {
   if (loading) {
     return (
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
         <div className="animate-pulse flex space-x-4">
           <div className="flex-1 space-y-4 py-1">
             <div className="h-4 bg-gray-200 rounded w-3/4"></div>
@@ -50,7 +50,7 @@ const TeamBreakdown: React.FC<TeamBreakdownProps> = ({
 
   if (!teamMembers || teamMembers.length === 0) {
     return (
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
         <div className="text-center text-gray-500">
           <UserIcon className="h-12 w-12 mx-auto mb-3 text-gray-300" />
           <p className="text-sm">No team members found</p>
@@ -60,7 +60,7 @@ const TeamBreakdown: React.FC<TeamBreakdownProps> = ({
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
       {/* Header */}
       <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
         <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
@@ -117,7 +117,7 @@ const TeamBreakdown: React.FC<TeamBreakdownProps> = ({
                 {/* Team Member Info */}
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center">
-                    <div className="flex-shrink-0 h-10 w-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+                    <div className="flex-shrink-0 h-10 w-10 bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-full flex items-center justify-center">
                       <span className="text-white font-semibold text-sm">
                         {member.name.charAt(0).toUpperCase()}
                       </span>

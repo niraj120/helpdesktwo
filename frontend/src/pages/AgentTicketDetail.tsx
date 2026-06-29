@@ -141,13 +141,13 @@ interface Ticket {
     studentPhone?: string;
     projectId?: string;
     centerId?:
-      | string
-      | {
-          _id?: string;
-          centerName?: string;
-          city?: string;
-          state?: string;
-        };
+    | string
+    | {
+      _id?: string;
+      centerName?: string;
+      city?: string;
+      state?: string;
+    };
     customFields?: Record<string, any>;
   };
   formSchemaSnapshot?: Array<{
@@ -170,21 +170,21 @@ interface Ticket {
   currentEscalationLevelNumber?: number;
   // Assignment tracking (Phase 1 — US-015)
   assignedVia?:
-    | "manual"
-    | "round-robin"
-    | "by-role"
-    | "by-user"
-    | "condition-based"
-    | "fallback"
-    | null;
+  | "manual"
+  | "round-robin"
+  | "by-role"
+  | "by-user"
+  | "condition-based"
+  | "fallback"
+  | null;
   /** US-ASSIGN-002: category rule that caused this assignment */
   assignedViaCategoryId?: string | { _id: string; name: string } | null;
   assignmentAttempts?: number;
   // Merge tracking fields
   isMerged?: boolean;
   mergedInto?:
-    | string
-    | { _id: string; ticketNumber: string; subject?: string; title?: string };
+  | string
+  | { _id: string; ticketNumber: string; subject?: string; title?: string };
   // US-ESC-009: SLA tracking fields for countdown pill
   roleLevelSLA?: {
     startedAt?: string;
@@ -607,7 +607,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
     from: string;
     to: string;
     onConfirm: () => void;
-  }>({ open: false, field: "", from: "", to: "", onConfirm: () => {} });
+  }>({ open: false, field: "", from: "", to: "", onConfirm: () => { } });
 
   // Closing-remark modal state (shown when a status has requireClosingRemark=true)
   const [remarkModal, setRemarkModal] = useState<{
@@ -1146,12 +1146,12 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
 
         const apiPriorities = Array.isArray(ticketConfig.allowedPriorities)
           ? ticketConfig.allowedPriorities
-              .map((p: any) =>
-                String(p || "")
-                  .trim()
-                  .toUpperCase(),
-              )
-              .filter((p: string) => p.length > 0)
+            .map((p: any) =>
+              String(p || "")
+                .trim()
+                .toUpperCase(),
+            )
+            .filter((p: string) => p.length > 0)
           : [];
 
         const currentTicketPriority = String(ticket?.priority || "")
@@ -2279,7 +2279,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
 
               {/* Latest Reply and Internal Note - Always Visible */}
               {(ticket.threads && ticket.threads.length > 0) ||
-              (ticket.internalNotes && ticket.internalNotes.length > 0) ? (
+                (ticket.internalNotes && ticket.internalNotes.length > 0) ? (
                 <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">
                     Recent Activity
@@ -2310,15 +2310,14 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                           </div>
                           <div className="bg-blue-50 rounded-lg p-3">
                             <p className="text-xs font-medium text-gray-700 mb-1">
-                              {`${latestReply.createdBy?.firstName ?? ""} ${
-                                latestReply.createdBy?.lastName ?? ""
-                              }`.trim() || "User"}
+                              {`${latestReply.createdBy?.firstName ?? ""} ${latestReply.createdBy?.lastName ?? ""
+                                }`.trim() || "User"}
                               {latestReply.createdBy?.role && (
                                 <span className="text-gray-500">
                                   {" "}
                                   •{" "}
                                   {typeof latestReply.createdBy.role ===
-                                  "string"
+                                    "string"
                                     ? latestReply.createdBy.role
                                     : (latestReply.createdBy.role as any).name}
                                 </span>
@@ -2385,9 +2384,8 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                           </div>
                           <div className="bg-yellow-50 rounded-lg p-3">
                             <p className="text-xs font-medium text-gray-700 mb-1">
-                              {`${latestNote.createdBy?.firstName ?? ""} ${
-                                latestNote.createdBy?.lastName ?? ""
-                              }`.trim() || "User"}
+                              {`${latestNote.createdBy?.firstName ?? ""} ${latestNote.createdBy?.lastName ?? ""
+                                }`.trim() || "User"}
                             </p>
                             <p className="text-sm text-gray-800 whitespace-pre-wrap line-clamp-3">
                               {latestNote.note}
@@ -2411,33 +2409,30 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                   <div className="flex space-x-8 px-6">
                     <button
                       onClick={() => setActiveTab("replies")}
-                      className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                        activeTab === "replies"
+                      className={`py-4 px-1 border-b-2 font-medium text-sm ${activeTab === "replies"
                           ? "border-blue-500 text-blue-600"
                           : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                      }`}
+                        }`}
                     >
                       <ChatBubbleLeftRightIcon className="h-5 w-5 inline-block mr-2" />
                       Replies
                     </button>
                     <button
                       onClick={() => setActiveTab("notes")}
-                      className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                        activeTab === "notes"
+                      className={`py-4 px-1 border-b-2 font-medium text-sm ${activeTab === "notes"
                           ? "border-blue-500 text-blue-600"
                           : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                      }`}
+                        }`}
                     >
                       <DocumentTextIcon className="h-5 w-5 inline-block mr-2" />
                       Internal Notes
                     </button>
                     <button
                       onClick={() => setActiveTab("history")}
-                      className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                        activeTab === "history"
+                      className={`py-4 px-1 border-b-2 font-medium text-sm ${activeTab === "history"
                           ? "border-blue-500 text-blue-600"
                           : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                      }`}
+                        }`}
                     >
                       <ClockIcon className="h-5 w-5 inline-block mr-2" />
                       History
@@ -2445,11 +2440,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                     {/* Audit tab — unified activity timeline */}
                     <button
                       onClick={() => setActiveTab("audit")}
-                      className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                        activeTab === "audit"
+                      className={`py-4 px-1 border-b-2 font-medium text-sm ${activeTab === "audit"
                           ? "border-blue-500 text-blue-600"
                           : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                      }`}
+                        }`}
                     >
                       <ListBulletIcon className="h-5 w-5 inline-block mr-2" />
                       Audit
@@ -2459,11 +2453,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                     {ticket.submissionSource === "email" && (
                       <button
                         onClick={() => setActiveTab("emails")}
-                        className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                          activeTab === "emails"
+                        className={`py-4 px-1 border-b-2 font-medium text-sm ${activeTab === "emails"
                             ? "border-blue-500 text-blue-600"
                             : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                        }`}
+                          }`}
                       >
                         <svg
                           className="h-5 w-5 inline-block mr-2"
@@ -2503,21 +2496,21 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                       {/* Closed Ticket Notice */}
                       {(String(ticket.status) === "5" ||
                         String(ticket.status).toLowerCase() === "closed") && (
-                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                          <div className="flex items-start">
-                            <ExclamationTriangleIcon className="h-5 w-5 text-yellow-600 mr-2 flex-shrink-0" />
-                            <div>
-                              <h4 className="text-sm font-semibold text-yellow-900">
-                                Query is Closed
-                              </h4>
-                              <p className="text-sm text-yellow-700 mt-1">
-                                This query is closed. To add a reply, please
-                                change the status to "Open" first.
-                              </p>
+                          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                            <div className="flex items-start">
+                              <ExclamationTriangleIcon className="h-5 w-5 text-yellow-600 mr-2 flex-shrink-0" />
+                              <div>
+                                <h4 className="text-sm font-semibold text-yellow-900">
+                                  Query is Closed
+                                </h4>
+                                <p className="text-sm text-yellow-700 mt-1">
+                                  This query is closed. To add a reply, please
+                                  change the status to "Open" first.
+                                </p>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      )}
+                        )}
 
                       {/* Reply Form (only if assigned to me / modify-any, and not closed) */}
                       {canModify &&
@@ -2525,99 +2518,99 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                           String(ticket.status) === "5" ||
                           String(ticket.status).toLowerCase() === "closed"
                         ) && (
-                        <form
-                          onSubmit={handleSubmitReply}
-                          className="space-y-4"
-                        >
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                              Add Reply
-                            </label>
-                            {replyDraftRestored && (
-                              <div className="text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 text-sm mb-2 flex items-center justify-between">
-                                <span>
-                                  📋 Draft restored — your unsent reply has been
-                                  loaded
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={dismissReplyDraftBanner}
-                                  className="ml-2 text-amber-500 hover:text-amber-700 font-bold"
-                                >
-                                  ✕
-                                </button>
-                              </div>
-                            )}
-                            {replyDraftStatus !== "idle" && (
-                              <div
-                                style={{
-                                  fontSize: 12,
-                                  marginBottom: 4,
-                                  color:
-                                    replyDraftStatus === "saved"
-                                      ? "#16a34a"
-                                      : replyDraftStatus === "saving"
-                                        ? "#2563eb"
-                                        : replyDraftStatus === "error"
-                                          ? "#dc2626"
-                                          : "#d97706",
-                                }}
-                              >
-                                {replyDraftStatus === "saving"
-                                  ? "⏳ Saving draft…"
-                                  : replyDraftStatus === "saved"
-                                    ? "✓ Draft saved"
-                                    : replyDraftStatus === "error"
-                                      ? "⚠ Failed to save draft"
-                                      : "● Unsaved changes"}
-                              </div>
-                            )}
-                            <textarea
-                              value={replyMessage}
-                              onChange={(e) => setReplyMessage(e.target.value)}
-                              rows={4}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                              placeholder="Type your reply here..."
-                              required
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                              Attachments (optional)
-                            </label>
-                            <input
-                              type="file"
-                              multiple
-                              onChange={(e) => {
-                                setReplyFiles(e.target.files);
-                                showFileUploadToast(e.target.files);
-                              }}
-                              className="w-full"
-                            />
-                          </div>
-
-                          <div className="flex justify-end">
-                            <button
-                              type="submit"
-                              disabled={isSubmittingReply}
-                              className="flex items-center space-x-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                              {isSubmittingReply ? (
-                                <>
-                                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                                  <span>Sending...</span>
-                                </>
-                              ) : (
-                                <>
-                                  <PaperAirplaneIcon className="h-5 w-5" />
-                                  <span>Send Reply</span>
-                                </>
+                          <form
+                            onSubmit={handleSubmitReply}
+                            className="space-y-4"
+                          >
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Add Reply
+                              </label>
+                              {replyDraftRestored && (
+                                <div className="text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 text-sm mb-2 flex items-center justify-between">
+                                  <span>
+                                    📋 Draft restored — your unsent reply has been
+                                    loaded
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={dismissReplyDraftBanner}
+                                    className="ml-2 text-amber-500 hover:text-amber-700 font-bold"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
                               )}
-                            </button>
-                          </div>
-                        </form>
-                      )}
+                              {replyDraftStatus !== "idle" && (
+                                <div
+                                  style={{
+                                    fontSize: 12,
+                                    marginBottom: 4,
+                                    color:
+                                      replyDraftStatus === "saved"
+                                        ? "#16a34a"
+                                        : replyDraftStatus === "saving"
+                                          ? "#2563eb"
+                                          : replyDraftStatus === "error"
+                                            ? "#dc2626"
+                                            : "#d97706",
+                                  }}
+                                >
+                                  {replyDraftStatus === "saving"
+                                    ? "⏳ Saving draft…"
+                                    : replyDraftStatus === "saved"
+                                      ? "✓ Draft saved"
+                                      : replyDraftStatus === "error"
+                                        ? "⚠ Failed to save draft"
+                                        : "● Unsaved changes"}
+                                </div>
+                              )}
+                              <textarea
+                                value={replyMessage}
+                                onChange={(e) => setReplyMessage(e.target.value)}
+                                rows={4}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                placeholder="Type your reply here..."
+                                required
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Attachments (optional)
+                              </label>
+                              <input
+                                type="file"
+                                multiple
+                                onChange={(e) => {
+                                  setReplyFiles(e.target.files);
+                                  showFileUploadToast(e.target.files);
+                                }}
+                                className="w-full"
+                              />
+                            </div>
+
+                            <div className="flex justify-end">
+                              <button
+                                type="submit"
+                                disabled={isSubmittingReply}
+                                className="flex items-center space-x-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {isSubmittingReply ? (
+                                  <>
+                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                    <span>Sending...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <PaperAirplaneIcon className="h-5 w-5" />
+                                    <span>Send Reply</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          </form>
+                        )}
 
                       {/* Combined Timeline - bifurcated: primary first, then merged secondary sections */}
                       {((ticket.comments && ticket.comments.length > 0) ||
@@ -2626,15 +2619,15 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                           // Merge all items into a unified list with type tag
                           type ConvItem =
                             | {
-                                kind: "comment";
-                                data: Comment;
-                                resolvedFrom: string | null;
-                              }
+                              kind: "comment";
+                              data: Comment;
+                              resolvedFrom: string | null;
+                            }
                             | {
-                                kind: "thread";
-                                data: Thread;
-                                resolvedFrom: string | null;
-                              };
+                              kind: "thread";
+                              data: Thread;
+                              resolvedFrom: string | null;
+                            };
 
                           // Build a lookup: threadId → ticketNumber from merged (secondary) tickets.
                           // Thread _id values are preserved during merge (via toObject() spread),
@@ -2887,7 +2880,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                                             <span className="ml-2 text-xs text-gray-500">
                                               (
                                               {typeof thread.createdBy.role ===
-                                              "string"
+                                                "string"
                                                 ? thread.createdBy.role
                                                 : thread.createdBy.role.name}
                                               )
@@ -3102,7 +3095,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                     <div className="space-y-6">
                       {/* Escalation History */}
                       {ticket.escalationHistory &&
-                      ticket.escalationHistory.length > 0 ? (
+                        ticket.escalationHistory.length > 0 ? (
                         <div className="space-y-3">
                           <div className="flex items-center justify-between">
                             <h3 className="text-sm font-medium text-gray-900">
@@ -3110,11 +3103,11 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                             </h3>
                             {(ticket.escalationMatrixName ||
                               escalationMatrix?.name) && (
-                              <span className="text-xs text-purple-700 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-full">
-                                {ticket.escalationMatrixName ||
-                                  escalationMatrix?.name}
-                              </span>
-                            )}
+                                <span className="text-xs text-purple-700 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-full">
+                                  {ticket.escalationMatrixName ||
+                                    escalationMatrix?.name}
+                                </span>
+                              )}
                           </div>
 
                           {/* Step indicator path */}
@@ -3133,21 +3126,20 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                                         ticket.currentEscalationLevelNumber;
                                       const isPast =
                                         ticket.currentEscalationLevelNumber !=
-                                          null &&
+                                        null &&
                                         level.levelNumber <
-                                          ticket.currentEscalationLevelNumber;
+                                        ticket.currentEscalationLevelNumber;
                                       return (
                                         <React.Fragment
                                           key={level._id || level.levelNumber}
                                         >
                                           <span
-                                            className={`inline-flex items-center px-2 py-1 rounded font-medium ${
-                                              isCurrent
+                                            className={`inline-flex items-center px-2 py-1 rounded font-medium ${isCurrent
                                                 ? "bg-orange-500 text-white"
                                                 : isPast
                                                   ? "bg-gray-300 text-gray-600 line-through"
                                                   : "bg-white border border-gray-300 text-gray-500"
-                                            }`}
+                                              }`}
                                           >
                                             L{level.levelNumber}
                                             <span className="ml-1 opacity-75">
@@ -3274,11 +3266,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                             return (
                               <div
                                 key={record._id}
-                                className={`p-4 border rounded-lg ${
-                                  index === ticket.escalationHistory!.length - 1
+                                className={`p-4 border rounded-lg ${index === ticket.escalationHistory!.length - 1
                                     ? "bg-orange-50 border-orange-400 ring-1 ring-orange-300"
                                     : "bg-orange-50 border-orange-200"
-                                }`}
+                                  }`}
                               >
                                 <div className="flex items-start space-x-3">
                                   <ArrowUpIcon className="h-5 w-5 text-orange-600 flex-shrink-0 mt-1" />
@@ -3294,11 +3285,11 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                                       <div className="flex items-center gap-1">
                                         {index ===
                                           ticket.escalationHistory!.length -
-                                            1 && (
-                                          <span className="text-xs font-medium text-orange-700 bg-orange-200 px-2 py-0.5 rounded-full">
-                                            Current
-                                          </span>
-                                        )}
+                                          1 && (
+                                            <span className="text-xs font-medium text-orange-700 bg-orange-200 px-2 py-0.5 rounded-full">
+                                              Current
+                                            </span>
+                                          )}
                                         <span className="text-xs font-medium text-orange-600 bg-orange-100 px-2 py-1 rounded">
                                           Level {index + 1}
                                         </span>
@@ -3357,7 +3348,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
 
                       {/* Change History */}
                       {ticket.changeHistory &&
-                      ticket.changeHistory.length > 0 ? (
+                        ticket.changeHistory.length > 0 ? (
                         <div className="space-y-3 mt-6">
                           <h3 className="text-sm font-medium text-gray-900">
                             Change History
@@ -3458,10 +3449,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                                             change.field,
                                             change.oldValue,
                                           ) || (
-                                            <span className="text-gray-400 italic">
-                                              Empty
-                                            </span>
-                                          )}
+                                              <span className="text-gray-400 italic">
+                                                Empty
+                                              </span>
+                                            )}
                                         </p>
                                       </div>
                                       <div>
@@ -3471,10 +3462,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                                             change.field,
                                             change.newValue,
                                           ) || (
-                                            <span className="text-gray-400 italic">
-                                              Empty
-                                            </span>
-                                          )}
+                                              <span className="text-gray-400 italic">
+                                                Empty
+                                              </span>
+                                            )}
                                         </p>
                                       </div>
                                     </div>
@@ -3870,11 +3861,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                               return (
                                 <div
                                   key={email._id}
-                                  className={`relative border-l-4 pl-6 pr-4 py-4 rounded-r-lg ${
-                                    isIncoming
+                                  className={`relative border-l-4 pl-6 pr-4 py-4 rounded-r-lg ${isIncoming
                                       ? "bg-blue-50 border-blue-500"
                                       : "bg-green-50 border-green-500"
-                                  }`}
+                                    }`}
                                 >
                                   {/* Thread indicator line */}
                                   {index > 0 && (
@@ -3889,11 +3879,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                                     <div className="flex-1">
                                       <div className="flex items-center gap-2 mb-1">
                                         <span
-                                          className={`text-xs font-semibold px-2 py-1 rounded ${
-                                            isIncoming
+                                          className={`text-xs font-semibold px-2 py-1 rounded ${isIncoming
                                               ? "bg-blue-100 text-blue-700"
                                               : "bg-green-100 text-green-700"
-                                          }`}
+                                            }`}
                                         >
                                           {isIncoming
                                             ? "📥 INCOMING"
@@ -4332,10 +4321,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                       })),
                       matchingSlaRule: matchingSlaRule
                         ? {
-                            name: matchingSlaRule.name,
-                            priority: matchingSlaRule.priority,
-                            resolutionTime: matchingSlaRule.resolutionTime,
-                          }
+                          name: matchingSlaRule.name,
+                          priority: matchingSlaRule.priority,
+                          resolutionTime: matchingSlaRule.resolutionTime,
+                        }
                         : null,
                     });
 
@@ -4395,8 +4384,8 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                       // Ticket is resolved - show time taken vs allowed
                       const completedAt = new Date(
                         ticket.resolvedAt ||
-                          ticket.closedAt ||
-                          ticket.updatedAt,
+                        ticket.closedAt ||
+                        ticket.updatedAt,
                       );
                       const timeTakenMs =
                         completedAt.getTime() - slaStartedAt.getTime();
@@ -4645,8 +4634,8 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                       // Ticket is resolved or closed - show time taken
                       const completedAt = new Date(
                         ticket.resolvedAt ||
-                          ticket.closedAt ||
-                          ticket.updatedAt,
+                        ticket.closedAt ||
+                        ticket.updatedAt,
                       );
                       const timeTakenMs =
                         completedAt.getTime() - levelStartTime.getTime();
@@ -4744,8 +4733,8 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                     </label>
                     {/* Use hierarchical category selector if multi-level hierarchy is configured */}
                     {hierarchyConfig &&
-                    hierarchyConfig.levelCount > 1 &&
-                    ticketProjectId ? (
+                      hierarchyConfig.levelCount > 1 &&
+                      ticketProjectId ? (
                       <div>
                         {!(permissions.includes("TICKET_CHANGE_CATEGORY") && canModify) ? (
                           <div className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500 text-sm cursor-not-allowed">
@@ -4796,7 +4785,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                         }
                         value={
                           typeof ticket.category === "object" &&
-                          ticket.category !== null
+                            ticket.category !== null
                             ? (ticket.category as any)._id
                             : String(ticket.category || "")
                         }
@@ -4806,12 +4795,12 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                           // Show confirmation modal before saving
                           const fromCatName =
                             typeof ticket.category === "object" &&
-                            ticket.category !== null
+                              ticket.category !== null
                               ? (ticket.category as any).name
                               : categories.find(
-                                  (c) =>
-                                    String(c._id) === String(ticket.category),
-                                )?.name || String(ticket.category);
+                                (c) =>
+                                  String(c._id) === String(ticket.category),
+                              )?.name || String(ticket.category);
                           const toCatName =
                             categories.find((c) => c._id === newCategoryId)
                               ?.name || newCategoryId;
@@ -4828,11 +4817,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                               ),
                           });
                         }}
-                        className={`w-full px-3 py-2 border rounded-lg ${
-                          (permissions.includes("TICKET_CHANGE_CATEGORY") && canModify)
+                        className={`w-full px-3 py-2 border rounded-lg ${(permissions.includes("TICKET_CHANGE_CATEGORY") && canModify)
                             ? "border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                             : "border-gray-200 bg-gray-50 text-gray-500 cursor-not-allowed"
-                        }`}
+                          }`}
                       >
                         {categories.map((cat) => (
                           <option key={cat._id} value={cat._id}>
@@ -4921,7 +4909,7 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                               via{" "}
                               <span style={{ fontStyle: "italic" }}>
                                 {typeof ticket.assignedViaCategoryId ===
-                                "object"
+                                  "object"
                                   ? ticket.assignedViaCategoryId.name
                                   : "Category Rule"}
                               </span>
@@ -4934,69 +4922,69 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                   {/* Escalation Matrix Info (US-ESC-004) */}
                   {(ticket.escalationMatrixId ||
                     ticket.escalationMatrixName) && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Escalation Matrix
-                      </label>
-                      <div className="rounded-lg border border-purple-100 bg-purple-50 p-3 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium text-purple-900">
-                            {ticket.escalationMatrixName ||
-                              escalationMatrix?.name ||
-                              "—"}
-                          </span>
-                          {ticket.currentEscalationLevelNumber && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                              L{ticket.currentEscalationLevelNumber}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Escalation Matrix
+                        </label>
+                        <div className="rounded-lg border border-purple-100 bg-purple-50 p-3 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-medium text-purple-900">
+                              {ticket.escalationMatrixName ||
+                                escalationMatrix?.name ||
+                                "—"}
                             </span>
-                          )}
-                        </div>
-                        {escalationMatrix?.levels &&
-                          escalationMatrix.levels.length > 0 && (
-                            <div className="space-y-1 mt-1">
-                              {[...escalationMatrix.levels]
-                                .sort(
-                                  (a: any, b: any) =>
-                                    a.levelNumber - b.levelNumber,
-                                )
-                                .map((level: any) => {
-                                  const isCurrent =
-                                    level.levelNumber ===
-                                    ticket.currentEscalationLevelNumber;
-                                  return (
-                                    <div
-                                      key={level._id || level.levelNumber}
-                                      className={`flex items-center gap-2 text-xs rounded px-2 py-1 ${isCurrent ? "bg-orange-100 text-orange-800 font-medium" : "text-gray-600"}`}
-                                    >
-                                      <span
-                                        className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${isCurrent ? "bg-orange-500 text-white" : "bg-gray-200 text-gray-600"}`}
+                            {ticket.currentEscalationLevelNumber && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                                L{ticket.currentEscalationLevelNumber}
+                              </span>
+                            )}
+                          </div>
+                          {escalationMatrix?.levels &&
+                            escalationMatrix.levels.length > 0 && (
+                              <div className="space-y-1 mt-1">
+                                {[...escalationMatrix.levels]
+                                  .sort(
+                                    (a: any, b: any) =>
+                                      a.levelNumber - b.levelNumber,
+                                  )
+                                  .map((level: any) => {
+                                    const isCurrent =
+                                      level.levelNumber ===
+                                      ticket.currentEscalationLevelNumber;
+                                    return (
+                                      <div
+                                        key={level._id || level.levelNumber}
+                                        className={`flex items-center gap-2 text-xs rounded px-2 py-1 ${isCurrent ? "bg-orange-100 text-orange-800 font-medium" : "text-gray-600"}`}
                                       >
-                                        {level.levelNumber}
-                                      </span>
-                                      <span className="flex-1 truncate">
-                                        {level.levelName}
-                                      </span>
-                                      <span className="text-gray-400 flex-shrink-0">
-                                        {level.slaHours}
-                                        {level.slaUnit === "mins"
-                                          ? "m"
-                                          : level.slaUnit === "days"
-                                            ? "d"
-                                            : "h"}
-                                      </span>
-                                      {isCurrent && (
-                                        <span className="flex-shrink-0 text-orange-600 font-semibold">
-                                          ← now
+                                        <span
+                                          className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${isCurrent ? "bg-orange-500 text-white" : "bg-gray-200 text-gray-600"}`}
+                                        >
+                                          {level.levelNumber}
                                         </span>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                            </div>
-                          )}
+                                        <span className="flex-1 truncate">
+                                          {level.levelName}
+                                        </span>
+                                        <span className="text-gray-400 flex-shrink-0">
+                                          {level.slaHours}
+                                          {level.slaUnit === "mins"
+                                            ? "m"
+                                            : level.slaUnit === "days"
+                                              ? "d"
+                                              : "h"}
+                                        </span>
+                                        {isCurrent && (
+                                          <span className="flex-shrink-0 text-orange-600 font-semibold">
+                                            ← now
+                                          </span>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                              </div>
+                            )}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
                   {/* Requester */}
                   <div>
@@ -5432,16 +5420,15 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                   onChange={(e) =>
                     setRemarkModal((m) => ({ ...m, remark: e.target.value }))
                   }
-                  className={`w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none ${
-                    remarkModal.remark.length > 0 &&
-                    remarkModal.remark.trim().length < 10
+                  className={`w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none ${remarkModal.remark.length > 0 &&
+                      remarkModal.remark.trim().length < 10
                       ? "border-red-400"
                       : "border-gray-300"
-                  }`}
+                    }`}
                 />
                 <div className="flex justify-between mt-1">
                   {remarkModal.remark.length > 0 &&
-                  remarkModal.remark.trim().length < 10 ? (
+                    remarkModal.remark.trim().length < 10 ? (
                     <span className="text-xs text-red-500">
                       Minimum 10 characters required
                     </span>
@@ -5449,11 +5436,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                     <span />
                   )}
                   <span
-                    className={`text-xs ${
-                      remarkModal.remark.trim().length < 10
+                    className={`text-xs ${remarkModal.remark.trim().length < 10
                         ? "text-gray-400"
                         : "text-green-600"
-                    }`}
+                      }`}
                   >
                     {remarkModal.remark.trim().length}/10
                   </span>
@@ -5517,16 +5503,16 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                     placeholder={
                       reassignDepartmentId
                         ? (reassignDepartments.find(
-                            (d) => d._id === reassignDepartmentId,
-                          )?.name ?? "Search department...")
+                          (d) => d._id === reassignDepartmentId,
+                        )?.name ?? "Search department...")
                         : "Search department..."
                     }
                     value={
                       deptDropdownOpen
                         ? deptSearch
                         : (reassignDepartments.find(
-                            (d) => d._id === reassignDepartmentId,
-                          )?.name ?? "")
+                          (d) => d._id === reassignDepartmentId,
+                        )?.name ?? "")
                     }
                     onFocus={() => {
                       setDeptDropdownOpen(true);
@@ -5551,11 +5537,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                       .map((d) => (
                         <li
                           key={d._id}
-                          className={`px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 ${
-                            d._id === reassignDepartmentId
+                          className={`px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 ${d._id === reassignDepartmentId
                               ? "bg-blue-100 font-medium"
                               : ""
-                          }`}
+                            }`}
                           onMouseDown={() => {
                             setReassignDepartmentId(d._id);
                             setReassignAgentId("");
@@ -5571,10 +5556,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                     {reassignDepartments.filter((d) =>
                       d.name.toLowerCase().includes(deptSearch.toLowerCase()),
                     ).length === 0 && (
-                      <li className="px-3 py-2 text-sm text-gray-400">
-                        No results
-                      </li>
-                    )}
+                        <li className="px-3 py-2 text-sm text-gray-400">
+                          No results
+                        </li>
+                      )}
                   </ul>
                 )}
                 {reassignDepartments.length === 0 && !deptDropdownOpen && (
@@ -5610,11 +5595,11 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                         ? agentSearch
                         : reassignAgentId
                           ? (() => {
-                              const a = reassignAgents.find(
-                                (x) => x._id === reassignAgentId,
-                              );
-                              return a ? `${a.firstName} ${a.lastName}` : "";
-                            })()
+                            const a = reassignAgents.find(
+                              (x) => x._id === reassignAgentId,
+                            );
+                            return a ? `${a.firstName} ${a.lastName}` : "";
+                          })()
                           : ""
                     }
                     disabled={!reassignDepartmentId || reassignLoadingAgents}
@@ -5645,11 +5630,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                       .map((a) => (
                         <li
                           key={a._id}
-                          className={`px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 ${
-                            a._id === reassignAgentId
+                          className={`px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 ${a._id === reassignAgentId
                               ? "bg-blue-100 font-medium"
                               : ""
-                          }`}
+                            }`}
                           onMouseDown={() => {
                             setReassignAgentId(a._id);
                             setAgentSearch("");
@@ -5669,10 +5653,10 @@ const AgentTicketDetail: React.FC<AgentTicketDetailProps> = ({
                         .toLowerCase()
                         .includes(agentSearch.toLowerCase()),
                     ).length === 0 && (
-                      <li className="px-3 py-2 text-sm text-gray-400">
-                        No results
-                      </li>
-                    )}
+                        <li className="px-3 py-2 text-sm text-gray-400">
+                          No results
+                        </li>
+                      )}
                   </ul>
                 )}
               </div>

@@ -1,7 +1,7 @@
 import React from "react";
 import { useSearchParams } from "react-router-dom";
-import SrPage from "../components/sr/SrPage";
-import SrTabs from "../components/sr/SrTabs";
+import SrPage from "../../components/sr/SrPage";
+import SrTabs from "../../components/sr/SrTabs";
 import ServiceRequests from "./ServiceRequests";
 import ServiceRequestCreate from "./ServiceRequestCreate";
 import EmailTriageInbox from "./EmailTriageInbox";

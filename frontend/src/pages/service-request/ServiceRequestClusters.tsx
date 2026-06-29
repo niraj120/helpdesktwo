@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
-import SrPage from "../components/sr/SrPage";
-import { srButton } from "../utils/srTheme";
-import { api } from "../utils/api";
-import { serviceRequestApi } from "../services/serviceRequests";
+import SrPage from "../../components/sr/SrPage";
+import { srButton } from "../../utils/srTheme";
+import { api } from "../../utils/api";
+import { serviceRequestApi } from "../../services/serviceRequests";
 
 interface ProjectOpt {
   _id: string;
@@ -79,8 +79,8 @@ const ServiceRequestClusters: React.FC<{ embedded?: boolean }> = ({
 
   const card: React.CSSProperties = {
     background: "#fff",
-    border: "1px solid #e7ebf3",
-    borderRadius: 14,
+    border: "1px solid #e2e8f0",
+    borderRadius: 16,
     boxShadow: "0 4px 18px rgba(15, 23, 42, 0.05)",
     padding: 20,
     marginBottom: 16,
@@ -157,7 +157,7 @@ const ServiceRequestClusters: React.FC<{ embedded?: boolean }> = ({
               </button>
               <button
                 onClick={() => setDraft(null)}
-                style={{ padding: "9px 18px", borderRadius: 10, border: "1px solid #e7ebf3", background: "#fff", fontWeight: 600, fontSize: 14, color: "#374151", cursor: "pointer" }}
+                style={{ padding: "9px 18px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", fontWeight: 600, fontSize: 14, color: "#374151", cursor: "pointer" }}
               >
                 Cancel
               </button>
@@ -199,7 +199,7 @@ const ServiceRequestClusters: React.FC<{ embedded?: boolean }> = ({
                         ),
                       })
                     }
-                    style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #e7ebf3", background: "#fff", fontSize: 13, fontWeight: 600, color: "#374151", cursor: "pointer" }}
+                    style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 13, fontWeight: 600, color: "#374151", cursor: "pointer" }}
                   >
                     Edit
                   </button>

@@ -1912,11 +1912,11 @@ function VisTypePicker({
               padding: "6px 4px",
               fontSize: 11,
               textAlign: "center",
-              background: selected ? "#ede9fe" : "#f9fafb",
-              border: `1.5px solid ${selected ? "#7c3aed" : "#e5e7eb"}`,
-              borderRadius: 7,
+              background: selected ? "#eef2ff" : "#fff",
+              border: `1.5px solid ${selected ? "#4f46e5" : "#e2e8f0"}`,
+              borderRadius: 8,
               cursor: "pointer",
-              color: selected ? "#7c3aed" : relevant ? "#374151" : "#d1d5db",
+              color: selected ? "#4f46e5" : relevant ? "#334155" : "#94a3b8",
               fontWeight: selected ? 700 : 400,
               transition: "all 0.12s",
               display: "flex",
@@ -1963,11 +1963,11 @@ function DisplayModePicker({
             padding: "5px 0",
             fontSize: 11,
             fontWeight: value === o.v ? 700 : 400,
-            background: value === o.v ? "#dbeafe" : "#f9fafb",
-            border: `1.5px solid ${value === o.v ? "#2563eb" : "#e5e7eb"}`,
-            borderRadius: 6,
+            background: value === o.v ? "#eef2ff" : "#fff",
+            border: `1.5px solid ${value === o.v ? "#4f46e5" : "#e2e8f0"}`,
+            borderRadius: 8,
             cursor: "pointer",
-            color: value === o.v ? "#2563eb" : "#6b7280",
+            color: value === o.v ? "#4f46e5" : "#475569",
           }}
         >
           <div style={{ fontSize: 14 }}>{o.icon}</div>
@@ -1994,8 +1994,8 @@ function DataPointCard({
       onDragStart={(e) => e.dataTransfer.setData("dataPointKey", dp.key)}
       onClick={() => onAdd(dp)}
       style={{
-        background: "#FEF7FF",
-        border: "1px solid #E8DEF8",
+        background: "#fff",
+        border: "1px solid #e2e8f0",
         borderRadius: 12,
         padding: "10px 12px",
         cursor: "grab",
@@ -2003,12 +2003,12 @@ function DataPointCard({
         userSelect: "none",
       }}
       onMouseEnter={(e) => {
-        (e.currentTarget as HTMLDivElement).style.borderColor = "#6750A4";
+        (e.currentTarget as HTMLDivElement).style.borderColor = "#4f46e5";
         (e.currentTarget as HTMLDivElement).style.boxShadow =
-          "0 2px 10px rgba(103,80,164,0.15)";
+          "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)";
       }}
       onMouseLeave={(e) => {
-        (e.currentTarget as HTMLDivElement).style.borderColor = "#E8DEF8";
+        (e.currentTarget as HTMLDivElement).style.borderColor = "#e2e8f0";
         (e.currentTarget as HTMLDivElement).style.boxShadow = "none";
       }}
     >
@@ -2022,7 +2022,7 @@ function DataPointCard({
         }}
       >
         <span
-          style={{ fontSize: 12, fontWeight: 700, color: "#1D1B20", flex: 1 }}
+          style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", flex: 1 }}
         >
           {dp.unit === "count" ? "# " : dp.unit === "percent" ? "% " : ""}
           {dp.label}
@@ -2052,7 +2052,7 @@ function DataPointCard({
           {dp.unit}
         </span>
       </div>
-      <div style={{ fontSize: 11, color: "#79747E", lineHeight: 1.4 }}>
+      <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.4 }}>
         {dp.desc}
       </div>
     </div>
@@ -2106,8 +2106,8 @@ function CustomFormulaPanel({
 
   const inputStyle: React.CSSProperties = {
     width: "100%",
-    border: "1px solid #e5e7eb",
-    borderRadius: 6,
+    border: "1.5px solid #e2e8f0",
+    borderRadius: 8,
     padding: "5px 8px",
     fontSize: 12,
     outline: "none",
@@ -2146,7 +2146,7 @@ function CustomFormulaPanel({
           style={{
             fontSize: 10,
             fontWeight: 700,
-            color: "#6b7280",
+            color: "#475569",
             display: "block",
             marginBottom: 3,
           }}
@@ -2165,7 +2165,7 @@ function CustomFormulaPanel({
           style={{
             fontSize: 10,
             fontWeight: 700,
-            color: "#6b7280",
+            color: "#475569",
             display: "block",
             marginBottom: 3,
           }}
@@ -2189,7 +2189,7 @@ function CustomFormulaPanel({
         style={{
           textAlign: "center",
           fontSize: 18,
-          color: "#9ca3af",
+          color: "#94a3b8",
           margin: "-4px 0",
         }}
       >
@@ -2201,7 +2201,7 @@ function CustomFormulaPanel({
           style={{
             fontSize: 10,
             fontWeight: 700,
-            color: "#6b7280",
+            color: "#475569",
             display: "block",
             marginBottom: 3,
           }}
@@ -2226,7 +2226,7 @@ function CustomFormulaPanel({
           style={{
             fontSize: 10,
             fontWeight: 700,
-            color: "#6b7280",
+            color: "#475569",
             display: "block",
             marginBottom: 3,
           }}
@@ -2242,12 +2242,12 @@ function CustomFormulaPanel({
                 flex: 1,
                 padding: "5px",
                 fontSize: 12,
-                background: multiply === v ? "#dbeafe" : "#f9fafb",
-                border: `1.5px solid ${multiply === v ? "#2563eb" : "#e5e7eb"}`,
-                borderRadius: 6,
+                background: multiply === v ? "#eef2ff" : "#fff",
+                border: `1.5px solid ${multiply === v ? "#4f46e5" : "#e2e8f0"}`,
+                borderRadius: 8,
                 cursor: "pointer",
                 fontWeight: multiply === v ? 700 : 400,
-                color: multiply === v ? "#2563eb" : "#374151",
+                color: multiply === v ? "#4f46e5" : "#334155",
               }}
             >
               {v === 100 ? "x 100 -> %" : "x 1 -> ratio"}
@@ -2276,7 +2276,7 @@ function CustomFormulaPanel({
           style={{
             fontSize: 10,
             fontWeight: 700,
-            color: "#6b7280",
+            color: "#475569",
             display: "block",
             marginBottom: 6,
           }}
@@ -2295,7 +2295,7 @@ function CustomFormulaPanel({
           style={{
             fontSize: 10,
             fontWeight: 700,
-            color: "#6b7280",
+            color: "#475569",
             display: "block",
             marginBottom: 6,
           }}
@@ -2311,12 +2311,13 @@ function CustomFormulaPanel({
           padding: "8px",
           fontSize: 13,
           fontWeight: 700,
-          background: "#7c3aed",
+          background: "linear-gradient(160deg, #4f46e5, #4338ca)",
           color: "#fff",
           border: "none",
-          borderRadius: 7,
+          borderRadius: 8,
           cursor: "pointer",
           marginTop: 4,
+          boxShadow: "0 4px 14px rgba(67,56,202,.35)",
         }}
       >
         + Add to Dashboard
@@ -2369,8 +2370,8 @@ function LibraryCard({
       onDragStart={(e) => e.dataTransfer.setData("widgetKey", def.widgetKey)}
       onClick={() => onAdd(def)}
       style={{
-        background: "#FEF7FF",
-        border: "1px solid #E8DEF8",
+        background: "#fff",
+        border: "1px solid #e2e8f0",
         borderRadius: 12,
         padding: "10px 12px",
         cursor: "grab",
@@ -2378,12 +2379,12 @@ function LibraryCard({
         userSelect: "none",
       }}
       onMouseEnter={(e) => {
-        (e.currentTarget as HTMLDivElement).style.borderColor = "#6750A4";
+        (e.currentTarget as HTMLDivElement).style.borderColor = "#4f46e5";
         (e.currentTarget as HTMLDivElement).style.boxShadow =
-          "0 2px 10px rgba(103,80,164,0.15)";
+          "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)";
       }}
       onMouseLeave={(e) => {
-        (e.currentTarget as HTMLDivElement).style.borderColor = "#E8DEF8";
+        (e.currentTarget as HTMLDivElement).style.borderColor = "#e2e8f0";
         (e.currentTarget as HTMLDivElement).style.boxShadow = "none";
       }}
     >
@@ -2391,7 +2392,7 @@ function LibraryCard({
         style={{
           fontSize: 12,
           fontWeight: 700,
-          color: "#1D1B20",
+          color: "#0f172a",
           marginBottom: 3,
         }}
       >
@@ -2401,7 +2402,7 @@ function LibraryCard({
         <div
           style={{
             fontSize: 11,
-            color: "#79747E",
+            color: "#475569",
             marginBottom: 6,
             lineHeight: 1.4,
           }}
@@ -2543,7 +2544,7 @@ function ConfigDrawer({
         style={{
           fontSize: 10,
           fontWeight: 700,
-          color: "#6b7280",
+          color: "#475569",
           letterSpacing: "0.05em",
           textTransform: "uppercase",
           marginBottom: 6,
@@ -2557,8 +2558,8 @@ function ConfigDrawer({
 
   const inputStyle: React.CSSProperties = {
     width: "100%",
-    border: "1px solid #e5e7eb",
-    borderRadius: 6,
+    border: "1.5px solid #e2e8f0",
+    borderRadius: 8,
     padding: "6px 10px",
     fontSize: 12,
     outline: "none",
@@ -2572,7 +2573,7 @@ function ConfigDrawer({
         width: 286,
         flexShrink: 0,
         background: "#fff",
-        borderLeft: "1px solid #e5e7eb",
+        borderLeft: "1px solid #e2e8f0",
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
@@ -2582,18 +2583,18 @@ function ConfigDrawer({
       <div
         style={{
           padding: "12px 14px",
-          borderBottom: "1px solid #f3f4f6",
+          borderBottom: "1px solid #e2e8f0",
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
-          background: "#fafafa",
+          background: "#f8fafc",
         }}
       >
         <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#111827" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a" }}>
             Widget Config
           </div>
-          <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 1 }}>
+          <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 1 }}>
             {widget.widgetKey}
           </div>
         </div>
@@ -2604,7 +2605,7 @@ function ConfigDrawer({
             border: "none",
             cursor: "pointer",
             fontSize: 16,
-            color: "#9ca3af",
+            color: "#94a3b8",
           }}
         >
           x
@@ -2718,7 +2719,7 @@ function ConfigDrawer({
               <label
                 style={{
                   fontSize: 10,
-                  color: "#9ca3af",
+                  color: "#94a3b8",
                   display: "block",
                   marginBottom: 3,
                 }}
@@ -2742,7 +2743,7 @@ function ConfigDrawer({
               <label
                 style={{
                   fontSize: 10,
-                  color: "#9ca3af",
+                  color: "#94a3b8",
                   display: "block",
                   marginBottom: 3,
                 }}
@@ -2785,7 +2786,7 @@ function ConfigDrawer({
                 }
                 style={inputStyle}
               />
-              <div style={{ fontSize: 10, color: "#6b7280", marginTop: 4 }}>
+              <div style={{ fontSize: 10, color: "#475569", marginTop: 4 }}>
                 Set the target headcount for this project. Overrides the
                 project-level setting.
               </div>
@@ -2811,7 +2812,7 @@ function ConfigDrawer({
                 }
                 style={inputStyle}
               />
-              <div style={{ fontSize: 10, color: "#6b7280", marginTop: 4 }}>
+              <div style={{ fontSize: 10, color: "#475569", marginTop: 4 }}>
                 Manually set the total required (predefined) asset count.
                 Overrides the sum calculated from asset definitions.
               </div>
@@ -2824,7 +2825,7 @@ function ConfigDrawer({
             "Exclude Roles from Count",
             <div>
               {availableRoles.length === 0 ? (
-                <div style={{ fontSize: 11, color: "#9ca3af" }}>
+                <div style={{ fontSize: 11, color: "#94a3b8" }}>
                   {projectId
                     ? "No roles found for this project."
                     : "Select a project above to filter roles."}
@@ -2858,7 +2859,7 @@ function ConfigDrawer({
                           fontSize: 12,
                           cursor: "pointer",
                           padding: "3px 0",
-                          color: checked ? "#ef4444" : "#374151",
+                          color: checked ? "#ef4444" : "#334155",
                         }}
                       >
                         <input
@@ -2889,7 +2890,7 @@ function ConfigDrawer({
                   })}
                 </div>
               )}
-              <div style={{ fontSize: 10, color: "#6b7280", marginTop: 6 }}>
+              <div style={{ fontSize: 10, color: "#475569", marginTop: 6 }}>
                 Ticked roles are <strong>removed</strong> from all user counts
                 on this widget. Leave all un-ticked to count everyone.
               </div>
@@ -2909,7 +2910,7 @@ function ConfigDrawer({
                 fontFamily: "monospace",
                 fontSize: 11,
                 resize: "vertical",
-                border: `1px solid ${filterError ? "#ef4444" : "#e5e7eb"}`,
+                border: `1.5px solid ${filterError ? "#ef4444" : "#e2e8f0"}`,
               }}
             />
             {filterError && (
@@ -2941,12 +2942,12 @@ function ConfigDrawer({
                 style={{
                   padding: "5px 8px",
                   fontSize: 11,
-                  background: "#f5f3ff",
-                  border: "1px solid #ddd6fe",
-                  borderRadius: 5,
+                  background: "#eef2ff",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 8,
                   cursor: "pointer",
                   textAlign: "left",
-                  color: "#5b21b6",
+                  color: "#4f46e5",
                   fontWeight: 600,
                   display: "flex",
                   flexDirection: "column",
@@ -2955,7 +2956,7 @@ function ConfigDrawer({
               >
                 <span>{p.label}</span>
                 <span
-                  style={{ fontSize: 9, color: "#7c3aed", fontWeight: 400 }}
+                  style={{ fontSize: 9, color: "#475569", fontWeight: 400 }}
                 >
                   {p.desc}
                 </span>
@@ -2985,7 +2986,7 @@ function ConfigDrawer({
               <label
                 style={{
                   fontSize: 10,
-                  color: "#9ca3af",
+                  color: "#94a3b8",
                   display: "block",
                   marginBottom: 3,
                 }}
@@ -3014,12 +3015,12 @@ function ConfigDrawer({
                   style={{
                     padding: "3px 8px",
                     fontSize: 10,
-                    background: ctxKey.trim() ? "#eef2ff" : "#f9fafb",
-                    border: `1px solid ${ctxKey.trim() ? "#c7d2fe" : "#e5e7eb"}`,
-                    borderRadius: 4,
+                    background: ctxKey.trim() ? "#eef2ff" : "#fff",
+                    border: `1px solid ${ctxKey.trim() ? "#c7d2fe" : "#e2e8f0"}`,
+                    borderRadius: 8,
                     cursor: ctxKey.trim() ? "pointer" : "not-allowed",
                     textAlign: "left",
-                    color: ctxKey.trim() ? "#4f46e5" : "#9ca3af",
+                    color: ctxKey.trim() ? "#4f46e5" : "#94a3b8",
                     opacity: ctxKey.trim() ? 1 : 0.6,
                     display: "flex",
                     justifyContent: "space-between",
@@ -3147,7 +3148,7 @@ function ConfigDrawer({
       </div>
 
       {/* Remove button */}
-      <div style={{ padding: "10px 14px", borderTop: "1px solid #f3f4f6" }}>
+      <div style={{ padding: "10px 14px", borderTop: "1px solid #e2e8f0" }}>
         <button
           onClick={() => onRemove(widget.layoutKey)}
           style={{
@@ -3157,7 +3158,7 @@ function ConfigDrawer({
             background: "#fef2f2",
             color: "#ef4444",
             border: "1px solid #fecaca",
-            borderRadius: 6,
+            borderRadius: 8,
             cursor: "pointer",
           }}
         >
@@ -3565,9 +3566,9 @@ export default function DashboardBuilderPage() {
     fontWeight: active ? 700 : 500,
     background: "transparent",
     border: "none",
-    borderBottom: `2px solid ${active ? "#6750A4" : "transparent"}`,
+    borderBottom: `2px solid ${active ? "#4f46e5" : "transparent"}`,
     cursor: "pointer",
-    color: active ? "#6750A4" : "#49454F",
+    color: active ? "#4f46e5" : "#475569",
     transition: "all 0.15s",
     whiteSpace: "nowrap",
   });
@@ -3581,7 +3582,7 @@ export default function DashboardBuilderPage() {
           display: "flex",
           flexDirection: "column",
           height: "100vh",
-          background: "#FEF7FF",
+          background: "#f8fafc",
           overflow: "hidden",
         }}
       >
@@ -3593,7 +3594,7 @@ export default function DashboardBuilderPage() {
             gap: 10,
             padding: "8px 16px",
             background: "#fff",
-            borderBottom: "1px solid #e5e7eb",
+            borderBottom: "1px solid #e2e8f0",
             flexShrink: 0,
             flexWrap: "wrap",
           }}
@@ -3605,7 +3606,7 @@ export default function DashboardBuilderPage() {
               border: "none",
               cursor: "pointer",
               fontSize: 18,
-              color: "#6b7280",
+              color: "#94a3b8",
               padding: "0 2px",
             }}
             title="Back"
@@ -3622,12 +3623,13 @@ export default function DashboardBuilderPage() {
             style={{
               flex: 1,
               minWidth: 160,
-              border: "1px solid #e5e7eb",
-              borderRadius: 6,
+              border: "1.5px solid #e2e8f0",
+              borderRadius: 8,
               padding: "5px 10px",
               fontSize: 14,
               fontWeight: 600,
               outline: "none",
+              color: "#0f172a",
             }}
           />
 
@@ -3637,13 +3639,14 @@ export default function DashboardBuilderPage() {
               display: "flex",
               alignItems: "center",
               gap: 8,
-              background: "#ECE6F0",
-              borderRadius: 10,
+              background: "#fff",
+              border: "1.5px solid #e2e8f0",
+              borderRadius: 8,
               padding: "5px 12px",
             }}
           >
             <span
-              style={{ fontSize: 12, color: "#49454F", whiteSpace: "nowrap" }}
+              style={{ fontSize: 12, color: "#475569", whiteSpace: "nowrap" }}
             >
               Project:
             </span>
@@ -3655,7 +3658,7 @@ export default function DashboardBuilderPage() {
                 background: "transparent",
                 padding: "0",
                 fontSize: 13,
-                color: "#6750A4",
+                color: "#4f46e5",
                 fontWeight: 700,
                 outline: "none",
                 cursor: "pointer",
@@ -3676,13 +3679,14 @@ export default function DashboardBuilderPage() {
               display: "flex",
               alignItems: "center",
               gap: 8,
-              border: "1px solid #CAC4D0",
-              borderRadius: 10,
+              background: "#fff",
+              border: "1.5px solid #e2e8f0",
+              borderRadius: 8,
               padding: "5px 12px",
             }}
           >
             <span
-              style={{ fontSize: 12, color: "#49454F", whiteSpace: "nowrap" }}
+              style={{ fontSize: 12, color: "#475569", whiteSpace: "nowrap" }}
               title="When set, this dashboard's 'All time' range counts from this date instead of the default."
             >
               All-time from:
@@ -3695,7 +3699,7 @@ export default function DashboardBuilderPage() {
                 border: "none",
                 background: "transparent",
                 fontSize: 13,
-                color: "#6750A4",
+                color: "#4f46e5",
                 fontWeight: 600,
                 outline: "none",
                 cursor: "pointer",
@@ -3709,7 +3713,7 @@ export default function DashboardBuilderPage() {
                 style={{
                   border: "none",
                   background: "transparent",
-                  color: "#6B778C",
+                  color: "#94a3b8",
                   cursor: "pointer",
                   fontSize: 16,
                   lineHeight: 1,
@@ -3727,8 +3731,9 @@ export default function DashboardBuilderPage() {
               display: "flex",
               alignItems: "center",
               gap: 6,
-              border: "1px solid #CAC4D0",
-              borderRadius: 10,
+              background: "#fff",
+              border: "1.5px solid #e2e8f0",
+              borderRadius: 8,
               padding: "5px 12px",
             }}
           >
@@ -3739,7 +3744,7 @@ export default function DashboardBuilderPage() {
                 border: "none",
                 background: "transparent",
                 fontSize: 12,
-                color: "#49454F",
+                color: "#475569",
                 outline: "none",
                 cursor: "pointer",
               }}
@@ -3780,7 +3785,7 @@ export default function DashboardBuilderPage() {
               style={{
                 width: 1,
                 height: 24,
-                background: "#CAC4D0",
+                background: "#e2e8f0",
                 margin: "0 4px",
               }}
             />
@@ -3791,14 +3796,14 @@ export default function DashboardBuilderPage() {
                   padding: "6px 14px",
                   fontSize: 13,
                   background: "transparent",
-                  color: "#49454F",
+                  color: "#334155",
                   border: "none",
                   borderRadius: 8,
                   cursor: "pointer",
                   fontWeight: 500,
                 }}
                 onMouseEnter={(e) =>
-                  (e.currentTarget.style.background = "#ECE6F0")
+                  (e.currentTarget.style.background = "#f1f5f9")
                 }
                 onMouseLeave={(e) =>
                   (e.currentTarget.style.background = "transparent")
@@ -3814,14 +3819,14 @@ export default function DashboardBuilderPage() {
                   padding: "6px 14px",
                   fontSize: 13,
                   background: "transparent",
-                  color: "#49454F",
+                  color: "#334155",
                   border: "none",
                   borderRadius: 8,
                   cursor: "pointer",
                   fontWeight: 500,
                 }}
                 onMouseEnter={(e) =>
-                  (e.currentTarget.style.background = "#ECE6F0")
+                  (e.currentTarget.style.background = "#f1f5f9")
                 }
                 onMouseLeave={(e) =>
                   (e.currentTarget.style.background = "transparent")
@@ -3835,7 +3840,7 @@ export default function DashboardBuilderPage() {
                 padding: "6px 14px",
                 fontSize: 13,
                 background: "transparent",
-                color: "#49454F",
+                color: "#334155",
                 border: "none",
                 borderRadius: 8,
                 cursor: "pointer",
@@ -3843,7 +3848,7 @@ export default function DashboardBuilderPage() {
                 fontWeight: 500,
               }}
               onMouseEnter={(e) =>
-                (e.currentTarget.style.background = "#ECE6F0")
+                (e.currentTarget.style.background = "#f1f5f9")
               }
               onMouseLeave={(e) =>
                 (e.currentTarget.style.background = "transparent")
@@ -3863,18 +3868,18 @@ export default function DashboardBuilderPage() {
               style={{
                 padding: "6px 16px",
                 fontSize: 13,
-                background: "transparent",
-                color: "#49454F",
-                border: "none",
+                background: "#fff",
+                color: "#334155",
+                border: "1.5px solid #e2e8f0",
                 borderRadius: 8,
                 cursor: "pointer",
                 fontWeight: 500,
               }}
               onMouseEnter={(e) =>
-                (e.currentTarget.style.background = "#ECE6F0")
+                (e.currentTarget.style.background = "#f1f5f9")
               }
               onMouseLeave={(e) =>
-                (e.currentTarget.style.background = "transparent")
+                (e.currentTarget.style.background = "#fff")
               }
             >
               {saving ? "Saving..." : "Save Draft"}
@@ -3885,13 +3890,13 @@ export default function DashboardBuilderPage() {
               style={{
                 padding: "7px 22px",
                 fontSize: 13,
-                background: "#6750A4",
+                background: "linear-gradient(160deg, #4f46e5, #4338ca)",
                 color: "#fff",
                 border: "none",
                 borderRadius: 8,
                 cursor: "pointer",
                 fontWeight: 700,
-                boxShadow: "0 1px 4px rgba(103,80,164,0.25)",
+                boxShadow: "0 4px 14px rgba(67,56,202,.35)",
               }}
             >
               Publish
@@ -3905,8 +3910,8 @@ export default function DashboardBuilderPage() {
             style={{
               width: 280,
               flexShrink: 0,
-              background: "#F7F2FA",
-              borderRight: "1px solid #CAC4D0",
+              background: "#fff",
+              borderRight: "1px solid #e2e8f0",
               display: "flex",
               flexDirection: "column",
               overflow: "hidden",
@@ -3916,8 +3921,8 @@ export default function DashboardBuilderPage() {
             <div
               style={{
                 display: "flex",
-                borderBottom: "1px solid #CAC4D0",
-                background: "#F7F2FA",
+                borderBottom: "1px solid #e2e8f0",
+                background: "#fff",
               }}
             >
               <button
@@ -3945,7 +3950,7 @@ export default function DashboardBuilderPage() {
               <div
                 style={{
                   padding: "12px 16px",
-                  borderBottom: "1px solid #CAC4D0",
+                  borderBottom: "1px solid #e2e8f0",
                 }}
               >
                 <div style={{ position: "relative" }}>
@@ -3955,7 +3960,7 @@ export default function DashboardBuilderPage() {
                       left: 10,
                       top: "50%",
                       transform: "translateY(-50%)",
-                      color: "#79747E",
+                      color: "#94a3b8",
                       pointerEvents: "none",
                     }}
                     width="16"
@@ -3975,14 +3980,14 @@ export default function DashboardBuilderPage() {
                     placeholder="Search data points..."
                     style={{
                       width: "100%",
-                      border: "none",
-                      borderRadius: 20,
+                      border: "1.5px solid #e2e8f0",
+                      borderRadius: 8,
                       padding: "7px 12px 7px 34px",
                       fontSize: 13,
                       outline: "none",
                       boxSizing: "border-box",
-                      background: "#ECE6F0",
-                      color: "#1D1B20",
+                      background: "#fff",
+                      color: "#0f172a",
                     }}
                   />
                 </div>
@@ -4045,14 +4050,14 @@ export default function DashboardBuilderPage() {
                           <span
                             style={{
                               fontSize: 10,
-                              color: "#79747E",
+                              color: "#94a3b8",
                               fontWeight: 400,
                             }}
                           >
                             ({dps.length})
                           </span>
                         </span>
-                        <span style={{ color: "#9ca3af" }}>
+                        <span style={{ color: "#94a3b8" }}>
                           {expandedDP[source] ? "v" : ">"}
                         </span>
                       </button>
@@ -4082,7 +4087,7 @@ export default function DashboardBuilderPage() {
                   <div
                     style={{
                       fontSize: 12,
-                      color: "#9ca3af",
+                      color: "#94a3b8",
                       padding: "12px 4px",
                     }}
                   >
@@ -4111,7 +4116,7 @@ export default function DashboardBuilderPage() {
                         padding: "5px 4px",
                         fontSize: 11,
                         fontWeight: 700,
-                        color: "#374151",
+                        color: "#0f172a",
                         cursor: "pointer",
                         display: "flex",
                         justifyContent: "space-between",
@@ -4122,7 +4127,7 @@ export default function DashboardBuilderPage() {
                         <span
                           style={{
                             fontSize: 10,
-                            color: "#9ca3af",
+                            color: "#94a3b8",
                             fontWeight: 400,
                             marginLeft: 5,
                           }}
@@ -4130,7 +4135,7 @@ export default function DashboardBuilderPage() {
                           ({defs.length})
                         </span>
                       </span>
-                      <span style={{ color: "#9ca3af" }}>
+                      <span style={{ color: "#94a3b8" }}>
                         {expandedModules[module] ? "v" : ">"}
                       </span>
                     </button>
@@ -4168,7 +4173,7 @@ export default function DashboardBuilderPage() {
                   <div
                     style={{
                       fontSize: 12,
-                      color: "#9ca3af",
+                      color: "#94a3b8",
                       padding: "12px 4px",
                     }}
                   >
@@ -4233,7 +4238,7 @@ export default function DashboardBuilderPage() {
                 flexWrap: "wrap",
               }}
             >
-              <div style={{ fontSize: 12, color: "#6b7280" }}>
+              <div style={{ fontSize: 12, color: "#475569" }}>
                 {widgets.length === 0
                   ? "<"
                   : `${widgets.length} widget${widgets.length !== 1 ? "s" : ""} on canvas`}
@@ -4243,11 +4248,11 @@ export default function DashboardBuilderPage() {
                   <div
                     style={{
                       fontSize: 11,
-                      background: "#faf5ff",
-                      border: "1px solid #e9d5ff",
-                      borderRadius: 20,
+                      background: "#eef2ff",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: 12,
                       padding: "2px 10px",
-                      color: "#7c3aed",
+                      color: "#4f46e5",
                       fontWeight: 600,
                     }}
                   >
@@ -4322,7 +4327,7 @@ export default function DashboardBuilderPage() {
                     }}
                   >
                     <span
-                      style={{ fontSize: 11, color: "#6b7280", minWidth: 16 }}
+                      style={{ fontSize: 11, color: "#94a3b8", minWidth: 16 }}
                     >
                       {idx + 1}.
                     </span>
@@ -4337,8 +4342,8 @@ export default function DashboardBuilderPage() {
                       }
                       style={{
                         flex: 1,
-                        border: "1px solid #e5e7eb",
-                        borderRadius: 4,
+                        border: "1.5px solid #e2e8f0",
+                        borderRadius: 8,
                         padding: "3px 7px",
                         fontSize: 12,
                         outline: "none",
@@ -4378,7 +4383,7 @@ export default function DashboardBuilderPage() {
             {widgets.length === 0 && (
               <div
                 style={{
-                  border: "2px dashed #CAC4D0",
+                  border: "2px dashed #e2e8f0",
                   borderRadius: 16,
                   display: "flex",
                   flexDirection: "column",
@@ -4386,7 +4391,7 @@ export default function DashboardBuilderPage() {
                   justifyContent: "center",
                   minHeight: 340,
                   backgroundImage:
-                    "radial-gradient(circle, #CAC4D0 1px, transparent 1px)",
+                    "radial-gradient(circle, #e2e8f0 1px, transparent 1px)",
                   backgroundSize: "32px 32px",
                   cursor: "pointer",
                 }}
@@ -4403,23 +4408,23 @@ export default function DashboardBuilderPage() {
                     style={{
                       width: 72,
                       height: 72,
-                      background: "#ECE6F0",
+                      background: "#eef2ff",
                       borderRadius: "50%",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
                       fontSize: 36,
-                      color: "#79747E",
+                      color: "#94a3b8",
                     }}
                   >
                     +
                   </div>
                   <div
-                    style={{ fontWeight: 700, fontSize: 18, color: "#49454F" }}
+                    style={{ fontWeight: 700, fontSize: 18, color: "#0f172a" }}
                   >
                     Your dashboard is empty
                   </div>
-                  <div style={{ fontSize: 13, color: "#79747E" }}>
+                  <div style={{ fontSize: 13, color: "#475569" }}>
                     Drag and drop data points or widgets here
                   </div>
                 </div>
@@ -4440,7 +4445,7 @@ export default function DashboardBuilderPage() {
                   const dp = w.dataPoint ?? getDataPoint(w.widgetKey);
                   const srcColor = dp
                     ? MODULE_META[dp.module]?.color
-                    : "#7F56D9";
+                    : "#4f46e5";
                   const cfg: WidgetBuildConfig = w.config ?? {};
                   const displayMode = cfg.displayMode ?? "count";
                   const isFormula = w.widgetKey === "custom_ratio";
@@ -4451,16 +4456,16 @@ export default function DashboardBuilderPage() {
                       onClick={() => setSelectedKey(w.layoutKey)}
                       style={{
                         background: "#fff",
-                        border: `2px solid ${selectedKey === w.layoutKey ? "#7F56D9" : "#e5e7eb"}`,
-                        borderRadius: 10,
+                        border: `2px solid ${selectedKey === w.layoutKey ? "#4f46e5" : "#e2e8f0"}`,
+                        borderRadius: 12,
                         display: "flex",
                         flexDirection: "column",
                         overflow: "hidden",
                         cursor: "pointer",
                         boxShadow:
                           selectedKey === w.layoutKey
-                            ? "0 0 0 3px #ede9fe"
-                            : "0 1px 4px rgba(0,0,0,0.07)",
+                            ? "0 0 0 3px #eef2ff"
+                            : "0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04)",
                         transition: "border-color 0.12s, box-shadow 0.12s",
                       }}
                     >
@@ -4484,7 +4489,7 @@ export default function DashboardBuilderPage() {
                           style={{
                             fontSize: 11,
                             fontWeight: 600,
-                            color: "#1f2937",
+                            color: "#0f172a",
                             flex: 1,
                             overflow: "hidden",
                             textOverflow: "ellipsis",
@@ -4535,7 +4540,7 @@ export default function DashboardBuilderPage() {
                           gap: 2,
                         }}
                       >
-                        <div style={{ fontSize: 11, color: "#6b7280" }}>
+                        <div style={{ fontSize: 11, color: "#475569" }}>
                           {isFormula && cfg.formula
                             ? `${DATA_POINTS.find((d) => d.key === cfg.formula?.numeratorKey)?.label ?? cfg.formula.numeratorKey} / ${DATA_POINTS.find((d) => d.key === cfg.formula?.denominatorKey)?.label ?? cfg.formula.denominatorKey}`
                             : (dp?.desc ?? w.widgetKey)}
@@ -4599,12 +4604,12 @@ export default function DashboardBuilderPage() {
                 width: 220,
                 flexShrink: 0,
                 background: "#fff",
-                borderLeft: "1px solid #e5e7eb",
+                borderLeft: "1px solid #e2e8f0",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
-                color: "#9ca3af",
+                color: "#94a3b8",
                 fontSize: 12,
                 padding: 16,
                 textAlign: "center",

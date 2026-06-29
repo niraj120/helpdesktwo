@@ -2,8 +2,8 @@
  * IVR call triage routes. Phase 5.
  */
 import { Router } from "express";
-import { authMiddleware } from "../middleware/auth";
-import { checkPermission } from "../middleware/permissions";
+import { authMiddleware } from "../../../middleware/auth";
+import { checkPermission } from "../../../middleware/permissions";
 import * as c from "../controllers/ivrController";
 
 const VIEW = ["SR_PSR_RECEIVE", "SR_PSR_CREATE", "EMAIL_TRIAGE_ACCESS"];
